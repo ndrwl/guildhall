@@ -4,8 +4,8 @@
 # Gate agents must not load project-level agent instructions or settings.
 disable_project_settings: true
 
-# Every pipeline step for this repository runs on Pi.
-# A pinned model and effort are chosen per run, not here.
+# Every pipeline step for this repository runs on Pi, using Pi's own default model and thinking level.
+# Repository config cannot set the model; a per-run pin also requires a Pi-only global agent list.
 agent: pi
 
 document:
