@@ -3,7 +3,7 @@
 A task is one unit of work in one repository a Director owns.
 The `guildhall task` commands create tasks in the Director's store and read them back.
 Creating a task records it and binds the exact workflow and configuration it was accepted under (R1.62); it launches nothing, calls no model and starts no step.
-Steps, decisions and approvals are recorded by later commands.
+For decisions and their answers, see the [decision commands](decisions-cli.md).
 
 ## Commands
 

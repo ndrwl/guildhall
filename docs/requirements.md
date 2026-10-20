@@ -51,7 +51,7 @@ A requirement describes intended behaviour, not shipped behaviour: see the READM
 | R1.17 | Each Director copy has one store owned by the tool, with records keyed by repository; large documents are referenced files; each task works in an isolated copy of its repository *(default: a single-writer bbolt database with mutation ids and receipts)* |
 | R1.18 | *(default)* Unlanded work is never deleted; cleanup happens only after a landed-work check; the tool never calls a runtime's own cleanup command on unlanded copies |
 | R1.19 | The default workflow uses one fresh review Artisan per review and up to three fix rounds before asking the Guildmaster *(default: the counts)*; both are workflow settings (R1.58) |
-| R1.20 | Waiting decisions show on the Guildmaster's next message to that Director; `guildhall inbox` lists them per machine; there is no push service |
+| R1.20 | Waiting decisions show on the Guildmaster's next message to that Director; `guildhall decide list` lists them per machine; there is no push service |
 
 ## Runtimes
 
