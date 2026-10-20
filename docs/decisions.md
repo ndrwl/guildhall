@@ -88,7 +88,7 @@ See [apply](steward.md#apply) for revalidation, machine selection, temporary tra
 Receipts are the rollout record for now; they are not a task store.
 The managed-settings source marks policy keys with `policy = true`, which is kept privately and not written to copies, because only the Guildmaster can say which preferences are review or approval rules.
 
-## D12. Separate managed publication from Director-owned config
+## D14. Separate managed publication from Director-owned config
 
 Rollouts write only `managed.toml`, never `config.toml`, so concurrent local edits cannot be overwritten by a stale whole-file snapshot.
 See [configuration](configuration.md) for combined loading and legacy inline-layout compatibility.
