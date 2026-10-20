@@ -18,7 +18,7 @@ const valid = `{
      "inputs": {"spec": ["plan.spec"]},
      "on": {"changes_requested": {"goto": "plan", "max": 2}}},
     {"id": "build", "type": "build", "version": 1, "inputs": {"spec": ["accept.spec"]}},
-    {"id": "review", "type": "automated-review", "version": 1,
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan"},
      "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
      "on": {"changes_requested": {"goto": "build", "max": 3}}},
     {"id": "deliver", "type": "deliver", "version": 1,
@@ -122,7 +122,7 @@ func TestValidationRefusals(t *testing.T) {
 		{"unknown goto", `"goto": "build", "max": 3`, `"goto": "fix", "max": 3`, `unknown step "fix"`},
 		{"outcome without rule", `"on": {"changes_requested": {"goto": "build"`, `"on": {"approved": {"goto": "build"`, `outcome "approved" cannot carry a rule`},
 		{"unknown setting", `{"id": "plan", "type": "plan", "version": 1}`, `{"id": "plan", "type": "plan", "version": 1, "settings": {"script": "x"}}`, `unknown setting "script"`},
-		{"wrong setting type", `"type": "automated-review", "version": 1,`, `"type": "automated-review", "version": 1, "settings": {"instructions": 5},`, `setting "instructions" must be a string`},
+		{"wrong setting type", `"settings": {"actor": "artisan"}`, `"settings": {"actor": "artisan", "instructions": 5}`, `setting "instructions" must be a string`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -190,52 +190,6 @@ func TestDigest(t *testing.T) {
 	}
 }
 
-func TestReviewOverride(t *testing.T) {
-	def, err := load(t, valid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	swapped, err := ApplyOverrides(def, map[string]Override{"review": {Type: "human-review", Version: 1}})
-	if err != nil {
-		t.Fatalf("review swap refused: %v", err)
-	}
-	if err := Validate(swapped); err != nil {
-		t.Fatalf("swapped workflow invalid: %v", err)
-	}
-	if got := swapped.Steps[3].Type; got != "human-review" {
-		t.Fatalf("review step type = %q", got)
-	}
-	if def.Steps[3].Type != "automated-review" {
-		t.Fatal("override mutated the original definition")
-	}
-	if swapped.Digest() == def.Digest() {
-		t.Fatal("override kept digest")
-	}
-	same, err := ApplyOverrides(def, nil)
-	if err != nil || same.Digest() != def.Digest() {
-		t.Fatalf("empty override changed workflow: %v", err)
-	}
-
-	refusals := []struct {
-		name string
-		ov   map[string]Override
-		want string
-	}{
-		{"unknown step", map[string]Override{"nope": {Type: "human-review", Version: 1}}, `unknown step "nope"`},
-		{"non-review step", map[string]Override{"build": {Type: "human-review", Version: 1}}, `only review steps`},
-		{"non-review target", map[string]Override{"review": {Type: "deliver", Version: 1}}, `only review steps`},
-		{"unknown version", map[string]Override{"review": {Type: "human-review", Version: 7}}, `does not support version 7`},
-	}
-	for _, c := range refusals {
-		t.Run(c.name, func(t *testing.T) {
-			_, err := ApplyOverrides(def, c.ov)
-			if err == nil || !strings.Contains(err.Error(), c.want) {
-				t.Fatalf("error %v does not mention %q", err, c.want)
-			}
-		})
-	}
-}
-
 func TestEveryBuiltinKindIsUsable(t *testing.T) {
 	for _, k := range Kinds() {
 		if k.Type == "" || k.Version < 1 {
@@ -243,6 +197,12 @@ func TestEveryBuiltinKindIsUsable(t *testing.T) {
 		}
 		if _, ok := LookupKind(k.Type, k.Version); !ok {
 			t.Errorf("kind %s@%d not found", k.Type, k.Version)
+		}
+		if len(k.Actors) == 0 {
+			t.Errorf("%s declares no actor", k.Type)
+		}
+		if _, declared := k.Settings[ActorSetting]; declared {
+			t.Errorf("%s declares %q as an ordinary setting", k.Type, ActorSetting)
 		}
 		for _, p := range append(append([]Port{}, k.Inputs...), k.Outputs...) {
 			if p.Name == "" || p.Type == "" {
@@ -253,7 +213,7 @@ func TestEveryBuiltinKindIsUsable(t *testing.T) {
 	if _, ok := LookupKind("deliver", 0); ok {
 		t.Error("version 0 resolved")
 	}
-	for _, name := range []string{"grill", "research", "plan", "guildmaster-approval", "build", "automated-review", "human-review", "validate", "deliver", "handoff-wait"} {
+	for _, name := range []string{"grill", "research", "plan", "document-review", "guildmaster-approval", "build", "review", "publish", "validate", "deliver", "handoff-wait"} {
 		if _, ok := LookupKind(name, 1); !ok {
 			t.Errorf("built-in %s@1 missing", name)
 		}

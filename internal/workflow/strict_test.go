@@ -18,8 +18,8 @@ func TestExactJSONFields(t *testing.T) {
 		fields     []string
 		parse      func([]byte) error
 	}{
-		{"workflow", strings.Replace(valid, `"name": "small"`, `"description": "test", "name": "small"`, 1), []string{"schema", "name", "description", "steps", "id", "type", "version", "inputs", "on", "goto", "max"}, func(b []byte) error { _, err := Parse(b); return err }},
-		{"outcome", string(outcome), []string{"schema", "reviewer", "verdict", "findings", "revisions", "file", "line", "summary", "code_head", "spec_digest", "standards_revision"}, func(b []byte) error { _, err := ParseReviewOutcome(b); return err }},
+		{"workflow", strings.Replace(valid, `"name": "small"`, `"description": "test", "name": "small"`, 1), []string{"schema", "name", "description", "steps", "id", "type", "version", "settings", "inputs", "on", "goto", "max"}, func(b []byte) error { _, err := Parse(b); return err }},
+		{"outcome", string(outcome), []string{"schema", "reviewer", "verdict", "findings", "revisions", "file", "line", "summary", "subject", "code_head", "spec_digest", "standards_revision"}, func(b []byte) error { _, err := ParseReviewOutcome(b); return err }},
 	}
 	for _, c := range cases {
 		if err := c.parse([]byte(c.data)); err != nil {
@@ -59,7 +59,7 @@ func TestInputReferenceArrays(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data := `{"schema":"guildhall.workflow/1","name":"arrays","steps":[{"id":"grill","type":"grill","version":1},{"id":"research","type":"research","version":1},{"id":"plan","type":"plan","version":1,"inputs":{"context":` + string(encoded) + `}}]}`
+		data := `{"schema":"guildhall.workflow/1","name":"arrays","steps":[{"id":"grill","type":"grill","version":1,"settings":{"actor":"director"}},{"id":"research","type":"research","version":1},{"id":"plan","type":"plan","version":1,"inputs":{"context":` + string(encoded) + `}}]}`
 		def, err := load(t, data)
 		if err != nil {
 			t.Fatal(err)

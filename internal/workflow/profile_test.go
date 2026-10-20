@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -8,10 +9,19 @@ import (
 
 // withSettings returns the small workflow with extra settings on one step.
 func withSettings(step, settings string) string {
-	needle := `{"id": "` + step + `", "type": `
-	i := strings.Index(valid, needle)
-	end := i + strings.Index(valid[i:], `"version": 1`) + len(`"version": 1`)
-	return valid[:end] + `, "settings": ` + settings + valid[end:]
+	def, err := Parse([]byte(valid))
+	if err != nil {
+		panic(err)
+	}
+	s := &def.Steps[def.stepIndex(step)]
+	if err := json.Unmarshal([]byte(settings), &s.Settings); err != nil {
+		panic(err)
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 func TestProfileAndSkillsAcceptedOnArtisanKinds(t *testing.T) {
@@ -35,7 +45,7 @@ func TestProfileAndSkillsSurviveHumanReviewOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	swapped, err := ApplyOverrides(def, map[string]Override{"review": {Type: "human-review", Version: 1}})
+	swapped, err := ApplyOverrides(def, map[string]Override{"review": {Actor: GuildmasterActor}})
 	if err != nil {
 		t.Fatal(err)
 	}

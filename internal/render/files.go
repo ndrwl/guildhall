@@ -20,7 +20,8 @@ func stageKind(stage Stage, human bool) (workflow.Kind, error) {
 	if !ok {
 		return workflow.Kind{}, fmt.Errorf("render: step %q: unknown kind %s version %d", stage.Step.ID, stage.Step.Type, stage.Step.Version)
 	}
-	if kind.Human != human {
+	actor := stage.Step.Actor()
+	if actor == "" || (actor == workflow.GuildmasterActor) != human {
 		return workflow.Kind{}, fmt.Errorf("render: step %q (%s): %w", stage.Step.ID, kind.Type, ErrWrongActor)
 	}
 	if stage.Repository == "" || stage.Task == "" || stage.Step.ID == "" || stage.Attempt < 1 {

@@ -38,6 +38,23 @@ type Setting struct {
 	Required bool
 }
 
+// Actor names who fulfils a step: who is asked, launched or run when the task reaches it.
+type Actor string
+
+const (
+	// ArtisanActor launches a fresh Artisan session for the step.
+	ArtisanActor Actor = "artisan"
+	// GuildmasterActor is a durable pause that waits for the Guildmaster without model calls.
+	GuildmasterActor Actor = "guildmaster"
+	// DirectorActor runs inside the Director's own session and ends with a recorded document.
+	DirectorActor Actor = "director"
+	// EngineActor runs inline in Guildhall itself, with no model.
+	EngineActor Actor = "engine"
+)
+
+// ActorSetting is the step setting that chooses the actor of a kind that allows more than one.
+const ActorSetting = "actor"
+
 // Kind is one built-in, versioned step type shipped with Guildhall.
 // Workflow JSON can only name kinds from this registry; it cannot add new ones.
 type Kind struct {
@@ -49,71 +66,101 @@ type Kind struct {
 	Settings map[string]Setting
 	// Loops lists the outcomes that may carry an "on" rule sending the task back to an earlier step.
 	Loops []string
-	// Human marks a durable pause that waits for the Guildmaster without model calls.
-	Human bool
-	// Review marks a step that produces the shared ReviewOutcome; review kinds are interchangeable.
-	Review bool
+	// Actors lists who may fulfil the kind's contract.
+	// With one actor the step always runs as it and takes no "actor" setting;
+	// with more, the "actor" setting is required and must name one of them.
+	Actors []Actor
 }
 
 var instructions = map[string]Setting{"instructions": {Type: StringSetting}}
 
-// artisan lists the settings of kinds an Artisan can run: the Director profile and the skills rendered for it.
+// artisan lists the profile and skills rendered for an Artisan.
 var artisan = map[string]Setting{"profile": {Type: NameSetting}, "skills": {Type: NameListSetting}}
 
-// reviewSettings is shared by both review kinds, so overriding one with the other keeps a step valid.
+// reviewSettings survives actor overrides; profile and skills are unused by the Guildmaster.
 var reviewSettings = map[string]Setting{
 	"instructions": {Type: StringSetting},
 	"profile":      artisan["profile"],
 	"skills":       artisan["skills"],
 }
 
-var reviewInputs = []Port{
-	{Name: "spec", Type: AcceptedSpec},
-	{Name: "head", Type: CodeHead},
-}
-
 var reviewOutputs = []Port{{Name: "outcome", Type: ReviewResult}}
 
 var reviewLoops = []string{string(VerdictChangesRequested)}
 
+var (
+	artisanOnly     = []Actor{ArtisanActor}
+	guildmasterOnly = []Actor{GuildmasterActor}
+	engineOnly      = []Actor{EngineActor}
+	// reviewers may fulfil either review kind, so a repository swaps human and automated review with one setting.
+	reviewers = []Actor{ArtisanActor, GuildmasterActor}
+)
+
 var kinds = []Kind{
-	{Type: "grill", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}},
-	{Type: "research", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}},
+	{Type: "grill", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Actors: []Actor{DirectorActor, ArtisanActor}},
+	{Type: "research", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Actors: artisanOnly},
 	{
 		Type: "plan", Version: 1,
 		Inputs:   []Port{{Name: "context", Type: Document, Optional: true, Many: true}},
 		Outputs:  []Port{{Name: "spec", Type: Document}},
 		Settings: artisan,
+		Actors:   artisanOnly,
+	},
+	{
+		// Document-review reviews a document, such as a plan's spec, before it is accepted;
+		// its outcome is bound to the document's digest (Subject.DocumentDigest).
+		Type: "document-review", Version: 1,
+		Inputs:   []Port{{Name: "subject", Type: Document}},
+		Outputs:  reviewOutputs,
+		Settings: reviewSettings,
+		Loops:    reviewLoops,
+		Actors:   reviewers,
 	},
 	{
 		Type: "guildmaster-approval", Version: 1,
-		Inputs:   []Port{{Name: "spec", Type: Document}},
+		Inputs: []Port{
+			{Name: "spec", Type: Document},
+			{Name: "reviews", Type: ReviewResult, Optional: true, Many: true},
+		},
 		Outputs:  []Port{{Name: "spec", Type: AcceptedSpec}},
 		Settings: instructions,
 		Loops:    reviewLoops,
-		Human:    true,
+		Actors:   guildmasterOnly,
 	},
 	{
 		Type: "build", Version: 1,
 		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}},
 		Outputs:  []Port{{Name: "head", Type: CodeHead}},
 		Settings: artisan,
+		Actors:   artisanOnly,
 	},
 	{
-		Type: "automated-review", Version: 1,
-		Inputs: reviewInputs, Outputs: reviewOutputs, Settings: reviewSettings, Loops: reviewLoops,
-		Review: true,
+		// Review reviews a code head against the accepted spec; its outcome is bound to the head (Subject.CodeHead).
+		Type: "review", Version: 1,
+		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}, {Name: "head", Type: CodeHead}},
+		Outputs:  reviewOutputs,
+		Settings: reviewSettings,
+		Loops:    reviewLoops,
+		Actors:   reviewers,
 	},
 	{
-		Type: "human-review", Version: 1,
-		Inputs: reviewInputs, Outputs: reviewOutputs, Settings: reviewSettings, Loops: reviewLoops,
-		Human: true, Review: true,
+		// Publish pushes the reviewed head to the repository's remote branch and opens or updates its pull request.
+		// It never merges, and it takes no settings: the repository's configuration names the remote.
+		// Its output is the same head, so validate and deliver read the head that was pushed.
+		Type: "publish", Version: 1,
+		Inputs: []Port{
+			{Name: "head", Type: CodeHead},
+			{Name: "review", Type: ReviewResult, Optional: true, Many: true},
+		},
+		Outputs: []Port{{Name: "head", Type: CodeHead}},
+		Actors:  engineOnly,
 	},
 	{
 		Type: "validate", Version: 1,
 		Inputs:  []Port{{Name: "head", Type: CodeHead}},
 		Outputs: []Port{{Name: "result", Type: ValidationResult}},
 		Loops:   []string{"failed"},
+		Actors:  engineOnly,
 	},
 	{
 		// Deliver takes no settings: the repository's merge policy decides, never the workflow.
@@ -123,12 +170,13 @@ var kinds = []Kind{
 			{Name: "review", Type: ReviewResult, Optional: true, Many: true},
 			{Name: "validation", Type: ValidationResult, Optional: true},
 		},
+		Actors: engineOnly,
 	},
 	{
 		Type: "handoff-wait", Version: 1,
 		Outputs:  []Port{{Name: "handoff", Type: Document}},
 		Settings: map[string]Setting{"from": {Type: StringSetting, Required: true}},
-		Human:    true,
+		Actors:   guildmasterOnly,
 	},
 }
 
