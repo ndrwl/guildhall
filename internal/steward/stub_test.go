@@ -24,8 +24,14 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("GUILDHALL_STUB_SSH_CHILD") == "1" {
-		time.Sleep(2 * time.Second)
+	if ready := os.Getenv("GUILDHALL_STUB_SSH_CHILD"); ready != "" {
+		if err := os.WriteFile(ready+".tmp", []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
+			os.Exit(1)
+		}
+		if err := os.Rename(ready+".tmp", ready); err != nil {
+			os.Exit(1)
+		}
+		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
 	if private := os.Getenv(ownerPrivateEnv); private != "" {
@@ -63,9 +69,9 @@ func stubSCP(root string, args []string) int {
 		return 1
 	}
 	if h := os.Getenv(stubHangEnv); h != "" && strings.Contains(joined, h) {
-		if os.Getenv("GUILDHALL_STUB_SCP_CHILD") == "1" {
-			child := exec.Command(os.Args[0])
-			child.Env = append(os.Environ(), "GUILDHALL_STUB_SSH_CHILD=1")
+		if executable := os.Getenv("GUILDHALL_STUB_SCP_CHILD"); executable != "" {
+			child := exec.Command(executable)
+			child.Env = append(os.Environ(), "GUILDHALL_STUB_SSH_CHILD="+filepath.Join(root, "child-ready"))
 			child.Stdout, child.Stderr = os.Stdout, os.Stderr
 			if err := child.Start(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
