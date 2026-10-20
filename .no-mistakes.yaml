@@ -13,5 +13,20 @@ document:
     Follow CONTRIBUTING.md for documentation style and placement.
     Write one sentence per line in Markdown.
 
-# review.path_instructions are added once the review standard document exists.
+review:
+  path_instructions:
+    - path: "*.go"
+      instructions: |
+        Review against docs/review.md, citing a requirement id from docs/requirements.md or a rule id from docs/review.md for every finding.
+        Check test-first evidence, three-platform behaviour and that no platform or runtime is claimed as supported without acceptance.
+    - path: "go.mod"
+      instructions: |
+        Every new dependency or Go version change must be recorded with its reason in docs/decisions.md (docs/review.md rule S7).
+    - path: ".github/**"
+      instructions: |
+        Review against docs/review.md rules S3 and S9: least-privilege permissions, the three-platform matrix, and release publication only from a pushed version tag with every artifact in SHA256SUMS.
+    - path: "docs/**"
+      instructions: |
+        Review against docs/review.md rules S4, S5 and S10: no unproven support claims, no private or personal content, and one sentence per line.
+
 # commands.test is deliberately unset: targeted tests run in the pipeline and the full suite runs in CI.
