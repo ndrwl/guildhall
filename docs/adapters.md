@@ -60,6 +60,7 @@ All field names, including nested output fields, must use the exact lowercase sp
 A rejected result is reported as rejected; it is never treated as success or failure of the work.
 
 Guildhall writes a result once: it writes a temporary file beside the result path and hard-links it into place, so a reader sees either no file or the whole result, and an existing result is never replaced.
+The result directory must be on a file system that supports hard links.
 `guildhall artisan run` refuses to launch when the result file already exists; a new attempt needs a new result path.
 An identity-bound stop first persists `<result>.cancelled`, containing the attempt's `task_id` and `attempt_id`.
 Result reads and writes reject that cancelled attempt, including after a client restart; a mismatched or invalid cancellation sidecar is also rejected.
@@ -93,7 +94,8 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
   On timeout or interruption without a result the Artisan is left running unless `--stop-on-timeout` is given; a rejected result does not trigger stopping, and Guildhall never closes the tab.
   On native Windows that option establishes ownership before work starts, then terminates and waits on the exact retained process handle when the wait ends.
   Elsewhere it requests Ctrl+C and explicitly reports that termination is unverified.
-- `--timeout` bounds the wait (default 30 minutes).
+- `--timeout` bounds launch setup and the result wait together (default 30 minutes).
+  A stop request after that deadline has a separate 30-second budget in the Herdr path.
 
 A valid result is printed to standard output as one JSON line.
 
@@ -121,6 +123,7 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 
 - Every call names its session with `--session <name>` and sets `HERDR_SESSION` to the same name; the inherited `HERDR_SESSION`, `HERDR_SOCKET_PATH`, `HERDR_ENV` and pane, tab and workspace id variables are removed, so only the explicit session selects the server.
 - The session name is required and Herdr's `default` session is refused.
+  Select a dedicated session provisioned outside Guildhall; a non-default name alone does not establish ownership of the session.
 - Before launching, `herdr status --json` must report a running server for that session, and both the client and the server must be Herdr 0.9.5 or newer.
   Guildhall never starts, stops, restarts or deletes a Herdr server or session.
 - Guildhall uses `status`, `workspace list|create`, `tab create|list|get|close` and `pane process-info|run|send-keys`, always with `--no-focus` when creating.

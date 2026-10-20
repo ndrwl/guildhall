@@ -121,15 +121,13 @@ Responses recorded from Herdr 0.9.5 are kept under `internal/herdr/testdata` so 
 ## D10. Explicit Herdr session and version floor
 
 Every Herdr call carries `--session <name>` and a matching `HERDR_SESSION`, with inherited Herdr context variables removed, so ambient state never chooses the server.
-Herdr's `default` session is refused, so Guildhall cannot act on a session it did not set up for itself.
+The session-selection and tab-ownership rules are defined in [Herdr access](adapters.md#herdr-access).
 0.9.5 is the minimum client and server version because it is the version exercised live; an older or unparsable version is refused.
 
 ## D11. Version 1 result file
 
-An Artisan's result is a strict JSON object, `guildhall.artisan-result` version 1, described in `docs/adapters.md`.
-Unknown, missing and repeated keys are rejected, a newer version is refused, and the identity must match the attempt exactly.
-Results are published once by hard-linking a fully written temporary file into place, which is atomic and refuses to replace an existing file on Linux, Windows and macOS.
-The result directory must therefore be on a file system that supports hard links.
+The [result-file contract](adapters.md#result-file) defines the schema, validation and publication requirements.
+Hard-link publication was chosen to make a complete result visible atomically without replacing an existing result on Linux, Windows and macOS.
 
 ## D12. Typing the launch command into a new tab
 
