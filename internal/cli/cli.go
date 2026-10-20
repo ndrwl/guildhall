@@ -26,6 +26,8 @@ Commands:
   store doctor <path>
             check a store file read-only and count its records
   steward   plan and apply rollouts of managed settings to enrolled Director copies
+  messages send|list|read|ack --store <path> ...
+            send, list, read and acknowledge local Director and Artisan messages
   help      print this help
 `
 
@@ -46,6 +48,7 @@ var doctorTools = []struct {
 
 // App holds the process boundaries the commands use, so tests can replace them.
 type App struct {
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 	// LookPath resolves a tool name on PATH.
@@ -57,6 +60,7 @@ type App struct {
 // New returns an App wired to the real process environment.
 func New() *App {
 	return &App{
+		Stdin:    os.Stdin,
 		Stdout:   os.Stdout,
 		Stderr:   os.Stderr,
 		LookPath: exec.LookPath,
@@ -107,6 +111,8 @@ func (a *App) Run(args []string) int {
 			return a.usageError("usage: guildhall store doctor <path>")
 		}
 		return a.storeDoctor(rest[1])
+	case "messages":
+		return a.messages(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

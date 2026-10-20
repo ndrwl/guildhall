@@ -16,8 +16,10 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. |
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Decision | repository, task, decision id | A question for the Guildmaster and, once, the exact answer (R1.61). |
+| Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
 Titles, questions and answers must be non-blank valid UTF-8 and are limited to 64 KiB per field; larger content belongs in a referenced document.
+Message text is limited to 16 KiB, and a message refers to at most 32 artifacts, each a document-style path with a sha256.
 Pane binding fields must be non-blank valid UTF-8 and are limited to 256 bytes each.
 Document paths are relative to the Director's document directory and must be clean, local, slash-separated paths of at most 1024 bytes, without backslashes or colons.
 Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
@@ -29,6 +31,7 @@ A mutation runs in one bbolt transaction that writes its records and a receipt t
 After a crash, either the records and the receipt are both present or neither is.
 
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, a store-wide sequence number starting at 1 and the commit time in UTC.
+Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
 
 - Replaying a mutation id with the same operation and request returns the original receipt and changes nothing, even after a restart and even when later mutations have changed the records since.
 - Reusing a mutation id for a different operation or request fails with `ErrMutationConflict` and changes nothing.
@@ -50,7 +53,9 @@ Within one open store, calls are safe from many goroutines; bbolt serializes wri
 
 ## File format and versions
 
-The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `documents`, `panes` and `decisions`.
+The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `documents`, `panes`, `decisions`, `messages` and `inbox`.
+`inbox` indexes unacknowledged messages by recipient and sequence, holding each message's id.
+A per-repository bucket is created by the first record that needs it, so a schema 1 file written before messages existed accepts them unchanged.
 Records and receipts are JSON.
 
 Opening refuses a file that is not a Guildhall store (`ErrNotStore`), including another program's bbolt file, and a store whose `schema_version` is newer than this Guildhall supports (`ErrNewerSchema`); a refusal releases the lock.
@@ -63,5 +68,5 @@ bbolt records the page size in the file, and every release target is little-endi
 
 ## `guildhall store doctor`
 
-`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count and each repository's record counts.
+`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count and each repository's record counts, including messages and how many are unread.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.

@@ -42,7 +42,7 @@ func TestStoreDoctorReportsStore(t *testing.T) {
 		"schema_version: 1 (supported: 1)\n" +
 		"integrity: ok\n" +
 		"receipts: 2\n" +
-		"repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 1\n"
+		"repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 1, messages 0 (0 unread)\n"
 	if got := stdout.String(); got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}

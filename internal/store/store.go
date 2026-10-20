@@ -230,7 +230,7 @@ var mutationIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`
 
 // mutate runs apply and records its receipt in one transaction, or returns the
 // original receipt when mutationID was already committed for the same request.
-// apply fills the receipt's record fields.
+// apply fills the receipt's record fields and may read its sequence.
 func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r *Receipt) error) (Receipt, error) {
 	if !mutationIDPattern.MatchString(mutationID) {
 		return Receipt{}, fmt.Errorf("store: %w: mutation id %q must match %s", ErrInvalid, mutationID, mutationIDPattern)
@@ -257,15 +257,15 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 			}
 			return nil
 		}
-		r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: digest}
-		if err := apply(tx, &r); err != nil {
-			return err
-		}
+		// The sequence is taken first so apply can record it; a failed apply rolls it back.
 		seq, err := receipts.NextSequence()
 		if err != nil {
 			return err
 		}
-		r.Sequence = seq
+		r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: digest, Sequence: seq}
+		if err := apply(tx, &r); err != nil {
+			return err
+		}
 		r.CommittedAt = s.now().UTC()
 		if err := putJSON(receipts, []byte(mutationID), r); err != nil {
 			return err

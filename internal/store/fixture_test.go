@@ -89,4 +89,9 @@ func TestSchemaV1Fixture(t *testing.T) {
 		t.Fatalf("replay from fixture = %+v, %v", r, err)
 	}
 	mustCreate(t, s, "after-fixture", sampleTask("app", "t-2"))
+	// A schema 1 file written before messages existed accepts them.
+	m := toDirector("q-fixture")
+	if _, err := s.SendMessage(m); err != nil {
+		t.Fatalf("message on fixture copy: %v", err)
+	}
 }
