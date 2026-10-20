@@ -2,7 +2,7 @@
 //
 // The roster and the managed settings live in the private config directory and are never written here:
 // enrolment, accounts and sign-in happen before a machine appears in the roster.
-// A rollout is planned with a side-effect-free dry run and applied only from that plan,
+// A dry run fetches copies without remote writes; applying requires its saved plan,
 // copying files with scp so the user's own SSH aliases, agent, keys and host-key checks apply.
 package steward
 
@@ -59,7 +59,7 @@ type Machine struct {
 // Director is one Director copy on its machine.
 type Director struct {
 	Name string `toml:"name"`
-	// CopyDir is the copy's directory on the machine, holding its config.toml; Windows paths use forward slashes.
+	// CopyDir holds the copy's config.toml and managed.toml; Windows paths use forward slashes.
 	CopyDir      string   `toml:"copy_dir"`
 	Repositories []string `toml:"repositories"`
 }
