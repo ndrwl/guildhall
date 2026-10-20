@@ -40,6 +40,11 @@ type Harness struct {
 	// SetsidEscapes is whether a grandchild that calls setsid leaves the unit
 	// (Unix process group): it is then an escape, not a member.
 	SetsidEscapes bool
+	// SetsidContained is whether a grandchild that calls setsid stays in the
+	// unit (Linux cgroup): it is then a member and Kill ends it.
+	SetsidContained bool
+	// Kind is the Containment kind every unit must report.
+	Kind string
 	// BreakawayRefused is whether a breakaway request is refused (Windows job).
 	BreakawayRefused bool
 }
@@ -176,6 +181,25 @@ func RunUnitContract(t *testing.T, h Harness) {
 			c.escaped(gc.Identity)
 		})
 	}
+	if h.SetsidContained {
+		t.Run("a setsid grandchild is a member and kill ends it", func(t *testing.T) {
+			c := h.begin(t, Worker{Grandchildren: 1, SetsidGrandchild: true})
+			worker := c.start()
+			gc := c.role("grandchild", 1)[0]
+			if !gc.Setsid {
+				t.Fatalf("grandchild %v did not record setsid", gc)
+			}
+			c.waitMembers(worker, gc.Identity)
+			c.kill()
+			c.assertGone(gc.Identity)
+		})
+	}
+	t.Run("containment reports its kind", func(t *testing.T) {
+		c := h.begin(t, Worker{})
+		if got := c.u.Containment(); got.Kind != h.Kind {
+			t.Errorf("Containment() = %+v, want kind %q", got, h.Kind)
+		}
+	})
 	if h.BreakawayRefused {
 		t.Run("a breakaway request is refused", func(t *testing.T) {
 			c := h.begin(t, Worker{Grandchildren: 1, BreakawayGrandchild: true})

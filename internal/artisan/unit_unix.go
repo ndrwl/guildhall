@@ -18,12 +18,14 @@ import (
 // reaped before Close, so its PID, the group id, stays allocated while the
 // unit can signal the group.
 type groupUnit struct {
-	mu         sync.Mutex
-	cmd        *exec.Cmd
-	worker     Identity
-	foreground bool
-	closed     bool
-	done       chan struct{}
+	mu          sync.Mutex
+	cmd         *exec.Cmd
+	worker      Identity
+	foreground  bool
+	closed      bool
+	done        chan struct{}
+	containment Containment
+	platformUnit
 
 	// lookup and signal are the leader check's and the rungs' OS calls.
 	lookup      func(pid int) (Identity, error)
@@ -31,9 +33,11 @@ type groupUnit struct {
 	signal      func(pid int, sig unix.Signal) error
 }
 
-func newUnit(string) (Unit, error) {
-	return &groupUnit{done: make(chan struct{}), lookup: Lookup, lookupGroup: lookupGroup, signal: unix.Kill}, nil
+func newGroupUnit(c Containment) *groupUnit {
+	return &groupUnit{done: make(chan struct{}), containment: c, lookup: Lookup, lookupGroup: lookupGroup, signal: unix.Kill}
 }
+
+func (u *groupUnit) Containment() Containment { return u.containment }
 
 func isTerminal(fd int) bool {
 	_, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
@@ -56,8 +60,14 @@ func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
 		attr.Foreground, attr.Ctty = true, 0
 	}
 	setParentDeath(attr)
+	release, err := u.placeWorker(attr)
+	if err != nil {
+		return Identity{}, err
+	}
 	cmd.SysProcAttr = attr
-	if err := startLocked(cmd); err != nil {
+	err = startLocked(cmd)
+	release()
+	if err != nil {
 		if attr.Foreground {
 			reclaimTerminal()
 		}
@@ -70,6 +80,9 @@ func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
 		close(u.done)
 	}()
 	id, pgid, err := u.lookupGroup(pid)
+	if err == nil {
+		err = u.verifyWorker(pid)
+	}
 	if err != nil || pgid != pid {
 		if u.foreground {
 			reclaimTerminal()
@@ -87,7 +100,7 @@ func (u *groupUnit) Members() ([]Identity, error) {
 	if err := u.usable(); err != nil {
 		return nil, err
 	}
-	return groupMembers(u.worker.PID)
+	return u.members()
 }
 
 func (u *groupUnit) usable() error {
@@ -110,7 +123,7 @@ func (u *groupUnit) send(sig unix.Signal) error {
 	if err := u.usable(); err != nil {
 		return err
 	}
-	return u.signalGroup(sig)
+	return u.signalUnit(sig)
 }
 
 // signalGroup signals the group after the leader check: a live process at the
@@ -143,17 +156,20 @@ func (u *groupUnit) Close() error {
 
 func (u *groupUnit) closeLocked() error {
 	if u.cmd == nil {
+		if err := u.removeContainment(); err != nil {
+			return err
+		}
 		u.closed = true
 		return nil
 	}
 	var err error
-	if u.worker.Token == "" {
+	if u.containment.Kind != KindCgroup && u.worker.Token == "" {
 		err = u.signal(-u.worker.PID, unix.SIGKILL)
 		if errors.Is(err, unix.ESRCH) {
 			err = nil
 		}
 	} else {
-		err = u.signalGroup(unix.SIGKILL)
+		err = u.signalUnit(unix.SIGKILL)
 	}
 	if err != nil {
 		return err
@@ -167,6 +183,10 @@ func (u *groupUnit) closeLocked() error {
 	_ = u.cmd.Wait()
 	if u.foreground {
 		reclaimTerminal()
+		u.foreground = false
+	}
+	if err := u.removeContainment(); err != nil {
+		return err
 	}
 	u.closed = true
 	return nil

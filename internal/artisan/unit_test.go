@@ -24,7 +24,7 @@ func TestUnitContract(t *testing.T) {
 		}
 		return u
 	})
-	platformHarness(&h)
+	platformHarness(t, &h)
 	artisantest.RunUnitContract(t, h)
 }
 

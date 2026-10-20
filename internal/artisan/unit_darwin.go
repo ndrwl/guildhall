@@ -11,6 +11,24 @@ import (
 
 const ioctlGetTermios = unix.TIOCGETA
 
+type platformUnit struct{}
+
+func (u *platformUnit) placeWorker(*syscall.SysProcAttr) (func(), error) {
+	return func() {}, nil
+}
+
+func (u *platformUnit) verifyWorker(int) error { return nil }
+
+func (u *groupUnit) members() ([]Identity, error) { return groupMembers(u.worker.PID) }
+
+func (u *groupUnit) signalUnit(sig unix.Signal) error { return u.signalGroup(sig) }
+
+func (u *platformUnit) removeContainment() error { return nil }
+
+// newUnit contains the worker in a process group: macOS has no cgroup and no
+// subreaper.
+func newUnit(string) (Unit, error) { return newGroupUnit(Containment{Kind: KindGroup}), nil }
+
 // setParentDeath: macOS has no parent-death signal.
 func setParentDeath(*syscall.SysProcAttr) {}
 

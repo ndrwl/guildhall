@@ -1,7 +1,13 @@
 package artisan_test
 
-import "github.com/ndrwl/guildhall/internal/artisan/artisantest"
+import (
+	"testing"
 
-func platformHarness(h *artisantest.Harness) {
+	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+)
+
+func platformHarness(_ *testing.T, h *artisantest.Harness) {
 	h.BreakawayRefused = true
+	h.Kind = artisan.KindJob
 }

@@ -31,17 +31,31 @@
 //     a live process at the group id that is not the recorded worker refuses
 //     the signal with ErrGroupReused. Linux also sets a parent-death signal,
 //     started from a locked thread.
+//   - Linux with a delegated cgroup v2: the process group as above, and the
+//     worker is created inside its own child cgroup guildhall-<name> of the
+//     launcher's cgroup (CLONE_INTO_CGROUP). Members reads cgroup.procs, the
+//     rungs signal every process in the cgroup and Kill writes cgroup.kill,
+//     so a descendant that leaves the process group is still a member.
+//   - Linux otherwise: the process group with the launcher as child
+//     subreaper (PR_SET_CHILD_SUBREAPER), so a descendant orphaned outside
+//     the group reparents to the launcher, where Escapes reports it.
+//
+// Which backend contains a unit is its Containment, and RecordContainment
+// writes that to the attempt directory; on Linux the detection that chose it
+// is part of the record.
 //
 // Limits are reported, not hidden: a Unix descendant that leaves the group
-// (setsid, setpgid) is outside the unit and survives Kill; Linux's
+// (setsid, setpgid) is outside a process-group unit and survives Kill; Linux's
 // parent-death signal reaches the direct child only; macOS has none.
 package artisan
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // Errors returned by a Unit.
@@ -93,6 +107,54 @@ type Unit interface {
 	// After success, Close is idempotent and Start, Members and stop rungs
 	// return ErrClosed. Exited continues to return the worker's exit channel.
 	Close() error
+	// Containment says which backend contains the unit; it is fixed when the
+	// unit is created.
+	Containment() Containment
+}
+
+// Containment kinds.
+const (
+	// KindJob is a Windows Job Object.
+	KindJob = "job"
+	// KindCgroup is a Linux cgroup v2 child of the launcher's delegated cgroup.
+	KindCgroup = "cgroup"
+	// KindSubreaper is a Linux process group with the launcher as child
+	// subreaper, used when no delegated cgroup v2 is available.
+	KindSubreaper = "subreaper+pgroup"
+	// KindGroup is a process group alone (macOS).
+	KindGroup = "pgroup"
+)
+
+// Containment is the record of how a unit contains its worker.
+type Containment struct {
+	// Kind is one of the Kind constants.
+	Kind string `json:"containment"`
+	// Name is what a later sweep can find the unit by: the job name, or the
+	// cgroup's directory. It is empty for a process group, which is found by
+	// the recorded worker identity instead.
+	Name string `json:"name,omitempty"`
+	// Reason is the detection result that chose Kind on Linux, such as why
+	// no delegated cgroup v2 was usable.
+	Reason string `json:"reason,omitempty"`
+}
+
+// ContainmentFile is the file RecordContainment writes in the attempt
+// directory.
+const ContainmentFile = "containment.json"
+
+// RecordContainment writes c to ContainmentFile in the attempt directory dir,
+// replacing any earlier record atomically.
+func RecordContainment(dir string, c Containment) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	name := filepath.Join(dir, ContainmentFile)
+	tmp := name + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, name)
 }
 
 // Identity names one process: its PID plus an OS creation token (Linux: boot
