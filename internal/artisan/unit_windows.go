@@ -94,7 +94,7 @@ func (u *jobUnit) Start(cmd *exec.Cmd) (Identity, error) {
 		return Identity{}, errors.Join(fmt.Errorf("%w: %s: %v", ErrContainment, what, err), u.closeLocked())
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|
-		windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SUSPEND_RESUME, false, uint32(cmd.Process.Pid))
+		windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SUSPEND_RESUME|windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid))
 	if err != nil {
 		return fail("OpenProcess", err)
 	}
@@ -156,7 +156,7 @@ func (u *jobUnit) Members() ([]Identity, error) {
 }
 
 func (u *jobUnit) member(pid int) (Identity, error) {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return Identity{}, errNoProcess
 	}

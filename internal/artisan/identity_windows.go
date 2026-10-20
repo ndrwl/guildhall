@@ -8,14 +8,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// stillActive is the exit code GetExitCodeProcess reports for a live process.
-const stillActive = 259
-
 // Lookup returns the identity of the live process pid: its creation time.
 // OpenProcess failing with ERROR_INVALID_PARAMETER means no such process;
 // access denied is an error, so Probe reports it unverified, never gone.
 func Lookup(pid int) (Identity, error) {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return Identity{}, fmt.Errorf("pid %d: %w", pid, errNoProcess)
 	}
@@ -27,12 +24,16 @@ func Lookup(pid int) (Identity, error) {
 }
 
 func identityFromHandle(pid int, h windows.Handle) (Identity, error) {
-	var code uint32
-	if err := windows.GetExitCodeProcess(h, &code); err != nil {
+	state, err := windows.WaitForSingleObject(h, 0)
+	if err != nil {
 		return Identity{}, err
 	}
-	if code != stillActive {
+	switch state {
+	case windows.WAIT_OBJECT_0:
 		return Identity{}, fmt.Errorf("pid %d: %w", pid, errNoProcess)
+	case uint32(windows.WAIT_TIMEOUT):
+	default:
+		return Identity{}, fmt.Errorf("pid %d: unexpected wait state %#x", pid, state)
 	}
 	var c, e, k, u windows.Filetime
 	if err := windows.GetProcessTimes(h, &c, &e, &k, &u); err != nil {

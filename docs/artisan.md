@@ -22,8 +22,6 @@ A process is named by an `Identity`: its PID plus a creation token that differs 
 - gone when no live process has the PID, when the PID now belongs to a process with another token, or when the process has exited and is an unreaped zombie;
 - unverified when the probe fails for any other reason, such as a permission error; unverified is never treated as gone.
 
-On Windows a live process that has called `ExitProcess(259)` reads as live, because 259 is the code Windows reports for a running process.
-
 ## Containment unit
 
 The launcher starts the worker inside a containment unit, `artisan.Unit`, and stops it only through that unit.
