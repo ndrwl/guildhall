@@ -1,0 +1,154 @@
+//go:build unix
+
+package artisan
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"os/signal"
+	"sync"
+	"syscall"
+
+	"golang.org/x/sys/unix"
+)
+
+// groupUnit contains the worker in its own process group. The leader is not
+// reaped before Close, so its PID, the group id, stays allocated while the
+// unit can signal the group.
+type groupUnit struct {
+	mu         sync.Mutex
+	cmd        *exec.Cmd
+	worker     Identity
+	foreground bool
+	closed     bool
+	done       chan struct{}
+
+	// lookup and signal are the leader check's and the rungs' OS calls.
+	lookup func(pid int) (Identity, error)
+	signal func(pid int, sig unix.Signal) error
+}
+
+func newUnit(string) (Unit, error) {
+	return &groupUnit{done: make(chan struct{}), lookup: Lookup, signal: unix.Kill}, nil
+}
+
+func isTerminal(fd int) bool {
+	_, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
+	return err == nil
+}
+
+func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	switch {
+	case u.closed:
+		return Identity{}, ErrClosed
+	case u.cmd != nil:
+		return Identity{}, ErrStarted
+	}
+	attr := &syscall.SysProcAttr{Setpgid: true}
+	if cmd.Stdin == os.Stdin && isTerminal(0) {
+		// The worker becomes the terminal's foreground group, so Ctrl+C from
+		// the pane reaches it and not the launcher.
+		attr.Foreground, attr.Ctty = true, 0
+	}
+	setParentDeath(attr)
+	cmd.SysProcAttr = attr
+	if err := startLocked(cmd); err != nil {
+		return Identity{}, err
+	}
+	pid := cmd.Process.Pid
+	id, pgid, err := lookupGroup(pid)
+	if err != nil || pgid != pid {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return Identity{}, fmt.Errorf("%w: worker %d in group %d: %v", ErrContainment, pid, pgid, err)
+	}
+	u.cmd, u.worker, u.foreground = cmd, id, attr.Foreground
+	go func() {
+		waitExit(pid)
+		close(u.done)
+	}()
+	return id, nil
+}
+
+func (u *groupUnit) Members() ([]Identity, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if err := u.usable(); err != nil {
+		return nil, err
+	}
+	return groupMembers(u.worker.PID)
+}
+
+func (u *groupUnit) usable() error {
+	switch {
+	case u.closed:
+		return ErrClosed
+	case u.cmd == nil:
+		return ErrNotStarted
+	}
+	return nil
+}
+
+func (u *groupUnit) Interrupt() error { return u.send(unix.SIGINT) }
+func (u *groupUnit) Terminate() error { return u.send(unix.SIGTERM) }
+func (u *groupUnit) Kill() error      { return u.send(unix.SIGKILL) }
+
+func (u *groupUnit) send(sig unix.Signal) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if err := u.usable(); err != nil {
+		return err
+	}
+	return u.signalGroup(sig)
+}
+
+// signalGroup signals the group after the leader check: a live process at the
+// group id must be the recorded worker, and an unreadable one is not signalled.
+func (u *groupUnit) signalGroup(sig unix.Signal) error {
+	pgid := u.worker.PID
+	leader, err := u.lookup(pgid)
+	switch {
+	case err == nil && leader != u.worker:
+		return fmt.Errorf("%w: group %d leader %v, worker %v", ErrGroupReused, pgid, leader, u.worker)
+	case err != nil && !errors.Is(err, errNoProcess):
+		return fmt.Errorf("leader check of group %d: %w", pgid, err)
+	}
+	if err := u.signal(-pgid, sig); err != nil && !errors.Is(err, unix.ESRCH) {
+		return err
+	}
+	return nil
+}
+
+func (u *groupUnit) Exited() <-chan struct{} { return u.done }
+
+func (u *groupUnit) Close() error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.closed {
+		return nil
+	}
+	u.closed = true
+	if u.cmd == nil {
+		return nil
+	}
+	err := u.signalGroup(unix.SIGKILL)
+	<-u.done
+	_ = u.cmd.Wait()
+	if u.foreground {
+		reclaimTerminal()
+	}
+	return err
+}
+
+// reclaimTerminal makes the launcher's group the terminal's foreground again
+// after the worker group ends, so the launcher's output is not stopped by
+// SIGTTOU.
+func reclaimTerminal() {
+	signal.Ignore(syscall.SIGTTOU)
+	defer signal.Reset(syscall.SIGTTOU)
+	_ = unix.IoctlSetPointerInt(0, unix.TIOCSPGRP, unix.Getpgrp())
+}

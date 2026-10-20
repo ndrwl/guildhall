@@ -255,4 +255,5 @@ sequenceDiagram
 - `docs/adapters.md`: the Artisan adapter contract, result file and Herdr access.
 - `docs/tasks.md`: creating Director tasks and the workflow and configuration they bind.
 - `docs/rendering.md`: Artisan prompts, skills, their manifest and Guildmaster questions.
+- `docs/artisan.md`: the Artisan launcher's process identity and containment.
 - `CONTRIBUTING.md`: how to contribute.
