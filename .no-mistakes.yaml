@@ -21,7 +21,7 @@ review:
         Check test-first evidence, three-platform behaviour and that no platform or runtime is claimed as supported without acceptance.
     - path: "go.mod"
       instructions: |
-        Every new dependency or Go version change must be recorded with its reason in docs/decisions.md (docs/review.md rule S7).
+        Every new dependency or Go version change must be recorded with its reason in a decision file under docs/decisions/ (docs/review.md rule S7).
     - path: ".github/**"
       instructions: |
         Review against docs/review.md rules S3 and S9: least-privilege permissions, the three-platform matrix, and release publication only from a pushed version tag with every artifact in SHA256SUMS.

@@ -6,7 +6,10 @@ Include that test evidence in the pull request description.
 Write Markdown with one sentence per line.
 Do not add co-author trailers to commit messages.
 Pull requests are reviewed against `docs/review.md` and the requirements in `docs/requirements.md`.
-Record engineering decisions in `docs/decisions.md` in the pull request that makes them.
+Record each engineering decision in its own new file, `docs/decisions/<branch-or-topic-slug>.md`, in the pull request that makes it.
+Do not number it or edit the `docs/decisions.md` index: decisions are numbered and indexed by a refresh after merge, so parallel pull requests cannot collide on a number.
+Record a package's contract and tests in its own `docs/contracts/<package>.md`.
+Describe a new command in its own `docs/` page and add at most one line for it to the README command list.
 
 ## Local checks
 
@@ -21,4 +24,4 @@ golangci-lint run
 ```
 
 `gofmt -l .` must print nothing.
-Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in `docs/decisions.md`.
+Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in [D4](docs/decisions/0004-ci-matrix-and-lint.md).
