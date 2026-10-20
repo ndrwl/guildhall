@@ -117,7 +117,7 @@ These are reported, not guaranteed:
 
 - A Unix descendant that leaves the group with `setsid` or `setpgid` is not a member of a process-group unit and survives `Kill`; the contract suite records it as an escape, and the Linux fallback reports it through `Escapes` once it is orphaned.
 - When the launcher dies, the Linux parent-death signal kills the worker only; descendants in a cgroup unit remain in its named cgroup.
-- Linux's parent-death signal reaches the worker only, not its descendants; macOS has no parent-death signal.
+- macOS has no parent-death signal.
 - macOS is covered by the contract suite on its CI runner only; no interactive macOS run has been made.
 - Interactive terminal foreground hand-over is not covered by CI; the Linux failed-exec restoration case uses a pseudo-terminal (see the [package test inventory](contracts/artisan.md#tests)).
 

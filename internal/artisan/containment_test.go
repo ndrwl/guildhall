@@ -46,6 +46,7 @@ func TestRecordContainment(t *testing.T) {
 	if prior.Kind != artisan.KindGroup {
 		t.Errorf("replacement modified the prior record: %s", old)
 	}
+	t.Logf("persisted containment.json: %s; preserved prior inode: %s", b, old)
 	if left, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(left) != 0 {
 		t.Errorf("temporary files left: %v", left)
 	}

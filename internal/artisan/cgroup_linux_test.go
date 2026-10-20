@@ -58,20 +58,26 @@ func TestCgroupKillEmpties(t *testing.T) {
 	if err != nil || !slices.Contains(m, worker) || !slices.Contains(m, gc.Identity) {
 		t.Fatalf("Members() = %v, %v; want worker %v and grandchild %v", m, err, worker, gc.Identity)
 	}
+	t.Logf("containment=%+v worker=%+v setsid-grandchild=%+v members=%+v", u.Containment(), worker, gc, m)
 	if err := u.Kill(); err != nil {
 		t.Fatal(err)
 	}
 	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if m, err = u.Members(); err == nil && len(m) == 0 {
-			break
+			// Members excludes zombies; cgroup.procs can retain an exiting
+			// task briefly after its identity is already reported gone.
+			if b, readErr := os.ReadFile(filepath.Join(dir, "cgroup.procs")); readErr == nil && len(strings.TrimSpace(string(b))) == 0 {
+				break
+			}
 		}
 	}
 	if err != nil || len(m) != 0 {
 		t.Fatalf("Members() after Kill = %v, %v", m, err)
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "cgroup.procs")); err != nil || len(strings.TrimSpace(string(b))) != 0 {
-		t.Errorf("cgroup.procs after Kill = %q, %v", b, err)
+		t.Fatalf("cgroup.procs after Kill = %q, %v", b, err)
 	}
+	t.Logf("after Kill: members=%v; cgroup.procs verified empty", m)
 	if err := u.Close(); err != nil {
 		t.Fatal(err)
 	}
