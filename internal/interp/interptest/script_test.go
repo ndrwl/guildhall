@@ -306,13 +306,13 @@ func TestExistingResultIsNeverReplaced(t *testing.T) {
 }
 
 func TestResponsePathsValidatedBeforeWriting(t *testing.T) {
-	for _, name := range []string{"", ".", "..", "../escape", "notes/../escape", "./output", "notes/./output", "notes//output", "notes/", `notes\output`, "/absolute", "result.json", ReviewOutcomeFile, interp.BlockedQuestionFile} {
+	for _, name := range []string{"", ".", "..", "../escape", "notes/../escape", "./output", "notes/./output", "notes//output", "notes/", `notes\output`, "/absolute", "result.json", "Result.json", ReviewOutcomeFile, strings.ToUpper(ReviewOutcomeFile), interp.BlockedQuestionFile, strings.ToUpper(interp.BlockedQuestionFile)} {
 		for _, existing := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/existing=%t", name, existing), func(t *testing.T) {
 				spec := Build(t, "spec-v1.md").Render(t)
 				resultName := "result.json"
 				r := Succeed("built", File{Path: name, Data: []byte("replacement")})
-				switch name {
+				switch strings.ToLower(name) {
 				case ReviewOutcomeFile:
 					resultName = name
 					r = Review(ReviewFixture(t, "approved"))
@@ -344,6 +344,33 @@ func TestResponsePathsValidatedBeforeWriting(t *testing.T) {
 					t.Errorf("refused response wrote a result: %v", err)
 				}
 			})
+		}
+	}
+}
+
+func TestResponseRejectsExistingResultAlias(t *testing.T) {
+	spec := Build(t, "spec-v1.md").Render(t)
+	if err := adapter.WriteResult(spec.ResultFile, adapter.Result{Identity: spec.Identity, Status: adapter.StatusFailed, Summary: "original"}); err != nil {
+		t.Fatal(err)
+	}
+	before := readFile(t, spec.ResultFile)
+	alias := filepath.Join(spec.WorkDir, "alias.json")
+	if err := os.Link(spec.ResultFile, alias); err != nil {
+		t.Fatal(err)
+	}
+	s := NewScript(t, Expect(spec, Succeed("built",
+		File{Path: "first.txt", Data: []byte("must not be written")},
+		File{Path: "alias.json", Data: []byte("replacement")},
+	)))
+	if _, err := s.Launch(context.Background(), spec); err == nil {
+		t.Fatal("Launch accepted an existing result alias")
+	}
+	if _, err := os.Stat(filepath.Join(spec.WorkDir, "first.txt")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("response wrote a file before validating all paths: %v", err)
+	}
+	for _, path := range []string{spec.ResultFile, alias} {
+		if after := readFile(t, path); !bytes.Equal(before, after) {
+			t.Errorf("%s replaced: %s", path, after)
 		}
 	}
 }

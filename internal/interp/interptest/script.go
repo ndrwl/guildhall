@@ -355,12 +355,26 @@ func digest(data []byte) string {
 
 // respond writes the response's files, then its result.
 func respond(spec interp.Spec, r Response) error {
+	resultInfo, err := os.Stat(spec.ResultFile)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	for _, f := range r.files {
 		if !fs.ValidPath(f.Path) || f.Path == "." || strings.Contains(f.Path, "\\") || !filepath.IsLocal(filepath.FromSlash(f.Path)) {
 			return fmt.Errorf("unsafe response path %q", f.Path)
 		}
-		if filepath.Join(spec.WorkDir, filepath.FromSlash(f.Path)) == filepath.Clean(spec.ResultFile) {
+		target := filepath.Join(spec.WorkDir, filepath.FromSlash(f.Path))
+		if strings.EqualFold(target, filepath.Clean(spec.ResultFile)) {
 			return fmt.Errorf("response path %q collides with result file", f.Path)
+		}
+		if resultInfo != nil {
+			targetInfo, err := os.Stat(target)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			if targetInfo != nil && os.SameFile(resultInfo, targetInfo) {
+				return fmt.Errorf("response path %q collides with result file", f.Path)
+			}
 		}
 	}
 	outputs := []adapter.Output{}
