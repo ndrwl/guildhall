@@ -35,6 +35,7 @@ No release has been published yet.
 - `docs/requirements.md`: the product requirements.
 - `docs/review.md`: the review standard every pull request is held to.
 - `docs/decisions.md`: engineering decisions.
+- `docs/contracts.md`: how contracts, interfaces, tests and packages are organised.
 - `docs/store.md`: the store's records, mutation receipts and locking.
 - `docs/steward.md`: Steward rollouts.
 - `docs/messaging.md`: the local Director and Artisan message inbox.

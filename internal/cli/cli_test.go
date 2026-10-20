@@ -8,35 +8,16 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newTestApp returns an App whose PATH lookups and commands are answered from
 // the given tables, so no test depends on what is installed on the runner.
 func newTestApp(paths map[string]string, outputs map[string]result) (*App, *bytes.Buffer, *bytes.Buffer) {
 	var stdout, stderr bytes.Buffer
-	app := &App{
-		Stdout: &stdout,
-		Stderr: &stderr,
-		LookPath: func(file string) (string, error) {
-			if p, ok := paths[file]; ok {
-				return p, nil
-			}
-			return "", exec.ErrNotFound
-		},
-		Output: func(_ context.Context, path string, args ...string) ([]byte, error) {
-			r, ok := outputs[path+" "+strings.Join(args, " ")]
-			if !ok {
-				return nil, errors.New("unexpected command")
-			}
-			return []byte(r.out), r.err
-		},
-	}
+	f := &fakeTools{paths: paths, outputs: outputs}
+	app := &App{Stdout: &stdout, Stderr: &stderr, LookPath: f.lookPath, Output: f.output}
 	return app, &stdout, &stderr
-}
-
-type result struct {
-	out string
-	err error
 }
 
 func setVersion(t *testing.T, v string) {
@@ -152,6 +133,31 @@ func TestDoctorReportsEmptyVersionOutput(t *testing.T) {
 
 	if !strings.Contains(stdout.String(), "git: version check printed nothing (/bin/git)\n") {
 		t.Errorf("stdout = %q, want an empty-output report for git", stdout)
+	}
+}
+
+func TestDoctorBoundsEachVersionCommand(t *testing.T) {
+	paths := map[string]string{}
+	for _, tool := range doctorTools {
+		paths[tool.name] = "/bin/" + tool.name
+	}
+	app, _, _ := newTestApp(paths, nil)
+	var ran []string
+	app.Output = func(ctx context.Context, path string, _ ...string) ([]byte, error) {
+		ran = append(ran, path)
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Errorf("%s ran without a deadline", path)
+		} else if left := time.Until(deadline); left > toolProbeTimeout {
+			t.Errorf("%s deadline is %v away, want at most %v", path, left, toolProbeTimeout)
+		}
+		return []byte("v1\n"), nil
+	}
+
+	app.Run([]string{"doctor"})
+
+	if len(ran) != len(doctorTools) {
+		t.Errorf("ran %q, want one version command per tool", ran)
 	}
 }
 

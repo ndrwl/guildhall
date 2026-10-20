@@ -104,3 +104,10 @@ A send is a store mutation whose id is derived from the message id, so the messa
 The `messages` and `inbox` buckets are per-repository buckets created on first use, like the other record buckets, so the store stays at schema 1; no release has shipped a schema 1 reader that lacks them.
 With no Director or Artisan registry yet, an Artisan's inbox is named by the running stage attempt it works on; a later registry can map onto that identity rather than replace it.
 The command line takes the store path explicitly and the envelope from a file or standard input; runtime notifications, daemons and transports remain deferred.
+
+## D16. Contract-first development and package layout
+
+Guildhall is developed contract first: a change states its contract, tests it and then implements it (`docs/contracts.md`).
+Packages stay organised by domain under `internal/`, with colocated tests and `testdata/`, following the Go module layout guidance rather than global interface, implementation or test directories.
+Interfaces are declared by their consumers at real seams; pure code stays as functions, and the store keeps no generic storage interface (D9) while a consumer may declare a narrow one over the methods it uses.
+A test double that replaces a real boundary shares one contract test with the real implementation.

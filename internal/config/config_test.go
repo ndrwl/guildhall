@@ -175,6 +175,48 @@ merge_policy`, `one owner machine`},
 	}
 }
 
+func TestRepositoryPathIsAbsoluteOnParsingHost(t *testing.T) {
+	for _, c := range hostPaths {
+		t.Run(c.path, func(t *testing.T) {
+			base := director(t)
+			_, err := Parse([]byte(strings.Replace(base, repositoryPaths(t, base)[0], c.path, 1)))
+			refused := err != nil && strings.Contains(err.Error(), "path must be absolute")
+			if refused == c.absolute {
+				t.Errorf("Parse(path %q) error = %v, want absolute = %v", c.path, err, c.absolute)
+			}
+		})
+	}
+}
+
+func TestRepositoryPathsCompareCleaned(t *testing.T) {
+	base := director(t)
+	paths := repositoryPaths(t, base)
+	tool, site := paths[0], paths[1]
+	alias := filepath.Join(site, "..", "tool") + string(filepath.Separator)
+	if filepath.Clean(alias) != tool {
+		t.Fatalf("fixture paths %q and %q are not siblings", tool, site)
+	}
+	_, err := Parse([]byte(strings.Replace(base, site, alias, 1)))
+	if err == nil || !strings.Contains(err.Error(), "path is already used by another repository") {
+		t.Fatalf("error %v, want the duplicate path refused after cleaning", err)
+	}
+}
+
+// repositoryPaths returns the repository path values in a config fixture, in order.
+func repositoryPaths(t *testing.T, data string) []string {
+	t.Helper()
+	var paths []string
+	for _, line := range strings.Split(data, "\n") {
+		if p, ok := strings.CutPrefix(line, "path = '"); ok {
+			paths = append(paths, strings.TrimSuffix(p, "'"))
+		}
+	}
+	if len(paths) < 2 {
+		t.Fatalf("fixture has %d repository paths, want 2", len(paths))
+	}
+	return paths
+}
+
 func TestStewardRefusals(t *testing.T) {
 	cases := map[string]string{
 		"missing private config":  "schema_version = 1\nmode = \"steward\"\n",

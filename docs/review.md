@@ -39,3 +39,7 @@ The verdict is approved, changes requested or rejected, and applies to the exact
 - **S10 Documentation.**
   Markdown has one sentence per line.
   Engineering decisions are recorded in `docs/decisions.md` by the pull request that makes them, and user-visible commands are described in the README.
+- **S11 Contracts.**
+  New or changed behaviour at a module, process, operating-system, shell or terminal boundary states its contract first and follows `docs/contracts.md`.
+  A test double that replaces a real boundary passes the same contract test as the real implementation.
+  No interface is added for a pure function, a value type or a dependency with one implementation and no test that replaces it.
