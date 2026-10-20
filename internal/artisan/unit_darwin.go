@@ -11,6 +11,20 @@ import (
 
 const ioctlGetTermios = unix.TIOCGETA
 
+type platformUnit struct{}
+
+func (u *groupUnit) placeWorker(*syscall.SysProcAttr) (func(), error) {
+	return func() {}, nil
+}
+
+func (u *groupUnit) verifyWorker(int) error { return nil }
+
+func (u *groupUnit) members() ([]Identity, error) { return groupMembers(u.worker.PID) }
+
+func (u *groupUnit) signalUnit(sig unix.Signal) error { return u.signalGroup(sig) }
+
+func (u *groupUnit) removeContainment() error { return nil }
+
 // newUnit contains the worker in a process group: macOS has no cgroup and no
 // subreaper.
 func newUnit(string) (Unit, error) { return newGroupUnit(Containment{Kind: KindGroup}), nil }

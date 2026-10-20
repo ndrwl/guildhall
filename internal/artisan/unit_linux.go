@@ -16,6 +16,51 @@ import (
 
 const ioctlGetTermios = unix.TCGETS
 
+type platformUnit struct {
+	cgroup *cgroup
+}
+
+func (u *groupUnit) placeWorker(attr *syscall.SysProcAttr) (func(), error) {
+	if u.cgroup != nil {
+		return u.cgroup.place(attr)
+	}
+	return func() {}, nil
+}
+
+func (u *groupUnit) verifyWorker(pid int) error {
+	if u.cgroup != nil {
+		in, err := u.cgroup.holds(pid)
+		if err != nil {
+			return err
+		}
+		if !in {
+			return errors.New("not in its cgroup")
+		}
+	}
+	return nil
+}
+
+func (u *groupUnit) members() ([]Identity, error) {
+	if u.cgroup != nil {
+		return u.cgroup.members()
+	}
+	return groupMembers(u.worker.PID)
+}
+
+func (u *groupUnit) signalUnit(sig unix.Signal) error {
+	if u.cgroup != nil {
+		return u.cgroup.signal(sig)
+	}
+	return u.signalGroup(sig)
+}
+
+func (u *groupUnit) removeContainment() error {
+	if u.cgroup != nil {
+		return u.cgroup.remove()
+	}
+	return nil
+}
+
 // newUnit contains the worker in a child cgroup when detection finds a
 // delegated cgroup v2, otherwise in a process group with the launcher as
 // child subreaper. A cgroup that cannot be created is an error, not a
@@ -64,23 +109,27 @@ func (u *groupUnit) Escapes() ([]Identity, error) {
 		if err != nil || pid == u.worker.PID {
 			continue
 		}
-		state, ppid, pgrp, _, err := procStat(pid)
+		id, err := Lookup(pid)
+		if errors.Is(err, errNoProcess) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		boot, err := bootID()
+		if err != nil {
+			return nil, err
+		}
+		state, ppid, pgrp, start, err := procStat(pid)
 		switch {
 		case errors.Is(err, fs.ErrNotExist) || errors.Is(err, unix.ESRCH):
 			continue
 		case err != nil:
 			return nil, err
-		case ppid != self || pgrp == u.worker.PID || state == 'Z' || state == 'X':
+		case id.Token != boot+":"+start || ppid != self || pgrp == u.worker.PID || state == 'Z' || state == 'X':
 			continue
 		}
-		id, err := Lookup(pid)
-		switch {
-		case errors.Is(err, errNoProcess):
-		case err != nil:
-			return nil, err
-		default:
-			out = append(out, id)
-		}
+		out = append(out, id)
 	}
 	return out, nil
 }

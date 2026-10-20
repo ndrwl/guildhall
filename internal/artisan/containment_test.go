@@ -16,6 +16,10 @@ func TestRecordContainment(t *testing.T) {
 	if err := artisan.RecordContainment(dir, artisan.Containment{Kind: artisan.KindGroup}); err != nil {
 		t.Fatal(err)
 	}
+	previous := filepath.Join(dir, "previous.json")
+	if err := os.Link(filepath.Join(dir, artisan.ContainmentFile), previous); err != nil {
+		t.Fatal(err)
+	}
 	want := artisan.Containment{Kind: artisan.KindSubreaper, Reason: "cgroup v1"}
 	if err := artisan.RecordContainment(dir, want); err != nil {
 		t.Fatal(err)
@@ -30,6 +34,17 @@ func TestRecordContainment(t *testing.T) {
 	}
 	if raw["containment"] != "subreaper+pgroup" || raw["reason"] != "cgroup v1" {
 		t.Errorf("record = %s", b)
+	}
+	old, err := os.ReadFile(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prior artisan.Containment
+	if err := json.Unmarshal(old, &prior); err != nil {
+		t.Fatal(err)
+	}
+	if prior.Kind != artisan.KindGroup {
+		t.Errorf("replacement modified the prior record: %s", old)
 	}
 	if left, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(left) != 0 {
 		t.Errorf("temporary files left: %v", left)

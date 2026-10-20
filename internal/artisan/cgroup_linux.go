@@ -136,7 +136,7 @@ func newCgroupUnit(name string, d cgroupDetection) (Unit, error) {
 		return nil, fmt.Errorf("%w: create cgroup: %v", ErrContainment, err)
 	}
 	u := newGroupUnit(Containment{Kind: KindCgroup, Name: c.dir, Reason: d.reason})
-	u.box = c
+	u.cgroup = c
 	return u, nil
 }
 
@@ -195,9 +195,22 @@ func (c *cgroup) members() ([]Identity, error) {
 		id, err := Lookup(pid)
 		switch {
 		case errors.Is(err, errNoProcess):
+			continue
 		case err != nil:
 			return nil, err
-		default:
+		}
+		if in, err := c.holds(pid); err != nil || !in {
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		current, err := Lookup(pid)
+		switch {
+		case errors.Is(err, errNoProcess):
+		case err != nil:
+			return nil, err
+		case current == id:
 			out = append(out, id)
 		}
 	}

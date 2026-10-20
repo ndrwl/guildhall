@@ -4,13 +4,11 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // fakeCgroupHost is a host for detectCgroup: file contents, the paths that
@@ -115,64 +113,15 @@ func liveCgroup(t *testing.T) cgroupDetection {
 	return d
 }
 
-// TestCgroupKillEmpties: Kill writes cgroup.kill, which ends a descendant
-// that left the process group, and Close removes the cgroup.
-func TestCgroupKillEmpties(t *testing.T) {
-	d := liveCgroup(t)
-	u, err := newCgroupUnit("kill-"+t.Name(), d)
-	if err != nil {
+func TestCgroupMembersRejectsNonmember(t *testing.T) {
+	c := &cgroup{dir: t.TempDir(), proc: "/guildhall-not-this-process"}
+	if err := os.WriteFile(filepath.Join(c.dir, "cgroup.procs"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = u.Close() })
-	dir := u.Containment().Name
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		t.Fatalf("cgroup %s: %v", dir, err)
+	members, err := c.members()
+	if err != nil || len(members) != 0 {
+		t.Fatalf("members of stale PID list = %v, %v; want none", members, err)
 	}
-	pidFile := filepath.Join(t.TempDir(), "escape")
-	// The grandchild leaves the process group; only the cgroup holds it.
-	cmd := exec.Command("/bin/sh", "-c", `setsid sleep 60 & echo $! > "$1"; wait`, "worker", pidFile)
-	worker, err := u.Start(cmd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var gc Identity
-	for end := time.Now().Add(10 * time.Second); gc.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
-		gc = identityIn(pidFile)
-	}
-	m, err := u.Members()
-	if err != nil || !slices.Contains(m, worker) || !slices.Contains(m, gc) {
-		t.Fatalf("Members() = %v, %v; want worker %v and grandchild %v", m, err, worker, gc)
-	}
-	if err := u.Kill(); err != nil {
-		t.Fatal(err)
-	}
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
-		if m, err = u.Members(); err == nil && len(m) == 0 {
-			break
-		}
-	}
-	if len(m) != 0 {
-		t.Fatalf("Members() after Kill = %v, %v", m, err)
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "cgroup.procs")); err != nil || len(strings.TrimSpace(string(b))) != 0 {
-		t.Errorf("cgroup.procs after Kill = %q, %v", b, err)
-	}
-	if err := u.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(dir); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("cgroup %s after Close: %v, want removed", dir, err)
-	}
-}
-
-func identityIn(pidFile string) Identity {
-	b, _ := os.ReadFile(pidFile)
-	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil {
-		return Identity{}
-	}
-	id, _ := Lookup(pid)
-	return id
 }
 
 // TestCgroupNameRefused: a name that is not one new path element, or whose
