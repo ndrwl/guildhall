@@ -13,7 +13,7 @@ import (
 type failingWorker struct{}
 
 func (failingWorker) stop(context.Context) error { return errors.New("termination failed") }
-func (failingWorker) close() error { return nil }
+func (failingWorker) close() error               { return nil }
 
 func TestOwnedWorkerFailedStopRejectsLateResult(t *testing.T) {
 	for _, established := range []bool{false, true} {
@@ -25,7 +25,11 @@ func TestOwnedWorkerFailedStopRejectsLateResult(t *testing.T) {
 			}
 			id := Identity{TaskID: "task", AttemptID: "attempt"}
 			o := &OwnedWorker{spec: Spec{Identity: id, ResultFile: path}, listener: listener}
-			defer o.Close()
+			defer func() {
+				if err := o.Close(); err != nil {
+					t.Errorf("close owned worker: %v", err)
+				}
+			}()
 			if established {
 				o.worker = failingWorker{}
 			}

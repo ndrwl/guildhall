@@ -131,7 +131,7 @@ func TestRunWrongIdentityIsValidAndDifferent(t *testing.T) {
 		t.Run(attempt, func(t *testing.T) {
 			args := setup(t, "guildhall-fake: fault=wrong-identity\n")
 			args.AttemptID = attempt
-			if err := args.Identity.Validate(); err != nil {
+			if err := args.Validate(); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := run(t, args); err != nil {
