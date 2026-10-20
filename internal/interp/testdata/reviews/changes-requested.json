@@ -1,0 +1,17 @@
+{
+  "schema": "guildhall.review-outcome/1",
+  "reviewer": "automated",
+  "verdict": "changes_requested",
+  "findings": [
+    {
+      "file": "internal/cli/task.go",
+      "line": 42,
+      "summary": "The list is not sorted by id, as the specification requires."
+    }
+  ],
+  "revisions": {
+    "code_head": "0123456789abcdef0123456789abcdef01234567",
+    "spec_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "standards_revision": "standards-1"
+  }
+}

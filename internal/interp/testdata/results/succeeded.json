@@ -1,0 +1,13 @@
+{
+  "schema": "guildhall.artisan-result",
+  "version": 1,
+  "task_id": "t7",
+  "attempt_id": "build-1",
+  "status": "succeeded",
+  "summary": "Built the sorted task list.",
+  "outputs": [
+    {
+      "path": "notes/build.md"
+    }
+  ]
+}
