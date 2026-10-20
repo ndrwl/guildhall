@@ -82,16 +82,17 @@ func (a *App) messages(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	var box messaging.Mailbox = &messaging.StoreMailbox{Store: s}
 	var out any
 	switch sub {
 	case "send":
-		out, err = messaging.Send(s, to, env, nil)
+		out, err = box.Send(to, env)
 	case "list":
-		out, err = messaging.List(s, to, *after, *limit)
+		out, err = box.List(to, *after, *limit)
 	case "read":
-		out, err = messaging.Read(s, pos[0])
+		out, err = box.Read(pos[0])
 	case "ack":
-		out, err = messaging.Ack(s, to, pos[1])
+		out, err = box.Ack(to, pos[1])
 	}
 	if cerr := s.Close(); err == nil {
 		err = cerr

@@ -79,6 +79,14 @@ A message body is one JSON object, read from a file or from standard input, neve
 
 Decoding is strict: unknown fields, a field given twice (including in a different letter case), trailing data and envelopes over 128 KiB are refused.
 A leading UTF-8 byte order mark and CRLF line endings, as some Windows tools write, are accepted.
+UTF-16, which Windows PowerShell 5.1 writes for `>` and `Out-File`, is refused with a hint rather than misread; write the file as UTF-8, for example with `Set-Content -Encoding utf8`, or pipe it to `-` from PowerShell 7 or Bash.
+
+## Go API
+
+`messaging.Mailbox` is the contract consumers use: `Send`, `List`, `Read` and `Ack` with the guarantees below.
+`messaging.StoreMailbox` implements it on a store and is what the commands use; its optional `Notify` callback runs after each successful send, including a retry, and is never the record of delivery.
+`messagingtest.RunMailboxContract` is the behavioural suite every implementation must pass, and `messagingtest.Fake` is an in-memory implementation that passes it, for testing a consumer without a store file.
+The fake is not durable and not shared between processes.
 
 ## Commands
 

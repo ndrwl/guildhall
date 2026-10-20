@@ -97,6 +97,14 @@ func (m Message) To() Recipient {
 // ids "message:<id>" and "message-ack:<id>" fit and cannot collide with each other.
 var messageIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 
+// ValidateMessageID checks a message id's form.
+func ValidateMessageID(id string) error {
+	if !messageIDPattern.MatchString(id) {
+		return invalid("message id %q must match %s", id, messageIDPattern)
+	}
+	return nil
+}
+
 func sendMutationID(id string) string { return "message:" + id }
 func ackMutationID(id string) string  { return "message-ack:" + id }
 
@@ -107,7 +115,7 @@ func ackMutationID(id string) string  { return "message-ack:" + id }
 // reusing its id for a different message returns ErrMutationConflict.
 // The receipt means the message is stored, not that the recipient has read it.
 func (s *Store) SendMessage(m Message) (Receipt, error) {
-	if err := validateMessage(m); err != nil {
+	if err := ValidateMessage(m); err != nil {
 		return Receipt{}, err
 	}
 	return s.mutate(sendMutationID(m.ID), opSendMessage, m, func(tx *bolt.Tx, r *Receipt) error {
@@ -148,11 +156,11 @@ func (s *Store) SendMessage(m Message) (Receipt, error) {
 // the inbox. Only the inbox the message is addressed to can acknowledge it;
 // retrying returns the original receipt. It changes nothing but the message.
 func (s *Store) AckMessage(to Recipient, id string) (Receipt, error) {
-	if err := validateRecipient(to); err != nil {
+	if err := ValidateRecipient(to); err != nil {
 		return Receipt{}, err
 	}
-	if !messageIDPattern.MatchString(id) {
-		return Receipt{}, invalid("message id %q must match %s", id, messageIDPattern)
+	if err := ValidateMessageID(id); err != nil {
+		return Receipt{}, err
 	}
 	req := struct {
 		To Recipient `json:"to"`
@@ -180,8 +188,8 @@ func (s *Store) AckMessage(to Recipient, id string) (Receipt, error) {
 
 // Message returns one message, acknowledged or not.
 func (s *Store) Message(id string) (Message, error) {
-	if !messageIDPattern.MatchString(id) {
-		return Message{}, invalid("message id %q must match %s", id, messageIDPattern)
+	if err := ValidateMessageID(id); err != nil {
+		return Message{}, err
 	}
 	var m Message
 	err := s.view(func(tx *bolt.Tx) error {
@@ -199,7 +207,7 @@ func (s *Store) Message(id string) (Message, error) {
 // sequence greater than after, in send order, and whether more remain.
 // The Director's inbox spans every repository in the store.
 func (s *Store) Inbox(to Recipient, after uint64, limit int) ([]Message, bool, error) {
-	if err := validateRecipient(to); err != nil {
+	if err := ValidateRecipient(to); err != nil {
 		return nil, false, err
 	}
 	if limit < 1 || limit > MaxInboxLimit {
@@ -294,7 +302,8 @@ func describeRecipient(to Recipient) string {
 	return string(to.Role)
 }
 
-func validateRecipient(to Recipient) error {
+// ValidateRecipient checks a recipient's form without reading the store.
+func ValidateRecipient(to Recipient) error {
 	switch to.Role {
 	case RecipientDirector:
 		if to != (Recipient{Role: RecipientDirector}) {
@@ -313,9 +322,10 @@ func validateRecipient(to Recipient) error {
 	return nil
 }
 
-func validateMessage(m Message) error {
-	if !messageIDPattern.MatchString(m.ID) {
-		return invalid("message id %q must match %s", m.ID, messageIDPattern)
+// ValidateMessage checks a new message's fields without reading the store.
+func ValidateMessage(m Message) error {
+	if err := ValidateMessageID(m.ID); err != nil {
+		return err
 	}
 	if m.Recipient != RecipientDirector && m.Recipient != RecipientArtisan {
 		return invalid("recipient %q must be %q or %q", m.Recipient, RecipientDirector, RecipientArtisan)

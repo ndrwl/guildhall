@@ -1,0 +1,9 @@
+{
+  "schema": "guildhall.message/1",
+  "id": "q-1",
+  "recipient": "director",
+  "repository": "app",
+  "task": "t-1",
+  "type": "question",
+  "text": "Which base branch should the fix target? — café"
+}

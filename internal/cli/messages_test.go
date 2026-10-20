@@ -108,6 +108,11 @@ func TestMessagesSendRefusals(t *testing.T) {
 		t.Fatalf("first send: %s", stderr)
 	}
 	missing := filepath.Join(t.TempDir(), "missing.store")
+	utf16 := filepath.Join(t.TempDir(), "body.json")
+	// Windows PowerShell 5.1's "Get-Content in.json > body.json" writes UTF-16LE with a byte order mark.
+	if err := os.WriteFile(utf16, []byte{0xff, 0xfe, '{', 0, '}', 0}, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	for name, tc := range map[string]struct {
 		stdin string
@@ -125,6 +130,7 @@ func TestMessagesSendRefusals(t *testing.T) {
 		"unknown recipient":   {envelope("q-6", "director"), []string{"--store", path, "steward", "-"}, 2, "recipient"},
 		"too few arguments":   {"", []string{"--store", path, "director"}, 2, "usage"},
 		"too many arguments":  {"", []string{"--store", path, "director", "-", "extra"}, 2, "usage"},
+		"utf-16 body":         {"", []string{"--store", path, "director", utf16}, 1, "UTF-16"},
 		"inline JSON as body": {"", []string{"--store", path, "director", `{"id":"q-7"}`}, 1, "body"},
 	} {
 		code, out, stderr := runMessages(t, tc.stdin, append([]string{"send"}, tc.args...)...)
