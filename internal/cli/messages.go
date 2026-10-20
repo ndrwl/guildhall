@@ -78,7 +78,7 @@ func (a *App) messages(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(fmt.Errorf("no store at %s", *path))
 	}
-	s, err := store.Open(*path, store.Options{ReadOnly: sub == "list" || sub == "read"})
+	s, err := store.Open(*path, store.Options{ReadOnly: sub == "list" || sub == "read", RequireStore: true})
 	if err != nil {
 		return fail(err)
 	}

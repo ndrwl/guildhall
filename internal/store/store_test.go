@@ -59,6 +59,70 @@ func mustCreate(t *testing.T, s *Store, mutationID string, task Task) Receipt {
 	return r
 }
 
+func TestOpenRequireStore(t *testing.T) {
+	for _, kind := range []string{"missing", "empty", "text", "bolt", "unsynced-bolt"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "store")
+			switch kind {
+			case "empty", "text":
+				var body []byte
+				if kind == "text" {
+					body = []byte("not a store")
+				}
+				if err := os.WriteFile(path, body, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "bolt", "unsynced-bolt":
+				db, err := bolt.Open(path, 0o600, &bolt.Options{NoFreelistSync: kind == "unsynced-bolt"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Update(func(tx *bolt.Tx) error { _, err := tx.CreateBucket([]byte("foreign")); return err }); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(path)
+			if err != nil && kind != "missing" {
+				t.Fatal(err)
+			}
+			for _, readOnly := range []bool{false, true} {
+				opts := testOptions()
+				opts.RequireStore, opts.ReadOnly = true, readOnly
+				s, err := Open(path, opts)
+				if s != nil {
+					_ = s.Close()
+				}
+				if !errors.Is(err, ErrNotStore) {
+					t.Fatalf("Open: %v, want ErrNotStore", err)
+				}
+				after, err := os.ReadFile(path)
+				if kind == "missing" {
+					if !errors.Is(err, fs.ErrNotExist) {
+						t.Fatalf("missing file created: %v", err)
+					}
+				} else if err != nil || string(after) != string(before) {
+					t.Fatalf("refused open changed file: %v", err)
+				}
+			}
+		})
+	}
+	s, path := newStore(t)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	opts := testOptions()
+	opts.RequireStore = true
+	s, err := Open(path, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	mustCreate(t, s, "required-store", sampleTask("app", "t-1"))
+}
+
 func TestOpenCreatesAndReopensStore(t *testing.T) {
 	s, path := newStore(t)
 	r := mustCreate(t, s, "m-1", sampleTask("app", "t-1"))

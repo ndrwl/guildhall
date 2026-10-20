@@ -75,6 +75,36 @@ func decodeJSON[T any](t *testing.T, out string) T {
 	return v
 }
 
+func TestMessagesRefuseEmptyStore(t *testing.T) {
+	for _, sub := range []string{"send", "ack", "list", "read"} {
+		t.Run(sub, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "empty.store")
+			if err := os.WriteFile(path, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{sub, "--store", path}
+			switch sub {
+			case "send":
+				args = append(args, "director", "-")
+			case "ack":
+				args = append(args, "director", "q-1")
+			case "list":
+				args = append(args, "director")
+			case "read":
+				args = append(args, "q-1")
+			}
+			code, out, stderr := runMessages(t, envelope("q-1", "director"), args...)
+			if code != 1 || out != "" || !strings.Contains(stderr, "not a Guildhall store") {
+				t.Fatalf("code %d, stdout %q, stderr %q", code, out, stderr)
+			}
+			body, err := os.ReadFile(path)
+			if err != nil || len(body) != 0 {
+				t.Fatalf("empty file changed: %d bytes, %v", len(body), err)
+			}
+		})
+	}
+}
+
 func TestMessagesSendFromFileAndStdin(t *testing.T) {
 	path := messagingStorePath(t)
 	body := writeEnvelope(t, envelope("q-1", "director"))

@@ -53,6 +53,11 @@ Within one open store, calls are safe from many goroutines; bbolt serializes wri
 
 ## File format and versions
 
+`store.Open` normally creates and initializes a missing or empty store file.
+`store.Options.RequireStore` requires an already initialized Guildhall store, even for a writable open: missing, empty and non-store files are refused with `ErrNotStore` without creating or modifying them.
+It checks existing metadata instead of initializing buckets, while leaving successful opens writable unless `ReadOnly` is also set.
+All messaging commands use this option; `send` and `ack` cannot initialize a store as a side effect of a refused operation.
+
 The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `documents`, `panes`, `decisions`, `messages` and `inbox`.
 `inbox` indexes unacknowledged messages by recipient and sequence, holding each message's id.
 A per-repository bucket is created by the first record that needs it, so a schema 1 file written before messages existed accepts them unchanged.
