@@ -3,7 +3,8 @@
 ## Contract
 
 `Parse`, `Validate`, the step registry, overrides and digests, and the review outcome shared by human and automated review (R1.60).
+The `profile` and `skills` settings and their `Step` accessors.
 
 ## Tests
 
-`workflow_test.go`, `strict_test.go`, `review_test.go`
+`workflow_test.go`, `strict_test.go`, `review_test.go`, `profile_test.go`

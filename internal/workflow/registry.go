@@ -26,6 +26,10 @@ const (
 	StringSetting SettingType = "string"
 	IntSetting    SettingType = "integer"
 	BoolSetting   SettingType = "boolean"
+	// NameSetting is a string that is a valid identifier (ValidID), such as a profile name.
+	NameSetting SettingType = "name"
+	// NameListSetting is a JSON array of distinct identifiers, such as skill names.
+	NameListSetting SettingType = "list of names"
 )
 
 // Setting describes one setting a step kind accepts.
@@ -53,6 +57,16 @@ type Kind struct {
 
 var instructions = map[string]Setting{"instructions": {Type: StringSetting}}
 
+// artisan lists the settings of kinds an Artisan can run: the Director profile and the skills rendered for it.
+var artisan = map[string]Setting{"profile": {Type: NameSetting}, "skills": {Type: NameListSetting}}
+
+// reviewSettings is shared by both review kinds, so overriding one with the other keeps a step valid.
+var reviewSettings = map[string]Setting{
+	"instructions": {Type: StringSetting},
+	"profile":      artisan["profile"],
+	"skills":       artisan["skills"],
+}
+
 var reviewInputs = []Port{
 	{Name: "spec", Type: AcceptedSpec},
 	{Name: "head", Type: CodeHead},
@@ -67,8 +81,9 @@ var kinds = []Kind{
 	{Type: "research", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}},
 	{
 		Type: "plan", Version: 1,
-		Inputs:  []Port{{Name: "context", Type: Document, Optional: true, Many: true}},
-		Outputs: []Port{{Name: "spec", Type: Document}},
+		Inputs:   []Port{{Name: "context", Type: Document, Optional: true, Many: true}},
+		Outputs:  []Port{{Name: "spec", Type: Document}},
+		Settings: artisan,
 	},
 	{
 		Type: "guildmaster-approval", Version: 1,
@@ -80,17 +95,18 @@ var kinds = []Kind{
 	},
 	{
 		Type: "build", Version: 1,
-		Inputs:  []Port{{Name: "spec", Type: AcceptedSpec}},
-		Outputs: []Port{{Name: "head", Type: CodeHead}},
+		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}},
+		Outputs:  []Port{{Name: "head", Type: CodeHead}},
+		Settings: artisan,
 	},
 	{
 		Type: "automated-review", Version: 1,
-		Inputs: reviewInputs, Outputs: reviewOutputs, Settings: instructions, Loops: reviewLoops,
+		Inputs: reviewInputs, Outputs: reviewOutputs, Settings: reviewSettings, Loops: reviewLoops,
 		Review: true,
 	},
 	{
 		Type: "human-review", Version: 1,
-		Inputs: reviewInputs, Outputs: reviewOutputs, Settings: instructions, Loops: reviewLoops,
+		Inputs: reviewInputs, Outputs: reviewOutputs, Settings: reviewSettings, Loops: reviewLoops,
 		Human: true, Review: true,
 	},
 	{

@@ -78,6 +78,8 @@ func (v *validator) checkSettings(s Step, kind Kind) {
 		}
 		if !hasType(s.Settings[name], spec.Type) {
 			v.addf("step %q: setting %q must be a %s", s.ID, name, spec.Type)
+		} else if dup := duplicateName(s.Settings[name], spec.Type); dup != "" {
+			v.addf("step %q: setting %q names %q twice", s.ID, name, dup)
 		}
 	}
 	for _, name := range sortedKeys(kind.Settings) {
@@ -102,8 +104,30 @@ func hasType(raw json.RawMessage, typ SettingType) bool {
 	case IntSetting:
 		var n int
 		return json.Unmarshal(raw, &n) == nil
+	case NameSetting:
+		s, ok := value.(string)
+		return ok && ValidID(s)
+	case NameListSetting:
+		var names []string
+		return json.Unmarshal(raw, &names) == nil && names != nil && !slices.ContainsFunc(names, func(n string) bool { return !ValidID(n) })
 	}
 	return false
+}
+
+// duplicateName returns a name listed twice in a list-of-names setting, or "".
+func duplicateName(raw json.RawMessage, typ SettingType) string {
+	var names []string
+	if typ != NameListSetting || json.Unmarshal(raw, &names) != nil {
+		return ""
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		if seen[n] {
+			return n
+		}
+		seen[n] = true
+	}
+	return ""
 }
 
 func (v *validator) checkInputs(at int, s Step, kind Kind) {

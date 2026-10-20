@@ -1,0 +1,38 @@
+{
+  "schema": "guildhall.prompt-manifest/1",
+  "identity": {
+    "repository": "cli",
+    "task": "t7",
+    "step": "review-astra",
+    "kind": "automated-review",
+    "kind_version": 1,
+    "attempt": 2,
+    "profile": "reviewer-astra"
+  },
+  "prompt": {
+    "path": "prompt.md",
+    "digest": "sha256:ea09ccc02565a4912e3ae29f83fd3e45ff6899b70e15afc3e19ef34717195bff"
+  },
+  "role": {
+    "path": "roles/reviewer.md",
+    "digest": "sha256:d41522c46100ac6ebb1c84cdd74c20b9792b540b0f72429bdc2a0c18113274d7"
+  },
+  "guide": {
+    "path": "stages/automated-review.md",
+    "digest": "sha256:0bebe804e0c523e1caf022254219cb8a2077e5c782cf0d270e847d20d1b27ab4"
+  },
+  "standards": [
+    {
+      "path": "standards/review.md",
+      "digest": "sha256:35c4a458572d1ae8bae7588bbbfd21d136926d106f7cad437e6bd9ca5aaf21c6"
+    }
+  ],
+  "inputs": [
+    {
+      "port": "spec",
+      "path": "tasks/t7/spec.md",
+      "digest": "sha256:242df7188ef036fb7f2376eda94382b23f989a04a61db84ae59acba315fc21be"
+    }
+  ],
+  "skills": []
+}

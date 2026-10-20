@@ -254,4 +254,5 @@ sequenceDiagram
 - `docs/messaging.md`: the local Director and Artisan message inbox.
 - `docs/adapters.md`: the Artisan adapter contract, result file and Herdr access.
 - `docs/tasks.md`: creating Director tasks and the workflow and configuration they bind.
+- `docs/rendering.md`: Artisan prompts, skills, their manifest and Guildmaster questions.
 - `CONTRIBUTING.md`: how to contribute.
