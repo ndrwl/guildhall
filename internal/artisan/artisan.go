@@ -77,6 +77,8 @@ type Unit interface {
 	Members() ([]Identity, error)
 	// Interrupt asks every member to stop (SIGINT to the group on Unix,
 	// CTRL_BREAK to the worker's console group on Windows). Members may ignore it.
+	// On Windows, no shared console means no delivery; after the worker exits,
+	// Interrupt sends nothing and returns nil, even if descendants remain.
 	Interrupt() error
 	// Terminate sends SIGTERM to the group on Unix; on Windows it returns
 	// ErrUnsupportedRung and changes nothing.

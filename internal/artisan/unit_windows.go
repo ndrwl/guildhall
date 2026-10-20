@@ -175,8 +175,8 @@ func (u *jobUnit) member(pid int) (Identity, error) {
 	return identityFromHandle(pid, h)
 }
 
-// Interrupt sends CTRL_BREAK to the worker's console process group; a worker
-// with no shared console does not receive it.
+// Interrupt implements Unit.Interrupt. The retained worker handle prevents
+// PID reuse while the unit can signal its console process group.
 func (u *jobUnit) Interrupt() error {
 	u.mu.Lock()
 	defer u.mu.Unlock()

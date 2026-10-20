@@ -32,7 +32,7 @@ A unit holds one worker and every descendant that stays inside it.
 |---|---|
 | `Start(cmd)` | Runs the command inside the unit and returns the worker's identity once membership is verified; a failure after the process exists kills it and returns `ErrContainment`. A second start is `ErrStarted`. |
 | `Members()` | The live contained processes by identity. Empty means the unit is empty. A member whose identity cannot be read is an error, never left out. |
-| `Interrupt()` | Asks every member to stop; members may ignore it. |
+| `Interrupt()` | See the [`Unit.Interrupt` contract](../internal/artisan/artisan.go), including Windows delivery limits. |
 | `Terminate()` | SIGTERM to the group on Unix; refused on Windows with `ErrUnsupportedRung`, which matches `errors.ErrUnsupported`. |
 | `Kill()` | Ends every member without their cooperation. |
 | `Exited()` | Closed once the worker, the direct child, has exited. |
@@ -48,7 +48,7 @@ The methods are safe for concurrent use.
 - The only limit is `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so breakaway is not allowed and a `CREATE_BREAKAWAY_FROM_JOB` request is refused.
 - The job handle is not inheritable, so only the launcher holds it and its death closes the job.
 - The worker is created suspended, assigned to the job, checked with `IsProcessInJob` and only then resumed with `NtResumeProcess`, so no descendant can start outside the job.
-- `Interrupt` sends `CTRL_BREAK` to the worker's console process group, which a worker without a shared console does not receive.
+- Console signalling follows the [`Unit.Interrupt` contract](../internal/artisan/artisan.go).
 - `Members` reads the job's process id list, which is bounded at 512 processes; more is an error.
 
 ### Unix: process group
@@ -71,7 +71,7 @@ These are reported, not guaranteed:
 - A Unix descendant that leaves the group with `setsid` or `setpgid` is not a member and survives `Kill`; the contract suite records it as an escape.
 - Linux's parent-death signal reaches the worker only, not its descendants; macOS has no parent-death signal.
 - macOS is covered by the contract suite on its CI runner only; no interactive macOS run has been made.
-- The terminal foreground hand-over is not covered by CI, which has no terminal.
+- Interactive terminal foreground hand-over is not covered by CI; the Linux failed-exec restoration case uses a pseudo-terminal (see the [package test inventory](contracts/artisan.md#tests)).
 
 ## Tests
 

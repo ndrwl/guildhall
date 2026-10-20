@@ -8,4 +8,4 @@ Backends: a Windows Job Object and a Unix process group with the leader check (`
 
 ## Tests
 
-`unit_test.go` runs the shared suite against the platform backend on each runner; `fakeunit_test.go` runs it against `fakeUnit`, the launcher's double; `unit_unix_internal_test.go` (leader check, close retry after a refused kill, start rollback killing descendants); `unit_internal_windows_test.go` (a process outside the job is not a member); `identity_test.go` (real processes); `identity_windows_test.go` (exit code 259 with a retained process handle).
+`unit_test.go` runs the shared suite against the platform backend on each runner; `fakeunit_test.go` runs it against `fakeUnit`, the launcher's double; `unit_unix_internal_test.go` (leader check, close retry after a refused kill, start rollback killing descendants); `unit_internal_windows_test.go` (a process outside the job is not a member; interrupt after worker exit and retained-handle cleanup); `unit_internal_linux_test.go` (failed exec restores foreground ownership using a controlling pseudo-terminal); `identity_test.go` (real processes); `identity_windows_test.go` (exit code 259 with a retained process handle).
