@@ -29,7 +29,7 @@ func writeFixture(t *testing.T, path string) {
 			return s.BindPane("fixture-5", PaneBinding{Repository: "app", TaskID: "t-1", Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p3"})
 		},
 		func() (Receipt, error) {
-			return s.OpenDecision("fixture-6", "app", "t-1", "accept-plan", "Accept the plan?")
+			return s.OpenDecision("fixture-6", Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: DecisionQuestion, Question: "Accept the plan?"})
 		},
 		func() (Receipt, error) { return s.AnswerDecision("fixture-7", "app", "t-1", "accept-plan", "Yes") },
 	}
@@ -79,6 +79,13 @@ func TestSchemaV1Fixture(t *testing.T) {
 	decisions, err := s.Decisions("app", "t-1")
 	if err != nil || len(decisions) != 1 || decisions[0].Answer != "Yes" {
 		t.Fatalf("decisions = %+v, %v", decisions, err)
+	}
+	_ = s.Close()
+
+	// The answer's request shape is unchanged by typed decisions, so the recorded answer still replays.
+	s = openTest(t, path)
+	if r, err := s.AnswerDecision("fixture-7", "app", "t-1", "accept-plan", "Yes"); err != nil || r.Sequence != 7 {
+		t.Fatalf("answer replay from fixture = %+v, %v", r, err)
 	}
 	_ = s.Close()
 

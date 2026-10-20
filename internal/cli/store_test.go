@@ -25,7 +25,7 @@ func writeStore(t *testing.T) string {
 	if _, err := s.CreateTask("m-1", task); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.OpenDecision("m-2", "app", "t-1", "accept-plan", "Accept?"); err != nil {
+	if _, err := s.OpenDecision("m-2", store.Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept?"}); err != nil {
 		t.Fatal(err)
 	}
 	return path

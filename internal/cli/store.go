@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -53,4 +55,16 @@ func (a *App) storeDoctor(path string) int {
 		return 1
 	}
 	return 0
+}
+
+// mutationID derives a command's store mutation id "<kind>:<id>:<id>...": ids never contain ':', so distinct
+// records get distinct mutation ids. When that text exceeds the store's 128-byte limit it becomes
+// "<kind>:sha256:<hex digest of the text>", so a retry of the same command still derives the same id.
+func mutationID(kind string, ids ...string) string {
+	id := kind + ":" + strings.Join(ids, ":")
+	if len(id) <= 128 {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	return kind + ":sha256:" + hex.EncodeToString(sum[:])
 }

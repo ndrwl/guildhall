@@ -2,7 +2,7 @@
 
 Each Director copy keeps its durable records in one store file owned by Guildhall (R1.17).
 `internal/store` implements it as a single bbolt database.
-The store supports the [local messaging commands](messaging.md), but nothing in Guildhall launches, schedules or merges work from it yet.
+The store supports the [local messaging commands](messaging.md) and the [decision commands](decisions-cli.md), but nothing in Guildhall launches, schedules or merges work from it yet.
 
 ## Records
 
@@ -15,10 +15,11 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`, once. A step cannot start a new attempt while one is running, and a task that is not open cannot start one. |
 | Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. |
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
-| Decision | repository, task, decision id | A question for the Guildmaster and, once, the exact answer (R1.61). |
 | Workflow approval | workflow digest | The Guildmaster's approval of one exact workflow revision for this Director: the workflow name, its `sha256:` digest, the approval words exactly as given and the UTC time it was recorded. Recorded once per digest; see [workflow-edit authority](configuration.md#workflow-edit-authority). Not per repository and never changes a task. |
+| Decision | repository, task, decision id | A question for the Guildmaster and, once, the exact answer (R1.61). A decision is typed: its kind is `approval`, `review`, `loop-exit`, `merge` or `question`; every kind but `question` names the subject the answer binds to, a document (`sha256:<64 lowercase hex>` digest) or a head (40 or 64 lowercase hex object id); and it may offer up to 16 one-line options. When it offers options, the answer's first line (the text before the first LF, with only a single trailing CR removed) must equal one exactly or the answer is refused and nothing is written; the answer is still recorded verbatim, with the matched option as `choice` and the trimmed text after the first line as `note`. Decisions recorded before typed decisions have no kind, subject or options and take any answer. Answering records the answer only and never advances the task. |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
+Options must be non-blank valid UTF-8 without line breaks or surrounding white space, distinct and at most 256 bytes each.
 Titles, questions, answers and approval words must be non-blank valid UTF-8 and are limited to 64 KiB per field; larger content belongs in a referenced document.
 Message payload limits and artifact requirements are defined in the [envelope contract](messaging.md#envelope).
 Pane binding fields must be non-blank valid UTF-8 and are limited to 256 bytes each.
@@ -34,6 +35,7 @@ After a crash, either the records and the receipt are both present or neither is
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, a store-wide sequence number starting at 1 and the commit time in UTC.
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.
+The [decision command reference](decisions-cli.md#answers) defines answer mutation ids (D23).
 
 - Replaying a mutation id with the same operation and request returns the original receipt and changes nothing, even after a restart and even when later mutations have changed the records since.
 - Reusing a mutation id for a different operation or request fails with `ErrMutationConflict` and changes nothing.

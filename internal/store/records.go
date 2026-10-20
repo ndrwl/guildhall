@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -100,15 +101,65 @@ type PaneBinding struct {
 	Pane       string `json:"pane"`
 }
 
-// Decision is a question waiting for, or answered by, the Guildmaster.
+// DecisionKind says what a decision decides; it is set when the decision is opened.
+type DecisionKind string
+
+const (
+	DecisionApproval DecisionKind = "approval"
+	DecisionReview   DecisionKind = "review"
+	DecisionLoopExit DecisionKind = "loop-exit"
+	DecisionMerge    DecisionKind = "merge"
+	DecisionQuestion DecisionKind = "question"
+)
+
+// SubjectKind names what a decision's answer binds to.
+type SubjectKind string
+
+const (
+	// SubjectDocument binds to a document's content; its digest is "sha256:<64 lowercase hex>".
+	SubjectDocument SubjectKind = "document"
+	// SubjectHead binds to a commit; its digest is the 40 or 64 lowercase hex object id.
+	SubjectHead SubjectKind = "head"
+)
+
+// Subject is the exact artefact a decision's answer applies to, so an answer
+// cannot be carried over to a document or head that changed after it was asked.
+type Subject struct {
+	Kind   SubjectKind `json:"kind"`
+	Digest string      `json:"digest"`
+}
+
+// MaxDecisionOptions bounds the options a decision may offer; MaxOptionBytes bounds each one.
+const (
+	MaxDecisionOptions = 16
+	MaxOptionBytes     = 256
+)
+
+// Decision is a question waiting for, or answered by, the Guildmaster (R1.61).
+//
+// A typed decision has a Kind, a Subject unless its kind is question, and
+// optionally Options. When it offers options, its answer's first line, with
+// only a single trailing CR removed, must equal one option exactly; the answer is
+// still recorded verbatim, the matched option is Choice and the trimmed text after
+// the first line is Note.
+// Decisions recorded before typed decisions have no Kind, Subject or Options and
+// accept any non-blank answer.
+// Answering records the answer only; it never advances a task by itself.
 type Decision struct {
-	Repository string `json:"repository"`
-	TaskID     string `json:"task_id"`
-	ID         string `json:"id"`
-	Question   string `json:"question"`
-	Answered   bool   `json:"answered"`
+	Repository string       `json:"repository"`
+	TaskID     string       `json:"task_id"`
+	ID         string       `json:"id"`
+	Kind       DecisionKind `json:"kind,omitempty"`
+	Subject    *Subject     `json:"subject,omitempty"`
+	Options    []string     `json:"options,omitempty"`
+	Question   string       `json:"question"`
+	Answered   bool         `json:"answered"`
 	// Answer is recorded exactly as given.
 	Answer string `json:"answer,omitempty"`
+	// Choice is the option the answer's first line named; empty when no options were offered.
+	Choice string `json:"choice,omitempty"`
+	// Note is the trimmed text after the first line of an answer to a decision with options.
+	Note string `json:"note,omitempty"`
 }
 
 // CreateTask records a new open task. A task id is unique within its repository.
@@ -287,15 +338,18 @@ func (s *Store) UnbindPane(mutationID, repository, taskID string) (Receipt, erro
 	})
 }
 
-// OpenDecision records a question for the Guildmaster.
-func (s *Store) OpenDecision(mutationID, repository, taskID, id, question string) (Receipt, error) {
-	if err := validateIDs(repository, taskID, id); err != nil {
+// OpenDecision records an open typed decision for the Guildmaster.
+// It refuses an unknown kind, a missing or malformed subject (a question may omit it),
+// options that are blank, multi-line, padded, duplicated, longer than MaxOptionBytes
+// or more than MaxDecisionOptions, and any answer fields; the decision id is unique within its task.
+func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
+	if err := validateIDs(d.Repository, d.TaskID, d.ID); err != nil {
 		return Receipt{}, err
 	}
-	if err := validateText("question", question, MaxTextBytes); err != nil {
+	if err := validateDecision(d); err != nil {
 		return Receipt{}, err
 	}
-	d := Decision{Repository: repository, TaskID: taskID, ID: id, Question: question}
+	repository, taskID, id := d.Repository, d.TaskID, d.ID
 	return s.mutate(mutationID, "open-decision", d, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID = repository, taskID
 		if _, err := getTask(tx, repository, taskID); err != nil {
@@ -314,6 +368,8 @@ func (s *Store) OpenDecision(mutationID, repository, taskID, id, question string
 }
 
 // AnswerDecision records the Guildmaster's exact answer; a decision is answered once.
+// When the decision offers options, an answer whose first line does not name one
+// is refused with ErrInvalid and nothing is written (see Decision).
 func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string) (Receipt, error) {
 	if err := validateIDs(repository, taskID, id); err != nil {
 		return Receipt{}, err
@@ -332,6 +388,14 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 		}
 		if d.Answered {
 			return invalid("decision %q of %s/%s is already answered", id, repository, taskID)
+		}
+		if len(d.Options) > 0 {
+			first, rest, _ := strings.Cut(answer, "\n")
+			first = strings.TrimSuffix(first, "\r")
+			if !slices.Contains(d.Options, first) {
+				return invalid("the first line of the answer to decision %q of %s/%s is %q; it must be one of %q", id, repository, taskID, first, d.Options)
+			}
+			d.Choice, d.Note = first, strings.TrimSpace(rest)
 		}
 		d.Answered, d.Answer = true, answer
 		return putJSON(decisions, key, d)
@@ -392,6 +456,21 @@ func (s *Store) PaneBinding(repository, taskID string) (PaneBinding, error) {
 		return PaneBinding{}, fmt.Errorf("store: pane binding of %s/%s: %w", repository, taskID, err)
 	}
 	return b, nil
+}
+
+// AllDecisions lists every decision in a repository by task id, then decision id.
+func (s *Store) AllDecisions(repository string) ([]Decision, error) {
+	out, err := list[Decision](s, repository, bucketDecisions, nil)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(out, func(a, b Decision) int {
+		if order := strings.Compare(a.TaskID, b.TaskID); order != 0 {
+			return order
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return out, nil
 }
 
 // Decisions lists a task's decisions in id order.
@@ -525,6 +604,50 @@ func validateTask(t Task) error {
 		if dep == (TaskRef{Repository: t.Repository, ID: t.ID}) {
 			return invalid("task %s/%s depends on itself", t.Repository, t.ID)
 		}
+	}
+	return nil
+}
+
+func validateDecision(d Decision) error {
+	if err := validateText("question", d.Question, MaxTextBytes); err != nil {
+		return err
+	}
+	switch d.Kind {
+	case DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge:
+		if d.Subject == nil {
+			return invalid("a %s decision needs a subject", d.Kind)
+		}
+	case DecisionQuestion:
+	default:
+		return invalid("decision kind %q must be one of approval, review, loop-exit, merge or question", d.Kind)
+	}
+	if sub := d.Subject; sub != nil {
+		hexPart, prefixed := strings.CutPrefix(sub.Digest, "sha256:")
+		switch {
+		case sub.Kind == SubjectDocument && (!prefixed || !isLowerHex(hexPart, 64)):
+			return invalid(`document subject digest %q must be "sha256:<64 lowercase hex>"`, sub.Digest)
+		case sub.Kind == SubjectHead && !isLowerHex(sub.Digest, 40) && !isLowerHex(sub.Digest, 64):
+			return invalid("head subject digest %q must be a 40 or 64 lowercase hex object id", sub.Digest)
+		case sub.Kind != SubjectDocument && sub.Kind != SubjectHead:
+			return invalid("subject kind %q must be %q or %q", sub.Kind, SubjectDocument, SubjectHead)
+		}
+	}
+	if len(d.Options) > MaxDecisionOptions {
+		return invalid("a decision offers at most %d options, not %d", MaxDecisionOptions, len(d.Options))
+	}
+	for i, o := range d.Options {
+		if err := validateText("option", o, MaxOptionBytes); err != nil {
+			return err
+		}
+		if strings.TrimSpace(o) != o || strings.ContainsAny(o, "\r\n") {
+			return invalid("option %q must be one line without surrounding white space", o)
+		}
+		if slices.Contains(d.Options[:i], o) {
+			return invalid("option %q is offered twice", o)
+		}
+	}
+	if d.Answered || d.Answer != "" || d.Choice != "" || d.Note != "" {
+		return invalid("a new decision has no answer")
 	}
 	return nil
 }

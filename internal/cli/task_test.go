@@ -456,7 +456,7 @@ func goldenStore(t *testing.T) string {
 			return s.PutDocument("g-3", store.DocumentRef{Repository: "app", TaskID: "t-2", Name: "spec", Path: "tasks/t-2/spec.md", SHA256: strings.Repeat("b", 64)})
 		},
 		func() (store.Receipt, error) {
-			return s.OpenDecision("g-4", "app", "t-2", "accept-plan", "Accept the plan?")
+			return s.OpenDecision("g-4", store.Decision{Repository: "app", TaskID: "t-2", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept the plan?"})
 		},
 		func() (store.Receipt, error) {
 			return s.AnswerDecision("g-5", "app", "t-2", "accept-plan", "Yes, but keep the old route.")

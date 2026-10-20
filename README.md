@@ -158,6 +158,7 @@ No release has been published yet.
 - `guildhall fake-artisan ...` is the fake Artisan itself: it reads a prompt file and writes a result file.
 - `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... <task>` creates a task bound to its repository's effective workflow revision and the configuration digest; `guildhall task show --store <path> --repo <id> <task> --json` and `guildhall task list --store <path> [--repo <id>] --json` print tasks and their records.
   It launches nothing; see [tasks](docs/tasks.md).
+- `guildhall decide list|show|answer --store <path> ...` lists the open decisions waiting for the Guildmaster, shows one and records an answer; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.
 
 ## Examples
