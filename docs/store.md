@@ -37,7 +37,8 @@ After a crash, either the records and the receipt are both present or neither is
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, the record it wrote, a store-wide sequence number starting at 1 and the commit time in UTC.
 The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, and `message/<id>` for sending and acknowledging a message.
 It is not part of the request digest, so receipts written before it existed have no record and still replay; mutations outside a task, such as workflow approvals, have none.
-`TaskHistory` reads a task's records and every receipt for it in one read transaction, labelled with the newest committed sequence; it scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
+`TaskHistory` reads a task, its attempts, documents and decisions, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership`.
+It scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.
 The [decision command reference](decisions-cli.md#answers) defines answer mutation ids (D23).
@@ -63,7 +64,8 @@ Within one open store, calls are safe from many goroutines; bbolt serializes wri
 ## Attempt ownership
 
 An ownership record says which per-attempt launcher owns a running stage attempt, so a second launcher cannot run the same attempt while the first is alive.
-The check and the write happen in one mutation under the store's single-writer lock, so no separate lock file is needed, and the mutation's receipt records who took ownership and when.
+The check and the write happen in one mutation under the store's single-writer lock, so no separate lock file is needed.
+The ownership record holds the current launcher identity; the receipt holds the request digest and commit time, not a historical copy of that identity.
 
 - `StartOwnedAttempt` starts the next attempt of a step and records its owner in the same mutation, so a crash leaves both or neither.
 - `TakeOwnership` records an owner for an attempt that is already running.
@@ -77,7 +79,8 @@ The check and the write happen in one mutation under the store's single-writer l
 - A replayed mutation id returns its original receipt without probing, as every mutation does.
 
 Taking ownership records the mutation id the caller chooses.
-The launcher uses `own:<repository>:<task>:<step>:<number>:<launcher pid>`, because mutation ids cannot contain `/`; a later launcher taking over the same attempt has a different PID and so a different id, and a PID reused by the same attempt's next launcher is refused with `ErrMutationConflict`, never applied.
+The planned launcher convention is `own:<repository>:<task>:<step>:<number>:<launcher pid>`, because mutation ids cannot contain `/`; launcher command integration is not implemented yet.
+Under that convention a different PID gives a different id; reusing an id with a different creation token returns `ErrMutationConflict`, never a new take-over.
 
 ## File format and versions
 

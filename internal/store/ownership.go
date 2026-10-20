@@ -41,7 +41,7 @@ type Containment struct {
 
 // Ownership records which launcher owns one running stage attempt (docs/store.md).
 // The store's single-writer lock makes taking it a check-and-set, and its
-// receipt is the proof of who took it.
+// receipt binds the request digest to its commit time without retaining a historical identity.
 type Ownership struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
@@ -57,9 +57,9 @@ type Ownership struct {
 }
 
 // OwnerProbe reports whether the launcher recorded in an ownership record is
-// still live. Alive refuses a take-over with ErrOwnerLive; Gone with a nil
-// error proves exit and allows it; anything else, including any error,
-// refuses it with ErrOwnerUnknown. A caller whose owner contained processes
+// still live. Alive refuses a take-over with ErrOwnerLive even with an error;
+// Gone with a nil error proves exit and allows it; all other results
+// refuse it with ErrOwnerUnknown. A caller whose owner contained processes
 // reports survivors as Alive or Unverified, never Gone.
 type OwnerProbe func(Ownership) (artisan.Liveness, error)
 
