@@ -64,6 +64,42 @@ func TestParseResultRejectsMalformed(t *testing.T) {
 	}
 }
 
+func TestParseResultRejectsAlternateKeyCase(t *testing.T) {
+	fields := map[string]string{
+		"schema": `"guildhall.artisan-result"`, "version": `1`,
+		"task_id": `"task-1"`, "attempt_id": `"attempt-1"`,
+		"status": `"succeeded"`, "summary": `"did the work"`,
+		"outputs":    `[{"path": "docs/notes.md", "description": "notes"}]`,
+		"landed_ref": `"refs/heads/task-1"`,
+		"path":       `"docs/notes.md"`, "description": `"notes"`,
+	}
+	for key, value := range fields {
+		for _, alias := range []string{strings.ToUpper(key), strings.ToUpper(key[:1]) + key[1:], strings.ReplaceAll(key, "s", "ſ")} {
+			if alias == key {
+				continue
+			}
+			canonical := `"` + key + `": ` + value
+			alternate := `"` + alias + `": ` + value
+			for _, replacement := range []string{alternate, canonical + ", " + alternate, alternate + ", " + canonical} {
+				t.Run(key+"/"+replacement, func(t *testing.T) {
+					data := strings.Replace(validResult, canonical, replacement, 1)
+					if _, err := ParseResult([]byte(data), testID); !errors.Is(err, ErrMalformedResult) {
+						t.Fatalf("ParseResult = %v, want ErrMalformedResult", err)
+					}
+				})
+			}
+		}
+	}
+	for _, data := range []string{
+		strings.Replace(validResult, `"version": 1`, `"version": 2, "VERSION": 1`, 1),
+		strings.Replace(validResult, `"status": "succeeded"`, `"status": "failed", "STATUS": "succeeded"`, 1),
+	} {
+		if _, err := ParseResult([]byte(data), testID); !errors.Is(err, ErrMalformedResult) {
+			t.Errorf("conflicting fields: ParseResult = %v, want ErrMalformedResult", err)
+		}
+	}
+}
+
 func TestParseResultRejectsOtherIdentity(t *testing.T) {
 	for _, id := range []Identity{{TaskID: "task-2", AttemptID: "attempt-1"}, {TaskID: "task-1", AttemptID: "attempt-2"}} {
 		if _, err := ParseResult([]byte(validResult), id); !errors.Is(err, ErrIdentityMismatch) {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/herdr"
 )
 
 // roleEnv makes the test binary act as another program in child processes:
@@ -210,13 +214,36 @@ func TestArtisanRunRefusesExistingResultAndBadFlags(t *testing.T) {
 	}
 }
 
+type artisanTestWriter func([]byte) (int, error)
+
+func (w artisanTestWriter) Write(p []byte) (int, error) { return w(p) }
+
 func TestArtisanRunInHerdrTabTypesCommandAndWaitsForFile(t *testing.T) {
 	t.Setenv(roleEnv, "herdr")
 	log := filepath.Join(t.TempDir(), "herdr.log")
 	t.Setenv("FAKE_HERDR_LOG", log)
-	code, stdout, stderr, _ := runArtisan(t, "Do it.\n", "--herdr-session", "lab", "--herdr-workspace", "w1",
-		"--herdr-exec", testExecutable(t), "--timeout", "300ms")
-	if code != 3 || !strings.Contains(stderr, "no result yet") || !strings.Contains(stderr, "w1:t2") {
+	prompt, result, dir := artisanFiles(t, "Do it.\n")
+	app, stdout, stderr := newArtisanApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	app.Stderr = artisanTestWriter(func(p []byte) (int, error) {
+		n, err := stderr.Write(p)
+		if bytes.Contains(p, []byte("artisan started in Herdr")) {
+			cancel()
+		}
+		return n, err
+	})
+	spec := adapter.Spec{Identity: adapter.Identity{TaskID: "task-1", AttemptID: "attempt-1"},
+		PromptFile: prompt, ResultFile: result, WorkDir: dir}
+	cmd, err := (fake.Adapter{Executable: testExecutable(t)}).Command(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := app.runInTab(ctx, spec, cmd, herdr.Options{Session: "lab", Command: []string{testExecutable(t)}}, "w1", "artisan task-1/attempt-1", false)
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatalf("launch did not reach synchronized cancellation: %v; stderr %s", ctx.Err(), stderr)
+	}
+	if code != 3 || !strings.Contains(stderr.String(), "no result yet") || !strings.Contains(stderr.String(), "w1:t2") {
 		t.Errorf("exit %d; stdout %q; stderr %q", code, stdout, stderr)
 	}
 	ran, err := os.ReadFile(log)

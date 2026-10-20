@@ -53,6 +53,7 @@ The result file is JSON, one object, version 1:
 | `landed_ref` | Optional; no whitespace or control characters |
 
 Guildhall rejects a result file that is larger than 1 MiB, is not exactly one JSON object, repeats a key, has an unknown or missing field, or breaks a rule above.
+All field names, including nested output fields, must use the exact lowercase spelling shown above; alternate casing and case-folded duplicates are rejected.
 A rejected result is reported as rejected; it is never treated as success or failure of the work.
 
 Guildhall writes a result once: it writes a temporary file beside the result path and hard-links it into place, so a reader sees either no file or the whole result, and an existing result is never replaced.

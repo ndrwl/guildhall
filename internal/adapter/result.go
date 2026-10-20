@@ -105,7 +105,7 @@ func ParseResult(data []byte, want Identity) (Result, error) {
 	if len(data) > MaxResultBytes {
 		return Result{}, malformed("larger than %d bytes", MaxResultBytes)
 	}
-	if err := checkDuplicateKeys(data); err != nil {
+	if err := checkResultKeys(data); err != nil {
 		return Result{}, malformed("%v", err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -167,9 +167,7 @@ func (r Result) validate() error {
 	return nil
 }
 
-// checkDuplicateKeys rejects any object with a repeated key, which
-// encoding/json would otherwise resolve silently to the last value.
-func checkDuplicateKeys(data []byte) error {
+func checkResultKeys(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	var walk func() error
 	walk = func() error {
@@ -186,6 +184,11 @@ func checkDuplicateKeys(data []byte) error {
 					return err
 				}
 				k, _ := key.(string)
+				switch k {
+				case "schema", "version", "task_id", "attempt_id", "status", "summary", "outputs", "landed_ref", "path", "description":
+				default:
+					return fmt.Errorf("unknown key %q", k)
+				}
 				if seen[k] {
 					return fmt.Errorf("duplicate key %q", k)
 				}

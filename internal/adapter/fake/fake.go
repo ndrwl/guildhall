@@ -204,7 +204,10 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 		say("writing a malformed result to %s (simulated fault)", a.ResultFile)
 		return writeNew(a.ResultFile, []byte(`{"schema": "`+adapter.ResultSchema+`", "version": 1, "task_id": `))
 	case "wrong-identity":
-		result.AttemptID = a.AttemptID + "-other"
+		result.AttemptID = "other"
+		if a.AttemptID == result.AttemptID {
+			result.AttemptID = "another"
+		}
 	}
 	if err := adapter.WriteResult(a.ResultFile, result); err != nil {
 		return err

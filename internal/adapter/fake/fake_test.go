@@ -126,6 +126,24 @@ func TestRunFaults(t *testing.T) {
 	})
 }
 
+func TestRunWrongIdentityIsValidAndDifferent(t *testing.T) {
+	for _, attempt := range []string{"a", "other", "another", strings.Repeat("a", 122), strings.Repeat("a", 123), strings.Repeat("a", 128)} {
+		t.Run(attempt, func(t *testing.T) {
+			args := setup(t, "guildhall-fake: fault=wrong-identity\n")
+			args.AttemptID = attempt
+			if err := args.Identity.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := run(t, args); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := adapter.ReadResult(args.ResultFile, args.Identity); !errors.Is(err, adapter.ErrIdentityMismatch) {
+				t.Fatalf("ReadResult = %v, want ErrIdentityMismatch", err)
+			}
+		})
+	}
+}
+
 func TestRunDelayIsBoundedAndCancellable(t *testing.T) {
 	args := setup(t, "guildhall-fake: delay=90s\n")
 	var slept time.Duration
