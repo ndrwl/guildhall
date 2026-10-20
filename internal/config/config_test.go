@@ -180,9 +180,12 @@ func TestRepositoryPathIsAbsoluteOnParsingHost(t *testing.T) {
 		t.Run(c.path, func(t *testing.T) {
 			base := director(t)
 			_, err := Parse([]byte(strings.Replace(base, repositoryPaths(t, base)[0], c.path, 1)))
-			refused := err != nil && strings.Contains(err.Error(), "path must be absolute")
-			if refused == c.absolute {
-				t.Errorf("Parse(path %q) error = %v, want absolute = %v", c.path, err, c.absolute)
+			if c.absolute {
+				if err != nil {
+					t.Errorf("Parse(path %q) error = %v, want success", c.path, err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "path must be absolute") {
+				t.Errorf("Parse(path %q) error = %v, want absolute-path refusal", c.path, err)
 			}
 		})
 	}
@@ -192,7 +195,8 @@ func TestRepositoryPathsCompareCleaned(t *testing.T) {
 	base := director(t)
 	paths := repositoryPaths(t, base)
 	tool, site := paths[0], paths[1]
-	alias := filepath.Join(site, "..", "tool") + string(filepath.Separator)
+	sep := string(filepath.Separator)
+	alias := site + sep + ".." + sep + "tool" + sep
 	if filepath.Clean(alias) != tool {
 		t.Fatalf("fixture paths %q and %q are not siblings", tool, site)
 	}

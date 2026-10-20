@@ -83,15 +83,29 @@ func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
-		done := make(chan error, 1)
+		done := make(chan struct {
+			out    []byte
+			err    error
+			ctxErr error
+		}, 1)
 		go func() {
-			_, err := b.app.Output(ctx, path, args...)
-			done <- err
+			out, err := b.app.Output(ctx, path, args...)
+			done <- struct {
+				out    []byte
+				err    error
+				ctxErr error
+			}{out, err, ctx.Err()}
 		}()
 		select {
-		case err := <-done:
-			if err == nil {
+		case got := <-done:
+			if got.err == nil {
 				t.Error("Output error = nil after the deadline, want an error")
+			}
+			if string(got.out) != probeReady {
+				t.Errorf("output = %q, want hang readiness signal %q", got.out, probeReady)
+			}
+			if !errors.Is(got.ctxErr, context.DeadlineExceeded) {
+				t.Errorf("context error at Output return = %v, want DeadlineExceeded", got.ctxErr)
 			}
 		case <-time.After(30 * time.Second):
 			t.Fatal("Output did not return after its context deadline")
@@ -145,6 +159,8 @@ func TestFakeToolBoundary(t *testing.T) {
 // probeEnv makes the test binary act as the probe tool when the real boundary runs it.
 const probeEnv = "GUILDHALL_TEST_TOOL_PROBE"
 
+const probeReady = "probe: hanging\n"
+
 // TestToolProbeHelper is not a test: it is the probe tool TestRealToolBoundary runs.
 func TestToolProbeHelper(t *testing.T) {
 	if os.Getenv(probeEnv) != "1" {
@@ -159,6 +175,7 @@ func TestToolProbeHelper(t *testing.T) {
 	_, _ = io.WriteString(os.Stdout, stdout)
 	_, _ = io.WriteString(os.Stderr, stderr)
 	if hang == "true" {
+		_, _ = io.WriteString(os.Stdout, probeReady)
 		time.Sleep(time.Hour)
 	}
 	code, _ := strconv.Atoi(exit)
@@ -204,7 +221,7 @@ func (f *fakeTools) output(ctx context.Context, path string, args ...string) ([]
 	}
 	if r.hang {
 		<-ctx.Done()
-		return nil, ctx.Err()
+		return []byte(r.out + probeReady), ctx.Err()
 	}
 	return []byte(r.out), r.err
 }
