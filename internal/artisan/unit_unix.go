@@ -26,12 +26,13 @@ type groupUnit struct {
 	done       chan struct{}
 
 	// lookup and signal are the leader check's and the rungs' OS calls.
-	lookup func(pid int) (Identity, error)
-	signal func(pid int, sig unix.Signal) error
+	lookup      func(pid int) (Identity, error)
+	lookupGroup func(pid int) (Identity, int, error)
+	signal      func(pid int, sig unix.Signal) error
 }
 
 func newUnit(string) (Unit, error) {
-	return &groupUnit{done: make(chan struct{}), lookup: Lookup, signal: unix.Kill}, nil
+	return &groupUnit{done: make(chan struct{}), lookup: Lookup, lookupGroup: lookupGroup, signal: unix.Kill}, nil
 }
 
 func isTerminal(fd int) bool {
@@ -60,17 +61,20 @@ func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
 		return Identity{}, err
 	}
 	pid := cmd.Process.Pid
-	id, pgid, err := lookupGroup(pid)
-	if err != nil || pgid != pid {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return Identity{}, fmt.Errorf("%w: worker %d in group %d: %v", ErrContainment, pid, pgid, err)
-	}
-	u.cmd, u.worker, u.foreground = cmd, id, attr.Foreground
+	u.cmd, u.worker, u.foreground = cmd, Identity{PID: pid}, attr.Foreground
 	go func() {
 		waitExit(pid)
 		close(u.done)
 	}()
+	id, pgid, err := u.lookupGroup(pid)
+	if err != nil || pgid != pid {
+		if u.foreground {
+			reclaimTerminal()
+			u.foreground = false
+		}
+		return Identity{}, errors.Join(fmt.Errorf("%w: worker %d in group %d: %v", ErrContainment, pid, pgid, err), u.closeLocked())
+	}
+	u.worker = id
 	return id, nil
 }
 
@@ -131,17 +135,38 @@ func (u *groupUnit) Close() error {
 	if u.closed {
 		return nil
 	}
-	u.closed = true
+	return u.closeLocked()
+}
+
+func (u *groupUnit) closeLocked() error {
 	if u.cmd == nil {
+		u.closed = true
 		return nil
 	}
-	err := u.signalGroup(unix.SIGKILL)
+	var err error
+	if u.worker.Token == "" {
+		err = u.signal(-u.worker.PID, unix.SIGKILL)
+		if errors.Is(err, unix.ESRCH) {
+			err = nil
+		}
+	} else {
+		err = u.signalGroup(unix.SIGKILL)
+	}
+	if err != nil {
+		return err
+	}
+	if u.worker.Token == "" {
+		if err := u.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			return err
+		}
+	}
 	<-u.done
 	_ = u.cmd.Wait()
 	if u.foreground {
 		reclaimTerminal()
 	}
-	return err
+	u.closed = true
+	return nil
 }
 
 // reclaimTerminal makes the launcher's group the terminal's foreground again

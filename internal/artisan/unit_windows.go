@@ -3,6 +3,7 @@ package artisan
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -84,10 +85,13 @@ func (u *jobUnit) Start(cmd *exec.Cmd) (Identity, error) {
 	if err := cmd.Start(); err != nil {
 		return Identity{}, err
 	}
-	fail := func(what string, err error) (Identity, error) {
-		_ = cmd.Process.Kill()
+	u.cmd = cmd
+	go func() {
 		_ = cmd.Wait()
-		return Identity{}, fmt.Errorf("%w: %s: %v", ErrContainment, what, err)
+		close(u.done)
+	}()
+	fail := func(what string, err error) (Identity, error) {
+		return Identity{}, errors.Join(fmt.Errorf("%w: %s: %v", ErrContainment, what, err), u.closeLocked())
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|
 		windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SUSPEND_RESUME, false, uint32(cmd.Process.Pid))
@@ -102,18 +106,14 @@ func (u *jobUnit) Start(cmd *exec.Cmd) (Identity, error) {
 	if r, _, e := procIsProcessInJob.Call(uintptr(h), uintptr(u.job), uintptr(unsafe.Pointer(&in))); r == 0 || in == 0 {
 		return fail("IsProcessInJob", e)
 	}
-	id, err := Lookup(cmd.Process.Pid)
+	id, err := identityFromHandle(cmd.Process.Pid, h)
 	if err != nil {
 		return fail("Lookup", err)
 	}
 	if r, _, _ := procNtResumeProcess.Call(uintptr(h)); r != 0 {
 		return fail("NtResumeProcess", fmt.Errorf("NTSTATUS %#x", r))
 	}
-	u.cmd, u.worker = cmd, id
-	go func() {
-		_ = cmd.Wait()
-		close(u.done)
-	}()
+	u.worker = id
 	return id, nil
 }
 
@@ -143,7 +143,7 @@ func (u *jobUnit) Members() ([]Identity, error) {
 	}
 	var out []Identity
 	for _, pid := range l.IDs[:l.InList] {
-		id, err := Lookup(int(pid))
+		id, err := u.member(int(pid))
 		switch {
 		case errors.Is(err, errNoProcess):
 		case err != nil:
@@ -153,6 +153,25 @@ func (u *jobUnit) Members() ([]Identity, error) {
 		}
 	}
 	return out, nil
+}
+
+func (u *jobUnit) member(pid int) (Identity, error) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return Identity{}, errNoProcess
+	}
+	if err != nil {
+		return Identity{}, err
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	var in int32
+	if r, _, e := procIsProcessInJob.Call(uintptr(h), uintptr(u.job), uintptr(unsafe.Pointer(&in))); r == 0 {
+		return Identity{}, e
+	}
+	if in == 0 {
+		return Identity{}, errNoProcess
+	}
+	return identityFromHandle(pid, h)
 }
 
 // Interrupt sends CTRL_BREAK to the worker's console process group; a worker
@@ -194,11 +213,24 @@ func (u *jobUnit) Close() error {
 	if u.closed {
 		return nil
 	}
-	u.closed = true
-	var err error
+	return u.closeLocked()
+}
+
+func (u *jobUnit) closeLocked() error {
 	if u.cmd != nil {
-		err = windows.TerminateJobObject(u.job, 1)
+		if err := windows.TerminateJobObject(u.job, 1); err != nil {
+			return err
+		}
+		if u.worker.PID == 0 {
+			if err := u.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+				return err
+			}
+		}
 		<-u.done
 	}
-	return errors.Join(err, windows.CloseHandle(u.job))
+	if err := windows.CloseHandle(u.job); err != nil {
+		return err
+	}
+	u.closed = true
+	return nil
 }

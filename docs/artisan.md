@@ -54,6 +54,8 @@ The methods are safe for concurrent use.
 
 ### Unix: process group
 
+The process group alone is the interim Linux containment backend in this L1 PR, not the final Linux design. Slice L2 will use cgroup v2 when delegated, otherwise subreaper plus process group. macOS retains the process-group backend. The shared contract harness capability flags, including `SetsidEscapes`, remain selectable for the L2 backends.
+
 - The worker leads its own process group (`Setpgid`).
 - When the worker's stdin is the launcher's terminal, the worker group becomes the terminal's foreground group (`Foreground`, `Ctty`), so Ctrl+C in the pane reaches the worker rather than the launcher; `Close` gives the terminal back.
 - The leader is not reaped before `Close`: Linux waits with `waitid(WNOWAIT)` and macOS polls until the leader is a zombie, so the group id stays allocated while the unit can signal it.

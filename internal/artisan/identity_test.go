@@ -1,6 +1,8 @@
 package artisan_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,10 +24,15 @@ func TestIdentityContract(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	cmd := artisantest.Command(dir, artisantest.Worker{Lifetime: 300 * time.Millisecond})
+	release := filepath.Join(dir, "release")
+	cmd := artisantest.Command(dir, artisantest.Worker{Release: release})
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
 	var id artisan.Identity
 	for end := time.Now().Add(10 * time.Second); id.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if inv, _ := artisantest.Inventory(dir); len(inv) == 1 {
@@ -37,6 +44,15 @@ func TestIdentityContract(t *testing.T) {
 	}
 	if got, err := artisan.Lookup(id.PID); got != id || err != nil {
 		t.Errorf("Lookup(%d) from another process = %v, %v; want %v", id.PID, got, err, id)
+	}
+	if err := artisantest.KillVerified(artisan.Identity{PID: id.PID, Token: id.Token + "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if lv, err := artisan.Probe(id); lv != artisan.Alive || err != nil {
+		t.Fatalf("mismatched cleanup affected worker: %v, %v", lv, err)
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	// Exited but not yet reaped: a zombie is gone.
 	lv, err := artisan.Probe(id)

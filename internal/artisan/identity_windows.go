@@ -23,6 +23,10 @@ func Lookup(pid int) (Identity, error) {
 		return Identity{}, err
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
+	return identityFromHandle(pid, h)
+}
+
+func identityFromHandle(pid int, h windows.Handle) (Identity, error) {
 	var code uint32
 	if err := windows.GetExitCodeProcess(h, &code); err != nil {
 		return Identity{}, err

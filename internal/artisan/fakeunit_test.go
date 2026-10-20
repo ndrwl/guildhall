@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
@@ -30,7 +29,6 @@ type fakeUnit struct {
 	members map[artisan.Identity]bool
 	ignore  bool
 	exited  chan struct{}
-	timer   *time.Timer
 }
 
 // fakeProcs is the liveness of every process the fakes of one harness made.
@@ -130,16 +128,13 @@ func (u *fakeUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 			return artisan.Identity{}, err
 		}
 	}
-	lifetime := w.Lifetime
-	if lifetime == 0 {
-		lifetime = time.Minute
-	}
-	u.timer = time.AfterFunc(lifetime, func() {
+	go func() {
+		w.Wait()
 		u.procs.end(escaped...)
 		u.mu.Lock()
 		defer u.mu.Unlock()
 		u.endLocked()
-	})
+	}()
 	return u.worker, nil
 }
 
@@ -203,9 +198,6 @@ func (u *fakeUnit) Close() error {
 	defer u.mu.Unlock()
 	if u.closed {
 		return nil
-	}
-	if u.timer != nil {
-		u.timer.Stop()
 	}
 	u.endLocked()
 	u.closed = true

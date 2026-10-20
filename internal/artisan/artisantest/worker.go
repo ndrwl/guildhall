@@ -30,6 +30,7 @@ type Worker struct {
 	BreakawayGrandchild bool `json:"breakaway_grandchild,omitempty"`
 	// Lifetime bounds every process; zero means one minute.
 	Lifetime time.Duration `json:"lifetime,omitempty"`
+	Release  string        `json:"release,omitempty"`
 
 	Role      string `json:"role,omitempty"`
 	Inventory string `json:"inventory,omitempty"`
@@ -127,10 +128,6 @@ func MainIfWorker() {
 }
 
 func (w Worker) run() int {
-	lifetime := w.Lifetime
-	if lifetime == 0 {
-		lifetime = time.Minute
-	}
 	if w.IgnoreInterrupt {
 		// Notify and discard rather than ignore: a handled console event keeps
 		// a Windows process alive.
@@ -156,8 +153,24 @@ func (w Worker) run() int {
 			}
 		}
 	}
-	time.Sleep(lifetime)
+	w.Wait()
 	return 0
+}
+
+func (w Worker) Wait() {
+	lifetime := w.Lifetime
+	if lifetime == 0 {
+		lifetime = time.Minute
+	}
+	release := w.Release
+	if release == "" {
+		release = filepath.Join(w.Inventory, "release")
+	}
+	for end := time.Now().Add(lifetime); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(release); err == nil {
+			return
+		}
+	}
 }
 
 func (w Worker) spawnGrandchild() error {

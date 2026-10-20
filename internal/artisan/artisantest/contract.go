@@ -49,18 +49,6 @@ func Native(newUnit func(t *testing.T) artisan.Unit) Harness {
 	return Harness{New: newUnit, Probe: artisan.Probe, Kill: KillVerified}
 }
 
-// KillVerified kills id's process only while Probe reports it alive.
-func KillVerified(id artisan.Identity) error {
-	if lv, err := artisan.Probe(id); lv != artisan.Alive {
-		return err
-	}
-	p, err := os.FindProcess(id.PID)
-	if err != nil {
-		return err
-	}
-	return p.Kill()
-}
-
 // RunUnitContract runs the containment contract against h.
 func RunUnitContract(t *testing.T, h Harness) {
 	t.Run("start reports the worker and a spawned grandchild as members", func(t *testing.T) {
@@ -92,8 +80,12 @@ func RunUnitContract(t *testing.T, h Harness) {
 		c.assertGone(c.owned()...)
 	})
 	t.Run("exited closes when the worker ends on its own", func(t *testing.T) {
-		c := h.begin(t, Worker{Lifetime: 200 * time.Millisecond})
+		release := filepath.Join(t.TempDir(), "release")
+		c := h.begin(t, Worker{Release: release})
 		c.start()
+		if err := os.WriteFile(release, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
 		c.waitExited()
 		c.waitEmpty()
 	})
@@ -200,11 +192,12 @@ func RunUnitContract(t *testing.T, h Harness) {
 
 // run is one case: a unit, its inventory, its sentinel and what it owns.
 type run struct {
-	t   *testing.T
-	h   Harness
-	u   artisan.Unit
-	w   Worker
-	dir string
+	t               *testing.T
+	h               Harness
+	u               artisan.Unit
+	w               Worker
+	dir             string
+	sentinelRelease string
 
 	mu      sync.Mutex
 	seen    map[artisan.Identity]bool
@@ -225,10 +218,28 @@ func (h Harness) begin(t *testing.T, w Worker) *run {
 				_ = h.Kill(id)
 			}
 		}
+		release := c.w.Release
+		if release == "" {
+			release = filepath.Join(c.dir, "release")
+		}
+		if err := os.WriteFile(release, nil, 0o600); err != nil {
+			t.Error(err)
+		}
+		c.assertGone(c.owned()...)
 		if lv, err := artisan.Probe(sentinel); lv != artisan.Alive {
 			t.Errorf("unrelated sentinel %v is %v (%v) after the case", sentinel, lv, err)
 		}
-		_ = KillVerified(sentinel)
+		if err := os.WriteFile(c.sentinelRelease, nil, 0o600); err != nil {
+			t.Error(err)
+		}
+		end := time.Now().Add(deadline)
+		for time.Now().Before(end) {
+			if lv, _ := artisan.Probe(sentinel); lv == artisan.Gone {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Errorf("sentinel %v did not exit after release", sentinel)
 	})
 	return c
 }
@@ -237,7 +248,8 @@ func (h Harness) begin(t *testing.T, w Worker) *run {
 func (c *run) sentinel() artisan.Identity {
 	c.t.Helper()
 	dir := c.t.TempDir()
-	cmd := Worker{Role: "sentinel", Inventory: dir, Lifetime: 2 * time.Minute}.command()
+	c.sentinelRelease = filepath.Join(dir, "release")
+	cmd := Worker{Role: "sentinel", Inventory: dir, Lifetime: 2 * time.Minute, Release: c.sentinelRelease}.command()
 	if err := cmd.Start(); err != nil {
 		c.t.Fatal(err)
 	}
