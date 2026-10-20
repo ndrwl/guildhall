@@ -20,7 +20,7 @@ func (e *ValidationError) Error() string {
 // Validate checks a parsed workflow before any task may start it:
 // step kinds exist in this release, settings match their kind,
 // every input is wired to an earlier step's output of the same type,
-// and every loop goes back to an earlier step with a bound.
+// and every loop returns to the same or an earlier step with a bound.
 func Validate(def *Definition) error {
 	v := validator{def: def, index: map[string]int{}}
 	v.check()

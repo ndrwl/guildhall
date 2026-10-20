@@ -49,7 +49,8 @@ No workflow can change a repository's merge policy.
 A workflow defines the steps of one task as an ordered list of built-in step kinds.
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
-The shipped default is [`internal/workflow/default.json`](../internal/workflow/default.json), and [`examples/workflows/human-review.json`](../examples/workflows/human-review.json) shows the same workflow with human review.
+The shipped default is [`internal/workflow/default.json`](../internal/workflow/default.json).
+[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates human review with reviewer instructions and omits the default's research step.
 
 ```json
 {
@@ -78,26 +79,16 @@ The shipped default is [`internal/workflow/default.json`](../internal/workflow/d
 | `steps[].inputs` | Input port to an array of `"step.output"` references, including for single-input ports. |
 | `steps[].on` | Outcome to `{"goto": <step-id>, "max": <rounds>}`. |
 
-A workflow is validated before any task may start it, and every problem found is reported together.
+Call `workflow.Parse` to decode a definition, then `workflow.Validate` before using it; parsing alone does not validate wiring.
+Parsing stops at the first decoding error, while validation reports the semantic problems it finds together.
 JSON field names must match their declared spelling exactly, including case.
-Validation refuses unknown fields and duplicate keys, unknown kinds or versions, unknown or mistyped settings, missing required settings, unwired required inputs, inputs that reference unknown steps or outputs, and inputs whose types do not match.
+Together, parsing and validation refuse unknown fields and duplicate keys, unknown kinds or versions, unknown or mistyped settings, missing required settings, unwired required inputs, inputs that reference unknown steps or outputs, and inputs whose types do not match.
 An input can only come from an earlier step, which makes each step's readiness explicit and rules out dependency cycles.
 A rule can only send the task back to the same or an earlier step, and `max` must be between 1 and 10, so every loop is bounded.
 
 ### Built-in step kinds
 
-| Kind | Inputs | Outputs | Settings | Loop outcomes |
-|---|---|---|---|---|
-| `grill` | - | `notes` document | - | - |
-| `research` | - | `notes` document | - | - |
-| `plan` | `context` documents (optional, several) | `spec` document | - | - |
-| `guildmaster-approval` | `spec` document | `spec` accepted-spec | `instructions` | `changes_requested` |
-| `build` | `spec` accepted-spec | `head` code-head | - | - |
-| `automated-review` | `spec` accepted-spec, `head` code-head | `outcome` review-outcome | `instructions` | `changes_requested` |
-| `human-review` | `spec` accepted-spec, `head` code-head | `outcome` review-outcome | `instructions` | `changes_requested` |
-| `validate` | `head` code-head | `result` validation-result | - | `failed` |
-| `deliver` | `head` code-head, `review` review-outcomes (optional), `validation` (optional) | - | - | - |
-| `handoff-wait` | - | `handoff` document | `from` (required) | - |
+The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
 `guildmaster-approval`, `human-review` and `handoff-wait` are durable human pauses.
 `deliver` has no settings: the repository's merge policy decides how work lands.
@@ -106,12 +97,14 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 
 `automated-review` and `human-review` have the same inputs, outputs and outcomes, so either can replace the other.
 A repository swaps them with `workflow_overrides` in the config, and only review steps can be overridden.
-The override produces a new workflow content, which is validated and has its own digest.
+`workflow.ApplyOverrides` returns a copy with the requested review kinds replaced; callers must run `workflow.Validate` on the result before use.
+The resulting definition's digest changes when its canonical content changes.
 
 ### Revisions
 
-A workflow's digest is the sha256 of its canonical JSON encoding, written `sha256:<hex>`, so reformatting the file does not change it but any content change does.
-A task binds the name and digest of its workflow, after repository overrides, when it is accepted.
+A workflow's digest is the sha256 of the parsed definition's canonical JSON encoding, written `sha256:<hex>`.
+Reformatting the file or changing an omitted optional field to its empty value does not change the digest; changes retained in the canonical encoding do.
+Task acceptance must bind the name and digest of its workflow after repository overrides; `workflow.Revision` supplies this pair, but task acceptance is outside this foundation package.
 
 ### Review outcome
 

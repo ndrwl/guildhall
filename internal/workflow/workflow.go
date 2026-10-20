@@ -58,7 +58,7 @@ type Step struct {
 	On map[string]Rule `json:"on,omitempty"`
 }
 
-// Rule sends the task back to an earlier step on an outcome, at most Max times.
+// Rule sends the task back to the same or an earlier step on an outcome, at most Max times.
 type Rule struct {
 	Goto string `json:"goto"`
 	Max  int    `json:"max"`
