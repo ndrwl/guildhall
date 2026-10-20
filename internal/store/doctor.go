@@ -10,8 +10,10 @@ import (
 type Report struct {
 	SchemaVersion int
 	// Receipts counts committed mutations.
-	Receipts     int
-	Repositories []RepositoryCounts
+	Receipts int
+	// WorkflowApprovals counts recorded workflow approvals.
+	WorkflowApprovals int
+	Repositories      []RepositoryCounts
 	// Problems lists bbolt integrity errors and undecodable records; empty means none were found.
 	Problems []string
 }
@@ -56,6 +58,15 @@ func (s *Store) Doctor() (Report, error) {
 			}
 			return nil
 		})
+		if approvals := tx.Bucket(bucketWorkflowApprovals); approvals != nil {
+			_ = approvals.ForEach(func(k, v []byte) error {
+				rep.WorkflowApprovals++
+				if err := decode(k, v, new(WorkflowApproval)); err != nil {
+					problem("workflow approval: %v", err)
+				}
+				return nil
+			})
+		}
 		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
 			counts := RepositoryCounts{Repository: string(repo)}
 			for name, n := range map[string]*int{

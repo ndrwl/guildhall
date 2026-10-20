@@ -28,6 +28,8 @@ Commands:
   steward        plan and apply rollouts of managed settings to enrolled Director copies
   messages send|list|read|ack --store <path> ...
                  send, list, read and acknowledge local Director and Artisan messages
+  workflow approve|approvals --store <path> ...
+                 record and list Guildmaster approvals of workflow revisions
   artisan run    launch one Artisan attempt and wait for its result file
   fake-artisan   run the test-only fake Artisan
   task new|show|list --store <path> ...
@@ -120,6 +122,8 @@ func (a *App) Run(args []string) int {
 		return a.storeDoctor(rest[1])
 	case "messages":
 		return a.messages(rest)
+	case "workflow":
+		return a.workflowCmd(rest)
 	case "artisan":
 		return a.artisan(rest)
 	case "fake-artisan":
