@@ -14,7 +14,7 @@ const nativeStopSupported = true
 
 var queryProcessImage = syscall.NewLazyDLL("kernel32.dll").NewProc("QueryFullProcessImageNameW")
 
-type windowsWorker struct { handle syscall.Handle }
+type windowsWorker struct{ handle syscall.Handle }
 
 func processCreationTime(h syscall.Handle) (uint64, error) {
 	var created, exited, kernel, user syscall.Filetime

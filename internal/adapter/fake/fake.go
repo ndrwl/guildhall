@@ -67,10 +67,10 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 // Args are the fake Artisan's command-line arguments.
 type Args struct {
 	adapter.Identity
-	PromptFile string
-	ResultFile string
+	PromptFile     string
+	ResultFile     string
 	ControlAddress string
-	ControlToken string
+	ControlToken   string
 }
 
 // ParseArgs parses `--task --attempt --prompt --result`, all required.

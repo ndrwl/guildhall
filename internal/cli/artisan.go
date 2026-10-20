@@ -150,8 +150,8 @@ func (a *App) artisanRun(args []string) int {
 }
 
 // runChild runs the Artisan as a direct child process. The child's output goes
-// to stderr so stdout carries only the recorded result. A child still running
-// when the wait ends is stopped, since nothing else supervises it.
+// to stderr so stdout carries only the recorded result. On timeout or
+// interruption without a result, it stops the otherwise unsupervised child.
 func (a *App) runChild(ctx context.Context, spec adapter.Spec, cmd adapter.Command) int {
 	p, err := adapter.StartProcess(cmd, a.Stderr, a.Stderr)
 	if err != nil {
@@ -193,7 +193,7 @@ func (a *App) runInTab(ctx context.Context, spec adapter.Spec, cmd adapter.Comma
 		if err != nil {
 			return a.fail(err)
 		}
-		defer owned.Close()
+		defer func() { _ = owned.Close() }()
 		stopper = owned
 		cmd.Argv = append(cmd.Argv, "--worker-control", owned.Address(), "--worker-token", owned.Token())
 	}

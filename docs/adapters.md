@@ -20,7 +20,8 @@ Guildhall starts it either as a direct child process, which tests and CI use, or
 The attempt is complete only when the result file holds a valid result for the attempt's exact identity.
 Process exit, a closed or vanished tab, a Herdr restart and Herdr's agent-state signals never complete an attempt (R1.23, R1.52).
 A direct child process that exits with no result file is reported as exited without a result, which is not a completion.
-Guildhall kills and waits for a direct child process when its wait ends without a result.
+When the wait times out or is interrupted without a result, Guildhall kills and waits for a direct child process.
+A rejected result does not trigger that stop path.
 For native Windows tabs, `--stop-on-timeout` uses an attempt-owned worker handshake and verified native process handle, independently of Herdr presentation.
 Other platforms request Ctrl+C in the owned pane; delivering Ctrl+C alone never proves termination.
 
@@ -86,10 +87,10 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 
 `guildhall artisan run --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir>` launches one attempt and waits for its result file.
 
-- Without Herdr flags the Artisan runs as a direct child process whose output goes to standard error; a child still running when the wait ends is stopped.
+- Without Herdr flags the Artisan runs as a direct child process whose output goes to standard error; timeout and interruption handling follow the baseline contract above.
 - With `--herdr-session <name> --herdr-workspace <id>` the Artisan runs in a new tab of that workspace, labelled `artisan <task>/<attempt>` unless `--tab-label` is given.
   `--herdr-exec` names the Herdr program, repeated once per word when the program needs leading arguments; the default is `herdr` on `PATH`.
-  When the wait ends without a result the Artisan is left running unless `--stop-on-timeout` is given; Guildhall never closes the tab.
+  On timeout or interruption without a result the Artisan is left running unless `--stop-on-timeout` is given; a rejected result does not trigger stopping, and Guildhall never closes the tab.
   On native Windows that option establishes ownership before work starts, then terminates and waits on the exact retained process handle when the wait ends.
   Elsewhere it requests Ctrl+C and explicitly reports that termination is unverified.
 - `--timeout` bounds the wait (default 30 minutes).

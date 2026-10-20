@@ -454,8 +454,8 @@ func (c *Client) TabGet(ctx context.Context, tabID string) (Tab, error) {
 	return r.Tab, nil
 }
 
-// CloseOwnedTab closes a tab this client created. Closing ends the processes
-// in the tab; callers decide when that is safe.
+// CloseOwnedTab closes a tab this client created. Closing does not prove
+// process termination; callers must establish separately when closure is safe.
 func (c *Client) CloseOwnedTab(ctx context.Context, t OwnedTab) error {
 	if err := c.checkOwned(t); err != nil {
 		return err

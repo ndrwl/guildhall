@@ -73,7 +73,7 @@ func NewOwnedWorker(spec Spec, exe string) (*OwnedWorker, error) {
 }
 
 func (o *OwnedWorker) Address() string { return o.listener.Addr().String() }
-func (o *OwnedWorker) Token() string { return o.token }
+func (o *OwnedWorker) Token() string   { return o.token }
 
 // Accept verifies the worker identity and retains the native process handle
 // before releasing the worker to do work. No PID is looked up again at stop.
@@ -87,8 +87,8 @@ func (o *OwnedWorker) Accept(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	defer o.listener.Close()
+	defer func() { _ = conn.Close() }()
+	defer func() { _ = o.listener.Close() }()
 	deadline := time.Now().Add(30 * time.Second)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
@@ -157,7 +157,7 @@ func JoinOwnedWorker(ctx context.Context, address, token string, id Identity, re
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	deadline, _ := ctx.Deadline()
 	if err := conn.SetDeadline(deadline); err != nil {
 		return err
