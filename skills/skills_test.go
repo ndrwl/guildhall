@@ -313,7 +313,7 @@ func TestInstallIsTheFirstRenderRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	step := workflow.Step{ID: "grill", Type: "grill", Version: 1, Settings: map[string]json.RawMessage{"skills": list}}
+	step := workflow.Step{ID: "grill", Type: "grill", Version: 1, Settings: map[string]json.RawMessage{"actor": json.RawMessage(`"artisan"`), "skills": list}}
 	r, err := render.Prompt(
 		render.Stage{Repository: "cli", Task: "t1", Step: step, Attempt: 1, Dir: filepath.Join(tmp, "attempt")},
 		nil,
@@ -326,6 +326,19 @@ func TestInstallIsTheFirstRenderRoot(t *testing.T) {
 	}
 	want := goldenDigests(t)
 	for _, s := range r.Manifest.Skills {
+		for _, dir := range []string{release, r.SkillsPath} {
+			notice, err := os.ReadFile(filepath.Join(dir, s.Name, "CREDITS.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantNotice, err := fs.ReadFile(skills.Release(), "CREDITS.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(notice, wantNotice) {
+				t.Errorf("%s: MIT notice not preserved", dir)
+			}
+		}
 		if s.Root != "release" || s.Digest != "sha256:"+want[s.Name] {
 			t.Errorf("%s rendered from %s with %s, want release with golden %s", s.Name, s.Root, s.Digest, want[s.Name])
 		}

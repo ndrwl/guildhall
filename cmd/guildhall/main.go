@@ -5,8 +5,11 @@ import (
 	"os"
 
 	"github.com/ndrwl/guildhall/internal/cli"
+	"github.com/ndrwl/guildhall/skills"
 )
 
 func main() {
-	os.Exit(cli.New().Run(os.Args[1:]))
+	app := cli.New()
+	app.InstallSkills = skills.Install
+	os.Exit(app.Run(os.Args[1:]))
 }

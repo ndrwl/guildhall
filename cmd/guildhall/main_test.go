@@ -35,6 +35,8 @@ func TestBinaryVersionFromLinkerFlag(t *testing.T) {
 		t.Errorf("output = %q, want prefix %q", out, want)
 	}
 
+	testReleaseRendering(t, bin)
+
 	// An empty PATH keeps doctor from running whatever tools the host has.
 	doctor := exec.Command(bin, "doctor")
 	doctor.Env = append(os.Environ(), "PATH="+t.TempDir())

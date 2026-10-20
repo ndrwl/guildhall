@@ -8,8 +8,6 @@ A Steward-managed override of an adapted skill keeps that line.
 |---|---|
 | `guildhall-grill-notes` | `skills/productivity/grilling/SKILL.md` |
 
-`guildhall-contributing` is written for Guildhall and adapts nothing.
-
 The upstream licence applies to the adapted text:
 
 ```text

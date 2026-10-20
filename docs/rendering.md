@@ -35,6 +35,12 @@ A skill is a directory, named in the stage's `skills` setting, that the Artisan'
 Each name is looked up in the skill roots the caller gives, in order; the Director's are the release, the Steward-managed skills directory and the Director's config area.
 The first root holding a directory of that name wins; a name found in none is refused (`ErrUnknownSkill`).
 The release root is the binary's embedded `skills` directory, written out by `skills.Install` ([contract](contracts/skills.md)).
+`guildhall render <request.json>` installs it temporarily and always supplies it first as `release`, followed by optional `Managed` and `Director` directories.
+The JSON request contains `Stage`, `Inputs` and `Baseline` using the renderer's Go field names, plus those optional directory paths; relative paths resolve from the command's working directory.
+The command writes the manifest as JSON to stdout and leaves the self-contained prompt in `Stage.Dir`, ready for `artisan run --prompt`.
+The temporary release root is removed on success or failure.
+Each adapted skill includes its own `CREDITS.md`, preserving the upstream MIT notice in the attempt.
+Release embedding is delivered here; Steward distribution of skill bundles follows in a later slice.
 Every file is copied, scripts included, byte for byte and with the permission bits the platform supports, so a POSIX script stays executable.
 A symbolic link or other non-regular file inside a skill is refused rather than followed.
 Executable content is controlled where skills are distributed, by the Steward's rollout review, not by the renderer ([Rendered prompts, skills and their digests](decisions/rendered-prompts-skills-and-digests.md)).
