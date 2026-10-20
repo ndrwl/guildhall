@@ -175,22 +175,6 @@ merge_policy`, `one owner machine`},
 	}
 }
 
-func TestRepositoryPathIsAbsoluteOnParsingHost(t *testing.T) {
-	for _, c := range hostPaths {
-		t.Run(c.path, func(t *testing.T) {
-			base := director(t)
-			_, err := Parse([]byte(strings.Replace(base, repositoryPaths(t, base)[0], c.path, 1)))
-			if c.absolute {
-				if err != nil {
-					t.Errorf("Parse(path %q) error = %v, want success", c.path, err)
-				}
-			} else if err == nil || !strings.Contains(err.Error(), "path must be absolute") {
-				t.Errorf("Parse(path %q) error = %v, want absolute-path refusal", c.path, err)
-			}
-		})
-	}
-}
-
 func TestRepositoryPathsCompareCleaned(t *testing.T) {
 	base := director(t)
 	paths := repositoryPaths(t, base)
@@ -251,7 +235,7 @@ func TestExampleConfigParses(t *testing.T) {
 func TestRepositoryPathsMayUseTheOwnerMachinesForm(t *testing.T) {
 	// A Steward on one OS validates copies whose owner machine runs another,
 	// so POSIX and Windows drive paths are both absolute on every host.
-	for _, path := range []string{"/srv/src/tool", "C:/src/tool", `C:\src\tool`} {
+	for _, path := range []string{"/srv/src/tool", "C:/src/tool", "c:/src/tool", `C:\src\tool`} {
 		t.Run(path, func(t *testing.T) {
 			data := strings.Replace(director(t), "path = '", "path = '"+path+"'\n#", 1)
 			if _, err := Parse([]byte(data)); err != nil {
@@ -259,7 +243,7 @@ func TestRepositoryPathsMayUseTheOwnerMachinesForm(t *testing.T) {
 			}
 		})
 	}
-	for _, path := range []string{"src/tool", "C:src/tool", "C:", `\\server\share`} {
+	for _, path := range []string{"src/tool", "C:src/tool", `C:src\tool`, "C:", `\src\tool`, `\\server\share`, `\\server\share\tool`} {
 		t.Run(path, func(t *testing.T) {
 			data := strings.Replace(director(t), "path = '", "path = '"+path+"'\n#", 1)
 			if _, err := Parse([]byte(data)); err == nil || !strings.Contains(err.Error(), "path must be absolute") {
