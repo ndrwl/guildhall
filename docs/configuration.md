@@ -16,7 +16,7 @@ See [`examples/director.toml`](../examples/director.toml) for a complete Directo
 | `mode` | `steward` or `director`. |
 | `name` | The Director's name; required in director mode. |
 | `[private_config] location` | Steward only: where the private config repository lives, as a path or remote; never a credential. |
-| `[managed.<key>]` | Written only by Steward rollouts: `value`, and `overridable` (default `false`). |
+| `[managed.<key>]` | Written only by [Steward rollouts](steward.md): `value`, and `overridable` (default `false`). |
 | `[local]` | Owned by the copy: `<key> = "value"`. |
 | `[[repository]]` | Director only: one entry per repository the Director owns. |
 
@@ -33,7 +33,7 @@ A local key with no managed counterpart is the copy's own setting.
 | Key | Meaning |
 |---|---|
 | `id` | Unique lowercase identifier. |
-| `path` | Absolute path of the repository on the owner machine. |
+| `path` | Absolute path of the repository on the owner machine: a POSIX path from `/` or a Windows path from a drive letter, accepted on any host. |
 | `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. |
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
 | `merge_policy` | `approval` (default) or `auto`. |

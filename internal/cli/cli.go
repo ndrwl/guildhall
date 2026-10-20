@@ -25,6 +25,7 @@ Commands:
   doctor    report the platform and the tools guildhall uses
   store doctor <path>
             check a store file read-only and count its records
+  steward   plan and apply rollouts of managed settings to enrolled Director copies
   help      print this help
 `
 
@@ -84,6 +85,9 @@ func (a *App) Run(args []string) int {
 		return a.usageError("missing command")
 	}
 	cmd, rest := args[0], args[1:]
+	if cmd == "steward" {
+		return a.steward(rest)
+	}
 	var out string
 	switch cmd {
 	case "help", "-h", "--help":
