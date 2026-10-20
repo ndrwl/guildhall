@@ -104,7 +104,7 @@ Green boxes are on `main`; grey dashed boxes are designed but not built.
 
 - The intended **Artisan wrapper** runs each attempt: it starts the agent through a runtime adapter, inside an execution environment, and delivers stored messages to it.
 - A **runtime adapter** launches an agent's normal interactive session with a prompt file and working directory; an attempt completes only when the Artisan writes a valid result file, not when a process exits or a terminal closes.
-  Claude Code is the first runtime adapter, and a fake test-only adapter keeps the core runtime-neutral in CI.
+  The planned adapters are Claude Code first and a fake test-only adapter for runtime-neutral CI; neither is implemented yet.
 - The **execution environment** is the local machine first; a Docker environment is a planned separate boundary and is not built.
 - **Herdr**, a terminal multiplexer, shows each Director and Artisan in its own tab.
   A tab is a presentation binding only: closing it, restarting Herdr or rebooting never changes task state or loses work.
@@ -206,7 +206,7 @@ repository app: tasks 1, attempts 1, documents 1, pane bindings 1, decisions 1, 
 ### Preview a Steward rollout
 
 A rollout needs a private config directory with a roster of enrolled machines, which this repository does not ship, and SSH access to those machines.
-The dry run changes nothing on any machine:
+Use the [dry-run procedure](docs/steward.md#dry-run) to preview changes and save a local plan:
 
 ```sh
 ./guildhall steward rollout --config steward.toml --machine workstation --plan rollout-plan --dry-run
@@ -216,7 +216,7 @@ See [Steward rollouts](docs/steward.md) for the roster format, the printed plan,
 
 ### A task, end to end (illustrative, not built)
 
-This is the intended flow once Directors run tasks; none of the task commands below exist yet.
+This is the intended flow once Directors run tasks; the orchestration shown below is not implemented yet.
 
 ```mermaid
 sequenceDiagram
