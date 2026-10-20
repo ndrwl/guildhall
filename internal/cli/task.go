@@ -125,7 +125,8 @@ func (a *App) task(args []string) int {
 	}
 	var task store.Task
 	if sub == "new" {
-		// Resolve and validate everything before the store is opened, so a refusal writes nothing.
+		// Resolve configuration and validate the effective workflow before opening the store.
+		// Task fields and dependencies are validated by CreateTask in the store.
 		var err error
 		if task, err = acceptTask(*cfgPath, *repo); err != nil {
 			return fail(err)

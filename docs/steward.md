@@ -153,10 +153,9 @@ Each `scp` run is bounded by a two-minute timeout.
 ## Revisions and active tasks
 
 A managed revision is the sha256 of its `managed.toml`, which the plan and receipt record; plans separately bind the fetched local config digest.
-Future task records must retain both local configuration and managed revision, not treat the managed digest alone as the entire effective config.
+For task configuration binding, see [tasks](tasks.md#the-bound-workflow); the managed digest alone is not the entire effective config.
 A rollout keeps each previous revision on the machine and never deletes one.
-The [store](store.md) provides task records, but Director execution does not yet bind tasks to configuration revisions.
-The intended consumer contract (R1.31) is that a task records the config revision and release in force when it is accepted and keeps them, while only new tasks pick up a rollout; that enforcement belongs to the Director's task store and execution, which are later work.
+Release binding and execution enforcement of R1.31 remain future work.
 
 ## Not implemented yet
 
