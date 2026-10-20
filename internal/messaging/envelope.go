@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -28,6 +29,12 @@ func Decode(r io.Reader) (Envelope, error) {
 		return Envelope{}, invalid("envelope is UTF-16; write it as UTF-8, for example with Set-Content -Encoding utf8")
 	}
 	data = bytes.TrimPrefix(data, []byte("\ufeff"))
+	if !utf8.Valid(data) {
+		return Envelope{}, invalid("envelope is not valid UTF-8")
+	}
+	if err := checkUnicode(data); err != nil {
+		return Envelope{}, invalid("envelope: %v", err)
+	}
 	if err := checkKeys(json.NewDecoder(bytes.NewReader(data))); err != nil {
 		return Envelope{}, invalid("envelope: %v", err)
 	}
@@ -57,9 +64,35 @@ func Decode(r io.Reader) (Envelope, error) {
 	return e, nil
 }
 
-// checkKeys refuses an object holding the same key twice, compared without case
-// because encoding/json matches field names that way; the value would otherwise
-// silently be the last one given.
+func checkUnicode(data []byte) error {
+	if !json.Valid(data) {
+		return fmt.Errorf("invalid JSON")
+	}
+	for i := 0; i < len(data); i++ {
+		if data[i] != '\\' {
+			continue
+		}
+		i++
+		if data[i] != 'u' {
+			continue
+		}
+		n, _ := strconv.ParseUint(string(data[i+1:i+5]), 16, 16)
+		i += 4
+		if n < 0xd800 || n > 0xdfff {
+			continue
+		}
+		if n > 0xdbff || i+6 >= len(data) || data[i+1] != '\\' || data[i+2] != 'u' {
+			return fmt.Errorf("unpaired Unicode surrogate")
+		}
+		low, err := strconv.ParseUint(string(data[i+3:i+7]), 16, 16)
+		if err != nil || low < 0xdc00 || low > 0xdfff {
+			return fmt.Errorf("unpaired Unicode surrogate")
+		}
+		i += 6
+	}
+	return nil
+}
+
 func checkKeys(dec *json.Decoder) error {
 	tok, err := dec.Token()
 	if err != nil {
@@ -73,7 +106,10 @@ func checkKeys(dec *json.Decoder) error {
 			if err != nil {
 				return err
 			}
-			name := strings.ToLower(key.(string))
+			name := key.(string)
+			if name != strings.ToLower(name) {
+				return fmt.Errorf("case-variant key %q", name)
+			}
 			if seen[name] {
 				return fmt.Errorf("duplicate key %q", key)
 			}

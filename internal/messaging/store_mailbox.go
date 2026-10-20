@@ -10,13 +10,11 @@ import (
 // StoreMailbox is the Mailbox kept in a Director's store.
 type StoreMailbox struct {
 	Store *store.Store
-	// Notify, if set, is called after each successful Send, including a retry.
-	Notify Notifier
 }
 
 var _ Mailbox = (*StoreMailbox)(nil)
 
-// Send implements Mailbox.Send and then calls b.Notify with the stored message.
+// Send implements Mailbox.Send.
 func (b *StoreMailbox) Send(to store.Recipient, e Envelope) (store.Receipt, error) {
 	m, err := Message(to, e)
 	if err != nil {
@@ -25,10 +23,6 @@ func (b *StoreMailbox) Send(to store.Recipient, e Envelope) (store.Receipt, erro
 	r, err := b.Store.SendMessage(m)
 	if err != nil {
 		return store.Receipt{}, fmt.Errorf("messaging: %w", err)
-	}
-	if b.Notify != nil {
-		m.Sequence = r.Sequence
-		b.Notify(m, r)
 	}
 	return r, nil
 }

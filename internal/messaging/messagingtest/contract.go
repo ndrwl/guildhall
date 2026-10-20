@@ -63,6 +63,8 @@ func RunMailboxContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		{"SendChecksTaskAndAttempt", contractTaskAndAttempt},
 		{"SendRefusesInvalidContent", contractInvalidContent},
 		{"RetryAndConflict", contractRetryAndConflict},
+		{"ArtifactOwnership", contractArtifactOwnership},
+		{"EmptyArtifactRetry", contractEmptyArtifactRetry},
 		{"ConcurrentSends", contractConcurrentSends},
 		{"ListIsBoundedOrderedAndSeparated", contractList},
 		{"AckConsumesAddressedMessages", contractAck},
@@ -231,6 +233,48 @@ func contractRetryAndConflict(t *testing.T, h Harness) {
 	}
 	if m, _ := b.Read("n-1"); m.Text != Envelope("n-1", "").Text {
 		t.Fatalf("conflict changed the message: %+v", m)
+	}
+}
+
+func contractArtifactOwnership(t *testing.T, h Harness) {
+	b := h.Mailbox()
+	e := Envelope("q-owned", store.RecipientDirector)
+	want := e.Artifacts[0]
+	mustSend(t, b, Director, e)
+	e.Artifacts[0] = store.ArtifactRef{Path: "changed.md", SHA256: strings.Repeat("a", 64)}
+	got, err := b.Read(e.ID)
+	if err != nil || len(got.Artifacts) != 1 || got.Artifacts[0] != want {
+		t.Fatalf("Send retained caller artifacts: %+v, %v", got, err)
+	}
+	got.Artifacts[0] = e.Artifacts[0]
+	page, err := b.List(Director, 0, 10)
+	if err != nil || len(page.Messages) != 1 || len(page.Messages[0].Artifacts) != 1 || page.Messages[0].Artifacts[0] != want {
+		t.Fatalf("Read exposed stored artifacts: %+v, %v", page, err)
+	}
+	page.Messages[0].Artifacts[0] = e.Artifacts[0]
+	got, err = b.Read(e.ID)
+	if err != nil || len(got.Artifacts) != 1 || got.Artifacts[0] != want {
+		t.Fatalf("List exposed stored artifacts: %+v, %v", got, err)
+	}
+}
+
+func contractEmptyArtifactRetry(t *testing.T, h Harness) {
+	for i, artifacts := range [][]store.ArtifactRef{nil, {}} {
+		e := Envelope(fmt.Sprintf("q-empty-%d", i), store.RecipientDirector)
+		e.Artifacts = artifacts
+		first := mustSend(t, h.Mailbox(), Director, e)
+		if _, err := h.Mailbox().Ack(Director, e.ID); err != nil {
+			t.Fatal(err)
+		}
+		h.Restart(t)
+		if artifacts == nil {
+			e.Artifacts = []store.ArtifactRef{}
+		} else {
+			e.Artifacts = nil
+		}
+		if again := mustSend(t, h.Mailbox(), Director, e); again != first {
+			t.Fatalf("empty artifacts retry = %+v, want %+v", again, first)
+		}
 	}
 }
 

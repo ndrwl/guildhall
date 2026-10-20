@@ -79,6 +79,7 @@ func (f *Fake) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, er
 	if err := store.ValidateMessage(m); err != nil {
 		return store.Receipt{}, err
 	}
+	m.Artifacts = append([]store.ArtifactRef(nil), m.Artifacts...)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if r, ok := f.sent[m.ID]; ok {
@@ -130,6 +131,7 @@ func (f *Fake) List(to store.Recipient, after uint64, limit int) (messaging.Page
 		msgs, page.More = msgs[:limit], true
 	}
 	for _, m := range msgs {
+		m.Artifacts = slices.Clone(m.Artifacts)
 		page.Messages = append(page.Messages, messaging.StoredMessage(m))
 	}
 	return page, nil
@@ -146,6 +148,7 @@ func (f *Fake) Read(id string) (messaging.Stored, error) {
 	if !ok {
 		return messaging.Stored{}, fmt.Errorf("messagingtest: %w: message %q", store.ErrNotFound, id)
 	}
+	m.Artifacts = slices.Clone(m.Artifacts)
 	return messaging.StoredMessage(m), nil
 }
 

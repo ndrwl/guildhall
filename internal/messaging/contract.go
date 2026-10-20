@@ -2,8 +2,7 @@
 //
 // A message is a versioned JSON envelope read from a file or standard input,
 // never from shell-quoted arguments. Send validates it, commits it to the
-// recipient's inbox in the store with a receipt and only then tells an optional
-// Notifier; the store, not the notification, is the record of delivery.
+// recipient's inbox in the store with a receipt.
 // Acceptance means stored, not read: a recipient lists its inbox and acknowledges
 // each message it has consumed, and unacknowledged messages stay listed across restarts.
 //
@@ -72,15 +71,6 @@ type Page struct {
 	// More reports that unacknowledged messages remain after this page.
 	More bool `json:"more"`
 }
-
-// Notifier is told about a message after the store committed it, for example
-// to wake a runtime adapter. It is a hint only: it may be called again for the
-// same message when a send is retried, and missing a notification loses nothing
-// because the message stays in the inbox until acknowledged.
-type Notifier func(store.Message, store.Receipt)
-
-// Decode reads one envelope strictly: unknown, duplicate or case-variant fields,
-// trailing data, more than MaxEnvelopeBytes and unknown or newer schemas are refused.
 
 // Mailbox is local Director–Artisan messaging as its consumers see it.
 //

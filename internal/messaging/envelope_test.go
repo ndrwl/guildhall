@@ -73,6 +73,34 @@ func TestDecodeRefusesMalformedEnvelopes(t *testing.T) {
 	}
 }
 
+func TestDecodeExactKeys(t *testing.T) {
+	for _, key := range []string{"schema", "id", "recipient", "repository", "task", "step", "attempt", "type", "text", "artifacts", "path", "sha256"} {
+		t.Run(key, func(t *testing.T) {
+			data := strings.Replace(envelopeJSON, `"`+key+`"`, `"`+strings.ToUpper(key)+`"`, 1)
+			if _, err := Decode(strings.NewReader(data)); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("case-variant key: %v", err)
+			}
+		})
+	}
+}
+
+func TestDecodeUnicodeFidelity(t *testing.T) {
+	for _, field := range []string{"Which base branch should the fix target?", "tasks/t-1/notes.md"} {
+		for _, bad := range []string{"\xe9", `\ud800`, `\udfff`, `\ud800\u0041`, `\ud800\ud800`, `\udc00\ud800`} {
+			data := strings.Replace(envelopeJSON, field, bad, 1)
+			if _, err := Decode(strings.NewReader(data)); !errors.Is(err, ErrInvalid) {
+				t.Errorf("%s with %q: %v", field, bad, err)
+			}
+		}
+	}
+	for raw, want := range map[string]string{`\ud83d\ude00`: "😀", `\uFFFD`: "�", `\\ud800`: `\ud800`, "café": "café"} {
+		e := mustDecode(t, strings.Replace(envelopeJSON, "Which base branch should the fix target?", raw, 1))
+		if e.Text != want {
+			t.Errorf("%q decoded as %q, want %q", raw, e.Text, want)
+		}
+	}
+}
+
 func TestRecipients(t *testing.T) {
 	for _, tc := range []struct {
 		text string

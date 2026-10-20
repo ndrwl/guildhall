@@ -17,8 +17,7 @@ Supported today, on a local store file named on the command line:
 Not provided yet:
 
 - telling a running agent that a message arrived.
-  A stored message is not proof that any agent has seen it.
-  The Go API takes an optional notifier that runs after the commit, so a runtime adapter can add notifications later without becoming the record of delivery;
+  A stored message is not proof that any agent has seen it;
 - finding the store from a Director's runtime context: every command takes `--store <path>`;
 - messaging another Director, another machine or anything over SSH or HTTP.
   Work still moves between Directors only by manual handoff (R1.15);
@@ -84,7 +83,7 @@ UTF-16, which Windows PowerShell 5.1 writes for `>` and `Out-File`, is refused w
 ## Go API
 
 `messaging.Mailbox` is the contract consumers use: `Send`, `List`, `Read` and `Ack` with the guarantees below.
-`messaging.StoreMailbox` implements it on a store and is what the commands use; its optional `Notify` callback runs after each successful send, including a retry, and is never the record of delivery.
+`messaging.StoreMailbox` implements it on a store and is what the commands use.
 `messagingtest.RunMailboxContract` is the behavioural suite every implementation must pass, and `messagingtest.Fake` is an in-memory implementation that passes it, for testing a consumer without a store file.
 The fake is not durable and not shared between processes.
 

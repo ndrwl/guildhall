@@ -1,7 +1,6 @@
 package messaging_test
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -80,34 +79,4 @@ func (h *storeHarness) Restart(t *testing.T) {
 
 func TestStoreMailboxContract(t *testing.T) {
 	messagingtest.RunMailboxContract(t, func(t *testing.T) messagingtest.Harness { return newStoreHarness(t) })
-}
-
-func TestStoreMailboxNotifiesOnlyAfterCommit(t *testing.T) {
-	h := newStoreHarness(t)
-	h.CreateTask(t, "app", "t-1")
-	h.StartAttempt(t, "app", "t-1", "build")
-	var notified []store.Message
-	b := &messaging.StoreMailbox{Store: h.s, Notify: func(m store.Message, r store.Receipt) {
-		// The message is durable before any notification.
-		if got, err := h.s.Message(m.ID); err != nil || got.Sequence != r.Sequence {
-			t.Errorf("message during notification = %+v, %v", got, err)
-		}
-		notified = append(notified, m)
-	}}
-
-	e := messagingtest.Envelope("q-1", store.RecipientDirector)
-	r, err := b.Send(messagingtest.Director, e)
-	if err != nil || len(notified) != 1 || notified[0].ID != "q-1" || notified[0].Sequence != r.Sequence {
-		t.Fatalf("Send = %+v, %v; notified %+v", r, err, notified)
-	}
-	// A retry after a lost result returns the original receipt and notifies again, so an adapter that missed the first notice can catch up.
-	if again, err := b.Send(messagingtest.Director, e); err != nil || again != r || len(notified) != 2 {
-		t.Fatalf("retry = %+v, %v, notified %d", again, err, len(notified))
-	}
-	// A refused send stores and notifies nothing.
-	bad := messagingtest.Envelope("q-2", store.RecipientDirector)
-	bad.Task = "t-9"
-	if _, err := b.Send(messagingtest.Director, bad); !errors.Is(err, store.ErrNotFound) || len(notified) != 2 {
-		t.Fatalf("send to missing task: err = %v, notified %d", err, len(notified))
-	}
 }
