@@ -12,6 +12,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/steward"
 )
 
 // version is set at release build time with
@@ -65,6 +67,8 @@ type App struct {
 	Output func(ctx context.Context, path string, args ...string) ([]byte, error)
 	// Executable returns the path of the running guildhall binary.
 	Executable func() (string, error)
+	// Copier reaches enrolled machines for steward rollouts; nil means scp, found with LookPath and run with Output.
+	Copier steward.Copier
 }
 
 // New returns an App wired to the real process environment.

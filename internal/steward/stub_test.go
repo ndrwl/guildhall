@@ -21,9 +21,13 @@ const (
 	stubRootEnv    = "GUILDHALL_STUB_SCP_ROOT"
 	stubFailEnv    = "GUILDHALL_STUB_SCP_FAIL"
 	stubCorruptEnv = "GUILDHALL_STUB_SCP_CORRUPT"
+	stubHangEnv    = "GUILDHALL_STUB_SCP_HANG"
 )
 
 func TestMain(m *testing.M) {
+	if private := os.Getenv(ownerPrivateEnv); private != "" {
+		os.Exit(lockOwner(private, os.Getenv(ownerPlanEnv)))
+	}
 	if root := os.Getenv(stubRootEnv); root != "" {
 		os.Exit(stubSCP(root, os.Args[1:]))
 	}
@@ -54,6 +58,9 @@ func stubSCP(root string, args []string) int {
 	if f := os.Getenv(stubFailEnv); f != "" && strings.Contains(joined, f) {
 		fmt.Fprintln(os.Stderr, "stub scp: connection closed")
 		return 1
+	}
+	if h := os.Getenv(stubHangEnv); h != "" && strings.Contains(joined, h) {
+		time.Sleep(time.Hour) // until the caller's context kills it
 	}
 	data, err := os.ReadFile(stubPath(root, src))
 	if err != nil {
@@ -108,6 +115,7 @@ func newStub(t *testing.T) *stub {
 	t.Setenv(stubRootEnv, root)
 	t.Setenv(stubFailEnv, "")
 	t.Setenv(stubCorruptEnv, "")
+	t.Setenv(stubHangEnv, "")
 	return &stub{t: t, root: root, scp: scp}
 }
 
@@ -158,3 +166,30 @@ func (s *stub) calls() []string {
 	}
 	return lines
 }
+
+// StubFleet exposes the stub scp fleet to tests outside the package, such as the shared Copier contract.
+type StubFleet struct{ s *stub }
+
+// NewStubFleet returns a fake fleet with no files, reached through a stub scp.
+func NewStubFleet(t *testing.T) StubFleet { return StubFleet{newStub(t)} }
+
+// Transport returns the scp Transport that runs the stub.
+func (f StubFleet) Transport() Transport { return f.s.transport() }
+
+// Write sets a file on a machine.
+func (f StubFleet) Write(file Remote, data []byte) {
+	f.s.t.Helper()
+	f.s.put(file.Alias, file.Path, string(data))
+}
+
+// Read returns a file on a machine and whether it exists.
+func (f StubFleet) Read(file Remote) ([]byte, bool) {
+	data, err := os.ReadFile(stubPath(f.s.root, file.String()))
+	return data, err == nil
+}
+
+// Refuse makes the stub fail every copy naming the machine with alias.
+func (f StubFleet) Refuse(alias string) { f.s.t.Setenv(stubFailEnv, alias+":") }
+
+// Hang makes the stub wait, without copying, on every copy naming the machine with alias.
+func (f StubFleet) Hang(alias string) { f.s.t.Setenv(stubHangEnv, alias+":") }

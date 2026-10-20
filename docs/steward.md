@@ -148,7 +148,7 @@ Rollouts run `scp` from `PATH` with fixed argument lists, never through a local 
 SSH's own config, agent, keys and host-key checking decide access; Guildhall adds no options that weaken them, and batch mode makes `scp` fail instead of prompting.
 No remote command is run.
 Roster values that reach the command line are restricted to characters that no remote shell or `scp` interprets.
-Each `scp` run is bounded by a two-minute timeout.
+Each `scp` run is bounded by a two-minute timeout; a run stopped by its timeout is reported as a timeout, and one that fails before transferring leaves its destination unchanged.
 
 ## Revisions and active tasks
 

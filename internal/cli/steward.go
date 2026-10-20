@@ -134,6 +134,9 @@ func (a *App) loadRollout(cfgPath string) (*steward.Rollout, error) {
 	if info, err := os.Stat(private); !filepath.IsAbs(private) || err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("private_config.location %q must be a local directory holding the private config; clone it first", private)
 	}
+	if a.Copier != nil {
+		return steward.LoadRollout(private, a.Copier)
+	}
 	scp, err := a.LookPath("scp")
 	if err != nil {
 		return nil, fmt.Errorf("scp is needed for rollouts: %w", err)
