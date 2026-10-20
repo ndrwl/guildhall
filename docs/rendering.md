@@ -16,7 +16,8 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 | `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
-Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory. The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.
+Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory.
+The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.
 Standards are inlined, because a reviewer measures against those exact words.
 An input whose file does not match the sha256 its record names is refused (`ErrDigestMismatch`), so a prompt never cites a document that changed after it was recorded.
 On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave files, which the caller removes before rendering that attempt again, since the attempt was not yet recorded.
@@ -58,6 +59,7 @@ Every digest is `sha256:<64 lowercase hex>`.
 
 `render.Question(stage, inputs)` refuses an Artisan stage (`ErrWrongActor`) and reads no files.
 The question names the task, step and attempt, carries the step's `instructions` and lists the inputs by name and recorded digest.
+The complete question text has CRLF and lone CR normalised to LF.
 
 | Kind | Options |
 |---|---|

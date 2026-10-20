@@ -51,6 +51,10 @@ Repository paths accept a POSIX path starting with `/` or a rooted Windows drive
 Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case.
 Other letter case is compared exactly.
 
+`approval` means the Director asks the Guildmaster before every merge.
+`auto` means a merge happens only when checks pass, the independent review is complete for the exact head and the work is within accepted scope; otherwise the Director asks.
+No workflow can change a repository's merge policy.
+
 ### Profiles
 
 A profile chooses who runs an Artisan stage whose `profile` setting names it.
@@ -64,10 +68,6 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 
 A profile names no credential.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
-
-`approval` means the Director asks the Guildmaster before every merge.
-`auto` means a merge happens only when checks pass, the independent review is complete for the exact head and the work is within accepted scope; otherwise the Director asks.
-No workflow can change a repository's merge policy.
 
 ## Workflow definitions
 

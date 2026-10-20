@@ -1,5 +1,5 @@
 // Package render turns one workflow stage into what its actor reads:
-// a prompt file and skills directory for an Artisan attempt, or a typed question for a Guildmaster stage.
+// a self-contained Artisan attempt (see Prompt), or a typed question for a Guildmaster stage.
 //
 // Rendering is pure over files: it reads the sources it is given, writes only inside the attempt
 // directory it is given, runs nothing and records nothing.
