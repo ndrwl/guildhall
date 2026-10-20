@@ -70,7 +70,11 @@ func (v *validator) check() {
 }
 
 func (v *validator) checkSettings(s Step, kind Kind) {
+	v.checkActor(s, kind)
 	for _, name := range sortedKeys(s.Settings) {
+		if name == ActorSetting {
+			continue
+		}
 		spec, ok := kind.Settings[name]
 		if !ok {
 			v.addf("step %q: unknown setting %q for %s", s.ID, name, kind.Type)
@@ -85,6 +89,27 @@ func (v *validator) checkSettings(s Step, kind Kind) {
 	for _, name := range sortedKeys(kind.Settings) {
 		if _, set := s.Settings[name]; kind.Settings[name].Required && !set {
 			v.addf("step %q: required setting %q is missing", s.ID, name)
+		}
+	}
+}
+
+// checkActor requires an allowed "actor" setting on a kind with several actors and refuses one on a kind with a single actor.
+func (v *validator) checkActor(s Step, kind Kind) {
+	raw, set := s.Settings[ActorSetting]
+	switch {
+	case len(kind.Actors) == 1:
+		if set {
+			v.addf("step %q: %s always runs as %s; remove setting %q", s.ID, kind.Type, kind.Actors[0], ActorSetting)
+		}
+	case !set:
+		v.addf("step %q: required setting %q is missing", s.ID, ActorSetting)
+	case !hasType(raw, StringSetting):
+		v.addf("step %q: setting %q must be a %s", s.ID, ActorSetting, StringSetting)
+	default:
+		var actor Actor
+		_ = json.Unmarshal(raw, &actor)
+		if !slices.Contains(kind.Actors, actor) {
+			v.addf("step %q: %s does not allow actor %q", s.ID, kind.Type, actor)
 		}
 	}
 }

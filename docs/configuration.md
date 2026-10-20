@@ -45,7 +45,7 @@ A local key with no managed counterpart is the copy's own setting.
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
 | `merge_policy` | `approval` (default) or `auto`. |
 | `workflow` | Name of the Director's workflow definition; defaults to `default`. |
-| `[repository.workflow_overrides.<step-id>]` | Replaces a review step's kind for this repository only: `type` and `version`. |
+| `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 
 Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.
 Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case.
@@ -75,7 +75,7 @@ A workflow defines the steps of one task as an ordered list of built-in step kin
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
 The shipped default is [`internal/workflow/default.json`](../internal/workflow/default.json).
-[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates human review with reviewer instructions and omits the default's research step.
+[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step.
 
 ```json
 {
@@ -86,11 +86,12 @@ The shipped default is [`internal/workflow/default.json`](../internal/workflow/d
     {"id": "accept", "type": "guildmaster-approval", "version": 1,
      "inputs": {"spec": ["plan.spec"]}},
     {"id": "build", "type": "build", "version": 1, "inputs": {"spec": ["accept.spec"]}},
-    {"id": "review", "type": "automated-review", "version": 1,
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan"},
      "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
      "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "publish", "type": "publish", "version": 1, "inputs": {"head": ["build.head"]}},
     {"id": "deliver", "type": "deliver", "version": 1,
-     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}}
+     "inputs": {"head": ["publish.head"], "review": ["review.outcome"]}}
   ]
 }
 ```
@@ -100,14 +101,14 @@ The shipped default is [`internal/workflow/default.json`](../internal/workflow/d
 | `schema` | `guildhall.workflow/<version>`; a newer version is refused. |
 | `name`, `steps[].id` | Lowercase identifiers; step ids are unique. |
 | `steps[].type`, `steps[].version` | A built-in kind and its version, both required, so a task never silently changes kind version. |
-| `steps[].settings` | Only the settings the kind declares, with their declared JSON types. |
+| `steps[].settings` | Only the settings the kind declares, with their declared JSON types, and `actor` where the kind allows more than one actor. |
 | `steps[].inputs` | Input port to an array of `"step.output"` references, including for single-input ports. |
 | `steps[].on` | Outcome to `{"goto": <step-id>, "max": <rounds>}`. |
 
 Call `workflow.Parse` to decode a definition, then `workflow.Validate` before using it; parsing alone does not validate wiring.
 Parsing stops at the first decoding error, while validation reports the semantic problems it finds together.
 JSON field names must match their declared spelling exactly, including case.
-Together, parsing and validation refuse unknown fields and duplicate keys, unknown kinds or versions, unknown or mistyped settings, missing required settings, unwired required inputs, inputs that reference unknown steps or outputs, and inputs whose types do not match.
+Together, parsing and validation refuse unknown fields and duplicate keys, unknown kinds or versions, unknown or mistyped settings, missing required settings, a missing or disallowed `actor`, unwired required inputs, inputs that reference unknown steps or outputs, and inputs whose types do not match.
 An input can only come from an earlier step, which makes each step's readiness explicit and rules out dependency cycles.
 A rule can only send the task back to the same or an earlier step, and `max` must be between 1 and 10, so every loop is bounded.
 
@@ -115,15 +116,44 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 
 The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
-`guildmaster-approval`, `human-review` and `handoff-wait` are durable human pauses.
-`plan`, `build` and both review kinds accept `profile`, a [profile](#profiles) name, and `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); a `human-review` step keeps them so swapping review kinds keeps the step valid, and they are unused while a human reviews.
-`deliver` has no settings: the repository's merge policy decides how work lands.
+`plan`, `build`, `review` and `document-review` accept `profile`, a [profile](#profiles) name, and `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
 
-### Swapping review per repository
+Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a step:
 
-`automated-review` and `human-review` have the same inputs, outputs and outcomes, so either can replace the other.
-A repository swaps them with `workflow_overrides` in the config, and only review steps can be overridden.
-`workflow.ApplyOverrides` returns a copy with the requested review kinds replaced; callers must run `workflow.Validate` on the result before use.
+| Actor | Meaning |
+|---|---|
+| `artisan` | A fresh Artisan session is launched for the step. |
+| `guildmaster` | A durable pause that waits for the Guildmaster without model calls. |
+| `director` | The step runs inside the Director's own session and ends with a recorded document. |
+| `engine` | Guildhall runs the step itself, with no model. |
+
+| Kind | Actors | Produces |
+|---|---|---|
+| `grill` | `director` or `artisan` | notes |
+| `research`, `plan`, `build` | `artisan` | notes, a spec document, a code head |
+| `document-review` | `artisan` or `guildmaster` | a review outcome for a document, such as the plan's spec |
+| `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` |
+| `review` | `artisan` or `guildmaster` | a review outcome for a code head against the accepted spec |
+| `publish` | `engine` | the same head, pushed to the repository's remote branch with its pull request opened or updated |
+| `validate`, `deliver` | `engine` | a validation result, the landed change |
+| `handoff-wait` | `guildmaster` | a handoff document |
+
+The director actor on `grill` is part of the accepted workflow design's stage table (design report section 4.1: grill produces notes, with actor director, a conversation with the Guildmaster, or artisan) and does not conflict with R1.5, because a grill is the Director clarifying requirements with the Guildmaster, not doing the work.
+A kind with more than one actor requires the `actor` setting; a kind with one actor refuses it.
+`publish` comes before `validate` so forge checks have a pushed head to read; it never merges.
+`publish` and `deliver` have no settings: the repository's configuration and merge policy decide where work goes and how it lands.
+
+### Choosing actors per repository
+
+A repository changes who fulfils a step with `workflow_overrides` in the config, for example the Guildmaster instead of an Artisan for review:
+
+```toml
+[repository.workflow_overrides.review]
+actor = "guildmaster"
+```
+
+Only a step whose kind allows more than one actor can be overridden, and only with an actor its kind allows, so the kind, wiring and other settings stay the same.
+`workflow.ApplyOverrides` returns a copy with the requested `actor` settings replaced; callers must run `workflow.Validate` on the result before use.
 The resulting definition's digest changes when its canonical content changes.
 
 ### Revisions
@@ -134,18 +164,18 @@ Reformatting the file or changing an omitted optional field to its empty value d
 
 ### Review outcome
 
-Human and automated review produce the same outcome, schema `guildhall.review-outcome/1`.
+Every `review` and `document-review` step produces the same outcome, schema `guildhall.review-outcome/1`, whoever its actor.
 
 | Field | Meaning |
 |---|---|
 | `reviewer` | `human` or `automated`. |
 | `verdict` | `approved`, `changes_requested` or `rejected`; the latter two need at least one finding. |
 | `findings[]` | `summary` (required), optional `file` and `line`. |
-| `revisions.code_head` | Full commit id that was reviewed. |
-| `revisions.spec_digest` | `sha256:<hex>` digest of the accepted specification. |
+| `revisions.subject` | What was reviewed: exactly one of `code_head`, the full commit id, or `document_digest`, the document's `sha256:<hex>` digest. |
+| `revisions.spec_digest` | `sha256:<hex>` digest of the accepted specification; required for a code head, optional for a document. |
 | `revisions.standards_revision` | Central standards revision reviewed against. |
 
-An outcome counts only for the exact code head, specification digest and standards revision it names.
+An outcome counts only for the exact subject, specification digest and standards revision it names, so a document review never counts for a code head or the reverse.
 
 ### Workflow-edit authority
 

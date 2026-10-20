@@ -46,7 +46,7 @@ var (
 type Stage struct {
 	Repository string
 	Task       string
-	// Step is the step from the task's bound workflow revision; its kind decides the actor,
+	// Step is the step from the task's bound workflow revision; its kind and settings decide the actor,
 	// and its "profile", "skills" and "instructions" settings are rendered.
 	Step workflow.Step
 	// Attempt is the attempt number, starting at 1.
@@ -331,7 +331,7 @@ func Question(stage Stage, inputs []Input) (Ask, error) {
 	switch kind.Type {
 	case "guildmaster-approval":
 		b.WriteString("Approval needed")
-	case "human-review":
+	case "review", "document-review":
 		b.WriteString("Review needed")
 	case "handoff-wait":
 		var from string
@@ -358,6 +358,7 @@ func Question(stage Stage, inputs []Input) (Ask, error) {
 
 var questionOptions = map[string][]string{
 	"guildmaster-approval": {string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested)},
-	"human-review":         {string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested), string(workflow.VerdictRejected)},
+	"review":               {string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested), string(workflow.VerdictRejected)},
+	"document-review":      {string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested), string(workflow.VerdictRejected)},
 	"handoff-wait":         {"received"},
 }

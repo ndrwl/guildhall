@@ -64,7 +64,7 @@ The complete question text has CRLF and lone CR normalised to LF.
 | Kind | Options |
 |---|---|
 | `guildmaster-approval` | `approved`, `changes_requested` |
-| `human-review` | `approved`, `changes_requested`, `rejected` |
+| `review` or `document-review` with actor `guildmaster` | `approved`, `changes_requested`, `rejected` |
 | `handoff-wait` | `received` |
 
 ## Profiles

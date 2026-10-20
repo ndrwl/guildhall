@@ -102,7 +102,7 @@ type Repository struct {
 	MergePolicy  MergePolicy `toml:"merge_policy"`
 	// Workflow names the Director's workflow definition this repository runs.
 	Workflow string `toml:"workflow"`
-	// WorkflowOverrides swaps review step kinds for this repository only, keyed by step id.
+	// WorkflowOverrides chooses step actors for this repository only, keyed by step id (workflow.ApplyOverrides).
 	WorkflowOverrides map[string]workflow.Override `toml:"workflow_overrides"`
 }
 

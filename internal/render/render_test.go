@@ -90,14 +90,14 @@ func TestPromptGoldenPerKind(t *testing.T) {
 		inputs   []Input
 		baseline Baseline
 	}{
-		{"grill", step(t, "grill", "grill", ""), nil, baseline("grill")},
+		{"grill", step(t, "grill", "grill", `{"actor":"director"}`), nil, baseline("grill")},
 		{"research", step(t, "research", "research", ""), nil, baseline("research")},
 		{"plan", step(t, "plan", "plan", `{"profile": "planner", "skills": ["guildhall-contributing"]}`),
 			[]Input{input(t, "context", "tasks/t7/grill-notes.md", "notes.md")}, baseline("plan")},
 		{"build", step(t, "build", "build", `{"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]}`),
 			[]Input{input(t, "spec", "tasks/t7/spec.md", "spec.md")}, baseline("build")},
-		{"automated-review", step(t, "review-astra", "automated-review",
-			`{"profile": "reviewer-astra", "instructions": "Check the JSON output on Windows too.\r\nCite S1 or S2."}`),
+		{"automated-review", step(t, "review-astra", "review",
+			`{"actor":"artisan", "profile": "reviewer-astra", "instructions": "Check the JSON output on Windows too.\r\nCite S1 or S2."}`),
 			[]Input{input(t, "spec", "tasks/t7/spec.md", "spec.md")},
 			Baseline{Role: source("roles/reviewer.md"), Guide: source("stages/automated-review.md"),
 				Standards: []Source{source("standards/review.md")}}},
@@ -151,7 +151,7 @@ func writeVariant(t *testing.T, dir string, src Source, eol string) Source {
 }
 
 func TestManifestDigestsStableAcrossLineEndings(t *testing.T) {
-	s := step(t, "review", "automated-review", `{"skills": ["go-tdd"]}`)
+	s := step(t, "review", "review", `{"actor":"artisan", "skills": ["go-tdd"]}`)
 	lf := Baseline{Role: source("roles/reviewer.md"), Guide: source("stages/automated-review.md"),
 		Standards: []Source{source("standards/review.md")}}
 	in := []Input{input(t, "spec", "tasks/t7/spec.md", "spec.md")}
@@ -411,7 +411,7 @@ func TestQuestionGoldenPerKind(t *testing.T) {
 	}{
 		{"guildmaster-approval", step(t, "accept", "guildmaster-approval", `{"instructions": "Check the scope.\r\nThen decide."}`),
 			[]Input{spec}, []string{"approved", "changes_requested"}},
-		{"human-review", step(t, "review", "human-review", `{"profile": "reviewer-opus"}`),
+		{"human-review", step(t, "review", "review", `{"actor":"guildmaster", "profile": "reviewer-opus"}`),
 			[]Input{spec, {Port: "head", Name: "tasks/t7/head", SHA256: strings.Repeat("ab", 32)}},
 			[]string{"approved", "changes_requested", "rejected"}},
 		{"handoff-wait", step(t, "handoff", "handoff-wait", `{"from": "design team"}`), nil, []string{"received"}},

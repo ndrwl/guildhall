@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// ReviewOutcomeSchema identifies the review outcome contract shared by human and automated review.
+// ReviewOutcomeSchema identifies the review outcome contract shared by every review and document-review step, whoever its actor.
 const (
 	reviewOutcomePrefix  = "guildhall.review-outcome/"
 	reviewOutcomeVersion = 1
@@ -31,12 +31,20 @@ const (
 	AutomatedReviewer Reviewer = "automated"
 )
 
+// Subject is what a review looked at: exactly one of a code head (review) or a document digest (document-review).
+type Subject struct {
+	// CodeHead is the full commit id of the reviewed code.
+	CodeHead string `json:"code_head,omitempty"`
+	// DocumentDigest is the "sha256:<hex>" digest of the reviewed document.
+	DocumentDigest string `json:"document_digest,omitempty"`
+}
+
 // Revisions binds an outcome to exactly what was reviewed.
 type Revisions struct {
-	// CodeHead is the full commit id of the reviewed code.
-	CodeHead string `json:"code_head"`
+	Subject Subject `json:"subject"`
 	// SpecDigest is the "sha256:<hex>" digest of the accepted specification.
-	SpecDigest string `json:"spec_digest"`
+	// It is required when the subject is a code head and optional for a document.
+	SpecDigest string `json:"spec_digest,omitempty"`
 	// StandardsRevision names the central standards revision reviewed against.
 	StandardsRevision string `json:"standards_revision"`
 }
@@ -48,7 +56,7 @@ type Finding struct {
 	Summary string `json:"summary"`
 }
 
-// ReviewOutcome is the result of a human-review or automated-review step.
+// ReviewOutcome is the result of a review or document-review step.
 type ReviewOutcome struct {
 	Schema    string    `json:"schema"`
 	Reviewer  Reviewer  `json:"reviewer"`
@@ -92,11 +100,26 @@ func (o ReviewOutcome) Validate() error {
 			problems = append(problems, fmt.Sprintf("finding %d has no summary", i+1))
 		}
 	}
-	if !isHex(o.Revisions.CodeHead, 40) && !isHex(o.Revisions.CodeHead, 64) {
-		problems = append(problems, "code_head must be a full commit id")
-	}
-	if digest, ok := strings.CutPrefix(o.Revisions.SpecDigest, "sha256:"); !ok || !isHex(digest, 64) {
-		problems = append(problems, `spec_digest must be "sha256:<64 hex>"`)
+	subject := o.Revisions.Subject
+	switch {
+	case subject.CodeHead == "" && subject.DocumentDigest == "":
+		problems = append(problems, "subject needs a code_head or a document_digest")
+	case subject.CodeHead != "" && subject.DocumentDigest != "":
+		problems = append(problems, "subject needs a code_head or a document_digest, not both")
+	case subject.CodeHead != "":
+		if !isHex(subject.CodeHead, 40) && !isHex(subject.CodeHead, 64) {
+			problems = append(problems, "code_head must be a full commit id")
+		}
+		if !isDigest(o.Revisions.SpecDigest) {
+			problems = append(problems, `spec_digest must be "sha256:<64 hex>" when the subject is a code head`)
+		}
+	default:
+		if !isDigest(subject.DocumentDigest) {
+			problems = append(problems, `document_digest must be "sha256:<64 hex>"`)
+		}
+		if o.Revisions.SpecDigest != "" && !isDigest(o.Revisions.SpecDigest) {
+			problems = append(problems, `spec_digest must be "sha256:<64 hex>"`)
+		}
 	}
 	if strings.TrimSpace(o.Revisions.StandardsRevision) == "" {
 		problems = append(problems, "standards_revision is required")
@@ -108,11 +131,19 @@ func (o ReviewOutcome) Validate() error {
 }
 
 // BoundTo refuses an outcome that reviewed anything other than the given revisions,
-// so a stale review never counts for a moved head, a changed spec or newer standards.
+// so a stale review never counts for a moved head or an edited document, a changed spec or newer standards,
+// and a document review never counts for a code head or the reverse.
 func (o ReviewOutcome) BoundTo(want Revisions) error {
 	var stale []string
-	if o.Revisions.CodeHead != want.CodeHead {
-		stale = append(stale, "code_head")
+	got, wantSubject := o.Revisions.Subject, want.Subject
+	switch {
+	case got == wantSubject:
+	case (got.CodeHead == "") != (wantSubject.CodeHead == ""):
+		stale = append(stale, "subject")
+	case got.CodeHead != wantSubject.CodeHead:
+		stale = append(stale, "subject.code_head")
+	default:
+		stale = append(stale, "subject.document_digest")
 	}
 	if o.Revisions.SpecDigest != want.SpecDigest {
 		stale = append(stale, "spec_digest")
@@ -124,6 +155,11 @@ func (o ReviewOutcome) BoundTo(want Revisions) error {
 		return fmt.Errorf("review outcome is stale: %s differ", strings.Join(stale, ", "))
 	}
 	return nil
+}
+
+func isDigest(s string) bool {
+	digest, ok := strings.CutPrefix(s, "sha256:")
+	return ok && isHex(digest, 64)
 }
 
 func isHex(s string, n int) bool {
