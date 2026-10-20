@@ -37,12 +37,15 @@ A local key with no managed counterpart is the copy's own setting.
 | Key | Meaning |
 |---|---|
 | `id` | Unique lowercase identifier. |
-| `path` | Absolute path of the repository on the owner machine: a POSIX path from `/` or a Windows path from a drive letter, accepted on any host. |
+| `path` | Absolute path of the repository on the owner machine. |
 | `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. |
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
 | `merge_policy` | `approval` (default) or `auto`. |
 | `workflow` | Name of the Director's workflow definition; defaults to `default`. |
 | `[repository.workflow_overrides.<step-id>]` | Replaces a review step's kind for this repository only: `type` and `version`. |
+
+Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.
+Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case. Other letter case is compared exactly.
 
 `approval` means the Director asks the Guildmaster before every merge.
 `auto` means a merge happens only when checks pass, the independent review is complete for the exact head and the work is within accepted scope; otherwise the Director asks.
