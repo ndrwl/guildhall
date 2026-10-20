@@ -34,7 +34,8 @@ The repository's `workflow` setting, `default` when it names none, selects the e
 - Any other name is the file `workflows/<name>.json` in the configuration file's directory, and the file's `name` must equal it.
 
 The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, and the result is checked with `workflow.Validate` (R1.59).
-A missing or unreadable file, a parse error, a refused override or a validation problem refuses the task with the problems named, and the store is not opened, so nothing is written.
+The effective workflow's profile references are then checked with `config.CheckProfiles`; every named profile must be declared in the loaded Director configuration.
+A missing or unreadable file, a parse error, a refused override, a validation problem or an undeclared profile refuses the task with the problems named, and the store is not opened, so nothing is written.
 
 The task binds `workflow.Revision` of the overridden definition, its name and digest, so two repositories with different overrides of one workflow bind different digests.
 It also binds the configuration digest: `sha256:` and the lowercase hex sha256 of the loaded configuration's canonical JSON encoding.
