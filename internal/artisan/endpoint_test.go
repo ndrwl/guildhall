@@ -147,7 +147,11 @@ func assertAbsent(t *testing.T, path, why string) {
 // startHolder runs an unrecorded process bound at path and waits until it answers.
 func startHolder(t *testing.T, path string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^$")
 	cmd.Env = append(os.Environ(), holderEnv+"="+path)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.StdoutPipe()
@@ -196,7 +200,13 @@ func TestEndpointPath(t *testing.T) {
 	}
 
 	// Pad the step so the readable path is exactly at the limit, then one byte over.
-	base, _ := artisan.EndpointPath(dir, artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "s", Attempt: 1})
+	// A short state directory is lengthened so the step id can carry the rest.
+	short := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "s", Attempt: 1}
+	base, _ := artisan.EndpointPath(dir, short)
+	if pad := artisan.MaxEndpointPath - len(base); pad > 40 {
+		dir = filepath.Join(dir, strings.Repeat("p", pad-31))
+		base, _ = artisan.EndpointPath(dir, short)
+	}
 	pad := artisan.MaxEndpointPath - len(base)
 	if pad < 1 || pad+2 > 63 {
 		t.Skipf("state directory %q leaves %d bytes of padding; the boundary needs 1 to 61", dir, pad)

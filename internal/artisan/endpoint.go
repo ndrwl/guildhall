@@ -1,9 +1,20 @@
 package artisan
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -78,7 +89,23 @@ func (k AttemptKey) validate() error {
 // cannot collide with a readable name; when that is still too long it returns
 // ErrEndpointPath. The path is a pure function of stateDir and k.
 func EndpointPath(stateDir string, k AttemptKey) (string, error) {
-	return "", errors.New("not implemented")
+	if err := k.validate(); err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(stateDir) {
+		return "", fmt.Errorf("artisan: endpoint state directory %q is not absolute", stateDir)
+	}
+	dir := filepath.Join(stateDir, "endpoints")
+	p := filepath.Join(dir, fmt.Sprintf("%s.%s.%s.%d.sock", k.Repository, k.TaskID, k.Step, k.Attempt))
+	if len(p) <= MaxEndpointPath {
+		return p, nil
+	}
+	sum := sha256.Sum256([]byte(k.String()))
+	p = filepath.Join(dir, hex.EncodeToString(sum[:16])+".sock")
+	if len(p) > MaxEndpointPath {
+		return "", fmt.Errorf("artisan: %w: %d bytes under %q, limit %d", ErrEndpointPath, len(p), stateDir, MaxEndpointPath)
+	}
+	return p, nil
 }
 
 // EndpointOp is one operation the endpoint serves.
@@ -114,9 +141,36 @@ type EndpointHandler interface {
 // released one, is an error.
 type OwnerLookup func() (Identity, error)
 
+// Limits of the line protocol.
+const (
+	maxRequestBytes = 4 << 10
+	maxReplyBytes   = 1 << 20
+	// exchangeTimeout bounds reading a request and writing its reply.
+	exchangeTimeout = 5 * time.Second
+	// leftoverTimeout bounds the connection attempt that tests a leftover file.
+	leftoverTimeout = time.Second
+)
+
+type endpointRequest struct {
+	Op EndpointOp `json:"op"`
+}
+
+type endpointReply struct {
+	Attempt  string         `json:"attempt"`
+	Launcher Identity       `json:"launcher"`
+	State    *EndpointState `json:"state,omitempty"`
+	Error    string         `json:"error,omitempty"`
+}
+
 // Endpoint is a bound control endpoint.
 type Endpoint struct {
-	path string
+	path     string
+	key      AttemptKey
+	self     Identity
+	h        EndpointHandler
+	ln       *net.UnixListener
+	once     sync.Once
+	closeErr error
 }
 
 // Listen binds the control endpoint of attempt k at path for launcher self
@@ -136,7 +190,110 @@ type Endpoint struct {
 // the socket is made 0600; access control is the state directory's, and the
 // endpoint does not authenticate its peers.
 func Listen(path string, k AttemptKey, self Identity, owner OwnerLookup, h EndpointHandler) (*Endpoint, error) {
-	return nil, errors.New("not implemented")
+	if err := k.validate(); err != nil {
+		return nil, err
+	}
+	if len(path) > MaxEndpointPath {
+		return nil, fmt.Errorf("artisan: %w: %q is %d bytes, limit %d", ErrEndpointPath, path, len(path), MaxEndpointPath)
+	}
+	got, err := owner()
+	if err != nil {
+		return nil, fmt.Errorf("artisan: %w: %w", ErrNotOwner, err)
+	}
+	if got != self {
+		return nil, fmt.Errorf("artisan: %w: attempt %s is recorded for launcher %d", ErrNotOwner, k, got.PID)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("artisan: endpoint directory: %w", err)
+	}
+	if err := removeStale(path); err != nil {
+		return nil, err
+	}
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		return nil, fmt.Errorf("artisan: bind endpoint: %w", err)
+	}
+	if err := restrictEndpoint(path); err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("artisan: restrict endpoint: %w", err)
+	}
+	e := &Endpoint{path: path, key: k, self: self, h: h, ln: ln}
+	go e.serve()
+	return e, nil
+}
+
+// removeStale applies the stale-file rule to whatever is at path.
+func removeStale(path string) error {
+	fi, err := os.Lstat(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("artisan: %w: %w", ErrEndpointUnknown, err)
+	case fi.IsDir():
+		return fmt.Errorf("artisan: %w: %s is a directory; kept", ErrEndpointUnknown, path)
+	}
+	c, err := net.DialTimeout("unix", path, leftoverTimeout)
+	if err == nil {
+		_ = c.Close()
+		return fmt.Errorf("artisan: %w: %s; kept", ErrEndpointAnswers, path)
+	}
+	if !isRefused(err) {
+		return fmt.Errorf("artisan: %w: %s: %w; kept", ErrEndpointUnknown, path, err)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("artisan: remove stale endpoint: %w", err)
+	}
+	return nil
+}
+
+func (e *Endpoint) serve() {
+	for {
+		c, err := e.ln.Accept()
+		if errors.Is(err, net.ErrClosed) {
+			return
+		}
+		if err != nil {
+			// A transient accept failure, such as running out of descriptors.
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		go e.answer(c)
+	}
+}
+
+// answer reads one request line from c and writes one reply line.
+func (e *Endpoint) answer(c net.Conn) {
+	defer func() { _ = c.Close() }()
+	rep := endpointReply{Attempt: e.key.String(), Launcher: e.self}
+	_ = c.SetReadDeadline(time.Now().Add(exchangeTimeout))
+	var req endpointRequest
+	line, err := bufio.NewReader(io.LimitReader(c, maxRequestBytes)).ReadBytes('\n')
+	if err == nil {
+		err = json.Unmarshal(line, &req)
+	}
+	if err != nil {
+		rep.Error = fmt.Sprintf("malformed request: one JSON line of at most %d bytes is required", maxRequestBytes)
+	} else {
+		var st EndpointState
+		switch req.Op {
+		case OpStatus:
+			st, err = e.h.Status()
+		case OpStop:
+			st, err = e.h.Stop()
+		case OpCancel:
+			st, err = e.h.Cancel()
+		default:
+			err = fmt.Errorf("unknown op %q", req.Op)
+		}
+		if err != nil {
+			rep.Error = err.Error()
+		} else {
+			rep.State = &st
+		}
+	}
+	_ = c.SetWriteDeadline(time.Now().Add(exchangeTimeout))
+	_ = json.NewEncoder(c).Encode(rep)
 }
 
 // Path returns the socket path the endpoint is bound at.
@@ -144,7 +301,10 @@ func (e *Endpoint) Path() string { return e.path }
 
 // Close stops accepting requests and removes the socket file; requests being
 // answered still get their reply. It is idempotent.
-func (e *Endpoint) Close() error { return errors.New("not implemented") }
+func (e *Endpoint) Close() error {
+	e.once.Do(func() { e.closeErr = e.ln.Close() })
+	return e.closeErr
+}
 
 // Call sends op to the endpoint at path and returns the state it answers.
 // The reply must name attempt k and launcher, otherwise ErrEndpointMismatch;
@@ -152,5 +312,41 @@ func (e *Endpoint) Close() error { return errors.New("not implemented") }
 // the whole exchange. A failed dial says nothing about whether the owner is
 // alive: a silent endpoint never proves exit.
 func Call(ctx context.Context, path string, k AttemptKey, launcher Identity, op EndpointOp) (EndpointState, error) {
-	return EndpointState{}, errors.New("not implemented")
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "unix", path)
+	if err != nil {
+		return EndpointState{}, fmt.Errorf("artisan: endpoint %s: %w", path, err)
+	}
+	defer func() { _ = c.Close() }()
+	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
+	defer stop()
+	if err := json.NewEncoder(c).Encode(endpointRequest{Op: op}); err != nil {
+		return EndpointState{}, callErr(ctx, path, err)
+	}
+	line, err := bufio.NewReader(io.LimitReader(c, maxReplyBytes)).ReadBytes('\n')
+	if err != nil {
+		return EndpointState{}, callErr(ctx, path, err)
+	}
+	var rep endpointReply
+	if err := json.Unmarshal(line, &rep); err != nil {
+		return EndpointState{}, fmt.Errorf("artisan: endpoint %s: malformed reply: %w", path, err)
+	}
+	if rep.Attempt != k.String() || rep.Launcher != launcher {
+		return EndpointState{}, fmt.Errorf("artisan: %w: %s answered for attempt %q launcher %d", ErrEndpointMismatch, path, rep.Attempt, rep.Launcher.PID)
+	}
+	if rep.Error != "" {
+		return EndpointState{}, fmt.Errorf("artisan: %w: %s: %s", ErrEndpointRequest, op, rep.Error)
+	}
+	if rep.State == nil {
+		return EndpointState{}, fmt.Errorf("artisan: endpoint %s: reply has neither state nor error", path)
+	}
+	return *rep.State, nil
+}
+
+// callErr reports a failed exchange, as the context's error once it is done.
+func callErr(ctx context.Context, path string, err error) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("artisan: endpoint %s: %w: %w", path, ctx.Err(), err)
+	}
+	return fmt.Errorf("artisan: endpoint %s: %w", path, err)
 }
