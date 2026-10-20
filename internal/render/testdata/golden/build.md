@@ -18,7 +18,9 @@ Commit your work and report the head.
 
 ## Inputs
 
-- spec: tasks/t7/spec.md (sha256:242df7188ef036fb7f2376eda94382b23f989a04a61db84ae59acba315fc21be)
+The inputs directory beside this prompt holds a verified copy of each input document.
+
+- spec: inputs/tasks/t7/spec.md (sha256:242df7188ef036fb7f2376eda94382b23f989a04a61db84ae59acba315fc21be)
 
 ## Standards
 

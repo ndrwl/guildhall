@@ -1,7 +1,7 @@
 # Prompt rendering
 
 `internal/render` turns one workflow stage into what its actor reads.
-For an Artisan stage, `render.Prompt` writes a prompt file and a skills directory and returns a manifest of every file it used.
+For an Artisan stage, `render.Prompt` writes a prompt file, an inputs directory and a skills directory and returns a manifest of every file it used.
 For a Guildmaster stage, `render.Question` returns the typed question a decision opens.
 Both are pure over files: they read the sources they are given, write only inside the attempt directory they are given, run nothing and record nothing.
 Choosing which role, stage guide, standards and skill roots apply, and recording the manifest with the attempt, belong to the caller.
@@ -13,9 +13,10 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 | Written | Contents |
 |---|---|
 | `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, and the skills by path and tree digest. |
+| `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
-Input documents are listed rather than inlined: the Artisan reads them from the paths it is given.
+Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory. The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.
 Standards are inlined, because a reviewer measures against those exact words.
 An input whose file does not match the sha256 its record names is refused (`ErrDigestMismatch`), so a prompt never cites a document that changed after it was recorded.
 On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave files, which the caller removes before rendering that attempt again, since the attempt was not yet recorded.

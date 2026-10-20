@@ -9,6 +9,7 @@
 package render
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,10 +24,11 @@ import (
 // ManifestSchema versions the manifest that records what a prompt was rendered from.
 const ManifestSchema = "guildhall.prompt-manifest/1"
 
-// PromptFile and SkillsDir are the names Prompt writes inside the attempt directory.
+// PromptFile, SkillsDir and InputsDir are the names Prompt writes inside the attempt directory.
 const (
 	PromptFile = "prompt.md"
 	SkillsDir  = "skills"
+	InputsDir  = "inputs"
 )
 
 var (
@@ -62,7 +64,8 @@ type Input struct {
 	Name string
 	// SHA256 is the recorded lowercase hex sha256 of the document's exact bytes.
 	SHA256 string
-	// Path is the local file. Prompt reads it to check SHA256; Question does not read it.
+	// Path is the local file. Prompt verifies SHA256 and copies its exact bytes to
+	// inputs/<Name> beside the prompt; Question does not read it.
 	Path string
 }
 
@@ -154,8 +157,10 @@ type Skill struct {
 }
 
 // Prompt renders an Artisan attempt into stage.Dir: one LF-only prompt file holding the attempt identity,
-// the role prompt, the stage guide, the step's instructions, the input documents by name and digest
-// and the standards in full; and a skills directory holding a copy of every skill the step names.
+// the role prompt, the stage guide, the step's instructions, the input documents by relative path and digest
+// and the standards in full; an inputs directory holding exact verified copies under their recorded names;
+// and a skills directory holding a copy of every skill the step names.
+// Input paths in the manifest remain the recorded names, without the inputs/ prefix.
 //
 // Each skill name is resolved in roots in order, the first root holding a directory of that name winning;
 // a name found in none is refused with ErrUnknownSkill.
@@ -186,12 +191,14 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 		}
 		m.Standards, standards[i] = append(m.Standards, f), text
 	}
+	inputData := make([][]byte, 0, len(inputs))
 	for _, in := range inputs {
-		f, err := checkInput(in)
+		f, data, err := checkInput(in)
 		if err != nil {
 			return Rendered{}, err
 		}
 		m.Inputs = append(m.Inputs, f)
+		inputData = append(inputData, data)
 	}
 	found, err := resolveSkills(stage.Step.Skills(), roots)
 	if err != nil {
@@ -203,9 +210,10 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, found, stage.Step.Instructions(), role, guide, standards); err != nil {
+	if err := r.write(&m, inputData, found, stage.Step.Instructions(), role, guide, standards); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
+		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
 		if created {
 			_ = os.Remove(stage.Dir)
 		}
@@ -215,7 +223,28 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, found []foundSkill, instructions, role, guide string, standards []string) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, instructions, role, guide string, standards []string) error {
+	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
+	if err := os.Mkdir(inputsPath, 0o755); err != nil {
+		return fmt.Errorf("render: %w", err)
+	}
+	for i, in := range m.Inputs {
+		target := filepath.Join(inputsPath, filepath.FromSlash(in.Path))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return fmt.Errorf("render: input %s: %w", in.Path, err)
+		}
+		if existing, err := os.ReadFile(target); err == nil {
+			if !bytes.Equal(existing, inputData[i]) {
+				return fmt.Errorf("render: conflicting input copies at %s", in.Path)
+			}
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("render: input %s: %w", in.Path, err)
+		}
+		if err := os.WriteFile(target, inputData[i], 0o644); err != nil {
+			return fmt.Errorf("render: input %s: %w", in.Path, err)
+		}
+	}
 	if err := os.Mkdir(r.SkillsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
 	}
@@ -249,8 +278,11 @@ func composePrompt(m *Manifest, instructions, role, guide string, standards []st
 		section("Instructions", instructions)
 	}
 	var list strings.Builder
+	if len(m.Inputs) > 0 {
+		list.WriteString("The inputs directory beside this prompt holds a verified copy of each input document.\n\n")
+	}
 	for _, in := range m.Inputs {
-		fmt.Fprintf(&list, "- %s: %s (%s)\n", in.Port, in.Path, in.Digest)
+		fmt.Fprintf(&list, "- %s: %s/%s (%s)\n", in.Port, InputsDir, in.Path, in.Digest)
 	}
 	section("Inputs", orNone(list.String()))
 	var std strings.Builder
@@ -321,7 +353,7 @@ func Question(stage Stage, inputs []Input) (Ask, error) {
 	}
 	options := questionOptions[kind.Type]
 	fmt.Fprintf(&b, "\nAnswer with one of: %s.\n", strings.Join(options, ", "))
-	return Ask{Question: b.String(), Options: slices.Clone(options)}, nil
+	return Ask{Question: normalise(b.String()), Options: slices.Clone(options)}, nil
 }
 
 var questionOptions = map[string][]string{

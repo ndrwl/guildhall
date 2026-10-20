@@ -299,6 +299,74 @@ func TestSymlinkInSkillRefused(t *testing.T) {
 	assertAbsentOrEmpty(t, stage.Dir)
 }
 
+func TestInputCopiesResolveFromPrompt(t *testing.T) {
+	for _, name := range []string{"tasks/t7/spec.md", `tasks\t7\spec.md`} {
+		t.Run(name, func(t *testing.T) {
+			data := []byte("specification\r\nexact bytes\r\x00\n")
+			src := filepath.Join(t.TempDir(), "spec.md")
+			if err := os.WriteFile(src, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(data)
+			in := Input{Port: "spec", Name: name, Path: src, SHA256: hex.EncodeToString(sum[:])}
+			otherPort := in
+			otherPort.Port = "context"
+			r, err := Prompt(attempt(t, step(t, "build", "build", "")), []Input{in, otherPort}, baseline("build"), roots())
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt, err := os.ReadFile(r.PromptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rel, recordedDigest string
+			for _, line := range strings.Split(string(prompt), "\n") {
+				if strings.HasPrefix(line, "- spec: ") {
+					if _, err := fmt.Sscanf(line, "- spec: %s %s", &rel, &recordedDigest); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if rel != "inputs/tasks/t7/spec.md" || recordedDigest != "(sha256:"+in.SHA256+")" {
+				t.Fatalf("emitted input = %q %q", rel, recordedDigest)
+			}
+			copied, err := os.ReadFile(filepath.Join(filepath.Dir(r.PromptPath), filepath.FromSlash(rel)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(copied, data) {
+				t.Fatalf("copy changed bytes: %q", copied)
+			}
+			for _, f := range r.Manifest.Inputs {
+				if f.Path != "tasks/t7/spec.md" || f.Digest != "sha256:"+in.SHA256 {
+					t.Fatalf("manifest input = %+v", f)
+				}
+			}
+		})
+	}
+}
+
+func TestInputCopyFailureCleansAttempt(t *testing.T) {
+	for _, existingDir := range []bool{false, true} {
+		for _, conflictingName := range []string{"tasks/t7/spec.md", "tasks/t7/spec.md/child"} {
+			stage := attempt(t, step(t, "build", "build", ""))
+			if existingDir {
+				if err := os.MkdirAll(stage.Dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			inputs := []Input{
+				input(t, "spec", "tasks/t7/spec.md", "spec.md"),
+				input(t, "context", conflictingName, "notes.md"),
+			}
+			if _, err := Prompt(stage, inputs, baseline("build"), roots()); err == nil {
+				t.Fatal("conflicting input copies accepted")
+			}
+			assertAbsentOrEmpty(t, stage.Dir)
+		}
+	}
+}
+
 func TestInputDigestMismatchRefused(t *testing.T) {
 	in := input(t, "spec", "tasks/t7/spec.md", "spec.md")
 	in.Path = filepath.Join("testdata", "docs", "notes.md")
@@ -362,6 +430,20 @@ func TestQuestionGoldenPerKind(t *testing.T) {
 			}
 			golden(t, "question-"+c.kind+".txt", []byte(ask.Question))
 		})
+	}
+}
+
+func TestQuestionNormalisesHandoffFrom(t *testing.T) {
+	stage := attempt(t, step(t, "handoff", "handoff-wait", `{"from":"design team\r\nrelease team"}`))
+	ask, err := Question(stage, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(ask.Question, "\r") || !strings.Contains(ask.Question, "from design team\nrelease team for") {
+		t.Fatalf("question = %q", ask.Question)
+	}
+	if !slices.Equal(ask.Options, []string{"received"}) {
+		t.Fatalf("options = %q", ask.Options)
 	}
 }
 

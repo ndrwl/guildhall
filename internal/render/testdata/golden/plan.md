@@ -17,7 +17,9 @@ Write a specification the Guildmaster can accept: scope, contract, tests and siz
 
 ## Inputs
 
-- context: tasks/t7/grill-notes.md (sha256:841ffd59700d20f04c07a415bdb7a72ff3746ed32cb18cc43c9de0732ad9c0ed)
+The inputs directory beside this prompt holds a verified copy of each input document.
+
+- context: inputs/tasks/t7/grill-notes.md (sha256:841ffd59700d20f04c07a415bdb7a72ff3746ed32cb18cc43c9de0732ad9c0ed)
 
 ## Standards
 

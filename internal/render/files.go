@@ -67,20 +67,20 @@ func readSource(what string, src Source) (File, string, error) {
 	return File{Path: name, Digest: digest([]byte(text))}, text, nil
 }
 
-func checkInput(in Input) (InputFile, error) {
+func checkInput(in Input) (InputFile, []byte, error) {
 	name := slashName(in.Name)
 	if in.Port == "" || !portable(name) {
-		return InputFile{}, fmt.Errorf("render: input %q on port %q needs a port and a relative slash-separated name", in.Name, in.Port)
+		return InputFile{}, nil, fmt.Errorf("render: input %q on port %q needs a port and a relative slash-separated name", in.Name, in.Port)
 	}
 	data, err := os.ReadFile(in.Path)
 	if err != nil {
-		return InputFile{}, fmt.Errorf("render: input %s: %w", name, err)
+		return InputFile{}, nil, fmt.Errorf("render: input %s: %w", name, err)
 	}
 	got := digest(data)
 	if got != "sha256:"+in.SHA256 {
-		return InputFile{}, fmt.Errorf("render: input %s: %w: recorded %s, file is %s", name, ErrDigestMismatch, in.SHA256, got)
+		return InputFile{}, nil, fmt.Errorf("render: input %s: %w: recorded %s, file is %s", name, ErrDigestMismatch, in.SHA256, got)
 	}
-	return InputFile{Port: in.Port, Path: name, Digest: got}, nil
+	return InputFile{Port: in.Port, Path: name, Digest: got}, data, nil
 }
 
 // prepareDir creates dir, or accepts an existing empty one, and reports whether it created it.
