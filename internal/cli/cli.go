@@ -32,6 +32,8 @@ Commands:
                  send, list, read and acknowledge local Director and Artisan messages
   workflow approve|approvals --store <path> ...
                  record and list Guildmaster approvals of workflow revisions
+  render <request.json>
+                 render a prompt with embedded release skills first
   artisan run    launch one Artisan attempt and wait for its result file
   fake-artisan   run the test-only fake Artisan
   task new|show|list|timeline|files --store <path> ...
@@ -58,9 +60,10 @@ var doctorTools = []struct {
 
 // App holds the process boundaries the commands use, so tests can replace them.
 type App struct {
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+	InstallSkills func(string) error
+	Stdin         io.Reader
+	Stdout        io.Writer
+	Stderr        io.Writer
 	// LookPath resolves a tool name on PATH.
 	LookPath func(file string) (string, error)
 	// Output runs a command and returns its combined stdout and stderr.
@@ -130,6 +133,8 @@ func (a *App) Run(args []string) int {
 		return a.messages(rest)
 	case "workflow":
 		return a.workflowCmd(rest)
+	case "render":
+		return a.renderPrompt(rest)
 	case "artisan":
 		return a.artisan(rest)
 	case "fake-artisan":

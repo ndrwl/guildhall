@@ -153,6 +153,7 @@ Each command is described in its own page; a new command adds its page and one l
 - `guildhall steward rollout` previews and applies rollouts of the private managed settings; see [Steward rollouts](docs/steward.md).
 - `guildhall messages send|list|read|ack` handles local Director and Artisan messages kept in a store; see [messaging](docs/messaging.md).
 - `guildhall workflow approve|approvals` records and lists workflow approvals; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
+- `guildhall render <request.json>` renders a prompt with embedded release skills first; see [prompt rendering](docs/rendering.md).
 - `guildhall artisan run` and `guildhall fake-artisan` launch one Artisan attempt with the test-only fake adapter; see [adapters](docs/adapters.md).
 - `guildhall task new|show|list|timeline|files` creates and inspects tasks without launching anything; see [tasks](docs/tasks.md).
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).

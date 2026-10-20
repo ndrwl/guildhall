@@ -73,3 +73,4 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/steward`](contracts/steward.md)
 - [`internal/store`](contracts/store.md)
 - [`internal/workflow`](contracts/workflow.md)
+- [`skills`](contracts/skills.md)
