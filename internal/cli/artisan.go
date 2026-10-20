@@ -197,7 +197,7 @@ func (a *App) runInTab(ctx context.Context, spec adapter.Spec, cmd adapter.Comma
 		stopper = owned
 		cmd.Argv = append(cmd.Argv, "--worker-control", owned.Address(), "--worker-token", owned.Token())
 	}
-	launcher := adapter.TabLauncher{Host: client, WorkspaceID: workspace}
+	launcher := adapter.TabLauncher{Host: adapter.NewHerdrTabs(client), WorkspaceID: workspace}
 	run, err := launcher.Start(ctx, label, cmd)
 	if err != nil {
 		return a.fail(err)
@@ -211,7 +211,7 @@ func (a *App) runInTab(ctx context.Context, spec adapter.Spec, cmd adapter.Comma
 		}
 	}
 	a.notef("guildhall: artisan started in Herdr %s session %q, workspace %s, tab %s, pane %s\n",
-		st.ServerVersion, client.Session(), run.Tab.WorkspaceID(), run.Tab.ID(), run.Tab.PaneID())
+		st.ServerVersion, client.Session(), run.Tab.WorkspaceID, run.Tab.TabID, run.Tab.PaneID)
 	r, err := adapter.WaitResult(ctx, spec.ResultFile, spec.Identity, adapter.WaitOptions{Poll: resultPoll})
 	if errors.Is(err, adapter.ErrNoResultYet) {
 		// Whether the Artisan still runs is unknown here: the tab may have been
@@ -233,7 +233,7 @@ func (a *App) runInTab(ctx context.Context, spec adapter.Spec, cmd adapter.Comma
 			}
 		}
 		a.notef("guildhall: no result yet (%v); %s; guildhall did not close tab %s; the attempt is not finished\n",
-			err, state, run.Tab.ID())
+			err, state, run.Tab.TabID)
 		return exitNoResultYet
 	}
 	return a.report(r, err)

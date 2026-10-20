@@ -8,14 +8,15 @@ import (
 	"slices"
 	"testing"
 	"time"
-
-	"github.com/ndrwl/guildhall/internal/herdr"
 )
 
 // helperEnv makes the test binary act as a child process for process tests.
 const helperEnv = "GUILDHALL_ADAPTER_TEST_HELPER"
 
 func TestMain(m *testing.M) {
+	if dir := os.Getenv(tabsStubEnv); dir != "" {
+		os.Exit(stubHerdr(dir, os.Args[1:]))
+	}
 	switch os.Getenv(helperEnv) {
 	case "write-result":
 		err := WriteResult(os.Getenv("RESULT"), Result{Identity: testID, Status: StatusSucceeded, Summary: "child " + os.Getenv("MARK")})
@@ -92,42 +93,9 @@ func TestStartProcessRefusesEmptyCommand(t *testing.T) {
 	}
 }
 
-// fakeTabs is a tabHost that records calls and reports a shell that becomes
-// idle after a number of busy reads.
-type fakeTabs struct {
-	created    []herdr.TabSpec
-	ran        []string
-	interrupts int
-	busyReads  int
-	shell      string
-	runErr     error
-}
-
-func (f *fakeTabs) TabCreate(_ context.Context, spec herdr.TabSpec) (herdr.OwnedTab, error) {
-	f.created = append(f.created, spec)
-	return herdr.OwnedTab{}, nil
-}
-
-func (f *fakeTabs) PaneProcessInfo(context.Context, string) (herdr.ProcessInfo, error) {
-	if f.busyReads > 0 {
-		f.busyReads--
-		return herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 11, Name: "rc-script"}}}, nil
-	}
-	return herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 10, Name: f.shell}}}, nil
-}
-
-func (f *fakeTabs) RunInOwnedTab(_ context.Context, _ herdr.OwnedTab, line string) error {
-	f.ran = append(f.ran, line)
-	return f.runErr
-}
-
-func (f *fakeTabs) InterruptOwnedTab(context.Context, herdr.OwnedTab) error {
-	f.interrupts++
-	return nil
-}
-
 func TestTabLauncherTypesCommandForThePaneShell(t *testing.T) {
-	f := &fakeTabs{shell: "bash", busyReads: 2}
+	f := newFakeTabs("lab", "bash")
+	f.busyReads = 2
 	l := TabLauncher{Host: f, WorkspaceID: "w1", ShellReady: time.Second, Poll: time.Millisecond}
 	cmd := Command{Argv: []string{"/bin/guild hall", "fake-artisan", "--prompt", "it's"}, Dir: "/work", Env: []string{"A=1"}}
 	run, err := l.Start(context.Background(), "artisan task-1", cmd)
@@ -138,30 +106,31 @@ func TestTabLauncherTypesCommandForThePaneShell(t *testing.T) {
 		f.created[0].Cwd != "/work" || !slices.Equal(f.created[0].Env, []string{"A=1"}) {
 		t.Errorf("created = %+v", f.created)
 	}
-	want := `'/bin/guild hall' 'fake-artisan' '--prompt' 'it'\''s'`
-	if len(f.ran) != 1 || f.ran[0] != want {
-		t.Errorf("ran = %q, want %q", f.ran, want)
+	want := "run " + run.Tab.PaneID + ` '/bin/guild hall' 'fake-artisan' '--prompt' 'it'\''s'`
+	if sent := f.sentLines(); len(sent) != 1 || sent[0] != want {
+		t.Errorf("sent = %q, want %q", sent, want)
 	}
-	if err := run.Stop(context.Background()); err != nil || f.interrupts != 1 {
-		t.Errorf("Stop = %v, interrupts = %d", err, f.interrupts)
+	if err := run.Stop(context.Background()); err != nil || len(f.sentLines()) != 2 || f.sentLines()[1] != "keys "+run.Tab.PaneID+" ctrl+c" {
+		t.Errorf("Stop = %v, sent = %q", err, f.sentLines())
 	}
 }
 
 func TestTabLauncherRefusesBusyOrUnknownShell(t *testing.T) {
-	busy := &fakeTabs{shell: "bash", busyReads: 1 << 30}
+	busy := newFakeTabs("lab", "bash")
+	busy.busyReads = 1 << 30
 	l := TabLauncher{Host: busy, WorkspaceID: "w1", ShellReady: 20 * time.Millisecond, Poll: time.Millisecond}
 	if _, err := l.Start(context.Background(), "a", Command{Argv: []string{"x"}}); err == nil {
 		t.Error("Start typed into a pane whose shell never became idle")
 	}
-	if len(busy.ran) != 0 {
-		t.Errorf("busy pane received %q", busy.ran)
+	if sent := busy.sentLines(); len(sent) != 0 {
+		t.Errorf("busy pane received %q", sent)
 	}
-	fish := &fakeTabs{shell: "fish"}
+	fish := newFakeTabs("lab", "fish")
 	l.Host = fish
 	if _, err := l.Start(context.Background(), "a", Command{Argv: []string{"x"}}); err == nil {
 		t.Error("Start accepted an unsupported shell")
 	}
-	if len(fish.ran) != 0 {
-		t.Errorf("unsupported shell received %q", fish.ran)
+	if sent := fish.sentLines(); len(sent) != 0 {
+		t.Errorf("unsupported shell received %q", sent)
 	}
 }
