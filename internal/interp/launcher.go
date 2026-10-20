@@ -1,6 +1,6 @@
 // Package interp is the workflow interpreter: it advances a task through its bound workflow revision.
-// This file holds the interpreter's launch seam, declared here by the consumer that calls it;
-// the interpreter itself is separate work. See docs/mock-agent.md.
+// Engine is the interpreter (docs/interpreter.md); this file holds its launch seam, declared here by
+// the consumer that calls it (docs/mock-agent.md), and records.go its other seams.
 package interp
 
 import (
