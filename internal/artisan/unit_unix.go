@@ -58,6 +58,9 @@ func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
 	setParentDeath(attr)
 	cmd.SysProcAttr = attr
 	if err := startLocked(cmd); err != nil {
+		if attr.Foreground {
+			reclaimTerminal()
+		}
 		return Identity{}, err
 	}
 	pid := cmd.Process.Pid
