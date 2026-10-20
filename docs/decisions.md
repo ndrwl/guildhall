@@ -95,7 +95,7 @@ See [configuration](configuration.md) for combined loading and legacy inline-lay
 A checksum framing line detects incomplete managed transfers, but scp publication is non-atomic and may transiently refuse reads; this does not establish uninterrupted config availability.
 An exclusive lock file in the private config directory prevents concurrent local applies sharing that directory, not cross-host writers.
 Operators must designate one writer and recover a stale lock only after confirming its owner has stopped.
-Previous managed revisions remain beside the published file; active-task pinning remains future work.
+See [Steward revisions and active tasks](steward.md#revisions-and-active-tasks) for revision retention and task binding.
 
 ## D15. Local messaging in the store
 

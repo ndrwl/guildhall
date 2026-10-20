@@ -154,6 +154,8 @@ No release has been published yet.
 - `guildhall artisan run --adapter fake ...` launches one Artisan attempt, as a direct child process or in a new tab of a named Herdr session, and waits for its result file; see `docs/adapters.md`.
   The only adapter is the test-only fake adapter.
 - `guildhall fake-artisan ...` is the fake Artisan itself: it reads a prompt file and writes a result file.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... <task>` creates a task bound to its repository's effective workflow revision and the configuration digest; `guildhall task show --store <path> --repo <id> <task> --json` and `guildhall task list --store <path> [--repo <id>] --json` print tasks and their records.
+  It launches nothing; see [tasks](docs/tasks.md).
 - `guildhall help` lists the commands.
 
 ## Examples
@@ -251,4 +253,5 @@ sequenceDiagram
 - `docs/steward.md`: Steward rollouts.
 - `docs/messaging.md`: the local Director and Artisan message inbox.
 - `docs/adapters.md`: the Artisan adapter contract, result file and Herdr access.
+- `docs/tasks.md`: creating Director tasks and the workflow and configuration they bind.
 - `CONTRIBUTING.md`: how to contribute.
