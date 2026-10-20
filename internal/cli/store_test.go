@@ -58,7 +58,8 @@ func TestStoreDoctorRefusals(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.store")
 	text := filepath.Join(dir, "notes.txt")
-	if err := os.WriteFile(text, []byte(strings.Repeat("not a store\n", 1000)), 0o600); err != nil {
+	// Reach metadata validation rather than bbolt's minimum two-page size check.
+	if err := os.WriteFile(text, []byte(strings.Repeat("not a store\n", 2*os.Getpagesize())), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	locked := writeStore(t)

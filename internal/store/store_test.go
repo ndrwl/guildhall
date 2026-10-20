@@ -359,7 +359,8 @@ func TestForeignFilesAreRefused(t *testing.T) {
 	dir := t.TempDir()
 
 	text := filepath.Join(dir, "notes.txt")
-	if err := os.WriteFile(text, []byte(strings.Repeat("not a database\n", 1000)), 0o600); err != nil {
+	// Reach metadata validation rather than bbolt's minimum two-page size check.
+	if err := os.WriteFile(text, []byte(strings.Repeat("not a database\n", 2*os.Getpagesize())), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Open(text, testOptions()); !errors.Is(err, ErrNotStore) {
