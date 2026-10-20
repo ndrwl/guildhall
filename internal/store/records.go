@@ -537,10 +537,10 @@ func decode(k, v []byte, rec any) error {
 // recordKey(task, "") sees only that task's records.
 func recordKey(parts ...string) []byte { return []byte(strings.Join(parts, "/")) }
 
-// attemptKey zero-pads the number so attempts sort numerically.
 // attemptRecord is the receipt record name of attempt number of step.
 func attemptRecord(step string, number int) string { return fmt.Sprintf("attempt/%s/%d", step, number) }
 
+// attemptKey zero-pads the number so attempts sort numerically.
 func attemptKey(taskID, step string, number int) []byte {
 	return recordKey(taskID, step, fmt.Sprintf("%010d", number))
 }

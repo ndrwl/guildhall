@@ -64,7 +64,8 @@ The Director inspects a task through read-only commands rather than by opening w
 Each prints one JSON document whose `as_of` label says exactly what it describes:
 
 - `partial`: always `true`; `excluded` lists live worker state, worker files and transcript, none of which these store-only reads inspect.
-- `sequence` and `committed_at`: the newest mutation committed anywhere in the store when the read began. Two reads with the same sequence saw the same records.
+- `sequence` and `committed_at`: the newest mutation committed anywhere in the store when the read began.
+  Two reads of the same store with the same sequence saw the same records.
 - `workflow`: the workflow revision (`name`, `digest`) the task is bound to.
 
 Times are commit times of the store's [receipts](store.md#mutations-and-receipts), in UTC; they record when Guildhall wrote a record, not when a worker did the work.
@@ -76,12 +77,16 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `task`: the task record.
 - `attempts`: every stage attempt with its outcome (absent while running), `started_at`, `finished_at` and `duration_seconds` between them, ordered by when they started.
 - `decisions`: every decision with its kind, subject, options, question and the Guildmaster's exact words (`answer`, `choice`, `note`), plus `opened_at`, `answered_at` and `wait_seconds` between them, ordered by when they opened.
-- `events`: every receipt of the task in commit order, each naming its operation, mutation id, sequence, commit time and the record it wrote (`record`, for example `attempt/build/2`, `decision/accept-plan` or `message/q-1`). These are the moves made on the task, including messages sent and acknowledged for it.
+- `events`: every receipt of the task in commit order, each naming its operation, mutation id, sequence, commit time and the record it wrote (`record`, for example `attempt/build/2`, `decision/accept-plan` or `message/q-1`).
+  These are the moves made on the task, including messages sent and acknowledged for it.
 
 `task files` prints `documents`: every document reference of the task with its relative path, its recorded `sha256` and `recorded_at`, in name order.
 The digest is the one recorded when the reference was written; `files` does not open or re-hash the document.
 
-Receipts committed before receipts named their record have no `record`; they still appear in `events`, but cannot supply record timestamps. Timestamps are matched by operation: an attempt finished or a decision answered after an upgrade can have a known completion time with an unknown start. Durations require both endpoints; attempts and decisions without a start time follow the timed ones in store order.
-The timeline includes every recorded event kind in commit order. Review findings and Director rulings are not yet recorded by this version, as explicitly listed in `omitted_kinds`; their persistence belongs to the interpreter slices.
+Receipts committed before receipts named their record have no `record`; they still appear in `events`, but cannot supply record timestamps.
+Unknown timestamps are omitted from the JSON.
+Timestamps are matched by operation: an attempt finished or a decision answered after an upgrade can have a known completion time with an unknown start.
+Durations require both endpoints; attempts and decisions without a start time follow the timed ones in store order.
+The timeline includes every recorded event kind in commit order.
+Review findings and Director rulings are not yet recorded by this version, as explicitly listed in `omitted_kinds`; their persistence belongs to the interpreter slices.
 Reading a task's diff, process status or transcript needs its worktree and adapter, and is separate work.
-
