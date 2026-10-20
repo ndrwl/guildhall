@@ -247,7 +247,7 @@ func TestStewardDryRunReportsUnreachableCopy(t *testing.T) {
 // scpStubEnv makes the test binary act as scp, appending its arguments to the named file and refusing the copy.
 const scpStubEnv = "GUILDHALL_TEST_SCP_LOG"
 
-func TestMain(m *testing.M) {
+func runStewardSCPStub() {
 	if log := os.Getenv(scpStubEnv); log != "" {
 		f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err == nil {
@@ -263,7 +263,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "stub scp: connection refused")
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
 }
 
 // TestStewardRolloutRunsSCPFromPath checks the real wiring: without a Copier, New's App

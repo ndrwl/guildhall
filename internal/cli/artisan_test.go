@@ -23,6 +23,7 @@ import (
 const roleEnv = "GUILDHALL_CLI_TEST_ROLE"
 
 func TestMain(m *testing.M) {
+	runStewardSCPStub()
 	switch os.Getenv(roleEnv) {
 	case "guildhall":
 		os.Exit(New().Run(os.Args[1:]))
