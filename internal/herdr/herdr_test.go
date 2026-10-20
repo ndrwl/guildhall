@@ -3,10 +3,13 @@ package herdr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -22,12 +25,21 @@ type fakeRunner struct {
 	t         *testing.T
 	calls     []call
 	responses map[string]response
+	hung      atomic.Bool
 }
+
+// hanging reports whether a hanging response has been entered.
+func (f *fakeRunner) hanging() bool { return f.hung.Load() }
 
 type response struct {
 	stdout string
 	stderr string
 	exit   int
+	// hang blocks until the context ends; echo prints the arguments and the
+	// named environment entries; startErr fails as a missing program would.
+	hang     bool
+	echo     []string
+	startErr bool
 }
 
 func fixture(t *testing.T, name string) string {
@@ -39,12 +51,27 @@ func fixture(t *testing.T, name string) string {
 	return string(b)
 }
 
-func (f *fakeRunner) run(_ context.Context, argv, env []string) ([]byte, []byte, int, error) {
+// run answers like execRun: canned output and exit code, an error only for a
+// program that cannot start or a call whose context ended.
+func (f *fakeRunner) run(ctx context.Context, argv, env []string) ([]byte, []byte, int, error) {
 	f.calls = append(f.calls, call{args: argv, env: env})
 	key := strings.Join(argv[1:3], " ")
 	r, ok := f.responses[key]
 	if !ok {
 		f.t.Fatalf("unexpected herdr call %q", argv)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, -1, fmt.Errorf("herdr stopped: %w", err)
+	}
+	switch {
+	case r.startErr:
+		return nil, nil, -1, fmt.Errorf("exec: %q: %w", argv[0], exec.ErrNotFound)
+	case r.hang:
+		f.hung.Store(true)
+		<-ctx.Done()
+		return []byte(r.stdout), []byte(r.stderr), -1, fmt.Errorf("herdr stopped: %w", ctx.Err())
+	case r.echo != nil:
+		return []byte(echoJSON(argv[3:], env, r.echo)), []byte(r.stderr), r.exit, nil
 	}
 	return []byte(r.stdout), []byte(r.stderr), r.exit, nil
 }

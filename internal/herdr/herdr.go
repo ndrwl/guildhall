@@ -92,6 +92,11 @@ func execRun(ctx context.Context, argv, env []string) ([]byte, []byte, int, erro
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
+	// A cancelled call is reported as the context's error, never as the exit
+	// status the killed process happened to leave.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return stdout.Bytes(), stderr.Bytes(), -1, fmt.Errorf("herdr stopped: %w", ctxErr)
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return stdout.Bytes(), stderr.Bytes(), exitErr.ExitCode(), nil
