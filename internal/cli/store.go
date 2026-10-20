@@ -42,8 +42,8 @@ func (a *App) storeDoctor(path string) int {
 	}
 	fmt.Fprintf(&b, "receipts: %d\nworkflow approvals: %d\n", rep.Receipts, rep.WorkflowApprovals)
 	for _, r := range rep.Repositories {
-		fmt.Fprintf(&b, "repository %s: tasks %d, attempts %d, documents %d, pane bindings %d, decisions %d, messages %d (%d unread)\n",
-			r.Repository, r.Tasks, r.Attempts, r.Documents, r.PaneBindings, r.Decisions, r.Messages, r.UnreadMessages)
+		fmt.Fprintf(&b, "repository %s: tasks %d, attempts %d, documents %d, pane bindings %d, decisions %d, owners %d, messages %d (%d unread)\n",
+			r.Repository, r.Tasks, r.Attempts, r.Documents, r.PaneBindings, r.Decisions, r.Owners, r.Messages, r.UnreadMessages)
 	}
 	for _, p := range rep.Problems {
 		fmt.Fprintf(&b, "problem: %s\n", p)

@@ -218,32 +218,39 @@ func (s *Store) StartAttempt(mutationID, repository, taskID, step string) (Recei
 	}
 	req := StageAttempt{Repository: repository, TaskID: taskID, Step: step}
 	return s.mutate(mutationID, "start-attempt", req, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = repository, taskID
-		if _, err := openTask(tx, repository, taskID); err != nil {
-			return err
-		}
-		attempts, err := createRepoBucket(tx, repository, bucketAttempts)
-		if err != nil {
-			return err
-		}
-		prefix := recordKey(taskID, step, "")
-		last := StageAttempt{}
-		c := attempts.Cursor()
-		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
-			if err := decode(k, v, &last); err != nil {
-				return err
-			}
-		}
-		if last.Number > 0 && last.Outcome == "" {
-			return invalid("attempt %d of step %q is still running", last.Number, step)
-		}
-		a := StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: last.Number + 1}
-		r.Attempt, r.Record = a.Number, attemptRecord(step, a.Number)
-		return putJSON(attempts, attemptKey(taskID, step, a.Number), a)
+		_, err := startAttempt(tx, r, repository, taskID, step)
+		return err
 	})
 }
 
-// FinishAttempt records the outcome of a running attempt.
+// startAttempt writes the next running attempt of step and fills the receipt's record fields.
+func startAttempt(tx *bolt.Tx, r *Receipt, repository, taskID, step string) (StageAttempt, error) {
+	r.Repository, r.TaskID = repository, taskID
+	if _, err := openTask(tx, repository, taskID); err != nil {
+		return StageAttempt{}, err
+	}
+	attempts, err := createRepoBucket(tx, repository, bucketAttempts)
+	if err != nil {
+		return StageAttempt{}, err
+	}
+	prefix := recordKey(taskID, step, "")
+	last := StageAttempt{}
+	c := attempts.Cursor()
+	for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
+		if err := decode(k, v, &last); err != nil {
+			return StageAttempt{}, err
+		}
+	}
+	if last.Number > 0 && last.Outcome == "" {
+		return StageAttempt{}, invalid("attempt %d of step %q is still running", last.Number, step)
+	}
+	a := StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: last.Number + 1}
+	r.Attempt, r.Record = a.Number, attemptRecord(step, a.Number)
+	return a, putJSON(attempts, attemptKey(taskID, step, a.Number), a)
+}
+
+// FinishAttempt records the outcome of a running attempt and, in the same mutation,
+// releases its ownership record if it has one.
 func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, number int, outcome AttemptOutcome) (Receipt, error) {
 	if err := validateIDs(repository, taskID, step); err != nil {
 		return Receipt{}, err
@@ -267,7 +274,10 @@ func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, numbe
 			return invalid("attempt %d of step %q already finished: %s", number, step, a.Outcome)
 		}
 		a.Outcome = outcome
-		return putJSON(attempts, key, a)
+		if err := putJSON(attempts, key, a); err != nil {
+			return err
+		}
+		return releaseOwnership(tx, repository, taskID, step, number)
 	})
 }
 

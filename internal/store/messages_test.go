@@ -19,7 +19,7 @@ func messagingStore(t *testing.T) (*Store, string) {
 	return s, path
 }
 
-var artisan = Recipient{Role: RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
+var artisanInbox = Recipient{Role: RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
 func toArtisan(id string) Message {
 	return Message{ID: id, Recipient: RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, Type: "note", Text: "Rebase onto main first."}
@@ -162,7 +162,7 @@ func TestSendMessageChecksTaskAndAttempt(t *testing.T) {
 func TestSendMessageReplayAndConflict(t *testing.T) {
 	s, path := messagingStore(t)
 	first := mustSend(t, s, toArtisan("n-1"))
-	if _, err := s.AckMessage(artisan, "n-1"); err != nil {
+	if _, err := s.AckMessage(artisanInbox, "n-1"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.FinishAttempt("m-finish", "app", "t-1", "build", 1, AttemptSucceeded); err != nil {
@@ -248,7 +248,7 @@ func TestConcurrentSends(t *testing.T) {
 	if len(ids) != n || more {
 		t.Fatalf("director inbox = %d messages (more %v), want %d", len(ids), more, n)
 	}
-	if ids, _ := inboxIDs(t, s, artisan, 0, MaxInboxLimit); fmt.Sprint(ids) != "[n-same]" {
+	if ids, _ := inboxIDs(t, s, artisanInbox, 0, MaxInboxLimit); fmt.Sprint(ids) != "[n-same]" {
 		t.Fatalf("artisan inbox = %v", ids)
 	}
 }
@@ -282,10 +282,10 @@ func TestInboxIsBoundedOrderedAndSeparated(t *testing.T) {
 		t.Fatalf("second page = %v (more %v)", ids, more)
 	}
 	// Each Artisan sees only its own attempt's messages.
-	if ids, _ := inboxIDs(t, s, artisan, 0, 10); fmt.Sprint(ids) != "[n-1]" {
+	if ids, _ := inboxIDs(t, s, artisanInbox, 0, 10); fmt.Sprint(ids) != "[n-1]" {
 		t.Fatalf("build inbox = %v", ids)
 	}
-	reviewer := artisan
+	reviewer := artisanInbox
 	reviewer.Step = "review"
 	if ids, _ := inboxIDs(t, s, reviewer, 0, 10); fmt.Sprint(ids) != "[n-review]" {
 		t.Fatalf("review inbox = %v", ids)
@@ -322,11 +322,11 @@ func TestAckMessageConsumesInboxDurably(t *testing.T) {
 			t.Fatalf("ack by %+v: err = %v, want ErrInvalid", wrong, err)
 		}
 	}
-	if _, err := s.AckMessage(artisan, "missing"); !errors.Is(err, ErrNotFound) {
+	if _, err := s.AckMessage(artisanInbox, "missing"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ack of missing message: err = %v, want ErrNotFound", err)
 	}
 
-	ack, err := s.AckMessage(artisan, "n-1")
+	ack, err := s.AckMessage(artisanInbox, "n-1")
 	if err != nil || ack.MutationID != "message-ack:n-1" || ack.Operation != "ack-message" || ack.Attempt != 1 {
 		t.Fatalf("ack = %+v, %v", ack, err)
 	}
@@ -334,10 +334,10 @@ func TestAckMessageConsumesInboxDurably(t *testing.T) {
 
 	// After a restart the acknowledged message is gone from the inbox, the unread one is not, and a retried ack returns the original receipt.
 	s = openTest(t, path)
-	if ids, _ := inboxIDs(t, s, artisan, 0, 10); fmt.Sprint(ids) != "[n-2]" {
+	if ids, _ := inboxIDs(t, s, artisanInbox, 0, 10); fmt.Sprint(ids) != "[n-2]" {
 		t.Fatalf("inbox after ack and restart = %v", ids)
 	}
-	if again, err := s.AckMessage(artisan, "n-1"); err != nil || again != ack {
+	if again, err := s.AckMessage(artisanInbox, "n-1"); err != nil || again != ack {
 		t.Fatalf("retried ack = %+v, %v; want %+v", again, err, ack)
 	}
 	if m, err := s.Message("n-1"); err != nil || !m.Acknowledged {
@@ -355,7 +355,7 @@ func TestAckMessageConsumesInboxDurably(t *testing.T) {
 	if _, err := s.FinishAttempt("m-finish", "app", "t-1", "build", 1, AttemptSucceeded); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AckMessage(artisan, "n-2"); err != nil {
+	if _, err := s.AckMessage(artisanInbox, "n-2"); err != nil {
 		t.Fatalf("ack after attempt finished: %v", err)
 	}
 	if _, err := s.AckMessage(Recipient{Role: RecipientDirector}, "q-1"); err != nil {
@@ -385,7 +385,7 @@ func TestDoctorCountsMessages(t *testing.T) {
 	s, _ := messagingStore(t)
 	mustSend(t, s, toDirector("q-1"))
 	mustSend(t, s, toArtisan("n-1"))
-	if _, err := s.AckMessage(artisan, "n-1"); err != nil {
+	if _, err := s.AckMessage(artisanInbox, "n-1"); err != nil {
 		t.Fatal(err)
 	}
 	rep, err := s.Doctor()

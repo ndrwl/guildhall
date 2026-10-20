@@ -26,6 +26,7 @@ type RepositoryCounts struct {
 	Documents      int
 	PaneBindings   int
 	Decisions      int
+	Owners         int
 	Messages       int
 	UnreadMessages int
 }
@@ -71,7 +72,7 @@ func (s *Store) Doctor() (Report, error) {
 			counts := RepositoryCounts{Repository: string(repo)}
 			for name, n := range map[string]*int{
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
-				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions,
+				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketOwners): &counts.Owners,
 				string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 			} {
 				b := tx.Bucket(bucketRepos).Bucket(repo).Bucket([]byte(name))
@@ -106,6 +107,8 @@ func decodeRecord(bucket string, k, v []byte) error {
 		return decode(k, v, new(DocumentRef))
 	case string(bucketPanes):
 		return decode(k, v, new(PaneBinding))
+	case string(bucketOwners):
+		return decode(k, v, new(Ownership))
 	case string(bucketMessages):
 		return decode(k, v, new(Message))
 	case string(bucketInbox):
