@@ -148,3 +148,12 @@ Approvals belong to the Director rather than to a repository or task, so they li
 The mutation id is derived from the digest, so the store's replay and conflict rules make an approval idempotent and refuse different words for the same revision without a second check.
 Definitions shipped with a release count as approved by that release without requiring a stored record, so a release that changes its default needs no migration.
 See [workflow-edit authority](configuration.md#workflow-edit-authority) for explicit approvals of shipped content and list output.
+
+## D23. Typed decisions bound to an artefact
+
+A decision records its kind (`approval`, `review`, `loop-exit`, `merge` or `question`), the document or head digest its answer binds to, and the options it offers, so an answer cannot silently apply to an artefact that changed after the question was asked.
+When options are offered, the answer's first line names one and the rest is a free note: the Guildmaster answers in words, the Director reads a choice without parsing prose, and an answer that names no option is refused before anything is written.
+The answer is kept verbatim; the command line only drops a UTF-8 byte order mark and turns CRLF into LF, so the same words record the same answer on Windows and elsewhere.
+The new fields are optional in the record, so decisions written before them decode and take any answer, and the answer request is unchanged, so their receipts still replay; the store stays at schema 1.
+Answer mutation ids use `:` because `/` is not a mutation id character, and fall back to a sha256 of the id when ids make it longer than 128 bytes, as `task new` does.
+Recording an answer never advances a task; the interpreter that acts on answers is separate work.

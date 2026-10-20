@@ -2,8 +2,12 @@ package store
 
 import (
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+
+	bolt "go.etcd.io/bbolt"
 
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -259,13 +263,24 @@ func TestPaneBindings(t *testing.T) {
 	}
 }
 
+func sampleDecision(id string) Decision {
+	return Decision{
+		Repository: "app", TaskID: "t-1", ID: id, Kind: DecisionApproval,
+		Subject:  &Subject{Kind: SubjectDocument, Digest: digest('c')},
+		Options:  []string{"approve", "reject"},
+		Question: "Approve the plan?",
+	}
+}
+
 func TestDecisions(t *testing.T) {
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
-	if _, err := s.OpenDecision("m-2", "app", "t-1", "accept-plan", "Accept the plan?"); err != nil {
+	q := Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: DecisionQuestion, Question: "Accept the plan?"}
+	if _, err := s.OpenDecision("m-2", q); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.OpenDecision("m-3", "app", "t-1", "accept-plan", "Again?"); !errors.Is(err, ErrExists) {
+	q.Question = "Again?"
+	if _, err := s.OpenDecision("m-3", q); !errors.Is(err, ErrExists) {
 		t.Fatalf("duplicate decision: err = %v, want ErrExists", err)
 	}
 	if _, err := s.AnswerDecision("m-4", "app", "t-1", "accept-plan", ""); !errors.Is(err, ErrInvalid) {
@@ -279,9 +294,165 @@ func TestDecisions(t *testing.T) {
 		t.Fatalf("answering twice: err = %v, want ErrInvalid", err)
 	}
 	got, err := s.Decisions("app", "t-1")
-	want := Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Question: "Accept the plan?", Answered: true, Answer: answer}
-	if err != nil || len(got) != 1 || got[0] != want {
+	want := Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: DecisionQuestion, Question: "Accept the plan?", Answered: true, Answer: answer}
+	if err != nil || len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 		t.Fatalf("Decisions = %+v, %v; want %+v", got, err, want)
+	}
+}
+
+func TestOpenDecisionValidates(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*Decision)
+	}{
+		{"missing kind", func(d *Decision) { d.Kind = "" }},
+		{"unknown kind", func(d *Decision) { d.Kind = "vote" }},
+		{"missing subject", func(d *Decision) { d.Subject = nil }},
+		{"unknown subject kind", func(d *Decision) { d.Subject.Kind = "branch" }},
+		{"document digest without prefix", func(d *Decision) { d.Subject.Digest = strings.Repeat("c", 64) }},
+		{"short head", func(d *Decision) { d.Subject = &Subject{Kind: SubjectHead, Digest: strings.Repeat("e", 39)} }},
+		{"upper-case head", func(d *Decision) { d.Subject = &Subject{Kind: SubjectHead, Digest: strings.Repeat("E", 40)} }},
+		{"blank option", func(d *Decision) { d.Options = []string{"approve", " "} }},
+		{"multi-line option", func(d *Decision) { d.Options = []string{"approve\nnow"} }},
+		{"carriage return option", func(d *Decision) { d.Options = []string{"approve\r"} }},
+		{"padded option", func(d *Decision) { d.Options = []string{" approve"} }},
+		{"duplicate option", func(d *Decision) { d.Options = []string{"approve", "approve"} }},
+		{"long option", func(d *Decision) { d.Options = []string{strings.Repeat("x", MaxOptionBytes+1)} }},
+		{"too many options", func(d *Decision) {
+			d.Options = nil
+			for i := range MaxDecisionOptions + 1 {
+				d.Options = append(d.Options, fmt.Sprint("option-", i))
+			}
+		}},
+		{"preset answer", func(d *Decision) { d.Answered, d.Answer = true, "approve" }},
+		{"preset choice", func(d *Decision) { d.Choice = "approve" }},
+		{"preset note", func(d *Decision) { d.Note = "fine" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newStore(t)
+			mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+			d := sampleDecision("approve-plan")
+			tc.mutate(&d)
+			if _, err := s.OpenDecision("m-2", d); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("err = %v, want ErrInvalid", err)
+			}
+			if got, err := s.Decisions("app", "t-1"); err != nil || len(got) != 0 {
+				t.Fatalf("refused open wrote %+v, %v", got, err)
+			}
+		})
+	}
+	// A question may omit its subject, and a head subject takes a SHA-1 or SHA-256 object id.
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	for i, d := range []Decision{
+		{Repository: "app", TaskID: "t-1", ID: "ask", Kind: DecisionQuestion, Question: "Which port?"},
+		{Repository: "app", TaskID: "t-1", ID: "merge-sha1", Kind: DecisionMerge, Subject: &Subject{Kind: SubjectHead, Digest: strings.Repeat("e", 40)}, Question: "Merge?"},
+		{Repository: "app", TaskID: "t-1", ID: "merge-sha256", Kind: DecisionMerge, Subject: &Subject{Kind: SubjectHead, Digest: strings.Repeat("f", 64)}, Question: "Merge?"},
+	} {
+		if _, err := s.OpenDecision(fmt.Sprint("m-open-", i), d); err != nil {
+			t.Errorf("%s: %v", d.ID, err)
+		}
+	}
+}
+
+func TestAnswerDecisionWithOptions(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	if _, err := s.OpenDecision("m-2", sampleDecision("approve-plan")); err != nil {
+		t.Fatal(err)
+	}
+	for _, wrong := range []string{"maybe", "Approve", "approve it", "\napprove", "reject-ish\napprove"} {
+		if _, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", wrong); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("answer %q: err = %v, want ErrInvalid", wrong, err)
+		}
+	}
+	// A refused answer writes nothing: no receipt, the decision stays open and its mutation id stays free.
+	if _, err := s.Receipt("m-wrong"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("refused answer left a receipt: %v", err)
+	}
+	if got, _ := s.Decisions("app", "t-1"); got[0].Answered || got[0].Answer != "" {
+		t.Fatalf("refused answer changed the decision: %+v", got[0])
+	}
+
+	answer := "  approve \r\n\nKeep the migration behind a flag.\r\n"
+	first, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sampleDecision("approve-plan")
+	want.Answered, want.Answer, want.Choice, want.Note = true, answer, "approve", "Keep the migration behind a flag."
+	if got, err := s.Decisions("app", "t-1"); err != nil || !reflect.DeepEqual(got, []Decision{want}) {
+		t.Fatalf("Decisions = %+v, %v; want %+v", got, err, want)
+	}
+
+	// Replaying the same answer returns the original receipt; any other second answer is refused.
+	replay, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", answer)
+	if err != nil || replay != first {
+		t.Fatalf("replay = %+v, %v; want %+v", replay, err, first)
+	}
+	if _, err := s.AnswerDecision("m-again", "app", "t-1", "approve-plan", "reject"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("second answer: err = %v, want ErrInvalid", err)
+	}
+	if _, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", "reject"); !errors.Is(err, ErrMutationConflict) {
+		t.Fatalf("different answer under the same mutation id: err = %v, want ErrMutationConflict", err)
+	}
+}
+
+// TestLegacyDecisionRecords reads and answers a decision recorded before typed decisions.
+func TestLegacyDecisionRecords(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	legacy := `{"repository":"app","task_id":"t-1","id":"accept-plan","question":"Accept the plan?","answered":false}`
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b, err := createRepoBucket(tx, "app", bucketDecisions)
+		if err != nil {
+			return err
+		}
+		return b.Put(recordKey("t-1", "accept-plan"), []byte(legacy))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.AllDecisions("app")
+	want := Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Question: "Accept the plan?"}
+	if err != nil || !reflect.DeepEqual(all, []Decision{want}) {
+		t.Fatalf("AllDecisions = %+v, %v; want %+v", all, err, want)
+	}
+	if _, err := s.AnswerDecision("m-2", "app", "t-1", "accept-plan", "Anything at all\nwith lines"); err != nil {
+		t.Fatalf("legacy answer: %v", err)
+	}
+	got, _ := s.Decisions("app", "t-1")
+	want.Answered, want.Answer = true, "Anything at all\nwith lines"
+	if !reflect.DeepEqual(got, []Decision{want}) {
+		t.Fatalf("answered legacy decision = %+v, want %+v", got, want)
+	}
+}
+
+func TestAllDecisionsOrder(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-2"))
+	mustCreate(t, s, "m-2", sampleTask("app", "t-1"))
+	for i, ref := range [][2]string{{"t-2", "a"}, {"t-1", "b"}, {"t-1", "a"}} {
+		d := sampleDecision(ref[1])
+		d.TaskID = ref[0]
+		if _, err := s.OpenDecision(fmt.Sprint("m-d-", i), d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := s.AllDecisions("app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, d := range all {
+		order = append(order, d.TaskID+"/"+d.ID)
+	}
+	if strings.Join(order, ",") != "t-1/a,t-1/b,t-2/a" {
+		t.Fatalf("order = %v", order)
+	}
+	if none, err := s.AllDecisions("lib"); err != nil || len(none) != 0 {
+		t.Fatalf("AllDecisions(lib) = %+v, %v", none, err)
 	}
 }
 
@@ -298,7 +469,10 @@ func TestRecordsRequireTask(t *testing.T) {
 			_, err := s.BindPane("m-4", PaneBinding{Repository: "app", TaskID: "t-2", Session: "s", Workspace: "w", Tab: "t", Pane: "p"})
 			return err
 		},
-		"decision": func() error { _, err := s.OpenDecision("m-5", "app", "t-2", "q", "Question?"); return err },
+		"decision": func() error {
+			_, err := s.OpenDecision("m-5", Decision{Repository: "app", TaskID: "t-2", ID: "q", Kind: DecisionQuestion, Question: "Question?"})
+			return err
+		},
 	} {
 		if err := call(); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s for a missing task: err = %v, want ErrNotFound", name, err)

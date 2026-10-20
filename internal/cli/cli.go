@@ -34,6 +34,8 @@ Commands:
   fake-artisan   run the test-only fake Artisan
   task new|show|list --store <path> ...
                  create Director tasks bound to their workflow revision and list or show them
+  decide list|show|answer --store <path> ...
+                 list open decisions, show one and record the Guildmaster's answer
   help           print this help
 `
 
@@ -130,6 +132,8 @@ func (a *App) Run(args []string) int {
 		return a.fakeArtisan(rest)
 	case "task":
 		return a.task(rest)
+	case "decide":
+		return a.decide(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}
