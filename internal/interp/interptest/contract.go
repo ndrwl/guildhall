@@ -40,7 +40,7 @@ type Harness struct {
 }
 
 // RunLauncherContract runs the interp.Launcher contract against harnesses from newHarness.
-// Each case calls newHarness once.
+// Each case creates independent launchers with newHarness.
 func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 	attempt := func(t *testing.T, h Harness, instructions string) interp.Spec {
 		a := Build(t, "spec-v1.md")
@@ -142,6 +142,33 @@ func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		}
 		if _, err := wait(spec, 300*time.Millisecond); !errors.Is(err, adapter.ErrNoResultYet) {
 			t.Errorf("WaitResult after Stop = %v, want ErrNoResultYet", err)
+		}
+	})
+
+	t.Run("refuses handles from another launcher", func(t *testing.T) {
+		harnesses := []Harness{newHarness(t), newHarness(t)}
+		handles := make([]interp.Handle, len(harnesses))
+		for i, h := range harnesses {
+			spec := prepare(t, h, Hangs)
+			hd, err := h.Launcher.Launch(context.Background(), spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			handles[i] = hd
+			t.Cleanup(func() { _ = h.Launcher.Stop(hd) })
+		}
+		if handles[0].Identity != handles[1].Identity {
+			t.Fatal("cross-launcher case requires identical attempt identities")
+		}
+		for i, h := range harnesses {
+			for range 2 {
+				if err := h.Launcher.Stop(handles[1-i]); err == nil {
+					t.Error("Stop accepted another launcher's handle")
+				}
+				if err := h.Launcher.Stop(handles[i]); err != nil {
+					t.Errorf("Stop of own handle = %v", err)
+				}
+			}
 		}
 	})
 

@@ -12,13 +12,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -31,6 +32,8 @@ const ReviewOutcomeFile = "review-outcome.json"
 
 // ErrScript reports a launch the script did not allow; the script has also failed the test.
 var ErrScript = errors.New("mock agent")
+
+var scriptIDs atomic.Uint64
 
 // TB is the part of testing.TB a Script reports through.
 type TB interface {
@@ -141,6 +144,7 @@ func Expect(spec interp.Spec, r Response) Expectation {
 // Launch returns after writing: the mock runs no process.
 type Script struct {
 	t       TB
+	id      uint64
 	mu      sync.Mutex
 	next    []Expectation
 	handles map[interp.Handle]bool
@@ -149,7 +153,7 @@ type Script struct {
 
 // NewScript returns a Script expecting exps in order.
 func NewScript(t TB, exps ...Expectation) *Script {
-	s := &Script{t: t, next: exps, handles: map[interp.Handle]bool{}}
+	s := &Script{t: t, id: scriptIDs.Add(1), next: exps, handles: map[interp.Handle]bool{}}
 	t.Cleanup(func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -204,7 +208,7 @@ func (s *Script) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, e
 	if problems := append(match(e, spec.Manifest), verifyFiles(spec)...); len(problems) > 0 {
 		return interp.Handle{}, s.fail("%s", strings.Join(problems, "; "))
 	}
-	h := interp.Handle{Identity: spec.Identity, Ref: "mock-" + strconv.Itoa(len(s.specs))}
+	h := interp.Handle{Identity: spec.Identity, Ref: fmt.Sprintf("mock-%d-%d", s.id, len(s.specs))}
 	if !e.Respond.hang {
 		if err := respond(spec, e.Respond); err != nil {
 			return interp.Handle{}, fmt.Errorf("mock agent: %w", err)
@@ -351,6 +355,14 @@ func digest(data []byte) string {
 
 // respond writes the response's files, then its result.
 func respond(spec interp.Spec, r Response) error {
+	for _, f := range r.files {
+		if !fs.ValidPath(f.Path) || f.Path == "." || strings.Contains(f.Path, "\\") || !filepath.IsLocal(filepath.FromSlash(f.Path)) {
+			return fmt.Errorf("unsafe response path %q", f.Path)
+		}
+		if filepath.Join(spec.WorkDir, filepath.FromSlash(f.Path)) == filepath.Clean(spec.ResultFile) {
+			return fmt.Errorf("response path %q collides with result file", f.Path)
+		}
+	}
 	outputs := []adapter.Output{}
 	for _, f := range r.files {
 		if err := writeAtomic(filepath.Join(spec.WorkDir, filepath.FromSlash(f.Path)), f.Data); err != nil {

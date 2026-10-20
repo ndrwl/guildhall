@@ -305,6 +305,49 @@ func TestExistingResultIsNeverReplaced(t *testing.T) {
 	}
 }
 
+func TestResponsePathsValidatedBeforeWriting(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "../escape", "notes/../escape", "./output", "notes/./output", "notes//output", "notes/", `notes\output`, "/absolute", "result.json", ReviewOutcomeFile, interp.BlockedQuestionFile} {
+		for _, existing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/existing=%t", name, existing), func(t *testing.T) {
+				spec := Build(t, "spec-v1.md").Render(t)
+				resultName := "result.json"
+				r := Succeed("built", File{Path: name, Data: []byte("replacement")})
+				switch name {
+				case ReviewOutcomeFile:
+					resultName = name
+					r = Review(ReviewFixture(t, "approved"))
+				case interp.BlockedQuestionFile:
+					resultName = name
+					r = Blocked("Which option?", "one", "two")
+				}
+				spec.ResultFile = filepath.Join(spec.WorkDir, resultName)
+				var before []byte
+				if existing {
+					if err := adapter.WriteResult(spec.ResultFile, adapter.Result{Identity: spec.Identity, Status: adapter.StatusFailed, Summary: "original"}); err != nil {
+						t.Fatal(err)
+					}
+					before = readFile(t, spec.ResultFile)
+				}
+				r.files = append([]File{{Path: "first.txt", Data: []byte("must not be written")}}, r.files...)
+				s := NewScript(t, Expect(spec, r))
+				if _, err := s.Launch(context.Background(), spec); err == nil {
+					t.Fatal("Launch accepted an unsafe or colliding output")
+				}
+				if _, err := os.Stat(filepath.Join(spec.WorkDir, "first.txt")); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("response wrote a file before validating all paths: %v", err)
+				}
+				if existing {
+					if after := readFile(t, spec.ResultFile); !bytes.Equal(before, after) {
+						t.Errorf("result replaced: %s", after)
+					}
+				} else if _, err := os.Stat(spec.ResultFile); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("refused response wrote a result: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestConcurrentLaunches(t *testing.T) {
 	const n = 8
 	specs := make([]interp.Spec, n)
