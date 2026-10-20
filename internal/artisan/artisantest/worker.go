@@ -28,6 +28,9 @@ type Worker struct {
 	// BreakawayGrandchild first asks for CREATE_BREAKAWAY_FROM_JOB (Windows
 	// only) and records the answer; a refused grandchild is started normally.
 	BreakawayGrandchild bool `json:"breakaway_grandchild,omitempty"`
+	// ExitAfterSpawn makes the worker exit once its grandchildren are
+	// started, orphaning them.
+	ExitAfterSpawn bool `json:"exit_after_spawn,omitempty"`
 	// Lifetime bounds every process; zero means one minute.
 	Lifetime time.Duration `json:"lifetime,omitempty"`
 	Release  string        `json:"release,omitempty"`
@@ -152,6 +155,9 @@ func (w Worker) run() int {
 				return 2
 			}
 		}
+		if w.ExitAfterSpawn {
+			return 0
+		}
 	}
 	w.Wait()
 	return 0
@@ -175,7 +181,7 @@ func (w Worker) Wait() {
 
 func (w Worker) spawnGrandchild() error {
 	g := w
-	g.Role, g.Grandchildren = "grandchild", 0
+	g.Role, g.Grandchildren, g.ExitAfterSpawn = "grandchild", 0, false
 	if w.BreakawayGrandchild && breakawayAvailable {
 		c := g.command()
 		applyBreakaway(c)

@@ -84,6 +84,7 @@ func newFakeHarness() artisantest.Harness {
 		Terminate:        true,
 		SetsidEscapes:    true,
 		BreakawayRefused: true,
+		Kind:             artisan.KindGroup,
 	}
 }
 
@@ -192,6 +193,10 @@ func (u *fakeUnit) Interrupt() error {
 func (u *fakeUnit) Terminate() error        { return u.rung(true) }
 func (u *fakeUnit) Kill() error             { return u.rung(true) }
 func (u *fakeUnit) Exited() <-chan struct{} { return u.exited }
+
+func (u *fakeUnit) Containment() artisan.Containment {
+	return artisan.Containment{Kind: artisan.KindGroup}
+}
 
 func (u *fakeUnit) Close() error {
 	u.mu.Lock()

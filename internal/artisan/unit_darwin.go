@@ -11,6 +11,10 @@ import (
 
 const ioctlGetTermios = unix.TIOCGETA
 
+// newUnit contains the worker in a process group: macOS has no cgroup and no
+// subreaper.
+func newUnit(string) (Unit, error) { return newGroupUnit(Containment{Kind: KindGroup}), nil }
+
 // setParentDeath: macOS has no parent-death signal.
 func setParentDeath(*syscall.SysProcAttr) {}
 

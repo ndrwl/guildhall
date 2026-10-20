@@ -246,3 +246,5 @@ func (u *jobUnit) closeLocked() error {
 	u.closed = true
 	return nil
 }
+
+func (u *jobUnit) Containment() Containment { return Containment{Kind: KindJob, Name: u.name} }

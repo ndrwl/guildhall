@@ -16,14 +16,17 @@ import (
 
 // groupUnit contains the worker in its own process group. The leader is not
 // reaped before Close, so its PID, the group id, stays allocated while the
-// unit can signal the group.
+// unit can signal the group. With a box, membership and signals are the
+// box's instead of the group's.
 type groupUnit struct {
-	mu         sync.Mutex
-	cmd        *exec.Cmd
-	worker     Identity
-	foreground bool
-	closed     bool
-	done       chan struct{}
+	mu          sync.Mutex
+	cmd         *exec.Cmd
+	worker      Identity
+	foreground  bool
+	closed      bool
+	done        chan struct{}
+	containment Containment
+	box         box
 
 	// lookup and signal are the leader check's and the rungs' OS calls.
 	lookup      func(pid int) (Identity, error)
@@ -31,9 +34,24 @@ type groupUnit struct {
 	signal      func(pid int, sig unix.Signal) error
 }
 
-func newUnit(string) (Unit, error) {
-	return &groupUnit{done: make(chan struct{}), lookup: Lookup, lookupGroup: lookupGroup, signal: unix.Kill}, nil
+// box is a container the worker is created in besides its process group: a
+// Linux cgroup.
+type box interface {
+	// place sets attr so the worker is created inside the box; release runs
+	// once the worker exists or failed to start.
+	place(attr *syscall.SysProcAttr) (release func(), err error)
+	holds(pid int) (bool, error)
+	members() ([]Identity, error)
+	signal(sig unix.Signal) error
+	// remove deletes the emptied box.
+	remove() error
 }
+
+func newGroupUnit(c Containment) *groupUnit {
+	return &groupUnit{done: make(chan struct{}), containment: c, lookup: Lookup, lookupGroup: lookupGroup, signal: unix.Kill}
+}
+
+func (u *groupUnit) Containment() Containment { return u.containment }
 
 func isTerminal(fd int) bool {
 	_, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
@@ -56,8 +74,17 @@ func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
 		attr.Foreground, attr.Ctty = true, 0
 	}
 	setParentDeath(attr)
+	release := func() {}
+	if u.box != nil {
+		var err error
+		if release, err = u.box.place(attr); err != nil {
+			return Identity{}, err
+		}
+	}
 	cmd.SysProcAttr = attr
-	if err := startLocked(cmd); err != nil {
+	err := startLocked(cmd)
+	release()
+	if err != nil {
 		if attr.Foreground {
 			reclaimTerminal()
 		}
@@ -70,6 +97,12 @@ func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
 		close(u.done)
 	}()
 	id, pgid, err := u.lookupGroup(pid)
+	if err == nil && u.box != nil {
+		var in bool
+		if in, err = u.box.holds(pid); err == nil && !in {
+			err = errors.New("not in its cgroup")
+		}
+	}
 	if err != nil || pgid != pid {
 		if u.foreground {
 			reclaimTerminal()
@@ -86,6 +119,9 @@ func (u *groupUnit) Members() ([]Identity, error) {
 	defer u.mu.Unlock()
 	if err := u.usable(); err != nil {
 		return nil, err
+	}
+	if u.box != nil {
+		return u.box.members()
 	}
 	return groupMembers(u.worker.PID)
 }
@@ -109,6 +145,9 @@ func (u *groupUnit) send(sig unix.Signal) error {
 	defer u.mu.Unlock()
 	if err := u.usable(); err != nil {
 		return err
+	}
+	if u.box != nil {
+		return u.box.signal(sig)
 	}
 	return u.signalGroup(sig)
 }
@@ -143,11 +182,18 @@ func (u *groupUnit) Close() error {
 
 func (u *groupUnit) closeLocked() error {
 	if u.cmd == nil {
+		if u.box != nil {
+			if err := u.box.remove(); err != nil {
+				return err
+			}
+		}
 		u.closed = true
 		return nil
 	}
 	var err error
-	if u.worker.Token == "" {
+	if u.box != nil {
+		err = u.box.signal(unix.SIGKILL)
+	} else if u.worker.Token == "" {
 		err = u.signal(-u.worker.PID, unix.SIGKILL)
 		if errors.Is(err, unix.ESRCH) {
 			err = nil
@@ -167,6 +213,12 @@ func (u *groupUnit) closeLocked() error {
 	_ = u.cmd.Wait()
 	if u.foreground {
 		reclaimTerminal()
+		u.foreground = false
+	}
+	if u.box != nil {
+		if err := u.box.remove(); err != nil {
+			return err
+		}
 	}
 	u.closed = true
 	return nil
