@@ -27,7 +27,6 @@ func TestRenderRejectsInvalidSettingsBeforeInstallation(t *testing.T) {
 		{"actor-missing", "review", `{}`, "actor"},
 		{"actor-single-kind", "plan", `{"actor":"artisan"}`, "actor"},
 		{"unknown-setting", "review", `{"actor":"artisan","typo":true}`, "typo"},
-		{"skills-disallowed-kind", "grill", `{"actor":"artisan","skills":["guildhall-grill-notes"]}`, "skills"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmp := t.TempDir()

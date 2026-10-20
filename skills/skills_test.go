@@ -314,6 +314,9 @@ func TestInstallIsTheFirstRenderRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	step := workflow.Step{ID: "grill", Type: "grill", Version: 1, Settings: map[string]json.RawMessage{"actor": json.RawMessage(`"artisan"`), "skills": list}}
+	if err := workflow.ValidateStepSettings(step); err != nil {
+		t.Fatal(err)
+	}
 	r, err := render.Prompt(
 		render.Stage{Repository: "cli", Task: "t1", Step: step, Attempt: 1, Dir: filepath.Join(tmp, "attempt")},
 		nil,

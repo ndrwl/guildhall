@@ -97,7 +97,7 @@ var (
 )
 
 var kinds = []Kind{
-	{Type: "grill", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Actors: []Actor{DirectorActor, ArtisanActor}},
+	{Type: "grill", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Settings: map[string]Setting{"skills": artisan["skills"]}, Actors: []Actor{DirectorActor, ArtisanActor}},
 	{Type: "research", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Actors: artisanOnly},
 	{
 		Type: "plan", Version: 1,
