@@ -19,5 +19,5 @@ Pure over embedded files: no interface and no double.
 
 ## Tests
 
-`skills_test.go`: the rules above over the embedded and checked-out root, the golden digests, which the Windows runner checks against a CRLF-configured checkout, script parsing with `sh -n` and the PowerShell parser (a missing shell is skipped by name), and `Install` rendered through `render.Prompt` ahead of a decoy managed root.
+`skills_test.go`: the rules above over the embedded and checked-out root, the golden digests on the CI platform matrix with LF checkout enforced by `.gitattributes`, script parsing with `sh -n` and the PowerShell parser (a missing shell is skipped by name), and `Install` rendered through `render.Prompt` ahead of a decoy managed root.
 No test starts a model.

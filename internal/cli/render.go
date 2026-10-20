@@ -25,7 +25,7 @@ func (a *App) renderPrompt(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var request struct {
 		Stage    render.Stage
 		Inputs   []render.Input
@@ -52,7 +52,7 @@ func (a *App) renderPrompt(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	if err := a.InstallSkills(dir); err != nil {
 		return a.fail(err)
 	}
