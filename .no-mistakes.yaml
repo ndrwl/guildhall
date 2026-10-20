@@ -1,0 +1,17 @@
+# Validation settings for this repository.
+# Gate-control keys below are honoured only from the copy on the default branch.
+
+# Gate agents must not load project-level agent instructions or settings.
+disable_project_settings: true
+
+# Every pipeline step for this repository runs on Pi.
+# A pinned model and effort are chosen per run, not here.
+agent: pi
+
+document:
+  instructions: |
+    Follow CONTRIBUTING.md for documentation style and placement.
+    Write one sentence per line in Markdown.
+
+# review.path_instructions are added once the review standard document exists.
+# commands.test is deliberately unset: targeted tests run in the pipeline and the full suite runs in CI.

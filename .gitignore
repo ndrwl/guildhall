@@ -1,0 +1,8 @@
+# Build output
+/dist/
+
+# Local validation state
+.no-mistakes/
+
+# Local databases
+*.db
