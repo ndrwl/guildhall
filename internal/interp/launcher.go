@@ -91,9 +91,9 @@ const (
 // ErrAdapterRefused reports an adapter that may not be constructed here.
 var ErrAdapterRefused = errors.New("adapter refused")
 
-// CheckAdapter is the guard every Launcher calls before it constructs or runs an adapter.
-// Inside a test binary (testing.Testing) it refuses every adapter but MockAdapter and FakeAdapter,
-// so no test, and so no CI run, can launch a real agent runtime or make a model call.
+// CheckAdapter is the guard every Launcher must call before it constructs or runs an adapter.
+// Inside a test binary (testing.Testing) it refuses every adapter but MockAdapter and FakeAdapter.
+// It guards callers of this seam, not direct adapter construction elsewhere.
 // Outside tests it allows any name; whether the adapter exists is the launcher's concern.
 func CheckAdapter(name string) error {
 	return checkAdapter(name, testing.Testing())

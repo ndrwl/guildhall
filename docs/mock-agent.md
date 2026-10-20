@@ -3,7 +3,8 @@
 The interpreter launches Artisan attempts through one seam, `interp.Launcher`, declared in `internal/interp` beside the code that will call it.
 `interptest.Script` is its scripted double, the mock agent: tests describe the attempts they expect the interpreter to launch and what each attempt should return.
 The mock checks the prompts, skills, artefact revisions and standards it is given and writes the scripted response.
-It makes no model calls and is not evidence of semantic intelligence: it proves only that the interpreter launched the right attempt with the right files and handled the scripted answer.
+It makes no model calls and is not evidence of semantic intelligence: it checks the launched attempt and its files and returns the scripted answer.
+Interpreter integration and result intake are separate work.
 
 ## The launch seam
 
@@ -22,9 +23,8 @@ It is the interpreter's own type; the conformance slice maps it onto `adapter.Sp
 
 ## Adapter guard
 
-Every launcher calls `interp.CheckAdapter` before it constructs or runs an adapter.
-Inside a test binary it refuses every adapter except `mock` and `fake`, so no test, and so no CI run, can launch a real agent runtime.
-Outside tests it allows any name.
+Every implementation of `interp.Launcher` must call `interp.CheckAdapter` before it constructs or runs an adapter; `Script` is the only implementation today.
+The guard's scope and allowed adapters are defined by [`CheckAdapter`](../internal/interp/launcher.go); it does not intercept direct adapter construction outside this seam.
 
 ## Scripts
 
@@ -50,9 +50,9 @@ The script fails the test with `t.Errorf` and refuses the launch with `ErrScript
 - an input carrying another artefact revision;
 - a prompt, input copy or skill file that does not match its manifest.
 
-A refused launch consumes its expectation, so one wrong launch is reported once.
+Once matching begins, a refused launch consumes its expectation, so one wrong launch is reported once.
 Expectations still unlaunched when the test ends fail it.
-A spec that fails `Spec.Validate` is refused without failing the test, because every launcher refuses it.
+An ended context or a spec that fails `Spec.Validate` is refused before consuming an expectation and without failing the test, because every launcher refuses it.
 
 ## Responses
 
@@ -64,7 +64,10 @@ A spec that fails `Spec.Validate` is refused without failing the test, because e
 | `Blocked(question, options...)` | `blocked-question.json`, schema `guildhall.blocked-question/1` | `failed`, listing it |
 | `Hang()` | Nothing | None, until stopped and after |
 
-Each file is written to a temporary file beside its target and renamed into place, and then the result is published with `adapter.WriteResult`, so a reader sees no result or the whole one and the outputs exist before it.
+Before writing any response files, the mock rejects empty or absolute output paths, dot segments, empty path segments, backslashes and paths that are not local to the working directory.
+It also rejects an output whose cleaned absolute target equals `ResultFile` under `strings.EqualFold` on every platform, or whose existing target is the same file as an existing result according to `os.SameFile`.
+These refusals return a launch error without writing any response files; regression coverage is in `TestResponsePathsValidatedBeforeWriting` and `TestResponseRejectsExistingResultAlias`.
+Each accepted file is written to a temporary file beside its target and renamed into place, and then the result is published with `adapter.WriteResult`, so a reader sees no result or the whole one and the outputs exist before it.
 The mock runs no process: `Launch` returns after writing.
 
 The blocked question file is provisional: no runtime writes it yet, and the interpreter's intake of it is separate work.
