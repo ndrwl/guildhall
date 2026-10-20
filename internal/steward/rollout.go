@@ -63,7 +63,9 @@ func (r Remote) String() string { return r.Alias + ":" + r.Path }
 // It fails with an error carrying the implementation's diagnostic when the source is missing,
 // or the machine refuses or cannot be reached; it stops when ctx ends, with an error that wraps ctx.Err().
 // A copy that fails in any of these ways before transferring data leaves the destination unchanged.
-// A copy interrupted mid-transfer may leave the destination partial, so a Rollout reads back and verifies what it put.
+// A copy interrupted mid-transfer may leave the destination partial. A Rollout reads back only after successful puts;
+// failed transfers are recorded as failed and may leave partial remote files without a read-back digest.
+// Checksum-framed managed-file loading subsequently detects incomplete or corrupt transfers; no rollback is promised.
 // A Copier adds no credentials of its own and runs no remote command.
 type Copier interface {
 	// Fetch copies src on a machine to the local file dst.
@@ -373,7 +375,8 @@ type Step struct {
 // Apply carries out the dry-run plan in stageDir.
 // It plans again and refuses unless the result is identical and the staged previews are intact,
 // and refuses a plan needing approval unless approve is that plan's digest.
-// Each changed copy keeps its previous managed file as a revision, then gets the new managed file, then is read back and verified.
+// Each changed copy keeps its previous managed file as a revision, then gets the new managed file;
+// only after both puts succeed is it read back and verified.
 // The local config is never written; validated managed inputs replace preview source paths in transport commands.
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
 //

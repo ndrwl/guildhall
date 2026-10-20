@@ -116,7 +116,7 @@ For each copy that changes, it then runs the three planned commands:
 3. read `managed.toml` back and compare its sha256 with the plan.
 
 A failure on one copy does not stop the others.
-The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed` or `verify_failed`), its before, after and read-back digests, the revision file and every command with its error.
+The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed` or `verify_failed`), its before and after digests, its read-back digest when verification reaches digest comparison, the revision file and every attempted command with its error. Read-back follows successful uploads only; failed transfers are recorded as failed and may leave partial remote files without a read-back digest.
 Apply exits 1 unless every copy is applied or unchanged; a plan that is no longer current needs a new dry run.
 Applying an unchanged plan performs no remote writes, but still writes a local receipt.
 
