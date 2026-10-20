@@ -74,7 +74,7 @@ func (a *App) messages(args []string) int {
 			return fail(err)
 		}
 	}
-	// Opening writable would create a missing file, and messages never create a store.
+	// Preserve the CLI's missing-store diagnostic before the existing-store-only open.
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(fmt.Errorf("no store at %s", *path))
 	}

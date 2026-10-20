@@ -1,7 +1,8 @@
 # Messaging
 
 A Director and its Artisans exchange short messages through the Director's store (R1.17).
-`internal/messaging` and the `guildhall messages` commands implement a local, durable inbox: a message is a versioned JSON envelope that is validated, committed to the store with a receipt and kept until its recipient acknowledges it.
+`internal/messaging` and the `guildhall messages` commands implement a local, durable inbox: a message is a versioned JSON envelope that is validated and committed to the store with a receipt.
+Acknowledgement removes it from the inbox, not from the store; it remains readable by id.
 There is no server: each command opens the store, does one operation and exits, and nothing waits or polls in the background (R1.29).
 No model is called to send, store, list or acknowledge a message, so an idle inbox spends no model tokens (R1.14).
 
@@ -76,7 +77,8 @@ A message body is one JSON object, read from a file or from standard input, neve
 | `text` | Concise prose: non-blank valid UTF-8 of at most 16 KiB. |
 | `artifacts` | Optional, at most 32: files the message refers to, each a clean relative slash-separated `path` and the lowercase hex `sha256` of its content. The files themselves are not stored. |
 
-Decoding is strict: unknown fields, a field given twice (including in a different letter case), trailing data and envelopes over 128 KiB are refused.
+Decoding is strict: field names must match the wire spelling exactly, including nested artifact keys; unknown fields, duplicate keys, trailing data and envelopes over 128 KiB are refused.
+Invalid UTF-8 bytes and unpaired JSON Unicode surrogate escapes are refused rather than replaced.
 A leading UTF-8 byte order mark and CRLF line endings, as some Windows tools write, are accepted.
 UTF-16, which Windows PowerShell 5.1 writes for `>` and `Out-File`, is refused with a hint rather than misread; write the file as UTF-8, for example with `Set-Content -Encoding utf8`, or pipe it to `-` from PowerShell 7 or Bash.
 
@@ -110,6 +112,7 @@ A listed or read message is its envelope plus `sequence`, its store-wide order, 
 - **Retries are safe.**
   A send records the mutation `message:<id>`.
   Sending the same envelope again, for example after losing the first result, prints the original receipt and stores nothing new, even after a restart or after the message was acknowledged.
+  Omitted, null and empty artifact lists are equivalent for retries.
   Reusing an id for a different envelope is refused with the store's mutation conflict and changes nothing.
 - **Nothing unread is dropped.**
   A message stays in its recipient's inbox until that recipient acknowledges it, across restarts.
