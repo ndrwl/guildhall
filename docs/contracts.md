@@ -34,7 +34,6 @@ Real external programs are replaced by the test binary itself acting as the prog
 Integration tests against real files and processes stay alongside the doubles.
 CI makes no model calls and uses no credentials or external network services.
 Worker ownership tests use attempt-local loopback connections.
-The optional Unix OpenSSH timeout check in `internal/steward/scp_unix_test.go` uses a silent loopback peer without reaching authentication.
 
 ## Layout
 
