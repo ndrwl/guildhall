@@ -1,0 +1,36 @@
+# Example Director config. Paths, remotes and names are placeholders.
+schema_version = 1
+mode = "director"
+name = "tools"
+
+# Written only by Steward rollouts.
+[managed.standards_revision]
+value = "standards-1"
+
+[managed.review_instructions]
+value = "Cite the accepted requirement for every finding."
+overridable = true
+
+# Owned by this Director; may replace managed keys marked overridable.
+[local]
+review_instructions = "Cite the accepted requirement for every finding and check Windows paths."
+
+[[repository]]
+id = "cli"
+path = '/srv/src/cli'
+remote = "git@github.com:example/cli.git"
+owner_machine = "workstation"
+# merge_policy defaults to "approval"; workflow defaults to "default".
+
+[[repository]]
+id = "docs-site"
+path = '/srv/src/docs-site'
+remote = "https://github.com/example/docs-site.git"
+owner_machine = "workstation"
+merge_policy = "auto"
+workflow = "default"
+
+# This repository swaps the default workflow's automated review for human review.
+[repository.workflow_overrides.review]
+type = "human-review"
+version = 1
