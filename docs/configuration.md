@@ -114,7 +114,7 @@ The resulting definition's digest changes when its canonical content changes.
 
 A workflow's digest is the sha256 of the parsed definition's canonical JSON encoding, written `sha256:<hex>`.
 Reformatting the file or changing an omitted optional field to its empty value does not change the digest; changes retained in the canonical encoding do.
-Task acceptance must bind the name and digest of its workflow after repository overrides; `workflow.Revision` supplies this pair, but task acceptance is outside this foundation package.
+Task acceptance must bind the name and digest of its workflow after repository overrides; `workflow.Revision` supplies this pair, but task acceptance is outside this foundation package: `guildhall task new` binds it (see [tasks](tasks.md)).
 
 ### Review outcome
 

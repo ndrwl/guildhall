@@ -30,6 +30,8 @@ Commands:
                  send, list, read and acknowledge local Director and Artisan messages
   artisan run    launch one Artisan attempt and wait for its result file
   fake-artisan   run the test-only fake Artisan
+  task new|show|list --store <path> ...
+                 create Director tasks bound to their workflow revision and list or show them
   help           print this help
 `
 
@@ -122,6 +124,8 @@ func (a *App) Run(args []string) int {
 		return a.artisan(rest)
 	case "fake-artisan":
 		return a.fakeArtisan(rest)
+	case "task":
+		return a.task(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}
