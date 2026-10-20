@@ -101,6 +101,48 @@ func TestDoctorReportsPlatformAndEachTool(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsLookupErrors(t *testing.T) {
+	for _, tool := range doctorTools {
+		for _, tc := range []struct {
+			name string
+			path string
+			err  error
+			want string
+		}{
+			{"missing", "", &exec.Error{Name: tool.name, Err: exec.ErrNotFound}, "not found on PATH"},
+			{"relative", "node_modules/.bin/" + tool.name, &exec.Error{Name: tool.name, Err: exec.ErrDot}, ""},
+			{"other", "", errors.New("lookup refused"), "PATH lookup failed: lookup refused"},
+		} {
+			t.Run(tool.name+"/"+tc.name, func(t *testing.T) {
+				app, stdout, stderr := newTestApp(nil, nil)
+				app.LookPath = func(name string) (string, error) {
+					if name == tool.name {
+						return tc.path, tc.err
+					}
+					return "", exec.ErrNotFound
+				}
+				app.Output = func(context.Context, string, ...string) ([]byte, error) {
+					t.Fatal("executed a tool after a failed lookup")
+					return nil, nil
+				}
+				if code := app.Run([]string{"doctor"}); code != 0 {
+					t.Fatalf("exit code = %d, want 0", code)
+				}
+				want := tc.want
+				if tc.name == "relative" {
+					want = "PATH lookup failed: " + tc.err.Error() + " (" + tc.path + ")"
+				}
+				if !strings.Contains(stdout.String(), tool.name+": "+want+"\n") {
+					t.Errorf("stdout = %q, want lookup report %q", stdout, want)
+				}
+				if stderr.Len() != 0 {
+					t.Errorf("stderr = %q, want empty", stderr)
+				}
+			})
+		}
+	}
+}
+
 func TestDoctorReportsEmptyVersionOutput(t *testing.T) {
 	paths := map[string]string{"git": "/bin/git"}
 	outputs := map[string]result{"/bin/git --version": {out: "  \n"}}

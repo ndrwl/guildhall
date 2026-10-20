@@ -37,3 +37,10 @@ The version is injected with `-ldflags -X github.com/ndrwl/guildhall/internal/cl
 `guildhall doctor` prints the platform, the Guildhall and Go versions, and, for each of `git`, `ssh`, `claude` and `herdr`, either the first line of its version output with its resolved path or the reason it could not be read.
 A missing tool is reported, not treated as a failure, so `doctor` exits 0 whenever it could write its report.
 Each version command is bounded by a timeout.
+
+## D7. Release policy regression test
+
+The focused release policy test uses Python 3 and PyYAML 6.0.1 to parse the workflow into a semantic model rather than matching YAML source text.
+Run it with `python3 .github/tests/test_release.py` in an environment with PyYAML available.
+It evaluates the publication condition's conjunction of equality predicates for pushed tags, manual tags, manual branches and pushed branches, and checks that manual builds retain their artifact-upload path.
+These are development-only test dependencies; the binary remains standard-library-only.

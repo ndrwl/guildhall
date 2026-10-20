@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -124,7 +125,13 @@ func (a *App) doctor() string {
 func (a *App) probeTool(name string, args []string) string {
 	path, err := a.LookPath(name)
 	if err != nil {
-		return "not found on PATH"
+		if errors.Is(err, exec.ErrNotFound) {
+			return "not found on PATH"
+		}
+		if path != "" {
+			return fmt.Sprintf("PATH lookup failed: %v (%s)", err, path)
+		}
+		return fmt.Sprintf("PATH lookup failed: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), toolProbeTimeout)
 	defer cancel()
