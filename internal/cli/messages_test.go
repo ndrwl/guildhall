@@ -242,26 +242,55 @@ func TestMessagesConcurrentSends(t *testing.T) {
 	path := messagingStorePath(t)
 	const n = 8
 	codes := make([]int, n)
+	outs := make([]string, n)
 	errs := make([]string, n)
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Go(func() {
-			app, _, stderr := newTestApp(nil, nil)
+			app, stdout, stderr := newTestApp(nil, nil)
 			app.Stdin = strings.NewReader(envelope(fmt.Sprintf("q-%d", i), "director"))
 			codes[i] = app.Run([]string{"messages", "send", "--store", path, "director", "-"})
+			outs[i] = stdout.String()
 			errs[i] = stderr.String()
 		})
 	}
 	wg.Wait()
+	// Separate CLI invocations contend for a bounded file lock. Under load,
+	// a contender may legitimately time out rather than commit a message.
+	want := make(map[string]bool)
+	locked := fmt.Sprintf("guildhall: messages send: store: %s: %s\n", path, store.ErrLocked)
 	for i := range n {
-		if codes[i] != 0 {
+		if codes[i] == 1 && errs[i] == locked && outs[i] == "" {
+			continue
+		}
+		if codes[i] != 0 || errs[i] != "" {
 			t.Fatalf("send %d: exit %d, %s", i, codes[i], errs[i])
 		}
+		id := fmt.Sprintf("q-%d", i)
+		if r := decodeJSON[store.Receipt](t, outs[i]); r.MutationID != "message:"+id || r.Operation != "send-message" || r.Sequence == 0 {
+			t.Fatalf("send %d: receipt = %+v", i, r)
+		}
+		want[id] = true
 	}
-	_, out, _ := runMessages(t, "", "list", "--store", path, "director")
-	if p := decodeJSON[struct {
-		Messages []json.RawMessage `json:"messages"`
-	}](t, out); len(p.Messages) != n {
-		t.Fatalf("messages = %d, want %d", len(p.Messages), n)
+	if len(want) == 0 {
+		t.Fatal("no concurrent send succeeded")
+	}
+	code, out, stderr := runMessages(t, "", "list", "--store", path, "director")
+	if code != 0 {
+		t.Fatalf("list: exit %d, %s", code, stderr)
+	}
+	p := decodeJSON[struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+	}](t, out)
+	for _, m := range p.Messages {
+		if !want[m.ID] {
+			t.Fatalf("unexpected or duplicate persisted message %q", m.ID)
+		}
+		delete(want, m.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("successful sends missing from inbox: %v", want)
 	}
 }
