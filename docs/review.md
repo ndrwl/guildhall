@@ -16,10 +16,10 @@ The verdict is approved, changes requested or rejected, and applies to the exact
   Behaviour that contradicts a requirement is a blocker even when tests pass.
 - **S2 Tests first.**
   New behaviour comes with a test that failed before the change, and the pull request description shows the red and the green runs.
-  Tests are deterministic: no network, no wall-clock races, and no dependence on tools installed on the runner; external processes are replaced by fakes at the process boundary.
+  Tests are deterministic, with no wall-clock races; process doubles and integration tests follow [the contract testing policy](contracts.md#test-doubles-and-shared-contract-tests), including its network constraints and [shell testing rules](contracts.md#platforms-and-shells).
 - **S3 Three platforms.**
   Build, vet, tests, formatting and lint pass on Linux, Windows and macOS in CI.
-  Code uses `path/filepath` and `os/exec` argument lists, never shell syntax, so it behaves the same on every platform.
+  Platform paths, process invocation and interactive-shell boundaries follow [the platform and shell contract](contracts.md#platforms-and-shells).
 - **S4 Honest claims.**
   Nothing is described as supported on a platform or runtime until its acceptance has passed there (R1.27).
   CI on macOS is not live macOS compatibility (R1.30).

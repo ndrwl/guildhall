@@ -33,7 +33,8 @@ When a test double stands in for a real boundary, one contract test runs against
 Real external programs are replaced by the test binary itself acting as the program, so tests cross a real process boundary on every platform without depending on installed tools.
 Not every current double meets this yet; see [outstanding retrofit](#outstanding-retrofit).
 Integration tests against real files and processes stay alongside the doubles.
-CI makes no model calls and uses no credentials or network.
+CI makes no model calls and uses no credentials or external network services.
+Worker ownership tests use attempt-local loopback connections.
 
 ## Layout
 
@@ -49,6 +50,7 @@ A platform difference is part of the contract: say what differs, and test each s
 Put platform-specific code or test cases in `_windows.go` files or files with a `//go:build` line, rather than branching on `runtime.GOOS` throughout.
 Where a platform or shell cannot do something, refuse it with an error that names the limit rather than emulating it.
 Run programs with `os/exec` argument lists; where text must cross an interactive shell, quote it per shell and refuse what that shell cannot pass unchanged.
+Shell round-trip tests execute installed shells against an argument-echoing child and skip missing shells by name rather than replacing the shell with a fake.
 
 ## Current contracts
 
