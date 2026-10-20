@@ -35,6 +35,7 @@ type toolBoundary struct {
 	// install makes name resolvable on the boundary's PATH, running p, and
 	// returns the arguments to pass Output for it.
 	install func(t *testing.T, name string, p probe) []string
+	ready   func() (bool, error)
 }
 
 func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary) {
@@ -74,14 +75,14 @@ func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary)
 			t.Errorf("output = %q, want %q", got, want)
 		}
 	})
-	t.Run("context deadline stops a hung tool", func(t *testing.T) {
+	t.Run("context cancellation stops a hung tool", func(t *testing.T) {
 		b := newBoundary(t)
 		args := b.install(t, "probe-hang", probe{hang: true})
 		path, err := b.app.LookPath("probe-hang")
 		if err != nil {
 			t.Fatalf("LookPath: %v", err)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		done := make(chan struct {
 			out    []byte
@@ -96,19 +97,40 @@ func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary)
 				ctxErr error
 			}{out, err, ctx.Err()}
 		}()
+		startup := time.NewTimer(30 * time.Second)
+		defer startup.Stop()
+		poll := time.NewTicker(10 * time.Millisecond)
+		defer poll.Stop()
+		for {
+			ready, err := b.ready()
+			if err != nil {
+				t.Fatalf("probe readiness: %v", err)
+			}
+			if ready {
+				break
+			}
+			select {
+			case got := <-done:
+				t.Fatalf("Output returned before readiness: output %q, error %v", got.out, got.err)
+			case <-startup.C:
+				t.Fatal("probe did not become ready within 30 seconds")
+			case <-poll.C:
+			}
+		}
+		cancel()
 		select {
 		case got := <-done:
 			if got.err == nil {
-				t.Error("Output error = nil after the deadline, want an error")
+				t.Error("Output error = nil after cancellation, want an error")
 			}
 			if string(got.out) != probeReady {
 				t.Errorf("output = %q, want hang readiness signal %q", got.out, probeReady)
 			}
-			if !errors.Is(got.ctxErr, context.DeadlineExceeded) {
-				t.Errorf("context error at Output return = %v, want DeadlineExceeded", got.ctxErr)
+			if !errors.Is(got.ctxErr, context.Canceled) {
+				t.Errorf("context error at Output return = %v, want Canceled", got.ctxErr)
 			}
-		case <-time.After(30 * time.Second):
-			t.Fatal("Output did not return after its context deadline")
+		case <-time.After(5 * time.Second):
+			t.Fatal("Output did not return promptly after cancellation")
 		}
 	})
 }
@@ -120,17 +142,25 @@ func TestRealToolBoundary(t *testing.T) {
 			t.Fatal(err)
 		}
 		dir := t.TempDir()
+		readyPath := filepath.Join(dir, "ready")
 		t.Setenv("PATH", dir)
 		t.Setenv(probeEnv, "1")
 		return toolBoundary{
 			app: New(),
+			ready: func() (bool, error) {
+				_, err := os.Stat(readyPath)
+				if errors.Is(err, os.ErrNotExist) {
+					return false, nil
+				}
+				return err == nil, err
+			},
 			install: func(t *testing.T, name string, p probe) []string {
 				if runtime.GOOS == "windows" {
 					name += ".exe"
 				}
 				copyFile(t, self, filepath.Join(dir, name))
 				return []string{"-test.run=^TestToolProbeHelper$", "--",
-					p.stdout, p.stderr, strconv.Itoa(p.exit), strconv.FormatBool(p.hang)}
+					p.stdout, p.stderr, strconv.Itoa(p.exit), strconv.FormatBool(p.hang), readyPath}
 			},
 		}
 	})
@@ -139,13 +169,25 @@ func TestRealToolBoundary(t *testing.T) {
 func TestFakeToolBoundary(t *testing.T) {
 	testToolBoundary(t, func(t *testing.T) toolBoundary {
 		f := &fakeTools{paths: map[string]string{}, outputs: map[string]result{}}
+		ready := make(chan struct{})
 		app := &App{Stdout: io.Discard, Stderr: io.Discard, LookPath: f.lookPath, Output: f.output}
 		return toolBoundary{
 			app: app,
+			ready: func() (bool, error) {
+				select {
+				case <-ready:
+					return true, nil
+				default:
+					return false, nil
+				}
+			},
 			install: func(t *testing.T, name string, p probe) []string {
 				path := "/fake/" + name
 				f.paths[name] = path
-				r := result{out: p.stdout + p.stderr, hang: p.hang}
+				r := result{out: p.stdout + p.stderr}
+				if p.hang {
+					r.ready = ready
+				}
 				if p.exit != 0 {
 					r.err = fmt.Errorf("exit status %d", p.exit)
 				}
@@ -167,7 +209,7 @@ func TestToolProbeHelper(t *testing.T) {
 		t.Skip("probe tool for TestRealToolBoundary")
 	}
 	at := slices.Index(os.Args, "--")
-	if at < 0 || len(os.Args) != at+5 {
+	if at < 0 || len(os.Args) != at+6 {
 		fmt.Fprintf(os.Stderr, "probe: bad arguments %q\n", os.Args)
 		os.Exit(2)
 	}
@@ -176,6 +218,10 @@ func TestToolProbeHelper(t *testing.T) {
 	_, _ = io.WriteString(os.Stderr, stderr)
 	if hang == "true" {
 		_, _ = io.WriteString(os.Stdout, probeReady)
+		if err := os.WriteFile(os.Args[at+5], nil, 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
 		time.Sleep(time.Hour)
 	}
 	code, _ := strconv.Atoi(exit)
@@ -201,9 +247,9 @@ type fakeTools struct {
 }
 
 type result struct {
-	out  string
-	err  error
-	hang bool
+	out   string
+	err   error
+	ready chan struct{}
 }
 
 func (f *fakeTools) lookPath(file string) (string, error) {
@@ -219,7 +265,8 @@ func (f *fakeTools) output(ctx context.Context, path string, args ...string) ([]
 	if !ok {
 		return nil, errors.New("unexpected command")
 	}
-	if r.hang {
+	if r.ready != nil {
+		close(r.ready)
 		<-ctx.Done()
 		return []byte(r.out + probeReady), ctx.Err()
 	}
