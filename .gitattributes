@@ -3,3 +3,6 @@
 
 # Store fixtures are bbolt files, never text.
 *.store binary
+
+# Message envelope fixtures keep the exact bytes and encodings Windows tools write.
+internal/messaging/testdata/*.json binary

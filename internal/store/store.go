@@ -79,7 +79,8 @@ var (
 // Options controls Open.
 type Options struct {
 	// ReadOnly opens an existing store without creating, initializing or writing it.
-	ReadOnly bool
+	ReadOnly     bool
+	RequireStore bool
 	// LockTimeout bounds the wait for another process's lock; zero means DefaultLockTimeout.
 	LockTimeout time.Duration
 	// Now stamps receipts; nil means time.Now. Times are stored in UTC.
@@ -108,20 +109,42 @@ type Receipt struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// Open opens the store at path, creating and initializing it unless opts.ReadOnly is set.
+// Open opens the store at path, creating and initializing it unless opts.ReadOnly or opts.RequireStore is set.
 // It refuses a file that is not a Guildhall store (ErrNotStore) or has a newer schema (ErrNewerSchema).
 func Open(path string, opts Options) (*Store, error) {
 	timeout := opts.LockTimeout
 	if timeout <= 0 {
 		timeout = DefaultLockTimeout
 	}
-	if opts.ReadOnly {
+	if opts.ReadOnly && !opts.RequireStore {
 		// bbolt would create nothing either, but report a missing file plainly.
 		if _, err := os.Stat(path); err != nil {
 			return nil, fmt.Errorf("store: %w", err)
 		}
 	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: timeout, ReadOnly: opts.ReadOnly})
+	boltOpts := &bolt.Options{Timeout: timeout, ReadOnly: opts.ReadOnly}
+	if opts.RequireStore {
+		boltOpts.NoFreelistSync = true
+		boltOpts.OpenFile = func(name string, flag int, mode os.FileMode) (*os.File, error) {
+			f, err := os.OpenFile(name, flag&^os.O_CREATE, mode)
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("%w: %w", ErrNotStore, err)
+			}
+			if err != nil {
+				return nil, err
+			}
+			info, err := f.Stat()
+			if err == nil && info.Size() == 0 {
+				err = ErrNotStore
+			}
+			if err != nil {
+				_ = f.Close()
+				return nil, err
+			}
+			return f, nil
+		}
+	}
+	db, err := bolt.Open(path, 0o600, boltOpts)
 	switch {
 	case errors.Is(err, berrors.ErrTimeout):
 		return nil, fmt.Errorf("store: %s: %w", path, ErrLocked)
@@ -132,7 +155,7 @@ func Open(path string, opts Options) (*Store, error) {
 	case err != nil:
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
-	if opts.ReadOnly {
+	if opts.ReadOnly || opts.RequireStore {
 		err = db.View(func(tx *bolt.Tx) error { return checkMeta(tx) })
 	} else {
 		err = db.Update(initMeta)
@@ -141,6 +164,7 @@ func Open(path string, opts Options) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("store: %s: %w", path, err)
 	}
+	db.NoFreelistSync = false
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -230,7 +254,7 @@ var mutationIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`
 
 // mutate runs apply and records its receipt in one transaction, or returns the
 // original receipt when mutationID was already committed for the same request.
-// apply fills the receipt's record fields.
+// apply fills the receipt's record fields and may read its sequence.
 func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r *Receipt) error) (Receipt, error) {
 	if !mutationIDPattern.MatchString(mutationID) {
 		return Receipt{}, fmt.Errorf("store: %w: mutation id %q must match %s", ErrInvalid, mutationID, mutationIDPattern)
@@ -257,15 +281,15 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 			}
 			return nil
 		}
-		r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: digest}
-		if err := apply(tx, &r); err != nil {
-			return err
-		}
+		// The sequence is taken first so apply can record it; a failed apply rolls it back.
 		seq, err := receipts.NextSequence()
 		if err != nil {
 			return err
 		}
-		r.Sequence = seq
+		r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: digest, Sequence: seq}
+		if err := apply(tx, &r); err != nil {
+			return err
+		}
 		r.CommittedAt = s.now().UTC()
 		if err := putJSON(receipts, []byte(mutationID), r); err != nil {
 			return err

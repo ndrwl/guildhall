@@ -18,12 +18,14 @@ type Report struct {
 
 // RepositoryCounts counts one repository's records.
 type RepositoryCounts struct {
-	Repository   string
-	Tasks        int
-	Attempts     int
-	Documents    int
-	PaneBindings int
-	Decisions    int
+	Repository     string
+	Tasks          int
+	Attempts       int
+	Documents      int
+	PaneBindings   int
+	Decisions      int
+	Messages       int
+	UnreadMessages int
 }
 
 // maxProblems bounds the problems Doctor collects from a badly damaged file.
@@ -59,6 +61,7 @@ func (s *Store) Doctor() (Report, error) {
 			for name, n := range map[string]*int{
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions,
+				string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 			} {
 				b := tx.Bucket(bucketRepos).Bucket(repo).Bucket([]byte(name))
 				if b == nil {
@@ -92,6 +95,14 @@ func decodeRecord(bucket string, k, v []byte) error {
 		return decode(k, v, new(DocumentRef))
 	case string(bucketPanes):
 		return decode(k, v, new(PaneBinding))
+	case string(bucketMessages):
+		return decode(k, v, new(Message))
+	case string(bucketInbox):
+		// Inbox entries index messages by id rather than holding JSON.
+		if v == nil || !messageIDPattern.Match(v) {
+			return fmt.Errorf("%w: inbox entry %q", ErrNotStore, k)
+		}
+		return nil
 	default:
 		return decode(k, v, new(Decision))
 	}
