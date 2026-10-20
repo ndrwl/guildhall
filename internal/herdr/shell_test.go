@@ -58,3 +58,33 @@ func TestShellCommandRefusesUnknownShellsAndUnsafeText(t *testing.T) {
 		t.Error("ShellCommand accepted an empty argv")
 	}
 }
+
+func TestShellCommandPOSIXUsesForwardSlashesForADriveProgram(t *testing.T) {
+	// dash under Git for Windows cannot start a program named by a
+	// backslashed drive path; every POSIX shell there accepts forward slashes.
+	got, err := ShellCommand("dash.exe", []string{`C:\Program Files\guildhall.exe`, `C:\keep\as is`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `'C:/Program Files/guildhall.exe' 'C:\keep\as is'`; got != want {
+		t.Errorf("ShellCommand = %s, want %s", got, want)
+	}
+	got, err = ShellCommand("bash", []string{`/opt/a\b`, "x"})
+	if err != nil || got != `'/opt/a\b' 'x'` {
+		t.Errorf("non-drive program changed: %s, %v", got, err)
+	}
+}
+
+func TestShellCommandPowerShellRefusesSpacedTrailingBackslash(t *testing.T) {
+	// Windows PowerShell 5.1 quotes an argument containing whitespace for the
+	// native program without doubling a trailing backslash, which then escapes
+	// the closing quote and merges the next argument.
+	for _, arg := range []string{`with space\`, `C:\dir with space\`, `two  spaces\\`} {
+		if _, err := ShellCommand("powershell.exe", []string{"x", arg}); err == nil {
+			t.Errorf("PowerShell accepted %q", arg)
+		}
+	}
+	if _, err := ShellCommand("powershell.exe", []string{"x", `trailing\`, `C:\no space\x`}); err != nil {
+		t.Errorf("PowerShell refused a safe backslash argument: %v", err)
+	}
+}
