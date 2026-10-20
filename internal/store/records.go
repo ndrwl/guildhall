@@ -169,7 +169,7 @@ func (s *Store) CreateTask(mutationID string, t Task) (Receipt, error) {
 	}
 	t.State = TaskOpen
 	return s.mutate(mutationID, "create-task", t, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = t.Repository, t.ID
+		r.Repository, r.TaskID, r.Record = t.Repository, t.ID, "task"
 		for _, dep := range t.DependsOn {
 			if _, err := getTask(tx, dep.Repository, dep.ID); err != nil {
 				return fmt.Errorf("dependency: %w", err)
@@ -200,7 +200,7 @@ func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskSt
 		State      TaskState `json:"state"`
 	}{repository, taskID, state}
 	return s.mutate(mutationID, "set-task-state", req, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = repository, taskID
+		r.Repository, r.TaskID, r.Record = repository, taskID, "task"
 		t, err := openTask(tx, repository, taskID)
 		if err != nil {
 			return err
@@ -238,7 +238,7 @@ func (s *Store) StartAttempt(mutationID, repository, taskID, step string) (Recei
 			return invalid("attempt %d of step %q is still running", last.Number, step)
 		}
 		a := StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: last.Number + 1}
-		r.Attempt = a.Number
+		r.Attempt, r.Record = a.Number, attemptRecord(step, a.Number)
 		return putJSON(attempts, attemptKey(taskID, step, a.Number), a)
 	})
 }
@@ -256,7 +256,7 @@ func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, numbe
 	}
 	req := StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: number, Outcome: outcome}
 	return s.mutate(mutationID, "finish-attempt", req, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID, r.Attempt = repository, taskID, number
+		r.Repository, r.TaskID, r.Attempt, r.Record = repository, taskID, number, attemptRecord(step, number)
 		attempts := repoBucket(tx, repository, bucketAttempts)
 		key := attemptKey(taskID, step, number)
 		var a StageAttempt
@@ -283,7 +283,7 @@ func (s *Store) PutDocument(mutationID string, d DocumentRef) (Receipt, error) {
 		return Receipt{}, invalid("document sha256 %q must be 64 lowercase hex characters", d.SHA256)
 	}
 	return s.mutate(mutationID, "put-document", d, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = d.Repository, d.TaskID
+		r.Repository, r.TaskID, r.Record = d.Repository, d.TaskID, "document/"+d.Name
 		if _, err := getTask(tx, d.Repository, d.TaskID); err != nil {
 			return err
 		}
@@ -310,7 +310,7 @@ func (s *Store) BindPane(mutationID string, b PaneBinding) (Receipt, error) {
 		}
 	}
 	return s.mutate(mutationID, "bind-pane", b, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = b.Repository, b.TaskID
+		r.Repository, r.TaskID, r.Record = b.Repository, b.TaskID, "pane"
 		if _, err := getTask(tx, b.Repository, b.TaskID); err != nil {
 			return err
 		}
@@ -329,7 +329,7 @@ func (s *Store) UnbindPane(mutationID, repository, taskID string) (Receipt, erro
 	}
 	req := TaskRef{Repository: repository, ID: taskID}
 	return s.mutate(mutationID, "unbind-pane", req, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = repository, taskID
+		r.Repository, r.TaskID, r.Record = repository, taskID, "pane"
 		panes := repoBucket(tx, repository, bucketPanes)
 		if panes == nil || panes.Get([]byte(taskID)) == nil {
 			return fmt.Errorf("%w: pane binding of %s/%s", ErrNotFound, repository, taskID)
@@ -351,7 +351,7 @@ func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
 	}
 	repository, taskID, id := d.Repository, d.TaskID, d.ID
 	return s.mutate(mutationID, "open-decision", d, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = repository, taskID
+		r.Repository, r.TaskID, r.Record = repository, taskID, "decision/"+id
 		if _, err := getTask(tx, repository, taskID); err != nil {
 			return err
 		}
@@ -379,7 +379,7 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 	}
 	req := Decision{Repository: repository, TaskID: taskID, ID: id, Answered: true, Answer: answer}
 	return s.mutate(mutationID, "answer-decision", req, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID = repository, taskID
+		r.Repository, r.TaskID, r.Record = repository, taskID, "decision/"+id
 		decisions := repoBucket(tx, repository, bucketDecisions)
 		key := recordKey(taskID, id)
 		var d Decision
@@ -481,19 +481,7 @@ func (s *Store) Decisions(repository, taskID string) ([]Decision, error) {
 func list[T any](s *Store, repository string, bucket, prefix []byte) ([]T, error) {
 	var out []T
 	err := s.view(func(tx *bolt.Tx) error {
-		b := repoBucket(tx, repository, bucket)
-		if b == nil {
-			return nil
-		}
-		c := b.Cursor()
-		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
-			var rec T
-			if err := decode(k, v, &rec); err != nil {
-				return err
-			}
-			out = append(out, rec)
-		}
-		return nil
+		return scan(repoBucket(tx, repository, bucket), prefix, &out)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: %s of %s: %w", bucket, repository, err)
@@ -548,6 +536,9 @@ func decode(k, v []byte, rec any) error {
 // recordKey joins ids with "/", which no valid id contains, so a prefix scan of
 // recordKey(task, "") sees only that task's records.
 func recordKey(parts ...string) []byte { return []byte(strings.Join(parts, "/")) }
+
+// attemptRecord is the receipt record name of attempt number of step.
+func attemptRecord(step string, number int) string { return fmt.Sprintf("attempt/%s/%d", step, number) }
 
 // attemptKey zero-pads the number so attempts sort numerically.
 func attemptKey(taskID, step string, number int) []byte {

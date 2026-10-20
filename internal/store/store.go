@@ -104,6 +104,10 @@ type Receipt struct {
 	TaskID        string `json:"task_id"`
 	// Attempt is the attempt number StartAttempt assigned, or the one FinishAttempt finished.
 	Attempt int `json:"attempt,omitempty"`
+	// Record names the record the mutation wrote within its task: "task", "attempt/<step>/<number>",
+	// "document/<name>", "pane", "decision/<id>" or "message/<id>" (docs/store.md).
+	// It is empty for mutations outside a task and for receipts committed before it was recorded.
+	Record string `json:"record,omitempty"`
 	// Sequence orders every committed mutation in the store, starting at 1.
 	Sequence    uint64    `json:"sequence"`
 	CommittedAt time.Time `json:"committed_at"`

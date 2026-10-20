@@ -34,8 +34,8 @@ Commands:
                  record and list Guildmaster approvals of workflow revisions
   artisan run    launch one Artisan attempt and wait for its result file
   fake-artisan   run the test-only fake Artisan
-  task new|show|list --store <path> ...
-                 create Director tasks bound to their workflow revision and list or show them
+  task new|show|list|timeline|files --store <path> ...
+                 create Director tasks bound to their workflow revision, list, show and inspect them
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
   help           print this help

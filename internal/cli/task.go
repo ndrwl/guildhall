@@ -21,7 +21,9 @@ import (
 const taskUsage = `usage:
   guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... <task>
   guildhall task show --store <path> --repo <id> <task> --json
-  guildhall task list --store <path> [--repo <id>] --json`
+  guildhall task list --store <path> [--repo <id>] --json
+  guildhall task timeline --store <path> --repo <id> <task> --json
+  guildhall task files --store <path> --repo <id> <task> --json`
 
 // dependsOn collects repeated --depends-on flags in the order given.
 type dependsOn []store.TaskRef
@@ -48,7 +50,9 @@ type taskDetail struct {
 // task runs a task subcommand against an existing store and prints its result as one JSON document (docs/tasks.md).
 // task new binds the repository's effective workflow revision and the configuration digest, and records the
 // mutation "task:<repo>:<task>" (or "task:sha256:<hex digest>" of that string if over 128 bytes),
-// so a retry prints the original receipt; show and list only read.
+// so a retry prints the original receipt; show, list, timeline and files only read.
+// timeline and files are the Director's inspection reads, labelled with the store sequence and
+// workflow revision they describe (docs/tasks.md#inspection).
 // It exits 0 on success, 1 when the configuration, workflow or store refuses or fails and 2 on a usage error.
 func (a *App) task(args []string) int {
 	if len(args) == 0 {
@@ -69,7 +73,7 @@ func (a *App) task(args []string) int {
 	switch sub {
 	case "new":
 		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "depends-on": true}
-	case "show":
+	case "show", "timeline", "files":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "json": true}
 	case "list":
 		want, allowed = 0, map[string]bool{"store": true, "repo": true, "json": true}
@@ -111,8 +115,8 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("--store is required")
 	case sub == "new" && (*cfgPath == "" || *repo == "" || *title == ""):
 		return a.taskUsage("task new requires --config, --repo and --title")
-	case sub == "show" && *repo == "":
-		return a.taskUsage("task show requires --repo")
+	case sub != "new" && sub != "list" && *repo == "":
+		return a.taskUsage(fmt.Sprintf("task %s requires --repo", sub))
 	case sub != "new" && !*asJSON:
 		return a.taskUsage(fmt.Sprintf("task %s prints JSON only; pass --json", sub))
 	case len(positional) != want:
@@ -148,6 +152,13 @@ func (a *App) task(args []string) int {
 		out, err = showTask(s, *repo, positional[0])
 	case "list":
 		out, err = listTasks(s, *repo)
+	case "timeline", "files":
+		var h store.TaskHistory
+		if h, err = s.TaskHistory(*repo, positional[0]); err == nil && sub == "timeline" {
+			out = timeline(h)
+		} else if err == nil {
+			out = files(h)
+		}
 	}
 	if cerr := s.Close(); err == nil {
 		err = cerr
