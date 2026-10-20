@@ -209,7 +209,6 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 		name     string
 		toml     string
 		file     string // replaces workflows/human-review.json; "-" removes it
-		extra    map[string]string
 		problems []string
 	}{
 		{name: "missing file", toml: directorTOML, file: "-", problems: []string{"human-review.json"}},
@@ -221,8 +220,6 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 		{name: "name mismatch", toml: directorTOML, file: strings.Replace(string(valid), `"name": "human-review"`, `"name": "other"`, 1), problems: []string{`"other"`, `"human-review"`}},
 		{name: "override of a non-review step", toml: strings.Replace(directorTOML, "overrides.review]", "overrides.build]", 1), problems: []string{"only review steps"}},
 		{name: "override to an unknown version", toml: strings.Replace(directorTOML, "review\"\nversion = 1", "review\"\nversion = 2", 1), problems: []string{"version 2"}},
-		{name: "shadowed default", toml: strings.Replace(directorTOML, `workflow = "human-review"`, `workflow = "default"`, 1),
-			extra: map[string]string{"default.json": string(valid)}, problems: []string{"default.json"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -236,9 +233,6 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 				}
 			default:
 				writeFile(t, filepath.Join(workflows, "human-review.json"), tc.file)
-			}
-			for name, body := range tc.extra {
-				writeFile(t, filepath.Join(workflows, name), body)
 			}
 			path := emptyStore(t)
 			before, err := os.ReadFile(path)
@@ -259,6 +253,74 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 				t.Fatalf("store changed (%v)", err)
 			}
 		})
+	}
+}
+
+func TestTaskDefaultIgnoresShadowFile(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "default.json"), "invalid JSON")
+	path := emptyStore(t)
+	newTask(t, path, cfg, "app", "Task", "t-1")
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readTask(t, path, "app", "t-1").Workflow; got != def.Revision() {
+		t.Fatalf("workflow = %+v, want %+v", got, def.Revision())
+	}
+}
+
+func TestTaskArgumentOrders(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	path := emptyStore(t)
+	newTask(t, path, cfg, "lib", "Dependency", "dep")
+	flags := []string{"--store", path, "--config", cfg, "--repo", "app", "--title=--", "--depends-on", "lib/dep"}
+	var first string
+	for _, position := range []int{0, 2, len(flags)} {
+		args := append([]string{"new"}, flags[:position]...)
+		args = append(args, "t-1")
+		args = append(args, flags[position:]...)
+		code, out, stderr := runTask(t, args...)
+		if code != 0 || (first != "" && out != first) {
+			t.Fatalf("position %d: exit %d, stdout %q, stderr %q", position, code, out, stderr)
+		}
+		first = out
+	}
+	for _, args := range [][]string{
+		{"show", "--store", path, "--repo", "app", "t-1", "--json"},
+		{"show", "t-1", "--store", path, "--repo", "app", "--json"},
+		{"show", "--store", path, "--repo", "app", "--json", "t-1"},
+		{"show", "--store", path, "--repo", "app", "--json", "--", "t-1"},
+	} {
+		code, out, stderr := runTask(t, args...)
+		if code != 0 {
+			t.Fatalf("%v: exit %d, stderr %s", args, code, stderr)
+		}
+		detail := decodeJSON[taskDetail](t, out)
+		if detail.Task.ID != "t-1" || detail.Task.Title != "--" || len(detail.Task.DependsOn) != 1 {
+			t.Fatalf("detail = %+v", detail)
+		}
+	}
+}
+
+func TestTaskNewMaximalIDsRetry(t *testing.T) {
+	repo, id := strings.Repeat("r", 63), strings.Repeat("t", 63)
+	cfg := writeDirector(t, strings.Replace(directorTOML, `id = "app"`, `id = "`+repo+`"`, 1))
+	path := emptyStore(t)
+	first := newTask(t, path, cfg, repo, "Task", id)
+	sum := sha256.Sum256([]byte("task:" + repo + ":" + id))
+	if first.MutationID != "task:sha256:"+hex.EncodeToString(sum[:]) || len(first.MutationID) > 128 {
+		t.Fatalf("receipt = %+v", first)
+	}
+	if again := newTask(t, path, cfg, repo, "Task", id); again != first {
+		t.Fatalf("retry = %+v, want %+v", again, first)
+	}
+	code, out, stderr := runTask(t, "new", id, "--store", path, "--config", cfg, "--repo", repo, "--title", "Changed")
+	if code != 1 || out != "" || !strings.Contains(stderr, store.ErrMutationConflict.Error()) {
+		t.Fatalf("conflict: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	if got := readTask(t, path, repo, id).Title; got != "Task" {
+		t.Fatalf("title = %q", got)
 	}
 }
 
@@ -306,20 +368,23 @@ func TestTaskUsageErrors(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	cases := map[string][]string{
-		"no subcommand":      {},
-		"unknown subcommand": {"start"},
-		"new without store":  {"new", "--config", cfg, "--repo", "app", "--title", "T", "t-1"},
-		"new without config": {"new", "--store", path, "--repo", "app", "--title", "T", "t-1"},
-		"new without repo":   {"new", "--store", path, "--config", cfg, "--title", "T", "t-1"},
-		"new without title":  {"new", "--store", path, "--config", cfg, "--repo", "app", "t-1"},
-		"new without task":   {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T"},
-		"bad dependency":     {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--depends-on", "t-1", "t-2"},
-		"show without json":  {"show", "--store", path, "--repo", "app", "t-1"},
-		"show without repo":  {"show", "--store", path, "--json", "t-1"},
-		"show with title":    {"show", "--store", path, "--repo", "app", "--title", "T", "--json", "t-1"},
-		"list without json":  {"list", "--store", path},
-		"list with task":     {"list", "--store", path, "--json", "t-1"},
-		"list with config":   {"list", "--store", path, "--config", cfg, "--json"},
+		"trailing unknown":       {"show", "t-1", "--store", path, "--repo", "app", "--json", "--unknown"},
+		"trailing disallowed":    {"show", "t-1", "--store", path, "--repo", "app", "--json", "--title", "T"},
+		"flags after terminator": {"show", "--store", path, "--repo", "app", "--", "t-1", "--json"},
+		"no subcommand":          {},
+		"unknown subcommand":     {"start"},
+		"new without store":      {"new", "--config", cfg, "--repo", "app", "--title", "T", "t-1"},
+		"new without config":     {"new", "--store", path, "--repo", "app", "--title", "T", "t-1"},
+		"new without repo":       {"new", "--store", path, "--config", cfg, "--title", "T", "t-1"},
+		"new without title":      {"new", "--store", path, "--config", cfg, "--repo", "app", "t-1"},
+		"new without task":       {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T"},
+		"bad dependency":         {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--depends-on", "t-1", "t-2"},
+		"show without json":      {"show", "--store", path, "--repo", "app", "t-1"},
+		"show without repo":      {"show", "--store", path, "--json", "t-1"},
+		"show with title":        {"show", "--store", path, "--repo", "app", "--title", "T", "--json", "t-1"},
+		"list without json":      {"list", "--store", path},
+		"list with task":         {"list", "--store", path, "--json", "t-1"},
+		"list with config":       {"list", "--store", path, "--config", cfg, "--json"},
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {

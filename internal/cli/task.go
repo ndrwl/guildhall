@@ -20,7 +20,7 @@ import (
 
 const taskUsage = `usage:
   guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... <task>
-  guildhall task show --store <path> --repo <id> --json <task>
+  guildhall task show --store <path> --repo <id> <task> --json
   guildhall task list --store <path> [--repo <id>] --json`
 
 // dependsOn collects repeated --depends-on flags in the order given.
@@ -47,7 +47,8 @@ type taskDetail struct {
 
 // task runs a task subcommand against an existing store and prints its result as one JSON document (docs/tasks.md).
 // task new binds the repository's effective workflow revision and the configuration digest, and records the
-// mutation "task:<repo>:<task>", so a retry prints the original receipt; show and list only read.
+// mutation "task:<repo>:<task>" (or "task:sha256:<hex digest>" of that string if over 128 bytes),
+// so a retry prints the original receipt; show and list only read.
 // It exits 0 on success, 1 when the configuration, workflow or store refuses or fails and 2 on a usage error.
 func (a *App) task(args []string) int {
 	if len(args) == 0 {
@@ -75,8 +76,27 @@ func (a *App) task(args []string) int {
 	default:
 		return a.taskUsage(fmt.Sprintf("unknown task subcommand %q", sub))
 	}
-	if err := flags.Parse(args[1:]); err != nil {
-		return a.taskUsage(err.Error())
+	var positional []string
+	for remaining := args[1:]; len(remaining) > 0; {
+		arg := remaining[0]
+		if arg == "--" {
+			positional = append(positional, remaining[1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			positional = append(positional, arg)
+			remaining = remaining[1:]
+			continue
+		}
+		n := 1
+		name, _, inline := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(arg, "-"), "-"), "=")
+		if f := flags.Lookup(name); f != nil && !inline && name != "json" && len(remaining) > 1 {
+			n = 2
+		}
+		if err := flags.Parse(remaining[:n]); err != nil {
+			return a.taskUsage(err.Error())
+		}
+		remaining = remaining[n:]
 	}
 	var extra string
 	flags.Visit(func(f *flag.Flag) {
@@ -95,7 +115,7 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("task show requires --repo")
 	case sub != "new" && !*asJSON:
 		return a.taskUsage(fmt.Sprintf("task %s prints JSON only; pass --json", sub))
-	case flags.NArg() != want:
+	case len(positional) != want:
 		return a.taskUsage(fmt.Sprintf("task %s takes %d arguments", sub, want))
 	}
 
@@ -110,7 +130,7 @@ func (a *App) task(args []string) int {
 		if task, err = acceptTask(*cfgPath, *repo); err != nil {
 			return fail(err)
 		}
-		task.ID, task.Title, task.DependsOn = flags.Arg(0), *title, deps
+		task.ID, task.Title, task.DependsOn = positional[0], *title, deps
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(fmt.Errorf("no store at %s", *path))
@@ -122,9 +142,14 @@ func (a *App) task(args []string) int {
 	var out any
 	switch sub {
 	case "new":
-		out, err = s.CreateTask("task:"+task.Repository+":"+task.ID, task)
+		mutationID := "task:" + task.Repository + ":" + task.ID
+		if len(mutationID) > 128 {
+			sum := sha256.Sum256([]byte(mutationID))
+			mutationID = "task:sha256:" + hex.EncodeToString(sum[:])
+		}
+		out, err = s.CreateTask(mutationID, task)
 	case "show":
-		out, err = showTask(s, *repo, flags.Arg(0))
+		out, err = showTask(s, *repo, positional[0])
 	case "list":
 		out, err = listTasks(s, *repo)
 	}
@@ -171,9 +196,6 @@ func effectiveWorkflow(dir string, r config.Repository) (*workflow.Definition, e
 	var def *workflow.Definition
 	var err error
 	if name == config.DefaultWorkflow {
-		if _, serr := os.Stat(file); serr == nil {
-			return nil, fmt.Errorf("workflow %q is the shipped definition; remove %s or name the workflow differently", name, file)
-		}
 		def, err = workflow.Default()
 	} else {
 		var data []byte

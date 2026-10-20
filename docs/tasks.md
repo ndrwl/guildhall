@@ -10,9 +10,10 @@ Steps, decisions and approvals are recorded by later commands.
 Every command takes `--store <path>`, an existing store file; no command creates a store.
 
 - `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... <task>` creates task `<task>` in repository `<id>` and prints the store's receipt as one JSON document.
-- `guildhall task show --store <path> --repo <id> --json <task>` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
+- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
 - `guildhall task list --store <path> [--repo <id>] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
 
+For `new` and `show`, the positional task id may appear before or after flags.
 `show` and `list` open the store read-only and change nothing.
 `--json` is required on both, so a later human-readable format is not a breaking change.
 
@@ -28,7 +29,7 @@ Errors are written to standard error and nothing is written to standard output.
 The repository's `workflow` setting, `default` when it names none, selects the effective workflow:
 
 - `default` is the definition shipped with this Guildhall release.
-  A `workflows/default.json` beside the configuration is refused rather than silently used in its place.
+  Any `workflows/default.json` beside the configuration is ignored.
 - Any other name is the file `workflows/<name>.json` in the configuration file's directory, and the file's `name` must equal it.
 
 The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, and the result is checked with `workflow.Validate` (R1.59).
@@ -47,8 +48,9 @@ The dependency order is preserved as given.
 
 ## Retries
 
-`task new` records the mutation `task:<repo>:<task>`.
-The store's mutation ids do not allow `/`, and repository and task ids cannot contain `:`, so the id is unambiguous.
+`task new` records the mutation `task:<repo>:<task>` when that string is at most 128 bytes.
+For longer strings it records `task:sha256:<digest>`, using the lowercase hex SHA-256 of the full original string.
+Repository and task ids cannot contain `:`, so the input is unambiguous; short ids remain unchanged and every valid pair has a bounded, deterministic mutation id.
 Running the same `task new` again, for example after losing its output, prints the original receipt and writes nothing, even after a restart.
 Reusing a task id with a different title, dependencies, workflow revision or configuration digest is refused with the store's mutation conflict and changes nothing.
 
