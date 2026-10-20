@@ -148,7 +148,7 @@ guildhall workflow approvals --store director.store --json
 A refused definition, empty words or a missing store write nothing.
 Repeating an approval prints the original receipt; different words for an approved digest are refused.
 An edited definition has a new digest and needs its own approval.
-The definitions shipped with this release, such as the default workflow, count as approved by the release: `approvals` lists them with source `release` before the recorded approvals (source `guildmaster`), and `approve` refuses them.
+The definitions shipped with this release, such as the default workflow, count as approved by the release: `approvals` lists them with source `release` before the recorded approvals (source `guildmaster`). Explicitly approving shipped content records the Guildmaster's words like any other approval; that revision then appears with both sources.
 Commands exit 0 on success, 1 when the definition, words or store refuse or fail, and 2 on a usage error; they never create a store.
 Enforcing this policy when a task is created belongs to a later execution layer, not this foundation package.
 Parsing and validation accept or refuse a definition only; they never activate it.

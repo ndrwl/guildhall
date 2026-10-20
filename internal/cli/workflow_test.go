@@ -104,6 +104,55 @@ func TestWorkflowApproveRecordsDigestAndWords(t *testing.T) {
 	}
 }
 
+func TestWorkflowApproveShippedRevision(t *testing.T) {
+	path := writeStore(t)
+	words := "Approved explicitly.\n"
+	_, wordsFile := approvalFiles(t, words)
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"approve", "--store", path, "--file", "../workflow/default.json", "--words-file"}
+	code, receipt, stderr := runWorkflow(t, "", append(args, wordsFile)...)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if got := decodeJSON[store.Receipt](t, receipt); got.MutationID != "workflow-approval:"+def.Digest() {
+		t.Fatalf("receipt = %+v", got)
+	}
+	recorded := storeApprovals(t, path)
+	if len(recorded) != 1 || recorded[0].Name != def.Name || recorded[0].Digest != def.Digest() || recorded[0].Words != words || recorded[0].RecordedAt.IsZero() {
+		t.Fatalf("approvals = %+v", recorded)
+	}
+	if code, replay, stderr := runWorkflow(t, words, append(args, "-")...); code != 0 || replay != receipt {
+		t.Fatalf("replay: exit %d, stdout %q, stderr %q", code, replay, stderr)
+	}
+	if code, out, stderr := runWorkflow(t, "Different words", append(args, "-")...); code != 1 || out != "" || !strings.Contains(stderr, "mutation id was already used") {
+		t.Fatalf("conflict: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	code, stdout, stderr := runWorkflow(t, "", "approvals", "--store", path, "--json")
+	if code != 0 {
+		t.Fatalf("list: exit %d, stderr %q", code, stderr)
+	}
+	listed := decodeJSON[[]listedApproval](t, stdout)
+	if len(listed) != 2 {
+		t.Fatalf("listed approvals = %+v", listed)
+	}
+	for i, source := range []string{"release", "guildmaster"} {
+		if listed[i].Source != source || listed[i].Name != def.Name || listed[i].Digest != def.Digest() {
+			t.Fatalf("listed approval = %+v", listed[i])
+		}
+	}
+	if listed[0].Words != "" || listed[0].RecordedAt != nil || listed[1].Words != words || listed[1].RecordedAt == nil || !listed[1].RecordedAt.Equal(recorded[0].RecordedAt) {
+		t.Fatalf("listed approval metadata = %+v", listed)
+	}
+	code, stdout, stderr = runWorkflow(t, "", "approvals", "--store", path)
+	want := "release default " + def.Digest() + " guildmaster default " + def.Digest() + " " + recorded[0].RecordedAt.Format(time.RFC3339)
+	if code != 0 || strings.Join(strings.Fields(stdout), " ") != want {
+		t.Fatalf("text list: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
+
 func TestWorkflowApproveRefusesBeforeWriting(t *testing.T) {
 	path := writeStore(t)
 	file, wordsFile := approvalFiles(t, "Approved.\n")
@@ -117,7 +166,6 @@ func TestWorkflowApproveRefusesBeforeWriting(t *testing.T) {
 	}
 	invalid := write("invalid.json", `{"schema": "guildhall.workflow/1", "name": "broken", "steps": [{"id": "build", "type": "build", "version": 1}]}`)
 	unknownField := write("unknown.json", `{"schema": "guildhall.workflow/1", "name": "x", "run": "rm -rf /", "steps": []}`)
-	shipped := write("default.json", mustReadFile(t, "../workflow/default.json"))
 	blank := write("blank.txt", " \r\n")
 
 	cases := []struct {
@@ -128,7 +176,6 @@ func TestWorkflowApproveRefusesBeforeWriting(t *testing.T) {
 		{"invalid workflow", "", []string{"--file", invalid, "--words-file", wordsFile}, `required input "spec" is not wired`},
 		{"unknown field", "", []string{"--file", unknownField, "--words-file", wordsFile}, `unknown field "run"`},
 		{"missing workflow file", "", []string{"--file", filepath.Join(dir, "missing.json"), "--words-file", wordsFile}, "workflow file"},
-		{"shipped workflow", "", []string{"--file", shipped, "--words-file", wordsFile}, "approved by this release"},
 		{"blank words", "", []string{"--file", file, "--words-file", blank}, "words must not be empty"},
 		{"blank stdin words", "\n", []string{"--file", file, "--words-file", "-"}, "words must not be empty"},
 		{"missing words file", "", []string{"--file", file, "--words-file", filepath.Join(dir, "missing.txt")}, "words file"},

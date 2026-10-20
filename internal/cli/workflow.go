@@ -32,7 +32,7 @@ type listedApproval struct {
 
 // workflowCmd runs a workflow subcommand against an existing store.
 // approve validates the definition, computes its digest and records the Guildmaster's words before printing the receipt;
-// a definition shipped with this release is already approved and is refused.
+// explicit approvals of shipped definitions are recorded like any other approval.
 // approvals lists the shipped definitions as approved by release, then the recorded approvals.
 // It exits 0 on success, 1 when the definition, words or store refuse or fail and 2 on a usage error.
 func (a *App) workflowCmd(args []string) int {
@@ -77,7 +77,7 @@ func (a *App) workflowCmd(args []string) int {
 	}
 	var approval store.WorkflowApproval
 	if sub == "approve" {
-		if approval, err = a.readApproval(*file, *wordsFile, shipped); err != nil {
+		if approval, err = a.readApproval(*file, *wordsFile); err != nil {
 			return fail(err)
 		}
 	}
@@ -130,7 +130,7 @@ func shippedRevisions() ([]workflow.Revision, error) {
 }
 
 // readApproval parses and validates the definition and reads the words, so nothing is written for a refused definition.
-func (a *App) readApproval(file, wordsFile string, shipped []workflow.Revision) (store.WorkflowApproval, error) {
+func (a *App) readApproval(file, wordsFile string) (store.WorkflowApproval, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return store.WorkflowApproval{}, fmt.Errorf("workflow file: %w", err)
@@ -143,11 +143,6 @@ func (a *App) readApproval(file, wordsFile string, shipped []workflow.Revision) 
 		return store.WorkflowApproval{}, fmt.Errorf("%s: %w", file, err)
 	}
 	rev := def.Revision()
-	for _, s := range shipped {
-		if s == rev {
-			return store.WorkflowApproval{}, fmt.Errorf("workflow %s %s ships with and is approved by this release", rev.Name, rev.Digest)
-		}
-	}
 	var words []byte
 	if wordsFile == "-" {
 		words, err = io.ReadAll(a.Stdin)
