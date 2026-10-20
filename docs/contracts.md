@@ -22,7 +22,7 @@ The consumer declares the narrow set of operations it calls, next to the code th
 These do not get an interface:
 
 - pure parsing, validation and value types, which are functions with behavioural tests;
-- the store as a whole: it has no generic storage interface (D9), and its tests use real database files, including crash, replay and cross-process locking behaviour; a consumer that needs to replace it in tests declares a narrow interface over just the methods it calls;
+- the store as a whole: it has no generic storage interface (D14), and its tests use real database files, including crash, replay and cross-process locking behaviour; a consumer that needs to replace it in tests declares a narrow interface over just the methods it calls;
 - anything with a single implementation and no test that needs to replace it.
 
 ## Test doubles and shared contract tests

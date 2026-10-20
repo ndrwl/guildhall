@@ -1,0 +1,22 @@
+{
+  "id": "cli:pane:process_info",
+  "result": {
+    "process_info": {
+      "foreground_process_group_id": 1204400,
+      "foreground_processes": [
+        {
+          "argv": [
+            "/usr/bin/zsh"
+          ],
+          "cmdline": "/usr/bin/zsh",
+          "cwd": "/tmp",
+          "name": "zsh",
+          "pid": 1204400
+        }
+      ],
+      "pane_id": "w1:p2",
+      "shell_pid": 1204400
+    },
+    "type": "pane_process_info"
+  }
+}

@@ -21,14 +21,16 @@ var version = "dev"
 const usage = `Usage: guildhall <command>
 
 Commands:
-  version   print the guildhall version and platform
-  doctor    report the platform and the tools guildhall uses
+  version        print the guildhall version and platform
+  doctor         report the platform and the tools guildhall uses
   store doctor <path>
-            check a store file read-only and count its records
-  steward   plan and apply rollouts of managed settings to enrolled Director copies
+                 check a store file read-only and count its records
+  steward        plan and apply rollouts of managed settings to enrolled Director copies
   messages send|list|read|ack --store <path> ...
-            send, list, read and acknowledge local Director and Artisan messages
-  help      print this help
+                 send, list, read and acknowledge local Director and Artisan messages
+  artisan run    launch one Artisan attempt and wait for its result file
+  fake-artisan   run the test-only fake Artisan
+  help           print this help
 `
 
 // toolProbeTimeout bounds each external version command run by doctor.
@@ -55,6 +57,8 @@ type App struct {
 	LookPath func(file string) (string, error)
 	// Output runs a command and returns its combined stdout and stderr.
 	Output func(ctx context.Context, path string, args ...string) ([]byte, error)
+	// Executable returns the path of the running guildhall binary.
+	Executable func() (string, error)
 }
 
 // New returns an App wired to the real process environment.
@@ -67,6 +71,7 @@ func New() *App {
 		Output: func(ctx context.Context, path string, args ...string) ([]byte, error) {
 			return exec.CommandContext(ctx, path, args...).CombinedOutput()
 		},
+		Executable: os.Executable,
 	}
 }
 
@@ -113,6 +118,10 @@ func (a *App) Run(args []string) int {
 		return a.storeDoctor(rest[1])
 	case "messages":
 		return a.messages(rest)
+	case "artisan":
+		return a.artisan(rest)
+	case "fake-artisan":
+		return a.fakeArtisan(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

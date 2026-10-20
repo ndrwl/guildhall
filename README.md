@@ -28,6 +28,9 @@ No release has been published yet.
   See [Steward rollouts](docs/steward.md).
 - `guildhall messages send|list|read|ack --store <path> ...` sends, lists, reads and acknowledges local Director and Artisan messages kept in a store; see [messaging](docs/messaging.md).
   It does not notify running agents or reach other machines.
+- `guildhall artisan run --adapter fake ...` launches one Artisan attempt, as a direct child process or in a new tab of a named Herdr session, and waits for its result file; see `docs/adapters.md`.
+  The only adapter is the test-only fake adapter.
+- `guildhall fake-artisan ...` is the fake Artisan itself: it reads a prompt file and writes a result file.
 - `guildhall help` lists the commands.
 
 ## Documentation
@@ -39,4 +42,5 @@ No release has been published yet.
 - `docs/store.md`: the store's records, mutation receipts and locking.
 - `docs/steward.md`: Steward rollouts.
 - `docs/messaging.md`: the local Director and Artisan message inbox.
+- `docs/adapters.md`: the Artisan adapter contract, result file and Herdr access.
 - `CONTRIBUTING.md`: how to contribute.

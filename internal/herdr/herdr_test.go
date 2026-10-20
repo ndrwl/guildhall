@@ -1,0 +1,362 @@
+package herdr
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// call is one recorded invocation of the Herdr executable.
+type call struct {
+	args []string
+	env  []string
+}
+
+// fakeRunner replays canned responses keyed by the Herdr subcommand words and
+// records every call, so tests check the exact argument lists sent.
+type fakeRunner struct {
+	t         *testing.T
+	calls     []call
+	responses map[string]response
+}
+
+type response struct {
+	stdout string
+	stderr string
+	exit   int
+}
+
+func fixture(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func (f *fakeRunner) run(_ context.Context, argv, env []string) ([]byte, []byte, int, error) {
+	f.calls = append(f.calls, call{args: argv, env: env})
+	key := strings.Join(argv[1:3], " ")
+	r, ok := f.responses[key]
+	if !ok {
+		f.t.Fatalf("unexpected herdr call %q", argv)
+	}
+	return []byte(r.stdout), []byte(r.stderr), r.exit, nil
+}
+
+func newTestClient(t *testing.T, responses map[string]response) (*Client, *fakeRunner) {
+	t.Helper()
+	f := &fakeRunner{t: t, responses: responses}
+	c, err := New(Options{Session: "guildhall-lab", Command: []string{"herdr"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.run = f.run
+	return c, f
+}
+
+func TestNewRefusesMissingOrDefaultSession(t *testing.T) {
+	for _, s := range []string{"", "default", "-x", "has space", "a/b", "--session"} {
+		if _, err := New(Options{Session: s, Command: []string{"herdr"}}); err == nil {
+			t.Errorf("New(session %q) succeeded, want refusal", s)
+		}
+	}
+	if _, err := New(Options{Session: "lab", Command: nil}); err == nil {
+		t.Error("New with no command succeeded, want refusal")
+	}
+	if _, err := New(Options{Session: "lab-1_x", Command: []string{"herdr"}}); err != nil {
+		t.Errorf("New(lab-1_x) = %v", err)
+	}
+}
+
+func TestEveryCallCarriesExplicitSession(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"workspace list": {stdout: fixture(t, "workspace_list_empty.json")},
+	})
+	c.environ = func() []string {
+		return []string{"PATH=/bin", "HERDR_SESSION=default", "HERDR_SOCKET_PATH=/other.sock", "HERDR_PANE_ID=w1:p1"}
+	}
+	if _, err := c.WorkspaceList(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := f.calls[0]
+	want := []string{"herdr", "workspace", "list", "--session", "guildhall-lab"}
+	if !slices.Equal(got.args, want) {
+		t.Errorf("argv = %q, want %q", got.args, want)
+	}
+	if !slices.Contains(got.env, "HERDR_SESSION=guildhall-lab") {
+		t.Errorf("env %q lacks HERDR_SESSION=guildhall-lab", got.env)
+	}
+	for _, e := range got.env {
+		if strings.HasPrefix(e, "HERDR_SESSION=default") || strings.HasPrefix(e, "HERDR_SOCKET_PATH=") || strings.HasPrefix(e, "HERDR_PANE_ID=") {
+			t.Errorf("ambient %q reached the Herdr call", e)
+		}
+	}
+}
+
+func TestCommandPrefixIsKept(t *testing.T) {
+	f := &fakeRunner{t: t}
+	c, err := New(Options{Session: "lab", Command: []string{"bash", "wrapper.sh"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.run = func(_ context.Context, argv, env []string) ([]byte, []byte, int, error) {
+		f.calls = append(f.calls, call{args: argv})
+		return []byte(fixture(t, "workspace_list_empty.json")), nil, 0, nil
+	}
+	if _, err := c.WorkspaceList(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"bash", "wrapper.sh", "workspace", "list", "--session", "lab"}
+	if !slices.Equal(f.calls[0].args, want) {
+		t.Errorf("argv = %q, want %q", f.calls[0].args, want)
+	}
+}
+
+func TestStatusChecksMinimumVersionAndRunningServer(t *testing.T) {
+	c, _ := newTestClient(t, map[string]response{"status --json": {stdout: fixture(t, "status.json")}})
+	st, err := c.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status = %v", err)
+	}
+	if st.ClientVersion != "0.9.5" || st.ServerVersion != "0.9.5" || !st.Running {
+		t.Errorf("status = %+v", st)
+	}
+
+	old := strings.ReplaceAll(fixture(t, "status.json"), `"version": "0.9.5"`, `"version": "0.9.4"`)
+	c, _ = newTestClient(t, map[string]response{"status --json": {stdout: old}})
+	if _, err := c.Status(context.Background()); !errors.Is(err, ErrUnsupportedVersion) {
+		t.Errorf("Status with 0.9.4 = %v, want ErrUnsupportedVersion", err)
+	}
+
+	stopped := strings.Replace(fixture(t, "status.json"), `"running": true`, `"running": false`, 1)
+	c, _ = newTestClient(t, map[string]response{"status --json": {stdout: stopped}})
+	if _, err := c.Status(context.Background()); !errors.Is(err, ErrServerNotRunning) {
+		t.Errorf("Status with stopped server = %v, want ErrServerNotRunning", err)
+	}
+
+	other := strings.ReplaceAll(fixture(t, "status.json"), `"session": "guildhall-lab"`, `"session": "default"`)
+	c, _ = newTestClient(t, map[string]response{"status --json": {stdout: other}})
+	if _, err := c.Status(context.Background()); err == nil {
+		t.Error("Status reporting another session succeeded, want refusal")
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+		ok   bool
+	}{
+		{"0.9.5", "0.9.5", 0, true},
+		{"0.10.0", "0.9.5", 1, true},
+		{"1.0.0", "0.9.5", 1, true},
+		{"0.9.4", "0.9.5", -1, true},
+		{"0.9.5-rc.1", "0.9.5", -1, true},
+		{"herdr", "0.9.5", 0, false},
+		{"0.9", "0.9.5", 0, false},
+	}
+	for _, tc := range cases {
+		got, err := compareVersions(tc.a, tc.b)
+		if (err == nil) != tc.ok || (tc.ok && got != tc.want) {
+			t.Errorf("compareVersions(%q, %q) = %d, %v; want %d ok=%v", tc.a, tc.b, got, err, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestWorkspaceCreateAndList(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"workspace create": {stdout: fixture(t, "workspace_create.json")},
+		"workspace list":   {stdout: fixture(t, "workspace_list_empty.json")},
+	})
+	ws, err := c.WorkspaceCreate(context.Background(), "guild", "/work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.ID != "w1" || ws.Label != "gh-probe" {
+		t.Errorf("workspace = %+v", ws)
+	}
+	want := []string{"herdr", "workspace", "create", "--label", "guild", "--cwd", "/work", "--no-focus", "--session", "guildhall-lab"}
+	if !slices.Equal(f.calls[0].args, want) {
+		t.Errorf("argv = %q, want %q", f.calls[0].args, want)
+	}
+	list, err := c.WorkspaceList(context.Background())
+	if err != nil || len(list) != 0 {
+		t.Errorf("WorkspaceList = %v, %v", list, err)
+	}
+}
+
+func TestTabCreateReturnsOwnedTab(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{"tab create": {stdout: fixture(t, "tab_create.json")}})
+	tab, err := c.TabCreate(context.Background(), TabSpec{
+		WorkspaceID: "w1", Label: "artisan-probe", Cwd: "/tmp", Env: []string{"A=1", "B=two words"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tab.ID() != "w1:t2" || tab.PaneID() != "w1:p2" || tab.WorkspaceID() != "w1" || tab.Session() != "guildhall-lab" {
+		t.Errorf("tab = %+v", tab)
+	}
+	want := []string{"herdr", "tab", "create", "--workspace", "w1", "--label", "artisan-probe", "--cwd", "/tmp",
+		"--env", "A=1", "--env", "B=two words", "--no-focus", "--session", "guildhall-lab"}
+	if !slices.Equal(f.calls[0].args, want) {
+		t.Errorf("argv = %q, want %q", f.calls[0].args, want)
+	}
+}
+
+func TestTabCreateRefusesBadInput(t *testing.T) {
+	c, f := newTestClient(t, nil)
+	for _, spec := range []TabSpec{
+		{WorkspaceID: "", Label: "x"},
+		{WorkspaceID: "w1", Label: "x", Env: []string{"NOEQUALS"}},
+		{WorkspaceID: "w1", Label: "x", Env: []string{"=v"}},
+		{WorkspaceID: "-w1", Label: "x"},
+	} {
+		if _, err := c.TabCreate(context.Background(), spec); err == nil {
+			t.Errorf("TabCreate(%+v) succeeded, want refusal", spec)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("refused input still called herdr: %v", f.calls)
+	}
+}
+
+func TestTabCreateRejectsResponseFromOtherWorkspace(t *testing.T) {
+	c, _ := newTestClient(t, map[string]response{"tab create": {stdout: fixture(t, "tab_create.json")}})
+	if _, err := c.TabCreate(context.Background(), TabSpec{WorkspaceID: "w7", Label: "x"}); err == nil {
+		t.Error("TabCreate accepted a tab in another workspace")
+	}
+}
+
+func TestAPIErrorIsParsed(t *testing.T) {
+	c, _ := newTestClient(t, map[string]response{"tab get": {stderr: fixture(t, "error_tab_not_found.json"), exit: 1}})
+	_, err := c.TabGet(context.Background(), "w9:t9")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "tab_not_found" {
+		t.Fatalf("TabGet error = %v, want APIError tab_not_found", err)
+	}
+	if !IsNotFound(err) {
+		t.Error("IsNotFound(tab_not_found) = false")
+	}
+}
+
+func TestUsageAndUnparsableFailures(t *testing.T) {
+	c, _ := newTestClient(t, map[string]response{
+		"tab get":  {stderr: "error: unexpected argument", exit: 2},
+		"tab list": {stdout: "not json"},
+	})
+	if _, err := c.TabGet(context.Background(), "w1:t1"); err == nil || IsNotFound(err) {
+		t.Errorf("usage failure = %v", err)
+	}
+	if _, err := c.TabList(context.Background(), "w1"); err == nil {
+		t.Error("unparsable output accepted")
+	}
+}
+
+func TestTabListAndGet(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"tab list": {stdout: fixture(t, "tab_list.json")},
+		"tab get":  {stdout: fixture(t, "tab_get.json")},
+	})
+	tabs, err := c.TabList(context.Background(), "w1")
+	if err != nil || len(tabs) != 2 || tabs[1].ID != "w1:t2" || tabs[1].Label != "artisan-probe" {
+		t.Fatalf("TabList = %+v, %v", tabs, err)
+	}
+	if want := []string{"herdr", "tab", "list", "--workspace", "w1", "--session", "guildhall-lab"}; !slices.Equal(f.calls[0].args, want) {
+		t.Errorf("argv = %q", f.calls[0].args)
+	}
+	tab, err := c.TabGet(context.Background(), "w1:t2")
+	if err != nil || tab.ID != "w1:t2" || tab.WorkspaceID != "w1" {
+		t.Errorf("TabGet = %+v, %v", tab, err)
+	}
+}
+
+func TestCloseTabOnlyOwnedBySameSession(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"tab create": {stdout: fixture(t, "tab_create.json")},
+		"tab close":  {stdout: fixture(t, "tab_close.json")},
+	})
+	tab, err := c.TabCreate(context.Background(), TabSpec{WorkspaceID: "w1", Label: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CloseOwnedTab(context.Background(), OwnedTab{}); err == nil {
+		t.Error("closing a zero OwnedTab succeeded")
+	}
+	other, err := New(Options{Session: "other-lab", Command: []string{"herdr"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.run = f.run
+	if err := other.CloseOwnedTab(context.Background(), tab); err == nil {
+		t.Error("another session's client closed the tab")
+	}
+	if err := c.CloseOwnedTab(context.Background(), tab); err != nil {
+		t.Fatal(err)
+	}
+	last := f.calls[len(f.calls)-1].args
+	if want := []string{"herdr", "tab", "close", "w1:t2", "--session", "guildhall-lab"}; !slices.Equal(last, want) {
+		t.Errorf("argv = %q, want %q", last, want)
+	}
+}
+
+func TestPaneProcessInfo(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{"pane process-info": {stdout: fixture(t, "process_info_idle.json")}})
+	info, err := c.PaneProcessInfo(context.Background(), "w1:p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ShellPID != 1204400 || len(info.Foreground) != 1 || info.Foreground[0].Name != "zsh" {
+		t.Errorf("info = %+v", info)
+	}
+	if !info.ShellIdle() {
+		t.Error("idle shell pane not reported idle")
+	}
+	if want := []string{"herdr", "pane", "process-info", "--pane", "w1:p2", "--session", "guildhall-lab"}; !slices.Equal(f.calls[0].args, want) {
+		t.Errorf("argv = %q", f.calls[0].args)
+	}
+
+	c, _ = newTestClient(t, map[string]response{"pane process-info": {stdout: fixture(t, "process_info_busy.json")}})
+	info, err = c.PaneProcessInfo(context.Background(), "w1:p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ShellIdle() {
+		t.Error("pane running sleep reported idle")
+	}
+}
+
+func TestPaneRunAndInterruptUseOwnedPane(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"tab create":     {stdout: fixture(t, "tab_create.json")},
+		"pane run":       {},
+		"pane send-keys": {},
+	})
+	tab, err := c.TabCreate(context.Background(), TabSpec{WorkspaceID: "w1", Label: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RunInOwnedTab(context.Background(), tab, "echo hi"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.InterruptOwnedTab(context.Background(), tab); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"herdr", "pane", "run", "w1:p2", "echo hi", "--session", "guildhall-lab"}; !slices.Equal(f.calls[1].args, want) {
+		t.Errorf("run argv = %q", f.calls[1].args)
+	}
+	if want := []string{"herdr", "pane", "send-keys", "w1:p2", "ctrl+c", "--session", "guildhall-lab"}; !slices.Equal(f.calls[2].args, want) {
+		t.Errorf("send-keys argv = %q", f.calls[2].args)
+	}
+	if err := c.RunInOwnedTab(context.Background(), OwnedTab{}, "x"); err == nil {
+		t.Error("RunInOwnedTab accepted a zero tab")
+	}
+	if err := c.RunInOwnedTab(context.Background(), tab, "two\nlines"); err == nil {
+		t.Error("RunInOwnedTab accepted a multi-line command")
+	}
+}
