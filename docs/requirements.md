@@ -114,5 +114,6 @@ A requirement describes intended behaviour, not shipped behaviour: see the READM
 
 ## Open questions
 
-- Who approves workflow edits, and whether repositories have minimum review requirements, is not yet decided.
+- Whether repositories have minimum review requirements is not yet decided.
   It does not block scaffolding, CI or the pilots.
+  Workflow-edit approval follows the [workflow-edit authority policy](configuration.md#workflow-edit-authority).

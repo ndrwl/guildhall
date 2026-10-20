@@ -4,6 +4,9 @@ Agent-agnostic local engineering workflows, shared tooling and fleet setup.
 Guildhall is at its foundation stage: it builds and runs, but no platform or agent runtime is supported for real work yet.
 The specification is in `docs/requirements.md`.
 
+The current foundation provides configuration and workflow parsing and validation, not a runnable Director or workflow executor.
+See [configuration and workflows](docs/configuration.md) for the format, examples and library usage.
+
 ## Build
 
 Guildhall needs Go 1.27 or later.
