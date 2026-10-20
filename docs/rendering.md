@@ -34,6 +34,7 @@ Every path in the manifest is slash-separated; a source name given with backslas
 A skill is a directory, named in the stage's `skills` setting, that the Artisan's runtime loads as a normal agent skill.
 Each name is looked up in the skill roots the caller gives, in order; the Director's are the release, the Steward-managed skills directory and the Director's config area.
 The first root holding a directory of that name wins; a name found in none is refused (`ErrUnknownSkill`).
+The release root is the binary's embedded `skills` directory, written out by `skills.Install` ([contract](contracts/skills.md)).
 Every file is copied, scripts included, byte for byte and with the permission bits the platform supports, so a POSIX script stays executable.
 A symbolic link or other non-regular file inside a skill is refused rather than followed.
 Executable content is controlled where skills are distributed, by the Steward's rollout review, not by the renderer ([Rendered prompts, skills and their digests](decisions/rendered-prompts-skills-and-digests.md)).
