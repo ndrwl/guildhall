@@ -30,6 +30,19 @@ func Validate(def *Definition) error {
 	return nil
 }
 
+func ValidateStepSettings(s Step) error {
+	kind, err := lookup(s.Type, s.Version)
+	if err != nil {
+		return err
+	}
+	v := validator{}
+	v.checkSettings(s, kind)
+	if len(v.problems) > 0 {
+		return &ValidationError{Problems: v.problems}
+	}
+	return nil
+}
+
 type validator struct {
 	def      *Definition
 	index    map[string]int

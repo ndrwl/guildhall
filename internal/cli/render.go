@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 func (a *App) renderPrompt(args []string) int {
@@ -40,6 +41,9 @@ func (a *App) renderPrompt(args []string) int {
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
 		return a.usageError("render: expected one JSON request")
+	}
+	if err := workflow.ValidateStepSettings(request.Stage.Step); err != nil {
+		return a.usageError("render: " + err.Error())
 	}
 	if a.InstallSkills == nil {
 		return a.fail(fmt.Errorf("release skills installer is not configured"))
