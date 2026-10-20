@@ -67,7 +67,7 @@ type App struct {
 	Output func(ctx context.Context, path string, args ...string) ([]byte, error)
 	// Executable returns the path of the running guildhall binary.
 	Executable func() (string, error)
-	// Copier reaches enrolled machines for steward rollouts; nil means scp, found with LookPath and run with Output.
+	// Copier reaches enrolled machines for steward rollouts; nil means scp, found with LookPath.
 	Copier steward.Copier
 }
 

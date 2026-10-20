@@ -2,7 +2,6 @@ package steward
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,6 +24,10 @@ const (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GUILDHALL_STUB_SSH_CHILD") == "1" {
+		time.Sleep(2 * time.Second)
+		os.Exit(0)
+	}
 	if private := os.Getenv(ownerPrivateEnv); private != "" {
 		os.Exit(lockOwner(private, os.Getenv(ownerPlanEnv)))
 	}
@@ -60,6 +63,15 @@ func stubSCP(root string, args []string) int {
 		return 1
 	}
 	if h := os.Getenv(stubHangEnv); h != "" && strings.Contains(joined, h) {
+		if os.Getenv("GUILDHALL_STUB_SCP_CHILD") == "1" {
+			child := exec.Command(os.Args[0])
+			child.Env = append(os.Environ(), "GUILDHALL_STUB_SSH_CHILD=1")
+			child.Stdout, child.Stderr = os.Stdout, os.Stderr
+			if err := child.Start(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+		}
 		time.Sleep(time.Hour) // until the caller's context kills it
 	}
 	data, err := os.ReadFile(stubPath(root, src))
@@ -121,10 +133,7 @@ func newStub(t *testing.T) *stub {
 
 func (s *stub) transport() Transport {
 	return Transport{
-		Path: s.scp,
-		Output: func(ctx context.Context, path string, args ...string) ([]byte, error) {
-			return exec.CommandContext(ctx, path, args...).CombinedOutput()
-		},
+		Path:    s.scp,
 		Timeout: time.Minute,
 	}
 }

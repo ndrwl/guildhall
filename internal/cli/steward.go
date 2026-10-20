@@ -141,7 +141,7 @@ func (a *App) loadRollout(cfgPath string) (*steward.Rollout, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scp is needed for rollouts: %w", err)
 	}
-	return steward.LoadRollout(private, steward.Transport{Path: scp, Output: a.Output, Timeout: scpTimeout})
+	return steward.LoadRollout(private, steward.Transport{Path: scp, Timeout: scpTimeout})
 }
 
 // renderPlan describes a dry-run plan: each copy's changes, diff and planned commands.

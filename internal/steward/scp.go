@@ -3,6 +3,7 @@ package steward
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -13,8 +14,6 @@ import (
 type Transport struct {
 	// Path is the resolved scp executable.
 	Path string
-	// Output runs a command and returns its combined output.
-	Output func(ctx context.Context, path string, args ...string) ([]byte, error)
 	// Timeout bounds each scp run.
 	Timeout time.Duration
 }
@@ -38,7 +37,11 @@ func (t Transport) Put(ctx context.Context, src string, dst Remote) error {
 func (t Transport) run(ctx context.Context, argv []string) error {
 	ctx, cancel := context.WithTimeout(ctx, t.Timeout)
 	defer cancel()
-	out, err := t.Output(ctx, t.Path, argv[1:]...)
+	cmd := exec.CommandContext(ctx, t.Path, argv[1:]...)
+	configureSCPCancellation(cmd)
+	// Bound pipe draining even if a descendant escapes process cancellation.
+	cmd.WaitDelay = 100 * time.Millisecond
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
 			// scp stopped by the context reports only the signal that killed it.
