@@ -362,7 +362,7 @@ func TestAnswerDecisionWithOptions(t *testing.T) {
 	if _, err := s.OpenDecision("m-2", sampleDecision("approve-plan")); err != nil {
 		t.Fatal(err)
 	}
-	for _, wrong := range []string{"maybe", "Approve", "approve it", "\napprove", "reject-ish\napprove"} {
+	for _, wrong := range []string{"maybe", "Approve", "approve it", "\napprove", "reject-ish\napprove", " approve \r\nKeep the migration behind a flag.", " approve ", "approve\r\r\nnote", "approve\t"} {
 		if _, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", wrong); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("answer %q: err = %v, want ErrInvalid", wrong, err)
 		}
@@ -375,7 +375,7 @@ func TestAnswerDecisionWithOptions(t *testing.T) {
 		t.Fatalf("refused answer changed the decision: %+v", got[0])
 	}
 
-	answer := "  approve \r\n\nKeep the migration behind a flag.\r\n"
+	answer := "approve\r\n\nKeep the migration behind a flag.\r\n"
 	first, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", answer)
 	if err != nil {
 		t.Fatal(err)
@@ -433,7 +433,9 @@ func TestAllDecisionsOrder(t *testing.T) {
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-2"))
 	mustCreate(t, s, "m-2", sampleTask("app", "t-1"))
-	for i, ref := range [][2]string{{"t-2", "a"}, {"t-1", "b"}, {"t-1", "a"}} {
+	mustCreate(t, s, "m-3", sampleTask("app", "t-a"))
+	mustCreate(t, s, "m-4", sampleTask("app", "t"))
+	for i, ref := range [][2]string{{"t-2", "a"}, {"t-1", "b"}, {"t-1", "a"}, {"t-a", "a"}, {"t", "b"}, {"t", "a"}} {
 		d := sampleDecision(ref[1])
 		d.TaskID = ref[0]
 		if _, err := s.OpenDecision(fmt.Sprint("m-d-", i), d); err != nil {
@@ -448,7 +450,7 @@ func TestAllDecisionsOrder(t *testing.T) {
 	for _, d := range all {
 		order = append(order, d.TaskID+"/"+d.ID)
 	}
-	if strings.Join(order, ",") != "t-1/a,t-1/b,t-2/a" {
+	if strings.Join(order, ",") != "t/a,t/b,t-1/a,t-1/b,t-2/a,t-a/a" {
 		t.Fatalf("order = %v", order)
 	}
 	if none, err := s.AllDecisions("lib"); err != nil || len(none) != 0 {

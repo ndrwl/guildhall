@@ -139,7 +139,7 @@ const (
 //
 // A typed decision has a Kind, a Subject unless its kind is question, and
 // optionally Options. When it offers options, its answer's first line, with
-// surrounding white space removed, must equal one option exactly; the answer is
+// only a single trailing CR removed, must equal one option exactly; the answer is
 // still recorded verbatim, the matched option is Choice and the trimmed text after
 // the first line is Note.
 // Decisions recorded before typed decisions have no Kind, Subject or Options and
@@ -391,7 +391,7 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 		}
 		if len(d.Options) > 0 {
 			first, rest, _ := strings.Cut(answer, "\n")
-			first = strings.TrimSpace(first)
+			first = strings.TrimSuffix(first, "\r")
 			if !slices.Contains(d.Options, first) {
 				return invalid("the first line of the answer to decision %q of %s/%s is %q; it must be one of %q", id, repository, taskID, first, d.Options)
 			}
@@ -460,7 +460,17 @@ func (s *Store) PaneBinding(repository, taskID string) (PaneBinding, error) {
 
 // AllDecisions lists every decision in a repository by task id, then decision id.
 func (s *Store) AllDecisions(repository string) ([]Decision, error) {
-	return list[Decision](s, repository, bucketDecisions, nil)
+	out, err := list[Decision](s, repository, bucketDecisions, nil)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(out, func(a, b Decision) int {
+		if order := strings.Compare(a.TaskID, b.TaskID); order != 0 {
+			return order
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return out, nil
 }
 
 // Decisions lists a task's decisions in id order.

@@ -152,7 +152,7 @@ See [workflow-edit authority](configuration.md#workflow-edit-authority) for expl
 ## D23. Typed decisions bound to an artefact
 
 A decision records its kind (`approval`, `review`, `loop-exit`, `merge` or `question`), the document or head digest its answer binds to, and the options it offers, so an answer cannot silently apply to an artefact that changed after the question was asked.
-When options are offered, the answer's first line names one and the rest is a free note: the Guildmaster answers in words, the Director reads a choice without parsing prose, and an answer that names no option is refused before anything is written.
+When options are offered, the answer's first line (the text before the first LF, with only a single trailing CR removed) equals one option exactly and the rest is a trimmed free note: the Guildmaster answers in words, the Director reads a choice without parsing prose, and an answer that names no option is refused before anything is written.
 The answer is kept verbatim; the command line only drops a UTF-8 byte order mark and turns CRLF into LF, so the same words record the same answer on Windows and elsewhere.
 The new fields are optional in the record, so decisions written before them decode and take any answer, and the answer request is unchanged, so their receipts still replay; the store stays at schema 1.
 Answer mutation ids use `:` because `/` is not a mutation id character, and fall back to a sha256 of the id when ids make it longer than 128 bytes, as `task new` does.

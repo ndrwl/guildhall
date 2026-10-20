@@ -111,6 +111,50 @@ func TestDecideListIsTheOpenInbox(t *testing.T) {
 	}
 }
 
+func TestDecideListPrefixOrder(t *testing.T) {
+	path := decideStorePath(t)
+	s, err := store.Open(path, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	for _, id := range []string{"t-a", "t"} {
+		task := store.Task{Repository: "app", ID: id, Title: "Task", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}
+		if _, err := s.CreateTask("task:"+id, task); err != nil {
+			t.Fatal(err)
+		}
+		for _, decision := range []string{"b", "a"} {
+			d := store.Decision{Repository: "app", TaskID: id, ID: decision, Kind: store.DecisionQuestion, Question: "Proceed?"}
+			if _, err := s.OpenDecision("open:"+id+":"+decision, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, repo := range []string{"", "app"} {
+		args := []string{"list", "--store", path}
+		want := "app/t/a,app/t/b,app/t-1/approve-plan,app/t-2/merge,app/t-a/a,app/t-a/b"
+		if repo != "" {
+			args = append(args, "--repo", repo)
+		} else {
+			want += ",lib/t-1/port"
+		}
+		code, out, errOut := runDecide(t, "", args...)
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errOut)
+		}
+		var order []string
+		for _, d := range decodeJSON[[]store.Decision](t, out) {
+			order = append(order, d.Repository+"/"+d.TaskID+"/"+d.ID)
+		}
+		if strings.Join(order, ",") != want {
+			t.Fatalf("repo %q: order = %v, want %s", repo, order, want)
+		}
+	}
+}
+
 func TestDecideShow(t *testing.T) {
 	path := decideStorePath(t)
 	code, out, errOut := runDecide(t, "", "show", "--store", path, "--repo", "app", "--task", "t-1", "--decision", "approve-plan")

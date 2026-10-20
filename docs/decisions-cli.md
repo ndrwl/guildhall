@@ -27,7 +27,7 @@ The answer is read from the file, or from standard input for `-`.
 A leading UTF-8 byte order mark is dropped and CRLF line endings become LF, so an answer written on Windows records the same words as on Linux or macOS; UTF-16, which Windows PowerShell 5.1 writes by default, is refused with a hint to write UTF-8.
 Otherwise the words are recorded exactly; a blank answer, invalid UTF-8 and more than 64 KiB are refused.
 
-When the decision offers options, the first line of the answer, with surrounding white space removed, must equal one of them exactly, case included:
+When the decision offers options, the first line of the answer (the text before the first LF, with only a single trailing CR removed) must equal one of them exactly, case and surrounding white space included:
 
 ```
 approve
