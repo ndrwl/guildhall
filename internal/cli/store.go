@@ -38,7 +38,7 @@ func (a *App) storeDoctor(path string) int {
 	} else {
 		fmt.Fprintf(&b, "integrity: %d problems\n", len(rep.Problems))
 	}
-	fmt.Fprintf(&b, "receipts: %d\n", rep.Receipts)
+	fmt.Fprintf(&b, "receipts: %d\nworkflow approvals: %d\n", rep.Receipts, rep.WorkflowApprovals)
 	for _, r := range rep.Repositories {
 		fmt.Fprintf(&b, "repository %s: tasks %d, attempts %d, documents %d, pane bindings %d, decisions %d, messages %d (%d unread)\n",
 			r.Repository, r.Tasks, r.Attempts, r.Documents, r.PaneBindings, r.Decisions, r.Messages, r.UnreadMessages)

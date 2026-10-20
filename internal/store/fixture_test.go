@@ -94,4 +94,8 @@ func TestSchemaV1Fixture(t *testing.T) {
 	if _, err := s.SendMessage(m); err != nil {
 		t.Fatalf("message on fixture copy: %v", err)
 	}
+	// A schema 1 file written before workflow approvals existed accepts them.
+	if _, err := s.ApproveWorkflow(sampleApproval('a')); err != nil {
+		t.Fatalf("workflow approval on fixture copy: %v", err)
+	}
 }
