@@ -143,22 +143,18 @@ No release has been published yet.
 
 ## Commands
 
+Each command is described in its own page; a new command adds its page and one line here.
+
 - `guildhall version` prints the Guildhall version, platform and Go version.
 - `guildhall doctor` prints the OS, architecture, Guildhall version and build-time Go version, then, for `git`, `ssh`, `claude` and `herdr`, the first non-blank version-output line and resolved path or why the version could not be read.
   A missing tool is reported, not treated as an error.
-- `guildhall store doctor <path>` checks a store file read-only and prints its schema version and record counts; see [the store](docs/store.md).
-- `guildhall steward rollout --config <steward.toml> --machine <label> --plan <dir> --dry-run` previews a rollout of the private managed settings to the enrolled Director copies on that machine and writes the plan; `--apply` carries out that plan over `scp` and writes a receipt.
-  See [Steward rollouts](docs/steward.md).
-- `guildhall messages send|list|read|ack --store <path> ...` sends, lists, reads and acknowledges local Director and Artisan messages kept in a store; see [messaging](docs/messaging.md).
-  It does not notify running agents or reach other machines.
-- `guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->` validates a workflow definition and records the Guildmaster's approval of its exact digest; `guildhall workflow approvals --store <path> [--json]` lists the shipped definitions, approved by release, and the recorded approvals.
-  See [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
-- `guildhall artisan run --adapter fake ...` launches one Artisan attempt, as a direct child process or in a new tab of a named Herdr session, and waits for its result file; see `docs/adapters.md`.
-  The only adapter is the test-only fake adapter.
-- `guildhall fake-artisan ...` is the fake Artisan itself: it reads a prompt file and writes a result file.
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... <task>` creates a task bound to its repository's effective workflow revision and the configuration digest; `guildhall task show --store <path> --repo <id> <task> --json` and `guildhall task list --store <path> [--repo <id>] --json` print tasks and their records; `guildhall task timeline` and `guildhall task files` (same flags as `show`) are the Director's read-only inspection of a task's history and documents, labelled with the store state and workflow revision they describe; see [tasks](docs/tasks.md#inspection).
-  It launches nothing; see [tasks](docs/tasks.md).
-- `guildhall decide list|show|answer --store <path> ...` lists the open decisions waiting for the Guildmaster, shows one and records an answer; see [decisions](docs/decisions-cli.md).
+- `guildhall store doctor <path>` checks a store file read-only; see [the store](docs/store.md).
+- `guildhall steward rollout` previews and applies rollouts of the private managed settings; see [Steward rollouts](docs/steward.md).
+- `guildhall messages send|list|read|ack` handles local Director and Artisan messages kept in a store; see [messaging](docs/messaging.md).
+- `guildhall workflow approve|approvals` records and lists workflow approvals; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
+- `guildhall artisan run` and `guildhall fake-artisan` launch one Artisan attempt with the test-only fake adapter; see [adapters](docs/adapters.md).
+- `guildhall task new|show|list|timeline|files` creates and inspects tasks without launching anything; see [tasks](docs/tasks.md).
+- `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.
 
 ## Examples
@@ -251,8 +247,8 @@ sequenceDiagram
 
 - `docs/requirements.md`: the product requirements.
 - `docs/review.md`: the review standard every pull request is held to.
-- `docs/decisions.md`: engineering decisions.
-- `docs/contracts.md`: how contracts, interfaces, tests and packages are organised.
+- `docs/decisions.md`: the index of engineering decisions, one file each under `docs/decisions/`.
+- `docs/contracts.md`: how contracts, interfaces, tests and packages are organised, with one contract file per package under `docs/contracts/`.
 - `docs/store.md`: the store's records, mutation receipts and locking.
 - `docs/steward.md`: Steward rollouts.
 - `docs/messaging.md`: the local Director and Artisan message inbox.

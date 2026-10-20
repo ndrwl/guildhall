@@ -31,14 +31,14 @@ The verdict is approved, changes requested or rejected, and applies to the exact
   No generic frameworks, plugin registries, event buses or always-on services beyond what a requirement needs (R1.29); concrete types come before abstractions.
 - **S7 Dependencies.**
   The standard library comes first.
-  Each new third-party module, CI action or tool version is recorded with its reason in `docs/decisions.md`.
+  Each new third-party module, CI action or tool version is recorded with its reason in a decision under `docs/decisions/`.
 - **S8 Custody.**
   Code never deletes unlanded work (R1.18) and never closes or stops Herdr tabs, workspaces or sessions it did not create (R1.54).
 - **S9 Release integrity.**
   Workflows hold least-privilege permissions; only a pushed version tag publishes a release; every release artifact is listed in `SHA256SUMS`.
 - **S10 Documentation.**
   Markdown has one sentence per line.
-  Engineering decisions are recorded in `docs/decisions.md` by the pull request that makes them, and user-visible commands are described in the README.
+  Engineering decisions are recorded under `docs/decisions/` by the pull request that makes them, and user-visible commands are described in the README.
 - **S11 Contracts.**
   New or changed behaviour at a module, process, operating-system, shell or terminal boundary states its contract first and follows `docs/contracts.md`.
   A test double that replaces a real boundary passes the same contract test as the real implementation.
