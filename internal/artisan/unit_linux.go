@@ -20,14 +20,14 @@ type platformUnit struct {
 	cgroup *cgroup
 }
 
-func (u *groupUnit) placeWorker(attr *syscall.SysProcAttr) (func(), error) {
+func (u *platformUnit) placeWorker(attr *syscall.SysProcAttr) (func(), error) {
 	if u.cgroup != nil {
 		return u.cgroup.place(attr)
 	}
 	return func() {}, nil
 }
 
-func (u *groupUnit) verifyWorker(pid int) error {
+func (u *platformUnit) verifyWorker(pid int) error {
 	if u.cgroup != nil {
 		in, err := u.cgroup.holds(pid)
 		if err != nil {
@@ -54,7 +54,7 @@ func (u *groupUnit) signalUnit(sig unix.Signal) error {
 	return u.signalGroup(sig)
 }
 
-func (u *groupUnit) removeContainment() error {
+func (u *platformUnit) removeContainment() error {
 	if u.cgroup != nil {
 		return u.cgroup.remove()
 	}
