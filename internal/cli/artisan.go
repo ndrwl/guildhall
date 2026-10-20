@@ -258,11 +258,6 @@ func (a *App) report(r adapter.Result, err error) int {
 	return 0
 }
 
-func (a *App) fail(err error) int {
-	a.notef("guildhall: %v\n", err)
-	return 1
-}
-
 // notef writes a diagnostic line to stderr. The exit code carries the outcome
 // if stderr is unwritable.
 func (a *App) notef(format string, args ...any) {
