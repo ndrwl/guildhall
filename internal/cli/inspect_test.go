@@ -2,8 +2,10 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -128,6 +130,31 @@ func TestTaskFilesGolden(t *testing.T) {
 	}
 }
 
+func TestTaskInspectionScope(t *testing.T) {
+	path := inspectStore(t)
+	for _, sub := range []string{"timeline", "files"} {
+		t.Run(sub, func(t *testing.T) {
+			code, out, stderr := runTask(t, sub, "--store", path, "--repo", "app", "--json", "t-2")
+			if code != 0 || stderr != "" {
+				t.Fatalf("exit %d, stderr %s", code, stderr)
+			}
+			var got struct {
+				AsOf         inspectLabel      `json:"as_of"`
+				OmittedKinds map[string]string `json:"omitted_kinds"`
+			}
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatal(err)
+			}
+			if !got.AsOf.Partial || !reflect.DeepEqual(got.AsOf.Excluded, []string{"live worker state", "worker files", "transcript"}) || got.AsOf.Sequence != 17 || got.AsOf.CommittedAt.IsZero() || got.AsOf.Workflow.Digest == "" {
+				t.Fatalf("inspection label = %+v", got.AsOf)
+			}
+			if sub == "timeline" && !reflect.DeepEqual(got.OmittedKinds, map[string]string{"findings": "not yet recorded by this version", "director_rulings": "not yet recorded by this version"}) {
+				t.Fatalf("omitted kinds = %v", got.OmittedKinds)
+			}
+		})
+	}
+}
+
 func TestTaskInspectionRefusals(t *testing.T) {
 	path := inspectStore(t)
 	missing := filepath.Join(t.TempDir(), "missing.store")
@@ -167,14 +194,16 @@ func TestTimelineWithoutRecordNames(t *testing.T) {
 	h := store.TaskHistory{
 		Task:      store.Task{Repository: "app", ID: "t-1"},
 		Attempts:  []store.StageAttempt{{Step: "build", Number: 1}, {Step: "plan", Number: 1}},
-		Decisions: []store.Decision{{ID: "q-1"}},
+		Decisions: []store.Decision{{ID: "q-1"}, {ID: "q-2"}},
 		Receipts: []store.Receipt{
 			{MutationID: "legacy", Operation: "start-attempt", Attempt: 1, Sequence: 1, CommittedAt: at},
 			{MutationID: "named", Operation: "start-attempt", Attempt: 1, Record: "attempt/plan/1", Sequence: 2, CommittedAt: at.Add(time.Minute)},
+			{Operation: "open-decision", Sequence: 3, CommittedAt: at.Add(2 * time.Minute)},
+			{Operation: "open-decision", Record: "decision/q-2", Sequence: 4, CommittedAt: at.Add(3 * time.Minute)},
 		},
 	}
 	got := timeline(h)
-	if len(got.Events) != 2 || len(got.Attempts) != 2 || got.Attempts[0].Step != "plan" || got.Attempts[1].Step != "build" {
+	if len(got.Events) != 4 || len(got.Attempts) != 2 || got.Attempts[0].Step != "plan" || got.Attempts[1].Step != "build" {
 		t.Fatalf("timeline = %+v", got)
 	}
 	if p := got.Attempts[0]; p.StartedAt == nil || !p.StartedAt.Equal(at.Add(time.Minute)) || p.FinishedAt != nil || p.DurationSeconds != nil {
@@ -183,7 +212,26 @@ func TestTimelineWithoutRecordNames(t *testing.T) {
 	if b := got.Attempts[1]; b.StartedAt != nil || b.DurationSeconds != nil {
 		t.Fatalf("legacy attempt = %+v", b)
 	}
-	if d := got.Decisions[0]; d.OpenedAt != nil || d.WaitSeconds != nil {
+	if d := got.Decisions[1]; d.ID != "q-1" || d.OpenedAt != nil || d.WaitSeconds != nil {
 		t.Fatalf("legacy decision = %+v", d)
+	}
+
+	finished := at.Add(4 * time.Minute)
+	answered := at.Add(5 * time.Minute)
+	h.Attempts[0].Outcome = store.AttemptSucceeded
+	h.Decisions[0].Answer = "Proceed"
+	h.Receipts = append(h.Receipts,
+		store.Receipt{Operation: "finish-attempt", Record: "attempt/build/1", Sequence: 5, CommittedAt: finished},
+		store.Receipt{Operation: "answer-decision", Record: "decision/q-1", Sequence: 6, CommittedAt: answered},
+	)
+	got = timeline(h)
+	if len(got.Events) != 6 || got.Attempts[0].Step != "plan" || got.Decisions[0].ID != "q-2" {
+		t.Fatalf("mixed-version ordering = %+v", got)
+	}
+	if b := got.Attempts[1]; b.Step != "build" || b.StartedAt != nil || b.FinishedAt == nil || !b.FinishedAt.Equal(finished) || b.DurationSeconds != nil {
+		t.Fatalf("mixed-version attempt = %+v", b)
+	}
+	if d := got.Decisions[1]; d.ID != "q-1" || d.OpenedAt != nil || d.AnsweredAt == nil || !d.AnsweredAt.Equal(answered) || d.WaitSeconds != nil {
+		t.Fatalf("mixed-version decision = %+v", d)
 	}
 }

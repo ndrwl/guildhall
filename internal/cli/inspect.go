@@ -13,6 +13,8 @@ import (
 // inspectLabel says what an inspection read describes: the store state as of the newest committed
 // mutation, and the workflow revision the task is bound to (docs/tasks.md#inspection).
 type inspectLabel struct {
+	Partial     bool              `json:"partial"`
+	Excluded    []string          `json:"excluded"`
 	Sequence    uint64            `json:"sequence"`
 	CommittedAt time.Time         `json:"committed_at"`
 	Workflow    workflow.Revision `json:"workflow"`
@@ -47,11 +49,12 @@ type timedDocument struct {
 // taskTimeline is what task timeline prints. Events are every receipt of the task in commit order:
 // the moves made on it, including those Guildhall records for the Director.
 type taskTimeline struct {
-	AsOf      inspectLabel    `json:"as_of"`
-	Task      store.Task      `json:"task"`
-	Attempts  []timedAttempt  `json:"attempts"`
-	Decisions []timedDecision `json:"decisions"`
-	Events    []store.Receipt `json:"events"`
+	AsOf         inspectLabel      `json:"as_of"`
+	Task         store.Task        `json:"task"`
+	Attempts     []timedAttempt    `json:"attempts"`
+	Decisions    []timedDecision   `json:"decisions"`
+	Events       []store.Receipt   `json:"events"`
+	OmittedKinds map[string]string `json:"omitted_kinds"`
 }
 
 // taskFiles is what task files prints: the task's recorded documents and their digests.
@@ -72,17 +75,19 @@ func recordReceipts(receipts []store.Receipt) map[string][]store.Receipt {
 }
 
 func label(h store.TaskHistory) inspectLabel {
-	return inspectLabel{Sequence: h.AsOf.Sequence, CommittedAt: h.AsOf.CommittedAt, Workflow: h.Task.Workflow}
+	return inspectLabel{Partial: true, Excluded: []string{"live worker state", "worker files", "transcript"}, Sequence: h.AsOf.Sequence, CommittedAt: h.AsOf.CommittedAt, Workflow: h.Task.Workflow}
 }
 
-// span returns the commit times of a record's first and second receipts and the seconds between them,
-// and the first receipt's sequence, or zero when the record has none.
-func span(rs []store.Receipt) (start, end *time.Time, seconds *float64, seq uint64) {
-	if len(rs) > 0 {
-		start, seq = &rs[0].CommittedAt, rs[0].Sequence
+func span(rs []store.Receipt, startOp, endOp string) (start, end *time.Time, seconds *float64, seq uint64) {
+	for _, r := range rs {
+		switch r.Operation {
+		case startOp:
+			start, seq = &r.CommittedAt, r.Sequence
+		case endOp:
+			end = &r.CommittedAt
+		}
 	}
-	if len(rs) > 1 {
-		end = &rs[1].CommittedAt
+	if start != nil && end != nil {
 		d := end.Sub(*start).Seconds()
 		seconds = &d
 	}
@@ -93,15 +98,16 @@ func span(rs []store.Receipt) (start, end *time.Time, seconds *float64, seq uint
 // the store's order after the timed ones.
 func timeline(h store.TaskHistory) taskTimeline {
 	byRecord := recordReceipts(h.Receipts)
-	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Events: h.Receipts}
+	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Events: h.Receipts,
+		OmittedKinds: map[string]string{"findings": "not yet recorded by this version", "director_rulings": "not yet recorded by this version"}}
 	for _, a := range h.Attempts {
 		t := timedAttempt{StageAttempt: a}
-		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)])
+		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)], "start-attempt", "finish-attempt")
 		out.Attempts = append(out.Attempts, t)
 	}
 	for _, d := range h.Decisions {
 		t := timedDecision{Decision: d}
-		t.OpenedAt, t.AnsweredAt, t.WaitSeconds, t.seq = span(byRecord["decision/"+d.ID])
+		t.OpenedAt, t.AnsweredAt, t.WaitSeconds, t.seq = span(byRecord["decision/"+d.ID], "open-decision", "answer-decision")
 		out.Decisions = append(out.Decisions, t)
 	}
 	slices.SortStableFunc(out.Attempts, func(a, b timedAttempt) int { return byStart(a.seq, b.seq) })
@@ -114,7 +120,7 @@ func files(h store.TaskHistory) taskFiles {
 	out := taskFiles{AsOf: label(h), Documents: []timedDocument{}}
 	for _, d := range h.Documents {
 		t := timedDocument{DocumentRef: d}
-		t.RecordedAt, _, _, _ = span(byRecord["document/"+d.Name])
+		t.RecordedAt, _, _, _ = span(byRecord["document/"+d.Name], "put-document", "")
 		out.Documents = append(out.Documents, t)
 	}
 	return out
