@@ -21,4 +21,4 @@ golangci-lint run
 ```
 
 `gofmt -l .` must print nothing.
-CI pins the golangci-lint version recorded in `docs/decisions.md`.
+Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in `docs/decisions.md`.

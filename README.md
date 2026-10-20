@@ -12,12 +12,13 @@ Guildhall needs Go 1.27 or later.
 go build -o guildhall ./cmd/guildhall
 ```
 
-The release workflow attaches binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, to each tagged GitHub release; none has been published yet.
+The release workflow publishes binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, only for pushed version tags; manual runs produce downloadable workflow artifacts without publishing a release.
+No release has been published yet.
 
 ## Commands
 
 - `guildhall version` prints the Guildhall version, platform and Go version.
-- `guildhall doctor` prints the platform and, for `git`, `ssh`, `claude` and `herdr`, the version found on `PATH` or why it could not be read.
+- `guildhall doctor` prints the OS, architecture, Guildhall version and build-time Go version, then, for `git`, `ssh`, `claude` and `herdr`, the first non-blank version-output line and resolved path or why the version could not be read.
   A missing tool is reported, not treated as an error.
 - `guildhall help` lists the commands.
 
