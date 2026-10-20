@@ -2,8 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -104,12 +102,7 @@ func (a *App) decide(args []string) int {
 	case "show":
 		out, err = findDecision(s, *repo, *task, *id)
 	case "answer":
-		mutationID := "decision-answer:" + *repo + ":" + *task + ":" + *id
-		if len(mutationID) > 128 {
-			sum := sha256.Sum256([]byte(mutationID))
-			mutationID = "decision-answer:sha256:" + hex.EncodeToString(sum[:])
-		}
-		out, err = s.AnswerDecision(mutationID, *repo, *task, *id, answer)
+		out, err = s.AnswerDecision(mutationID("decision-answer", *repo, *task, *id), *repo, *task, *id, answer)
 	}
 	if cerr := s.Close(); err == nil {
 		err = cerr

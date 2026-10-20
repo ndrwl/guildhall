@@ -143,12 +143,7 @@ func (a *App) task(args []string) int {
 	var out any
 	switch sub {
 	case "new":
-		mutationID := "task:" + task.Repository + ":" + task.ID
-		if len(mutationID) > 128 {
-			sum := sha256.Sum256([]byte(mutationID))
-			mutationID = "task:sha256:" + hex.EncodeToString(sum[:])
-		}
-		out, err = s.CreateTask(mutationID, task)
+		out, err = s.CreateTask(mutationID("task", task.Repository, task.ID), task)
 	case "show":
 		out, err = showTask(s, *repo, positional[0])
 	case "list":
