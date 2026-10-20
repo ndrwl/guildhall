@@ -52,3 +52,16 @@ Copy configuration uses TOML (R1.11), which the Go standard library does not par
 Add `github.com/BurntSushi/toml` v1.6.0 for `internal/config`, following D3's policy of adding a dependency when a feature needs it.
 Its typed decoding and undecoded-key metadata let the configuration parser populate concrete Go types and reject unknown keys without maintaining a custom TOML parser.
 Workflow JSON continues to use the standard library's `encoding/json`; this dependency adds no execution or activation behavior.
+
+## D9. bbolt for the store
+
+The store (R1.17) uses `go.etcd.io/bbolt` v1.5.0, which brings `golang.org/x/sys`.
+It is pure Go, so release builds keep `CGO_ENABLED=0`; it gives serializable transactions with a durable commit, and its kernel file lock works on Linux, Windows and macOS.
+Records are JSON from the standard library inside bbolt buckets, so the store needs no other codec.
+The store has no generic storage interface: `internal/store` exposes concrete record types and mutation methods only.
+
+## D10. Store single-writer lock
+
+The single-writer rule uses bbolt's own file lock and no separate lock file or locking package.
+An exclusive lock on the database file for a writer and a shared lock for a read-only open, with a bounded wait, already give the contract the store needs: one writer per file, released by the kernel when the process dies.
+The landed gomate `internal/lock` package wraps `github.com/gofrs/flock` for a separate lock file; it would add a dependency and a second lock without a behaviour the store needs, so no gomate code is copied and no notice is added.

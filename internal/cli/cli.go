@@ -23,6 +23,8 @@ const usage = `Usage: guildhall <command>
 Commands:
   version   print the guildhall version and platform
   doctor    report the platform and the tools guildhall uses
+  store doctor <path>
+            check a store file read-only and count its records
   help      print this help
 `
 
@@ -96,6 +98,11 @@ func (a *App) Run(args []string) int {
 			return a.usageError("doctor takes no arguments")
 		}
 		out = a.doctor()
+	case "store":
+		if len(rest) != 2 || rest[0] != "doctor" {
+			return a.usageError("usage: guildhall store doctor <path>")
+		}
+		return a.storeDoctor(rest[1])
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

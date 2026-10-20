@@ -1,2 +1,5 @@
 # Check out text with LF endings on every platform so gofmt agrees on Windows.
 * text=auto eol=lf
+
+# Store fixtures are bbolt files, never text.
+*.store binary
