@@ -5,6 +5,8 @@ Pure parsing APIs in `internal/config` and `internal/workflow` run nothing and g
 `config.Load` reads the config and its sibling managed file when present, while `config.ParseCombined` validates supplied bytes without file access.
 Legacy `config.Parse` still accepts inline managed settings, and `config.Load` falls back to it when no sibling `managed.toml` exists.
 When that sibling exists, `config.Load` uses `config.ParseCombined`, which refuses inline managed settings with migration guidance.
+Only a sibling that does not exist falls back: a sibling that exists but cannot be read, such as a directory, or that `config.ParseCombined` refuses, such as one with a checksum mismatch, is an error rather than a silent return to the inline layout.
+A config file that cannot be read is an error.
 No credentials belong in either; sign-in stays in each runtime's own store.
 
 ## Config file

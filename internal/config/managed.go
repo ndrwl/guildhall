@@ -62,6 +62,10 @@ func ParseCombined(local, managed []byte) (*Config, error) {
 	return cfg, nil
 }
 
+// Load reads the config at filename and the managed.toml in the same directory.
+// An unreadable config file is returned as its read error.
+// Only a managed.toml that does not exist falls back to Parse, which accepts legacy inline managed settings;
+// any other read error, or a managed.toml that ParseCombined refuses, is returned and never falls back.
 func Load(filename string) (*Config, error) {
 	local, err := os.ReadFile(filename)
 	if err != nil {
