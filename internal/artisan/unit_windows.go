@@ -31,13 +31,14 @@ type processIDList struct {
 // jobUnit contains the worker in a named Job Object that kills its processes
 // when the last handle closes and does not allow breakaway.
 type jobUnit struct {
-	mu     sync.Mutex
-	name   string
-	job    windows.Handle
-	cmd    *exec.Cmd
-	worker Identity
-	closed bool
-	done   chan struct{}
+	mu           sync.Mutex
+	name         string
+	job          windows.Handle
+	cmd          *exec.Cmd
+	worker       Identity
+	workerHandle windows.Handle
+	closed       bool
+	done         chan struct{}
 }
 
 // newUnit creates the job Local\guildhall-<name>; a name already in use is
@@ -98,7 +99,7 @@ func (u *jobUnit) Start(cmd *exec.Cmd) (Identity, error) {
 	if err != nil {
 		return fail("OpenProcess", err)
 	}
-	defer func() { _ = windows.CloseHandle(h) }()
+	u.workerHandle = h
 	if err := windows.AssignProcessToJobObject(u.job, h); err != nil {
 		return fail("AssignProcessToJobObject", err)
 	}
@@ -182,6 +183,11 @@ func (u *jobUnit) Interrupt() error {
 	if err := u.usable(); err != nil {
 		return err
 	}
+	if _, err := identityFromHandle(u.worker.PID, u.workerHandle); errors.Is(err, errNoProcess) {
+		return nil
+	} else if err != nil {
+		return err
+	}
 	return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(u.worker.PID))
 }
 
@@ -227,6 +233,12 @@ func (u *jobUnit) closeLocked() error {
 			}
 		}
 		<-u.done
+	}
+	if u.workerHandle != 0 {
+		if err := windows.CloseHandle(u.workerHandle); err != nil {
+			return err
+		}
+		u.workerHandle = 0
 	}
 	if err := windows.CloseHandle(u.job); err != nil {
 		return err
