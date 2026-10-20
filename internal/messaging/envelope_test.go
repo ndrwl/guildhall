@@ -76,11 +76,38 @@ func TestDecodeRefusesMalformedEnvelopes(t *testing.T) {
 func TestDecodeExactKeys(t *testing.T) {
 	for _, key := range []string{"schema", "id", "recipient", "repository", "task", "step", "attempt", "type", "text", "artifacts", "path", "sha256"} {
 		t.Run(key, func(t *testing.T) {
-			data := strings.Replace(envelopeJSON, `"`+key+`"`, `"`+strings.ToUpper(key)+`"`, 1)
+			variants := []string{strings.ToUpper(key), strings.ToUpper(key[:1]) + key[1:]}
+			if strings.Contains(key, "s") {
+				variants = append(variants, strings.ReplaceAll(key, "s", "ſ"), strings.ReplaceAll(key, "s", `\u017f`))
+			}
+			for _, variant := range variants {
+				for _, replacement := range []string{`"` + variant + `"`, `"` + variant + `": "other", "` + key + `"`, `"` + key + `": "other", "` + variant + `"`} {
+					data := strings.Replace(envelopeJSON, `"`+key+`"`, replacement, 1)
+					if _, err := Decode(strings.NewReader(data)); !errors.Is(err, ErrInvalid) {
+						t.Errorf("key %s: %v", replacement, err)
+					}
+				}
+			}
+			data := strings.Replace(envelopeJSON, `"`+key+`"`, `"`+key+`": null, "`+key+`"`, 1)
 			if _, err := Decode(strings.NewReader(data)); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("case-variant key: %v", err)
+				t.Errorf("duplicate key: %v", err)
 			}
 		})
+	}
+}
+
+func TestDecodeKeysMatchContainingObject(t *testing.T) {
+	for _, data := range []string{
+		strings.Replace(envelopeJSON, `"text"`, `"path"`, 1),
+		strings.Replace(envelopeJSON, `"path"`, `"text"`, 1),
+	} {
+		if _, err := Decode(strings.NewReader(data)); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("key from wrong object: %v", err)
+		}
+	}
+	e := mustDecode(t, strings.Replace(envelopeJSON, `"task"`, `"ta\u0073k"`, 1))
+	if e.Task != "t-1" {
+		t.Fatalf("escaped canonical key: %+v", e)
 	}
 }
 

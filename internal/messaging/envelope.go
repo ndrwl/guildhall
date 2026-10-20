@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -35,7 +36,7 @@ func Decode(r io.Reader) (Envelope, error) {
 	if err := checkUnicode(data); err != nil {
 		return Envelope{}, invalid("envelope: %v", err)
 	}
-	if err := checkKeys(json.NewDecoder(bytes.NewReader(data))); err != nil {
+	if err := checkKeys(json.NewDecoder(bytes.NewReader(data)), reflect.TypeFor[Envelope]()); err != nil {
 		return Envelope{}, invalid("envelope: %v", err)
 	}
 	var head struct {
@@ -93,13 +94,16 @@ func checkUnicode(data []byte) error {
 	return nil
 }
 
-func checkKeys(dec *json.Decoder) error {
+func checkKeys(dec *json.Decoder, typ reflect.Type) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
 	}
 	switch tok {
 	case json.Delim('{'):
+		if typ.Kind() != reflect.Struct {
+			return fmt.Errorf("unexpected object for %s", typ)
+		}
 		seen := map[string]bool{}
 		for dec.More() {
 			key, err := dec.Token()
@@ -107,21 +111,33 @@ func checkKeys(dec *json.Decoder) error {
 				return err
 			}
 			name := key.(string)
-			if name != strings.ToLower(name) {
-				return fmt.Errorf("case-variant key %q", name)
+			var fieldType reflect.Type
+			for i := 0; i < typ.NumField(); i++ {
+				field := typ.Field(i)
+				tag, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+				if name == tag {
+					fieldType = field.Type
+					break
+				}
+			}
+			if fieldType == nil {
+				return fmt.Errorf("unknown field %q", name)
 			}
 			if seen[name] {
 				return fmt.Errorf("duplicate key %q", key)
 			}
 			seen[name] = true
-			if err := checkKeys(dec); err != nil {
+			if err := checkKeys(dec, fieldType); err != nil {
 				return err
 			}
 		}
 		_, err = dec.Token()
 	case json.Delim('['):
+		if typ.Kind() != reflect.Slice {
+			return fmt.Errorf("unexpected array for %s", typ)
+		}
 		for dec.More() {
-			if err := checkKeys(dec); err != nil {
+			if err := checkKeys(dec, typ.Elem()); err != nil {
 				return err
 			}
 		}
