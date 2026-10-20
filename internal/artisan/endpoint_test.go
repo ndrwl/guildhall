@@ -93,6 +93,8 @@ type testHandler struct {
 	entered  chan struct{}
 	release  chan struct{}
 	statuses atomic.Int32
+	stops    atomic.Int32
+	cancels  atomic.Int32
 }
 
 func (h *testHandler) Status() (artisan.EndpointState, error) {
@@ -101,6 +103,7 @@ func (h *testHandler) Status() (artisan.EndpointState, error) {
 }
 
 func (h *testHandler) Stop() (artisan.EndpointState, error) {
+	h.stops.Add(1)
 	if h.release != nil {
 		h.entered <- struct{}{}
 		<-h.release
@@ -109,6 +112,7 @@ func (h *testHandler) Stop() (artisan.EndpointState, error) {
 }
 
 func (h *testHandler) Cancel() (artisan.EndpointState, error) {
+	h.cancels.Add(1)
 	return artisan.EndpointState{Phase: "cancelled"}, h.err
 }
 
@@ -332,6 +336,70 @@ func TestEndpointServesStatusStopAndCancel(t *testing.T) {
 	}
 }
 
+func TestEndpointRejectsMismatchedTargetsBeforeDispatch(t *testing.T) {
+	path := endpointPath(t)
+	self := mustSelf(t)
+	old := listen(t, path, &testHandler{})
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+	replacement := artisan.Identity{PID: self.PID, Token: self.Token + "-replacement"}
+	h := &testHandler{}
+	e, err := artisan.Listen(path, testKey, replacement, ownedBy(replacement), h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+	other := testKey
+	other.Attempt++
+	for _, op := range []artisan.EndpointOp{artisan.OpStatus, artisan.OpStop, artisan.OpCancel} {
+		for _, target := range []struct {
+			name     string
+			key      artisan.AttemptKey
+			launcher artisan.Identity
+		}{
+			{"stale owner", testKey, self},
+			{"wrong PID", testKey, artisan.Identity{PID: replacement.PID + 1, Token: replacement.Token}},
+			{"wrong attempt", other, replacement},
+		} {
+			t.Run(string(op)+"/"+target.name, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if _, err := artisan.Call(ctx, path, target.key, target.launcher, op); !errors.Is(err, artisan.ErrEndpointMismatch) {
+					t.Errorf("Call = %v, want ErrEndpointMismatch", err)
+				}
+			})
+		}
+		for _, fields := range []map[string]any{
+			{"op": op},
+			{"op": op, "attempt": testKey.String()},
+			{"op": op, "launcher": replacement},
+		} {
+			request, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rep := rawExchange(t, path, string(request)+"\n"); rep["error"] == nil || rep["state"] != nil {
+				t.Errorf("missing target identity: reply %v", rep)
+			}
+		}
+	}
+	if s, p, c := h.statuses.Load(), h.stops.Load(), h.cancels.Load(); s != 0 || p != 0 || c != 0 {
+		t.Fatalf("rejected requests reached handlers: status=%d stop=%d cancel=%d", s, p, c)
+	}
+	for _, op := range []artisan.EndpointOp{artisan.OpStatus, artisan.OpStop, artisan.OpCancel} {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err := artisan.Call(ctx, path, testKey, replacement, op)
+		cancel()
+		if err != nil {
+			t.Errorf("current owner %s: %v", op, err)
+		}
+	}
+	if s, p, c := h.statuses.Load(), h.stops.Load(), h.cancels.Load(); s != 1 || p != 1 || c != 1 {
+		t.Errorf("matching requests: status=%d stop=%d cancel=%d, want one each", s, p, c)
+	}
+}
+
 func TestEndpointHandlerError(t *testing.T) {
 	path := endpointPath(t)
 	listen(t, path, &testHandler{err: errors.New("ladder failed")})
@@ -371,7 +439,11 @@ func TestEndpointLineProtocol(t *testing.T) {
 	path := endpointPath(t)
 	h := &testHandler{}
 	listen(t, path, h)
-	rep := rawExchange(t, path, `{"op":"status"}`+"\n")
+	request, err := json.Marshal(map[string]any{"op": "status", "attempt": testKey.String(), "launcher": mustSelf(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := rawExchange(t, path, string(request)+"\n")
 	if rep["attempt"] != testKey.String() || rep["error"] != nil {
 		t.Errorf("status reply = %v", rep)
 	}

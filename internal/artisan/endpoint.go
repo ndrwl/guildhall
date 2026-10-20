@@ -152,7 +152,9 @@ const (
 )
 
 type endpointRequest struct {
-	Op EndpointOp `json:"op"`
+	Op       EndpointOp `json:"op"`
+	Attempt  string     `json:"attempt"`
+	Launcher Identity   `json:"launcher"`
 }
 
 type endpointReply struct {
@@ -274,6 +276,8 @@ func (e *Endpoint) answer(c net.Conn) {
 	}
 	if err != nil {
 		rep.Error = fmt.Sprintf("malformed request: one JSON line of at most %d bytes is required", maxRequestBytes)
+	} else if req.Attempt != rep.Attempt || req.Launcher != e.self {
+		rep.Error = ErrEndpointMismatch.Error()
 	} else {
 		var st EndpointState
 		switch req.Op {
@@ -320,7 +324,7 @@ func Call(ctx context.Context, path string, k AttemptKey, launcher Identity, op 
 	defer func() { _ = c.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
 	defer stop()
-	if err := json.NewEncoder(c).Encode(endpointRequest{Op: op}); err != nil {
+	if err := json.NewEncoder(c).Encode(endpointRequest{Op: op, Attempt: k.String(), Launcher: launcher}); err != nil {
 		return EndpointState{}, callErr(ctx, path, err)
 	}
 	line, err := bufio.NewReader(io.LimitReader(c, maxReplyBytes)).ReadBytes('\n')

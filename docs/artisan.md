@@ -149,7 +149,7 @@ The endpoint directory is created `0700`, and on Unix the socket is made `0600`;
 
 ### Protocol
 
-A request is one JSON line of at most 4 KiB, `{"op":"status"}`, and the reply is one JSON line naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
+A request is one JSON line of at most 4 KiB containing `op`, the expected `attempt` string, and the expected `launcher` identity (PID and token). Before dispatching status, stop or cancel, the endpoint checks that both identities match its bound attempt and launcher; missing or mismatched identities receive an error without invoking any handler. The reply is one JSON line naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
 A malformed or oversized request and an unknown operation get an error reply without reaching the handler.
 Requests are answered concurrently, so a `stop` that waits for the attempt to end does not delay a `status`.
 `Call` dials the endpoint within the caller's context, and refuses a reply naming another attempt or launcher with `ErrEndpointMismatch`; an error reply is `ErrEndpointRequest`.
