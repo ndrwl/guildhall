@@ -65,6 +65,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/herdr`](contracts/herdr.md)
 - [`internal/messaging/messagingtest`](contracts/messaging-messagingtest.md)
 - [`internal/messaging`](contracts/messaging.md)
+- [`internal/render`](contracts/render.md)
 - [`internal/steward`](contracts/steward.md)
 - [`internal/store`](contracts/store.md)
 - [`internal/workflow`](contracts/workflow.md)

@@ -1,0 +1,7 @@
+Review needed for cli/t7, step review (human-review version 1), attempt 2.
+
+Inputs:
+- spec: tasks/t7/spec.md (sha256:242df7188ef036fb7f2376eda94382b23f989a04a61db84ae59acba315fc21be)
+- head: tasks/t7/head (sha256:abababababababababababababababababababababababababababababababab)
+
+Answer with one of: approved, changes_requested, rejected.

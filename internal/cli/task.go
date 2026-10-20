@@ -187,6 +187,9 @@ func acceptTask(cfgPath, repo string) (store.Task, error) {
 	if err != nil {
 		return store.Task{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
+	if err := cfg.CheckProfiles(def); err != nil {
+		return store.Task{}, fmt.Errorf("repository %s: %w", repo, err)
+	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return store.Task{}, fmt.Errorf("config digest: %w", err)

@@ -8,6 +8,8 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `EncodeManaged` and `ParseCombined` frame and verify the separate managed file and refuse inline managed settings beside it (D14).
 `Load` follows the filesystem fallback and error rules in [configuration](../configuration.md).
 
+`Profile` and `CheckProfiles` refuse an unknown profile name (`ErrUnknownProfile`).
+
 ## Tests
 
-`config_test.go`, `managed_test.go`; real temporary files: `load_test.go`
+`config_test.go`, `managed_test.go`, `profile_test.go`; real temporary files: `load_test.go`

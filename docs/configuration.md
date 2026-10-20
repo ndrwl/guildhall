@@ -25,6 +25,7 @@ The managed file's first line binds the exact remaining bytes by SHA-256; use `c
 | `[managed.<key>]` | In the separate managed file for [Steward rollouts](steward.md): `value`, and `overridable` (default `false`). |
 | `[local]` | Owned by the copy: `<key> = "value"`. |
 | `[[repository]]` | Director only: one entry per repository the Director owns. |
+| `[profile.<name>]` | Director only: a named Artisan [profile](#profiles). |
 
 Keys whose names look like credentials, such as `token` or `password`, are refused in both sections.
 
@@ -53,6 +54,20 @@ Other letter case is compared exactly.
 `approval` means the Director asks the Guildmaster before every merge.
 `auto` means a merge happens only when checks pass, the independent review is complete for the exact head and the work is within accepted scope; otherwise the Director asks.
 No workflow can change a repository's merge policy.
+
+### Profiles
+
+A profile chooses who runs an Artisan stage whose `profile` setting names it.
+Names are lowercase identifiers, so three review stages can name `reviewer-opus`, `reviewer-opus-b` and `reviewer-astra` and no model name appears in a repository's workflow.
+
+| Key | Meaning |
+|---|---|
+| `adapter` | Required: the runtime adapter, such as `claude`. |
+| `model`, `effort` | Passed to the adapter as given; empty means the adapter's default. |
+| `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
+
+A profile names no credential.
+`config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
 
 ## Workflow definitions
 
@@ -101,6 +116,7 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
 `guildmaster-approval`, `human-review` and `handoff-wait` are durable human pauses.
+`plan`, `build` and both review kinds accept `profile`, a [profile](#profiles) name, and `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); a `human-review` step keeps them so swapping review kinds keeps the step valid, and they are unused while a human reviews.
 `deliver` has no settings: the repository's merge policy decides how work lands.
 
 ### Swapping review per repository

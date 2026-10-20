@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net/url"
 	"path"
@@ -61,6 +62,24 @@ type Config struct {
 	// Local is owned by this copy and may override managed keys marked overridable.
 	Local        map[string]string `toml:"local"`
 	Repositories []Repository      `toml:"repository"`
+	// Profiles are the Director's named Artisan profiles, keyed by the name workflow steps give in "profile".
+	Profiles map[string]Profile `toml:"profile"`
+}
+
+// ErrUnknownProfile reports a profile name that the Director config does not declare.
+var ErrUnknownProfile = errors.New("unknown profile")
+
+// Profile chooses who runs an Artisan stage that names it: the runtime adapter, model and effort,
+// and optionally a role prompt replacing the release's Artisan role.
+// It names no credential; sign-in stays in each runtime's own store.
+type Profile struct {
+	// Adapter names the runtime adapter, such as "claude"; required.
+	Adapter string `toml:"adapter"`
+	// Model and Effort are passed to the adapter as given; empty means the adapter's default.
+	Model  string `toml:"model"`
+	Effort string `toml:"effort"`
+	// Role is a slash-separated path relative to the config file's directory; empty keeps the release role.
+	Role string `toml:"role"`
 }
 
 // PrivateConfig is a reference to the private config repository, never a credential.
@@ -97,6 +116,12 @@ var (
 // a POSIX path from the root or a Windows path from a drive letter.
 func ownerAbsolute(path string) bool {
 	return strings.HasPrefix(path, "/") || drivePathPattern.MatchString(path)
+}
+
+// configRelative reports whether p names a file below the config directory on every platform:
+// slash-separated, relative, without dot segments, backslashes or a drive letter.
+func configRelative(p string) bool {
+	return fs.ValidPath(p) && p != "." && !strings.Contains(p, `\`) && !strings.Contains(p, ":")
 }
 
 func ownerPathKey(p string) string {
@@ -177,6 +202,9 @@ func (c *Config) validate() []string {
 		if len(c.Repositories) > 0 {
 			add("repositories belong to a director, not the steward")
 		}
+		if len(c.Profiles) > 0 {
+			add("profiles belong to a director, not the steward")
+		}
 	default:
 		add(`mode must be "steward" or "director", not %q`, c.Mode)
 	}
@@ -188,6 +216,23 @@ func (c *Config) validate() []string {
 		problems = append(problems, checkKey("local", key)...)
 		if m, managed := c.Managed[key]; managed && !m.Overridable {
 			add("local %q overrides a managed key that is not overridable", key)
+		}
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(c.Profiles)) {
+		p := c.Profiles[name]
+		if !workflow.ValidID(name) {
+			add("invalid profile name %q", name)
+			continue
+		}
+		switch {
+		case p.Adapter == "":
+			add("profile %q: adapter is required", name)
+		case !workflow.ValidID(p.Adapter):
+			add("profile %q: invalid adapter %q", name, p.Adapter)
+		}
+		if p.Role != "" && !configRelative(p.Role) {
+			add("profile %q: role must be a relative slash-separated path inside the config directory", name)
 		}
 	}
 
@@ -274,6 +319,33 @@ func (c *Config) Setting(key string) (string, bool) {
 		return v, true
 	}
 	return m.Value, managed
+}
+
+// Profile returns the profile with this name, or an error wrapping ErrUnknownProfile.
+func (c *Config) Profile(name string) (Profile, error) {
+	p, ok := c.Profiles[name]
+	if !ok {
+		return Profile{}, fmt.Errorf("%w %q", ErrUnknownProfile, name)
+	}
+	return p, nil
+}
+
+// CheckProfiles refuses a workflow whose steps name a profile this config does not declare,
+// listing every such step in one error that wraps ErrUnknownProfile.
+// Run it with the repository's effective workflow before a task binds it.
+func (c *Config) CheckProfiles(def *workflow.Definition) error {
+	var problems []string
+	for _, step := range def.Steps {
+		if name := step.Profile(); name != "" {
+			if _, ok := c.Profiles[name]; !ok {
+				problems = append(problems, fmt.Sprintf("step %q names unknown profile %q", step.ID, name))
+			}
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("workflow %q: %w: %s", def.Name, ErrUnknownProfile, strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 // Repository returns the repository with this id.

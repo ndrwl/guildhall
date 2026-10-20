@@ -1,0 +1,26 @@
+{
+  "schema": "guildhall.prompt-manifest/1",
+  "identity": {
+    "repository": "cli",
+    "task": "t7",
+    "step": "grill",
+    "kind": "grill",
+    "kind_version": 1,
+    "attempt": 2
+  },
+  "prompt": {
+    "path": "prompt.md",
+    "digest": "sha256:604d43db23da43199b261e9f41a0ed466eda1e8376f3393d2568506147a4d9d3"
+  },
+  "role": {
+    "path": "roles/artisan.md",
+    "digest": "sha256:617fae11efe1587423bd4dd4a81c8e14927a63369b790a6f1d72446b245585f0"
+  },
+  "guide": {
+    "path": "stages/grill.md",
+    "digest": "sha256:2fa70449bcde4ea749939294e88757892652df75fc1bb3c8fe943e59fc2efa5f"
+  },
+  "standards": [],
+  "inputs": [],
+  "skills": []
+}

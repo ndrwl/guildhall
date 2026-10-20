@@ -7,6 +7,18 @@ name = "tools"
 [local]
 review_instructions = "Cite the accepted requirement for every finding and check Windows paths."
 
+# Artisan profiles that workflow steps name with "profile"; no credentials.
+[profile.builder]
+adapter = "claude"
+model = "opus"
+effort = "high"
+
+[profile.reviewer]
+adapter = "claude"
+model = "opus"
+effort = "high"
+role = "roles/reviewer.md"
+
 [[repository]]
 id = "cli"
 path = '/srv/src/cli'

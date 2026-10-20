@@ -1,0 +1,26 @@
+{
+  "schema": "guildhall.prompt-manifest/1",
+  "identity": {
+    "repository": "cli",
+    "task": "t7",
+    "step": "research",
+    "kind": "research",
+    "kind_version": 1,
+    "attempt": 2
+  },
+  "prompt": {
+    "path": "prompt.md",
+    "digest": "sha256:8b2debffd712eb2db701d8e77541547264011a7adc15d2e33374c4d70695a170"
+  },
+  "role": {
+    "path": "roles/artisan.md",
+    "digest": "sha256:617fae11efe1587423bd4dd4a81c8e14927a63369b790a6f1d72446b245585f0"
+  },
+  "guide": {
+    "path": "stages/research.md",
+    "digest": "sha256:a262e13b954f3e024164aa941114b0153eb540a0a4bc97d564a8a7af632481c2"
+  },
+  "standards": [],
+  "inputs": [],
+  "skills": []
+}

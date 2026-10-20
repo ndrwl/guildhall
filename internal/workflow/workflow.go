@@ -58,6 +58,33 @@ type Step struct {
 	On map[string]Rule `json:"on,omitempty"`
 }
 
+// Profile returns the step's "profile" setting: the name of a Director config profile
+// choosing the adapter, model, effort and role prompt of the Artisan that runs it, or "" when unset.
+// Call it on a validated definition; an invalid value reads as "".
+func (s Step) Profile() string { return s.stringSetting("profile") }
+
+// Skills returns the step's "skills" setting in order, or nil when unset.
+// Each name is a skill directory resolved by package render.
+// Call it on a validated definition; an invalid value reads as nil.
+func (s Step) Skills() []string {
+	var names []string
+	if raw, ok := s.Settings["skills"]; !ok || json.Unmarshal(raw, &names) != nil {
+		return nil
+	}
+	return names
+}
+
+// Instructions returns the step's "instructions" setting, or "" when unset.
+func (s Step) Instructions() string { return s.stringSetting("instructions") }
+
+func (s Step) stringSetting(name string) string {
+	var v string
+	if raw, ok := s.Settings[name]; ok && json.Unmarshal(raw, &v) == nil {
+		return v
+	}
+	return ""
+}
+
 // Rule sends the task back to the same or an earlier step on an outcome, at most Max times.
 type Rule struct {
 	Goto string `json:"goto"`

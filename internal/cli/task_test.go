@@ -256,6 +256,65 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 	}
 }
 
+func TestTaskNewRefusesUnknownProfilesAndWritesNothing(t *testing.T) {
+	for _, kind := range []string{"plan", "build", "automated-review", "human-review"} {
+		t.Run(kind, func(t *testing.T) {
+			toml := directorTOML
+			if kind == "human-review" {
+				toml = strings.Replace(toml, `type = "automated-review"`, `type = "human-review"`, 1)
+			}
+			cfg := writeDirector(t, toml)
+			file := filepath.Join(filepath.Dir(cfg), "workflows", "human-review.json")
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			def, err := workflow.Parse(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stepID := kind
+			if kind == "automated-review" || kind == "human-review" {
+				stepID = "review"
+			}
+			for i := range def.Steps {
+				if def.Steps[i].ID == stepID {
+					def.Steps[i].Settings = map[string]json.RawMessage{"profile": json.RawMessage(`"missing"`)}
+				}
+			}
+			data, err = json.Marshal(def)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, file, string(data))
+			path := emptyStore(t)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "lib", "--title", "Task", "t-1")
+			if code != 1 || out != "" || !strings.Contains(stderr, `step "`+stepID+`" names unknown profile "missing"`) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, stderr)
+			}
+			if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("store changed (%v)", err)
+			}
+			code, out, stderr = runTask(t, "list", "--store", path, "--repo", "lib", "--json")
+			if code != 0 {
+				t.Fatalf("list: exit %d, stderr %q", code, stderr)
+			}
+			if tasks := decodeJSON[[]store.Task](t, out); len(tasks) != 0 {
+				t.Fatalf("refusal recorded tasks: %+v", tasks)
+			}
+			writeFile(t, cfg, toml+"\n[profile.missing]\nadapter = \"claude\"\n")
+			newTask(t, path, cfg, "lib", "Task", "t-1")
+			if got := readTask(t, path, "lib", "t-1"); got.ConfigDigest != configDigest(t, cfg) {
+				t.Fatalf("declared-profile task = %+v", got)
+			}
+		})
+	}
+}
+
 func TestTaskDefaultIgnoresShadowFile(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "default.json"), "invalid JSON")
