@@ -15,7 +15,7 @@ func KillVerified(id artisan.Identity) error {
 	if err != nil {
 		return err
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if lv, err := artisan.Probe(id); lv != artisan.Alive {
 		return err
 	}

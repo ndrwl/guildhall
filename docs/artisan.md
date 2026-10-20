@@ -2,8 +2,9 @@
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
 This page describes what is built today: the operating-system seams the launcher stands on, process identity and the containment unit.
-The ownership record, control endpoint, stop ladder, heartbeat and the `artisan run`, `stop`, `status` and `resume` commands are later work; nothing here is wired into a command yet.
-The package is `internal/artisan`; its doc comments hold the same contract.
+The ownership record, control endpoint, stop ladder, heartbeat and integration into launcher commands are later work; nothing here is wired into a command yet.
+The existing fake-adapter `artisan run` command is described in [adapters](adapters.md#running-an-attempt).
+The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
 ## Process identity
 
@@ -35,7 +36,7 @@ A unit holds one worker and every descendant that stays inside it.
 | `Terminate()` | SIGTERM to the group on Unix; refused on Windows with `ErrUnsupportedRung`, which matches `errors.ErrUnsupported`. |
 | `Kill()` | Ends every member without their cooperation. |
 | `Exited()` | Closed once the worker, the direct child, has exited. |
-| `Close()` | Kills what remains, waits for the worker and releases the unit; idempotent; afterwards every other operation is `ErrClosed`. |
+| `Close()` | Cleanup and retry semantics are defined in the [`Unit.Close` contract](../internal/artisan/artisan.go). |
 
 `Members` and the stop operations before `Start` are `ErrNotStarted`.
 A stop rung counts as successful only when `Members` is empty afterwards; delivering a signal proves nothing.
@@ -52,7 +53,10 @@ The methods are safe for concurrent use.
 
 ### Unix: process group
 
-The process group alone is the interim Linux containment backend in this L1 PR, not the final Linux design. Slice L2 will use cgroup v2 when delegated, otherwise subreaper plus process group. macOS retains the process-group backend. The shared contract harness capability flags, including `SetsidEscapes`, remain selectable for the L2 backends.
+The process group alone is the interim Linux containment backend in this L1 PR, not the final Linux design.
+Slice L2 will use cgroup v2 when delegated, otherwise subreaper plus process group.
+macOS retains the process-group backend.
+The shared contract harness capability flags, including `SetsidEscapes`, remain selectable for the L2 backends.
 
 - The worker leads its own process group (`Setpgid`).
 - When the worker's stdin is the launcher's terminal, the worker group becomes the terminal's foreground group (`Foreground`, `Ctty`), so Ctrl+C in the pane reaches the worker rather than the launcher; `Close` gives the terminal back.

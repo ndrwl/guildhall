@@ -16,7 +16,7 @@ func KillVerified(id artisan.Identity) error {
 	if err != nil {
 		return err
 	}
-	defer windows.CloseHandle(h)
+	defer func() { _ = windows.CloseHandle(h) }()
 	var c, e, k, u windows.Filetime
 	if err := windows.GetProcessTimes(h, &c, &e, &k, &u); err != nil {
 		return err

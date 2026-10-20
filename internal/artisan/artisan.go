@@ -60,7 +60,7 @@ var (
 	ErrStarted = errors.New("unit already started")
 	// ErrNotStarted refuses Members or a rung on a unit with no worker.
 	ErrNotStarted = errors.New("unit not started")
-	// ErrClosed refuses any operation after Close.
+	// ErrClosed refuses operations other than Close and Exited after successful cleanup.
 	ErrClosed = errors.New("unit closed")
 )
 
@@ -86,8 +86,10 @@ type Unit interface {
 	// Exited is closed once the worker, the direct child, has exited.
 	Exited() <-chan struct{}
 	// Close kills any remaining members, waits for the worker to exit, then
-	// releases the unit. It is idempotent; every other method afterwards
-	// returns ErrClosed.
+	// releases the unit. A termination error returns without waiting for exit;
+	// cleanup errors retain ownership so Close can be retried.
+	// After success, Close is idempotent and Start, Members and stop rungs
+	// return ErrClosed. Exited continues to return the worker's exit channel.
 	Close() error
 }
 
