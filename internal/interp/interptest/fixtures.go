@@ -129,11 +129,11 @@ func Build(t testing.TB, doc string) Attempt {
 	}
 }
 
-// AutomatedReview is the review attempt the fixtures describe: profile "reviewer-astra",
+// AutomatedReview is the review attempt the fixtures describe: actor "artisan", profile "reviewer-astra",
 // the reviewer role, input "spec" at doc, and the Go and review standards.
 func AutomatedReview(t testing.TB, doc string) Attempt {
 	return Attempt{
-		Step:      Step(t, "review", "automated-review", `{"profile": "reviewer-astra"}`),
+		Step:      Step(t, "review", "review", `{"actor": "artisan", "profile": "reviewer-astra"}`),
 		Inputs:    []Input{{Port: "spec", Doc: doc}},
 		Standards: []string{"standards/go.md", "standards/review.md"},
 		Role:      "roles/reviewer.md",

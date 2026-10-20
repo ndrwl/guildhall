@@ -76,7 +76,8 @@ The blocked question file is provisional: no runtime writes it yet, and the inte
 
 `internal/interp/testdata` is the one fixture tree for launch tests, which the interpreter and adapter conformance slices reuse.
 `interptest.Attempt.Render` renders a prompt from its baseline, documents and skills into a temporary attempt directory and returns the `Spec`; `interptest.Build` and `interptest.AutomatedReview` are the two attempts it describes, and `docs/spec-v1.md` and `docs/spec-v2.md` are two revisions of one artefact.
-`manifests/` pins the manifests those renders produce, `results/` the files the mock writes and `reviews/` the review outcomes it returns.
+`AutomatedReview` uses the `review` kind with actor `artisan` and the `stages/review.md` guide.
+`manifests/` pins the manifests those renders produce, `results/` the files the mock writes and `reviews/` the review outcomes it returns. Review outcomes bind the reviewed code head at `revisions.subject.code_head`, alongside `revisions.spec_digest` and `revisions.standards_revision`.
 
 ## Shared contract suite
 
