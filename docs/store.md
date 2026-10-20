@@ -18,6 +18,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Decision | repository, task, decision id | A question for the Guildmaster and, once, the exact answer (R1.61). |
 
 Free text is limited to 64 KiB per field; larger content belongs in a referenced document.
+Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
 
 ## Mutations and receipts
 
@@ -51,6 +52,8 @@ The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a
 Records and receipts are JSON.
 
 Opening refuses a file that is not a Guildhall store (`ErrNotStore`), including another program's bbolt file, and a store whose `schema_version` is newer than this Guildhall supports (`ErrNewerSchema`); a refusal releases the lock.
+Both writable and read-only opens refuse an existing store missing any required top-level bucket (`meta`, `receipts` or `repositories`) with `ErrNotStore`.
+Required buckets are created only when initializing an empty file, never to repair an existing store.
 A read-only open never creates, initializes or writes a file.
 
 The repository holds a schema 1 store file (`internal/store/testdata/schema-v1.store`) that the tests open on Linux, Windows and macOS in CI, so every platform reads a file another platform wrote.

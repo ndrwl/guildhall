@@ -531,7 +531,7 @@ func validateTask(t Task) error {
 
 // validDocumentPath accepts a clean, local, slash-separated relative path.
 func validDocumentPath(p string) bool {
-	return p != "" && len(p) <= 1024 && !strings.Contains(p, `\`) && path.Clean(p) == p &&
+	return p != "" && utf8.ValidString(p) && len(p) <= 1024 && !strings.Contains(p, `\`) && path.Clean(p) == p &&
 		!path.IsAbs(p) && filepath.IsLocal(filepath.FromSlash(p)) && !strings.Contains(p, ":")
 }
 

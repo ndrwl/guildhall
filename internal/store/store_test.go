@@ -310,6 +310,51 @@ func TestNewerSchemaIsRefused(t *testing.T) {
 	_ = db.Close()
 }
 
+func TestMissingRequiredBucketsAreRefused(t *testing.T) {
+	for _, bucket := range []string{"meta", "receipts", "repositories"} {
+		for _, readOnly := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/readOnly=%t", bucket, readOnly), func(t *testing.T) {
+				s, path := newStore(t)
+				if err := s.Close(); err != nil {
+					t.Fatal(err)
+				}
+				db, err := bolt.Open(path, 0o600, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Update(func(tx *bolt.Tx) error { return tx.DeleteBucket([]byte(bucket)) }); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				opts := testOptions()
+				opts.ReadOnly = readOnly
+				opened, err := Open(path, opts)
+				if opened != nil {
+					_ = opened.Close()
+				}
+				if !errors.Is(err, ErrNotStore) {
+					t.Fatalf("Open: %v, want ErrNotStore", err)
+				}
+				db, err = bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = db.Close() }()
+				if err := db.View(func(tx *bolt.Tx) error {
+					if tx.Bucket([]byte(bucket)) != nil {
+						t.Error("Open recreated missing bucket")
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
 func TestForeignFilesAreRefused(t *testing.T) {
 	dir := t.TempDir()
 

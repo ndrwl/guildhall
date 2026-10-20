@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	bolt "go.etcd.io/bbolt"
+
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -81,6 +83,31 @@ func TestStoreDoctorRefusals(t *testing.T) {
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Errorf("doctor created %s: %v", missing, err)
+	}
+}
+
+func TestStoreDoctorMissingRequiredBuckets(t *testing.T) {
+	for _, bucket := range []string{"meta", "receipts", "repositories"} {
+		t.Run(bucket, func(t *testing.T) {
+			path := writeStore(t)
+			db, err := bolt.Open(path, 0o600, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Update(func(tx *bolt.Tx) error { return tx.DeleteBucket([]byte(bucket)) }); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			app, stdout, stderr := newTestApp(nil, nil)
+			if code := app.Run([]string{"store", "doctor", path}); code != 1 {
+				t.Errorf("exit code = %d, want 1", code)
+			}
+			if stdout.Len() != 0 || !strings.Contains(stderr.String(), "not a Guildhall store") {
+				t.Errorf("stdout %q, stderr %q; want store refusal", stdout, stderr)
+			}
+		})
 	}
 }
 

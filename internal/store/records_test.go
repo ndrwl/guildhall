@@ -165,6 +165,31 @@ func TestStageAttempts(t *testing.T) {
 	}
 }
 
+func TestDocumentPathRejectsInvalidUTF8(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	doc := DocumentRef{Repository: "app", TaskID: "t-1", Name: "plan", SHA256: strings.Repeat("d", 64)}
+	for _, path := range []string{"docs/\xff.md", "docs/\xfe.md"} {
+		doc.Path = path
+		if _, err := s.PutDocument("m-doc", doc); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("PutDocument(%q): %v, want ErrInvalid", path, err)
+		}
+	}
+	if _, err := s.Receipt("m-doc"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("rejected mutation receipt: %v, want ErrNotFound", err)
+	}
+	if docs, err := s.Documents("app", "t-1"); err != nil || len(docs) != 0 {
+		t.Fatalf("rejected documents: %+v, %v", docs, err)
+	}
+	doc.Path = "docs/日本語.md"
+	if _, err := s.PutDocument("m-doc", doc); err != nil {
+		t.Fatal(err)
+	}
+	if docs, err := s.Documents("app", "t-1"); err != nil || len(docs) != 1 || docs[0] != doc {
+		t.Fatalf("persisted documents: %+v, %v", docs, err)
+	}
+}
+
 func TestDocumentReferences(t *testing.T) {
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))

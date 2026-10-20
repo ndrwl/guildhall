@@ -166,20 +166,22 @@ func initMeta(tx *bolt.Tx) error {
 		if err := meta.Put(keySchema, []byte(strconv.Itoa(SchemaVersion))); err != nil {
 			return err
 		}
-	}
-	if err := checkMeta(tx); err != nil {
-		return err
-	}
-	for _, name := range [][]byte{bucketReceipts, bucketRepos} {
-		if _, err := tx.CreateBucketIfNotExists(name); err != nil {
-			return err
+		for _, name := range [][]byte{bucketReceipts, bucketRepos} {
+			if _, err := tx.CreateBucket(name); err != nil {
+				return err
+			}
 		}
 	}
-	return nil
+	return checkMeta(tx)
 }
 
 // checkMeta returns the store's schema version or refuses the file.
 func checkMeta(tx *bolt.Tx) error {
+	for _, name := range [][]byte{bucketMeta, bucketReceipts, bucketRepos} {
+		if tx.Bucket(name) == nil {
+			return ErrNotStore
+		}
+	}
 	_, err := schemaVersion(tx)
 	return err
 }
