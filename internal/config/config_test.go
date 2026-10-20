@@ -44,8 +44,7 @@ merge_policy = "auto"
 workflow = "careful"
 
 [repository.workflow_overrides.review]
-type = "human-review"
-version = 1
+actor = "guildmaster"
 `
 }
 
@@ -67,7 +66,7 @@ func TestDirectorConfig(t *testing.T) {
 	if site.MergePolicy != MergeAuto || site.Workflow != "careful" {
 		t.Errorf("explicit repository settings lost: %+v", site)
 	}
-	if got := site.WorkflowOverrides["review"]; got != (workflow.Override{Type: "human-review", Version: 1}) {
+	if got := site.WorkflowOverrides["review"]; got != (workflow.Override{Actor: workflow.GuildmasterActor}) {
 		t.Errorf("workflow override = %+v", got)
 	}
 	if r, ok := cfg.Repository("site"); !ok || r.ID != "site" {
@@ -129,6 +128,7 @@ func TestSchemaRefusals(t *testing.T) {
 		"zero schema":    strings.Replace(director(t), "schema_version = 1", "schema_version = 0", 1),
 		"malformed toml": "schema_version = 1\nmode = \"director",
 		"unknown key":    strings.Replace(director(t), `name = "alpha"`, "name = \"alpha\"\nauto_merge_everything = true", 1),
+		"kind override":  strings.Replace(director(t), `actor = "guildmaster"`, "type = \"human-review\"\nversion = 1", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Parse([]byte(data))

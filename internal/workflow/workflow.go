@@ -15,8 +15,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -232,14 +234,14 @@ func (d *Definition) Revision() Revision {
 	return Revision{Name: d.Name, Digest: d.Digest()}
 }
 
-// Override replaces a review step's kind for one repository, for example automated-review with human-review.
+// Override chooses a step's actor for one repository, for example the Guildmaster instead of an Artisan for review.
 type Override struct {
-	Type    string `toml:"type" json:"type"`
-	Version int    `toml:"version" json:"version"`
+	Actor Actor `toml:"actor" json:"actor"`
 }
 
-// ApplyOverrides returns a copy of def with the given steps' kinds replaced.
-// Only review kinds can be swapped, and only for other review kinds, so the wiring stays the same.
+// ApplyOverrides returns a copy of def with the given steps' "actor" settings replaced.
+// Only a step whose kind allows more than one actor can be overridden, and only with an actor its kind allows,
+// so the kind, wiring and every other setting stay the same. def is not modified.
 // The result has its own digest; validate it before use.
 func ApplyOverrides(def *Definition, overrides map[string]Override) (*Definition, error) {
 	out := *def
@@ -249,20 +251,45 @@ func ApplyOverrides(def *Definition, overrides map[string]Override) (*Definition
 		if i < 0 {
 			return nil, fmt.Errorf("override: unknown step %q", id)
 		}
-		from, ok := LookupKind(out.Steps[i].Type, out.Steps[i].Version)
-		if !ok || !from.Review {
-			return nil, fmt.Errorf("override %q: only review steps can be overridden", id)
-		}
-		to, err := lookup(ov.Type, ov.Version)
+		step := &out.Steps[i]
+		kind, err := lookup(step.Type, step.Version)
 		if err != nil {
 			return nil, fmt.Errorf("override %q: %w", id, err)
 		}
-		if !to.Review {
-			return nil, fmt.Errorf("override %q: only review steps can replace a review step", id)
+		if len(kind.Actors) == 1 {
+			return nil, fmt.Errorf("override %q: %s always runs as %s", id, kind.Type, kind.Actors[0])
 		}
-		out.Steps[i].Type, out.Steps[i].Version = ov.Type, ov.Version
+		if !slices.Contains(kind.Actors, ov.Actor) {
+			return nil, fmt.Errorf("override %q: %s does not allow actor %q", id, kind.Type, ov.Actor)
+		}
+		actor, err := json.Marshal(ov.Actor)
+		if err != nil {
+			return nil, fmt.Errorf("override %q: %w", id, err)
+		}
+		step.Settings = maps.Clone(step.Settings)
+		if step.Settings == nil {
+			step.Settings = map[string]json.RawMessage{}
+		}
+		step.Settings[ActorSetting] = actor
 	}
 	return &out, nil
+}
+
+// Actor returns who fulfils the step: its "actor" setting, or the only actor its kind allows.
+// It returns "" for an unknown kind or a missing or malformed setting, which Validate refuses.
+func (s Step) Actor() Actor {
+	kind, ok := LookupKind(s.Type, s.Version)
+	if !ok {
+		return ""
+	}
+	if len(kind.Actors) == 1 {
+		return kind.Actors[0]
+	}
+	var actor Actor
+	if raw, set := s.Settings[ActorSetting]; !set || json.Unmarshal(raw, &actor) != nil || !slices.Contains(kind.Actors, actor) {
+		return ""
+	}
+	return actor
 }
 
 func lookup(typ string, version int) (Kind, error) {

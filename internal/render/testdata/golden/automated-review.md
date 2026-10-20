@@ -2,7 +2,7 @@
 
 Repository: cli
 Task: t7
-Step: review-astra (automated-review version 1)
+Step: review-astra (review version 1)
 Attempt: 2
 Profile: reviewer-astra
 

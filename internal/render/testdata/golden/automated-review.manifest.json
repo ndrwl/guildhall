@@ -4,14 +4,14 @@
     "repository": "cli",
     "task": "t7",
     "step": "review-astra",
-    "kind": "automated-review",
+    "kind": "review",
     "kind_version": 1,
     "attempt": 2,
     "profile": "reviewer-astra"
   },
   "prompt": {
     "path": "prompt.md",
-    "digest": "sha256:e615f7823404c47646618b7e9b6e598b9bac4bcd490a0ce58c7197c0423bf73b"
+    "digest": "sha256:8d8614e36d77a4358bb78ba0899c880b98418b7aaaa31e2437f00434f04ebcae"
   },
   "role": {
     "path": "roles/reviewer.md",

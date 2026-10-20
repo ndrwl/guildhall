@@ -113,21 +113,22 @@ Green boxes are on `main`; grey dashed boxes are designed but not built.
 ### Workflows
 
 Each task runs a JSON workflow made of built-in, versioned step kinds; a workflow cannot contain commands or code.
-Loops are bounded, human steps are durable pauses that spend no model tokens, and every repository's merge policy applies whatever the workflow says.
+Each step names who fulfils it: an Artisan, the Guildmaster, the Director or Guildhall itself.
+Loops are bounded, Guildmaster steps are durable pauses that spend no model tokens, and every repository's merge policy applies whatever the workflow says.
 The shipped [default workflow](internal/workflow/default.json) is:
 
 ```mermaid
 flowchart LR
     grill --> research --> plan --> accept{{"Guildmaster<br/>approval"}}
     accept -- "changes requested, max 3" --> plan
-    accept --> build --> review["automated review"]
+    accept --> build --> review["Artisan review"]
     review -- "changes requested, max 3" --> build
-    review --> validate
+    review --> publish --> validate
     validate -- "failed, max 3" --> build
     validate --> deliver
 ```
 
-A repository can swap automated review for human review without changing any other repository; see [configuration and workflows](docs/configuration.md).
+A repository can have the Guildmaster review instead of an Artisan without changing any other repository; see [configuration and workflows](docs/configuration.md).
 Workflows are parsed and validated as a Go library today; nothing executes them yet.
 
 ## Build

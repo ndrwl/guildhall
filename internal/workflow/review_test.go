@@ -7,7 +7,7 @@ import (
 )
 
 var revisions = Revisions{
-	CodeHead:          strings.Repeat("a", 40),
+	Subject:           Subject{CodeHead: strings.Repeat("a", 40)},
 	SpecDigest:        "sha256:" + strings.Repeat("b", 64),
 	StandardsRevision: "standards-1",
 }
@@ -47,7 +47,10 @@ func TestReviewOutcomeRefusals(t *testing.T) {
 		{"changes without findings", func(o *ReviewOutcome) { o.Verdict = VerdictChangesRequested }, "at least one finding"},
 		{"rejected without findings", func(o *ReviewOutcome) { o.Verdict = VerdictRejected }, "at least one finding"},
 		{"finding without summary", func(o *ReviewOutcome) { o.Findings = []Finding{{File: "a.go"}} }, "summary"},
-		{"short code head", func(o *ReviewOutcome) { o.Revisions.CodeHead = "abc123" }, "code_head"},
+		{"short code head", func(o *ReviewOutcome) { o.Revisions.Subject.CodeHead = "abc123" }, "code_head"},
+		{"no subject", func(o *ReviewOutcome) { o.Revisions.Subject = Subject{} }, "subject needs a code_head or a document_digest"},
+		{"two subjects", func(o *ReviewOutcome) { o.Revisions.Subject.DocumentDigest = documentDigest }, "subject needs a code_head or a document_digest, not both"},
+		{"code head without spec", func(o *ReviewOutcome) { o.Revisions.SpecDigest = "" }, "spec_digest"},
 		{"bad spec digest", func(o *ReviewOutcome) { o.Revisions.SpecDigest = "md5:00" }, "spec_digest"},
 		{"missing standards", func(o *ReviewOutcome) { o.Revisions.StandardsRevision = "" }, "standards_revision"},
 	}
@@ -66,7 +69,7 @@ func TestReviewOutcomeRefusals(t *testing.T) {
 func TestReviewOutcomeBinding(t *testing.T) {
 	o := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: HumanReviewer, Verdict: VerdictApproved, Revisions: revisions}
 	moved := revisions
-	moved.CodeHead = strings.Repeat("c", 40)
+	moved.Subject.CodeHead = strings.Repeat("c", 40)
 	if err := o.BoundTo(moved); err == nil || !strings.Contains(err.Error(), "code_head") {
 		t.Fatalf("stale code head accepted: %v", err)
 	}
@@ -79,7 +82,7 @@ func TestReviewOutcomeBinding(t *testing.T) {
 
 func TestParseReviewOutcome(t *testing.T) {
 	data := `{"schema": "guildhall.review-outcome/1", "reviewer": "human", "verdict": "approved",
-	  "revisions": {"code_head": "` + revisions.CodeHead + `", "spec_digest": "` + revisions.SpecDigest + `", "standards_revision": "standards-1"}}`
+	  "revisions": {"subject": {"code_head": "` + revisions.Subject.CodeHead + `"}, "spec_digest": "` + revisions.SpecDigest + `", "standards_revision": "standards-1"}}`
 	o, err := ParseReviewOutcome([]byte(data))
 	if err != nil {
 		t.Fatalf("valid outcome refused: %v", err)
@@ -94,5 +97,52 @@ func TestParseReviewOutcome(t *testing.T) {
 	unknown := strings.Replace(data, `"verdict"`, `"merge": true, "verdict"`, 1)
 	if _, err := ParseReviewOutcome([]byte(unknown)); err == nil {
 		t.Fatal("unknown field accepted")
+	}
+}
+
+var documentDigest = "sha256:" + strings.Repeat("d", 64)
+
+func TestDocumentReviewOutcome(t *testing.T) {
+	doc := Revisions{Subject: Subject{DocumentDigest: documentDigest}, StandardsRevision: "standards-1"}
+	o := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: VerdictApproved, Revisions: doc}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("document outcome without a spec digest refused: %v", err)
+	}
+	if err := o.BoundTo(doc); err != nil {
+		t.Fatalf("document outcome not bound to its own revisions: %v", err)
+	}
+	withSpec := o
+	withSpec.Revisions.SpecDigest = revisions.SpecDigest
+	if err := withSpec.Validate(); err != nil {
+		t.Fatalf("document outcome with a spec digest refused: %v", err)
+	}
+	bad := o
+	bad.Revisions.Subject.DocumentDigest = "sha256:XYZ"
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "document_digest") {
+		t.Fatalf("malformed document digest: %v", err)
+	}
+	edited := doc
+	edited.Subject.DocumentDigest = "sha256:" + strings.Repeat("e", 64)
+	if err := o.BoundTo(edited); err == nil || !strings.Contains(err.Error(), "subject") {
+		t.Fatalf("edited document accepted: %v", err)
+	}
+	// A document review never counts for a code head, nor a code review for a document.
+	if err := o.BoundTo(revisions); err == nil || !strings.Contains(err.Error(), "subject") {
+		t.Fatalf("document outcome bound to a code head: %v", err)
+	}
+	code := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: VerdictApproved, Revisions: revisions}
+	if err := code.BoundTo(doc); err == nil || !strings.Contains(err.Error(), "subject") {
+		t.Fatalf("code outcome bound to a document: %v", err)
+	}
+	data := `{"schema": "guildhall.review-outcome/1", "reviewer": "human", "verdict": "approved",
+	  "revisions": {"subject": {"document_digest": "` + documentDigest + `"}, "standards_revision": "standards-1"}}`
+	parsed, err := ParseReviewOutcome([]byte(data))
+	if err != nil || parsed.Revisions != doc {
+		t.Fatalf("parse document outcome = %+v, %v", parsed, err)
+	}
+	flat := `{"schema": "guildhall.review-outcome/1", "reviewer": "human", "verdict": "approved",
+	  "revisions": {"code_head": "` + revisions.Subject.CodeHead + `", "spec_digest": "` + revisions.SpecDigest + `", "standards_revision": "standards-1"}}`
+	if _, err := ParseReviewOutcome([]byte(flat)); err == nil {
+		t.Fatal("pre-subject revisions accepted")
 	}
 }

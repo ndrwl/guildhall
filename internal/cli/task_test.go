@@ -16,7 +16,7 @@ import (
 )
 
 // directorTOML has repository "app" on the shipped default workflow and "lib" on the human-review example
-// with its review swapped back to automated review. Paths are fixed so digests and goldens are stable.
+// with its review swapped back to an Artisan. Paths are fixed so digests and goldens are stable.
 const directorTOML = `schema_version = 1
 mode = "director"
 name = "alpha"
@@ -35,8 +35,7 @@ owner_machine = "workstation"
 workflow = "human-review"
 
 [repository.workflow_overrides.review]
-type = "automated-review"
-version = 1
+actor = "artisan"
 `
 
 // writeDirector writes config.toml and workflows/human-review.json into a new directory whose name has a space,
@@ -152,7 +151,7 @@ func TestTaskNewBindsEffectiveWorkflowAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overridden, err := workflow.ApplyOverrides(file, map[string]workflow.Override{"review": {Type: "automated-review", Version: 1}})
+	overridden, err := workflow.ApplyOverrides(file, map[string]workflow.Override{"review": {Actor: workflow.ArtisanActor}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,8 +217,8 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 			file:     strings.Replace(strings.Replace(string(valid), `"plan.spec"`, `"plan.nothing"`, 1), `"max": 3`, `"max": 99`, 1),
 			problems: []string{`has no output "nothing"`, "max must be between"}},
 		{name: "name mismatch", toml: directorTOML, file: strings.Replace(string(valid), `"name": "human-review"`, `"name": "other"`, 1), problems: []string{`"other"`, `"human-review"`}},
-		{name: "override of a non-review step", toml: strings.Replace(directorTOML, "overrides.review]", "overrides.build]", 1), problems: []string{"only review steps"}},
-		{name: "override to an unknown version", toml: strings.Replace(directorTOML, "review\"\nversion = 1", "review\"\nversion = 2", 1), problems: []string{"version 2"}},
+		{name: "override of a single-actor step", toml: strings.Replace(directorTOML, "overrides.review]", "overrides.build]", 1), problems: []string{"build always runs as artisan"}},
+		{name: "override to a disallowed actor", toml: strings.Replace(directorTOML, `actor = "artisan"`, `actor = "engine"`, 1), problems: []string{`does not allow actor "engine"`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -257,12 +256,9 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 }
 
 func TestTaskNewRefusesUnknownProfilesAndWritesNothing(t *testing.T) {
-	for _, kind := range []string{"plan", "build", "automated-review", "human-review"} {
+	for _, kind := range []string{"plan", "build", "review", "document-review"} {
 		t.Run(kind, func(t *testing.T) {
 			toml := directorTOML
-			if kind == "human-review" {
-				toml = strings.Replace(toml, `type = "automated-review"`, `type = "human-review"`, 1)
-			}
 			cfg := writeDirector(t, toml)
 			file := filepath.Join(filepath.Dir(cfg), "workflows", "human-review.json")
 			data, err := os.ReadFile(file)
@@ -274,12 +270,15 @@ func TestTaskNewRefusesUnknownProfilesAndWritesNothing(t *testing.T) {
 				t.Fatal(err)
 			}
 			stepID := kind
-			if kind == "automated-review" || kind == "human-review" {
-				stepID = "review"
+			if kind == "document-review" {
+				stepID = "design-review"
 			}
 			for i := range def.Steps {
 				if def.Steps[i].ID == stepID {
-					def.Steps[i].Settings = map[string]json.RawMessage{"profile": json.RawMessage(`"missing"`)}
+					if def.Steps[i].Settings == nil {
+						def.Steps[i].Settings = map[string]json.RawMessage{}
+					}
+					def.Steps[i].Settings["profile"] = json.RawMessage(`"missing"`)
 				}
 			}
 			data, err = json.Marshal(def)

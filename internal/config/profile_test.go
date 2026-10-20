@@ -48,9 +48,9 @@ func TestUnknownProfileRefused(t *testing.T) {
 	}
 	def, err := workflow.Parse([]byte(`{"schema": "guildhall.workflow/1", "name": "three", "steps": [
 	  {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder"}},
-	  {"id": "review-a", "type": "automated-review", "version": 1, "settings": {"profile": "reviewer-opus"}},
-	  {"id": "review-b", "type": "automated-review", "version": 1, "settings": {"profile": "reviewer-astra"}},
-	  {"id": "review-c", "type": "automated-review", "version": 1, "settings": {"profile": "reviewer-strict"}},
+	  {"id": "review-a", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-opus"}},
+	  {"id": "review-b", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-astra"}},
+	  {"id": "review-c", "type": "document-review", "version": 1, "settings": {"actor": "guildmaster", "profile": "reviewer-strict"}},
 	  {"id": "plan", "type": "plan", "version": 1}]}`))
 	if err != nil {
 		t.Fatal(err)

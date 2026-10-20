@@ -34,7 +34,6 @@ owner_machine = "workstation"
 merge_policy = "auto"
 workflow = "default"
 
-# This repository swaps the default workflow's automated review for human review.
+# This repository has the Guildmaster review every change instead of an Artisan.
 [repository.workflow_overrides.review]
-type = "human-review"
-version = 1
+actor = "guildmaster"
