@@ -18,12 +18,18 @@ func Lookup(pid int) (Identity, error) {
 }
 
 func lookupGroup(pid int) (Identity, int, error) {
-	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
-	if errors.Is(err, unix.ESRCH) || err == nil && (int(kp.Proc.P_pid) != pid || kp.Proc.P_stat == zombie) {
+	// An absent PID produces an empty result, not a single kinfo_proc.
+	// The single-record wrapper turns that valid empty result into EIO.
+	kps, err := unix.SysctlKinfoProcSlice("kern.proc.pid", pid)
+	if errors.Is(err, unix.ESRCH) || err == nil && len(kps) == 0 {
 		return Identity{}, 0, fmt.Errorf("pid %d: %w", pid, errNoProcess)
 	}
 	if err != nil {
 		return Identity{}, 0, err
+	}
+	kp := kps[0]
+	if int(kp.Proc.P_pid) != pid || kp.Proc.P_stat == zombie {
+		return Identity{}, 0, fmt.Errorf("pid %d: %w", pid, errNoProcess)
 	}
 	t := kp.Proc.P_starttime
 	return Identity{PID: pid, Token: fmt.Sprintf("%d.%06d", t.Sec, t.Usec)}, int(kp.Eproc.Pgid), nil

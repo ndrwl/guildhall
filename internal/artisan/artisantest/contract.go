@@ -211,10 +211,12 @@ func (h Harness) begin(t *testing.T, w Worker) *run {
 	t.Cleanup(func() {
 		_ = c.u.Close()
 		for _, id := range c.owned() {
+			// Job termination can remove a member before its process handle
+			// becomes signaled. Allow exit to finish before reporting a leak.
+			if !c.escapes[id] {
+				c.assertGone(id)
+			}
 			if lv, _ := h.Probe(id); lv == artisan.Alive {
-				if !c.escapes[id] {
-					t.Errorf("owned process %v alive after the case", id)
-				}
 				_ = h.Kill(id)
 			}
 		}
