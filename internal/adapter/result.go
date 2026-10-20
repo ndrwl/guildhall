@@ -216,6 +216,9 @@ func checkResultKeys(data []byte) error {
 // ReadResult reads and validates the result file at path. A file that does
 // not exist yet yields an error matching fs.ErrNotExist.
 func ReadResult(path string, want Identity) (Result, error) {
+	if err := checkCancellation(path, want); err != nil {
+		return Result{}, err
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return Result{}, err
@@ -226,7 +229,14 @@ func ReadResult(path string, want Identity) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return ParseResult(data, want)
+	r, err := ParseResult(data, want)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := checkCancellation(path, want); err != nil {
+		return Result{}, err
+	}
+	return r, nil
 }
 
 // WriteResult validates r and publishes it at path exactly once: the content
@@ -234,6 +244,9 @@ func ReadResult(path string, want Identity) (Result, error) {
 // so a reader sees either no file or the whole result, and an existing result
 // is never replaced.
 func WriteResult(path string, r Result) error {
+	if err := checkCancellation(path, r.Identity); err != nil {
+		return err
+	}
 	if r.Outputs == nil {
 		r.Outputs = []Output{}
 	}
@@ -260,6 +273,9 @@ func WriteResult(path string, r Result) error {
 		err = tmp.Sync()
 	}
 	if err = errors.Join(err, tmp.Close()); err != nil {
+		return err
+	}
+	if err := checkCancellation(path, r.Identity); err != nil {
 		return err
 	}
 	if err := os.Link(tmp.Name(), path); err != nil {

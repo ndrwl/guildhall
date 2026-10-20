@@ -69,6 +69,8 @@ type Args struct {
 	adapter.Identity
 	PromptFile string
 	ResultFile string
+	ControlAddress string
+	ControlToken string
 }
 
 // ParseArgs parses `--task --attempt --prompt --result`, all required.
@@ -80,11 +82,16 @@ func ParseArgs(argv []string) (Args, error) {
 	fs.StringVar(&a.AttemptID, "attempt", "", "attempt id")
 	fs.StringVar(&a.PromptFile, "prompt", "", "prompt file")
 	fs.StringVar(&a.ResultFile, "result", "", "result file")
+	fs.StringVar(&a.ControlAddress, "worker-control", "", "attempt owner loopback address")
+	fs.StringVar(&a.ControlToken, "worker-token", "", "attempt ownership token")
 	if err := fs.Parse(argv); err != nil {
 		return Args{}, err
 	}
 	if fs.NArg() > 0 {
 		return Args{}, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	if (a.ControlAddress == "") != (a.ControlToken == "") {
+		return Args{}, errors.New("--worker-control and --worker-token go together")
 	}
 	if a.PromptFile == "" || a.ResultFile == "" {
 		return Args{}, errors.New("--task, --attempt, --prompt and --result are required")
@@ -161,6 +168,11 @@ func Sleep(ctx context.Context, d time.Duration) error {
 // Run is the fake Artisan: it reads the prompt, applies its directives, and
 // writes the result file. Progress lines go to out so a Herdr tab shows them.
 func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context, time.Duration) error) error {
+	if a.ControlAddress != "" {
+		if err := adapter.JoinOwnedWorker(ctx, a.ControlAddress, a.ControlToken, a.Identity, a.ResultFile); err != nil {
+			return fmt.Errorf("worker ownership handshake: %w", err)
+		}
+	}
 	f, err := os.Open(a.PromptFile)
 	if err != nil {
 		return err

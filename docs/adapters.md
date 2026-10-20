@@ -20,7 +20,9 @@ Guildhall starts it either as a direct child process, which tests and CI use, or
 The attempt is complete only when the result file holds a valid result for the attempt's exact identity.
 Process exit, a closed or vanished tab, a Herdr restart and Herdr's agent-state signals never complete an attempt (R1.23, R1.52).
 A direct child process that exits with no result file is reported as exited without a result, which is not a completion.
-Guildhall can stop an Artisan: it kills a direct child process, and it sends Ctrl+C to the pane of a tab it created.
+Guildhall kills and waits for a direct child process when its wait ends without a result.
+For native Windows tabs, `--stop-on-timeout` uses an attempt-owned worker handshake and verified native process handle, independently of Herdr presentation.
+Other platforms request Ctrl+C in the owned pane; delivering Ctrl+C alone never proves termination.
 
 Each adapter declares optional capabilities: a pre-assigned session id, native background sessions, hooks, structured output and remote control.
 They all default to absent, and the core uses none of them until a capability is proven (R1.24).
@@ -58,6 +60,11 @@ A rejected result is reported as rejected; it is never treated as success or fai
 
 Guildhall writes a result once: it writes a temporary file beside the result path and hard-links it into place, so a reader sees either no file or the whole result, and an existing result is never replaced.
 `guildhall artisan run` refuses to launch when the result file already exists; a new attempt needs a new result path.
+An identity-bound stop first persists `<result>.cancelled`, containing the attempt's `task_id` and `attempt_id`.
+Result reads and writes reject that cancelled attempt, including after a client restart; a mismatched or invalid cancellation sidecar is also rejected.
+The marker remains even if termination fails, but that failure is explicitly reported rather than claiming the worker stopped.
+Do not remove the marker to retry: use a new attempt and result path.
+This is attempt-local cancellation evidence, not task completion or a separate task store.
 
 ## Fake adapter
 
@@ -82,7 +89,9 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 - Without Herdr flags the Artisan runs as a direct child process whose output goes to standard error; a child still running when the wait ends is stopped.
 - With `--herdr-session <name> --herdr-workspace <id>` the Artisan runs in a new tab of that workspace, labelled `artisan <task>/<attempt>` unless `--tab-label` is given.
   `--herdr-exec` names the Herdr program, repeated once per word when the program needs leading arguments; the default is `herdr` on `PATH`.
-  When the wait ends without a result the Artisan is left running unless `--stop-on-timeout` asks for Ctrl+C, and Guildhall never closes the tab.
+  When the wait ends without a result the Artisan is left running unless `--stop-on-timeout` is given; Guildhall never closes the tab.
+  On native Windows that option establishes ownership before work starts, then terminates and waits on the exact retained process handle when the wait ends.
+  Elsewhere it requests Ctrl+C and explicitly reports that termination is unverified.
 - `--timeout` bounds the wait (default 30 minutes).
 
 A valid result is printed to standard output as one JSON line.
@@ -94,6 +103,16 @@ A valid result is printed to standard output as one JSON line.
 | 2 | A usage error |
 | 3 | No result yet when the wait ended; the attempt is not finished |
 | 4 | A valid result with status `failed` |
+
+### Native Windows stop boundary
+
+The cooperating fake worker connects to a one-use loopback listener with a random attempt token, task/attempt identity, result path, PID and native creation time, and waits for acknowledgement before doing work.
+The owner verifies those values and the process image against its executable, retains a Windows handle with only terminate/query/synchronize rights, then acknowledges startup.
+Stopping uses `TerminateProcess` and waits for that same handle to signal exit: it never reopens a PID, kills by name, targets the shell, closes the tab, adjusts privileges, or deletes unfinished work.
+This stops the exact fake worker only, not arbitrary runtimes or descendant process trees; no general supervisor or service is introduced.
+The token prevents accidental adoption, not malicious interference by another process with the same user's access.
+Missing ownership, image/creation mismatches and failed termination are explicit failures; there is no Windows Ctrl+C fallback claiming success.
+The native handle capability is explicitly unsupported outside Windows, where the existing interrupt-only path remains.
 
 ## Herdr access
 
@@ -116,7 +135,9 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 | Fake Artisan in a Herdr tab: result recorded, failed and malformed results, closed tab not counted as completion, existing result refused | Linux (WSL, zsh panes) in an isolated named Herdr 0.9.5 session | Passed |
 | The same in native Windows panes running Git Bash and Windows PowerShell 5.1 | Native Windows in an isolated named Herdr 0.9.5 session | Passed |
 | Stop by Ctrl+C ends the fake Artisan | Linux zsh and Windows Git Bash panes | Passed |
-| Stop by Ctrl+C ends the fake Artisan | Windows PowerShell 5.1 panes | Failed: the process kept running after Ctrl+C; stopping in PowerShell panes is not available |
+| Stop by Ctrl+C ends the fake Artisan | Windows PowerShell 5.1 panes | Failed: the process kept running after Ctrl+C; Ctrl+C stopping remains unsupported in these panes |
+| Identity-bound native handle stop; no later success, unrelated worker survival and unfinished-work preservation | Native Windows PowerShell 5.1 in an isolated named Herdr session, using the current locally built artifact with matching local/remote SHA-256 | Passed |
+| Cancellation rejection, failed-stop semantics, handshake identity rejection and exact-process termination | Focused portable contract tests plus the native Windows test executable | Passed |
 | macOS in Herdr | Not run | macOS has CI only, not live acceptance (R1.30) |
 
 Recording pane bindings, reconciling after a restart and the per-task watcher are not built yet.

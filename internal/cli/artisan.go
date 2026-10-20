@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -83,7 +84,7 @@ func (a *App) artisanRun(args []string) int {
 	fl.StringVar(&workspace, "herdr-workspace", "", "Herdr workspace id for the tab")
 	fl.Var(&herdrExec, "herdr-exec", "Herdr program, then leading arguments (repeat per word)")
 	fl.StringVar(&label, "tab-label", "", "tab label")
-	fl.BoolVar(&stopOnTimeout, "stop-on-timeout", false, "interrupt the Artisan in its tab when the wait times out")
+	fl.BoolVar(&stopOnTimeout, "stop-on-timeout", false, "stop the owned Windows worker, or request Ctrl+C on other platforms, when the wait times out")
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan run: " + err.Error())
 	}
@@ -185,10 +186,29 @@ func (a *App) runInTab(ctx context.Context, spec adapter.Spec, cmd adapter.Comma
 	if err != nil {
 		return a.fail(err)
 	}
+	var owned *adapter.OwnedWorker
+	var stopper adapter.WorkerStopper
+	if stopOnTimeout && runtime.GOOS == "windows" {
+		owned, err = adapter.NewOwnedWorker(spec, cmd.Argv[0])
+		if err != nil {
+			return a.fail(err)
+		}
+		defer owned.Close()
+		stopper = owned
+		cmd.Argv = append(cmd.Argv, "--worker-control", owned.Address(), "--worker-token", owned.Token())
+	}
 	launcher := adapter.TabLauncher{Host: client, WorkspaceID: workspace}
 	run, err := launcher.Start(ctx, label, cmd)
 	if err != nil {
 		return a.fail(err)
+	}
+	if owned != nil {
+		if err := owned.Accept(ctx); err != nil {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			stopErr := stopper.Stop(stopCtx)
+			return a.fail(fmt.Errorf("worker ownership handshake failed: %w; stop verification: %v", err, stopErr))
+		}
 	}
 	a.notef("guildhall: artisan started in Herdr %s session %q, workspace %s, tab %s, pane %s\n",
 		st.ServerVersion, client.Session(), run.Tab.WorkspaceID(), run.Tab.ID(), run.Tab.PaneID())
@@ -200,10 +220,16 @@ func (a *App) runInTab(ctx context.Context, spec adapter.Spec, cmd adapter.Comma
 		if stopOnTimeout {
 			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if stopErr := run.Stop(stopCtx); stopErr != nil {
+			if stopper != nil {
+				if stopErr := stopper.Stop(stopCtx); stopErr != nil {
+					state = fmt.Sprintf("stopping the owned artisan failed; termination is unverified: %v", stopErr)
+				} else {
+					state = "guildhall verified termination of the owned artisan; late results are rejected"
+				}
+			} else if stopErr := run.Stop(stopCtx); stopErr != nil {
 				state = fmt.Sprintf("interrupting the artisan failed: %v", stopErr)
 			} else {
-				state = "guildhall sent Ctrl+C to the artisan"
+				state = "guildhall sent Ctrl+C to the artisan; termination is unverified"
 			}
 		}
 		a.notef("guildhall: no result yet (%v); %s; guildhall did not close tab %s; the attempt is not finished\n",
