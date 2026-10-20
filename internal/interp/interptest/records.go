@@ -94,22 +94,26 @@ func (r *Records) Task(repository, taskID string) (store.Task, error) {
 
 // Attempts implements interp.Records.
 func (r *Records) Attempts(repository, taskID string) ([]store.StageAttempt, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return list(r, repository, taskID, r.attempts, func(a store.StageAttempt) (string, string) { return a.Repository, a.TaskID })
 }
 
 // Documents implements interp.Records.
 func (r *Records) Documents(repository, taskID string) ([]store.DocumentRef, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return list(r, repository, taskID, r.documents, func(d store.DocumentRef) (string, string) { return d.Repository, d.TaskID })
 }
 
 // Decisions implements interp.Records.
 func (r *Records) Decisions(repository, taskID string) ([]store.Decision, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return list(r, repository, taskID, r.decisions, func(d store.Decision) (string, string) { return d.Repository, d.TaskID })
 }
 
 func list[T any](r *Records, repository, taskID string, all []T, key func(T) (string, string)) ([]T, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, ok := r.tasks[[2]string{repository, taskID}]; !ok {
 		return nil, nil
 	}
@@ -268,6 +272,43 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 			t.Errorf("%s = %v, want %v", what, err, target)
 		}
 	}
+
+	t.Run("concurrent lists and writes", func(t *testing.T) {
+		h := setup(t)
+		var wg sync.WaitGroup
+		for worker := range 4 {
+			wg.Go(func() {
+				for i := range 30 {
+					id := fmt.Sprintf("record-%d-%d", worker, i)
+					if _, err := h.Records.StartAttempt("attempt-"+id, "app", "t7", id); err != nil {
+						t.Error(err)
+					}
+					if _, err := h.Records.PutDocument("doc-"+id, store.DocumentRef{Repository: "app", TaskID: "t7", Name: id, Path: id, SHA256: strings.Repeat("b", 64)}); err != nil {
+						t.Error(err)
+					}
+					if _, err := h.Records.OpenDecision("decision-"+id, store.Decision{Repository: "app", TaskID: "t7", ID: id, Kind: store.DecisionApproval, Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("b", 64)}, Question: "Approve?", Options: []string{"approved"}}); err != nil {
+						t.Error(err)
+					}
+					if _, err := h.Records.Attempts("app", "t7"); err != nil {
+						t.Error(err)
+					}
+					if _, err := h.Records.Documents("app", "t7"); err != nil {
+						t.Error(err)
+					}
+					if _, err := h.Records.Decisions("app", "t7"); err != nil {
+						t.Error(err)
+					}
+				}
+			})
+		}
+		wg.Wait()
+		a, _ := h.Records.Attempts("app", "t7")
+		d, _ := h.Records.Documents("app", "t7")
+		q, _ := h.Records.Decisions("app", "t7")
+		if len(a) != 120 || len(d) != 120 || len(q) != 120 {
+			t.Fatalf("counts = %d, %d, %d", len(a), len(d), len(q))
+		}
+	})
 
 	t.Run("reads a task and refuses an unknown one", func(t *testing.T) {
 		h := setup(t)

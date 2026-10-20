@@ -118,8 +118,9 @@ type Engine struct {
 	Workflow func(workflow.Revision) (*workflow.Definition, error)
 	// Config gives the profile adapters and the repositories' merge policies.
 	// A step without a profile runs DefaultAdapter.
-	Config         *config.Config
-	DefaultAdapter string
+	Config            *config.Config
+	DefaultAdapter    string
+	StandardsRevision string
 	// DocumentDir is the absolute Director document directory every recorded document path is relative to.
 	DocumentDir string
 	// StateDir is the absolute directory holding attempt directories, <repo>/<task>/<step>-<n>, and each
@@ -397,11 +398,17 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		return fmt.Errorf("a succeeded result lists no output for port %s", port.Name)
 	}
 	work := filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, "work")
+	root, err := os.OpenRoot(work)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	contents := make([][]byte, len(outputs))
 	for i, o := range outputs {
 		if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
 			return fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path)
 		}
-		data, err := os.ReadFile(filepath.Join(work, filepath.FromSlash(o.Path)))
+		data, err := root.ReadFile(filepath.FromSlash(o.Path))
 		if err != nil {
 			return err
 		}
@@ -410,6 +417,10 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 				return err
 			}
 		}
+		contents[i] = data
+	}
+	for i, o := range outputs {
+		data := contents[i]
 		name := fmt.Sprintf("%s-%d-%s", s.ID, n, port.Name)
 		if i > 0 {
 			name += "-" + strconv.Itoa(i+1)
@@ -476,7 +487,38 @@ func (r *run) guildmaster(s workflow.Step) (bool, Next, error) {
 	if s.Type == "guildmaster-approval" {
 		return true, Next{}, r.accept(s, *d)
 	}
+	if s.Type == "review" || s.Type == "document-review" {
+		return true, Next{}, r.humanOutcome(*d)
+	}
 	return true, Next{}, nil
+}
+
+func (r *run) humanOutcome(d store.Decision) error {
+	name := d.ID + "-outcome"
+	if r.document(name) != nil {
+		return nil
+	}
+	binding := r.document(d.ID + "-revisions")
+	if binding == nil {
+		return fmt.Errorf("decision %s has no review revisions", d.ID)
+	}
+	data, err := r.read(*binding)
+	if err != nil {
+		return err
+	}
+	var revisions workflow.Revisions
+	if err := json.Unmarshal(data, &revisions); err != nil {
+		return err
+	}
+	o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.Verdict(d.Choice), Revisions: revisions}
+	if err := o.Validate(); err != nil {
+		return err
+	}
+	data, err = json.Marshal(o)
+	if err != nil {
+		return err
+	}
+	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest(data)}, data)
 }
 
 // subjectPorts names the input whose artefact each Guildmaster or engine decision binds to.
@@ -525,6 +567,33 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 		Repository: r.task.Repository, TaskID: r.task.ID, ID: fmt.Sprintf("%s-%d", s.ID, k),
 		Kind: sp.kind, Subject: subject, Options: ask.Options, Question: ask.Question,
 	}
+	if s.Type == "review" || s.Type == "document-review" {
+		name := d.ID + "-revisions"
+		if r.document(name) == nil {
+			revisions := workflow.Revisions{StandardsRevision: r.e.StandardsRevision}
+			if s.Type == "document-review" {
+				revisions.Subject.DocumentDigest = subject.Digest
+			} else {
+				revisions.Subject.CodeHead = subject.Digest
+				for _, in := range inputs {
+					if in.Port == "spec" {
+						revisions.SpecDigest = "sha256:" + in.SHA256
+					}
+				}
+			}
+			o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.VerdictApproved, Revisions: revisions}
+			if err := o.Validate(); err != nil {
+				return Next{}, err
+			}
+			data, err := json.Marshal(revisions)
+			if err != nil {
+				return Next{}, err
+			}
+			if err := r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "revisions.json"), SHA256: digest(data)}, data); err != nil {
+				return Next{}, err
+			}
+		}
+	}
 	if _, err := r.e.Records.OpenDecision(r.mutation("decision", d.ID), d); err != nil {
 		return Next{}, err
 	}
@@ -566,6 +635,10 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	d := r.latestDecision(s.ID)
 	switch {
 	case d == nil:
+		inputs, err := r.inputs(s)
+		if err != nil {
+			return false, Next{}, err
+		}
 		in, err := r.input(s, "head")
 		if err != nil {
 			return false, Next{}, err
@@ -580,7 +653,7 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 				r.task.Repository, r.task.ID, s.ID, k, h, strings.Join(mergeOptions, ", ")),
 			Options: mergeOptions,
 		}
-		next, err := r.open(s, k, []render.Input{in}, ask)
+		next, err := r.open(s, k, inputs, ask)
 		return false, next, err
 	case !d.Answered:
 		return false, Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(*d, s.ID)

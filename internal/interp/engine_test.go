@@ -68,8 +68,11 @@ type env struct {
 }
 
 func newEnv(t *testing.T, b backend, exps ...interptest.Expectation) *env {
+	return newEnvDefinition(t, b, straight(t), exps...)
+}
+
+func newEnvDefinition(t *testing.T, b backend, def *workflow.Definition, exps ...interptest.Expectation) *env {
 	t.Helper()
-	def := straight(t)
 	h, mailbox := b.new(t)
 	task := store.Task{Repository: "app", ID: "t7", Title: "Straight path", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)}
 	if _, err := h.CreateTask("task:app:t7", task); err != nil {
@@ -95,9 +98,10 @@ func newEnv(t *testing.T, b backend, exps ...interptest.Expectation) *env {
 			},
 			Repositories: []config.Repository{{ID: "app", MergePolicy: config.MergeApproval}},
 		},
-		DefaultAdapter: interp.MockAdapter,
-		DocumentDir:    t.TempDir(),
-		StateDir:       t.TempDir(),
+		StandardsRevision: "standards-1",
+		DefaultAdapter:    interp.MockAdapter,
+		DocumentDir:       t.TempDir(),
+		StateDir:          t.TempDir(),
 	}
 	return e
 }
@@ -319,6 +323,19 @@ func TestStraightPath(t *testing.T) {
 			if merge.Kind != store.DecisionMerge || merge.Subject == nil || *merge.Subject != (store.Subject{Kind: store.SubjectHead, Digest: head}) || len(merge.Options) == 0 {
 				t.Errorf("merge decision = %+v", merge)
 			}
+			doc := e.documents(t)["sign-off-1-outcome"]
+			data, err := os.ReadFile(filepath.Join(e.eng.DocumentDir, doc.Path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			outcome, err := workflow.ParseReviewOutcome(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if outcome.Reviewer != workflow.HumanReviewer || outcome.Revisions.Subject.CodeHead != head || outcome.Revisions.SpecDigest != "sha256:"+spec || outcome.Revisions.StandardsRevision != "standards-1" {
+				t.Fatalf("human outcome = %+v", outcome)
+			}
+			e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "sign-off-1"})
 			if got, want := e.inbox(t), []string{"app.t7.decision.accept-1", "app.t7.decision.sign-off-1", "app.t7.decision.deliver-1"}; !slices.Equal(got, want) {
 				t.Errorf("Director inbox = %q, want %q", got, want)
 			}
