@@ -1,8 +1,8 @@
 # Contributing
 
 Keep each pull request small and coherent: one reviewable change with no fixed line cap.
-Follow test-driven development: write a failing test first, then make it pass.
-Show the red-then-green test evidence in the pull request description.
+Follow the contract-first method and evidence requirements in `docs/contracts.md`.
+Include that test evidence in the pull request description.
 Write Markdown with one sentence per line.
 Do not add co-author trailers to commit messages.
 Pull requests are reviewed against `docs/review.md` and the requirements in `docs/requirements.md`.

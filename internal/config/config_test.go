@@ -175,6 +175,36 @@ merge_policy`, `one owner machine`},
 	}
 }
 
+func TestRepositoryPathsCompareCleaned(t *testing.T) {
+	base := director(t)
+	paths := repositoryPaths(t, base)
+	tool, site := paths[0], paths[1]
+	sep := string(filepath.Separator)
+	alias := site + sep + ".." + sep + "tool" + sep
+	if filepath.Clean(alias) != tool {
+		t.Fatalf("fixture paths %q and %q are not siblings", tool, site)
+	}
+	_, err := Parse([]byte(strings.Replace(base, site, alias, 1)))
+	if err == nil || !strings.Contains(err.Error(), "path is already used by another repository") {
+		t.Fatalf("error %v, want the duplicate path refused after cleaning", err)
+	}
+}
+
+// repositoryPaths returns the repository path values in a config fixture, in order.
+func repositoryPaths(t *testing.T, data string) []string {
+	t.Helper()
+	var paths []string
+	for _, line := range strings.Split(data, "\n") {
+		if p, ok := strings.CutPrefix(line, "path = '"); ok {
+			paths = append(paths, strings.TrimSuffix(p, "'"))
+		}
+	}
+	if len(paths) < 2 {
+		t.Fatalf("fixture has %d repository paths, want 2", len(paths))
+	}
+	return paths
+}
+
 func TestStewardRefusals(t *testing.T) {
 	cases := map[string]string{
 		"missing private config":  "schema_version = 1\nmode = \"steward\"\n",
@@ -205,7 +235,7 @@ func TestExampleConfigParses(t *testing.T) {
 func TestRepositoryPathsMayUseTheOwnerMachinesForm(t *testing.T) {
 	// A Steward on one OS validates copies whose owner machine runs another,
 	// so POSIX and Windows drive paths are both absolute on every host.
-	for _, path := range []string{"/srv/src/tool", "C:/src/tool", `C:\src\tool`} {
+	for _, path := range []string{"/srv/src/tool", "C:/src/tool", "c:/src/tool", `C:\src\tool`} {
 		t.Run(path, func(t *testing.T) {
 			data := strings.Replace(director(t), "path = '", "path = '"+path+"'\n#", 1)
 			if _, err := Parse([]byte(data)); err != nil {
@@ -213,7 +243,7 @@ func TestRepositoryPathsMayUseTheOwnerMachinesForm(t *testing.T) {
 			}
 		})
 	}
-	for _, path := range []string{"src/tool", "C:src/tool", "C:", `\\server\share`} {
+	for _, path := range []string{"src/tool", "C:src/tool", `C:src\tool`, "C:", `\src\tool`, `\\server\share`, `\\server\share\tool`} {
 		t.Run(path, func(t *testing.T) {
 			data := strings.Replace(director(t), "path = '", "path = '"+path+"'\n#", 1)
 			if _, err := Parse([]byte(data)); err == nil || !strings.Contains(err.Error(), "path must be absolute") {
