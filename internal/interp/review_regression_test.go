@@ -19,7 +19,7 @@ func TestHumanDocumentReviewOutput(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
 			def := straight(t)
-			review := workflow.Step{ID: "doc-review", Type: "document-review", Version: 1, Settings: map[string]json.RawMessage{"actor": json.RawMessage(`"guildmaster"`)}, Inputs: map[string][]string{"subject": {"plan.spec"}}}
+			review := workflow.Step{ID: "doc-review", Type: "document-review", Version: 1, Settings: map[string]json.RawMessage{"actor": json.RawMessage(`"guildmaster"`)}, Inputs: map[string]workflow.Refs{"subject": {"plan.spec"}}}
 			def.Steps = append(def.Steps[:1], append([]workflow.Step{review}, def.Steps[1:]...)...)
 			def.Steps[2].Inputs["reviews"] = []string{"doc-review.outcome"}
 			e := newEnvDefinition(t, b, def, planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})))
@@ -49,6 +49,7 @@ func TestHumanDocumentReviewOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Logf("persisted human document review: %s", data)
 			if outcome.Reviewer != workflow.HumanReviewer || outcome.Revisions.Subject.DocumentDigest != "sha256:"+sum(specV1(t)) || outcome.Revisions.StandardsRevision != "standards-1" {
 				t.Fatalf("outcome = %+v", outcome)
 			}
@@ -100,6 +101,7 @@ func TestOutputContainment(t *testing.T) {
 			if err == nil {
 				t.Fatal("accepted escaping output")
 			}
+			t.Logf("escaping %s output refused: %v; documents: %+v", mode, err, e.documents(t))
 			if len(e.documents(t)) != 0 {
 				t.Fatal("recorded outputs before validating containment")
 			}

@@ -1,6 +1,6 @@
 # Scripted mock agent
 
-The interpreter launches Artisan attempts through one seam, `interp.Launcher`, declared in `internal/interp` beside the code that will call it.
+The interpreter launches Artisan attempts through one seam, `interp.Launcher`, declared in `internal/interp` beside the code that calls it.
 `interptest.Script` is its scripted double, the mock agent: tests describe the attempts they expect the interpreter to launch and what each attempt should return.
 The mock checks the prompts, skills, artefact revisions and standards it is given and writes the scripted response.
 It makes no model calls and is not evidence of semantic intelligence: it checks the launched attempt and its files and returns the scripted answer.

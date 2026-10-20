@@ -11,7 +11,7 @@ import (
 // in-memory double; both pass interptest.RunRecordsContract.
 //
 // Reads return a task's records in key order: attempts by step then number, documents by name and
-// decisions by id. An unknown task matches store.ErrNotFound.
+// decisions by id. Task returns store.ErrNotFound for an unknown task; list reads return empty slices.
 // Every write names a mutation id: repeating it with the same request returns the original receipt and
 // changes nothing, and reusing it for a different request fails with store.ErrMutationConflict.
 // StartAttempt numbers attempts of a step from 1 and refuses, with store.ErrInvalid, while one is running;

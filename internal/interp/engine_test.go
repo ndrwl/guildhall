@@ -149,6 +149,7 @@ func (e *env) advance(t *testing.T, ev interp.Event) interp.Next {
 	if err != nil {
 		t.Fatalf("Advance(%+v) = %v", ev, err)
 	}
+	t.Logf("Advance(%+v) => %+v", ev, next)
 	return next
 }
 
@@ -177,6 +178,7 @@ func (e *env) documents(t *testing.T) map[string]store.DocumentRef {
 	out := map[string]store.DocumentRef{}
 	for _, d := range docs {
 		out[d.Name] = d
+		t.Logf("document: %+v", d)
 	}
 	return out
 }
@@ -189,6 +191,7 @@ func (e *env) decision(t *testing.T, id string) store.Decision {
 	}
 	for _, d := range ds {
 		if d.ID == id {
+			t.Logf("decision: %+v; subject: %+v", d, d.Subject)
 			return d
 		}
 	}
@@ -332,6 +335,7 @@ func TestStraightPath(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Logf("persisted human code review: %s", data)
 			if outcome.Reviewer != workflow.HumanReviewer || outcome.Revisions.Subject.CodeHead != head || outcome.Revisions.SpecDigest != "sha256:"+spec || outcome.Revisions.StandardsRevision != "standards-1" {
 				t.Fatalf("human outcome = %+v", outcome)
 			}
@@ -358,6 +362,7 @@ func advanceErr(t *testing.T, e *env, ev interp.Event) error {
 	t.Helper()
 	ev.Repository, ev.Task = "app", "t7"
 	_, err := e.eng.Advance(context.Background(), ev)
+	t.Logf("Advance(%+v) refused: %v", ev, err)
 	return err
 }
 

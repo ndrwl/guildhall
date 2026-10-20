@@ -20,7 +20,9 @@ The engine consumes four narrow interfaces, declared in `internal/interp` beside
 The engine does not read workflow approvals; enforcing them at task creation is separate work.
 `Engine.Workflow` returns the definition a task's revision names, and the engine refuses one whose name or digest differs (`ErrRevision`).
 `Engine.Config` gives each profile's adapter and each repository's merge policy; a step without a profile runs `Engine.DefaultAdapter`.
-`Engine.StandardsRevision` must name the central standards revision presented for human reviews. A blank revision refuses to open a human review decision. The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
+`Engine.StandardsRevision` must name the central standards revision presented for human reviews.
+A blank revision refuses to open a human review decision.
+The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
 
 ## Events
 
@@ -36,9 +38,16 @@ Any other event, or one that does not match the records, is refused with `ErrEve
 
 After intake, the engine walks the steps in order, from the records, and stops at the first one that must be waited for.
 
-- **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records attempt `n`, renders its prompt into `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt. A succeeded attempt completes the step; a review step's outcome must be `approved`. A failed or stopped attempt waits for the Director, who is told through the outbox.
-- **Guildmaster step.** The engine opens decision `<step>-<round>` with the question and options `render.Question` gives, bound to its subject, and waits. An `approved` answer completes the step; a Guildmaster approval then records the approved document as the accepted spec, `<step>-<round>-spec`. Both human review kinds first persist the shared `ReviewOutcome` as `<step>-<round>-outcome`, with reviewer `human` and the revisions captured when the decision opened. File and record writes are replay-safe.
-- **Deliver.** Under the `approval` merge policy the engine opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits. Every wired input, including review outcomes, must resolve before the decision opens; this is not yet the review verdict gate. Merging after the answer, and the `auto` policy, are later work.
+- **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records attempt `n`, renders its prompt into `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt.
+  A succeeded attempt completes the step; a review step's outcome must be `approved`.
+  A failed or stopped attempt waits for the Director, who is told through the outbox.
+- **Guildmaster step.** The engine opens decision `<step>-<round>` with the question and options `render.Question` gives, bound to its subject, and waits.
+  An `approved` answer completes the step; a Guildmaster approval then records the approved document as the accepted spec, `<step>-<round>-spec`.
+  Both human review kinds first persist the shared `ReviewOutcome` as `<step>-<round>-outcome`, with reviewer `human` and the revisions captured when the decision opened.
+  File and record writes are replay-safe.
+- **Deliver.** Under the `approval` merge policy the engine opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits.
+  Every wired input, including review outcomes, must resolve before the decision opens; this is not yet the review verdict gate.
+  Merging after the answer, and the `auto` policy, are later work.
 
 A `changes_requested` outcome, from a review result or a Guildmaster answer, fails with `ErrUnsupported` and the words "loops in S6b"; any other outcome that is not `approved` fails with `ErrUnsupported`.
 
@@ -54,7 +63,8 @@ Every decision the engine opens is also sent to the Director's inbox as message 
 ## Documents and inputs
 
 A succeeded result's outputs are copied from the task's working directory into the Director document directory at `tasks/<repo>/<task>/<step>-<n>/<output path>` and recorded with their sha256.
-Output reads are rooted in the working directory: file and parent-directory symlinks cannot escape it. All outputs, including supplemental ones, are read and checked before any are copied or recorded.
+Output reads are rooted in the working directory: file and parent-directory symlinks cannot escape it.
+All outputs, including supplemental ones, are read and checked before any are copied or recorded.
 The first output is the step's output port, named `<step>-<n>-<port>`; later outputs add `-<index>`, from 2.
 A code-head output must hold a 40 or 64 lowercase hex object id, and a review outcome must parse, or nothing is recorded.
 An input `step.port` resolves to that port's document of the latest round, and its file is checked against the recorded digest before it is used.
@@ -79,5 +89,6 @@ A crash after `Launch` returns but before the mark relaunches the same identity;
 
 `internal/interp/engine_test.go` runs the straight workflow, `testdata/workflows/straight.json` (plan, Guildmaster acceptance, build, Artisan review, Guildmaster sign-off, deliver), twice: against the scripted mock with the in-memory records and `messagingtest.Fake`, and against the same mock with a real store file and its mailbox.
 It checks each event's effect on the records, the approval bound to the plan document's digest, the spec gate, a crash between recording and launching an attempt, the zero-model guard, refused loops, a failed attempt, mismatched events and a changed revision.
-Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write. Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
+Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
+Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
 `TestRecordsContract` runs `interptest.RunRecordsContract` against the store and the double, including concurrent list readers and record writers.

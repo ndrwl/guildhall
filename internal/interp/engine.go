@@ -89,7 +89,7 @@ var (
 // Advance takes one event, validates it against the records, records what it carries and then
 // moves the task forward through the steps in order until something must be waited for:
 //
-//   - an Artisan step renders its prompt (Prompter), records a new attempt and launches it (Launcher),
+//   - an Artisan step records a new attempt, renders its prompt (Prompter) and launches it (Launcher),
 //     then waits for its result;
 //   - a Guildmaster step opens a typed decision bound to its subject and waits for the answer;
 //   - deliver under the "approval" merge policy opens the merge decision and waits.
@@ -402,7 +402,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	contents := make([][]byte, len(outputs))
 	for i, o := range outputs {
 		if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
