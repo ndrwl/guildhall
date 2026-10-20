@@ -119,7 +119,7 @@ func (s *Store) SendMessage(m Message) (Receipt, error) {
 		return Receipt{}, err
 	}
 	return s.mutate(sendMutationID(m.ID), opSendMessage, m, func(tx *bolt.Tx, r *Receipt) error {
-		r.Repository, r.TaskID, r.Attempt = m.Repository, m.TaskID, m.Attempt
+		r.Repository, r.TaskID, r.Attempt, r.Record = m.Repository, m.TaskID, m.Attempt, "message/"+m.ID
 		if _, err := getTask(tx, m.Repository, m.TaskID); err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ func (s *Store) AckMessage(to Recipient, id string) (Receipt, error) {
 		if err != nil {
 			return err
 		}
-		r.Repository, r.TaskID, r.Attempt = m.Repository, m.TaskID, m.Attempt
+		r.Repository, r.TaskID, r.Attempt, r.Record = m.Repository, m.TaskID, m.Attempt, "message/"+m.ID
 		if m.To() != to {
 			return invalid("message %q is addressed to %s, not %s", id, describeRecipient(m.To()), describeRecipient(to))
 		}

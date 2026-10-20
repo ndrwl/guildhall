@@ -32,7 +32,10 @@ Every change is a mutation that names a caller-chosen mutation id of 1 to 128 ch
 A mutation runs in one bbolt transaction that writes its records and a receipt together and commits durably before the call returns.
 After a crash, either the records and the receipt are both present or neither is.
 
-A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, a store-wide sequence number starting at 1 and the commit time in UTC.
+A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, the record it wrote, a store-wide sequence number starting at 1 and the commit time in UTC.
+The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, and `message/<id>` for sending and acknowledging a message.
+It is not part of the request digest, so receipts written before it existed have no record and still replay; mutations outside a task, such as workflow approvals, have none.
+`TaskHistory` reads a task's records and every receipt for it in one read transaction, labelled with the newest committed sequence; it scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.
 The [decision command reference](decisions-cli.md#answers) defines answer mutation ids (D23).
