@@ -1,0 +1,13 @@
+{
+  "schema": "guildhall.artisan-result",
+  "version": 1,
+  "task_id": "t7",
+  "attempt_id": "build-1",
+  "status": "failed",
+  "summary": "blocked: Should the list be sorted by id or by title?",
+  "outputs": [
+    {
+      "path": "blocked-question.json"
+    }
+  ]
+}

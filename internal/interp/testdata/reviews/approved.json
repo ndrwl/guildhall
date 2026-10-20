@@ -1,0 +1,12 @@
+{
+  "schema": "guildhall.review-outcome/1",
+  "reviewer": "automated",
+  "verdict": "approved",
+  "revisions": {
+    "subject": {
+      "code_head": "0123456789abcdef0123456789abcdef01234567"
+    },
+    "spec_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "standards_revision": "standards-1"
+  }
+}

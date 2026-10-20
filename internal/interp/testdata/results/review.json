@@ -1,0 +1,13 @@
+{
+  "schema": "guildhall.artisan-result",
+  "version": 1,
+  "task_id": "t7",
+  "attempt_id": "review-1",
+  "status": "succeeded",
+  "summary": "review changes_requested",
+  "outputs": [
+    {
+      "path": "review-outcome.json"
+    }
+  ]
+}

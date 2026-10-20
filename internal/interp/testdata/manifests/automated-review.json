@@ -1,0 +1,42 @@
+{
+  "schema": "guildhall.prompt-manifest/1",
+  "identity": {
+    "repository": "app",
+    "task": "t7",
+    "step": "review",
+    "kind": "review",
+    "kind_version": 1,
+    "attempt": 1,
+    "profile": "reviewer-astra"
+  },
+  "prompt": {
+    "path": "prompt.md",
+    "digest": "sha256:f6304be3e46970b4938bd3b5a4c593463309d2e8be665459f55555274655f226"
+  },
+  "role": {
+    "path": "roles/reviewer.md",
+    "digest": "sha256:f0cc00106c93738b552990fd5f1199aae4ec1f3ba7749bb8c613af5809776559"
+  },
+  "guide": {
+    "path": "stages/review.md",
+    "digest": "sha256:d9fdc5e28986507d3a823411be1a03832a709f9c56f97c85fc6ca089e3c94f59"
+  },
+  "standards": [
+    {
+      "path": "standards/go.md",
+      "digest": "sha256:8e71d7bac72b7ab8260633f853edd4389ff26bcf91ca9a07a26bb3a5154e13a0"
+    },
+    {
+      "path": "standards/review.md",
+      "digest": "sha256:10f8c4453b65554f2531891f794e6ae71e4e30eb0edf41056676a913eb2424de"
+    }
+  ],
+  "inputs": [
+    {
+      "port": "spec",
+      "path": "tasks/t7/spec-v1.md",
+      "digest": "sha256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84"
+    }
+  ],
+  "skills": []
+}
