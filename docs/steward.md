@@ -84,7 +84,8 @@ It writes `plan.json` and, for each copy that would change, `files/<machine>/<di
 - the planned `scp` commands, with preview source paths replaced by private temporary inputs during [apply](#apply);
 - the plan digest and the apply command.
 
-It changes nothing on any machine, and it exits 1 if any copy was refused.
+It does not update remote Director copies; its writes are local plan files and temporary downloads.
+It exits 1 if any copy was refused.
 
 A copy is refused when it cannot be fetched, is not valid config, is not in director mode, names another Director, has repositories other than the roster lists, has a repository whose `owner_machine` is not the roster machine, or has a local value for a key the new managed section makes non-overridable.
 A refused copy is reported, never overwritten, and a plan with a refused copy cannot be applied.
@@ -154,7 +155,7 @@ Each `scp` run is bounded by a two-minute timeout.
 A managed revision is the sha256 of its `managed.toml`, which the plan and receipt record; plans separately bind the fetched local config digest.
 Future task records must retain both local configuration and managed revision, not treat the managed digest alone as the entire effective config.
 A rollout keeps each previous revision on the machine and never deletes one.
-Task records do not exist yet, so nothing binds a task to a config revision today.
+The [store](store.md) provides task records, but Director execution does not yet bind tasks to configuration revisions.
 The intended consumer contract (R1.31) is that a task records the config revision and release in force when it is accepted and keeps them, while only new tasks pick up a rollout; that enforcement belongs to the Director's task store and execution, which are later work.
 
 ## Not implemented yet
