@@ -141,7 +141,7 @@ func (a *App) loadRollout(cfgPath string) (*steward.Rollout, error) {
 	return steward.LoadRollout(private, steward.Transport{Path: scp, Output: a.Output, Timeout: scpTimeout})
 }
 
-// renderPlan describes a dry-run plan: each copy's changes, diff and exact commands.
+// renderPlan describes a dry-run plan: each copy's changes, diff and planned commands.
 func renderPlan(p *steward.Plan, cfgPath string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "rollout plan %s\ndry run: nothing was changed\n", p.Digest)

@@ -3,7 +3,8 @@
 Each Guildhall copy has a local TOML config file, and enrolled rollout copies also have a separate Steward-owned `managed.toml`; each Director has JSON workflow definitions.
 Pure parsing APIs in `internal/config` and `internal/workflow` run nothing and grant no authority.
 `config.Load` reads the config and its sibling managed file when present, while `config.ParseCombined` validates supplied bytes without file access.
-Legacy `config.Parse` still accepts inline managed settings, but combined loading and rollouts refuse that layout with migration guidance.
+Legacy `config.Parse` still accepts inline managed settings, and `config.Load` falls back to it when no sibling `managed.toml` exists.
+When that sibling exists, `config.Load` uses `config.ParseCombined`, which refuses inline managed settings with migration guidance.
 No credentials belong in either; sign-in stays in each runtime's own store.
 
 ## Config file

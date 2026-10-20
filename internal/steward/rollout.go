@@ -114,7 +114,7 @@ func LoadRollout(privateDir string, t Transport) (*Rollout, error) {
 	}, nil
 }
 
-// Plan is a dry-run rollout: what each copy would become and the exact commands that would do it.
+// Plan is a dry-run rollout: what each copy would become and the planned transport commands.
 type Plan struct {
 	Schema        string     `json:"schema"`
 	Digest        string     `json:"digest"`
@@ -133,11 +133,11 @@ type CopyPlan struct {
 	Target   string `json:"target"`
 	Status   string `json:"status"`
 	Problem  string `json:"problem,omitempty"`
-	// BeforeSHA256 and AfterSHA256 identify the copy's config revision now and after the rollout.
+	// LocalSHA256 binds the fetched local config; BeforeSHA256 and AfterSHA256 identify managed revisions.
 	LocalSHA256  string `json:"local_sha256,omitempty"`
 	BeforeSHA256 string `json:"before_sha256,omitempty"`
 	AfterSHA256  string `json:"after_sha256,omitempty"`
-	// Revision is where the previous config is kept on the machine.
+	// Revision is where the previous managed file is kept on the machine.
 	Revision string     `json:"revision,omitempty"`
 	Changes  []Change   `json:"changes,omitempty"`
 	Diff     string     `json:"diff,omitempty"`
@@ -267,7 +267,7 @@ func (p *Plan) digest() string {
 	return digest(data)
 }
 
-// WritePlan writes plan.json and each changed copy's previous.toml and config.toml previews into a new stage directory.
+// WritePlan writes plan.json and each changed copy's previous.toml and managed.toml previews into a new stage directory.
 func WritePlan(p *Plan) error {
 	if _, err := os.Stat(filepath.Join(p.StageDir, "plan.json")); err == nil {
 		return fmt.Errorf("%s already holds a plan; use a new directory", p.StageDir)
@@ -348,7 +348,8 @@ type Step struct {
 // Apply carries out the dry-run plan in stageDir.
 // It plans again and refuses unless the result is identical and the staged previews are intact,
 // and refuses a plan needing approval unless approve is that plan's digest.
-// Each changed copy keeps its previous config as a revision file, then gets the new config, then is read back and verified.
+// Each changed copy keeps its previous managed file as a revision, then gets the new managed file, then is read back and verified.
+// The local config is never written; validated managed inputs replace preview source paths in transport commands.
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
 func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines ...string) (*Receipt, error) {
 	saved, err := ReadPlan(stageDir)

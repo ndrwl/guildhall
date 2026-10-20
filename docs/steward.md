@@ -44,7 +44,7 @@ repositories = ["cli", "docs-site"]
 | `os` | `linux`, `windows` or `darwin`; it decides the path form. |
 | `roles` | `steward` and/or `director`. A machine that lists Directors needs `director`. |
 | `[[machine.director]] name` | The Director's name, which its copy's config must match. |
-| `copy_dir` | Absolute path of the Director copy's directory, holding `config.toml`. Windows paths use a drive letter and forward slashes, such as `C:/Users/guild/directors/tools`. Only letters, digits, `.`, `_`, `-` and `/` are allowed, with no `.` or `..` segments. |
+| `copy_dir` | Absolute path of the Director copy's directory, holding `config.toml` and the published `managed.toml`. Windows paths use a drive letter and forward slashes, such as `C:/Users/guild/directors/tools`. Only letters, digits, `.`, `_`, `-` and `/` are allowed, with no `.` or `..` segments. |
 | `repositories` | The repository ids the copy must have. |
 
 Each machine has one SSH alias for its one non-administrator Guildhall account, and that account may host several Directors, each with its own copy directory.
@@ -63,7 +63,9 @@ value = "Cite the accepted requirement for every finding."
 overridable = true
 ```
 
-Each `[managed.<key>]` table has a `value` and `overridable` as in a copy's config ([configuration](configuration.md)), plus `policy`.
+This private source is distinct from each copy's checksum-framed published file described in [configuration](configuration.md).
+Keep the Steward copy's own config outside this private source directory so `config.Load` does not treat the source as its published sibling.
+Each `[managed.<key>]` table has a `value` and `overridable` as in a copy's config, plus `policy`.
 `policy = true` marks a key, such as a review or approval rule, whose every change needs approval; it is not written to copies.
 Keys follow the config key rules, so credential-like names are refused.
 
@@ -78,8 +80,8 @@ It writes `plan.json` and, for each copy that would change, `files/<machine>/<di
 
 - each copy's status: `change`, `unchanged` or `refused` with the reason;
 - each managed key added, changed or removed, and whether it needs approval;
-- a line diff of the config file;
-- the exact `scp` commands `--apply` will run;
+- a line diff of the published managed file;
+- the planned `scp` commands, with preview source paths replaced by private temporary inputs during [apply](#apply);
 - the plan digest and the apply command.
 
 It changes nothing on any machine, and it exits 1 if any copy was refused.
@@ -91,9 +93,9 @@ A refused copy is reported, never overwritten, and a plan with a refused copy ca
 
 Only the separate `managed.toml` is replaced; `config.toml` is never written, even when an editor changes it during apply.
 During enrolment, move any inline managed settings out of `config.toml` into a checksum-framed `managed.toml` generated with `config.EncodeManaged`; preserve their existing values and override flags.
-Inline managed layouts are refused by rollout and combined loading, not by the legacy pure `config.Parse` API.
+Rollouts require both files and refuse inline managed layouts.
 New copies with no previous managed settings can start with [`examples/managed.toml`](../examples/managed.toml) beside their local config.
-Use `config.Load` to read both files, or `config.ParseCombined` when bytes are already available; both enforce existing override validation.
+See [configuration](configuration.md) for loading APIs and legacy-layout compatibility.
 A rollout never changes a local value: a new managed key that conflicts with one is refused, and the Director or Guildmaster resolves it.
 
 ## Apply
@@ -115,11 +117,11 @@ For each copy that changes, it then runs the three planned commands:
 A failure on one copy does not stop the others.
 The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed` or `verify_failed`), its before, after and read-back digests, the revision file and every command with its error.
 Apply exits 1 unless every copy is applied or unchanged; a plan that is no longer current needs a new dry run.
-Applying an unchanged plan writes nothing.
+Applying an unchanged plan performs no remote writes, but still writes a local receipt.
 
 ### Publication and writer containment
 
-Each published managed file starts with a SHA-256 checksum of all remaining bytes, so combined loading explicitly refuses incomplete or corrupted transfers, including syntactically valid truncated TOML.
+The [managed-file checksum framing](configuration.md#config-file) makes combined loading explicitly refuse incomplete or corrupted transfers, including syntactically valid truncated TOML.
 This is integrity detection, not atomic publication: non-atomic scp may transiently refuse reads and does not prove uninterrupted config availability.
 The `.rollout.lock` file in the private config directory excludes concurrent applies using that directory on this Steward.
 It does not protect against another host, another private directory or a manual managed-file writer; designate one Steward writer for each fleet and do not edit managed files during rollout.
