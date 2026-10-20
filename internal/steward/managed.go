@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -88,35 +86,6 @@ type Change struct {
 	Reason        string `json:"reason,omitempty"`
 }
 
-// Render returns the copy's config with its managed section replaced by src and the changes that makes.
-// Everything else in the file, including local values, repositories and comments, is kept byte for byte.
-// It refuses a copy that is not the target's Director, names another owner machine or other repositories,
-// or whose local values a non-overridable managed key would silently override.
-func Render(current []byte, src *ManagedSource, target Target) ([]byte, []Change, error) {
-	before, err := config.Parse(current)
-	if err != nil {
-		return nil, nil, fmt.Errorf("current config: %w", err)
-	}
-	if err := checkTarget(before, target); err != nil {
-		return nil, nil, err
-	}
-	oldManaged := before.Managed
-	want := src.Settings()
-	after := splice(current, want)
-	cfg, err := config.Parse(after)
-	if err != nil {
-		return nil, nil, fmt.Errorf("rendered config: %w", err)
-	}
-	// The splice is textual; refuse unless exactly the managed section changed, as intended.
-	managedOK := reflect.DeepEqual(cfg.Managed, want) || len(cfg.Managed) == 0 && len(want) == 0
-	rest := *cfg
-	rest.Managed, before.Managed = nil, nil
-	if !managedOK || !reflect.DeepEqual(&rest, before) {
-		return nil, nil, errors.New("managed settings in this copy must be written as [managed.<key>] tables; edit it by hand first")
-	}
-	return after, changes(oldManaged, src), nil
-}
-
 func checkTarget(cfg *config.Config, target Target) error {
 	if cfg.Mode != config.ModeDirector {
 		return fmt.Errorf("not a director copy (mode %q)", cfg.Mode)
@@ -173,134 +142,4 @@ func changes(before map[string]config.ManagedSetting, src *ManagedSource) []Chan
 		out = append(out, c)
 	}
 	return out
-}
-
-var managedHeader = regexp.MustCompile(`^\s*\[\s*managed\s*[.\]]`)
-
-// splice replaces every [managed] and [managed.<key>] table in a TOML file with the given settings,
-// keeping every other line, and the comments and blank lines that lead into the next table, unchanged.
-// The result is idempotent; Render checks it semantically.
-func splice(current []byte, managed map[string]config.ManagedSetting) []byte {
-	text := string(current)
-	nl := "\n"
-	if strings.Contains(text, "\r\n") {
-		nl = "\r\n"
-	}
-	var out, dropped []string
-	insertAt, firstHeader := -1, -1
-	inManaged := false
-	endManaged := func() {
-		// Comments and blank lines ending a managed table lead into what follows, so they stay.
-		i := len(dropped)
-		for i > 0 && isTrivia(dropped[i-1]) {
-			i--
-		}
-		out = append(out, dropped[i:]...)
-		dropped = nil
-	}
-	for line := range strings.Lines(text) {
-		if trimmed := strings.TrimSpace(line); strings.HasPrefix(trimmed, "[") {
-			isManaged := managedHeader.MatchString(trimmed)
-			switch {
-			case isManaged && !inManaged:
-				if insertAt < 0 {
-					insertAt = len(out)
-				}
-			case isManaged:
-				dropped = nil
-			case inManaged:
-				endManaged()
-			}
-			inManaged = isManaged
-			if firstHeader < 0 && !isManaged {
-				firstHeader = len(out)
-			}
-		}
-		if inManaged {
-			dropped = append(dropped, line)
-		} else {
-			out = append(out, line)
-		}
-	}
-	if inManaged {
-		endManaged()
-	}
-
-	block := renderManaged(managed, nl)
-	if insertAt < 0 {
-		if block == "" {
-			return []byte(strings.Join(out, ""))
-		}
-		// A copy without managed tables gets them before its first table and the comments leading into it, or at the end.
-		insertAt = len(out)
-		if firstHeader >= 0 {
-			insertAt = firstHeader
-			for insertAt > 0 && isTrivia(out[insertAt-1]) {
-				insertAt--
-			}
-		}
-		if insertAt > 0 && !isBlank(out[insertAt-1]) {
-			block = nl + block
-		}
-		if insertAt < len(out) && !isBlank(out[insertAt]) {
-			block += nl
-		}
-	}
-	if insertAt > 0 && !strings.HasSuffix(out[insertAt-1], "\n") {
-		out[insertAt-1] += nl
-	}
-	return []byte(strings.Join(out[:insertAt], "") + block + strings.Join(out[insertAt:], ""))
-}
-
-func isBlank(line string) bool { return strings.TrimSpace(line) == "" }
-
-func isTrivia(line string) bool {
-	t := strings.TrimSpace(line)
-	return t == "" || strings.HasPrefix(t, "#")
-}
-
-// renderManaged writes managed settings as tables in key order, separated by blank lines, with no trailing blank line.
-func renderManaged(managed map[string]config.ManagedSetting, nl string) string {
-	var tables []string
-	for _, key := range slices.Sorted(maps.Keys(managed)) {
-		m := managed[key]
-		table := "[managed." + key + "]" + nl + "value = " + tomlString(m.Value) + nl
-		if m.Overridable {
-			table += "overridable = true" + nl
-		}
-		tables = append(tables, table)
-	}
-	return strings.Join(tables, nl)
-}
-
-// tomlString encodes s as a TOML basic string.
-func tomlString(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\f':
-			b.WriteString(`\f`)
-		case '\r':
-			b.WriteString(`\r`)
-		default:
-			if r < 0x20 || r == 0x7f {
-				fmt.Fprintf(&b, `\u%04X`, r)
-			} else {
-				b.WriteRune(r)
-			}
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
 }

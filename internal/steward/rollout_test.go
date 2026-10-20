@@ -20,18 +20,6 @@ const gamesCopy = "schema_version = 1\r\nmode = \"director\"\r\nname = \"games\"
 var stamp = time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 
 func managedPath(p string) string { return strings.TrimSuffix(p, "config.toml") + "managed.toml" }
-func splitCopy(t *testing.T, data string) (string, string) {
-	t.Helper()
-	cfg, err := config.Parse([]byte(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := config.EncodeManaged(cfg.Managed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(splice([]byte(data), nil)), string(m)
-}
 func fleet(t *testing.T) (*stub, *Rollout) {
 	t.Helper()
 	s := newStub(t)
@@ -41,12 +29,32 @@ func fleet(t *testing.T) (*stub, *Rollout) {
 			t.Fatal(err)
 		}
 	}
-	docs := strings.ReplaceAll(strings.ReplaceAll(copyFixture, `name = "tools"`, `name = "docs"`), `id = "cli"`, `id = "handbook"`)
-	docs = strings.Split(docs, "\n[[repository]]\nid = \"site\"")[0] + "\n"
-	for _, c := range []struct{ alias, path, data string }{{"guild-ws", toolsPath, copyFixture}, {"guild-ws", docsPath, docs}, {"guild-laptop", gamesPath, gamesCopy}} {
-		local, managed := splitCopy(t, c.data)
-		s.put(c.alias, c.path, local)
-		s.put(c.alias, managedPath(c.path), managed)
+	oldManaged := map[string]config.ManagedSetting{
+		"standards_revision":  {Value: "standards-1"},
+		"review_instructions": {Value: "Cite the requirement.", Overridable: true},
+	}
+	const docsLocal = `schema_version = 1
+mode = "director"
+name = "docs"
+[local]
+review_instructions = "Cite the requirement and check Windows paths."
+notes_dir = "notes"
+[[repository]]
+id = "handbook"
+path = '/srv/src/handbook'
+remote = "git@github.com:example/handbook.git"
+owner_machine = "workstation"
+`
+	for _, c := range []struct {
+		alias, path, local string
+		managed            map[string]config.ManagedSetting
+	}{{"guild-ws", toolsPath, localCopyFixture, oldManaged}, {"guild-ws", docsPath, docsLocal, oldManaged}, {"guild-laptop", gamesPath, gamesCopy, nil}} {
+		managed, err := config.EncodeManaged(c.managed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.put(c.alias, c.path, c.local)
+		s.put(c.alias, managedPath(c.path), string(managed))
 	}
 	r, err := LoadRollout(private, s.transport())
 	if err != nil {
@@ -130,7 +138,7 @@ func TestRolloutRefusals(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			s, r := fleet(t)
 			if scenario == "inline" {
-				s.put("guild-ws", toolsPath, copyFixture)
+				s.put("guild-ws", toolsPath, localCopyFixture+"\n[managed.standards_revision]\nvalue = 'standards-1'\n")
 			}
 			p := dryRun(t, r, "workstation")
 			machines := p.Machines
