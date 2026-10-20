@@ -15,14 +15,14 @@ const valid = `{
   "steps": [
     {"id": "plan", "type": "plan", "version": 1},
     {"id": "accept", "type": "guildmaster-approval", "version": 1,
-     "inputs": {"spec": "plan.spec"},
+     "inputs": {"spec": ["plan.spec"]},
      "on": {"changes_requested": {"goto": "plan", "max": 2}}},
-    {"id": "build", "type": "build", "version": 1, "inputs": {"spec": "accept.spec"}},
+    {"id": "build", "type": "build", "version": 1, "inputs": {"spec": ["accept.spec"]}},
     {"id": "review", "type": "automated-review", "version": 1,
-     "inputs": {"spec": "accept.spec", "head": "build.head"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
      "on": {"changes_requested": {"goto": "build", "max": 3}}},
     {"id": "deliver", "type": "deliver", "version": 1,
-     "inputs": {"head": "build.head", "review": "review.outcome"}}
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}}
   ]
 }`
 
@@ -107,14 +107,15 @@ func TestValidationRefusals(t *testing.T) {
 		{"unsupported version", `"id": "build", "type": "build", "version": 1`, `"id": "build", "type": "build", "version": 9`, `does not support version 9`},
 		{"duplicate id", `"id": "deliver"`, `"id": "build"`, `duplicate step id "build"`},
 		{"invalid id", `"id": "deliver"`, `"id": "Deliver Now"`, `invalid step id`},
-		{"missing required input", `"inputs": {"spec": "accept.spec"}}`, `"inputs": {}}`, `required input "spec" is not wired`},
-		{"unknown input", `"inputs": {"spec": "accept.spec"}}`, `"inputs": {"spec": "accept.spec", "extra": "plan.spec"}}`, `unknown input "extra"`},
-		{"unknown reference step", `"head": "build.head", "review"`, `"head": "built.head", "review"`, `unknown step "built"`},
-		{"unknown output", `"head": "build.head", "review"`, `"head": "build.binary", "review"`, `has no output "binary"`},
-		{"type mismatch", `"head": "build.head", "review"`, `"head": "plan.spec", "review"`, `wants code-head`},
-		{"forward reference", `"inputs": {"spec": "plan.spec"}`, `"inputs": {"spec": "build.head"}`, `must come from an earlier step`},
-		{"self reference", `"inputs": {"spec": "accept.spec"}}`, `"inputs": {"spec": "build.head"}}`, `must come from an earlier step`},
-		{"bad reference syntax", `"inputs": {"spec": "plan.spec"}`, `"inputs": {"spec": "plan"}`, `want "step.output"`},
+		{"missing required input", `"inputs": {"spec": ["accept.spec"]}}`, `"inputs": {}}`, `required input "spec" is not wired`},
+		{"unknown input", `"inputs": {"spec": ["accept.spec"]}}`, `"inputs": {"spec": ["accept.spec"], "extra": ["plan.spec"]}}`, `unknown input "extra"`},
+		{"unknown reference step", `"head": ["build.head"], "review"`, `"head": ["built.head"], "review"`, `unknown step "built"`},
+		{"unknown output", `"head": ["build.head"], "review"`, `"head": ["build.binary"], "review"`, `has no output "binary"`},
+		{"type mismatch", `"head": ["build.head"], "review"`, `"head": ["plan.spec"], "review"`, `wants code-head`},
+		{"forward reference", `"inputs": {"spec": ["plan.spec"]}`, `"inputs": {"spec": ["build.head"]}`, `must come from an earlier step`},
+		{"self reference", `"inputs": {"spec": ["accept.spec"]}}`, `"inputs": {"spec": ["build.head"]}}`, `must come from an earlier step`},
+		{"bad reference syntax", `"inputs": {"spec": ["plan.spec"]}`, `"inputs": {"spec": ["plan"]}`, `want "step.output"`},
+		{"single-input cardinality", `"inputs": {"spec": ["plan.spec"]}`, `"inputs": {"spec": ["plan.spec", "plan.spec"]}`, `takes one reference`},
 		{"unbounded loop", `"goto": "build", "max": 3`, `"goto": "build"`, `max must be between 1 and`},
 		{"excessive loop", `"goto": "build", "max": 3`, `"goto": "build", "max": 1000`, `max must be between 1 and`},
 		{"forward goto", `"goto": "plan", "max": 2`, `"goto": "deliver", "max": 2`, `can only loop back`},

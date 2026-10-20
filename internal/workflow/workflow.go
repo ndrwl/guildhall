@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -63,23 +64,7 @@ type Rule struct {
 	Max  int    `json:"max"`
 }
 
-// Refs is one or more "step.output" references; JSON accepts a string or an array of strings.
 type Refs []string
-
-// UnmarshalJSON accepts a single reference or a list.
-func (r *Refs) UnmarshalJSON(data []byte) error {
-	var one string
-	if err := json.Unmarshal(data, &one); err == nil {
-		*r = Refs{one}
-		return nil
-	}
-	var many []string
-	if err := json.Unmarshal(data, &many); err != nil {
-		return errors.New(`input must be a "step.output" string or a list of them`)
-	}
-	*r = many
-	return nil
-}
 
 // Revision identifies the exact workflow content a task binds when accepted.
 type Revision struct {
@@ -114,25 +99,27 @@ func Parse(data []byte) (*Definition, error) {
 
 // checkSchema reads only the "schema" field so a newer document is refused before strict decoding.
 func checkSchema(data []byte, prefix string, supported int) error {
-	var head struct {
-		Schema string `json:"schema"`
-	}
+	var head map[string]json.RawMessage
 	if err := json.Unmarshal(data, &head); err != nil {
 		return fmt.Errorf("malformed JSON: %w", err)
 	}
-	num, ok := strings.CutPrefix(head.Schema, prefix)
+	var schema string
+	if err := json.Unmarshal(head["schema"], &schema); err != nil {
+		return fmt.Errorf("schema: %w", err)
+	}
+	num, ok := strings.CutPrefix(schema, prefix)
 	version, err := strconv.Atoi(num)
 	if !ok || err != nil || version < 1 {
-		return fmt.Errorf("schema %q is not %s<version>", head.Schema, prefix)
+		return fmt.Errorf("schema %q is not %s<version>", schema, prefix)
 	}
 	if version > supported {
-		return fmt.Errorf("%w: %q (supported: %s%d)", ErrNewerSchema, head.Schema, prefix, supported)
+		return fmt.Errorf("%w: %q (supported: %s%d)", ErrNewerSchema, schema, prefix, supported)
 	}
 	return nil
 }
 
 func decodeStrict(data []byte, v any) error {
-	if err := checkDuplicateKeys(json.NewDecoder(bytes.NewReader(data))); err != nil {
+	if err := checkJSONKeys(json.NewDecoder(bytes.NewReader(data)), reflect.TypeOf(v).Elem()); err != nil {
 		return err
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -146,9 +133,7 @@ func decodeStrict(data []byte, v any) error {
 	return nil
 }
 
-// checkDuplicateKeys walks one JSON value and refuses an object that repeats a key,
-// because encoding/json would silently keep only the last one.
-func checkDuplicateKeys(dec *json.Decoder) error {
+func checkJSONKeys(dec *json.Decoder, typ reflect.Type) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
@@ -166,14 +151,37 @@ func checkDuplicateKeys(dec *json.Decoder) error {
 				return fmt.Errorf("duplicate key %q", name)
 			}
 			seen[name] = true
-			if err := checkDuplicateKeys(dec); err != nil {
+			var child reflect.Type
+			if typ != nil {
+				switch typ.Kind() {
+				case reflect.Struct:
+					for i := 0; i < typ.NumField(); i++ {
+						field := typ.Field(i)
+						tag, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+						if tag == name {
+							child = field.Type
+							break
+						}
+					}
+					if child == nil {
+						return fmt.Errorf("unknown field %q", name)
+					}
+				case reflect.Map:
+					child = typ.Elem()
+				}
+			}
+			if err := checkJSONKeys(dec, child); err != nil {
 				return err
 			}
 		}
 		_, err = dec.Token()
 	case json.Delim('['):
+		var child reflect.Type
+		if typ != nil && typ.Kind() == reflect.Slice {
+			child = typ.Elem()
+		}
 		for dec.More() {
-			if err := checkDuplicateKeys(dec); err != nil {
+			if err := checkJSONKeys(dec, child); err != nil {
 				return err
 			}
 		}

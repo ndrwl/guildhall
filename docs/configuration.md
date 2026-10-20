@@ -58,13 +58,13 @@ The shipped default is [`internal/workflow/default.json`](../internal/workflow/d
   "steps": [
     {"id": "plan", "type": "plan", "version": 1},
     {"id": "accept", "type": "guildmaster-approval", "version": 1,
-     "inputs": {"spec": "plan.spec"}},
-    {"id": "build", "type": "build", "version": 1, "inputs": {"spec": "accept.spec"}},
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "inputs": {"spec": ["accept.spec"]}},
     {"id": "review", "type": "automated-review", "version": 1,
-     "inputs": {"spec": "accept.spec", "head": "build.head"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
      "on": {"changes_requested": {"goto": "build", "max": 3}}},
     {"id": "deliver", "type": "deliver", "version": 1,
-     "inputs": {"head": "build.head", "review": "review.outcome"}}
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}}
   ]
 }
 ```
@@ -75,10 +75,11 @@ The shipped default is [`internal/workflow/default.json`](../internal/workflow/d
 | `name`, `steps[].id` | Lowercase identifiers; step ids are unique. |
 | `steps[].type`, `steps[].version` | A built-in kind and its version, both required, so a task never silently changes kind version. |
 | `steps[].settings` | Only the settings the kind declares, with their declared JSON types. |
-| `steps[].inputs` | Input port to `"step.output"`, or a list of them for ports that take several. |
+| `steps[].inputs` | Input port to an array of `"step.output"` references, including for single-input ports. |
 | `steps[].on` | Outcome to `{"goto": <step-id>, "max": <rounds>}`. |
 
 A workflow is validated before any task may start it, and every problem found is reported together.
+JSON field names must match their declared spelling exactly, including case.
 Validation refuses unknown fields and duplicate keys, unknown kinds or versions, unknown or mistyped settings, missing required settings, unwired required inputs, inputs that reference unknown steps or outputs, and inputs whose types do not match.
 An input can only come from an earlier step, which makes each step's readiness explicit and rules out dependency cycles.
 A rule can only send the task back to the same or an earlier step, and `max` must be between 1 and 10, so every loop is bounded.

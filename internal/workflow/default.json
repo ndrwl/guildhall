@@ -8,17 +8,17 @@
     {"id": "plan", "type": "plan", "version": 1,
      "inputs": {"context": ["grill.notes", "research.notes"]}},
     {"id": "accept", "type": "guildmaster-approval", "version": 1,
-     "inputs": {"spec": "plan.spec"},
+     "inputs": {"spec": ["plan.spec"]},
      "on": {"changes_requested": {"goto": "plan", "max": 3}}},
     {"id": "build", "type": "build", "version": 1,
-     "inputs": {"spec": "accept.spec"}},
+     "inputs": {"spec": ["accept.spec"]}},
     {"id": "review", "type": "automated-review", "version": 1,
-     "inputs": {"spec": "accept.spec", "head": "build.head"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
      "on": {"changes_requested": {"goto": "build", "max": 3}}},
     {"id": "validate", "type": "validate", "version": 1,
-     "inputs": {"head": "build.head"},
+     "inputs": {"head": ["build.head"]},
      "on": {"failed": {"goto": "build", "max": 3}}},
     {"id": "deliver", "type": "deliver", "version": 1,
-     "inputs": {"head": "build.head", "review": "review.outcome", "validation": "validate.result"}}
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"], "validation": ["validate.result"]}}
   ]
 }
