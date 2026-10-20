@@ -45,7 +45,8 @@ A local key with no managed counterpart is the copy's own setting.
 | `[repository.workflow_overrides.<step-id>]` | Replaces a review step's kind for this repository only: `type` and `version`. |
 
 Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.
-Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case. Other letter case is compared exactly.
+Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case.
+Other letter case is compared exactly.
 
 `approval` means the Director asks the Guildmaster before every merge.
 `auto` means a merge happens only when checks pass, the independent review is complete for the exact head and the work is within accepted scope; otherwise the Director asks.
