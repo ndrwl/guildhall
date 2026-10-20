@@ -88,14 +88,12 @@ func TestRolloutPreservesConcurrentLocalEditAndRevisions(t *testing.T) {
 			t.Fatal("dry run wrote", call)
 		}
 	}
-	output := r.Transport.Output
 	edited := s.get("guild-ws", toolsPath) + "\n# concurrent editor change\n"
-	r.Transport.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
-		if strings.Contains(args[5], "guild-laptop:") {
+	r.Transport = editingCopier{r.Transport, func(src Remote) {
+		if src.Alias == "guild-laptop" {
 			s.put("guild-ws", toolsPath, edited)
 		}
-		return output(ctx, path, args...)
-	}
+	}}
 	receipt, err := r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...)
 	if err != nil {
 		t.Fatal(err)
@@ -133,6 +131,18 @@ func TestRolloutPreservesConcurrentLocalEditAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// editingCopier runs edit before each fetch, as a concurrent editor would.
+type editingCopier struct {
+	Copier
+	edit func(src Remote)
+}
+
+func (c editingCopier) Fetch(ctx context.Context, src Remote, dst string) error {
+	c.edit(src)
+	return c.Copier.Fetch(ctx, src, dst)
+}
+
 func TestRolloutRefusals(t *testing.T) {
 	for _, scenario := range []string{"machines", "duplicate", "approval", "stale", "preview", "inline", "lock"} {
 		t.Run(scenario, func(t *testing.T) {

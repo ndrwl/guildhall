@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
@@ -48,33 +47,31 @@ var (
 	ErrIncomplete = errors.New("the rollout did not complete on every copy")
 )
 
-// Transport copies files to and from enrolled machines with scp.
-// It adds no credentials or trust options, so SSH's own config, agent, keys and host-key checks decide access,
-// and batch mode makes scp fail rather than prompt.
-type Transport struct {
-	// Path is the resolved scp executable.
-	Path string
-	// Output runs a command and returns its combined output.
-	Output func(ctx context.Context, path string, args ...string) ([]byte, error)
-	// Timeout bounds each scp run.
-	Timeout time.Duration
+// Remote names a file on an enrolled machine: its roster SSH alias and its path there.
+type Remote struct {
+	Alias string
+	Path  string
 }
 
-func scpCommand(src, dst string) []string {
-	return []string{"scp", "-q", "-B", "-o", "BatchMode=yes", "--", src, dst}
-}
+// String returns the file as an scp operand, alias:path.
+func (r Remote) String() string { return r.Alias + ":" + r.Path }
 
-func (t Transport) run(ctx context.Context, argv []string) error {
-	ctx, cancel := context.WithTimeout(ctx, t.Timeout)
-	defer cancel()
-	out, err := t.Output(ctx, t.Path, argv[1:]...)
-	if err != nil {
-		if msg := strings.TrimSpace(string(out)); msg != "" {
-			return fmt.Errorf("scp: %w: %s", err, msg)
-		}
-		return fmt.Errorf("scp: %w", err)
-	}
-	return nil
+// Copier copies whole files between this Steward and enrolled machines; it is how a Rollout reaches them.
+// Transport is the scp implementation and stewardtest.Fleet an in-memory one; both pass stewardtest.RunCopierContract.
+//
+// A copy replaces the destination file with exactly the source's bytes, creating it if absent.
+// It fails with an error carrying the implementation's diagnostic when the source is missing,
+// or the machine refuses or cannot be reached; it stops when ctx ends, with an error that wraps ctx.Err().
+// A copy that fails in any of these ways before transferring data leaves the destination unchanged.
+// A copy interrupted mid-transfer may leave the destination partial. A Rollout reads back only after successful puts;
+// failed transfers are recorded as failed and may leave partial remote files without a read-back digest.
+// Checksum-framed managed-file loading subsequently detects incomplete or corrupt transfers; no rollback is promised.
+// A Copier adds no credentials of its own and runs no remote command.
+type Copier interface {
+	// Fetch copies src on a machine to the local file dst.
+	Fetch(ctx context.Context, src Remote, dst string) error
+	// Put copies the local file src to dst on a machine.
+	Put(ctx context.Context, src string, dst Remote) error
 }
 
 // Rollout plans and applies managed-settings rollouts from one private config directory.
@@ -84,13 +81,14 @@ type Rollout struct {
 	rosterDigest  string
 	managedDigest string
 	privateDir    string
-	Transport     Transport
+	// Transport reaches the enrolled machines.
+	Transport Copier
 	// Now stamps receipts.
 	Now func() time.Time
 }
 
 // LoadRollout reads roster.toml and managed.toml from the private config directory.
-func LoadRollout(privateDir string, t Transport) (*Rollout, error) {
+func LoadRollout(privateDir string, t Copier) (*Rollout, error) {
 	rosterData, err := os.ReadFile(filepath.Join(privateDir, "roster.toml"))
 	if err != nil {
 		return nil, err
@@ -158,6 +156,38 @@ func (p *Plan) NeedsApproval() bool {
 	return false
 }
 
+// transfer is one copy a rollout makes, between a local file and a machine.
+type transfer struct {
+	local  string
+	remote Remote
+	put    bool
+}
+
+// command is the scp command that makes the copy, as plans and receipts record it.
+func (x transfer) command() []string {
+	if x.put {
+		return scpCommand(x.local, x.remote.String())
+	}
+	return scpCommand(x.remote.String(), x.local)
+}
+
+func (x transfer) run(ctx context.Context, c Copier) error {
+	if x.put {
+		return c.Put(ctx, x.local, x.remote)
+	}
+	return c.Fetch(ctx, x.remote, x.local)
+}
+
+// transfers are the copies that apply a changed copy plan: keep the previous revision, publish, read back.
+func (c CopyPlan) transfers(previous, managed, verify string) []transfer {
+	target := Remote{c.SSHAlias, c.Target}
+	return []transfer{
+		{local: previous, remote: Remote{c.SSHAlias, c.Revision}, put: true},
+		{local: managed, remote: target, put: true},
+		{local: verify, remote: target},
+	}
+}
+
 func (c CopyPlan) stage(stageDir string) string {
 	return filepath.Join(stageDir, "files", c.Machine, c.Director)
 }
@@ -202,8 +232,7 @@ func (r *Rollout) Plan(ctx context.Context, machines []string, stageDir string) 
 }
 
 func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched, stageDir string) {
-	localRemote := c.SSHAlias + ":" + d.ConfigPath()
-	if err := r.Transport.run(ctx, scpCommand(localRemote, fetched+".local")); err != nil {
+	if err := r.Transport.Fetch(ctx, Remote{c.SSHAlias, d.ConfigPath()}, fetched+".local"); err != nil {
 		c.Status, c.Problem = StatusRefused, err.Error()
 		return
 	}
@@ -213,9 +242,9 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 		return
 	}
 	c.LocalSHA256 = digestHex(local)
-	remote := c.SSHAlias + ":" + c.Target
-	if err := r.Transport.run(ctx, scpCommand(remote, fetched)); err != nil {
-		c.Status, c.Problem = StatusRefused, "fetching "+remote+": "+err.Error()
+	remote := Remote{c.SSHAlias, c.Target}
+	if err := r.Transport.Fetch(ctx, remote, fetched); err != nil {
+		c.Status, c.Problem = StatusRefused, "fetching "+remote.String()+": "+err.Error()
 		return
 	}
 	before, err := os.ReadFile(fetched)
@@ -250,10 +279,8 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 	c.Revision = c.Target + ".rev-" + c.BeforeSHA256[:16]
 	c.Diff = lineDiff(string(before), string(after))
 	stage := c.stage(stageDir)
-	c.Commands = [][]string{
-		scpCommand(filepath.Join(stage, "previous.toml"), c.SSHAlias+":"+c.Revision),
-		scpCommand(filepath.Join(stage, "managed.toml"), remote),
-		scpCommand(remote, filepath.Join(stage, "verify.toml")),
+	for _, x := range c.transfers(filepath.Join(stage, "previous.toml"), filepath.Join(stage, "managed.toml"), filepath.Join(stage, "verify.toml")) {
+		c.Commands = append(c.Commands, x.command())
 	}
 }
 
@@ -348,9 +375,16 @@ type Step struct {
 // Apply carries out the dry-run plan in stageDir.
 // It plans again and refuses unless the result is identical and the staged previews are intact,
 // and refuses a plan needing approval unless approve is that plan's digest.
-// Each changed copy keeps its previous managed file as a revision, then gets the new managed file, then is read back and verified.
+// Each changed copy keeps its previous managed file as a revision, then gets the new managed file;
+// only after both puts succeed is it read back and verified.
 // The local config is never written; validated managed inputs replace preview source paths in transport commands.
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
+//
+// Apply is the private config directory's single writer: after checking the machine set and before any transport
+// it creates .rollout.lock there exclusively, and removes it when it returns, whether it succeeded or failed.
+// While the lock exists Apply is refused with an error wrapping fs.ErrExist, and the lock is left as it is.
+// A lock left by a writer that stopped without returning is not removed automatically;
+// an operator removes it once they have confirmed that writer has stopped.
 func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines ...string) (*Receipt, error) {
 	saved, err := ReadPlan(stageDir)
 	if err != nil {
@@ -443,13 +477,10 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 			return cr
 		}
 	}
-	for i, planned := range c.Commands {
-		argv := slices.Clone(planned)
-		if i < 2 {
-			argv[len(argv)-2] = filepath.Join(inputs, filepath.Base(argv[len(argv)-2]))
-		}
-		step := Step{Command: argv}
-		err := r.Transport.run(ctx, argv)
+	stage := c.stage(stageDir)
+	for _, x := range c.transfers(filepath.Join(inputs, "previous.toml"), filepath.Join(inputs, "managed.toml"), filepath.Join(stage, "verify.toml")) {
+		step := Step{Command: x.command()}
+		err := x.run(ctx, r.Transport)
 		if err != nil {
 			step.Error = err.Error()
 		}
@@ -459,7 +490,7 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 			return cr
 		}
 	}
-	verified, err := os.ReadFile(filepath.Join(c.stage(stageDir), "verify.toml"))
+	verified, err := os.ReadFile(filepath.Join(stage, "verify.toml"))
 	if err != nil {
 		cr.Status, cr.Error = StatusFailed, err.Error()
 		return cr

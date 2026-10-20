@@ -116,7 +116,8 @@ For each copy that changes, it then runs the three planned commands:
 3. read `managed.toml` back and compare its sha256 with the plan.
 
 A failure on one copy does not stop the others.
-The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed` or `verify_failed`), its before, after and read-back digests, the revision file and every command with its error.
+The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed` or `verify_failed`), its before and after digests, its read-back digest when verification reaches digest comparison, the revision file and every attempted command with its error.
+Read-back follows successful uploads only; failed transfers are recorded as failed and may leave partial remote files without a read-back digest.
 Apply exits 1 unless every copy is applied or unchanged; a plan that is no longer current needs a new dry run.
 Applying an unchanged plan performs no remote writes, but still writes a local receipt.
 
@@ -148,7 +149,7 @@ Rollouts run `scp` from `PATH` with fixed argument lists, never through a local 
 SSH's own config, agent, keys and host-key checking decide access; Guildhall adds no options that weaken them, and batch mode makes `scp` fail instead of prompting.
 No remote command is run.
 Roster values that reach the command line are restricted to characters that no remote shell or `scp` interprets.
-Each `scp` run is bounded by a two-minute timeout.
+Each `scp` run is bounded by a two-minute timeout; a run stopped by its timeout is reported as a timeout, and one that fails before transferring leaves its destination unchanged.
 
 ## Revisions and active tasks
 

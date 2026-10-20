@@ -2,16 +2,18 @@ package cli
 
 import (
 	"bytes"
-	"context"
-	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/steward"
+	"github.com/ndrwl/guildhall/internal/steward/stewardtest"
 )
 
 const (
@@ -41,59 +43,47 @@ path = '/srv/src/cli'
 remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"
 `
-	cliRemote = "guild-ws:/home/guild/tools/config.toml"
 )
 
-var fakeRemote = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]+):(.+)$`)
+var (
+	cliConfig  = steward.Remote{Alias: "guild-ws", Path: "/home/guild/tools/config.toml"}
+	cliManaged = steward.Remote{Alias: "guild-ws", Path: "/home/guild/tools/managed.toml"}
+)
 
-// stewardApp is an App whose scp is answered in-process from a fake remote tree.
-func stewardApp(t *testing.T, managed string) (app *App, stdout, stderr *bytes.Buffer, stewardConfig, remoteRoot string) {
+// stewardApp is an App whose rollouts reach an in-memory fleet holding one Director copy.
+func stewardApp(t *testing.T, managed string) (app *App, stdout, stderr *bytes.Buffer, stewardConfig string, fleet *stewardtest.Fleet) {
 	t.Helper()
-	private, remoteRoot := t.TempDir(), t.TempDir()
+	stewardConfig = writeStewardConfig(t, managed)
+	fleet = stewardtest.NewFleet()
+	fleet.Write(cliConfig, []byte(cliCopy))
+	managedCopy, err := config.EncodeManaged(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fleet.Write(cliManaged, managedCopy)
+	app, stdout, stderr = newTestApp(nil, nil)
+	app.Copier = fleet
+	return app, stdout, stderr, stewardConfig, fleet
+}
+
+// writeStewardConfig writes a private config directory with cliRoster and managed, and a Steward config naming it.
+func writeStewardConfig(t *testing.T, managed string) string {
+	t.Helper()
+	private := t.TempDir()
 	for name, content := range map[string]string{"roster.toml": cliRoster, "managed.toml": managed} {
 		if err := os.WriteFile(filepath.Join(private, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	stewardConfig = filepath.Join(t.TempDir(), "steward.toml")
+	stewardConfig := filepath.Join(t.TempDir(), "steward.toml")
 	if err := os.WriteFile(stewardConfig, []byte("schema_version = 1\nmode = \"steward\"\n[private_config]\nlocation = '"+private+"'\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	local := func(operand string) string {
-		if m := fakeRemote.FindStringSubmatch(operand); m != nil {
-			return filepath.Join(remoteRoot, m[1], filepath.FromSlash(m[2]))
-		}
-		return operand
-	}
-	if err := os.MkdirAll(filepath.Dir(local(cliRemote)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(local(cliRemote), []byte(cliCopy), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	managedCopy, err := config.EncodeManaged(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(local(strings.Replace(cliRemote, "config.toml", "managed.toml", 1)), managedCopy, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	app, stdout, stderr = newTestApp(map[string]string{"scp": "/fake/scp"}, nil)
-	app.Output = func(_ context.Context, path string, args ...string) ([]byte, error) {
-		if path != "/fake/scp" || len(args) != 7 || strings.Join(args[:5], " ") != "-q -B -o BatchMode=yes --" {
-			return nil, errors.New("unexpected command")
-		}
-		data, err := os.ReadFile(local(args[5]))
-		if err != nil {
-			return []byte("no such file"), err
-		}
-		return nil, os.WriteFile(local(args[6]), data, 0o600)
-	}
-	return app, stdout, stderr, stewardConfig, remoteRoot
+	return stewardConfig
 }
 
 func TestStewardRolloutDryRunThenApply(t *testing.T) {
-	app, stdout, stderr, cfg, root := stewardApp(t, "schema_version = 1\n[managed.standards_revision]\nvalue = \"standards-2\"\n")
+	app, stdout, stderr, cfg, fleet := stewardApp(t, "schema_version = 1\n[managed.standards_revision]\nvalue = \"standards-2\"\n")
 	plan := filepath.Join(t.TempDir(), "plan")
 	args := []string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan}
 
@@ -107,16 +97,17 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 		"workstation/tools (guild-ws:/home/guild/tools/managed.toml): change",
 		`added standards_revision = "standards-2"`,
 		"+[managed.standards_revision]",
-		"scp -q -B -o BatchMode=yes -- " + filepath.Join(plan, "files", "workstation", "tools", "managed.toml") + " " + strings.Replace(cliRemote, "config.toml", "managed.toml", 1),
+		"scp -q -B -o BatchMode=yes -- " + filepath.Join(plan, "files", "workstation", "tools", "managed.toml") + " " + cliManaged.String(),
 		"--apply",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry run output lacks %q:\n%s", want, out)
 		}
 	}
-	remote, _ := os.ReadFile(filepath.Join(root, "guild-ws", "home", "guild", "tools", "config.toml"))
-	if string(remote) != cliCopy {
-		t.Fatal("dry run changed the copy")
+	for _, call := range fleet.Calls() {
+		if !strings.HasPrefix(call, "fetch ") {
+			t.Errorf("dry run made %s", call)
+		}
 	}
 
 	stdout.Reset()
@@ -126,11 +117,12 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 	if out := stdout.String(); !strings.Contains(out, "workstation/tools: applied") || !strings.Contains(out, "receipt: "+plan) {
 		t.Errorf("apply output:\n%s", out)
 	}
-	remote, _ = os.ReadFile(filepath.Join(root, "guild-ws", "home", "guild", "tools", "config.toml"))
-	if string(remote) != cliCopy {
+	local, _ := fleet.Read(cliConfig)
+	if string(local) != cliCopy {
 		t.Fatal("local config changed")
 	}
-	combined, err := config.Load(filepath.Join(root, "guild-ws", "home", "guild", "tools", "config.toml"))
+	published, _ := fleet.Read(cliManaged)
+	combined, err := config.ParseCombined(local, published)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,18 +132,17 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 }
 
 func TestStewardApplyRefusesDifferentMachinesBeforeTransport(t *testing.T) {
-	app, _, stderr, cfg, _ := stewardApp(t, "schema_version = 1\n")
+	app, _, stderr, cfg, fleet := stewardApp(t, "schema_version = 1\n")
 	plan := filepath.Join(t.TempDir(), "plan")
 	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 0 {
 		t.Fatal(stderr.String())
 	}
-	calls := 0
-	app.Output = func(context.Context, string, ...string) ([]byte, error) {
-		calls++
-		return nil, errors.New("unexpected transport")
+	fleet.Calls()
+	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "laptop", "--plan", plan, "--apply"}); code != 1 || !strings.Contains(stderr.String(), "requested machines differ") {
+		t.Fatalf("code %d: %s", code, stderr)
 	}
-	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "laptop", "--plan", plan, "--apply"}); code != 1 || calls != 0 || !strings.Contains(stderr.String(), "requested machines differ") {
-		t.Fatalf("code %d calls %d: %s", code, calls, stderr)
+	if calls := fleet.Calls(); len(calls) != 0 {
+		t.Fatalf("refused apply made %q", calls)
 	}
 }
 
@@ -231,9 +222,81 @@ func TestStewardRolloutRefusals(t *testing.T) {
 			}
 		})
 	}
+	app.Copier = nil
 	app.LookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	stderr.Reset()
 	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 1 || !strings.Contains(stderr.String(), "scp") {
 		t.Fatalf("missing scp: exit %d; stderr: %s", code, stderr)
+	}
+}
+
+func TestStewardDryRunReportsUnreachableCopy(t *testing.T) {
+	app, stdout, stderr, cfg, fleet := stewardApp(t, "schema_version = 1\n")
+	fleet.Refuse("guild-ws")
+	plan := filepath.Join(t.TempDir(), "plan")
+	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 1 {
+		t.Fatalf("dry run exit %d, want 1; stderr: %s", code, stderr)
+	}
+	for _, want := range []string{"workstation/tools (guild-ws:/home/guild/tools/managed.toml): refused", "problem: fleet: guild-ws: connection refused"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("dry run output lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// scpStubEnv makes the test binary act as scp, appending its arguments to the named file and refusing the copy.
+const scpStubEnv = "GUILDHALL_TEST_SCP_LOG"
+
+func runStewardSCPStub() {
+	if log := os.Getenv(scpStubEnv); log != "" {
+		f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, err = fmt.Fprintln(f, strings.Join(os.Args[1:], " "))
+			if cerr := f.Close(); err == nil {
+				err = cerr
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "stub scp:", err)
+			os.Exit(2)
+		}
+		fmt.Fprintln(os.Stderr, "stub scp: connection refused")
+		os.Exit(1)
+	}
+}
+
+// TestStewardRolloutRunsSCPFromPath checks the real wiring: without a Copier, New's App
+// finds scp on PATH and runs it, in a separate process, with the planned arguments.
+func TestStewardRolloutRunsSCPFromPath(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	name := "scp"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	copyFile(t, self, filepath.Join(bin, name))
+	log := filepath.Join(t.TempDir(), "scp.log")
+	t.Setenv("PATH", bin)
+	t.Setenv(scpStubEnv, log)
+
+	app := New()
+	var stdout, stderr bytes.Buffer
+	app.Stdout, app.Stderr = &stdout, &stderr
+	cfg := writeStewardConfig(t, "schema_version = 1\n")
+	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", filepath.Join(t.TempDir(), "plan"), "--dry-run"}); code != 1 {
+		t.Fatalf("dry run exit %d, want 1; stderr: %s", code, &stderr)
+	}
+	if want := "problem: scp: exit status 1: stub scp: connection refused"; !strings.Contains(stdout.String(), want) {
+		t.Errorf("dry run output lacks %q:\n%s", want, &stdout)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "-q -B -o BatchMode=yes -- " + cliConfig.String() + " "; !strings.HasPrefix(string(data), want) || strings.Count(string(data), "\n") != 1 {
+		t.Errorf("scp ran with %q, want one run starting %q", data, want)
 	}
 }
