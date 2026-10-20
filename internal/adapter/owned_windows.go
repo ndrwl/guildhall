@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -14,7 +15,14 @@ const nativeStopSupported = true
 
 var queryProcessImage = syscall.NewLazyDLL("kernel32.dll").NewProc("QueryFullProcessImageNameW")
 
-type windowsWorker struct{ handle syscall.Handle }
+// windowsWorker holds the verified process handle. Its mutex serializes stop
+// and close, so concurrent stops see one termination and no call ever uses a
+// handle after it was released.
+type windowsWorker struct {
+	mu     sync.Mutex
+	handle syscall.Handle
+	closed bool
+}
 
 func processCreationTime(h syscall.Handle) (uint64, error) {
 	var created, exited, kernel, user syscall.Filetime
@@ -74,6 +82,11 @@ func openNativeWorker(pid uint32, created uint64, exe string) (nativeWorker, err
 }
 
 func (w *windowsWorker) stop(ctx context.Context) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return errWorkerClosed
+	}
 	state, err := syscall.WaitForSingleObject(w.handle, 0)
 	if err != nil {
 		return err
@@ -85,11 +98,12 @@ func (w *windowsWorker) stop(ctx context.Context) error {
 		return err
 	}
 	if err := syscall.TerminateProcess(w.handle, 1); err != nil {
-		// A concurrent natural exit is success only if the retained handle
-		// itself proves termination.
-		if state, waitErr := syscall.WaitForSingleObject(w.handle, 0); waitErr != nil || state != syscall.WAIT_OBJECT_0 {
+		// A process already exiting refuses termination; it counts as
+		// stopped only if the retained handle signals exit shortly after.
+		if state, waitErr := syscall.WaitForSingleObject(w.handle, terminateGrace); waitErr != nil || state != syscall.WAIT_OBJECT_0 {
 			return err
 		}
+		return nil
 	}
 	for {
 		if err := ctx.Err(); err != nil {
@@ -109,4 +123,16 @@ func (w *windowsWorker) stop(ctx context.Context) error {
 	}
 }
 
-func (w *windowsWorker) close() error { return syscall.CloseHandle(w.handle) }
+// terminateGrace bounds the wait, in milliseconds, for a process that refused
+// termination because it was already exiting.
+const terminateGrace = 5000
+
+func (w *windowsWorker) close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return nil
+	}
+	w.closed = true
+	return syscall.CloseHandle(w.handle)
+}

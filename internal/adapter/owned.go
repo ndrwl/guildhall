@@ -19,17 +19,23 @@ var ErrAttemptCancelled = errors.New("artisan attempt is cancelled")
 // ErrStopUnsupported means this platform cannot establish native worker ownership.
 var ErrStopUnsupported = errors.New("identity-bound worker stopping is unsupported on this platform")
 
-// WorkerStopper is the consumer boundary for stopping an owned worker. A nil
-// error proves termination, not merely delivery of an interrupt. It does not
-// delete work or mark the task finished.
-type WorkerStopper interface {
-	Stop(context.Context) error
-}
-
+// nativeWorker is the operating system's handle on one verified worker
+// process, retained from the moment ownership was established.
+//   - stop terminates that exact process and returns nil only once the handle
+//     itself shows it has exited; it is idempotent, safe to call concurrently,
+//     and returns nil for a process that already exited on its own.
+//   - stop with an ended context returns the context's error without
+//     terminating a running process.
+//   - close releases the handle and is idempotent; stop after close returns
+//     errWorkerClosed and never acts on a released handle, whose value the
+//     operating system may already have given to another object.
 type nativeWorker interface {
 	stop(context.Context) error
 	close() error
 }
+
+// errWorkerClosed reports a stop on a released native handle.
+var errWorkerClosed = errors.New("worker handle was released; termination is unverified")
 
 type workerHello struct {
 	Identity
@@ -49,12 +55,20 @@ type OwnedWorker struct {
 	token    string
 	listener *net.TCPListener
 	worker   nativeWorker
+	// open verifies a handshake's process identity and returns its handle.
+	open func(pid uint32, created uint64, exe string) (nativeWorker, error)
 }
 
+// NewOwnedWorker prepares to own the worker for spec, whose executable is exe.
+// It returns ErrStopUnsupported where the platform has no native handle stop.
 func NewOwnedWorker(spec Spec, exe string) (*OwnedWorker, error) {
 	if !nativeStopSupported {
 		return nil, ErrStopUnsupported
 	}
+	return newOwnedWorker(spec, exe, openNativeWorker)
+}
+
+func newOwnedWorker(spec Spec, exe string, open func(uint32, uint64, string) (nativeWorker, error)) (*OwnedWorker, error) {
 	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
@@ -69,7 +83,7 @@ func NewOwnedWorker(spec Spec, exe string) (*OwnedWorker, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &OwnedWorker{spec: spec, exe: exe, token: hex.EncodeToString(token[:]), listener: listener}, nil
+	return &OwnedWorker{spec: spec, exe: exe, token: hex.EncodeToString(token[:]), listener: listener, open: open}, nil
 }
 
 func (o *OwnedWorker) Address() string { return o.listener.Addr().String() }
@@ -105,7 +119,7 @@ func (o *OwnedWorker) Accept(ctx context.Context) error {
 	if hello.Token != o.token || hello.Identity != o.spec.Identity || hello.Result != o.spec.ResultFile {
 		return errors.New("worker handshake does not belong to this attempt")
 	}
-	o.worker, err = openNativeWorker(hello.PID, hello.Created, o.exe)
+	o.worker, err = o.open(hello.PID, hello.Created, o.exe)
 	if err != nil {
 		return err
 	}

@@ -2,51 +2,130 @@ package adapter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
-type failingWorker struct{}
+// These cases pin OwnedWorker's cancellation contract on every platform: a
+// stop records the attempt's cancellation before acting, a nil Stop is
+// claimed only when the native handle proved termination, and a late result
+// is rejected whatever happened to the process. Ownership is established
+// through the real loopback handshake; only the native handle is the
+// fakeNative double, whose contract is shared with the Windows handle.
 
-func (failingWorker) stop(context.Context) error { return errors.New("termination failed") }
-func (failingWorker) close() error               { return nil }
-
-func TestOwnedWorkerFailedStopRejectsLateResult(t *testing.T) {
-	for _, established := range []bool{false, true} {
-		t.Run(map[bool]string{false: "no-ownership", true: "termination-failure"}[established], func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "result.json")
-			listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			id := Identity{TaskID: "task", AttemptID: "attempt"}
-			o := &OwnedWorker{spec: Spec{Identity: id, ResultFile: path}, listener: listener}
-			defer func() {
-				if err := o.Close(); err != nil {
-					t.Errorf("close owned worker: %v", err)
-				}
-			}()
-			if established {
-				o.worker = failingWorker{}
-			}
-			if err := o.Stop(context.Background()); err == nil {
-				t.Fatal("claimed termination without proof")
-			}
-			if _, err := ReadResult(path, id); !errors.Is(err, ErrAttemptCancelled) {
-				t.Fatalf("late read = %v", err)
-			}
-			if err := WriteResult(path, Result{Identity: id, Status: StatusSucceeded, Summary: "late", Outputs: []Output{}}); !errors.Is(err, ErrAttemptCancelled) {
-				t.Fatalf("late write = %v", err)
-			}
-			if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("late result exists: %v", err)
-			}
-		})
+// joinAs speaks the worker side of the handshake for o.
+func joinAs(t *testing.T, o *OwnedWorker, spec Spec) {
+	t.Helper()
+	conn, err := net.Dial("tcp4", o.Address())
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer func() { _ = conn.Close() }()
+	if err := json.NewEncoder(conn).Encode(workerHello{Identity: spec.Identity, Token: o.Token(), Result: spec.ResultFile, PID: 4242, Created: 1}); err != nil {
+		t.Fatal(err)
+	}
+	var ack [6]byte
+	if _, err := io.ReadFull(conn, ack[:]); err != nil || string(ack[:]) != "ready\n" {
+		t.Fatalf("handshake ack %q, %v", ack, err)
+	}
+}
+
+// ownedWithFake returns an OwnedWorker bound by handshake to native, or not
+// bound at all when native is nil.
+func ownedWithFake(t *testing.T, native *fakeNative) (*OwnedWorker, Spec) {
+	t.Helper()
+	dir := t.TempDir()
+	spec := Spec{Identity: Identity{TaskID: "task", AttemptID: "attempt"}, WorkDir: dir,
+		PromptFile: filepath.Join(dir, "prompt"), ResultFile: filepath.Join(dir, "result.json")}
+	o, err := newOwnedWorker(spec, "worker", func(pid uint32, created uint64, exe string) (nativeWorker, error) {
+		if pid != 4242 || created != 1 || exe != "worker" {
+			return nil, errors.New("unexpected identity")
+		}
+		return native, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = o.Close() })
+	if native != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- o.Accept(ctx) }()
+		joinAs(t, o, spec)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	return o, spec
+}
+
+func assertLateResultRejected(t *testing.T, spec Spec) {
+	t.Helper()
+	if _, err := ReadResult(spec.ResultFile, spec.Identity); !errors.Is(err, ErrAttemptCancelled) {
+		t.Errorf("late read = %v, want ErrAttemptCancelled", err)
+	}
+	if err := WriteResult(spec.ResultFile, Result{Identity: spec.Identity, Status: StatusSucceeded, Summary: "late", Outputs: []Output{}}); !errors.Is(err, ErrAttemptCancelled) {
+		t.Errorf("late write = %v, want ErrAttemptCancelled", err)
+	}
+	if _, err := os.Stat(spec.ResultFile); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("late result exists: %v", err)
+	}
+}
+
+func TestOwnedWorkerStopVerifiedTermination(t *testing.T) {
+	native := newFakeNative()
+	o, spec := ownedWithFake(t, native)
+	if err := o.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop = %v", err)
+	}
+	if native.isRunning() {
+		t.Error("Stop returned nil but the native worker still runs")
+	}
+	if err := o.Stop(context.Background()); err != nil {
+		t.Errorf("repeat Stop = %v", err)
+	}
+	assertLateResultRejected(t, spec)
+}
+
+func TestOwnedWorkerStopWithoutProofRejectsLateResult(t *testing.T) {
+	t.Run("ownership never established", func(t *testing.T) {
+		o, spec := ownedWithFake(t, nil)
+		if err := o.Stop(context.Background()); err == nil {
+			t.Error("claimed termination without ownership")
+		}
+		assertLateResultRejected(t, spec)
+	})
+	t.Run("termination failed", func(t *testing.T) {
+		native := newFakeNative()
+		native.stopErr = errors.New("termination failed")
+		o, spec := ownedWithFake(t, native)
+		if err := o.Stop(context.Background()); err == nil {
+			t.Error("claimed termination after it failed")
+		}
+		assertLateResultRejected(t, spec)
+	})
+	t.Run("handle already released", func(t *testing.T) {
+		native := newFakeNative()
+		o, spec := ownedWithFake(t, native)
+		if err := o.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := o.Stop(context.Background()); !errors.Is(err, errWorkerClosed) {
+			t.Errorf("Stop after Close = %v, want errWorkerClosed", err)
+		}
+		if !native.isRunning() {
+			t.Error("Stop after Close acted on the worker")
+		}
+		assertLateResultRejected(t, spec)
+	})
 }
 
 func TestOwnedWorkerUnsupported(t *testing.T) {

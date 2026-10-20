@@ -187,7 +187,7 @@ func (a *App) runInTab(ctx context.Context, spec adapter.Spec, cmd adapter.Comma
 		return a.fail(err)
 	}
 	var owned *adapter.OwnedWorker
-	var stopper adapter.WorkerStopper
+	var stopper workerStopper
 	if stopOnTimeout && runtime.GOOS == "windows" {
 		owned, err = adapter.NewOwnedWorker(spec, cmd.Argv[0])
 		if err != nil {
@@ -262,4 +262,11 @@ func (a *App) report(r adapter.Result, err error) int {
 // if stderr is unwritable.
 func (a *App) notef(format string, args ...any) {
 	_, _ = fmt.Fprintf(a.Stderr, format, args...)
+}
+
+// workerStopper stops an owned Artisan process. A nil error proves the process
+// terminated, not merely that an interrupt was delivered; it neither deletes
+// work nor finishes the task.
+type workerStopper interface {
+	Stop(context.Context) error
 }
