@@ -10,13 +10,17 @@ package skills
 import (
 	"embed"
 	"errors"
+	"fmt"
 	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
 )
 
 // ErrNotEmpty reports an install directory that already holds files; an installed release root is never mixed or replaced.
 var ErrNotEmpty = errors.New("install directory is not empty")
 
-//go:embed CREDITS.md
+//go:embed CREDITS.md guildhall-*
 var release embed.FS
 
 // Release returns the embedded root: CREDITS.md and one directory per skill, with exact bytes and LF line endings.
@@ -27,5 +31,38 @@ func Release() fs.FS { return release }
 // and every other file 0644, so a skill's tree digest is the one Release holds.
 // On error nothing Install wrote is left behind.
 func Install(dir string) error {
-	return errors.New("skills: install not implemented")
+	entries, err := os.ReadDir(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return fmt.Errorf("skills: %w", err)
+	case len(entries) > 0:
+		return fmt.Errorf("skills: %s: %w", dir, ErrNotEmpty)
+	}
+	if err := install(dir); err != nil {
+		_ = os.RemoveAll(dir)
+		return fmt.Errorf("skills: install %s: %w", dir, err)
+	}
+	return nil
+}
+
+func install(dir string) error {
+	return fs.WalkDir(release, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dir, filepath.FromSlash(p))
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := release.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		mode := fs.FileMode(0o644)
+		if path.Base(path.Dir(p)) == "scripts" {
+			mode = 0o755
+		}
+		return os.WriteFile(target, data, mode)
+	})
 }

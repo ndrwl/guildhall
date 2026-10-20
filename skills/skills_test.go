@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -102,13 +103,7 @@ func TestReleaseHoldsEveryShippedSkill(t *testing.T) {
 			embedded = append(embedded, e.Name())
 		}
 	}
-	want := slices.Sorted(func(yield func(string) bool) {
-		for name := range goldenDigests(t) {
-			if !yield(name) {
-				return
-			}
-		}
-	})
+	want := slices.Sorted(maps.Keys(goldenDigests(t)))
 	if got := shipped(t); !slices.Equal(got, want) {
 		t.Errorf("skill directories = %q, golden = %q", got, want)
 	}
@@ -217,6 +212,9 @@ func TestRegularFilesWithLFOnly(t *testing.T) {
 // sentenceBreak finds a sentence end followed by another sentence on the same line.
 var sentenceBreak = regexp.MustCompile("[.!?][\"')`*_]*\\s+[\"'(`*_]*[A-Z]")
 
+// listMarker is a Markdown list item's marker, whose "1." is not a sentence end.
+var listMarker = regexp.MustCompile(`^\s*(\d+\.|[-*])\s+`)
+
 func TestOneSentencePerLine(t *testing.T) {
 	err := fs.WalkDir(skills.Release(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
@@ -236,7 +234,7 @@ func TestOneSentencePerLine(t *testing.T) {
 				fenced = !fenced
 				continue
 			}
-			if !fenced && sentenceBreak.MatchString(line) {
+			if !fenced && sentenceBreak.MatchString(listMarker.ReplaceAllString(line, "")) {
 				t.Errorf("%s: body line %d has more than one sentence: %q", p, i+1, line)
 			}
 		}
