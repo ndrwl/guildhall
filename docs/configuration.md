@@ -121,7 +121,11 @@ Human and automated review produce the same outcome, schema `guildhall.review-ou
 
 An outcome counts only for the exact code head, specification digest and standards revision it names.
 
-### Not decided here
+### Workflow-edit authority
 
-Who may author or approve workflow edits, and any minimum review requirement, are open product questions.
+Directors may propose workflow changes.
+Guildmaster approval is required before applying changes that affect review requirements, required checks or approval steps.
+No blanket delegated authority or automatic self-approval is granted.
+A task keeps its pinned workflow revision when a workflow is edited.
+Enforcing this policy belongs to a later execution layer, not this foundation package.
 Parsing and validation accept or refuse a definition only; they never activate it.
