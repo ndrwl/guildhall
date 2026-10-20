@@ -4,7 +4,7 @@ The interpreter launches Artisan attempts through one seam, `interp.Launcher`, d
 `interptest.Script` is its scripted double, the mock agent: tests describe the attempts they expect the interpreter to launch and what each attempt should return.
 The mock checks the prompts, skills, artefact revisions and standards it is given and writes the scripted response.
 It makes no model calls and is not evidence of semantic intelligence: it checks the launched attempt and its files and returns the scripted answer.
-Interpreter integration and result intake are separate work.
+The [interpreter](interpreter.md) launches through it; result intake from a real runtime is separate work.
 
 ## The launch seam
 
