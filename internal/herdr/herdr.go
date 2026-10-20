@@ -1,0 +1,530 @@
+// Package herdr drives the Herdr terminal multiplexer through its documented
+// command-line API (`herdr <group> <command> ... --session <name>`).
+//
+// Every call names its session explicitly; the ambient HERDR_SESSION,
+// HERDR_SOCKET_PATH and pane context variables never choose the target.
+// The client creates workspaces and tabs, reads them, runs a command in a tab it
+// created, interrupts that command, and closes only tabs it created.
+// It never starts, stops or deletes Herdr servers or sessions.
+package herdr
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+// MinVersion is the oldest Herdr release whose client and server this package
+// has been exercised against.
+const MinVersion = "0.9.5"
+
+var (
+	// ErrUnsupportedVersion reports a Herdr client or server older than MinVersion.
+	ErrUnsupportedVersion = errors.New("herdr version is older than the supported minimum " + MinVersion)
+	// ErrServerNotRunning reports that the named session has no running server.
+	// The client never starts one.
+	ErrServerNotRunning = errors.New("herdr session has no running server")
+)
+
+// sessionName is the accepted shape of an explicit session name.
+var sessionName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+// idShape is the accepted shape of a workspace, tab or pane id argument; ids
+// are opaque but must never be mistaken for an option.
+var idShape = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_-]*$`)
+
+// ambientVars are inherited Herdr context variables removed from every call so
+// only the explicit session selects the target server.
+var ambientVars = []string{"HERDR_SESSION", "HERDR_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HERDR_ENV"}
+
+// Options configures a Client.
+type Options struct {
+	// Session is the explicit, non-default Herdr session every call targets.
+	Session string
+	// Command is the Herdr executable followed by any leading arguments, for
+	// example a wrapper script run by an interpreter.
+	Command []string
+}
+
+// Client runs Herdr API commands against one named session.
+type Client struct {
+	session string
+	command []string
+	// run executes argv with env and returns stdout, stderr and the exit code;
+	// err is set only when the process could not be run at all.
+	run     func(ctx context.Context, argv, env []string) (stdout, stderr []byte, exit int, err error)
+	environ func() []string
+}
+
+// New returns a client for the named session. The session must be given and
+// must not be Herdr's default session.
+func New(opts Options) (*Client, error) {
+	if !sessionName.MatchString(opts.Session) {
+		return nil, fmt.Errorf("herdr session %q: need a name of letters, digits, '-' or '_'", opts.Session)
+	}
+	if opts.Session == "default" {
+		return nil, errors.New(`herdr session "default" is refused: name a dedicated session`)
+	}
+	if len(opts.Command) == 0 || opts.Command[0] == "" {
+		return nil, errors.New("herdr command is empty")
+	}
+	return &Client{
+		session: opts.Session,
+		command: append([]string(nil), opts.Command...),
+		run:     execRun,
+		environ: os.Environ,
+	}, nil
+}
+
+// Session returns the session this client targets.
+func (c *Client) Session() string { return c.session }
+
+func execRun(ctx context.Context, argv, env []string) ([]byte, []byte, int, error) {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Env = env
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	// A cancelled call is reported as the context's error, never as the exit
+	// status the killed process happened to leave.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return stdout.Bytes(), stderr.Bytes(), -1, fmt.Errorf("herdr stopped: %w", ctxErr)
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return stdout.Bytes(), stderr.Bytes(), exitErr.ExitCode(), nil
+	}
+	if err != nil {
+		return nil, nil, -1, err
+	}
+	return stdout.Bytes(), stderr.Bytes(), 0, nil
+}
+
+// APIError is an error reported by the Herdr server as
+// {"error":{"code":...,"message":...}}.
+type APIError struct {
+	Code    string
+	Message string
+}
+
+func (e *APIError) Error() string { return fmt.Sprintf("herdr %s: %s", e.Code, e.Message) }
+
+// IsNotFound reports whether err is a Herdr not-found error for a workspace,
+// tab or pane.
+func IsNotFound(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && strings.HasSuffix(apiErr.Code, "_not_found")
+}
+
+// call runs one Herdr subcommand and returns its stdout.
+func (c *Client) call(ctx context.Context, args ...string) ([]byte, error) {
+	argv := make([]string, 0, len(c.command)+len(args)+2)
+	argv = append(argv, c.command...)
+	argv = append(argv, args...)
+	argv = append(argv, "--session", c.session)
+	stdout, stderr, exit, err := c.run(ctx, argv, c.env())
+	if err != nil {
+		return nil, fmt.Errorf("herdr %s: %w", strings.Join(args[:min(2, len(args))], " "), err)
+	}
+	if exit != 0 {
+		var body struct {
+			Error *struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(bytes.TrimSpace(stderr), &body) == nil && body.Error != nil {
+			return nil, &APIError{Code: body.Error.Code, Message: body.Error.Message}
+		}
+		return nil, fmt.Errorf("herdr %s: exit %d: %s", strings.Join(args[:min(2, len(args))], " "), exit, strings.TrimSpace(string(stderr)))
+	}
+	return stdout, nil
+}
+
+func (c *Client) env() []string {
+	var env []string
+	for _, kv := range c.environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		ambient := false
+		for _, v := range ambientVars {
+			if strings.EqualFold(name, v) {
+				ambient = true
+				break
+			}
+		}
+		if !ambient {
+			env = append(env, kv)
+		}
+	}
+	return append(env, "HERDR_SESSION="+c.session)
+}
+
+// decode parses a success response {"id":...,"result":{...}} into result.
+func decode(out []byte, result any) error {
+	var body struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(out, &body); err != nil {
+		return fmt.Errorf("herdr response is not JSON: %w", err)
+	}
+	if len(body.Result) == 0 {
+		return errors.New("herdr response has no result")
+	}
+	if err := json.Unmarshal(body.Result, result); err != nil {
+		return fmt.Errorf("herdr result: %w", err)
+	}
+	return nil
+}
+
+func checkID(kind, id string) error {
+	if !idShape.MatchString(id) {
+		return fmt.Errorf("herdr %s id %q is malformed", kind, id)
+	}
+	return nil
+}
+
+// Status is the client and server state of the session.
+type Status struct {
+	ClientVersion string
+	ServerVersion string
+	Running       bool
+}
+
+// Status reads `herdr status --json` and checks that the session's server is
+// running, is the session asked for, and that both ends meet MinVersion.
+func (c *Client) Status(ctx context.Context) (Status, error) {
+	out, err := c.call(ctx, "status", "--json")
+	if err != nil {
+		return Status{}, err
+	}
+	var body struct {
+		Client struct {
+			Version string `json:"version"`
+			Session string `json:"session"`
+		} `json:"client"`
+		Server struct {
+			Running bool   `json:"running"`
+			Version string `json:"version"`
+			Session string `json:"session"`
+		} `json:"server"`
+	}
+	if err := json.Unmarshal(out, &body); err != nil {
+		return Status{}, fmt.Errorf("herdr status is not JSON: %w", err)
+	}
+	st := Status{ClientVersion: body.Client.Version, ServerVersion: body.Server.Version, Running: body.Server.Running}
+	if body.Client.Session != c.session {
+		return st, fmt.Errorf("herdr status reports session %q, want %q", body.Client.Session, c.session)
+	}
+	if !st.Running {
+		return st, fmt.Errorf("session %q: %w", c.session, ErrServerNotRunning)
+	}
+	if body.Server.Session != c.session {
+		return st, fmt.Errorf("herdr server reports session %q, want %q", body.Server.Session, c.session)
+	}
+	for _, v := range []string{st.ClientVersion, st.ServerVersion} {
+		cmp, err := compareVersions(v, MinVersion)
+		if err != nil {
+			return st, err
+		}
+		if cmp < 0 {
+			return st, fmt.Errorf("herdr %s: %w", v, ErrUnsupportedVersion)
+		}
+	}
+	return st, nil
+}
+
+// compareVersions compares two MAJOR.MINOR.PATCH[-PRERELEASE] versions; a
+// prerelease sorts before its release.
+func compareVersions(a, b string) (int, error) {
+	pa, preA, err := parseVersion(a)
+	if err != nil {
+		return 0, err
+	}
+	pb, preB, err := parseVersion(b)
+	if err != nil {
+		return 0, err
+	}
+	for i := range pa {
+		if pa[i] != pb[i] {
+			if pa[i] < pb[i] {
+				return -1, nil
+			}
+			return 1, nil
+		}
+	}
+	switch {
+	case preA == preB:
+		return 0, nil
+	case preA == "":
+		return 1, nil
+	case preB == "":
+		return -1, nil
+	}
+	return strings.Compare(preA, preB), nil
+}
+
+func parseVersion(v string) ([3]int, string, error) {
+	var parts [3]int
+	core, pre, _ := strings.Cut(v, "-")
+	fields := strings.Split(core, ".")
+	if len(fields) != 3 {
+		return parts, "", fmt.Errorf("herdr version %q is not MAJOR.MINOR.PATCH", v)
+	}
+	for i, f := range fields {
+		n, err := strconv.Atoi(f)
+		if err != nil || n < 0 {
+			return parts, "", fmt.Errorf("herdr version %q is not MAJOR.MINOR.PATCH", v)
+		}
+		parts[i] = n
+	}
+	return parts, pre, nil
+}
+
+// Workspace is a Herdr workspace.
+type Workspace struct {
+	ID    string `json:"workspace_id"`
+	Label string `json:"label"`
+}
+
+// WorkspaceList lists the session's workspaces.
+func (c *Client) WorkspaceList(ctx context.Context) ([]Workspace, error) {
+	out, err := c.call(ctx, "workspace", "list")
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Workspaces []Workspace `json:"workspaces"`
+	}
+	if err := decode(out, &r); err != nil {
+		return nil, err
+	}
+	return r.Workspaces, nil
+}
+
+// WorkspaceCreate creates a workspace without taking focus. Herdr gives every
+// new workspace a first tab of its own.
+func (c *Client) WorkspaceCreate(ctx context.Context, label, cwd string) (Workspace, error) {
+	args := []string{"workspace", "create", "--label", label}
+	if cwd != "" {
+		args = append(args, "--cwd", cwd)
+	}
+	out, err := c.call(ctx, append(args, "--no-focus")...)
+	if err != nil {
+		return Workspace{}, err
+	}
+	var r struct {
+		Workspace Workspace `json:"workspace"`
+	}
+	if err := decode(out, &r); err != nil {
+		return Workspace{}, err
+	}
+	if err := checkID("workspace", r.Workspace.ID); err != nil {
+		return Workspace{}, err
+	}
+	return r.Workspace, nil
+}
+
+// Tab is a Herdr tab as listed by the server.
+type Tab struct {
+	ID          string `json:"tab_id"`
+	WorkspaceID string `json:"workspace_id"`
+	Label       string `json:"label"`
+	PaneCount   int    `json:"pane_count"`
+}
+
+// TabSpec describes a tab to create.
+type TabSpec struct {
+	WorkspaceID string
+	Label       string
+	Cwd         string
+	// Env holds NAME=VALUE entries set in the tab's shell.
+	Env []string
+}
+
+// OwnedTab is a tab this client created. Only TabCreate makes one, so a value
+// is proof that the caller's session created that tab.
+type OwnedTab struct {
+	session     string
+	workspaceID string
+	tabID       string
+	paneID      string
+}
+
+// ID returns the tab id.
+func (t OwnedTab) ID() string { return t.tabID }
+
+// PaneID returns the id of the tab's root pane.
+func (t OwnedTab) PaneID() string { return t.paneID }
+
+// WorkspaceID returns the id of the workspace holding the tab.
+func (t OwnedTab) WorkspaceID() string { return t.workspaceID }
+
+// Session returns the session the tab was created in.
+func (t OwnedTab) Session() string { return t.session }
+
+func (c *Client) checkOwned(t OwnedTab) error {
+	if t.tabID == "" || t.paneID == "" {
+		return errors.New("herdr: not a tab created by this client")
+	}
+	if t.session != c.session {
+		return fmt.Errorf("herdr: tab %s belongs to session %q, not %q", t.tabID, t.session, c.session)
+	}
+	return nil
+}
+
+// TabCreate creates a tab in an existing workspace without taking focus and
+// returns it as an OwnedTab.
+func (c *Client) TabCreate(ctx context.Context, spec TabSpec) (OwnedTab, error) {
+	if err := checkID("workspace", spec.WorkspaceID); err != nil {
+		return OwnedTab{}, err
+	}
+	args := []string{"tab", "create", "--workspace", spec.WorkspaceID, "--label", spec.Label}
+	if spec.Cwd != "" {
+		args = append(args, "--cwd", spec.Cwd)
+	}
+	for _, kv := range spec.Env {
+		if name, _, ok := strings.Cut(kv, "="); !ok || name == "" {
+			return OwnedTab{}, fmt.Errorf("herdr tab env %q is not NAME=VALUE", kv)
+		}
+		args = append(args, "--env", kv)
+	}
+	out, err := c.call(ctx, append(args, "--no-focus")...)
+	if err != nil {
+		return OwnedTab{}, err
+	}
+	var r struct {
+		Tab      Tab `json:"tab"`
+		RootPane struct {
+			PaneID      string `json:"pane_id"`
+			TabID       string `json:"tab_id"`
+			WorkspaceID string `json:"workspace_id"`
+		} `json:"root_pane"`
+	}
+	if err := decode(out, &r); err != nil {
+		return OwnedTab{}, err
+	}
+	if err := checkID("tab", r.Tab.ID); err != nil {
+		return OwnedTab{}, err
+	}
+	if err := checkID("pane", r.RootPane.PaneID); err != nil {
+		return OwnedTab{}, err
+	}
+	if r.Tab.WorkspaceID != spec.WorkspaceID || r.RootPane.TabID != r.Tab.ID || r.RootPane.WorkspaceID != spec.WorkspaceID {
+		return OwnedTab{}, fmt.Errorf("herdr created tab %s in workspace %s, want %s", r.Tab.ID, r.Tab.WorkspaceID, spec.WorkspaceID)
+	}
+	return OwnedTab{session: c.session, workspaceID: spec.WorkspaceID, tabID: r.Tab.ID, paneID: r.RootPane.PaneID}, nil
+}
+
+// TabList lists the tabs of one workspace.
+func (c *Client) TabList(ctx context.Context, workspaceID string) ([]Tab, error) {
+	if err := checkID("workspace", workspaceID); err != nil {
+		return nil, err
+	}
+	out, err := c.call(ctx, "tab", "list", "--workspace", workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Tabs []Tab `json:"tabs"`
+	}
+	if err := decode(out, &r); err != nil {
+		return nil, err
+	}
+	return r.Tabs, nil
+}
+
+// TabGet reads one tab. A closed tab yields an error for which IsNotFound is
+// true; that says only that the tab is gone, never that its work finished.
+func (c *Client) TabGet(ctx context.Context, tabID string) (Tab, error) {
+	if err := checkID("tab", tabID); err != nil {
+		return Tab{}, err
+	}
+	out, err := c.call(ctx, "tab", "get", tabID)
+	if err != nil {
+		return Tab{}, err
+	}
+	var r struct {
+		Tab Tab `json:"tab"`
+	}
+	if err := decode(out, &r); err != nil {
+		return Tab{}, err
+	}
+	return r.Tab, nil
+}
+
+// CloseOwnedTab closes a tab this client created. Closing does not prove
+// process termination; callers must establish separately when closure is safe.
+func (c *Client) CloseOwnedTab(ctx context.Context, t OwnedTab) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	_, err := c.call(ctx, "tab", "close", t.tabID)
+	return err
+}
+
+// Process is one foreground process reported for a pane.
+type Process struct {
+	PID  int      `json:"pid"`
+	Name string   `json:"name"`
+	Argv []string `json:"argv"`
+}
+
+// ProcessInfo is a pane's shell and foreground processes.
+type ProcessInfo struct {
+	ShellPID   int       `json:"shell_pid"`
+	Foreground []Process `json:"foreground_processes"`
+}
+
+// ShellIdle reports whether the pane's shell is the only foreground process,
+// so typed input reaches the shell prompt.
+func (p ProcessInfo) ShellIdle() bool {
+	return p.ShellPID > 0 && len(p.Foreground) == 1 && p.Foreground[0].PID == p.ShellPID
+}
+
+// PaneProcessInfo reads a pane's shell and foreground processes.
+func (c *Client) PaneProcessInfo(ctx context.Context, paneID string) (ProcessInfo, error) {
+	if err := checkID("pane", paneID); err != nil {
+		return ProcessInfo{}, err
+	}
+	out, err := c.call(ctx, "pane", "process-info", "--pane", paneID)
+	if err != nil {
+		return ProcessInfo{}, err
+	}
+	var r struct {
+		ProcessInfo ProcessInfo `json:"process_info"`
+	}
+	if err := decode(out, &r); err != nil {
+		return ProcessInfo{}, err
+	}
+	return r.ProcessInfo, nil
+}
+
+// RunInOwnedTab types one command line and Enter into the root pane of a tab
+// this client created. Success means Herdr accepted the input, not that the
+// command ran.
+func (c *Client) RunInOwnedTab(ctx context.Context, t OwnedTab, line string) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	if line == "" || strings.ContainsAny(line, "\r\n") {
+		return errors.New("herdr pane run needs exactly one non-empty line")
+	}
+	_, err := c.call(ctx, "pane", "run", t.paneID, line)
+	return err
+}
+
+// InterruptOwnedTab sends Ctrl+C to the root pane of a tab this client created.
+func (c *Client) InterruptOwnedTab(ctx context.Context, t OwnedTab) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	_, err := c.call(ctx, "pane", "send-keys", t.paneID, "ctrl+c")
+	return err
+}

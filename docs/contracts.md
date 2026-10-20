@@ -33,7 +33,8 @@ When a test double stands in for a real boundary, one contract test runs against
 Real external programs are replaced by the test binary itself acting as the program, so tests cross a real process boundary on every platform without depending on installed tools.
 Not every current double meets this yet; see [outstanding retrofit](#outstanding-retrofit).
 Integration tests against real files and processes stay alongside the doubles.
-CI makes no model calls and uses no credentials or network.
+CI makes no model calls and uses no credentials or external network services.
+Worker ownership tests use attempt-local loopback connections.
 
 ## Layout
 
@@ -49,6 +50,7 @@ A platform difference is part of the contract: say what differs, and test each s
 Put platform-specific code or test cases in `_windows.go` files or files with a `//go:build` line, rather than branching on `runtime.GOOS` throughout.
 Where a platform or shell cannot do something, refuse it with an error that names the limit rather than emulating it.
 Run programs with `os/exec` argument lists; where text must cross an interactive shell, quote it per shell and refuse what that shell cannot pass unchanged.
+Shell round-trip tests execute installed shells against an argument-echoing child and skip missing shells by name rather than replacing the shell with a fake.
 
 ## Current contracts
 
@@ -62,6 +64,10 @@ Run programs with `os/exec` argument lists; where text must cross an interactive
 | `internal/messaging` | `Decode` and the envelope (`docs/messaging.md`); `Mailbox`: durable send with receipts, retry and id-reuse conflict, recipient, task and attempt checks, bounded ordered listing and acknowledgement, concurrent use (D15). `StoreMailbox` implements it on the store. | `envelope_test.go` (with `testdata/` encodings); `store_mailbox_test.go` runs the shared suite against real store files, closing and reopening them for restart |
 | `internal/messaging/messagingtest` | The shared `Mailbox` contract suite, `RunMailboxContract` and its `Harness`, and `Fake`, an in-memory mailbox for consumer tests that passes it. The fake's restart keeps its state, so it models a durable mailbox rather than proving durability. | `fake_test.go` runs the suite against `Fake` |
 | `internal/steward` | Roster and managed-source parsing, dry-run plans and previews, apply with revalidation, approval, revisions, read-back verification and receipts, and the private config directory's apply lock (`docs/steward.md`, D12, D13, D14). `Transport` runs only `scp` as an argument list. | `roster_test.go`, `managed_test.go`; `rollout_test.go` against real files, with `stub_test.go` re-executing the test binary as `scp` |
+| `internal/herdr` | `Client` names an explicit non-default session on every call and operates only on tabs it created (`docs/adapters.md`); its process boundary, `Client.run`, passes argv and env exactly, keeps stdout and stderr apart, reports a nonzero exit with its output, errors when a program cannot start, and reports cancellation as the context's error. `ShellCommand` renders argv so the named shell starts exactly that argv, or refuses (D20). | `runner_test.go` (shared contract test, real `execRun` and `fakeRunner`), `herdr_test.go` (client against recorded Herdr 0.9.5 responses), `shell_test.go`, `shell_exec_test.go` (round trips executed in each installed shell) |
+| `internal/adapter` | The spec, identity, capabilities and versioned result file, completion only from that file (`docs/adapters.md`). The terminal boundary `tabHost` operates only on tabs the host created and honours its context; `HerdrTabs` implements it over the Herdr client. The native worker boundary `nativeWorker` stops one verified process and proves its exit, is idempotent and concurrency-safe, refuses an ended context without terminating, and never uses a released handle; it exists only on Windows, and other hosts refuse with `ErrStopUnsupported`. | `result_test.go`, `launch_test.go`, `run_test.go`; `tabhost_test.go` (shared contract test, `HerdrTabs` over a stub Herdr process and `fakeTabs`); `native_test.go` and `native_windows_test.go` (shared contract test, real Windows handle and `fakeNative`); `owned_test.go`, `owned_contract_test.go`, `cancel_test.go`; `conformance_test.go` (scripted runtime double) |
+| `internal/adapter/adaptertest` | `RunConformance`: the launch and result protocol every runtime adapter passes through a real child process, with no model calls; `Runtime` is the narrow interface it consumes. | Run by `internal/adapter/fake` and `internal/adapter` |
+| `internal/adapter/fake` | The test-only fake runtime: no optional capabilities, bounded prompt directives (`docs/adapters.md`). | `fake_test.go`, `conformance_test.go` (the shipped fake as a real child process) |
 
 ## Outstanding retrofit
 

@@ -111,3 +111,32 @@ Guildhall is developed contract first: a change states its contract, tests it an
 Packages stay organised by domain under `internal/`, with colocated tests and `testdata/`, following the Go module layout guidance rather than global interface, implementation or test directories.
 Interfaces are declared by their consumers at real seams; pure code stays as functions, and the store keeps no generic storage interface (D9) while a consumer may declare a narrow one over the methods it uses.
 A test double that replaces a real boundary shares one contract test with the real implementation.
+
+## D17. Herdr through its command-line API
+
+Guildhall drives Herdr by running the `herdr` client with argument lists and reading the JSON it prints, as Herdr's own agent guide documents.
+No Go client library for Herdr was found, and the client already handles each platform's transport (a Unix socket, or a named pipe on Windows), so Guildhall does not implement the socket protocol.
+Responses recorded from Herdr 0.9.5 are kept under `internal/herdr/testdata` so tests run without Herdr installed.
+
+## D18. Explicit Herdr session and version floor
+
+Every Herdr call carries `--session <name>` and a matching `HERDR_SESSION`, with inherited Herdr context variables removed, so ambient state never chooses the server.
+The session-selection and tab-ownership rules are defined in [Herdr access](adapters.md#herdr-access).
+0.9.5 is the minimum client and server version because it is the version exercised live; an older or unparsable version is refused.
+
+## D19. Version 1 result file
+
+The [result-file contract](adapters.md#result-file) defines the schema, validation and publication requirements.
+Hard-link publication was chosen to make a complete result visible atomically without replacing an existing result on Linux, Windows and macOS.
+
+## D20. Typing the launch command into a new tab
+
+Herdr's tab creation does not take a command, so Guildhall creates the tab, waits until its shell is idle, and types one quoted command line with `pane run`.
+Quoting is chosen from the shell Herdr reports for the pane: POSIX single quoting or PowerShell's call operator with single quotes.
+An unrecognised shell is refused rather than guessed.
+Rendered lines are proven by executing them in each supported shell installed on the test host, and an argument a shell would alter is refused rather than changed.
+
+## D21. Fake adapter as a subcommand
+
+The fake Artisan is `guildhall fake-artisan`, part of the same binary, so CI and lab runs need nothing else installed.
+Its test behaviours are selected by `guildhall-fake:` lines in the prompt file, bounded to the outcomes and faults listed in `docs/adapters.md`.
