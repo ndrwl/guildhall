@@ -27,7 +27,7 @@ func TestTransportOpenSSHTimeout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer listener.Close()
+			defer func() { _ = listener.Close() }()
 			accepted := make(chan struct{})
 			closed := make(chan struct{})
 			go func() {
@@ -36,13 +36,13 @@ func TestTransportOpenSSHTimeout(t *testing.T) {
 				if err != nil {
 					return
 				}
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				close(accepted)
 				// A silent SSH peer, with a safety bound for the broken version.
 				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 				_, _ = io.Copy(io.Discard, conn)
 			}()
-			defer func() { listener.Close(); <-closed }()
+			defer func() { _ = listener.Close(); <-closed }()
 			root := t.TempDir()
 			wrapper := filepath.Join(root, "scp")
 			// Isolate SSH configuration; no authentication is ever reached.

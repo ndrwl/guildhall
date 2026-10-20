@@ -200,7 +200,7 @@ func TestStaleWriterLockNeedsManualRecoveryAfterOwnerStops(t *testing.T) {
 	if err := owner.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
-	<-exited
+	<-exited //nolint:errcheck // Killing the owner is expected to return an exit error.
 	if !lockExists(t, r) {
 		t.Fatal("killed owner's lock disappeared")
 	}
