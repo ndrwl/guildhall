@@ -2,12 +2,12 @@
 
 Each Director copy keeps its durable records in one store file owned by Guildhall (R1.17).
 `internal/store` implements it as a single bbolt database.
-It is a library for later commands: nothing in Guildhall launches, schedules or merges work from it yet.
+The store supports the [local messaging commands](messaging.md), but nothing in Guildhall launches, schedules or merges work from it yet.
 
 ## Records
 
 Every record is keyed by repository id, so the same task id in two repositories names two tasks.
-Ids use the workflow id form: lowercase letters, digits and hyphens, starting with a letter.
+Ids use the workflow id form: lowercase letters, digits and hyphens, starting with a letter, except for [message ids](messaging.md#envelope).
 
 | Record | Key | Contract |
 |---|---|---|
@@ -19,7 +19,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
 Titles, questions and answers must be non-blank valid UTF-8 and are limited to 64 KiB per field; larger content belongs in a referenced document.
-Message text is limited to 16 KiB, and a message refers to at most 32 artifacts, each a document-style path with a sha256.
+Message payload limits and artifact requirements are defined in the [envelope contract](messaging.md#envelope).
 Pane binding fields must be non-blank valid UTF-8 and are limited to 256 bytes each.
 Document paths are relative to the Director's document directory and must be clean, local, slash-separated paths of at most 1024 bytes, without backslashes or colons.
 Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
