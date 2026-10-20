@@ -1,0 +1,80 @@
+name: Release
+
+# A pushed version tag builds, checksums and publishes a GitHub release.
+# A manual run builds and checksums only, as a dry run with downloadable artifacts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build binaries and checksums
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version=$GITHUB_REF_NAME
+            if ! [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "tag $version is not a vMAJOR.MINOR.PATCH[-PRERELEASE] version"
+              exit 1
+            fi
+          else
+            version=dev-${GITHUB_SHA:0:12}
+          fi
+          mkdir dist
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+            goos=${target%/*}
+            goarch=${target#*/}
+            name=guildhall_${goos}_${goarch}
+            if [ "$goos" = windows ]; then
+              name=$name.exe
+            fi
+            CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath \
+              -ldflags "-s -w -X github.com/ndrwl/guildhall/internal/cli.version=$version" \
+              -o "dist/$name" ./cmd/guildhall
+          done
+          cd dist
+          sha256sum guildhall_* > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: guildhall-dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: guildhall-dist
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prerelease=()
+          if [[ $GITHUB_REF_NAME == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --verify-tag \
+            "${prerelease[@]}"
