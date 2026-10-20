@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
-	"path/filepath"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -97,6 +97,13 @@ var (
 // a POSIX path from the root or a Windows path from a drive letter.
 func ownerAbsolute(path string) bool {
 	return strings.HasPrefix(path, "/") || drivePathPattern.MatchString(path)
+}
+
+func ownerPathKey(p string) string {
+	if drivePathPattern.MatchString(p) {
+		return strings.ToLower(p[:2]) + path.Clean(strings.ReplaceAll(p[2:], `\`, "/"))
+	}
+	return path.Clean(p)
 }
 
 // Parse decodes and validates a config, applying defaults.
@@ -199,7 +206,7 @@ func (c *Config) validate() []string {
 		seenID[r.ID] = true
 		if !ownerAbsolute(r.Path) {
 			add("%s: path must be absolute", name)
-		} else if clean := filepath.Clean(r.Path); seenPath[clean] {
+		} else if clean := ownerPathKey(r.Path); seenPath[clean] {
 			add("%s: path is already used by another repository", name)
 		} else {
 			seenPath[clean] = true

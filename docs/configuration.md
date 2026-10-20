@@ -1,14 +1,17 @@
 # Configuration and workflows
 
-Each Guildhall copy has one TOML config file, and each Director has JSON workflow definitions.
-Both are parsed and validated by pure code in `internal/config` and `internal/workflow`, which read no other files, run nothing and grant no authority.
+Each Guildhall copy has a local TOML config file, and enrolled rollout copies also have a separate Steward-owned `managed.toml`; each Director has JSON workflow definitions.
+Pure parsing APIs in `internal/config` and `internal/workflow` run nothing and grant no authority.
+`config.Load` reads the config and its sibling managed file when present, while `config.ParseCombined` validates supplied bytes without file access.
+Legacy `config.Parse` still accepts inline managed settings, but combined loading and rollouts refuse that layout with migration guidance.
 No credentials belong in either; sign-in stays in each runtime's own store.
 
 ## Config file
 
 The config is versioned by `schema_version`.
 A config with a newer `schema_version` than this Guildhall supports is refused rather than guessed at, and unknown keys are refused.
-See [`examples/director.toml`](../examples/director.toml) for a complete Director config.
+See [`examples/director.toml`](../examples/director.toml) for a Director's local config and [`examples/managed.toml`](../examples/managed.toml) for an initially empty managed file.
+The managed file's first line binds the exact remaining bytes by SHA-256; use `config.EncodeManaged` to generate it, rather than editing its payload without regenerating the checksum.
 
 | Key | Meaning |
 |---|---|
@@ -16,7 +19,7 @@ See [`examples/director.toml`](../examples/director.toml) for a complete Directo
 | `mode` | `steward` or `director`. |
 | `name` | The Director's name; required in director mode. |
 | `[private_config] location` | Steward only: where the private config repository lives, as a path or remote; never a credential. |
-| `[managed.<key>]` | Written only by [Steward rollouts](steward.md): `value`, and `overridable` (default `false`). |
+| `[managed.<key>]` | In the separate managed file for [Steward rollouts](steward.md): `value`, and `overridable` (default `false`). |
 | `[local]` | Owned by the copy: `<key> = "value"`. |
 | `[[repository]]` | Director only: one entry per repository the Director owns. |
 

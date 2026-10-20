@@ -70,6 +70,7 @@ The landed gomate `internal/lock` package wraps `github.com/gofrs/flock` for a s
 
 A Steward validates Director configs whose owner machine may run another OS than its own, so `internal/config` accepts a repository `path` that starts with `/` or with a drive letter followed by `/` or `\`, on every host.
 Relative, drive-relative and UNC paths are refused.
+Duplicate comparison cleans POSIX dot segments and, for drive paths, normalizes separators, drive-letter case and dot segments independently of the validating host.
 A later Director layer that opens repositories on its own machine checks the path against that machine's form.
 
 ## D12. Steward rollouts copy files with scp and nothing else
@@ -83,5 +84,15 @@ Atomic replacement would need a remote rename command, so the file is copied in 
 
 A dry run writes `plan.json`, the per-copy previews and, after apply, timestamped receipts into one new directory named by `--plan`.
 The plan digest is the sha256 of the plan's JSON encoding without its digest field; apply re-plans and requires the same digest, so the staged files, the commands and the recorded revisions are exactly what was reviewed.
-Receipt files are the rollout record for now; they are not a task store.
+Apply requires the explicit machine set to match the plan before transport and uses private temporary copies of the validated managed bytes as transport inputs.
+Receipt files record those actual source paths and are the rollout record for now; they are not a task store.
 The managed-settings source marks policy keys with `policy = true`, which is kept privately and not written to copies, because only the Guildmaster can say which preferences are review or approval rules.
+
+## D12. Separate managed publication from Director-owned config
+
+Rollouts write only `managed.toml`, never `config.toml`, so concurrent local edits cannot be overwritten by a stale whole-file snapshot.
+Combined loading validates local overrides and refuses inline managed layouts, while the existing pure Parse API remains compatible.
+A checksum framing line detects incomplete managed transfers, but scp publication is non-atomic and may transiently refuse reads; this does not establish uninterrupted config availability.
+An exclusive lock file in the private config directory prevents concurrent local applies sharing that directory, not cross-host writers.
+Operators must designate one writer and recover a stale lock only after confirming its owner has stopped.
+Previous managed revisions remain beside the published file; active-task pinning remains future work.

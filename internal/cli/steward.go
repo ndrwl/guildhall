@@ -88,7 +88,7 @@ func (a *App) steward(args []string) int {
 		return 0
 	}
 
-	receipt, err := r.Apply(ctx, *planDir, *approve)
+	receipt, err := r.Apply(ctx, *planDir, *approve, machines...)
 	if errors.Is(err, steward.ErrApprovalRequired) {
 		if saved, rerr := steward.ReadPlan(*planDir); rerr == nil {
 			err = fmt.Errorf("%w; once the Guildmaster approves this exact plan, add --approve %s", err, saved.Digest)
@@ -123,11 +123,7 @@ func (a *App) fail(err error) int {
 
 // loadRollout reads the Steward copy's config and the private config directory it names.
 func (a *App) loadRollout(cfgPath string) (*steward.Rollout, error) {
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := config.Parse(data)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", cfgPath, err)
 	}

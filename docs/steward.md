@@ -73,8 +73,8 @@ Keys follow the config key rules, so credential-like names are refused.
 guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <new dir> --dry-run
 ```
 
-For each Director copy on each named machine, the dry run downloads `config.toml`, renders the new config and checks it.
-It writes `plan.json` and, for each copy that would change, `files/<machine>/<director>/previous.toml` and `config.toml` previews into the new plan directory, and prints:
+For each Director copy on each named machine, the dry run downloads `config.toml` and `managed.toml`, renders new managed settings and checks the combined config.
+It writes `plan.json` and, for each copy that would change, `files/<machine>/<director>/previous.toml` and `managed.toml` previews into the new plan directory, and prints:
 
 - each copy's status: `change`, `unchanged` or `refused` with the reason;
 - each managed key added, changed or removed, and whether it needs approval;
@@ -89,9 +89,11 @@ A refused copy is reported, never overwritten, and a plan with a refused copy ca
 
 ### What a rollout changes
 
-Only the managed section is replaced.
-Every other line, including the `[local]` section, repositories, other comments and line endings, is kept byte for byte, and the result is parsed and compared with the original to prove it.
-Managed tables are written in key order; managed values in a copy must be `[managed.<key>]` tables.
+Only the separate `managed.toml` is replaced; `config.toml` is never written, even when an editor changes it during apply.
+During enrolment, move any inline managed settings out of `config.toml` into a checksum-framed `managed.toml` generated with `config.EncodeManaged`; preserve their existing values and override flags.
+Inline managed layouts are refused by rollout and combined loading, not by the legacy pure `config.Parse` API.
+New copies with no previous managed settings can start with [`examples/managed.toml`](../examples/managed.toml) beside their local config.
+Use `config.Load` to read both files, or `config.ParseCombined` when bytes are already available; both enforce existing override validation.
 A rollout never changes a local value: a new managed key that conflicts with one is refused, and the Director or Guildmaster resolves it.
 
 ## Apply
@@ -100,17 +102,30 @@ A rollout never changes a local value: a new managed key that conflicts with one
 guildhall steward rollout --config <steward.toml> --machine <label> --plan <dir> --apply [--approve <plan digest>]
 ```
 
-Apply plans again and refuses unless the result has the same digest as the dry run and the staged previews are unchanged, so a copy, roster or managed-settings change since the dry run stops it.
+Apply first refuses a requested machine set that differs from the saved plan, before any transport operation.
+It plans again and refuses unless the result has the same digest as the dry run and the staged previews are unchanged, so a change observed during revalidation stops it.
+Validated managed inputs are copied into private temporary input files for transport; receipts record those actual command paths rather than the preview source paths.
+Local changes after revalidation remain untouched; readers validate overrides against the currently published managed settings.
 For each copy that changes, it then runs the three planned commands:
 
-1. copy the previous config to `config.toml.rev-<first 16 hex digits of its sha256>` next to it, keeping the old revision;
-2. copy the new config over `config.toml`;
-3. read `config.toml` back and compare its sha256 with the plan.
+1. copy the previous managed file to `managed.toml.rev-<first 16 hex digits of its sha256>` next to it, keeping the old revision;
+2. copy the new managed file over `managed.toml`;
+3. read `managed.toml` back and compare its sha256 with the plan.
 
 A failure on one copy does not stop the others.
 The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed` or `verify_failed`), its before, after and read-back digests, the revision file and every command with its error.
 Apply exits 1 unless every copy is applied or unchanged; a plan that is no longer current needs a new dry run.
 Applying an unchanged plan writes nothing.
+
+### Publication and writer containment
+
+Each published managed file starts with a SHA-256 checksum of all remaining bytes, so combined loading explicitly refuses incomplete or corrupted transfers, including syntactically valid truncated TOML.
+This is integrity detection, not atomic publication: non-atomic scp may transiently refuse reads and does not prove uninterrupted config availability.
+The `.rollout.lock` file in the private config directory excludes concurrent applies using that directory on this Steward.
+It does not protect against another host, another private directory or a manual managed-file writer; designate one Steward writer for each fleet and do not edit managed files during rollout.
+If a writer crashes, stop competing invocations and confirm that the owning process has exited before manually removing its stale lock.
+Never remove a lock held by another live writer; there is no automatic stale-lock deletion.
+Keep the plan directory private while applying.
 
 ### Approval
 
@@ -134,7 +149,8 @@ Each `scp` run is bounded by a two-minute timeout.
 
 ## Revisions and active tasks
 
-A copy's config revision is the sha256 of its `config.toml`, which the plan and receipt record.
+A managed revision is the sha256 of its `managed.toml`, which the plan and receipt record; plans separately bind the fetched local config digest.
+Future task records must retain both local configuration and managed revision, not treat the managed digest alone as the entire effective config.
 A rollout keeps each previous revision on the machine and never deletes one.
 Task records do not exist yet, so nothing binds a task to a config revision today.
 The intended consumer contract (R1.31) is that a task records the config revision and release in force when it is accepted and keeps them, while only new tasks pick up a rollout; that enforcement belongs to the Director's task store and execution, which are later work.

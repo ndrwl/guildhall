@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
 const (
@@ -69,6 +71,13 @@ func stewardApp(t *testing.T, managed string) (app *App, stdout, stderr *bytes.B
 	if err := os.WriteFile(local(cliRemote), []byte(cliCopy), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	managedCopy, err := config.EncodeManaged(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(local(strings.Replace(cliRemote, "config.toml", "managed.toml", 1)), managedCopy, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	app, stdout, stderr = newTestApp(map[string]string{"scp": "/fake/scp"}, nil)
 	app.Output = func(_ context.Context, path string, args ...string) ([]byte, error) {
 		if path != "/fake/scp" || len(args) != 7 || strings.Join(args[:5], " ") != "-q -B -o BatchMode=yes --" {
@@ -95,10 +104,10 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 	for _, want := range []string{
 		"rollout plan sha256:",
 		"dry run: nothing was changed",
-		"workstation/tools (guild-ws:/home/guild/tools/config.toml): change",
+		"workstation/tools (guild-ws:/home/guild/tools/managed.toml): change",
 		`added standards_revision = "standards-2"`,
 		"+[managed.standards_revision]",
-		"scp -q -B -o BatchMode=yes -- " + filepath.Join(plan, "files", "workstation", "tools", "config.toml") + " " + cliRemote,
+		"scp -q -B -o BatchMode=yes -- " + filepath.Join(plan, "files", "workstation", "tools", "managed.toml") + " " + strings.Replace(cliRemote, "config.toml", "managed.toml", 1),
 		"--apply",
 	} {
 		if !strings.Contains(out, want) {
@@ -118,8 +127,31 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 		t.Errorf("apply output:\n%s", out)
 	}
 	remote, _ = os.ReadFile(filepath.Join(root, "guild-ws", "home", "guild", "tools", "config.toml"))
-	if !strings.Contains(string(remote), "[managed.standards_revision]\nvalue = \"standards-2\"\n") || !strings.Contains(string(remote), "notes_dir = \"notes\"") {
-		t.Errorf("copy after apply:\n%s", remote)
+	if string(remote) != cliCopy {
+		t.Fatal("local config changed")
+	}
+	combined, err := config.Load(filepath.Join(root, "guild-ws", "home", "guild", "tools", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, _ := combined.Setting("standards_revision"); value != "standards-2" {
+		t.Fatal(value)
+	}
+}
+
+func TestStewardApplyRefusesDifferentMachinesBeforeTransport(t *testing.T) {
+	app, _, stderr, cfg, _ := stewardApp(t, "schema_version = 1\n")
+	plan := filepath.Join(t.TempDir(), "plan")
+	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 0 {
+		t.Fatal(stderr.String())
+	}
+	calls := 0
+	app.Output = func(context.Context, string, ...string) ([]byte, error) {
+		calls++
+		return nil, errors.New("unexpected transport")
+	}
+	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "laptop", "--plan", plan, "--apply"}); code != 1 || calls != 0 || !strings.Contains(stderr.String(), "requested machines differ") {
+		t.Fatalf("code %d calls %d: %s", code, calls, stderr)
 	}
 }
 

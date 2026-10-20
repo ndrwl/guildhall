@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
 // Plan and receipt schemas.
@@ -81,6 +83,7 @@ type Rollout struct {
 	Managed       *ManagedSource
 	rosterDigest  string
 	managedDigest string
+	privateDir    string
 	Transport     Transport
 	// Now stamps receipts.
 	Now func() time.Time
@@ -105,7 +108,7 @@ func LoadRollout(privateDir string, t Transport) (*Rollout, error) {
 		return nil, err
 	}
 	return &Rollout{
-		Roster: roster, Managed: managed,
+		Roster: roster, Managed: managed, privateDir: privateDir,
 		rosterDigest: digest(rosterData), managedDigest: digest(managedData),
 		Transport: t, Now: time.Now,
 	}, nil
@@ -131,6 +134,7 @@ type CopyPlan struct {
 	Status   string `json:"status"`
 	Problem  string `json:"problem,omitempty"`
 	// BeforeSHA256 and AfterSHA256 identify the copy's config revision now and after the rollout.
+	LocalSHA256  string `json:"local_sha256,omitempty"`
 	BeforeSHA256 string `json:"before_sha256,omitempty"`
 	AfterSHA256  string `json:"after_sha256,omitempty"`
 	// Revision is where the previous config is kept on the machine.
@@ -188,7 +192,7 @@ func (r *Rollout) Plan(ctx context.Context, machines []string, stageDir string) 
 			return nil, fmt.Errorf("machine %q has no Director copies", label)
 		}
 		for j, d := range m.Directors {
-			c := CopyPlan{Machine: m.Label, Director: d.Name, SSHAlias: m.SSHAlias, Target: d.ConfigPath()}
+			c := CopyPlan{Machine: m.Label, Director: d.Name, SSHAlias: m.SSHAlias, Target: d.CopyDir + "/managed.toml"}
 			r.planCopy(ctx, &c, d, filepath.Join(fetchDir, fmt.Sprintf("%d-%d.toml", i, j)), stageDir)
 			p.Copies = append(p.Copies, c)
 		}
@@ -198,6 +202,17 @@ func (r *Rollout) Plan(ctx context.Context, machines []string, stageDir string) 
 }
 
 func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched, stageDir string) {
+	localRemote := c.SSHAlias + ":" + d.ConfigPath()
+	if err := r.Transport.run(ctx, scpCommand(localRemote, fetched+".local")); err != nil {
+		c.Status, c.Problem = StatusRefused, err.Error()
+		return
+	}
+	local, err := os.ReadFile(fetched + ".local")
+	if err != nil {
+		c.Status, c.Problem = StatusRefused, err.Error()
+		return
+	}
+	c.LocalSHA256 = digestHex(local)
 	remote := c.SSHAlias + ":" + c.Target
 	if err := r.Transport.run(ctx, scpCommand(remote, fetched)); err != nil {
 		c.Status, c.Problem = StatusRefused, "fetching "+remote+": "+err.Error()
@@ -209,7 +224,19 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 		return
 	}
 	c.before, c.BeforeSHA256 = before, digestHex(before)
-	after, changes, err := Render(before, r.Managed, Target{Machine: c.Machine, Director: d})
+	cfg, err := config.ParseCombined(local, before)
+	if err == nil {
+		err = checkTarget(cfg, Target{Machine: c.Machine, Director: d})
+	}
+	if err != nil {
+		c.Status, c.Problem = StatusRefused, err.Error()
+		return
+	}
+	after, err := config.EncodeManaged(r.Managed.Settings())
+	if err == nil {
+		_, err = config.ParseCombined(local, after)
+	}
+	changes := changes(cfg.Managed, r.Managed)
 	if err != nil {
 		c.Status, c.Problem = StatusRefused, err.Error()
 		return
@@ -225,7 +252,7 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 	stage := c.stage(stageDir)
 	c.Commands = [][]string{
 		scpCommand(filepath.Join(stage, "previous.toml"), c.SSHAlias+":"+c.Revision),
-		scpCommand(filepath.Join(stage, "config.toml"), remote),
+		scpCommand(filepath.Join(stage, "managed.toml"), remote),
 		scpCommand(remote, filepath.Join(stage, "verify.toml")),
 	}
 }
@@ -256,7 +283,7 @@ func WritePlan(p *Plan) error {
 		if err := os.WriteFile(filepath.Join(stage, "previous.toml"), c.before, 0o600); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(stage, "config.toml"), c.after, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(stage, "managed.toml"), c.after, 0o600); err != nil {
 			return err
 		}
 	}
@@ -323,9 +350,23 @@ type Step struct {
 // and refuses a plan needing approval unless approve is that plan's digest.
 // Each changed copy keeps its previous config as a revision file, then gets the new config, then is read back and verified.
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
-func (r *Rollout) Apply(ctx context.Context, stageDir, approve string) (*Receipt, error) {
+func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines ...string) (*Receipt, error) {
 	saved, err := ReadPlan(stageDir)
 	if err != nil {
+		return nil, err
+	}
+	requested := slices.Sorted(slices.Values(machines))
+	planned := slices.Sorted(slices.Values(saved.Machines))
+	if !slices.Equal(requested, planned) {
+		return nil, errors.New("requested machines differ from saved plan; use its exact machine set or create a new plan")
+	}
+	lock := filepath.Join(r.privateDir, ".rollout.lock")
+	f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("rollout writer lock %s: %w; confirm the writer has stopped before stale-lock recovery", lock, err)
+	}
+	defer func() { _ = os.Remove(lock) }()
+	if err := f.Close(); err != nil {
 		return nil, err
 	}
 	if abs, err := filepath.Abs(stageDir); err != nil || abs != saved.StageDir {
@@ -352,7 +393,7 @@ func (r *Rollout) Apply(ctx context.Context, stageDir, approve string) (*Receipt
 		}
 		stage := c.stage(p.StageDir)
 		previous, err1 := os.ReadFile(filepath.Join(stage, "previous.toml"))
-		next, err2 := os.ReadFile(filepath.Join(stage, "config.toml"))
+		next, err2 := os.ReadFile(filepath.Join(stage, "managed.toml"))
 		if err1 != nil || err2 != nil || !bytes.Equal(previous, c.before) || !bytes.Equal(next, c.after) {
 			return nil, fmt.Errorf("%w: staged files for %s/%s changed", ErrPlanStale, c.Machine, c.Director)
 		}
@@ -389,7 +430,23 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 	if c.Status != StatusChange {
 		return cr
 	}
-	for _, argv := range c.Commands {
+	inputs, err := os.MkdirTemp(stageDir, ".apply-")
+	if err != nil {
+		cr.Status, cr.Error = StatusFailed, err.Error()
+		return cr
+	}
+	defer func() { _ = os.RemoveAll(inputs) }()
+	for name, data := range map[string][]byte{"previous.toml": c.before, "managed.toml": c.after} {
+		if err := os.WriteFile(filepath.Join(inputs, name), data, 0o600); err != nil {
+			cr.Status, cr.Error = StatusFailed, err.Error()
+			return cr
+		}
+	}
+	for i, planned := range c.Commands {
+		argv := slices.Clone(planned)
+		if i < 2 {
+			argv[len(argv)-2] = filepath.Join(inputs, filepath.Base(argv[len(argv)-2]))
+		}
 		step := Step{Command: argv}
 		err := r.Transport.run(ctx, argv)
 		if err != nil {

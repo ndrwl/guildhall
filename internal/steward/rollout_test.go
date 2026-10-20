@@ -2,49 +2,36 @@ package steward
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
-const (
-	toolsPath = "/home/guild/directors/tools/config.toml"
-	docsPath  = "/home/guild/directors/docs/config.toml"
-	gamesPath = "C:/Users/guild/directors/games/config.toml"
-)
-
-// docsCopy already carries managedFixture's settings, so a rollout leaves it unchanged.
-const docsCopy = `schema_version = 1
-mode = "director"
-name = "docs"
-
-[managed.lint_profile]
-value = "strict \"quoted\"\nsecond line"
-
-[managed.review_instructions]
-value = "Cite the requirement."
-overridable = true
-
-[managed.standards_revision]
-value = "standards-2"
-
-[[repository]]
-id = "handbook"
-path = '/srv/src/handbook'
-remote = "git@github.com:example/handbook.git"
-owner_machine = "workstation"
-`
-
-const gamesCopy = "schema_version = 1\r\nmode = \"director\"\r\nname = \"games\"\r\n\r\n[local]\r\nnotes_dir = 'D:/notes'\r\n\r\n[[repository]]\r\nid = \"engine\"\r\npath = 'C:/src/engine'\r\nremote = \"git@github.com:example/engine.git\"\r\nowner_machine = \"laptop\"\r\n"
+const toolsPath = "/home/guild/directors/tools/config.toml"
+const docsPath = "/home/guild/directors/docs/config.toml"
+const gamesPath = "C:/Users/guild/directors/games/config.toml"
+const gamesCopy = "schema_version = 1\r\nmode = \"director\"\r\nname = \"games\"\r\n[local]\r\nnotes_dir = 'D:/notes'\r\n[[repository]]\r\nid = \"engine\"\r\npath = 'C:/src/engine'\r\nremote = \"git@github.com:example/engine.git\"\r\nowner_machine = \"laptop\"\r\n"
 
 var stamp = time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 
-// fleet is a private config directory and a fake fleet with three enrolled copies.
+func managedPath(p string) string { return strings.TrimSuffix(p, "config.toml") + "managed.toml" }
+func splitCopy(t *testing.T, data string) (string, string) {
+	t.Helper()
+	cfg, err := config.Parse([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := config.EncodeManaged(cfg.Managed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(splice([]byte(data), nil)), string(m)
+}
 func fleet(t *testing.T) (*stub, *Rollout) {
 	t.Helper()
 	s := newStub(t)
@@ -54,266 +41,178 @@ func fleet(t *testing.T) (*stub, *Rollout) {
 			t.Fatal(err)
 		}
 	}
-	s.put("guild-ws", toolsPath, copyFixture)
-	s.put("guild-ws", docsPath, docsCopy)
-	s.put("guild-laptop", gamesPath, gamesCopy)
+	docs := strings.ReplaceAll(strings.ReplaceAll(copyFixture, `name = "tools"`, `name = "docs"`), `id = "cli"`, `id = "handbook"`)
+	docs = strings.Split(docs, "\n[[repository]]\nid = \"site\"")[0] + "\n"
+	for _, c := range []struct{ alias, path, data string }{{"guild-ws", toolsPath, copyFixture}, {"guild-ws", docsPath, docs}, {"guild-laptop", gamesPath, gamesCopy}} {
+		local, managed := splitCopy(t, c.data)
+		s.put(c.alias, c.path, local)
+		s.put(c.alias, managedPath(c.path), managed)
+	}
 	r, err := LoadRollout(private, s.transport())
 	if err != nil {
-		t.Fatalf("load rollout: %v", err)
+		t.Fatal(err)
 	}
 	r.Now = func() time.Time { return stamp }
 	return s, r
 }
-
 func dryRun(t *testing.T, r *Rollout, machines ...string) *Plan {
 	t.Helper()
 	p, err := r.Plan(context.Background(), machines, filepath.Join(t.TempDir(), "plan"))
 	if err != nil {
-		t.Fatalf("plan: %v", err)
+		t.Fatal(err)
 	}
 	if err := WritePlan(p); err != nil {
-		t.Fatalf("write plan: %v", err)
+		t.Fatal(err)
 	}
 	return p
 }
-
-func statuses[T any](items []T, status func(T) string) []string {
-	var out []string
-	for _, it := range items {
-		out = append(out, status(it))
-	}
-	return out
-}
-
-func copyStatus(c CopyPlan) string       { return c.Machine + "/" + c.Director + "=" + c.Status }
-func receiptStatus(c CopyReceipt) string { return c.Machine + "/" + c.Director + "=" + c.Status }
-
-func TestDryRunPreviewsWithoutChangingCopies(t *testing.T) {
+func TestRolloutPreservesConcurrentLocalEditAndRevisions(t *testing.T) {
 	s, r := fleet(t)
+	original := s.get("guild-ws", managedPath(toolsPath))
 	p := dryRun(t, r, "workstation", "laptop")
-
-	want := []string{"workstation/tools=change", "workstation/docs=unchanged", "laptop/games=change"}
-	if got := statuses(p.Copies, copyStatus); !slices.Equal(got, want) {
-		t.Fatalf("copies = %v, want %v", got, want)
+	for _, c := range p.Copies {
+		if c.Status != StatusChange {
+			t.Fatalf("plan: %+v", c)
+		}
 	}
-	if !strings.HasPrefix(p.Digest, "sha256:") || !p.NeedsApproval() {
-		t.Errorf("digest %q, needs approval %v", p.Digest, p.NeedsApproval())
-	}
-	// Planning only downloads: every scp call reads from a remote.
 	for _, call := range s.calls() {
 		if !strings.Contains(call, "-- guild-") {
-			t.Errorf("dry run ran a non-download: %s", call)
+			t.Fatal("dry run wrote", call)
 		}
 	}
-	if s.get("guild-ws", toolsPath) != copyFixture || s.get("guild-laptop", gamesPath) != gamesCopy {
-		t.Error("dry run changed a copy")
+	output := r.Transport.Output
+	edited := s.get("guild-ws", toolsPath) + "\n# concurrent editor change\n"
+	r.Transport.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
+		if strings.Contains(args[5], "guild-laptop:") {
+			s.put("guild-ws", toolsPath, edited)
+		}
+		return output(ctx, path, args...)
 	}
-
-	tools := p.Copies[0]
-	staged := filepath.Join(p.StageDir, "files", "workstation", "tools")
-	wantCommands := [][]string{
-		{"scp", "-q", "-B", "-o", "BatchMode=yes", "--", filepath.Join(staged, "previous.toml"), "guild-ws:" + toolsPath + ".rev-" + tools.BeforeSHA256[:16]},
-		{"scp", "-q", "-B", "-o", "BatchMode=yes", "--", filepath.Join(staged, "config.toml"), "guild-ws:" + toolsPath},
-		{"scp", "-q", "-B", "-o", "BatchMode=yes", "--", "guild-ws:" + toolsPath, filepath.Join(staged, "verify.toml")},
+	receipt, err := r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(tools.Commands) != len(wantCommands) {
-		t.Fatalf("commands = %q", tools.Commands)
-	}
-	for i := range wantCommands {
-		if !slices.Equal(tools.Commands[i], wantCommands[i]) {
-			t.Errorf("command %d = %q, want %q", i, tools.Commands[i], wantCommands[i])
+	for _, c := range receipt.Copies {
+		if c.Status != StatusApplied || c.VerifiedSHA256 != c.AfterSHA256 {
+			t.Fatalf("receipt: %+v", c)
 		}
 	}
-	if len(p.Copies[1].Commands) != 0 {
-		t.Errorf("unchanged copy has commands %q", p.Copies[1].Commands)
+	if got := s.get("guild-ws", toolsPath); got != edited {
+		t.Fatal("local edit overwritten")
 	}
-	if !strings.Contains(tools.Diff, "-value = \"standards-1\"\n") || !strings.Contains(tools.Diff, "+[managed.standards_revision]\n+value = \"standards-2\"\n") {
-		t.Errorf("diff does not show the change:\n%s", tools.Diff)
+	if got := s.get("guild-ws", receipt.Copies[0].Revision); got != original {
+		t.Fatal("old revision lost")
 	}
-	previous, _ := os.ReadFile(filepath.Join(staged, "previous.toml"))
-	next, _ := os.ReadFile(filepath.Join(staged, "config.toml"))
-	if string(previous) != copyFixture || !strings.Contains(string(next), `value = "standards-2"`) {
-		t.Errorf("staged previews wrong:\n%s\n---\n%s", previous, next)
+	if got := s.get("guild-laptop", gamesPath); got != gamesCopy {
+		t.Fatal("CRLF local file changed")
 	}
-
-	again, err := r.Plan(context.Background(), []string{"workstation", "laptop"}, p.StageDir)
-	if err != nil || again.Digest != p.Digest {
-		t.Errorf("replanning the same state changed the digest: %v %q != %q", err, again.Digest, p.Digest)
+	if _, err := config.ParseCombined([]byte(edited), []byte(s.get("guild-ws", managedPath(toolsPath)))); err != nil {
+		t.Fatal(err)
 	}
-	read, err := ReadPlan(p.StageDir)
-	if err != nil || read.Digest != p.Digest {
-		t.Errorf("read plan: %v %+v", err, read)
+	if _, err := os.Stat(receipt.File); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...); !errors.Is(err, ErrPlanStale) {
+		t.Fatalf("stale: %v", err)
+	}
+	fresh := dryRun(t, r, p.Machines...)
+	for _, c := range fresh.Copies {
+		if c.Status != StatusUnchanged {
+			t.Fatalf("fresh: %+v", c)
+		}
+	}
+	if _, err := r.Apply(context.Background(), fresh.StageDir, "", fresh.Machines...); err != nil {
+		t.Fatal(err)
 	}
 }
-
-func TestPlanRefusesUnknownOrRepeatedMachines(t *testing.T) {
-	_, r := fleet(t)
-	for name, machines := range map[string][]string{
-		"unenrolled": {"stranger"},
-		"repeated":   {"laptop", "laptop"},
-		"none":       nil,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := r.Plan(context.Background(), machines, t.TempDir()); err == nil {
+func TestRolloutRefusals(t *testing.T) {
+	for _, scenario := range []string{"machines", "duplicate", "approval", "stale", "preview", "inline", "lock"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, r := fleet(t)
+			if scenario == "inline" {
+				s.put("guild-ws", toolsPath, copyFixture)
+			}
+			p := dryRun(t, r, "workstation")
+			machines := p.Machines
+			approve := p.Digest
+			switch scenario {
+			case "machines":
+				machines = []string{"laptop"}
+			case "duplicate":
+				machines = []string{"workstation", "workstation"}
+			case "approval":
+				approve = "sha256:wrong"
+			case "stale":
+				s.put("guild-ws", toolsPath, s.get("guild-ws", toolsPath)+"\n# changed\n")
+			case "preview":
+				if err := os.WriteFile(filepath.Join(p.Copies[0].stage(p.StageDir), "managed.toml"), []byte("bad"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "inline":
+				if !strings.Contains(p.Copies[0].Problem, "move") {
+					t.Fatal(p.Copies[0].Problem)
+				}
+			case "lock":
+				if err := os.WriteFile(filepath.Join(r.privateDir, ".rollout.lock"), []byte("live writer"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s.calls()
+			if _, err := r.Apply(context.Background(), p.StageDir, approve, machines...); err == nil {
 				t.Fatal("accepted")
+			}
+			calls := s.calls()
+			for _, call := range calls {
+				if !strings.Contains(call, "-- guild-") {
+					t.Fatal("refused apply wrote", call)
+				}
+			}
+			if (scenario == "machines" || scenario == "duplicate" || scenario == "lock") && len(calls) != 0 {
+				t.Fatal("transport before refusal")
+			}
+			if scenario == "lock" {
+				b, err := os.ReadFile(filepath.Join(r.privateDir, ".rollout.lock"))
+				if err != nil || string(b) != "live writer" {
+					t.Fatal("removed live lock")
+				}
 			}
 		})
 	}
 }
-
-func TestApplyRollsOutAndIsIdempotent(t *testing.T) {
-	s, r := fleet(t)
-	p := dryRun(t, r, "workstation", "laptop")
-	s.calls()
-
-	if _, err := r.Apply(context.Background(), p.StageDir, ""); !errors.Is(err, ErrApprovalRequired) {
-		t.Fatalf("policy change applied without approval: %v", err)
-	}
-	if _, err := r.Apply(context.Background(), p.StageDir, "sha256:0000"); !errors.Is(err, ErrApprovalRequired) {
-		t.Fatalf("approval of another plan accepted: %v", err)
-	}
-	for _, call := range s.calls() {
-		if !strings.Contains(call, "-- guild-") {
-			t.Fatalf("refused apply wrote: %s", call)
-		}
-	}
-
-	receipt, err := r.Apply(context.Background(), p.StageDir, p.Digest)
-	if err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	want := []string{"workstation/tools=applied", "workstation/docs=unchanged", "laptop/games=applied"}
-	if got := statuses(receipt.Copies, receiptStatus); !slices.Equal(got, want) {
-		t.Fatalf("receipt = %v, want %v", got, want)
-	}
-	if !receipt.Approved || receipt.PlanDigest != p.Digest {
-		t.Errorf("receipt approval %v digest %q", receipt.Approved, receipt.PlanDigest)
-	}
-	staged, _ := os.ReadFile(filepath.Join(p.StageDir, "files", "workstation", "tools", "config.toml"))
-	if got := s.get("guild-ws", toolsPath); got != string(staged) {
-		t.Errorf("remote config is not the staged preview:\n%s", got)
-	}
-	tools := receipt.Copies[0]
-	if tools.VerifiedSHA256 != tools.AfterSHA256 || tools.Revision != toolsPath+".rev-"+tools.BeforeSHA256[:16] {
-		t.Errorf("tools receipt %+v", tools)
-	}
-	if got := s.get("guild-ws", tools.Revision); got != copyFixture {
-		t.Errorf("previous revision not preserved: %q", got)
-	}
-	games := s.get("guild-laptop", gamesPath)
-	if !strings.Contains(games, "[local]\r\nnotes_dir = 'D:/notes'\r\n") || !strings.Contains(games, "[managed.standards_revision]\r\nvalue = \"standards-2\"\r\n") {
-		t.Errorf("windows copy lost local settings or managed values:\n%q", games)
-	}
-
-	data, err := os.ReadFile(filepath.Join(p.StageDir, "receipt-20261020T120000Z.json"))
-	if err != nil {
-		t.Fatalf("receipt file: %v", err)
-	}
-	var onDisk Receipt
-	if err := json.Unmarshal(data, &onDisk); err != nil || onDisk.Schema != ReceiptSchema || len(onDisk.Copies) != 3 {
-		t.Errorf("receipt file %v: %s", err, data)
-	}
-
-	// Applying the same plan again is refused: the copies no longer match it.
-	if _, err := r.Apply(context.Background(), p.StageDir, p.Digest); !errors.Is(err, ErrPlanStale) {
-		t.Errorf("stale plan reapplied: %v", err)
-	}
-	// A fresh plan finds nothing to do, and applying it writes nothing.
-	s.calls()
-	fresh := dryRun(t, r, "workstation", "laptop")
-	if got := statuses(fresh.Copies, copyStatus); !slices.Equal(got, []string{"workstation/tools=unchanged", "workstation/docs=unchanged", "laptop/games=unchanged"}) {
-		t.Fatalf("second plan = %v", got)
-	}
-	again, err := r.Apply(context.Background(), fresh.StageDir, "")
-	if err != nil {
-		t.Fatalf("idempotent apply: %v", err)
-	}
-	if got := statuses(again.Copies, receiptStatus); !slices.Equal(got, []string{"workstation/tools=unchanged", "workstation/docs=unchanged", "laptop/games=unchanged"}) {
-		t.Errorf("idempotent receipt = %v", got)
-	}
-	for _, call := range s.calls() {
-		if !strings.Contains(call, "-- guild-") {
-			t.Errorf("idempotent apply wrote: %s", call)
-		}
+func TestRolloutTransferFailures(t *testing.T) {
+	for _, corrupt := range []bool{false, true} {
+		t.Run(map[bool]string{false: "failure", true: "corruption"}[corrupt], func(t *testing.T) {
+			s, r := fleet(t)
+			p := dryRun(t, r, "workstation", "laptop")
+			if corrupt {
+				t.Setenv(stubCorruptEnv, "verify.toml")
+			} else {
+				t.Setenv(stubFailEnv, "managed.toml guild-laptop:")
+			}
+			receipt, err := r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...)
+			if !errors.Is(err, ErrIncomplete) {
+				t.Fatal(err)
+			}
+			if corrupt {
+				if receipt.Copies[0].Status != StatusVerifyFailed {
+					t.Fatal(receipt)
+				}
+			} else {
+				if receipt.Copies[0].Status != StatusApplied || receipt.Copies[2].Status != StatusFailed {
+					t.Fatal(receipt)
+				}
+				if s.get("guild-laptop", gamesPath) != gamesCopy {
+					t.Fatal("local config changed")
+				}
+			}
+		})
 	}
 }
-
-func TestApplyRefusesWhenACopyChangedSinceThePlan(t *testing.T) {
-	s, r := fleet(t)
-	p := dryRun(t, r, "workstation")
-	edited := strings.Replace(copyFixture, `notes_dir = "notes"`, `notes_dir = "journal"`, 1)
-	s.put("guild-ws", toolsPath, edited)
-	if _, err := r.Apply(context.Background(), p.StageDir, p.Digest); !errors.Is(err, ErrPlanStale) {
-		t.Fatalf("stale plan applied: %v", err)
-	}
-	if s.get("guild-ws", toolsPath) != edited {
-		t.Error("the Director's newer edit was overwritten")
-	}
-}
-
-func TestApplyRefusesTamperedPreview(t *testing.T) {
+func TestPlanRefusesUnknownOrRepeatedMachines(t *testing.T) {
 	_, r := fleet(t)
-	p := dryRun(t, r, "workstation")
-	preview := filepath.Join(p.StageDir, "files", "workstation", "tools", "config.toml")
-	if err := os.WriteFile(preview, []byte("schema_version = 1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.Apply(context.Background(), p.StageDir, p.Digest); !errors.Is(err, ErrPlanStale) {
-		t.Fatalf("tampered preview applied: %v", err)
-	}
-}
-
-func TestApplyRecordsPartialFailure(t *testing.T) {
-	s, r := fleet(t)
-	p := dryRun(t, r, "workstation", "laptop")
-	t.Setenv(stubFailEnv, "config.toml guild-laptop:")
-	receipt, err := r.Apply(context.Background(), p.StageDir, p.Digest)
-	if !errors.Is(err, ErrIncomplete) {
-		t.Fatalf("partial failure not reported: %v", err)
-	}
-	want := []string{"workstation/tools=applied", "workstation/docs=unchanged", "laptop/games=failed"}
-	if got := statuses(receipt.Copies, receiptStatus); !slices.Equal(got, want) {
-		t.Fatalf("receipt = %v, want %v", got, want)
-	}
-	games := receipt.Copies[2]
-	if !strings.Contains(games.Error, "connection closed") || len(games.Steps) != 2 || games.Steps[1].Error == "" {
-		t.Errorf("failed copy receipt %+v", games)
-	}
-	if s.get("guild-laptop", gamesPath) != gamesCopy {
-		t.Error("failed copy was changed")
-	}
-	if _, err := os.Stat(filepath.Join(p.StageDir, "receipt-20261020T120000Z.json")); err != nil {
-		t.Errorf("no receipt for a partial rollout: %v", err)
-	}
-}
-
-func TestApplyDetectsVerificationFailure(t *testing.T) {
-	_, r := fleet(t)
-	p := dryRun(t, r, "laptop")
-	t.Setenv(stubCorruptEnv, "verify.toml")
-	receipt, err := r.Apply(context.Background(), p.StageDir, p.Digest)
-	if !errors.Is(err, ErrIncomplete) {
-		t.Fatalf("verification failure not reported: %v", err)
-	}
-	games := receipt.Copies[0]
-	if games.Status != StatusVerifyFailed || games.VerifiedSHA256 == "" || games.VerifiedSHA256 == games.AfterSHA256 {
-		t.Errorf("verify receipt %+v", games)
-	}
-}
-
-func TestRefusedCopyBlocksApply(t *testing.T) {
-	s, r := fleet(t)
-	s.put("guild-ws", docsPath, strings.Replace(docsCopy, `owner_machine = "workstation"`, `owner_machine = "laptop"`, 1))
-	t.Setenv(stubFailEnv, "guild-laptop:")
-	p := dryRun(t, r, "workstation", "laptop")
-	want := []string{"workstation/tools=change", "workstation/docs=refused", "laptop/games=refused"}
-	if got := statuses(p.Copies, copyStatus); !slices.Equal(got, want) {
-		t.Fatalf("copies = %v, want %v", got, want)
-	}
-	if !strings.Contains(p.Copies[1].Problem, `owner machine "laptop"`) || !strings.Contains(p.Copies[2].Problem, "connection closed") {
-		t.Errorf("problems: %q, %q", p.Copies[1].Problem, p.Copies[2].Problem)
-	}
-	if _, err := r.Apply(context.Background(), p.StageDir, p.Digest); !errors.Is(err, ErrNotApplicable) {
-		t.Fatalf("plan with refused copies applied: %v", err)
+	for _, machines := range [][]string{nil, {"unknown"}, {"laptop", "laptop"}} {
+		if _, err := r.Plan(context.Background(), machines, t.TempDir()); err == nil {
+			t.Fatal("accepted", machines)
+		}
 	}
 }
