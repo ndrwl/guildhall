@@ -32,7 +32,7 @@ func TestIdentityExited259(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer release.Close()
+	defer func() { _ = release.Close() }()
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestIdentityExited259(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer windows.CloseHandle(h)
+	defer func() { _ = windows.CloseHandle(h) }()
 	id, err := artisan.Lookup(cmd.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
