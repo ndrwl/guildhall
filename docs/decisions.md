@@ -65,3 +65,34 @@ The store has no generic storage interface: `internal/store` exposes concrete re
 The single-writer rule uses bbolt's own file lock and no separate lock file or locking package.
 An exclusive lock on the database file for a writer and a shared lock for a read-only open, with a bounded wait, already give the contract the store needs: one writer per file, released by the kernel when the process dies.
 The landed gomate `internal/lock` package wraps `github.com/gofrs/flock` for a separate lock file; it would add a dependency and a second lock without a behaviour the store needs, so no gomate code is copied and no notice is added.
+
+## D11. Repository paths are absolute in the owner machine's form
+
+A Steward validates Director configs whose owner machine may run another OS than its own, so `internal/config` accepts a repository `path` that starts with `/` or with a drive letter followed by `/` or `\`, on every host.
+Relative, drive-relative and backslash-prefixed UNC paths are refused; paths beginning with `/`, including `//`, are treated as POSIX paths.
+Duplicate comparison cleans POSIX dot segments and, for drive paths, normalizes separators, drive-letter case and dot segments independently of the validating host.
+A later Director layer that opens repositories on its own machine checks the path against that machine's form.
+
+## D12. Steward rollouts copy files with scp and nothing else
+
+Rollouts in `internal/steward` run only `scp -q -B -o BatchMode=yes -- <source> <destination>` from `PATH`, as an argument list, and no remote command.
+This leaves access to the user's SSH config, agent, keys and host-key checking, works the same against POSIX and Windows OpenSSH servers, and avoids any remote shell, whose quoting differs between them.
+Roster aliases and copy directories are restricted to characters no remote shell or `scp` interprets, so untrusted roster values cannot inject options or commands.
+Atomic replacement would need a remote rename command, so the file is copied in place, then read back and verified by sha256, and the previous revision is copied beside it first.
+
+## D13. Rollout plans, previews and receipts live in a plan directory
+
+A dry run writes `plan.json`, the per-copy previews and, after apply, timestamped receipts into one new directory named by `--plan`.
+The plan digest is the sha256 of the plan's JSON encoding with its digest field set to an empty string.
+See [apply](steward.md#apply) for revalidation, machine selection, temporary transport inputs and receipt contents.
+Receipts are the rollout record for now; they are not a task store.
+The managed-settings source marks policy keys with `policy = true`, which is kept privately and not written to copies, because only the Guildmaster can say which preferences are review or approval rules.
+
+## D14. Separate managed publication from Director-owned config
+
+Rollouts write only `managed.toml`, never `config.toml`, so concurrent local edits cannot be overwritten by a stale whole-file snapshot.
+See [configuration](configuration.md) for combined loading and legacy inline-layout compatibility.
+A checksum framing line detects incomplete managed transfers, but scp publication is non-atomic and may transiently refuse reads; this does not establish uninterrupted config availability.
+An exclusive lock file in the private config directory prevents concurrent local applies sharing that directory, not cross-host writers.
+Operators must designate one writer and recover a stale lock only after confirming its owner has stopped.
+Previous managed revisions remain beside the published file; active-task pinning remains future work.

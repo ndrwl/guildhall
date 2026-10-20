@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
-	"path/filepath"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -90,7 +90,21 @@ type Repository struct {
 var (
 	keyPattern        = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 	credentialPattern = regexp.MustCompile(`(?i)(token|passw|secret|api_?key|credential|private_?key)`)
+	drivePathPattern  = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 )
+
+// ownerAbsolute reports whether path is absolute on its owner machine, which may run another OS than this host:
+// a POSIX path from the root or a Windows path from a drive letter.
+func ownerAbsolute(path string) bool {
+	return strings.HasPrefix(path, "/") || drivePathPattern.MatchString(path)
+}
+
+func ownerPathKey(p string) string {
+	if drivePathPattern.MatchString(p) {
+		return strings.ToLower(p[:2]) + path.Clean(strings.ReplaceAll(p[2:], `\`, "/"))
+	}
+	return path.Clean(p)
+}
 
 // Parse decodes and validates a config, applying defaults.
 func Parse(data []byte) (*Config, error) {
@@ -190,9 +204,9 @@ func (c *Config) validate() []string {
 			add("duplicate repository id %q", r.ID)
 		}
 		seenID[r.ID] = true
-		if !filepath.IsAbs(r.Path) {
+		if !ownerAbsolute(r.Path) {
 			add("%s: path must be absolute", name)
-		} else if clean := filepath.Clean(r.Path); seenPath[clean] {
+		} else if clean := ownerPathKey(r.Path); seenPath[clean] {
 			add("%s: path is already used by another repository", name)
 		} else {
 			seenPath[clean] = true
@@ -218,6 +232,14 @@ func (c *Config) validate() []string {
 		add("a director has one owner machine, but repositories name %s", strings.Join(machines, ", "))
 	}
 	return problems
+}
+
+// CheckKey reports why key cannot name a managed or local setting, or nil if it can.
+func CheckKey(key string) error {
+	if problems := checkKey("setting", key); len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 func checkKey(section, key string) []string {

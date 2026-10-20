@@ -201,3 +201,42 @@ func TestExampleConfigParses(t *testing.T) {
 		t.Fatalf("example config refused: %v", err)
 	}
 }
+
+func TestRepositoryPathsMayUseTheOwnerMachinesForm(t *testing.T) {
+	// A Steward on one OS validates copies whose owner machine runs another,
+	// so POSIX and Windows drive paths are both absolute on every host.
+	for _, path := range []string{"/srv/src/tool", "C:/src/tool", `C:\src\tool`} {
+		t.Run(path, func(t *testing.T) {
+			data := strings.Replace(director(t), "path = '", "path = '"+path+"'\n#", 1)
+			if _, err := Parse([]byte(data)); err != nil {
+				t.Fatalf("absolute path %q refused: %v", path, err)
+			}
+		})
+	}
+	for _, path := range []string{"src/tool", "C:src/tool", "C:", `\\server\share`} {
+		t.Run(path, func(t *testing.T) {
+			data := strings.Replace(director(t), "path = '", "path = '"+path+"'\n#", 1)
+			if _, err := Parse([]byte(data)); err == nil || !strings.Contains(err.Error(), "path must be absolute") {
+				t.Fatalf("path %q: got %v", path, err)
+			}
+		})
+	}
+}
+
+func TestCheckKey(t *testing.T) {
+	for _, key := range []string{"standards_revision", "a", "lint2"} {
+		if err := CheckKey(key); err != nil {
+			t.Errorf("CheckKey(%q) = %v", key, err)
+		}
+	}
+	for key, want := range map[string]string{
+		"Upper":        "invalid key",
+		"a]\nb":        "invalid key",
+		"":             "invalid key",
+		"github_token": "looks like a credential",
+	} {
+		if err := CheckKey(key); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("CheckKey(%q) = %v, want %q", key, err, want)
+		}
+	}
+}

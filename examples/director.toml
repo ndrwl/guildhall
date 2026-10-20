@@ -3,14 +3,6 @@ schema_version = 1
 mode = "director"
 name = "tools"
 
-# Written only by Steward rollouts.
-[managed.standards_revision]
-value = "standards-1"
-
-[managed.review_instructions]
-value = "Cite the accepted requirement for every finding."
-overridable = true
-
 # Owned by this Director; may replace managed keys marked overridable.
 [local]
 review_instructions = "Cite the accepted requirement for every finding and check Windows paths."
