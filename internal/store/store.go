@@ -175,7 +175,7 @@ func initMeta(tx *bolt.Tx) error {
 	return checkMeta(tx)
 }
 
-// checkMeta returns the store's schema version or refuses the file.
+// checkMeta refuses files missing required buckets or supported Guildhall metadata.
 func checkMeta(tx *bolt.Tx) error {
 	for _, name := range [][]byte{bucketMeta, bucketReceipts, bucketRepos} {
 		if tx.Bucket(name) == nil {

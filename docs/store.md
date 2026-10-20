@@ -17,7 +17,9 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Decision | repository, task, decision id | A question for the Guildmaster and, once, the exact answer (R1.61). |
 
-Free text is limited to 64 KiB per field; larger content belongs in a referenced document.
+Titles, questions and answers must be non-blank valid UTF-8 and are limited to 64 KiB per field; larger content belongs in a referenced document.
+Pane binding fields must be non-blank valid UTF-8 and are limited to 256 bytes each.
+Document paths are relative to the Director's document directory and must be clean, local, slash-separated paths of at most 1024 bytes, without backslashes or colons.
 Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
 
 ## Mutations and receipts
