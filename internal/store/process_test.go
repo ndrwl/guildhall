@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
 const helperEnv = "GUILDHALL_STORE_TEST_HOLDER"
@@ -93,5 +95,83 @@ func TestKilledWriterReleasesLockAndKeepsCommittedWork(t *testing.T) {
 	r, err := s.CreateTask("holder-1", sampleTask("app", "held"))
 	if err != nil || r.Sequence != 1 {
 		t.Fatalf("replaying the killed writer's mutation = %+v, %v; want its original receipt", r, err)
+	}
+}
+
+const ownerEnv = "GUILDHALL_STORE_TEST_OWNER"
+
+// TestHelperOwnAttempt is not a test: TestOwnerInAnotherProcessIsRefused runs
+// it as a separate process that starts an attempt owned by its own identity,
+// closes the store, reports "owned" and stays alive until killed.
+func TestHelperOwnAttempt(t *testing.T) {
+	path := os.Getenv(ownerEnv)
+	if path == "" {
+		t.Skip("helper process only")
+	}
+	err := func() error {
+		self, err := artisan.Self()
+		if err != nil {
+			return err
+		}
+		s, err := Open(path, testOptions())
+		if err != nil {
+			return err
+		}
+		if _, err := s.StartOwnedAttempt("owner-start", sampleOwnership(self)); err != nil {
+			_ = s.Close()
+			return err
+		}
+		return s.Close()
+	}()
+	if err != nil {
+		fmt.Println("own:", err)
+		os.Exit(1)
+	}
+	fmt.Println("owned")
+	_, _ = io.Copy(io.Discard, os.Stdin)
+	os.Exit(0)
+}
+
+func TestOwnerInAnotherProcessIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "guildhall.store")
+	s := openTest(t, path)
+	mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperOwnAttempt$")
+	cmd.Env = append(os.Environ(), ownerEnv+"="+path)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stdin.Close() }()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	if line, err := bufio.NewReader(stdout).ReadString('\n'); err != nil || line != "owned\n" {
+		t.Fatalf("owner did not take the attempt: %q, %v", line, err)
+	}
+
+	s = openTest(t, path)
+	owner := mustOwnership(t, s, 1)
+	if owner.LauncherIdentity.PID != cmd.Process.Pid {
+		t.Fatalf("recorded owner = %+v, want the helper's pid %d", owner.LauncherIdentity, cmd.Process.Pid)
+	}
+	if _, err := s.TakeOwnership("m-take", takeB(1), nil); !errors.Is(err, ErrOwnerLive) {
+		t.Fatalf("take while the owning process lives: err = %v, want ErrOwnerLive", err)
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	if _, err := s.TakeOwnership("m-take", takeB(1), nil); err != nil {
+		t.Fatalf("take after the owning process was killed and reaped: %v", err)
 	}
 }

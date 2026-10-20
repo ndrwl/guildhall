@@ -19,8 +19,9 @@ type Snapshot struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// TaskHistory is one task's records together with the receipt of every mutation that touched it,
-// all read in one read transaction, so they describe exactly the store state AsOf names.
+// TaskHistory is a task, its attempts, documents and decisions, together with
+// the receipt of every mutation that touched it; ownership records are read separately.
+// Its contents are read in one transaction and describe exactly the store state AsOf names.
 // Its lists are empty rather than nil when the task has no such records.
 type TaskHistory struct {
 	AsOf      Snapshot

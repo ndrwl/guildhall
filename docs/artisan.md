@@ -2,7 +2,7 @@
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
 This page describes what is built today: the operating-system seams the launcher stands on, process identity and the containment unit.
-The ownership record, control endpoint, stop ladder, heartbeat and integration into launcher commands are later work; nothing here is wired into a command yet.
+The [ownership record](store.md#attempt-ownership) is in the store; the control endpoint, stop ladder, heartbeat and integration into launcher commands are later work, and nothing here is wired into a command yet.
 The existing fake-adapter `artisan run` command is described in [adapters](adapters.md#running-an-attempt).
 The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
