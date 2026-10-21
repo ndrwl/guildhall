@@ -2,8 +2,8 @@
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
 This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit, the control endpoint, the stop ladder, the heartbeat and reconcile's classification.
-The [ownership record](store.md#attempt-ownership) is in the store; integration into launcher commands is later work, and nothing here is wired into a command yet.
-The existing fake-adapter `artisan run` command is described in [adapters](adapters.md#running-an-attempt).
+The [ownership record](store.md#attempt-ownership) is in the store, and the `artisan run`, `stop` and `status` [commands](#commands) wire the pieces together.
+The Herdr tab mode of `artisan run` is described in [adapters](adapters.md#running-an-attempt).
 The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
 ## Process identity
@@ -173,7 +173,7 @@ The endpoint decodes the request strictly with [`strictjson`](contracts/strictjs
 | A `launcher` with an incompatible JSON type, such as a string or list, or a string `pid` | Malformed request |
 | Invalid JSON or UTF-8, or no newline within the 4 KiB request budget | Malformed request |
 
-Unversioned requests are refused rather than supported during a transition: the endpoint is not yet wired into a command, so no client of an earlier protocol exists.
+Unversioned requests are refused rather than supported during a transition: no client of an earlier protocol existed when the endpoint was wired into a command.
 A newer version is refused rather than guessed at, because stop and cancel are destructive; serving a later version means naming it in the endpoint.
 Before dispatching status, stop or cancel, the endpoint checks that both identities match its bound attempt and launcher; missing or mismatched identities receive an error without invoking any handler.
 The reply is one JSON line carrying `"schema": "guildhall.attempt-control/1"`, including when refusing a request, and naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
@@ -189,6 +189,7 @@ A failed call never proves the owner exited: a silent endpoint is unknown until 
 A `Launcher` runs one attempt's worker in its unit, decides the attempt once and stops the worker tree ([decision](decisions/0041-stop-ladder-precedence.md)).
 It is the endpoint's handler, and its [doc comments](../internal/artisan/launcher.go) own the API contract.
 It reads the attempt's result and writes its cancel marker through `AttemptFiles`, and writes `outcome.json`, `events.jsonl` and `attempt.lock` in the attempt directory.
+The real `AttemptFiles` is `launch.Files`: the adapter's result file parsed with `adapter.ParseResult`, bound to the attempt identity and version-checked, and the adapter's `.cancelled` sidecar as the marker; launcher and `reconcile.Classify` both read through it, so marker and result have one reader each.
 
 ### Precedence
 
@@ -241,7 +242,7 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 
 - `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
-- The ladder is driven through the Go API only; the `artisan run`, `stop` and `status` commands, the adapter's result and marker files and Tier 2 pane runs come with the command-line slice.
+- Tier 2 pane runs, `artisan resume` and the retirement of the Windows-only worker stop path come with the next command-line slice.
 
 ## Heartbeat
 
@@ -266,6 +267,7 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 - `sequence` is positive and increases with every write, continuing from a heartbeat an earlier launcher of the attempt left.
 - `worker_state` is the launcher's phase: `starting`, `running` or `stopping`; it is nonblank UTF-8 of at most 256 bytes.
 - `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began.
+  `artisan run` sets none: the worker writes straight to the launcher's terminal, which the launcher does not read.
   A later time than the beat is reported as the beat's time.
 - The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live.
   Beats continue during result grace and cooperative supervision, but pause while the stop ladder waits on a signal rung.
@@ -306,6 +308,42 @@ A heartbeat is evidence only: `stuck` is never exit and grants no relaunch, take
 A heartbeat that names another attempt is ignored.
 The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s).
 
+## Commands
+
+`guildhall artisan run`, `stop` and `status` name an owned attempt with `--store <file> --state <dir> --repository <id> --task <id> --step <id> --attempt <n>`.
+The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
+They are the composition package `internal/launch`, whose [doc comments](../internal/launch/launch.go) own the API contract.
+
+`artisan run --adapter fake --prompt <file> --workdir <dir>` runs the attempt as its launcher:
+
+1. it takes the attempt's ownership, which the store records as running already; a live owner refuses it with `ErrOwnerLive`, and an owner that cannot be proven exited, or whose recorded unit still has members, with `ErrOwnerUnknown`, before anything starts;
+2. it binds the control endpoint and records its path;
+3. it starts the worker in a fresh containment unit and records the containment in `containment.json` and the ownership record, with state `running`;
+4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; `--timeout`, when given, requests the stop ladder, as do the endpoint's `stop` and SIGTERM or SIGHUP;
+5. it records the store outcome with `FinishAttempt`, which releases the ownership.
+
+The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.
+Survivors after the last rung leave the attempt running and owned, so `status` reports them once the launcher has exited.
+
+| Launcher outcome | Result | Store outcome | Exit status |
+|---|---|---|---|
+| `finished` | `succeeded` | `succeeded` | 0 |
+| `finished` | `failed` | `failed` | 4 |
+| `failed` | none | `failed` | 4 |
+| `cancelled` | any, rejected as late | `stopped` | 5 |
+
+Any error, including a refused ownership and survivors, exits 1; a usage error exits 2.
+
+`artisan stop` asks the owner to stop through the endpoint its unreleased ownership record names and waits for the ladder's end within `--timeout` (one minute).
+Without a record, an endpoint or an answer it only classifies; it never signals a process itself.
+It prints what the endpoint did and the classification afterwards, and exits 1 when that is `running`, `stuck` or `unknown`.
+`artisan status` prints the [classification](#reconcile) and exits 0; an attempt with no directory and no ownership record is `absent`.
+
+### Custody
+
+The launcher opens the store for each record operation and closes it before the next, and never holds it while the worker runs.
+Ownership is durable state in the store, not a held handle, so other commands read, write and refuse competing runs while an attempt runs.
+
 ## Tests
 
 `artisantest.RunUnitContract` is the containment contract.
@@ -345,3 +383,5 @@ It also covers SIGTERM and SIGHUP stopping the attempt, a forwarded interrupt le
 The four heartbeat cases are a wedged launcher whose supervision loop is really blocked (stuck while its identity and endpoint live, then running again); a stalled worker whose fresh heartbeat with an old `last_output_at` is running, not stuck; a stale heartbeat while the launcher lives (stuck, take-over refused with `ErrOwnerLive`, running once beats resume); and a killed launcher process whose frozen heartbeat is reported while the identity decides, `unknown` while contained processes survive and `exited` once they are gone.
 The pinned scratch cases are the files deciding first (L22), a gone launcher with an emptied or surviving unit (L13, L14), a broken endpoint of a live launcher (L19), a reused PID (L20) and a leftover endpoint file (L21).
 Every case checks that the processes it caused are gone.
+
+The command tests are listed in the [launch contract](contracts/launch.md#tests): `RunStopContract` with `launch.Files`, the outcome translation table, owned runs against a real store, and the custody acceptance with each command in its own process.

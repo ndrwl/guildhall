@@ -86,10 +86,11 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 
 ## Running an attempt
 
-`guildhall artisan run --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir>` launches one attempt and waits for its result file.
+Without Herdr flags, `guildhall artisan run` owns a stored attempt as its launcher; see [Artisan commands](artisan.md#commands).
 
-- Without Herdr flags the Artisan runs as a direct child process whose output goes to standard error; timeout and interruption handling follow the baseline contract above.
-- With `--herdr-session <name> --herdr-workspace <id>` the Artisan runs in a new tab of that workspace, labelled `artisan <task>/<attempt>` unless `--tab-label` is given.
+`guildhall artisan run --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
+
+- The tab is labelled `artisan <task>/<attempt>` unless `--tab-label` is given.
   `--herdr-exec` names the Herdr program, repeated once per word when the program needs leading arguments; the default is `herdr` on `PATH`.
   On timeout or interruption without a result the Artisan is left running unless `--stop-on-timeout` is given; a rejected result does not trigger stopping, and Guildhall never closes the tab.
   On native Windows that option establishes ownership before work starts, then terminates and waits on the exact retained process handle when the wait ends.
@@ -102,7 +103,7 @@ A valid result is printed to standard output as one JSON line.
 | Exit status | Meaning |
 |---|---|
 | 0 | A valid result with status `succeeded` |
-| 1 | An error, a rejected result, or a direct child that exited without a result |
+| 1 | An error or a rejected result |
 | 2 | A usage error |
 | 3 | No result yet when the wait ended; the attempt is not finished |
 | 4 | A valid result with status `failed` |
