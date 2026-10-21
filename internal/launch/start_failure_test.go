@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -16,11 +17,17 @@ func TestRunPreservesStartFailureAndRecordsOutcome(t *testing.T) {
 	a := newAttempt(t)
 	cmd, inv := worker(t, a, artisantest.Worker{})
 	cmd.Dir = filepath.Join(t.TempDir(), "missing-workdir")
+	probe := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
+	probe.Dir, probe.Env = cmd.Dir, cmd.Env
+	var want *os.PathError
+	if err := probe.Run(); !errors.As(err, &want) {
+		t.Fatalf("direct start error = %v; want native path error", err)
+	}
 	done, cancel := start(a, cmd)
 	defer cancel()
 	r := wait(t, done)
-	if !errors.Is(r.err, os.ErrNotExist) {
-		t.Fatalf("Run error = %v; want missing working directory error", r.err)
+	if !errors.Is(r.err, want.Err) {
+		t.Fatalf("Run error = %v; want native missing working directory error %v", r.err, want.Err)
 	}
 	if r.r.Outcome.State != artisan.Failed || r.r.AttemptOutcome != store.AttemptFailed || storedOutcome(t, a) != store.AttemptFailed {
 		t.Fatalf("Run report = %+v; want recorded failed outcome", r.r)
