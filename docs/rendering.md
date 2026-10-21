@@ -38,7 +38,7 @@ The release root is the binary's embedded `skills` directory, written out by `sk
 `guildhall render <request.json>` installs it temporarily and always supplies it first as `release`, followed by optional `Managed` and `Director` directories.
 The JSON request contains `Stage`, `Inputs` and `Baseline` using the [renderer types' Go field names](../internal/render/render.go), plus those optional directory paths; `Stage.Step` uses the [workflow JSON fields](configuration.md#workflow-definitions), and relative paths resolve from the command's working directory.
 Strict JSON decoding, request validation and refusal behavior are specified in the [CLI contract](contracts/cli.md).
-The command writes the manifest as JSON to stdout and leaves the self-contained prompt at `Stage.Dir/prompt.md`, ready for `artisan run --prompt`.
+The command writes the manifest as JSON to stdout and leaves the self-contained prompt at `Stage.Dir/prompt.md`, ready for `artisan start --prompt`.
 The temporary release root is removed on success or failure.
 Each adapted skill includes its own `CREDITS.md`, preserving the upstream MIT notice in the attempt.
 Release embedding is delivered here; Steward distribution of skill bundles follows in a later slice.

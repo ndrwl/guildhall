@@ -63,6 +63,11 @@ func TestKill(t *testing.T) {
 	if err := artisan.Kill(id); err != nil {
 		t.Fatalf("Kill = %v", err)
 	}
+	// Repeat before waiting: termination is asynchronous on Windows, and
+	// another cleanup caller can encounter the process while it exits.
+	if err := artisan.Kill(id); err != nil {
+		t.Errorf("Kill during termination = %v", err)
+	}
 	waitGone(t, id)
 	_ = cmd.Wait()
 	if err := artisan.Kill(id); err != nil {

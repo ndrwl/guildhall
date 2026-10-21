@@ -1,7 +1,7 @@
 // Package launch composes one owned Artisan attempt from the adapter's files,
 // the containment unit and stop ladder of artisan, the Director store's
 // ownership record and reconcile's classification (docs/artisan.md#commands).
-// It is what `guildhall artisan run`, `stop`, `status` and `resume` call.
+// It is what `guildhall artisan start`, `stop`, `status` and `resume` call.
 //
 // Run owns and runs one attempt the store already records as running:
 //

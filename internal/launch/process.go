@@ -20,12 +20,12 @@ import (
 const LogFile = "launcher.log"
 
 // Process is the real interp.Launcher: it runs each attempt as its own
-// `guildhall artisan run` process, the attempt's owned launcher (Run),
+// `guildhall artisan start` process, the attempt's owned launcher (Run),
 // detached from the caller so the attempt outlives it.
 //
 // Launch refuses, starting nothing, a spec that interp.Spec.Validate refuses,
 // an adapter interp.CheckAdapter refuses or other than "fake" (the only one
-// `artisan run` runs), an ended context, and a spec not laid out as its
+// `artisan start` runs), an ended context, and a spec not laid out as its
 // manifest's attempt under StateDir: an identity other than the task and
 // artisan.AttemptKey.AttemptID, or a result file other than
 // artisan.ResultFile in artisan.AttemptKey.Dir. The attempt must already be
@@ -45,7 +45,7 @@ type Process struct {
 	Executable string
 	Env        []string
 	// Store and StateDir are the Director store and the absolute state
-	// directory, as `artisan run --store --state` takes them.
+	// directory, as `artisan start --store --state` takes them.
 	Store, StateDir string
 	// StartTimeout bounds Launch's wait for ownership; zero is 30 seconds.
 	StartTimeout time.Duration
@@ -87,7 +87,7 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 		return interp.Handle{}, err
 	}
 	k := at.Key
-	cmd := exec.Command(p.Executable, "artisan", "run", "--store", p.Store, "--state", p.StateDir,
+	cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
 		"--repository", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
 		"--adapter", spec.Adapter, "--prompt", spec.PromptFile, "--workdir", spec.WorkDir)
 	cmd.Env = append(os.Environ(), p.Env...)

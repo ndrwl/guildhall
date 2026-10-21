@@ -178,6 +178,42 @@ func TestHelpPrintsUsageToStdout(t *testing.T) {
 	}
 }
 
+// TestArtisanRoleGrammar pins the role grammar of docs/decisions/cli-role-grammar.md
+// for the Artisan: help lists every artisan verb, and the pre-release `artisan
+// run` is refused with a pointer to `artisan start` rather than kept as an alias.
+func TestArtisanRoleGrammar(t *testing.T) {
+	app, stdout, _ := newTestApp(nil, nil)
+	if code := app.Run([]string{"help"}); code != 0 {
+		t.Fatalf("help exit code = %d, want 0", code)
+	}
+	for _, want := range []string{"artisan start|stop|status|resume", "artisan harness inventory|kill-owned|probe --lab"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("help = %q, want it to list %q", stdout, want)
+		}
+	}
+
+	for _, args := range [][]string{{"artisan"}, {"artisan", "frobnicate"}} {
+		app, _, stderr := newTestApp(nil, nil)
+		if code := app.Run(args); code != 2 {
+			t.Errorf("%q exit code = %d, want 2", args, code)
+		}
+		if want := "guildhall: artisan: the commands are start, stop, status, resume and harness\n"; !strings.HasPrefix(stderr.String(), want) {
+			t.Errorf("%q stderr = %q, want prefix %q", args, stderr, want)
+		}
+	}
+
+	app, stdout, stderr := newTestApp(nil, nil)
+	if code := app.Run([]string{"artisan", "run", "--adapter", "fake"}); code != 2 {
+		t.Errorf("artisan run exit code = %d, want 2", code)
+	}
+	if want := "guildhall: artisan run is now artisan start\n"; !strings.HasPrefix(stderr.String(), want) {
+		t.Errorf("artisan run stderr = %q, want prefix %q", stderr, want)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("artisan run stdout = %q, want empty", stdout)
+	}
+}
+
 func TestUsageErrors(t *testing.T) {
 	tests := []struct {
 		name    string

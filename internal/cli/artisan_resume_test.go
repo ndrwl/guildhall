@@ -57,11 +57,11 @@ type resumeReport struct {
 	Classification classification `json:"classification"`
 }
 
-// launcherProcess starts `artisan run` for o in its own process and waits
+// launcherProcess starts `artisan start` for o in its own process and waits
 // until it owns the running attempt.
 func launcherProcess(t *testing.T, o ownedAttempt) (*exec.Cmd, chan struct{}, *bytes.Buffer) {
 	t.Helper()
-	run := exec.Command(testExecutable(t), o.args("run")...)
+	run := exec.Command(testExecutable(t), o.args("start")...)
 	run.Env = append(os.Environ(), roleEnv+"=guildhall")
 	var runErr bytes.Buffer
 	run.Stderr = &runErr

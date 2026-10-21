@@ -15,7 +15,7 @@ guildhall step done --store <file> --config <director.toml> --state <dir> --repo
 |---|---|
 | Records, outbox | The store at `--store`, opened for each record operation and closed before the next, so an attempt's launcher can take its ownership while the advance runs |
 | Workflow | The repository's effective workflow, resolved from `--config` exactly as [`task new`](tasks.md) resolves it; a definition that is no longer the task's bound revision is refused |
-| Profiles, merge policy | The Director config; a step without a profile runs the `fake` adapter, the only one `artisan run` runs today |
+| Profiles, merge policy | The Director config; a step without a profile runs the `fake` adapter, the only one `artisan start` runs today |
 | Standards revision | The config setting `standards_revision` |
 | Baseline | `baseline/` beside the config file: the role `roles/artisan.md`, the guide `stages/<kind>.md`, and every `standards/*.md` in name order; a step profile's `role` overrides the default role and is resolved relative to the config directory |
 | Skills | The embedded release skills, installed into a temporary root for the advance |

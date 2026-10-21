@@ -17,6 +17,14 @@ func kill(id Identity) error {
 		return nil
 	}
 	if err != nil {
+		// A job closing can terminate this process between inventory and
+		// OpenProcess. Windows may deny termination access during exit;
+		// suppress that error only if the recorded identity is proven gone.
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			if lv, _ := Probe(id); lv == Gone {
+				return nil
+			}
+		}
 		return err
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
@@ -31,6 +39,12 @@ func kill(id Identity) error {
 		return nil
 	}
 	if err := windows.TerminateProcess(h, 1); err != nil {
+		// This handle already grants PROCESS_TERMINATE. Access denied here
+		// means termination is already underway, not a permission failure;
+		// the handle need not be signalled yet because termination is async.
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			return nil
+		}
 		if _, checkErr := identityFromHandle(id.PID, h); errors.Is(checkErr, errNoProcess) {
 			return nil
 		}

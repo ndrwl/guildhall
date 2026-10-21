@@ -130,19 +130,19 @@ func TestFakeArtisanCommandUsageErrors(t *testing.T) {
 	}
 }
 
-func TestArtisanRunRefusesExistingResultAndBadFlags(t *testing.T) {
+func TestArtisanStartRefusesExistingResultAndBadFlags(t *testing.T) {
 	prompt, result, dir := artisanFiles(t, "x")
 	if err := os.WriteFile(result, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	app, _, stderr := newArtisanApp(t)
-	base := []string{"artisan", "run", "--adapter", "fake", "--task", "task-1", "--attempt", "attempt-1", "--prompt", prompt, "--result", result, "--workdir", dir}
+	base := []string{"artisan", "start", "--adapter", "fake", "--task", "task-1", "--attempt", "attempt-1", "--prompt", prompt, "--result", result, "--workdir", dir}
 	inTab := append(append([]string{}, base...), "--herdr-session", "lab", "--herdr-workspace", "w1")
 	if code := app.Run(inTab); code != 1 || !strings.Contains(stderr.String(), "already exists") {
 		t.Errorf("existing result: exit %d, stderr %q", code, stderr)
 	}
 	for _, bad := range [][]string{
-		{"artisan", "run", "--adapter", "claude", "--herdr-session", "lab", "--herdr-workspace", "w1"},
+		{"artisan", "start", "--adapter", "claude", "--herdr-session", "lab", "--herdr-workspace", "w1"},
 		{"artisan", "launch"},
 		{"artisan"},
 		append(append([]string{}, base...), "--herdr-session", "lab"),
@@ -159,7 +159,7 @@ type artisanTestWriter func([]byte) (int, error)
 
 func (w artisanTestWriter) Write(p []byte) (int, error) { return w(p) }
 
-func TestArtisanRunInHerdrTabTypesCommandAndWaitsForFile(t *testing.T) {
+func TestArtisanStartInHerdrTabTypesCommandAndWaitsForFile(t *testing.T) {
 	t.Setenv(roleEnv, "herdr")
 	log := filepath.Join(t.TempDir(), "herdr.log")
 	t.Setenv("FAKE_HERDR_LOG", log)
@@ -196,13 +196,13 @@ func TestArtisanRunInHerdrTabTypesCommandAndWaitsForFile(t *testing.T) {
 	}
 }
 
-func TestArtisanRunInHerdrTabRecordsResultFromFile(t *testing.T) {
+func TestArtisanStartInHerdrTabRecordsResultFromFile(t *testing.T) {
 	t.Setenv(roleEnv, "herdr")
 	t.Setenv("FAKE_HERDR_LOG", filepath.Join(t.TempDir(), "herdr.log"))
 	prompt, result, dir := artisanFiles(t, "Do it.\n")
 	t.Setenv("FAKE_HERDR_RESULT", result)
 	app, stdout, stderr := newArtisanApp(t)
-	code := app.Run([]string{"artisan", "run", "--adapter", "fake", "--task", "task-1", "--attempt", "attempt-1",
+	code := app.Run([]string{"artisan", "start", "--adapter", "fake", "--task", "task-1", "--attempt", "attempt-1",
 		"--prompt", prompt, "--result", result, "--workdir", dir,
 		"--herdr-session", "lab", "--herdr-workspace", "w1", "--herdr-exec", testExecutable(t), "--timeout", "30s"})
 	if code != 0 || !strings.Contains(stdout.String(), `"summary":"from the pane"`) {

@@ -34,10 +34,10 @@ func newOwnedAttempt(t *testing.T, prompt string) ownedAttempt {
 	return ownedAttempt{store: messagingStorePath(t), state: state, prompt: p, workdir: work}
 }
 
-// args are the flags naming the attempt, for run, stop and status.
+// args are the flags naming the attempt, for start, stop and status.
 func (o ownedAttempt) args(cmd string, extra ...string) []string {
 	a := []string{"artisan", cmd, "--store", o.store, "--state", o.state, "--repository", "app", "--task", "t-1", "--step", "build", "--attempt", "1"}
-	if cmd == "run" {
+	if cmd == "start" {
 		a = append(a, "--adapter", "fake", "--prompt", o.prompt, "--workdir", o.workdir)
 	}
 	return append(a, extra...)
@@ -100,7 +100,7 @@ type classification struct {
 	Launcher string `json:"launcher"`
 }
 
-func TestArtisanRunOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
+func TestArtisanStartOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
 	cases := []struct {
 		prompt, extra string
 		code          int
@@ -123,7 +123,7 @@ func TestArtisanRunOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
 			if tc.extra != "" {
 				extra = []string{"--timeout", tc.extra}
 			}
-			code, stdout, stderr := guildhall(t, "", o.args("run", extra...)...)
+			code, stdout, stderr := guildhall(t, "", o.args("start", extra...)...)
 			if code != tc.code {
 				t.Fatalf("exit %d, want %d; stdout %q; stderr %q", code, tc.code, stdout, stderr)
 			}
@@ -153,10 +153,10 @@ func lastLine(s string) string {
 func TestArtisanOwnedCommandUsage(t *testing.T) {
 	o := newOwnedAttempt(t, "x")
 	for _, bad := range [][]string{
-		{"artisan", "run", "--adapter", "fake"},
-		o.args("run", "--result", filepath.Join(o.workdir, "r.json")),
-		o.args("run", "--adapter", "claude"),
-		o.args("run", "--timeout", "-1s"),
+		{"artisan", "start", "--adapter", "fake"},
+		o.args("start", "--result", filepath.Join(o.workdir, "r.json")),
+		o.args("start", "--adapter", "claude"),
+		o.args("start", "--timeout", "-1s"),
 		append(o.args("status")[:12], "0"),
 		append(o.args("stop")[:12], "one"),
 		{"artisan", "status", "--store", o.store},
@@ -185,14 +185,14 @@ func TestArtisanStopWithoutAnOwner(t *testing.T) {
 	}
 }
 
-// TestArtisanRunCustody is the launcher and store custody acceptance (P6):
+// TestArtisanStartCustody is the launcher and store custody acceptance (P6):
 // while a launcher process owns a running fake worker, other processes read
 // its status, send a message, answer a decision and are refused a competing
 // run, each within a bound and without changing the owner; then a stop
 // through the endpoint ends the attempt.
-func TestArtisanRunCustody(t *testing.T) {
+func TestArtisanStartCustody(t *testing.T) {
 	o := newOwnedAttempt(t, "guildhall-fake: delay=5m\n")
-	run := exec.Command(testExecutable(t), o.args("run")...)
+	run := exec.Command(testExecutable(t), o.args("start")...)
 	run.Env = append(os.Environ(), roleEnv+"=guildhall")
 	var runOut, runErr bytes.Buffer
 	run.Stdout, run.Stderr = &runOut, &runErr
@@ -243,7 +243,7 @@ func TestArtisanRunCustody(t *testing.T) {
 	}
 	bounded("send a message", 0, "", envelope("q-1", "director"), "messages", "send", "--store", o.store, "director", "-")
 	bounded("answer a decision", 0, "", "Yes", "decide", "answer", "--store", o.store, "--repo", "app", "--task", "t-1", "--decision", "accept-plan", "--answer-file", "-")
-	bounded("competing run", 1, "owned by a live launcher", "", o.args("run")...)
+	bounded("competing run", 1, "owned by a live launcher", "", o.args("start")...)
 	if now := o.ownership(t); now != owner {
 		t.Errorf("ownership changed from %+v to %+v", owner, now)
 	}
