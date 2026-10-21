@@ -10,11 +10,13 @@ With `Schema` set, the top-level `schema` must be `<Schema><n>` with `n` a posit
 See [`Options.Schema`](../../internal/strictjson/strictjson.go) for decoding without schema-version validation.
 Every other error means the document is malformed; each caller adds its own sentinel, context, limit and schema name.
 
-Callers today: `messaging.Decode` and `workflow.Parse` and `workflow.ParseReviewOutcome` (whose `ErrNewerSchema` is this sentinel), the [attempt control endpoint](../artisan.md#protocol) for requests and replies, the interpreter's prompt manifest reader, `adapter.ParseResult` (shape only: the result file versions with its own `version` field), `steward.ReadPlan` and the `guildhall render` request.
+The [migration decision](../decisions/shared-strict-json.md) records the migrated readers and the result-file versioning exception.
 
 ## Tests
 
 `strictjson_test.go` was written red first against a stub that accepted everything: one table per rule (size bound, encodings, surrogates, duplicate keys, unknown fields, trailing data, schema), plus valid documents, an unchanged target on refusal and non-object targets.
 `TestDecodeShellFixtures` reuses the CRLF, BOM and UTF-16 envelopes in `internal/messaging/testdata`.
 The messaging envelope tests pin `messaging.Decode`'s behaviour across the migration and passed unchanged.
-The later migrations kept each reader's refusal tests as the pin: `TestInvalidPreparationIsRefused`, `TestSchemaRefusals`, `TestExactJSONFields` and the result-file refusal table passed unchanged, while the manifest's duplicate-key and newer-schema cases, `TestReadPlanIsStrict` and `TestRenderRefusesMalformedRequestBeforeInstallation` were added red first; one CLI diagnostic pin now names strictjson's "not one JSON value" instead of the deleted "malformed JSON" wording.
+The later migrations retain reader-level refusal coverage in `TestInvalidPreparationIsRefused`, `TestSchemaRefusals`, `TestExactJSONFields` and the result-file refusal table.
+`TestInvalidPreparationIsRefused` now also covers duplicate keys, nested unknown fields, UTF-16, unpaired surrogates and the newer-schema sentinel.
+`TestReadPlanIsStrict` and `TestRenderRefusesMalformedRequestBeforeInstallation` cover the plan and command-line boundaries; one CLI diagnostic pin now names strictjson's "not one JSON value" instead of the deleted "malformed JSON" wording.
