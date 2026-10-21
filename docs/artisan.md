@@ -242,7 +242,7 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 
 - `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
-- This PR is L7 part 1: `internal/launch`, F2 real AttemptFiles, F3 attemptOutcome, `artisan run/stop/status`, and the P6 custody test. L7 part 2 holds `artisan resume` with `artisan.Sweep`, `resume_argv` registration through `pane report-agent --source guildhall`, the fake Artisan's P0 directives, the `artisan harness` subcommand, the Tier 2 lab runs, and retirement of the Windows-only worker stop path after the native Windows acceptance case passes.
+- The remaining command-line and Tier 2 work is scoped in the [launch composition decision](decisions/launch-composition.md).
 
 ## Heartbeat
 
