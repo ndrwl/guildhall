@@ -1,4 +1,4 @@
-# Artisan resume sweeps a recorded unit only after the owner-gone rule
+# D48. Artisan resume sweeps a recorded unit only after the owner-gone rule
 
 `guildhall artisan resume` is L7 part 2's reconcile entry for an attempt whose launcher has exited ([resume](../artisan.md#resume)).
 It sweeps the recorded unit only when the recorded launcher identity is proven gone, and settles the attempt only once `reconcile.ProbeOwner`, the one owner-gone rule, proves the unit empty; a live or unproven owner, or a record without containment, is refused and nothing is signalled.

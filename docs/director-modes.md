@@ -2,7 +2,7 @@
 
 Everything on this page is designed, not built, except where [what already holds](#what-already-holds) says otherwise.
 No command, config key or store record it names exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
-The decision is recorded in [optional Steward](decisions/optional-steward.md).
+The decision is recorded in [optional Steward](decisions/0050-optional-steward.md).
 
 A Director runs in one of two modes:
 
@@ -142,4 +142,4 @@ These are flagged rather than chosen silently:
 - **R1.39** and **R1.40** let the Herdr setup helper touch only machines enrolled by the Steward; a standalone Director's machine would need its own entry.
 - **R1.32** has the Steward draft every lesson; a standalone lesson is adopted without one.
 
-The [optional Steward decision](decisions/optional-steward.md) supersedes D12's no-remote-command restriction for `config reload`.
+The [optional Steward decision](decisions/0050-optional-steward.md) supersedes D12's no-remote-command restriction for `config reload`.

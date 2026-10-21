@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -178,7 +181,34 @@ func TestHelpPrintsUsageToStdout(t *testing.T) {
 	}
 }
 
-// TestArtisanRoleGrammar pins the role grammar of docs/decisions/cli-role-grammar.md
+// TestHelpNamesReadmeCommands pins the help text to the README command list:
+// every `guildhall <command>` the list names appears in the usage.
+func TestHelpNamesReadmeCommands(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, list, ok := strings.Cut(string(readme), "\n## Commands\n")
+	if !ok {
+		t.Fatal("README.md has no Commands section")
+	}
+	list, _, _ = strings.Cut(list, "\n## ")
+	commands := regexp.MustCompile("(?m)^- `guildhall ([^`<]+?)( <[^`]*)?`").FindAllStringSubmatch(list, -1)
+	if len(commands) == 0 {
+		t.Fatal("README.md lists no commands")
+	}
+	app, stdout, _ := newTestApp(nil, nil)
+	if code := app.Run([]string{"help"}); code != 0 {
+		t.Fatalf("help exit code = %d, want 0", code)
+	}
+	for _, c := range commands {
+		if !strings.Contains(stdout.String(), "  "+c[1]) {
+			t.Errorf("help does not name README command %q", c[1])
+		}
+	}
+}
+
+// TestArtisanRoleGrammar pins the role grammar of docs/decisions/0053-cli-role-grammar.md
 // for the Artisan: help lists every artisan verb, and the pre-release `artisan
 // run` is refused with a pointer to `artisan start` rather than kept as an alias.
 func TestArtisanRoleGrammar(t *testing.T) {

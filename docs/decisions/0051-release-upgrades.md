@@ -1,8 +1,8 @@
-# Release upgrades
+# D51. Release upgrades
 
 Designed, not built: [release upgrades](../releases.md) implement R1.31 with releases installed side by side under `releases/<version>/`, each verified against its sha256 before it can run.
 A copy-scoped release pin selects the release for new work in that copy only; the shared launcher resolves the copy before execution, and standalone Directors set it with `guildhall release use`, managed Directors take it from `managed.toml` by approved rollout, and either route records a `release-pin` store event, so no upgrade feature needs a Steward.
-A managed pin is applied only after `guildhall config reload` authorizes its revision and verifies its target binary, consistent with the [optional Steward](optional-steward.md) observed-untrusted rule; bootstrap and recovery retain the same validation, migration, mode and authorization checks.
+A managed pin is applied only after `guildhall config reload` authorizes its revision and verifies its target binary, consistent with the [optional Steward](0050-optional-steward.md) observed-untrusted rule; bootstrap and recovery retain the same validation, migration, mode and authorization checks.
 A fixed PATH launcher runs the pinned release.
 For an absent pin or missing or damaged selected executable, recovery dispatch is limited to `guildhall release` commands and explicit `guildhall config reload --copy <dir>`, using the newest installed, verified release and reporting which.
 Recovery reload requires a managed copy; dispatch does not itself authorize a revision or change a pin.

@@ -1,4 +1,4 @@
-# Contract TDD skill
+# D44. Contract TDD skill
 
 The release ships `guildhall-contract-tdd` for build and fix stages, adapted from upstream `tdd` as the [release skills root](0030-release-skills-root.md) records.
 It teaches the method in [contracts and tests](../contracts.md) rather than a variant of it: the seams are the contracts the accepted spec names, a contract the spec did not name is an open question rather than a new interface, and a test double passes the same contract test function as the real implementation.

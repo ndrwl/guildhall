@@ -2,7 +2,7 @@
 
 Each Director copy keeps its durable records in one store file owned by Guildhall (R1.17).
 `internal/store` implements it as a single bbolt database.
-The store supports the [local messaging commands](messaging.md) and the [decision commands](decisions-cli.md), but nothing in Guildhall launches, schedules or merges work from it yet.
+The store supports the [local messaging commands](messaging.md), the [decision commands](decisions-cli.md), and the [owned Artisan commands](artisan.md#commands) and [`task start` and `step done`](running.md), which launch and reconcile attempts from its ownership records; nothing schedules or merges work from it yet.
 
 ## Records
 
@@ -113,7 +113,7 @@ Writes refuse a containment that is not recoverable with `ErrInvalid`.
 Records written before this rule, whose containment held only `kind` and `name`, still read unchanged; a recoverable one keeps working, and one that is not never authorises a sweep or a take-over: `TakeOwnership` refuses it with `ErrOwnerUnknown` without probing, even when its launcher has exited.
 
 Taking ownership records the mutation id the caller chooses.
-The [launcher composition](../internal/launch/launch.go) owns its mutation-id convention.
+The [launcher composition](../internal/launch/launch.go), `internal/launch`, owns its mutation-id convention: `launch-<operation>:<tag>`, where the tag is a hex digest of the attempt key and the launcher's identity.
 Reusing an id with a different creation token returns `ErrMutationConflict`, never a new take-over.
 
 ## File format and versions

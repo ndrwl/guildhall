@@ -1,6 +1,6 @@
-# Owned attempt commands compose in internal/launch
+# D45. Owned attempt commands compose in internal/launch
 
-Command names below record this slice; see the [role grammar decision](cli-role-grammar.md#what-this-changes-now) for the subsequent rename and [Artisan commands](../artisan.md#commands) for current usage.
+Command names below record this slice; see the [role grammar decision](0053-cli-role-grammar.md#what-this-changes-now) for the subsequent rename and [Artisan commands](../artisan.md#commands) for current usage.
 
 `artisan run`, `stop` and `status` are thin commands over one composition package, `internal/launch`, which alone imports the adapter, artisan, store and reconcile together; `artisan` stays free of the adapter, and the command line only parses flags and prints JSON.
 The launcher opens the Director store for each record operation and closes it before the next, so a running attempt never holds the store's single-writer lock and other commands work meanwhile; ownership is a store record, not a held handle.
@@ -9,6 +9,6 @@ Survivors after the last rung leave the store attempt running and owned, because
 `stop` only asks the owner through its endpoint and otherwise requires verified termination; classification alone is not proof.
 Missing containment prevents takeover even after the launcher exits.
 This PR is L7 part 1: `internal/launch`, F2 real AttemptFiles, F3 attemptOutcome, `artisan run/stop/status`, and the P6 custody test.
-The [resume decision](artisan-resume.md) owns the subsequent L7 scope and deferred production registration.
+The [resume decision](0048-artisan-resume.md) owns the subsequent L7 scope and deferred production registration.
 The direct-child mode of `artisan run` is replaced by the owned mode; the Herdr tab mode remains as described in [running an attempt](../adapters.md#running-an-attempt).
 `run` exits 0 for a succeeded attempt, 4 for a failed one and 5 for a stopped one, from the store outcome.

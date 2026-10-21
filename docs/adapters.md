@@ -157,4 +157,4 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 | Native handle stop contract: verified termination, repeated and concurrent stops, natural exit, ended context, idempotent close, no use of a released handle | Native Windows test executable against a live helper process | Passed |
 | macOS in Herdr | Not run | macOS has CI only, not live acceptance (R1.30) |
 
-Recording pane bindings, reconciling after a restart and the per-task watcher are not built yet.
+Reconciling an attempt after a restart is [`artisan resume`](artisan.md#resume); recording pane bindings and the per-task watcher are not built yet.

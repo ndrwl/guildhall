@@ -12,5 +12,5 @@ None of the hand-written strict readers this record listed remains; the steward 
 The ledger of JSON readers outside this package's formats:
 
 - The attempt's `outcome.json` and `heartbeat.json` are strict: `artisan.ReadOutcome` and `artisan.ReadHeartbeat` decode them with their schema names, `guildhall.attempt-outcome/` and `guildhall.attempt-heartbeat/`, at version 1, so a newer file is told apart from damage and reconcile reads only through them.
-- The adapter's `.cancelled` sidecar is a bare `json.Unmarshal` of an identity; it is left as it is because the `artisan run` slice retires it in favour of the launcher's cancel marker ([stop ladder](0041-stop-ladder-precedence.md)).
+- The adapter's `.cancelled` sidecar is a bare `json.Unmarshal` of an identity; it is the launcher's cancel marker ([stop ladder](0041-stop-ladder-precedence.md)), written only by the launcher through `adapter.MarkCancelled` under the attempt lock and read through `adapter.Cancelled` by the launcher and `reconcile.Classify` under the same lock, so the lenient decode is kept by choice: no other process writes the file.
 - Documents the engine writes and reads back itself, such as store records, attempt input bindings and revision lists, stay `json.Unmarshal` by choice: no person or other process writes them, and the store's own schema governs their versions.

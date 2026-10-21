@@ -1,4 +1,4 @@
-# Optional Steward
+# D50. Optional Steward
 
 Designed, not built: a Director runs [standalone or managed](../director-modes.md), and no Director feature may require a Steward.
 The mode is a store fact recorded by explicit `enrol` and `leave` commands, not a config key, because the key `mode` already means a copy's role (R1.9) and a store event gives the change a receipt and a place in the timeline.

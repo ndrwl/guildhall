@@ -1,4 +1,4 @@
-# Director messaging
+# D49. Director messaging
 
 Designed, not built: [Director messaging](../messaging.md#director-messaging-designed-not-built) extends the local inbox (D15) so the Guildmaster and other Directors can message a Director.
 The inbox has two external sender types, `guildmaster` and `director`; the Steward never messages and acts by command, and each managed revision it causes is a store event, not a message, so a Director's inbox holds only things the Director must judge.

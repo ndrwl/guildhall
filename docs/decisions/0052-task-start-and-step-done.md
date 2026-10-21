@@ -1,4 +1,4 @@
-# Task start and step done join the interpreter to the owned launcher
+# D52. Task start and step done join the interpreter to the owned launcher
 
 `guildhall task start` and `guildhall step done` each run one interpreter advance, and the real `interp.Launcher`, `launch.Process`, runs every Artisan attempt as its own detached `guildhall artisan run` process over the directory the interpreter prepared.
 The attempt layout has one owner, `artisan.AttemptKey` (`Dir`, `AttemptID`, `ResultFile`), so the two sides cannot disagree about where an attempt lives (review 7 F19).

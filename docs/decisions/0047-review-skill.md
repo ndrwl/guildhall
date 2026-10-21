@@ -1,4 +1,4 @@
-# Review skill
+# D47. Review skill
 
 The release ships `guildhall-review` for automated `review` stages, adapted from upstream `code-review` as the [release skills root](0030-release-skills-root.md) records.
 It keeps upstream's two axes, Spec and Standards, never merged or reranked, with the spec line quoted for each spec finding, the standard cited for each standards finding, anything tooling enforces skipped, scope creep reported, and the smell baseline as labelled judgement calls in `smells.md`.

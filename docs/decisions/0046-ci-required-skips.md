@@ -1,4 +1,4 @@
-# A CI runner's required tools turn their skips into failures
+# D46. A CI runner's required tools turn their skips into failures
 
 Tests that need an installed shell or Windows skip by name when the host lacks it, and `go test` without `-v` prints nothing for a skip, so a CI log cannot show that a case ran where it was meant to.
 Each CI job now sets `GUILDHALL_CI_REQUIRE` to the tools and platform its runner supplies, and those skips go through `internal/testenv`, which fails the test when the missing name is required.
