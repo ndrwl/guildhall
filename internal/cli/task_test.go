@@ -96,6 +96,16 @@ func newTask(t *testing.T, storePath, cfg, repo, title, id string, deps ...strin
 	return decodeJSON[store.Receipt](t, out)
 }
 
+// approveRepo records the Guildmaster's approval of the repository's effective workflow, which task new needs
+// for "lib": the human-review example with its review swapped to an Artisan weakens the shipped default.
+func approveRepo(t *testing.T, storePath, cfg, repo string) {
+	t.Helper()
+	code, _, stderr := runWorkflow(t, "Approved for "+repo+".\n", "approve", "--store", storePath, "--config", cfg, "--repo", repo, "--words-file", "-")
+	if code != 0 {
+		t.Fatalf("workflow approve %s: exit %d, stderr %s", repo, code, stderr)
+	}
+}
+
 func readTask(t *testing.T, path, repo, id string) store.Task {
 	t.Helper()
 	s, err := store.Open(path, store.Options{ReadOnly: true, RequireStore: true})
@@ -142,6 +152,7 @@ func TestTaskNewBindsEffectiveWorkflowAndConfig(t *testing.T) {
 		t.Fatalf("default task = %+v, want workflow %+v", got, def.Revision())
 	}
 
+	approveRepo(t, path, cfg, "lib")
 	newTask(t, path, cfg, "lib", "Bump the parser", "t-1")
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(cfg), "workflows", "human-review.json"))
 	if err != nil {
@@ -193,6 +204,7 @@ func TestTaskNewConfigPaths(t *testing.T) {
 	t.Chdir(filepath.Dir(filepath.Dir(cfg)))
 	relative := filepath.Join("director config", "config.toml")
 
+	approveRepo(t, path, cfg, "lib")
 	newTask(t, path, relative, "lib", "Relative config path", "t-1")
 	if got, want := readTask(t, path, "lib", "t-1").ConfigDigest, configDigest(t, cfg); got != want {
 		t.Fatalf("relative config digest %s, want %s", got, want)
@@ -306,6 +318,7 @@ func TestTaskNewRefusesUnknownProfilesAndWritesNothing(t *testing.T) {
 				t.Fatalf("refusal recorded tasks: %+v", tasks)
 			}
 			writeFile(t, cfg, toml+"\n[profile.missing]\nadapter = \"claude\"\n")
+			approveRepo(t, path, cfg, "lib")
 			newTask(t, path, cfg, "lib", "Task", "t-1")
 			if got := readTask(t, path, "lib", "t-1"); got.ConfigDigest != configDigest(t, cfg) {
 				t.Fatalf("declared-profile task = %+v", got)
@@ -331,6 +344,7 @@ func TestTaskDefaultIgnoresShadowFile(t *testing.T) {
 func TestTaskArgumentOrders(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
+	approveRepo(t, path, cfg, "lib")
 	newTask(t, path, cfg, "lib", "Dependency", "dep")
 	flags := []string{"--store", path, "--config", cfg, "--repo", "app", "--title=--", "--depends-on", "lib/dep"}
 	var first string
@@ -402,6 +416,7 @@ func TestTaskNewRetry(t *testing.T) {
 func TestTaskNewDependencies(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
+	approveRepo(t, path, cfg, "lib")
 	newTask(t, path, cfg, "lib", "Parser", "t-1")
 	newTask(t, path, cfg, "app", "Schema", "t-2")
 
@@ -497,6 +512,7 @@ func goldenStore(t *testing.T) string {
 	t.Helper()
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
+	approveRepo(t, path, cfg, "lib")
 	newTask(t, path, cfg, "lib", "Bump the parser", "t-1")
 	newTask(t, path, cfg, "app", "Fix the login redirect", "t-2", "lib/t-1")
 	newTask(t, path, cfg, "app", "Add a sign-out link", "t-1")
@@ -583,4 +599,115 @@ func TestTaskListGolden(t *testing.T) {
 	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("reads changed the store (%v)", err)
 	}
+}
+
+// smallWorkflow is the configuration page's example: plan, acceptance, build, review, publish and deliver, with no validation.
+const smallWorkflow = `{
+  "schema": "guildhall.workflow/1",
+  "name": "small",
+  "steps": [
+    {"id": "plan", "type": "plan", "version": 1},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1, "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "publish", "type": "publish", "version": 1, "inputs": {"head": ["build.head"]}},
+    {"id": "deliver", "type": "deliver", "version": 1, "inputs": {"head": ["publish.head"], "review": ["review.outcome"]}}
+  ]
+}`
+
+// refuseTask runs task new for repo, which must be refused with exit 1 and leave the store's bytes unchanged,
+// and returns its standard error.
+func refuseTask(t *testing.T, path, cfg, repo string) string {
+	t.Helper()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", repo, "--title", "Task", "t-1")
+	if code != 1 || out != "" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("store changed (%v)", err)
+	}
+	return stderr
+}
+
+func TestTaskNewEnforcesWorkflowAuthority(t *testing.T) {
+	t.Run("a weakening override needs the effective revision approved", func(t *testing.T) {
+		cfg := writeDirector(t, directorTOML)
+		path := emptyStore(t)
+		file := filepath.Join(filepath.Dir(cfg), "workflows", "human-review.json")
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		def, err := workflow.Parse(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		effective, err := workflow.ApplyOverrides(def, map[string]workflow.Override{"review": {Actor: workflow.ArtisanActor}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stderr := refuseTask(t, path, cfg, "lib")
+		for _, want := range []string{"not authorized", effective.Digest(), "step review: instructions", "guildhall workflow approve"} {
+			if !strings.Contains(stderr, want) {
+				t.Errorf("stderr %q does not name %q", stderr, want)
+			}
+		}
+		// Approving the file is not approving the repository's override of it.
+		if code, _, stderr := runWorkflow(t, "Approved.\n", "approve", "--store", path, "--file", file, "--words-file", "-"); code != 0 {
+			t.Fatalf("approve file: exit %d, stderr %s", code, stderr)
+		}
+		if stderr := refuseTask(t, path, cfg, "lib"); !strings.Contains(stderr, "step review: actor guildmaster -> artisan") {
+			t.Errorf("stderr %q does not name the weaker actor", stderr)
+		}
+		approveRepo(t, path, cfg, "lib")
+		newTask(t, path, cfg, "lib", "Task", "t-1")
+		if got := readTask(t, path, "lib", "t-1").Workflow; got != effective.Revision() {
+			t.Fatalf("workflow = %+v, want %+v", got, effective.Revision())
+		}
+	})
+
+	t.Run("below the floor needs the exact revision approved", func(t *testing.T) {
+		cfg := writeDirector(t, strings.Replace(directorTOML, `workflow = "human-review"`, `workflow = "small"`, 1))
+		writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "small.json"), smallWorkflow)
+		path := emptyStore(t)
+		if stderr := refuseTask(t, path, cfg, "lib"); !strings.Contains(stderr, `deliver step "deliver" takes no validate result`) {
+			t.Errorf("stderr %q does not name the floor", stderr)
+		}
+		approveRepo(t, path, cfg, "lib")
+		newTask(t, path, cfg, "lib", "Task", "t-1")
+	})
+
+	t.Run("a non-weakening change needs no approval", func(t *testing.T) {
+		def, err := workflow.Default()
+		if err != nil {
+			t.Fatal(err)
+		}
+		def.Name = "careful"
+		for i := range def.Steps {
+			if def.Steps[i].ID == "review" {
+				def.Steps[i].Settings = map[string]json.RawMessage{"actor": json.RawMessage(`"guildmaster"`)}
+			}
+		}
+		data, err := json.Marshal(def)
+		if err != nil {
+			t.Fatal(err)
+		}
+		toml := strings.Replace(directorTOML, `workflow = "human-review"`, `workflow = "careful"`, 1)
+		toml = strings.Replace(toml, "[repository.workflow_overrides.review]\nactor = \"artisan\"\n", "", 1)
+		toml += "\n[repository.workflow_overrides.review]\nactor = \"guildmaster\"\n"
+		cfg := writeDirector(t, toml)
+		writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "careful.json"), string(data))
+		path := emptyStore(t)
+		newTask(t, path, cfg, "lib", "Task", "t-1")
+		newTask(t, path, cfg, "app", "Task", "t-1")
+		if got := storeApprovals(t, path); len(got) != 0 {
+			t.Fatalf("approvals = %+v", got)
+		}
+	})
 }
