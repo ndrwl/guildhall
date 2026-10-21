@@ -1,6 +1,7 @@
 package artisan_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"sync/atomic"
@@ -17,6 +18,8 @@ type exitedLauncherUnit struct {
 	start     func()
 	members   func()
 	interrupt func()
+	terminate func()
+	keepAlive bool
 	alive     bool
 	exited    chan struct{}
 }
@@ -42,6 +45,15 @@ func (u *exitedLauncherUnit) Interrupt() error {
 	if u.interrupt != nil {
 		u.interrupt()
 	}
+	if !u.keepAlive {
+		u.alive = false
+	}
+	return nil
+}
+func (u *exitedLauncherUnit) Terminate() error {
+	if u.terminate != nil {
+		u.terminate()
+	}
 	u.alive = false
 	return nil
 }
@@ -66,6 +78,42 @@ func TestLauncherCancelDuringCleanup(t *testing.T) {
 	out, err := l.Run(&exec.Cmd{}, nil)
 	if err != nil || out.State != artisan.Cancelled || !out.LateResultRejected {
 		t.Fatalf("Run = %+v, %v", out, err)
+	}
+}
+
+func TestLauncherCancelBeforeAutomaticSignal(t *testing.T) {
+	for _, cancelAt := range []int{1, 2, 5} {
+		t.Run(fmt.Sprint(cancelAt), func(t *testing.T) {
+			dir := t.TempDir()
+			files := artisantest.NewFiles(dir)
+			u := &exitedLauncherUnit{exited: make(chan struct{}), alive: true, keepAlive: cancelAt == 5}
+			l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files,
+				Ladder: artisan.Ladder{Cooperative: time.Millisecond, Interrupt: -time.Nanosecond, Terminate: time.Millisecond, Kill: time.Millisecond}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			u.members = func() {
+				calls++
+				if calls == cancelAt {
+					if _, err := l.Cancel(); err != nil {
+						t.Fatal(err)
+					}
+				} else if calls > cancelAt {
+					u.alive = false
+				}
+			}
+			u.interrupt = func() {
+				if cancelAt != 5 {
+					t.Error("automatic cleanup interrupted after Cancel")
+				}
+			}
+			u.terminate = func() { t.Error("automatic cleanup terminated after Cancel") }
+			out, err := l.Run(&exec.Cmd{}, nil)
+			if err != nil || out.State != artisan.Cancelled || out.Rung != 1 {
+				t.Fatalf("Run = %+v, %v", out, err)
+			}
+		})
 	}
 }
 

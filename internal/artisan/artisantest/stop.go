@@ -341,7 +341,7 @@ func (c *launch) outcome(wantErr error, want artisan.Outcome) artisan.Outcome {
 	if got.Schema != artisan.OutcomeSchema {
 		c.t.Errorf("outcome schema %q, want %q", got.Schema, artisan.OutcomeSchema)
 	}
-	if (want.State != "any" && got.State != want.State) || (want.Rung >= 0 && got.Rung != want.Rung) || got.LateResultRejected != want.LateResultRejected {
+	if (want.State != "any" && (got.State != want.State || got.LateResultRejected != want.LateResultRejected)) || (want.Rung >= 0 && got.Rung != want.Rung) {
 		c.t.Errorf("outcome %+v, want state %s rung %d late result rejected %v", got, want.State, want.Rung, want.LateResultRejected)
 	}
 	b, err := os.ReadFile(filepath.Join(c.attempt, artisan.OutcomeFile))

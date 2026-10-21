@@ -233,15 +233,9 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	defer tick.Stop()
 	var decided *Outcome
 	var grace <-chan time.Time
-	var cooperative <-chan time.Time
-	exited := l.c.Unit.Exited()
 	for {
 		select {
 		case <-tick.C:
-			if exited == nil && l.empty() {
-				l.event("rung-emptied", map[string]any{"rung": 1})
-				return l.finish(*decided, 1, nil, nil)
-			}
 			if decided != nil {
 				continue
 			}
@@ -256,25 +250,11 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 			}
 		case <-grace:
 			l.event("worker-outlived-result", nil)
-			return l.ladder(*decided, 2, nil)
-		case <-cooperative:
-			cooperative = nil
-			alive, aerr := l.c.Unit.Members()
-			l.event("rung-timeout", map[string]any{"rung": 1, "alive": alive, "error": errString(aerr)})
-		case <-exited:
+			return l.ladder(*decided, 2, nil, false, signals)
+		case <-l.c.Unit.Exited():
 			l.event("worker-exited", nil)
 			d, err := l.decide(false, "worker exited without a result")
-			if err == nil && d.State == Cancelled {
-				if l.empty() {
-					return l.finish(d, 0, nil, nil)
-				}
-				exited, decided, grace = nil, &d, nil
-				l.event("ladder", map[string]any{"first": 1})
-				l.event("rung", map[string]any{"rung": 1, "name": "cancel-marker", "deadline": l.c.Ladder.Cooperative.String()})
-				cooperative = time.After(l.c.Ladder.Cooperative)
-				continue
-			}
-			return l.ladder(d, 2, err)
+			return l.ladder(d, 2, err, false, signals)
 		case <-l.stopReq:
 			return l.stop(decided)
 		case s := <-signals:
@@ -353,12 +333,12 @@ func (l *Launcher) stop(decided *Outcome) (Outcome, error) {
 	if decided == nil || decided.State == "" {
 		d, err := l.decide(true, "")
 		if err != nil {
-			return l.ladder(d, 2, err)
+			return l.ladder(d, 2, err, true, nil)
 		}
 		decided = &d
 	}
 	if decided.State == Cancelled {
-		return l.ladder(*decided, 1, nil)
+		return l.ladder(*decided, 1, nil, true, nil)
 	}
 	l.event("stop-after-decision", map[string]any{"state": decided.State})
 	if l.started {
@@ -367,15 +347,14 @@ func (l *Launcher) stop(decided *Outcome) (Outcome, error) {
 		case <-time.After(l.c.ResultGrace):
 		}
 	}
-	return l.ladder(*decided, 2, nil)
+	return l.ladder(*decided, 2, nil, true, nil)
 }
 
 // ladder climbs from rung first until the unit is empty, then finishes.
-func (l *Launcher) ladder(d Outcome, first int, err error) (Outcome, error) {
+func (l *Launcher) ladder(d Outcome, first int, err error, explicit bool, signals <-chan os.Signal) (Outcome, error) {
 	if !l.started || l.empty() {
 		return l.finish(d, 0, nil, err)
 	}
-	l.event("ladder", map[string]any{"first": first})
 	rungs := []struct {
 		name string
 		do   func() error
@@ -389,7 +368,34 @@ func (l *Launcher) ladder(d Outcome, first int, err error) (Outcome, error) {
 	for i, r := range rungs[first-1:] {
 		n := first + i
 		members, _ := l.c.Unit.Members()
-		rerr := r.do()
+		var rerr error
+		if explicit {
+			rerr = r.do()
+		} else {
+			lerr := l.locked(func() error {
+				marked, merr := l.c.Files.Marked()
+				if merr != nil {
+					return merr
+				}
+				if marked {
+					d = Outcome{State: Cancelled, Detail: "cancel marker present"}
+					return nil
+				}
+				if d.State != Cancelled {
+					rerr = r.do()
+				}
+				return nil
+			})
+			if lerr != nil {
+				return l.finish(d, 4, members, errors.Join(err, lerr, ErrNotEmpty))
+			}
+			if d.State == Cancelled {
+				return l.cooperate(d, signals, err)
+			}
+		}
+		if i == 0 {
+			l.event("ladder", map[string]any{"first": first})
+		}
 		if errors.Is(rerr, ErrUnsupportedRung) {
 			l.event("rung-skipped", map[string]any{"rung": n, "name": r.name, "error": rerr.Error()})
 			continue
@@ -408,6 +414,39 @@ func (l *Launcher) ladder(d Outcome, first int, err error) (Outcome, error) {
 	}
 	alive, _ := l.c.Unit.Members()
 	return l.finish(d, 4, alive, errors.Join(err, ErrNotEmpty))
+}
+
+func (l *Launcher) cooperate(d Outcome, signals <-chan os.Signal, err error) (Outcome, error) {
+	l.event("ladder", map[string]any{"first": 1})
+	l.event("rung", map[string]any{"rung": 1, "name": "cancel-marker", "deadline": l.c.Ladder.Cooperative.String()})
+	timer := time.NewTimer(l.c.Ladder.Cooperative)
+	defer timer.Stop()
+	tick := time.NewTicker(pollInterval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-tick.C:
+			if l.empty() {
+				l.event("rung-emptied", map[string]any{"rung": 1})
+				return l.finish(d, 1, nil, err)
+			}
+		case <-timer.C:
+			alive, aerr := l.c.Unit.Members()
+			l.event("rung-timeout", map[string]any{"rung": 1, "alive": alive, "error": errString(aerr)})
+		case <-l.stopReq:
+			out, stopErr := l.stop(&d)
+			return out, errors.Join(err, stopErr)
+		case s := <-signals:
+			if s == os.Interrupt {
+				l.event("signal-forwarded", map[string]any{"signal": s.String(), "error": errString(l.c.Unit.Interrupt())})
+				continue
+			}
+			l.event("signal", map[string]any{"signal": s.String()})
+			l.requestStop()
+			out, stopErr := l.stop(&d)
+			return out, errors.Join(err, stopErr)
+		}
+	}
 }
 
 // empty reports whether the unit is proven empty; a failed listing is not.

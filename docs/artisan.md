@@ -223,7 +223,7 @@ Each rung is logged to `events.jsonl` with the members it acted on, its bound an
 ### Stop requests
 
 `Stop`, the endpoint's `stop`, and SIGTERM or SIGHUP delivered to the launcher all request the one ladder; every request waits for it and answers with its end, and a stop after the end returns at once.
-`Cancel`, the endpoint's `cancel`, is rung 1 alone: it writes the marker unless a valid result is present and does not escalate. If the worker exits with the marker present while descendants remain, the launcher starts the bounded cooperative wait at rung 1. After that bound expires it continues supervising without signalling descendants; only an explicit Stop request (including a stop signal) escalates past rung 1.
+`Cancel`, the endpoint's `cancel`, is rung 1 alone: it writes the marker unless a valid result is present and does not escalate. If the worker exits with the marker present while descendants remain, the launcher starts the bounded cooperative wait at rung 1. After that bound expires it continues supervising without signalling descendants; only an explicit Stop request (including a stop signal) escalates past rung 1. Automatic cleanup checks the marker and dispatches each signal under the attempt lock: a Cancel accepted before dispatch switches cleanup to cooperative supervision, while a signal dispatched before Cancel cannot be undone.
 An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwarded to the worker with `Unit.Interrupt` and does not stop the attempt.
 `StopSignals` lists the signals the caller relays to `Run`.
 
