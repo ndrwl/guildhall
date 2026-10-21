@@ -1,11 +1,16 @@
 package cli
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
+	"github.com/ndrwl/guildhall/internal/messaging"
+	"github.com/ndrwl/guildhall/internal/messaging/messagingtest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // TestStoreRecordsContract runs the shared interp.Records suite against the production adapter,
@@ -43,4 +48,91 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.RequestFullReview(m, repo, id) })
 		},
 	}
+}
+
+// TestStoreRecordsOutboxContract runs the shared Mailbox suite through the production adapter's Send
+// (docs/interpreter.md#seams).
+func TestStoreRecordsOutboxContract(t *testing.T) {
+	messagingtest.RunMailboxContract(t, newStoreOutboxHarness)
+}
+
+// storeOutboxHarness sends through storeRecords and reads back through a StoreMailbox opened per call,
+// so no operation holds the store's lock between calls and Restart has nothing to drop.
+type storeOutboxHarness struct {
+	path string
+	n    int
+}
+
+func newStoreOutboxHarness(t *testing.T) messagingtest.Harness {
+	path := filepath.Join(t.TempDir(), "director.store")
+	s, err := store.Open(path, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &storeOutboxHarness{path: path}
+}
+
+func (h *storeOutboxHarness) Mailbox() messaging.Mailbox { return storeOutbox{storeRecords(h.path)} }
+
+func (h *storeOutboxHarness) mutation() string {
+	h.n++
+	return fmt.Sprintf("harness-%d", h.n)
+}
+
+func (h *storeOutboxHarness) write(t *testing.T, fn func(*store.Store) (store.Receipt, error)) store.Receipt {
+	t.Helper()
+	r, err := withStore(h.path, false, fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func (h *storeOutboxHarness) CreateTask(t *testing.T, repository, task string) {
+	t.Helper()
+	digest := "sha256:" + strings.Repeat("a", 64)
+	rec := store.Task{Repository: repository, ID: task, Title: "Task", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}
+	m := h.mutation()
+	h.write(t, func(s *store.Store) (store.Receipt, error) { return s.CreateTask(m, rec) })
+}
+
+func (h *storeOutboxHarness) StartAttempt(t *testing.T, repository, task, step string) int {
+	t.Helper()
+	m := h.mutation()
+	return h.write(t, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repository, task, step) }).Attempt
+}
+
+func (h *storeOutboxHarness) FinishAttempt(t *testing.T, repository, task, step string, number int) {
+	t.Helper()
+	m := h.mutation()
+	h.write(t, func(s *store.Store) (store.Receipt, error) {
+		return s.FinishAttempt(m, repository, task, step, number, store.AttemptSucceeded)
+	})
+}
+
+func (h *storeOutboxHarness) Restart(*testing.T) {}
+
+// storeOutbox is the Mailbox the suite drives: Send is storeRecords' own, and List, Read and Ack,
+// which the engine never calls, open the store per call as storeRecords does.
+type storeOutbox struct{ storeRecords }
+
+func (b storeOutbox) List(to store.Recipient, after uint64, limit int) (messaging.Page, error) {
+	return withStore(string(b.storeRecords), true, func(s *store.Store) (messaging.Page, error) {
+		return (&messaging.StoreMailbox{Store: s}).List(to, after, limit)
+	})
+}
+
+func (b storeOutbox) Read(id string) (messaging.Stored, error) {
+	return withStore(string(b.storeRecords), true, func(s *store.Store) (messaging.Stored, error) {
+		return (&messaging.StoreMailbox{Store: s}).Read(id)
+	})
+}
+
+func (b storeOutbox) Ack(to store.Recipient, id string) (store.Receipt, error) {
+	return withStore(string(b.storeRecords), false, func(s *store.Store) (store.Receipt, error) {
+		return (&messaging.StoreMailbox{Store: s}).Ack(to, id)
+	})
 }

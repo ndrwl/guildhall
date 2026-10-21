@@ -14,7 +14,7 @@ The engine consumes five narrow interfaces, declared in `internal/interp` beside
 | `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
-| `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
+| `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
