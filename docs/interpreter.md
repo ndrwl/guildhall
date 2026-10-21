@@ -80,7 +80,9 @@ Each blocking result of a step is one round of its `on.changes_requested` rule; 
 - **Within `max`.** The rule's target, which must be an Artisan step, runs again with the result as `feedback`.
   When the target has run and the step's inputs did not change, as when a build returns the same head, the step runs again on the same subject with its previous outcome.
 - **Past `max`.** The engine opens decision `<step>-x<round>`, kind `loop-exit`, bound to the round's subject, with options `continue` (one more round), `accept` and `reject`.
-  `accept` on a review step records the Guildmaster's approval as `<step>-x<round>-outcome`, an outcome by reviewer `human` bound to the step's current revisions, and completes the step; `reject` leaves the task waiting for the Director, told as `<repo>.<task>.loop-exit-rejected.<id>`.
+  `accept` on a review step records the Guildmaster's approval as `<step>-x<round>-outcome`, an outcome by reviewer `human` bound to the step's current revisions, and completes the step; on a `guildmaster-approval` step it records `<step>-x<round>-spec`, checked against the exit decision's document subject by the spec gate.
+  Output resolution orders an exit output immediately after its originating round, before later rounds, for all downstream consumers.
+  `reject` leaves the task waiting for the Director, told as `<repo>.<task>.loop-exit-rejected.<id>`.
 - **No rule.** The task waits for the Director, told as `<repo>.<task>.changes-requested.<step>-<n>` (or `.<decision>`).
 
 When an attempt's review outcome arrives, it is refused with `ErrOutcome`, recording nothing, if it is not bound to the revisions in its binding (a stale outcome) or if it gives no disposition for a finding id of the previous outcome it was given.
@@ -92,7 +94,7 @@ A stall is information only: it never changes the loop, and only `max` asks the 
 
 ## Review gate
 
-Before `deliver`, every `review` step earlier in the workflow must have a recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to the head being delivered, the step's accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.
+Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.
 So several review stages, such as the Guildhall repository's three reviews on distinct profiles, must all approve the same head.
 A Guildmaster review answered under an older standards revision does not satisfy the gate; asking it again is later work.
 

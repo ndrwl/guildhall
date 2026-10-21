@@ -7,5 +7,5 @@ The review step gets its own previous outcome on port `previous` and the loop's 
 A result is blocking only when it requests changes with a finding that cites a rule; ruleless findings are suggestions and never loop (audit C7).
 Exhausting `max` opens a `loop-exit` decision instead of failing, and `continue` adds one round per answer; `accept` records the Guildmaster's approval in the shared review outcome contract, so the review gate needs no waiver path.
 Stall signals are Director messages and never change a loop: only `max` asks the Guildmaster (report §5.3).
-The review gate at `deliver` re-checks from records that every code review step has a non-blocking outcome bound to the delivered head, spec and current standards revision, even though the walk already re-runs stale reviews, so a later change to the walk cannot bypass it.
+The review gate at `deliver` re-checks from records that every review and document-review step has a latest non-blocking outcome bound to its document subject or the delivered head, applicable spec and current standards revision, even though the walk already re-runs stale reviews, so a later change to the walk cannot bypass it.
 Loops back to Guildmaster, Director or engine steps, the worker heartbeat, Director rulings and rebase-aware re-review are later slices.

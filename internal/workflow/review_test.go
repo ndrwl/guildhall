@@ -18,7 +18,7 @@ func TestReviewOutcomeContract(t *testing.T) {
 			Schema:    ReviewOutcomeSchema,
 			Reviewer:  reviewer,
 			Verdict:   VerdictChangesRequested,
-			Findings:  []Finding{{File: "main.go", Line: 3, Summary: "missing error check"}},
+			Findings:  []Finding{{ID: "f1", File: "main.go", Line: 3, Summary: "missing error check"}},
 			Revisions: revisions,
 		}
 		if err := o.Validate(); err != nil {
@@ -46,6 +46,8 @@ func TestReviewOutcomeRefusals(t *testing.T) {
 		{"unknown reviewer", func(o *ReviewOutcome) { o.Reviewer = "robot" }, "reviewer"},
 		{"changes without findings", func(o *ReviewOutcome) { o.Verdict = VerdictChangesRequested }, "at least one finding"},
 		{"rejected without findings", func(o *ReviewOutcome) { o.Verdict = VerdictRejected }, "at least one finding"},
+		{"finding without id", func(o *ReviewOutcome) { o.Findings = []Finding{{Rule: "S2", Summary: "Missing regression"}} }, "finding id"},
+		{"suggestion without id", func(o *ReviewOutcome) { o.Findings = []Finding{{Summary: "Naming preference"}} }, "finding id"},
 		{"finding without summary", func(o *ReviewOutcome) { o.Findings = []Finding{{File: "a.go"}} }, "summary"},
 		{"short code head", func(o *ReviewOutcome) { o.Revisions.Subject.CodeHead = "abc123" }, "code_head"},
 		{"no subject", func(o *ReviewOutcome) { o.Revisions.Subject = Subject{} }, "subject needs a code_head or a document_digest"},

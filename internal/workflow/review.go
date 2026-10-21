@@ -56,7 +56,7 @@ type Revisions struct {
 // disposition it; Rule cites the rule it breaks (a requirement id such as "R1.27" or a docs/review.md
 // rule such as "S4"). A finding without a rule is a suggestion: it never blocks (Blocking).
 type Finding struct {
-	ID      string `json:"id,omitempty"`
+	ID      string `json:"id"`
 	Rule    string `json:"rule,omitempty"`
 	File    string `json:"file,omitempty"`
 	Line    int    `json:"line,omitempty"`
@@ -112,7 +112,7 @@ func ParseReviewOutcome(data []byte) (*ReviewOutcome, error) {
 	return &o, o.Validate()
 }
 
-// Validate checks the outcome is complete and well formed: finding ids, when given, are valid ids
+// Validate checks the outcome is complete and well formed: finding ids are required valid ids
 // used once; a rule, when given, is not blank; each disposition names one finding once with a known
 // state, a still-open finding is listed again under its id and a resolved or withdrawn one is not.
 // Whether the dispositions cover every finding of the previous round is the interpreter's check.
@@ -142,7 +142,6 @@ func (o ReviewOutcome) Validate() error {
 			problems = append(problems, fmt.Sprintf("finding %d has a blank or padded rule", i+1))
 		}
 		switch {
-		case f.ID == "":
 		case !ValidID(f.ID):
 			problems = append(problems, fmt.Sprintf("finding id %q must be lowercase letters, digits and hyphens", f.ID))
 		case ids[f.ID]:

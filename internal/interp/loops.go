@@ -163,6 +163,7 @@ func (r *run) outcome(step string, n int) (*workflow.ReviewOutcome, error) {
 type firing struct {
 	path, sha256 string
 	answer       *store.Decision
+	round        int
 }
 
 // firings returns the blocking results of step s in round order: its recorded outcomes that are
@@ -173,7 +174,7 @@ func (r *run) firings(s workflow.Step) ([]firing, error) {
 		for _, d := range r.rounds(s.ID) {
 			if d.Answered && d.Choice == changesRequested {
 				p := path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "answer.md")
-				out = append(out, firing{path: p, sha256: digest([]byte(d.Answer)), answer: d})
+				out = append(out, firing{path: p, sha256: digest([]byte(d.Answer)), answer: d, round: round(d.ID)})
 			}
 		}
 		return out, nil
@@ -190,7 +191,7 @@ func (r *run) firings(s workflow.Step) ([]firing, error) {
 		}
 		if o != nil && o.Blocking() {
 			d := r.document(fmt.Sprintf("%s-%d-outcome", s.ID, a.Number))
-			out = append(out, firing{path: d.Path, sha256: d.SHA256})
+			out = append(out, firing{path: d.Path, sha256: d.SHA256, round: a.Number})
 		}
 	}
 	return out, nil
@@ -339,6 +340,8 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject) (bool, Next, 
 			fmt.Sprintf("The Guildmaster rejected step %s at loop exit %s; the Director decides what happens next.", s.ID, id))
 	case d.Choice != "accept":
 		return false, Next{}, fmt.Errorf("loop exit %s answered %q but the loop was not taken", id, d.Choice)
+	case s.Type == "guildmaster-approval":
+		return true, Next{}, r.accept(s, *d)
 	case !isReview(s):
 		return false, Next{}, fmt.Errorf("%w: accepting at the loop exit of a %s step", ErrUnsupported, s.Type)
 	}
@@ -393,7 +396,7 @@ func (r *run) checkOutcome(s workflow.Step, n int, data []byte) error {
 		return err
 	}
 	for _, f := range prev.Findings {
-		if f.ID != "" && !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.Finding == f.ID }) {
+		if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.Finding == f.ID }) {
 			return fmt.Errorf("%w: previous finding %q has no disposition", ErrOutcome, f.ID)
 		}
 	}
@@ -455,13 +458,13 @@ func (r *run) stall(s workflow.Step, n int) error {
 }
 
 // gate checks, before deliver, that every review step before it has an outcome that does not block,
-// bound to the head being delivered, its accepted spec and the current standards revision.
+// bound to its document or the delivered head, its applicable spec and the current standards revision.
 func (r *run) gate(deliver workflow.Step, h string) error {
 	for _, s := range r.def.Steps {
 		if s.ID == deliver.ID {
 			return nil
 		}
-		if s.Type != "review" {
+		if !isReview(s) {
 			continue
 		}
 		inputs, err := r.inputs(s)
@@ -472,42 +475,35 @@ func (r *run) gate(deliver workflow.Step, h string) error {
 		if err != nil {
 			return err
 		}
-		want.Subject.CodeHead = h
+		if s.Type == "review" {
+			want.Subject.CodeHead = h
+		}
 		ok, err := r.approved(s.ID, want)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			return fmt.Errorf("%w: step %s has no outcome approving head %s for spec %s and standards %s", ErrReviewGate, s.ID, h, want.SpecDigest, want.StandardsRevision)
+			return fmt.Errorf("%w: step %s has no outcome approving subject %+v for spec %s and standards %s", ErrReviewGate, s.ID, want.Subject, want.SpecDigest, want.StandardsRevision)
 		}
 	}
 	return nil
 }
 
-// approved reports whether any recorded outcome of the step, <step>-<n>-outcome or <step>-x<k>-outcome,
-// is bound to want and neither blocks nor rejects.
+// approved reports whether the latest output is bound to want and neither blocks nor rejects.
 func (r *run) approved(step string, want workflow.Revisions) (bool, error) {
-	for _, d := range r.documents {
-		mid, ok := strings.CutPrefix(d.Name, step+"-")
-		if !ok {
-			continue
-		}
-		if mid, ok = strings.CutSuffix(mid, "-outcome"); !ok || !isNumber(strings.TrimPrefix(mid, "x")) {
-			continue
-		}
-		data, err := r.read(d)
-		if err != nil {
-			return false, err
-		}
-		o, err := workflow.ParseReviewOutcome(data)
-		if err != nil {
-			return false, err
-		}
-		if o.BoundTo(want) == nil && !o.Blocking() && o.Verdict != workflow.VerdictRejected {
-			return true, nil
-		}
+	d, _, err := r.output(step, "outcome")
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrReviewGate, err)
 	}
-	return false, nil
+	data, err := r.read(d)
+	if err != nil {
+		return false, err
+	}
+	o, err := workflow.ParseReviewOutcome(data)
+	if err != nil {
+		return false, err
+	}
+	return o.BoundTo(want) == nil && !o.Blocking() && o.Verdict != workflow.VerdictRejected, nil
 }
 
 // rounds returns the step's round decisions, <step>-<n>, in round order.

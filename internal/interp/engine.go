@@ -746,12 +746,12 @@ func (r *run) input(s workflow.Step, name string) (render.Input, error) {
 
 func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 	from, out, _ := strings.Cut(ref, ".")
-	doc, round, err := r.output(from, out)
+	doc, source, err := r.output(from, out)
 	if err != nil {
 		return render.Input{}, fmt.Errorf("input %s: %w", port.Name, err)
 	}
 	if port.Type == workflow.AcceptedSpec {
-		if err := r.specGate(from, round, doc); err != nil {
+		if err := r.specGate(source, doc); err != nil {
 			return render.Input{}, err
 		}
 	}
@@ -759,10 +759,10 @@ func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 }
 
 // specGate checks that an accepted spec is the document its approval decision approved.
-func (r *run) specGate(step string, round int, doc store.DocumentRef) error {
-	d := r.decision(fmt.Sprintf("%s-%d", step, round))
+func (r *run) specGate(source string, doc store.DocumentRef) error {
+	d := r.decision(source)
 	switch {
-	case d == nil || !d.Answered || d.Choice != string(workflow.VerdictApproved):
+	case d == nil || !d.Answered || !(d.Kind == store.DecisionApproval && d.Choice == string(workflow.VerdictApproved) || d.Kind == store.DecisionLoopExit && d.Choice == "accept"):
 		return fmt.Errorf("%w: %s has no approved decision", ErrSpecGate, doc.Name)
 	case d.Subject == nil || d.Subject.Digest != "sha256:"+doc.SHA256:
 		return fmt.Errorf("%w: accepted spec %s is sha256:%s, decision %s approved %v", ErrSpecGate, doc.Name, doc.SHA256, d.ID, d.Subject)
@@ -770,24 +770,48 @@ func (r *run) specGate(step string, round int, doc store.DocumentRef) error {
 	return nil
 }
 
-// output returns the latest recorded document of one step's output port and its round.
-func (r *run) output(step, port string) (store.DocumentRef, int, error) {
+// output returns the latest recorded document of one step's output port and its source id.
+func (r *run) output(step, port string) (store.DocumentRef, string, error) {
 	var best *store.DocumentRef
-	round := 0
+	bestRound, bestExit := 0, false
+	source := ""
 	for i, d := range r.documents {
 		mid, ok := strings.CutPrefix(d.Name, step+"-")
 		if !ok {
 			continue
 		}
 		mid, ok = strings.CutSuffix(mid, "-"+port)
-		if n, err := strconv.Atoi(mid); ok && err == nil && n > round {
-			best, round = &r.documents[i], n
+		if !ok {
+			continue
+		}
+		number, exit := strings.CutPrefix(mid, "x")
+		if !isNumber(number) {
+			continue
+		}
+		n, _ := strconv.Atoi(number)
+		if exit {
+			j := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == step })
+			if j < 0 {
+				continue
+			}
+			fs, err := r.firings(r.def.Steps[j])
+			if err != nil {
+				return store.DocumentRef{}, "", err
+			}
+			if n > len(fs) {
+				return store.DocumentRef{}, "", fmt.Errorf("output %s has no originating firing", d.Name)
+			}
+			n = fs[n-1].round
+		}
+		if n > bestRound || n == bestRound && exit && !bestExit {
+			best, bestRound, bestExit = &r.documents[i], n, exit
+			source = step + "-" + mid
 		}
 	}
 	if best == nil {
-		return store.DocumentRef{}, 0, fmt.Errorf("%s.%s has no recorded document", step, port)
+		return store.DocumentRef{}, "", fmt.Errorf("%s.%s has no recorded document", step, port)
 	}
-	return *best, round, nil
+	return *best, source, nil
 }
 
 // head reads a code head document, checking its recorded digest.
