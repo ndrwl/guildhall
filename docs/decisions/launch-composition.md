@@ -1,5 +1,7 @@
 # Owned attempt commands compose in internal/launch
 
+Command names below record this slice; see the [role grammar decision](cli-role-grammar.md#what-this-changes-now) for the subsequent rename and [Artisan commands](../artisan.md#commands) for current usage.
+
 `artisan run`, `stop` and `status` are thin commands over one composition package, `internal/launch`, which alone imports the adapter, artisan, store and reconcile together; `artisan` stays free of the adapter, and the command line only parses flags and prints JSON.
 The launcher opens the Director store for each record operation and closes it before the next, so a running attempt never holds the store's single-writer lock and other commands work meanwhile; ownership is a store record, not a held handle.
 `run` takes ownership with a containment-aware probe, so a crashed launcher whose recorded unit is proven empty can be replaced, while a live launcher or surviving members refuse.

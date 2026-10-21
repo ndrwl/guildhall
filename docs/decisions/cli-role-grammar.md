@@ -21,7 +21,7 @@ Role-specific work stays under sub-nouns of the role or under its own top-level 
 `artisan run` is renamed `artisan start` in the command line, help, README, docs and tests.
 Guildhall is pre-release, so there is no alias: `artisan run` is a usage error, exit code 2, whose message is `artisan run is now artisan start`.
 Help lists every artisan verb, `artisan start|stop|status|resume` and the lab-only `artisan harness inventory|kill-owned|probe --lab`, and the `artisan` usage error names all five.
-Numbered decisions and evidence files that mention `artisan run` are records of their time and are not rewritten.
+Earlier decisions and evidence files that mention `artisan run` are records of their time; current command usage is documented in [Artisan commands](../artisan.md#commands).
 
 This slice renames `artisan run` and pins the grammar; `director start` and `steward start` are deferred to their own later slices.
 `artisan start` still names its runtime with `--adapter fake`; the positional runtime and its config default arrive with those later slices, which follow this grammar.
