@@ -161,6 +161,29 @@ func TestTaskStartAndStepDone(t *testing.T) {
 	}
 }
 
+// TestStepRetryRefusesASucceededAttempt: step retry reaches the engine, which refuses an attempt that did not
+// fail or stop and records nothing; help lists the command.
+func TestStepRetryRefusesASucceededAttempt(t *testing.T) {
+	d := newRunDirector(t)
+	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+		t.Fatalf("task start: exit %d, stderr %s", code, stderr)
+	}
+	d.waitResult(t, "plan", 1)
+	if code, _, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...); code != 0 {
+		t.Fatalf("step done: exit %d, stderr %s", code, stderr)
+	}
+	retry := append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "again")...)
+	if code, out, stderr := d.run(t, retry...); code != 1 || out != "" || !strings.Contains(stderr, "only a failed or stopped attempt is retried") {
+		t.Errorf("retry of a succeeded attempt: exit %d, %q, stderr %s; want 1", code, out, stderr)
+	}
+	if got := d.attempts(t); len(got) != 1 {
+		t.Errorf("attempts after a refused retry = %+v", got)
+	}
+	if _, out, _ := d.run(t, "help"); !strings.Contains(out, "step retry") {
+		t.Errorf("help does not list step retry:\n%s", out)
+	}
+}
+
 // TestTaskStartLaunchesClaude: a profile naming the claude adapter makes task start launch the attempt
 // through launch.Process as an owned claude attempt, over the stub Claude Code, whose draft the
 // wrapper publishes as the attempt's result.
@@ -212,15 +235,22 @@ func TestStepDoneRefusesAResultItDoesNotTake(t *testing.T) {
 func TestTaskStartAndStepDoneUsage(t *testing.T) {
 	d := runDirector{store: "s", config: "c", state: "st"}
 	for name, args := range map[string][]string{
-		"start without store":    {"task", "start", "--config", "c", "--state", "st", "--repo", "app", "t-1"},
-		"start without task":     append([]string{"task", "start"}, d.flags()...),
-		"start with two tasks":   append([]string{"task", "start"}, d.flags("t-1", "t-2")...),
-		"start with a bad id":    append([]string{"task", "start"}, d.flags("T 1")...),
-		"step without done":      {"step"},
-		"step other command":     {"step", "undo"},
-		"done without result":    append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1")...),
-		"done with a bad number": append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "0", "--result", "r")...),
-		"done with an argument":  append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", "r", "extra")...),
+		"start without store":        {"task", "start", "--config", "c", "--state", "st", "--repo", "app", "t-1"},
+		"start without task":         append([]string{"task", "start"}, d.flags()...),
+		"start with two tasks":       append([]string{"task", "start"}, d.flags("t-1", "t-2")...),
+		"start with a bad id":        append([]string{"task", "start"}, d.flags("T 1")...),
+		"step without done":          {"step"},
+		"step other command":         {"step", "undo"},
+		"done without result":        append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1")...),
+		"done with a bad number":     append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "0", "--result", "r")...),
+		"done with an argument":      append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", "r", "extra")...),
+		"retry without store":        {"step", "retry", "--config", "c", "--state", "st", "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"},
+		"retry without attempt":      append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan")...),
+		"retry without step":         append([]string{"step", "retry"}, d.flags("--task", "t-1", "--attempt", "1")...),
+		"retry with a bad id":        append([]string{"step", "retry"}, d.flags("--task", "T 1", "--step", "plan", "--attempt", "1")...),
+		"retry with a bad number":    append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "x")...),
+		"retry with an argument":     append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "extra")...),
+		"retry with an unknown flag": append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--force")...),
 	} {
 		if code, out, _ := d.run(t, args...); code != 2 || out != "" {
 			t.Errorf("%s: exit %d, %q; want 2", name, code, out)

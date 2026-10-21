@@ -41,7 +41,7 @@ func (f advanceFlags) check() error {
 	return nil
 }
 
-// next is what `task start` and `step done` print: interp.Next as JSON.
+// next is what `task start`, `step done` and `step retry` print: interp.Next as JSON.
 type next struct {
 	Wait     interp.Wait `json:"wait"`
 	Step     string      `json:"step"`
@@ -73,11 +73,49 @@ func (a *App) taskStart(args []string) int {
 	return a.advanced(a.advance(f, ev))
 }
 
+// step runs `guildhall step done|retry`.
+func (a *App) step(args []string) int {
+	switch {
+	case len(args) > 0 && args[0] == "done":
+		return a.stepDone(args[1:])
+	case len(args) > 0 && args[0] == "retry":
+		return a.stepRetry(args[1:])
+	}
+	return a.usageError("step: the commands are done and retry")
+}
+
+// stepRetry runs `guildhall step retry`: it feeds attempt-retried for the Director's retry of a failed or
+// stopped attempt, with its reason when given (docs/running.md).
+func (a *App) stepRetry(args []string) int {
+	fl := flag.NewFlagSet("step retry", flag.ContinueOnError)
+	fl.SetOutput(io.Discard)
+	var f advanceFlags
+	f.register(fl)
+	task := fl.String("task", "", "task id")
+	step := fl.String("step", "", "step id")
+	attempt := fl.String("attempt", "", "attempt number")
+	reason := fl.String("reason", "", "the Director's reason")
+	if err := fl.Parse(args); err != nil {
+		return a.usageError("step retry: " + err.Error())
+	}
+	n, err := strconv.Atoi(*attempt)
+	switch {
+	case f.check() != nil:
+		return a.usageError("step retry: " + f.check().Error())
+	case fl.NArg() > 0:
+		return a.usageError(fmt.Sprintf("step retry: unexpected argument %q", fl.Arg(0)))
+	case *task == "" || *step == "" || *attempt == "":
+		return a.usageError("step retry: --task, --step and --attempt are required")
+	case !workflow.ValidID(*task) || !workflow.ValidID(*step):
+		return a.usageError("step retry: --task and --step must be ids")
+	case err != nil || n < 1:
+		return a.usageError(fmt.Sprintf("step retry: --attempt %q must be a positive attempt number", *attempt))
+	}
+	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptRetried, Repository: f.repo, Task: *task, Step: *step, Attempt: n, Reason: *reason}))
+}
+
 // stepDone runs `guildhall step done`: it validates the attempt's result file and feeds attempt-result (docs/running.md).
 func (a *App) stepDone(args []string) int {
-	if len(args) == 0 || args[0] != "done" {
-		return a.usageError("step: the only command is done")
-	}
 	fl := flag.NewFlagSet("step done", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var f advanceFlags
@@ -86,7 +124,7 @@ func (a *App) stepDone(args []string) int {
 	step := fl.String("step", "", "step id")
 	attempt := fl.String("attempt", "", "attempt number")
 	result := fl.String("result", "", "result file")
-	if err := fl.Parse(args[1:]); err != nil {
+	if err := fl.Parse(args); err != nil {
 		return a.usageError("step done: " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)

@@ -19,12 +19,18 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// TestTaskRunsEndToEnd is the S7 acceptance: the built binary runs task app/t-1 on the fake-straight workflow
-// (internal/cli/testdata/run) from task new to its terminal step, the merge decision, through the real commands:
-// task start launches each Artisan stage as its own owned launcher process, the fake Artisan writes its result,
-// step done takes it, decide answer and task start --decision cross each Guildmaster step. Afterwards every
-// attempt's launcher is proven stopped and the timeline records the run in order.
-func TestTaskRunsEndToEnd(t *testing.T) {
+// binDirector runs the built binary over one store, config and state directory, recording each attempt it
+// takes so that cleanup proves every launcher stopped.
+type binDirector struct {
+	t                      *testing.T
+	bin, store, cfg, state string
+	flags                  []string
+	attempts               []string
+}
+
+// newBinDirector builds the binary and creates an empty store and a short state directory for cfg.
+func newBinDirector(t *testing.T, cfg string) *binDirector {
+	t.Helper()
 	gobin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("go command not on PATH")
@@ -35,10 +41,6 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 	}
 	if out, err := exec.Command(gobin, "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
-	}
-	cfg, err := filepath.Abs(filepath.Join("..", "..", "internal", "cli", "testdata", "run", "config.toml"))
-	if err != nil {
-		t.Fatal(err)
 	}
 	state, err := os.MkdirTemp("", "ge")
 	if err != nil {
@@ -52,83 +54,118 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	d := &binDirector{t: t, bin: bin, store: storePath, cfg: cfg, state: state,
+		flags: []string{"--store", storePath, "--config", cfg, "--state", state, "--repo", "app"}}
+	t.Cleanup(func() {
+		d.stopAll()
+		_ = os.RemoveAll(state)
+	})
+	return d
+}
 
-	try := func(stdin string, args ...string) (string, string, error) {
-		cmd := exec.Command(bin, args...)
-		cmd.Stdin = strings.NewReader(stdin)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		err := cmd.Run()
-		return stdout.String(), stderr.String(), err
+func (d *binDirector) try(stdin string, args ...string) (string, string, error) {
+	cmd := exec.Command(d.bin, args...)
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	return stdout.String(), stderr.String(), err
+}
+
+func (d *binDirector) run(stdin string, args ...string) string {
+	d.t.Helper()
+	out, stderr, err := d.try(stdin, args...)
+	if err != nil {
+		d.t.Fatalf("guildhall %s: %v\nstdout %s\nstderr %s", strings.Join(args, " "), err, out, stderr)
 	}
-	run := func(stdin string, args ...string) string {
-		t.Helper()
-		out, stderr, err := try(stdin, args...)
-		if err != nil {
-			t.Fatalf("guildhall %s: %v\nstdout %s\nstderr %s", strings.Join(args, " "), err, out, stderr)
-		}
-		return out
+	return out
+}
+
+// advance runs task start, step done or step retry with the director flags before args.
+func (d *binDirector) advance(cmd []string, args ...string) string {
+	d.t.Helper()
+	return d.run("", append(append(cmd, d.flags...), args...)...)
+}
+
+func (d *binDirector) want(got, want string) {
+	d.t.Helper()
+	if strings.TrimSpace(got) != want {
+		d.t.Fatalf("got %s, want %s", strings.TrimSpace(got), want)
 	}
-	attempts := []string{}
-	// stopAll proves every attempt's launcher stopped, so no owned process outlives the test; a launcher
-	// that has just recorded its outcome may still be exiting, and stop proves it only once it is gone.
-	stopAll := func() {
-		t.Helper()
-		for _, a := range attempts {
-			step, n, _ := strings.Cut(a, "/")
-			for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
-				out, stderr, err := try("", "artisan", "stop", "--store", storePath, "--state", state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", n)
-				if err == nil {
-					break
-				}
-				if time.Now().After(end) {
-					t.Errorf("artisan stop %s: %v\n%s%s", a, err, out, stderr)
-					break
-				}
+}
+
+// launched records attempt n of step so that cleanup stops its launcher.
+func (d *binDirector) launched(step string, n int) {
+	d.attempts = append(d.attempts, step+"/"+strconv.Itoa(n))
+}
+
+// stopAll proves every attempt's launcher stopped, so no owned process outlives the test; a launcher
+// that has just recorded its outcome may still be exiting, and stop proves it only once it is gone.
+func (d *binDirector) stopAll() {
+	d.t.Helper()
+	for _, a := range d.attempts {
+		step, n, _ := strings.Cut(a, "/")
+		for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+			out, stderr, err := d.try("", "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", n)
+			if err == nil {
+				break
+			}
+			if time.Now().After(end) {
+				d.t.Errorf("artisan stop %s: %v\n%s%s", a, err, out, stderr)
+				break
 			}
 		}
 	}
-	t.Cleanup(func() {
-		stopAll()
-		_ = os.RemoveAll(state)
-	})
-	flags := []string{"--store", storePath, "--config", cfg, "--state", state, "--repo", "app"}
-	want := func(got, want string) {
-		t.Helper()
-		if strings.TrimSpace(got) != want {
-			t.Fatalf("got %s, want %s", strings.TrimSpace(got), want)
-		}
-	}
-	// done waits for the attempt's result and takes it.
-	done := func(step string, n int) string {
-		t.Helper()
-		attempts = append(attempts, step+"/"+strconv.Itoa(n))
-		k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}
-		result := filepath.Join(k.Dir(state), artisan.ResultFile)
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		if _, err := adapter.WaitResult(ctx, result, adapter.Identity{TaskID: "t-1", AttemptID: k.AttemptID()}, adapter.WaitOptions{Poll: 50 * time.Millisecond}); err != nil {
-			log, _ := os.ReadFile(filepath.Join(k.Dir(state), "launcher.log"))
-			t.Fatalf("result of %s: %v\nlauncher log:\n%s", k, err, log)
-		}
-		return run("", append(append([]string{"step", "done"}, flags...), "--task", "t-1", "--step", step, "--attempt", strconv.Itoa(n), "--result", result)...)
-	}
-	answer := func(decision string) string {
-		t.Helper()
-		run("approved\nLooks right.\n", "decide", "answer", "--store", storePath, "--repo", "app", "--task", "t-1", "--decision", decision, "--answer-file", "-")
-		return run("", append(append([]string{"task", "start"}, flags...), "--decision", decision, "t-1")...)
-	}
+}
 
-	// fake-straight has no validate step, so it is below the review floor and task new needs its approval.
-	run("Approved for the acceptance run.\n", "workflow", "approve", "--store", storePath, "--config", cfg, "--repo", "app", "--words-file", "-")
-	run("", "task", "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Sort the task list", "t-1")
-	want(run("", append(append([]string{"task", "start"}, flags...), "t-1")...), `{"wait":"attempt","step":"plan","attempt":1}`)
-	want(done("plan", 1), `{"wait":"decision","step":"accept","decision":"accept-1"}`)
-	want(answer("accept-1"), `{"wait":"attempt","step":"build","attempt":1}`)
-	want(done("build", 1), `{"wait":"decision","step":"sign-off","decision":"sign-off-1"}`)
-	want(answer("sign-off-1"), `{"wait":"decision","step":"deliver","decision":"deliver-1"}`)
+// done waits for the attempt's result and takes it.
+func (d *binDirector) done(step string, n int) string {
+	d.t.Helper()
+	d.launched(step, n)
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}
+	result := filepath.Join(k.Dir(d.state), artisan.ResultFile)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if _, err := adapter.WaitResult(ctx, result, adapter.Identity{TaskID: "t-1", AttemptID: k.AttemptID()}, adapter.WaitOptions{Poll: 50 * time.Millisecond}); err != nil {
+		log, _ := os.ReadFile(filepath.Join(k.Dir(d.state), "launcher.log"))
+		d.t.Fatalf("result of %s: %v\nlauncher log:\n%s", k, err, log)
+	}
+	return d.advance([]string{"step", "done"}, "--task", "t-1", "--step", step, "--attempt", strconv.Itoa(n), "--result", result)
+}
 
-	stopAll()
+// newTask approves the repository's workflow, which has no validate step and so is below the review floor,
+// and creates task t-1.
+func (d *binDirector) newTask() {
+	d.t.Helper()
+	d.run("Approved for the acceptance run.\n", "workflow", "approve", "--store", d.store, "--config", d.cfg, "--repo", "app", "--words-file", "-")
+	d.run("", "task", "new", "--store", d.store, "--config", d.cfg, "--repo", "app", "--title", "Sort the task list", "t-1")
+}
+
+func (d *binDirector) answer(decision string) string {
+	d.t.Helper()
+	d.run("approved\nLooks right.\n", "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", decision, "--answer-file", "-")
+	return d.advance([]string{"task", "start"}, "--decision", decision, "t-1")
+}
+
+// TestTaskRunsEndToEnd is the S7 acceptance: the built binary runs task app/t-1 on the fake-straight workflow
+// (internal/cli/testdata/run) from task new to its terminal step, the merge decision, through the real commands:
+// task start launches each Artisan stage as its own owned launcher process, the fake Artisan writes its result,
+// step done takes it, decide answer and task start --decision cross each Guildmaster step. Afterwards every
+// attempt's launcher is proven stopped and the timeline records the run in order.
+func TestTaskRunsEndToEnd(t *testing.T) {
+	cfg, err := filepath.Abs(filepath.Join("..", "..", "internal", "cli", "testdata", "run", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := newBinDirector(t, cfg)
+	d.newTask()
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
+	d.want(d.done("plan", 1), `{"wait":"decision","step":"accept","decision":"accept-1"}`)
+	d.want(d.answer("accept-1"), `{"wait":"attempt","step":"build","attempt":1}`)
+	d.want(d.done("build", 1), `{"wait":"decision","step":"sign-off","decision":"sign-off-1"}`)
+	d.want(d.answer("sign-off-1"), `{"wait":"decision","step":"deliver","decision":"deliver-1"}`)
+
+	d.stopAll()
 
 	var tl struct {
 		Attempts []struct {
@@ -144,7 +181,7 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 		} `json:"decisions"`
 		Events []store.Receipt `json:"events"`
 	}
-	if err := json.Unmarshal([]byte(run("", "task", "timeline", "--store", storePath, "--repo", "app", "t-1", "--json")), &tl); err != nil {
+	if err := json.Unmarshal([]byte(d.run("", "task", "timeline", "--store", d.store, "--repo", "app", "t-1", "--json")), &tl); err != nil {
 		t.Fatal(err)
 	}
 	var got []string
@@ -169,6 +206,108 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 		"start-attempt attempt/plan/1", "finish-attempt attempt/plan/1", "open-decision decision/accept-1", "answer-decision decision/accept-1",
 		"start-attempt attempt/build/1", "finish-attempt attempt/build/1", "open-decision decision/sign-off-1", "answer-decision decision/sign-off-1",
 		"open-decision decision/deliver-1",
+	}
+	if !slices.Equal(order, exp) {
+		t.Errorf("timeline events:\n%q\nwant\n%q", order, exp)
+	}
+}
+
+// TestRetryAfterAKilledLauncher is F27 through the binary: the plan attempt's launcher is killed outright,
+// artisan resume settles the attempt failed, task start waits for the Director, and step retry starts
+// attempt 2 with its reason recorded; repeating the retry changes nothing.
+func TestRetryAfterAKilledLauncher(t *testing.T) {
+	// The plan attempts never publish a result, so the launcher is still running when it is killed.
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "internal", "cli", "testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(dir, "baseline", "stages", "plan.md")
+	f, err := os.OpenFile(plan, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("guildhall-fake: result=never\nguildhall-fake: lifetime=60s\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d := newBinDirector(t, filepath.Join(dir, "config.toml"))
+	d.newTask()
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
+	d.launched("plan", 1)
+
+	var pid int
+	for end := time.Now().Add(time.Minute); pid == 0; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the plan attempt's launcher did not record itself running")
+		}
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			continue
+		}
+		own, err := s.Ownership("app", "t-1", "plan", 1)
+		_ = s.Close()
+		if err == nil && own.State == store.OwnerRunning {
+			pid = own.LauncherIdentity.PID
+		}
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	// resume refuses while the killed launcher is still seen live.
+	resume := []string{"artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"}
+	for end := time.Now().Add(time.Minute); ; time.Sleep(100 * time.Millisecond) {
+		out, stderr, err := d.try("", resume...)
+		if err == nil {
+			if !strings.Contains(out, `"attempt_outcome":"failed"`) {
+				t.Fatalf("resume settled %s", out)
+			}
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("artisan resume: %v\n%s%s", err, out, stderr)
+		}
+	}
+
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"director","step":"plan","attempt":1}`)
+	retry := []string{"--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "The launcher was killed; try again."}
+	d.want(d.advance([]string{"step", "retry"}, retry...), `{"wait":"attempt","step":"plan","attempt":2}`)
+	d.launched("plan", 2)
+	d.want(d.advance([]string{"step", "retry"}, retry...), `{"wait":"attempt","step":"plan","attempt":2}`)
+
+	var tl struct {
+		Attempts []struct {
+			Step    string `json:"step"`
+			Number  int    `json:"number"`
+			Outcome string `json:"outcome"`
+		} `json:"attempts"`
+		Events []store.Receipt `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(d.run("", "task", "timeline", "--store", d.store, "--repo", "app", "t-1", "--json")), &tl); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, a := range tl.Attempts {
+		got = append(got, a.Step+"-"+strconv.Itoa(a.Number)+" "+a.Outcome)
+	}
+	if exp := []string{"plan-1 failed", "plan-2 "}; !slices.Equal(got, exp) {
+		t.Errorf("timeline attempts %q, want %q", got, exp)
+	}
+	var order []string
+	for _, e := range tl.Events {
+		switch e.Operation {
+		case "start-attempt", "finish-attempt", "send-message":
+			order = append(order, e.Operation+" "+e.Record)
+		}
+	}
+	exp := []string{
+		"start-attempt attempt/plan/1", "finish-attempt attempt/plan/1", "send-message message/app.t-1.attempt-failed.plan-1",
+		"send-message message/app.t-1.attempt-retried.plan-1", "start-attempt attempt/plan/2",
 	}
 	if !slices.Equal(order, exp) {
 		t.Errorf("timeline events:\n%q\nwant\n%q", order, exp)

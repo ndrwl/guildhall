@@ -137,6 +137,7 @@ Every command that exists today, each described in its own page; a new command a
 - `guildhall artisan start|stop|status|resume` starts, stops, classifies and resumes one owned Artisan attempt with the test-only fake adapter or the minimal Claude adapter; `guildhall fake-artisan` is the fake and `guildhall claude-artisan` the Claude wrapper ([Claude adapter](docs/adapters.md#claude-adapter)); see [Artisan commands](docs/artisan.md#commands).
 - `guildhall task new|show|list|timeline|files|finding rule|review` creates and inspects tasks and records the Director's rulings on review findings and full-review requests, without launching anything; see [tasks](docs/tasks.md).
 - `guildhall task start` and `guildhall step done` advance a task through its workflow, launching each Artisan stage as an owned attempt, and publish and merge its pull request through `gh` on GitHub; see [running a task](docs/running.md).
+- `guildhall step retry` starts the next attempt of a step after a failed or stopped one; see [running a task](docs/running.md#step-retry).
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.
 
@@ -385,7 +386,7 @@ The [workflow interpreter](docs/interpreter.md) executes a supported subset; the
 - `docs/messaging.md`: the local Director and Artisan message inbox.
 - `docs/adapters.md`: the Artisan adapter contract, result file and Herdr access.
 - `docs/tasks.md`: creating Director tasks and the workflow and configuration they bind.
-- `docs/running.md`: advancing a task with `task start` and `step done`.
+- `docs/running.md`: advancing a task with `task start`, `step done` and `step retry`.
 - `docs/rendering.md`: Artisan prompts, skills, their manifest and Guildmaster questions.
 - `docs/artisan.md`: the Artisan launcher's process identity, containment, control endpoint, stop ladder, heartbeat, reconcile classification and commands.
 - `docs/glossary.md`: terms several packages use with different meanings.
