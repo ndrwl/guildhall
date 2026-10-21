@@ -433,7 +433,7 @@ Production registration is deferred to L7 part 3, which wires the `herdr.Client.
 
 The inventory directory holds one `artisan.ProcessRecord`, an identity with a role, per process, written as `<role>-<pid>.json` by `artisan.RecordProcess`, atomically, and read by `artisan.ReadProcessRecords`, which refuses a record without a positive PID, a token or a role, or one not stored under its own name, with `ErrInvalidProcessRecord`, and a missing directory with an error matching `fs.ErrNotExist`.
 The fake Artisan's `inventory` directive ([fake directives](adapters.md#fake-adapter)), the `artisantest` worker and this harness write and read the directory only through them and spell neither the file name nor the fields.
-The `artisantest` worker's `Entry` is a wider type embedding the record, with `Setsid` and `Breakaway` beside it, written by `RecordProcess` and read with `ReadProcessRecordsAs`.
+The `artisantest` worker's `Entry` is a `ProcessRecord`, written by `RecordProcess` and read with `ReadProcessRecords`. Test metadata lives in roles: `grandchild-setsid` identifies a grandchild started in its own session; `breakaway-refused` and `breakaway-succeeded` record the breakaway outcome under the worker's identity.
 
 ### Custody
 

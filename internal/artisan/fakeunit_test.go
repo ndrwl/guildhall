@@ -116,13 +116,13 @@ func (u *fakeUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 	u.worker = u.procs.spawn()
 	u.members[u.worker] = true
 	record := func(e artisantest.Entry) error { return artisantest.Record(w.Inventory, e) }
-	if err := record(artisantest.Entry{ProcessRecord: artisan.ProcessRecord{Identity: u.worker, Role: "worker"}}); err != nil {
+	if err := record(artisantest.Entry{Identity: u.worker, Role: "worker"}); err != nil {
 		return artisan.Identity{}, err
 	}
 	var escaped []artisan.Identity
 	for range w.Grandchildren {
 		if w.BreakawayGrandchild {
-			if err := record(artisantest.Entry{ProcessRecord: artisan.ProcessRecord{Identity: u.worker, Role: "breakaway"}, Breakaway: "refused: breakaway not allowed"}); err != nil {
+			if err := record(artisantest.Entry{Identity: u.worker, Role: "breakaway-refused"}); err != nil {
 				return artisan.Identity{}, err
 			}
 		}
@@ -132,7 +132,11 @@ func (u *fakeUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 		} else {
 			u.members[g] = true
 		}
-		if err := record(artisantest.Entry{ProcessRecord: artisan.ProcessRecord{Identity: g, Role: "grandchild"}, Setsid: w.SetsidGrandchild}); err != nil {
+		role := "grandchild"
+		if w.SetsidGrandchild {
+			role = "grandchild-setsid"
+		}
+		if err := record(artisantest.Entry{Identity: g, Role: role}); err != nil {
 			return artisan.Identity{}, err
 		}
 	}

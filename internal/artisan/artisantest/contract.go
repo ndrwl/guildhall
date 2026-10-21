@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -177,10 +176,7 @@ func RunUnitContract(t *testing.T, h Harness) {
 		t.Run("a setsid grandchild is an escape, not a member", func(t *testing.T) {
 			c := h.begin(t, Worker{Grandchildren: 1, SetsidGrandchild: true})
 			worker := c.start()
-			gc := c.role("grandchild", 1)[0]
-			if !gc.Setsid {
-				t.Fatalf("grandchild %v did not record setsid", gc)
-			}
+			gc := c.role("grandchild-setsid", 1)[0]
 			c.waitMembers(worker)
 			c.kill()
 			if m := c.members(); slices.Contains(m, gc.Identity) {
@@ -197,10 +193,7 @@ func RunUnitContract(t *testing.T, h Harness) {
 		t.Run("a setsid grandchild is a member and kill ends it", func(t *testing.T) {
 			c := h.begin(t, Worker{Grandchildren: 1, SetsidGrandchild: true})
 			worker := c.start()
-			gc := c.role("grandchild", 1)[0]
-			if !gc.Setsid {
-				t.Fatalf("grandchild %v did not record setsid", gc)
-			}
+			gc := c.role("grandchild-setsid", 1)[0]
 			c.waitMembers(worker, gc.Identity)
 			c.kill()
 			c.assertGone(gc.Identity)
@@ -216,10 +209,7 @@ func RunUnitContract(t *testing.T, h Harness) {
 		t.Run("a breakaway request is refused", func(t *testing.T) {
 			c := h.begin(t, Worker{Grandchildren: 1, BreakawayGrandchild: true})
 			worker := c.start()
-			b := c.role("breakaway", 1)[0]
-			if !strings.HasPrefix(b.Breakaway, "refused") {
-				t.Errorf("breakaway %q, want refused", b.Breakaway)
-			}
+			c.role("breakaway-refused", 1)
 			c.waitMembers(append([]artisan.Identity{worker}, ids(c.role("grandchild", 1))...)...)
 			c.kill()
 		})

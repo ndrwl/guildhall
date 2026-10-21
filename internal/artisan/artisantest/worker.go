@@ -53,17 +53,7 @@ type Worker struct {
 	Inventory string `json:"inventory,omitempty"`
 }
 
-// Entry is one inventory record: a process the worker tree started, as
-// artisan.ProcessRecord with the worker's own fields beside it. Its Role is
-// "worker", "grandchild", "sentinel" or "breakaway" (the worker's record of a
-// breakaway request, under the worker's identity).
-type Entry struct {
-	artisan.ProcessRecord
-	// Setsid is set on a grandchild started in its own session.
-	Setsid bool `json:"setsid,omitempty"`
-	// Breakaway is "refused: <error>" or "succeeded" on a breakaway record.
-	Breakaway string `json:"breakaway,omitempty"`
-}
+type Entry = artisan.ProcessRecord
 
 // Command returns the command that runs w as the worker, recording into dir.
 // Its stdin, stdout and stderr are left unset.
@@ -100,9 +90,9 @@ func Record(dir string, e Entry) error {
 }
 
 // Inventory reads every entry recorded in dir with
-// artisan.ReadProcessRecordsAs; a directory not yet created holds none.
+// artisan.ReadProcessRecords; a directory not yet created holds none.
 func Inventory(dir string) ([]Entry, error) {
-	out, err := artisan.ReadProcessRecordsAs[Entry](dir)
+	out, err := artisan.ReadProcessRecords(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -139,7 +129,11 @@ func (w Worker) run() int {
 	if err != nil {
 		return 2
 	}
-	if err := Record(w.Inventory, Entry{ProcessRecord: artisan.ProcessRecord{Identity: self, Role: w.Role}, Setsid: w.Role == "grandchild" && w.SetsidGrandchild && setsidAvailable}); err != nil {
+	role := w.Role
+	if role == "grandchild" && w.SetsidGrandchild && setsidAvailable {
+		role = "grandchild-setsid"
+	}
+	if err := Record(w.Inventory, Entry{Identity: self, Role: role}); err != nil {
 		return 2
 	}
 	if w.Role == "worker" {
@@ -202,13 +196,13 @@ func (w Worker) spawnGrandchild() error {
 		}
 		c := g.command()
 		applyBreakaway(c)
-		e := Entry{ProcessRecord: artisan.ProcessRecord{Identity: self, Role: "breakaway"}, Breakaway: "succeeded"}
+		e := Entry{Identity: self, Role: "breakaway-succeeded"}
 		if err := c.Start(); err != nil {
-			e.Breakaway = "refused: " + err.Error()
+			e.Role = "breakaway-refused"
 		} else {
 			go func() { _ = c.Wait() }()
 		}
-		if err := Record(w.Inventory, e); err != nil || e.Breakaway == "succeeded" {
+		if err := Record(w.Inventory, e); err != nil || e.Role == "breakaway-succeeded" {
 			return err
 		}
 	}

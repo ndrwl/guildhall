@@ -12,40 +12,23 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
-// wideRecord is a writer's own record type: a ProcessRecord with a field of
-// its own, as artisantest.Entry is.
-type wideRecord struct {
-	artisan.ProcessRecord
-	Note string `json:"note,omitempty"`
-}
-
-// TestProcessRecordRoundTrip: records written by RecordProcess are read back
-// in file-name order under <role>-<pid>.json, a wider type keeps its own
-// fields, and a rewrite of the same role and PID replaces the record.
 func TestProcessRecordRoundTrip(t *testing.T) {
 	worker := artisan.ProcessRecord{Identity: artisan.Identity{PID: 41, Token: "t41"}, Role: "worker"}
 	grandchild := artisan.ProcessRecord{Identity: artisan.Identity{PID: 42, Token: "t42"}, Role: "grandchild"}
 	for _, tc := range []struct {
 		name  string
-		write []artisan.InventoryRecord
+		write []artisan.ProcessRecord
 		files []string
 		want  []artisan.ProcessRecord
-		wide  []wideRecord
 	}{
-		{"none", nil, nil, nil, nil},
-		{"one", []artisan.InventoryRecord{worker}, []string{"worker-41.json"}, []artisan.ProcessRecord{worker}, []wideRecord{{ProcessRecord: worker}}},
-		{"file-name order", []artisan.InventoryRecord{worker, grandchild},
+		{"none", nil, nil, nil},
+		{"one", []artisan.ProcessRecord{worker}, []string{"worker-41.json"}, []artisan.ProcessRecord{worker}},
+		{"file-name order", []artisan.ProcessRecord{worker, grandchild},
 			[]string{"grandchild-42.json", "worker-41.json"},
-			[]artisan.ProcessRecord{grandchild, worker},
-			[]wideRecord{{ProcessRecord: grandchild}, {ProcessRecord: worker}}},
-		{"a wider type keeps its fields", []artisan.InventoryRecord{wideRecord{grandchild, "setsid"}},
-			[]string{"grandchild-42.json"},
-			[]artisan.ProcessRecord{grandchild},
-			[]wideRecord{{grandchild, "setsid"}}},
-		{"a rewrite replaces", []artisan.InventoryRecord{wideRecord{worker, "first"}, worker},
+			[]artisan.ProcessRecord{grandchild, worker}},
+		{"a rewrite replaces", []artisan.ProcessRecord{{Identity: artisan.Identity{PID: 41, Token: "old"}, Role: "worker"}, worker},
 			[]string{"worker-41.json"},
-			[]artisan.ProcessRecord{worker},
-			[]wideRecord{{ProcessRecord: worker}}},
+			[]artisan.ProcessRecord{worker}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -69,10 +52,6 @@ func TestProcessRecordRoundTrip(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("ReadProcessRecords = %+v, %v; want %+v", got, err, tc.want)
 			}
-			wide, err := artisan.ReadProcessRecordsAs[wideRecord](dir)
-			if err != nil || !reflect.DeepEqual(wide, tc.wide) {
-				t.Errorf("ReadProcessRecordsAs = %+v, %v; want %+v", wide, err, tc.wide)
-			}
 		})
 	}
 }
@@ -84,7 +63,7 @@ func TestRecordProcessRefuses(t *testing.T) {
 	id := artisan.Identity{PID: 7, Token: "t7"}
 	for _, tc := range []struct {
 		name string
-		rec  artisan.InventoryRecord
+		rec  artisan.ProcessRecord
 	}{
 		{"zero PID", artisan.ProcessRecord{Identity: artisan.Identity{Token: "t"}, Role: "worker"}},
 		{"negative PID", artisan.ProcessRecord{Identity: artisan.Identity{PID: -1, Token: "t"}, Role: "worker"}},
@@ -93,7 +72,6 @@ func TestRecordProcessRefuses(t *testing.T) {
 		{"role with a slash", artisan.ProcessRecord{Identity: id, Role: "a/b"}},
 		{"role with a backslash", artisan.ProcessRecord{Identity: id, Role: `a\b`}},
 		{"role dot-dot", artisan.ProcessRecord{Identity: id, Role: ".."}},
-		{"a wider type without a role", wideRecord{artisan.ProcessRecord{Identity: id}, "x"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -131,9 +109,6 @@ func TestReadProcessRecordsRefuses(t *testing.T) {
 			_, err := artisan.ReadProcessRecords(dir)
 			if !errors.Is(err, artisan.ErrInvalidProcessRecord) || !strings.Contains(err.Error(), tc.file) {
 				t.Errorf("ReadProcessRecords = %v, want ErrInvalidProcessRecord naming %s", err, tc.file)
-			}
-			if _, err := artisan.ReadProcessRecordsAs[wideRecord](dir); !errors.Is(err, artisan.ErrInvalidProcessRecord) {
-				t.Errorf("ReadProcessRecordsAs = %v, want ErrInvalidProcessRecord", err)
 			}
 		})
 	}

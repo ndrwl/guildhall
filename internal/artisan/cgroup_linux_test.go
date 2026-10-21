@@ -40,12 +40,12 @@ func TestCgroupKillEmpties(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, e := range entries {
-			if e.Role == "grandchild" {
+			if e.Role == "grandchild-setsid" {
 				gc = e
 			}
 		}
 	}
-	if gc.PID == 0 || !gc.Setsid {
+	if gc.PID == 0 {
 		t.Fatalf("grandchild did not acknowledge setsid: %+v", gc)
 	}
 	if pgid, err := unix.Getpgid(gc.PID); err != nil || pgid != gc.PID || pgid == worker.PID {
