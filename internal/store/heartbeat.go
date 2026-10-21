@@ -2,17 +2,30 @@ package store
 
 import (
 	"fmt"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
-
-	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
 var bucketHeartbeats = []byte("heartbeats")
 
-// Heartbeat is an attempt's launcher heartbeat, the record the launcher
-// writes to its attempt directory (artisan.HeartbeatFile), in the same shape.
-type Heartbeat = artisan.Heartbeat
+// Heartbeat is an attempt's launcher heartbeat as a record value, with the
+// fields and JSON of the beat the launcher writes to its attempt directory
+// (artisan.Heartbeat), so a launcher's beat converts to it directly.
+type Heartbeat struct {
+	Repository string `json:"repository"`
+	TaskID     string `json:"task_id"`
+	Step       string `json:"step"`
+	Attempt    int    `json:"attempt"`
+	// Sequence increases with every write for the attempt, from 1.
+	Sequence uint64 `json:"sequence"`
+	// Time is when the beat was written.
+	Time time.Time `json:"time"`
+	// WorkerState is the launcher's phase: starting, running or stopping.
+	WorkerState string `json:"worker_state"`
+	// LastOutputAt is the worker's last output, never after Time.
+	LastOutputAt time.Time `json:"last_output_at"`
+}
 
 func (s *Store) Heartbeat(repository, taskID, step string, number int) (Heartbeat, error) {
 	var h Heartbeat

@@ -8,8 +8,6 @@ import (
 	"unicode/utf8"
 
 	bolt "go.etcd.io/bbolt"
-
-	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
 // bucketOwners holds one ownership record per owned stage attempt, keyed like the attempt.
@@ -32,6 +30,28 @@ const (
 	OwnerRunning OwnershipState = "running"
 	// OwnerReleased is recorded by FinishAttempt; a released record is never owned again.
 	OwnerReleased OwnershipState = "released"
+)
+
+// ProcessIdentity names one process as a record value: its PID plus the OS
+// creation token that differs for a later process reusing the PID. It has
+// Artisan's identity fields, and the store never reads the OS to fill it.
+type ProcessIdentity struct {
+	PID   int    `json:"pid"`
+	Token string `json:"token"`
+}
+
+// Liveness is a probe's verdict on a recorded process. Its values are the
+// words Artisan's native probe reports; the zero value is no verdict and never
+// proves exit.
+type Liveness string
+
+const (
+	// ProbeGone proves no live process has the recorded identity.
+	ProbeGone Liveness = "gone"
+	// ProbeAlive means a live process has the recorded identity.
+	ProbeAlive Liveness = "alive"
+	// ProbeUnverified means the probe could neither prove exit nor find it live.
+	ProbeUnverified Liveness = "unverified"
 )
 
 // Containment kinds a recovery description may name. They are the kinds
@@ -67,7 +87,7 @@ type Containment struct {
 	// Reason is the Linux detection result that chose Kind.
 	Reason string `json:"reason,omitempty"`
 	// Worker is the contained worker; a process group requires it.
-	Worker artisan.Identity `json:"worker,omitzero"`
+	Worker ProcessIdentity `json:"worker,omitzero"`
 }
 
 // Recoverable reports, with an error wrapping ErrUnrecoverable, a record that
@@ -98,13 +118,13 @@ func (c Containment) Recoverable() error {
 		if c.Name != "" {
 			return unrecoverable("a %s has no name; it is found by its worker, not %q", c.Kind, c.Name)
 		}
-		if c.Worker == (artisan.Identity{}) {
+		if c.Worker == (ProcessIdentity{}) {
 			return unrecoverable("a %s needs its worker identity", c.Kind)
 		}
 	default:
 		return unrecoverable("unknown containment kind %q", c.Kind)
 	}
-	if c.Worker != (artisan.Identity{}) {
+	if c.Worker != (ProcessIdentity{}) {
 		if c.Worker.PID < 1 {
 			return unrecoverable("worker pid %d must be positive", c.Worker.PID)
 		}
@@ -126,8 +146,8 @@ type Ownership struct {
 	TaskID     string `json:"task_id"`
 	Step       string `json:"step"`
 	// Attempt is the stage attempt's number; StartOwnedAttempt assigns it.
-	Attempt          int              `json:"attempt"`
-	LauncherIdentity artisan.Identity `json:"launcher_identity"`
+	Attempt          int             `json:"attempt"`
+	LauncherIdentity ProcessIdentity `json:"launcher_identity"`
 	// Containment is empty until the owner's worker has been placed in a unit;
 	// once set it must be Recoverable.
 	Containment Containment `json:"containment,omitzero"`
@@ -137,20 +157,28 @@ type Ownership struct {
 }
 
 // OwnerProbe reports whether the launcher recorded in an ownership record is
-// still live. Alive refuses a take-over with ErrOwnerLive even with an error;
-// Gone with a nil error proves exit and allows it; all other results
+// still live. ProbeAlive refuses a take-over with ErrOwnerLive even with an
+// error; ProbeGone with a nil error proves exit and allows it; all other results
 // refuse it with ErrOwnerUnknown. A caller whose owner contained processes
-// reports survivors as Alive or Unverified, never Gone.
-type OwnerProbe func(Ownership) (artisan.Liveness, error)
+// reports survivors as ProbeAlive or ProbeUnverified, never ProbeGone.
+type OwnerProbe func(Ownership) (Liveness, error)
 
-// ProbeLauncher returns Unverified when containment is recorded, since launcher
-// exit cannot prove absence of contained survivors. Without containment it probes
-// the recorded launcher identity with artisan.Probe.
-func ProbeLauncher(o Ownership) (artisan.Liveness, error) {
-	if o.Containment != (Containment{}) {
-		return artisan.Unverified, nil
+// IdentityProbe reports whether one recorded process is still live. The
+// launcher composition supplies the operating system's probe; the store never
+// probes processes itself.
+type IdentityProbe func(ProcessIdentity) (Liveness, error)
+
+// ProbeLauncher returns the conservative owner probe over identity: it reports
+// ProbeUnverified without probing when containment is recorded, since launcher
+// exit cannot prove absence of contained survivors, and otherwise probes the
+// recorded launcher identity.
+func ProbeLauncher(identity IdentityProbe) OwnerProbe {
+	return func(o Ownership) (Liveness, error) {
+		if o.Containment != (Containment{}) {
+			return ProbeUnverified, nil
+		}
+		return identity(o.LauncherIdentity)
 	}
-	return artisan.Probe(o.LauncherIdentity)
 }
 
 // MaxEndpointBytes bounds an ownership record's endpoint.
@@ -183,10 +211,11 @@ func (s *Store) StartOwnedAttempt(mutationID string, o Ownership) (Receipt, erro
 // takes over one whose recorded owner probe proves exited; it refuses with
 // ErrOwnerLive or ErrOwnerUnknown otherwise and writes nothing. A recorded
 // containment that is not Recoverable refuses with ErrOwnerUnknown without
-// probing, since its unit could not be swept. A nil probe
-// means ProbeLauncher, which refuses recorded containment with ErrOwnerUnknown;
-// recovery requires an explicit containment-aware probe proving no survivors.
-// The probe runs inside the mutation, under the store's
+// probing, since its unit could not be swept. The probe is required, even
+// for an attempt with no owner, and a nil probe is refused with ErrInvalid:
+// launcher callers pass ProbeLauncher, which refuses recorded containment with
+// ErrOwnerUnknown, and recovery passes a containment-aware probe proving no
+// survivors. The probe runs inside the mutation, under the store's
 // single-writer lock, so two take-overs never both succeed. A replayed
 // mutation id returns its original receipt without probing.
 func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) (Receipt, error) {
@@ -194,7 +223,7 @@ func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) 
 		return Receipt{}, err
 	}
 	if probe == nil {
-		probe = ProbeLauncher
+		return Receipt{}, invalid("a take-over needs an owner probe; the store does not probe processes")
 	}
 	o.State = OwnerStarting
 	return s.mutate(mutationID, "take-ownership", o, func(tx *bolt.Tx, r *Receipt) error {
@@ -219,11 +248,11 @@ func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) 
 			}
 			lv, perr := probe(prev)
 			switch {
-			case lv == artisan.Alive:
+			case lv == ProbeAlive:
 				return fmt.Errorf("%w: launcher %d", ErrOwnerLive, prev.LauncherIdentity.PID)
 			case perr != nil:
 				return fmt.Errorf("%w: launcher %d: %w", ErrOwnerUnknown, prev.LauncherIdentity.PID, perr)
-			case lv != artisan.Gone:
+			case lv != ProbeGone:
 				return fmt.Errorf("%w: launcher %d is %s", ErrOwnerUnknown, prev.LauncherIdentity.PID, lv)
 			}
 		}

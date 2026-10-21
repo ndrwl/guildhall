@@ -6,6 +6,7 @@ A process group is found by its leader, so its record carries the worker's PID a
 The store owns the record's kind vocabulary as plain strings equal to Artisan's kinds, and a composition test in `internal/artisan` stores each backend's description, so the two cannot drift silently.
 `Containment.Recoverable` checks structural recovery evidence, not whether a unit is empty; a record that fails it, including an older incomplete one, is still readable but never authorises a sweep or a take-over.
 Unknown identity or surviving contained processes never grants take-over: probing only the launcher cannot rule out surviving workers or descendants.
-The [attempt ownership contract](../store.md#attempt-ownership) defines the conservative default probe and explicit containment-aware recovery path; `TestTakeOwnershipPreservesContainmentAfterLauncherExit` in `internal/store/process_test.go` pins the refusal without discarding recovery evidence.
+The [attempt ownership contract](../store.md#attempt-ownership) defines explicit probing and the containment-aware recovery path; `TestTakeOwnershipPreservesContainmentAfterLauncherExit` in `internal/store/process_test.go` pins the refusal without discarding recovery evidence.
 The same contract defines monotonic recovery evidence because `TakeOwnership`'s refusal only protects evidence still in the record; the [store contract tests](../contracts/store.md#tests) record its regression coverage.
-The store still imports `artisan` for identities and the default probe; moving those to store-neutral values with a launcher-supplied probe is a separate change.
+The store-neutral identity and probe values now follow the [attempt ownership contract](../store.md#attempt-ownership), removing the store's dependency on Artisan without changing persisted records.
+The [store contract tests](../contracts/store.md#tests) pin the dependency direction and explicit probing.

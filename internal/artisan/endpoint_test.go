@@ -601,7 +601,7 @@ func TestEndpointWithStoreOwnership(t *testing.T) {
 		if o.State == store.OwnerReleased {
 			return artisan.Identity{}, errors.New("ownership released")
 		}
-		return o.LauncherIdentity, nil
+		return artisan.Identity(o.LauncherIdentity), nil
 	}
 	tryListen := func() error {
 		e, err := artisan.Listen(path, testKey, self, lookup, &testHandler{})
@@ -618,15 +618,15 @@ func TestEndpointWithStoreOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	gone := artisan.Identity{PID: self.PID, Token: self.Token + "-exited"}
-	if _, err := st.StartOwnedAttempt("m-start", store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", LauncherIdentity: gone}); err != nil {
+	if _, err := st.StartOwnedAttempt("m-start", store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", LauncherIdentity: store.ProcessIdentity(gone)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tryListen(); !errors.Is(err, artisan.ErrNotOwner) {
 		t.Errorf("Listen while another launcher owns the attempt: %v, want ErrNotOwner", err)
 	}
 	assertAbsent(t, path, "refused bind")
-	own := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, LauncherIdentity: self}
-	if _, err := st.TakeOwnership("m-take", own, nil); err != nil {
+	own := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, LauncherIdentity: store.ProcessIdentity(self)}
+	if _, err := st.TakeOwnership("m-take", own, launcherProbe); err != nil {
 		t.Fatalf("TakeOwnership from an exited launcher: %v", err)
 	}
 	e, err := artisan.Listen(path, testKey, self, lookup, &testHandler{})

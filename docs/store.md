@@ -38,7 +38,7 @@ Sequence must be positive and increase; times must be nonzero and last output ca
 Only a running, existing attempt accepts writes; missing attempts return `ErrNotFound`, while completed attempts and non-increasing sequence return `ErrInvalid`.
 Mutation replay is unchanged and receipts name `heartbeat/<step>/<number>`.
 `Heartbeat` returns the latest record or `ErrNotFound`; reading or writing a heartbeat never changes the attempt.
-`Heartbeat` is an alias of `artisan.Heartbeat`, the record the launcher writes to its attempt directory about every five seconds ([launcher heartbeat](artisan.md#heartbeat)).
+`Heartbeat` is a store value with the fields and JSON of `artisan.Heartbeat`, the record the launcher writes to its attempt directory about every five seconds ([launcher heartbeat](artisan.md#heartbeat)).
 Heartbeats are read separately, not through `TaskHistory`.
 
 The shared Records contract and worker-stalled integration tests were written before implementation, but no failure was observed then.
@@ -92,12 +92,14 @@ The ownership record holds the current launcher identity; the receipt holds the 
   An attempt with no owner is taken at once.
   An attempt with an owner is probed first: a live owner refuses the take with `ErrOwnerLive`, and an owner that cannot be proven exited refuses it with `ErrOwnerUnknown`; a refusal writes nothing.
   Only an owner proven exited, with no probe error, may be replaced.
-  The default probe (`ProbeLauncher`, also selected by nil) refuses with `ErrOwnerUnknown` whenever containment is recorded; launcher exit alone cannot establish absence of contained survivors.
+  The caller supplies the probe; the store never probes processes, and a nil probe is refused with `ErrInvalid` and writes nothing, even for an attempt with no owner.
+  Owner identities are `ProcessIdentity` values (PID and creation token), and a probe answers with a `Liveness` value: `gone`, `alive` or `unverified`, the words Artisan's native probe reports; any other value, including the empty one, is unknown.
+  A launcher passes `ProbeLauncher` over the native identity probe: it refuses with `ErrOwnerUnknown` whenever containment is recorded, without consulting the identity probe, because launcher exit alone cannot establish absence of contained survivors.
   Without containment it checks the recorded launcher identity, so a reused PID with a different creation token counts as exited.
   Recovery of recorded containment requires an explicit containment-aware probe proving both launcher exit and absence of survivors; it reports surviving members as live or unknown, never as exited.
 - Both record the owner as `starting`.
   `UpdateOwnership` then lets the same launcher identity record its containment unit, its endpoint and `running`; another launcher's update is refused with `ErrOwnerLive`, and `running` never returns to `starting`.
-  Recovery evidence is monotonic: once the record holds a containment or an endpoint, every later update must carry an equal value; an update that clears or changes either is refused with `ErrInvalid` and writes nothing, so a stale or partial progress write cannot turn a contained attempt into one the default probe lets be taken over.
+  Recovery evidence is monotonic: once the record holds a containment or an endpoint, every later update must carry an equal value; an update that clears or changes either is refused with `ErrInvalid` and writes nothing, so a stale or partial progress write cannot turn a contained attempt into one `ProbeLauncher` lets be taken over.
 - `FinishAttempt` releases the attempt's ownership record in the same mutation and keeps it, still naming its launcher; a released record is never updated or taken again, because a finished attempt cannot be owned.
 - A replayed mutation id returns its original receipt without probing, as every mutation does.
 

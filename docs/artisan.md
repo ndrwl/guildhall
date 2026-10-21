@@ -260,7 +260,7 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 }
 ```
 
-- It is `artisan.Heartbeat`, which is also the store's heartbeat record (`store.Heartbeat` is an alias), so the record the interpreter reads for [`worker-stalled`](interpreter.md#worker-stalled-observations) has the shape the launcher writes; feeding the file to `PutHeartbeat` is the command-line slice's.
+- It is `artisan.Heartbeat`, and the store's heartbeat record `store.Heartbeat` has the same fields and JSON, so a beat converts to it directly and the record the interpreter reads for [`worker-stalled`](interpreter.md#worker-stalled-observations) has the shape the launcher writes; feeding the file to `PutHeartbeat` is the command-line slice's.
 - `sequence` increases with every write, continuing from a heartbeat an earlier launcher of the attempt left, as the store requires.
 - `worker_state` is the launcher's phase: `starting`, `running` or `stopping`.
 - `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began.
