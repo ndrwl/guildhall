@@ -38,7 +38,7 @@ Any other event, or one that does not match the records, is refused with `ErrEve
 
 After intake, the engine walks the steps in order, from the records, and stops at the first one that must be waited for.
 
-- **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records the attempt's [binding](#rounds-and-loops) and attempt `n`, renders its prompt into `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt.
+- **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records the attempt's [binding](#rounds-and-loops) and attempt `n`, [prepares](#attempt-preparation) its prompt in `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt.
   A succeeded attempt completes the step while it is current; a review step's outcome must also not block (see [rounds and loops](#rounds-and-loops)).
   A failed or stopped attempt waits for the Director, who is told through the outbox.
 - **Guildmaster step.** The engine opens decision `<step>-<round>` with the question and options `render.Question` gives, bound to its subject, and waits.
@@ -122,16 +122,31 @@ Every write uses a mutation id derived from the task and the record, such as `at
 The engine derives its position from the records, not from the event, so repeating any advance after a crash at any point replays its writes and records nothing twice.
 An advance is several writes, one per record, each committed on its own; the ordering (outputs before the attempt's outcome, the attempt before its launch) makes every partial advance one that a repeat completes.
 Once `Launch` returns, the engine marks the attempt directory with `launched.json`.
-An attempt recorded but neither marked launched nor holding a result is rendered again and launched with the same identity, never recorded again.
-A crash after `Launch` returns but before the mark relaunches the same identity; refusing a live duplicate belongs to the launcher's ownership record.
+An attempt recorded but neither marked launched nor holding a result is launched again with the same identity from its published preparation, never recorded again and never rendered again once prepared.
+A lost acknowledgement, or a crash after `Launch` returns but before the mark, relaunches the same identity with the same files; refusing a live duplicate belongs to the launcher's ownership record.
 An attempt's binding is recorded before the attempt, and a relaunch uses the recorded binding, so a replayed launch is given exactly the inputs of the first.
 A blocking result's stall message is sent before its attempt is finished, and a Guildmaster's answer is recorded as a document before the attempt it feeds, so a repeat completes both.
 `Advance` is not safe for concurrent use on one task; the store's single writer serialises processes.
+
+### Attempt preparation
+
+A missing `launched.json` does not prove that no worker holds the attempt's files, so an attempt's preparation is published once and never replaced ([decision](decisions/immutable-attempt-preparation.md)).
+A fresh attempt is rendered into `<step>-<n>/prompt.partial`, its manifest is written there as `manifest.json`, and the directory is renamed to `<step>-<n>/prompt` in one step; `prompt/` therefore either does not exist or holds a complete preparation.
+No launch is given a path inside `prompt.partial`, so a leftover one from a crash is removed and rendered again.
+A replay that finds `prompt/` launches from it unchanged, with the manifest it holds, after checking that:
+
+- `manifest.json` is a prompt manifest, decoded strictly, naming this attempt's repository, task, step and attempt number;
+- its inputs are exactly the attempt's recorded binding, by port, path and digest;
+- `prompt.md`, every input copy and every skill file match their manifest digests, each skill's tree digest matches its files, and `prompt/` holds no other files.
+
+Preparation that fails a check is refused with `ErrPreparation`: nothing is launched, removed or rewritten.
+Changes to the role, guide, standards, skills or inputs after preparation reach only a later attempt, which has its own identity.
 
 ## Tests
 
 `internal/interp/engine_test.go` runs the straight workflow, `testdata/workflows/straight.json` (plan, Guildmaster acceptance, build, Artisan review, Guildmaster sign-off, deliver), twice: against the scripted mock with the in-memory records and `messagingtest.Fake`, and against the same mock with a real store file and its mailbox.
 It checks each event's effect on the records, the approval bound to the plan document's digest, the spec gate, a crash between recording and launching an attempt, the zero-model guard, a failed attempt, mismatched events and a changed revision.
+`prepare_test.go` checks [attempt preparation](#attempt-preparation): a lost acknowledgement or lost `launched.json` with a changed baseline and skill tree replays the same files and spec, a refused live duplicate leaves every byte and path intact, invalid preparation is refused with `ErrPreparation`, and a worker started from the test binary reads its original input after the replay.
 `loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`) against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
 Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
 Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
