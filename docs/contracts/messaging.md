@@ -2,7 +2,7 @@
 
 ## Contract
 
-`Decode` and the envelope (`docs/messaging.md`); `Mailbox`: durable send with receipts, retry and id-reuse conflict, recipient, task and attempt checks, bounded ordered listing and acknowledgement, concurrent use (D15).
+`Decode` and the envelope (`docs/messaging.md`), read with [`strictjson`](strictjson.md); `Mailbox`: durable send with receipts, retry and id-reuse conflict, recipient, task and attempt checks, bounded ordered listing and acknowledgement, concurrent use (D15).
 `StoreMailbox` implements it on the store.
 
 ## Tests

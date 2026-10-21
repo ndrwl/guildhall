@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/strictjson"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -29,6 +30,13 @@ import (
 // answers one JSON request line with one JSON reply line naming the attempt
 // and the launcher, for the operations status, stop and cancel; what stop and
 // cancel do is the launcher's EndpointHandler.
+//
+// The line protocol is versioned (docs/artisan.md#protocol): request and reply
+// carry "schema": "guildhall.attempt-control/1". The endpoint decodes a
+// request strictly and refuses, before matching identities or calling any
+// handler, a missing or unversioned schema, a newer version, a duplicate key
+// and a field the protocol does not declare, at any depth; Call refuses such
+// a reply with ErrEndpointProtocol.
 
 // Errors returned by the control endpoint.
 var (
@@ -49,6 +57,10 @@ var (
 	// ErrEndpointRequest reports a request the endpoint answered with an error,
 	// such as an unknown operation or a handler failure.
 	ErrEndpointRequest = errors.New("endpoint refused the request")
+	// ErrEndpointProtocol reports a reply that is not protocol
+	// guildhall.attempt-control/1: malformed, carrying unknown or duplicate
+	// fields, unversioned or, also matching strictjson.ErrNewerSchema, newer.
+	ErrEndpointProtocol = errors.New("endpoint reply is not attempt-control protocol version 1")
 )
 
 // MaxEndpointPath is the longest socket path, in bytes, this platform's
@@ -141,23 +153,35 @@ type EndpointHandler interface {
 // released one, is an error.
 type OwnerLookup func() (Identity, error)
 
-// Limits of the line protocol.
+// Limits and version of the line protocol.
 const (
-	maxRequestBytes = 4 << 10
-	maxReplyBytes   = 1 << 20
+	// endpointSchema prefixes the protocol version in every request and reply.
+	endpointSchema  = "guildhall.attempt-control/"
+	endpointVersion = 1
+	// endpointSchemaV1 is the schema this endpoint speaks and Call sends.
+	endpointSchemaV1 = "guildhall.attempt-control/1"
+	maxRequestBytes  = 4 << 10
+	maxReplyBytes    = 1 << 20
 	// exchangeTimeout bounds reading a request and writing its reply.
 	exchangeTimeout = 5 * time.Second
 	// leftoverTimeout bounds the connection attempt that tests a leftover file.
 	leftoverTimeout = time.Second
 )
 
+// endpointOptions are the strict decoding rules for a line of at most max bytes.
+func endpointOptions(max int) strictjson.Options {
+	return strictjson.Options{Schema: endpointSchema, Version: endpointVersion, MaxBytes: max}
+}
+
 type endpointRequest struct {
+	Schema   string     `json:"schema"`
 	Op       EndpointOp `json:"op"`
 	Attempt  string     `json:"attempt"`
 	Launcher Identity   `json:"launcher"`
 }
 
 type endpointReply struct {
+	Schema   string         `json:"schema"`
 	Attempt  string         `json:"attempt"`
 	Launcher Identity       `json:"launcher"`
 	State    *EndpointState `json:"state,omitempty"`
@@ -267,15 +291,17 @@ func (e *Endpoint) serve() {
 // answer reads one request line from c and writes one reply line.
 func (e *Endpoint) answer(c net.Conn) {
 	defer func() { _ = c.Close() }()
-	rep := endpointReply{Attempt: e.key.String(), Launcher: e.self}
+	rep := endpointReply{Schema: endpointSchemaV1, Attempt: e.key.String(), Launcher: e.self}
 	_ = c.SetReadDeadline(time.Now().Add(exchangeTimeout))
 	var req endpointRequest
 	line, err := bufio.NewReader(io.LimitReader(c, maxRequestBytes)).ReadBytes('\n')
 	if err == nil {
-		err = json.Unmarshal(line, &req)
+		err = strictjson.Decode(line, &req, endpointOptions(maxRequestBytes))
 	}
-	if err != nil {
-		rep.Error = fmt.Sprintf("malformed request: one JSON line of at most %d bytes is required", maxRequestBytes)
+	if errors.Is(err, strictjson.ErrNewerSchema) {
+		rep.Error = fmt.Sprintf("unsupported protocol version: %v", err)
+	} else if err != nil {
+		rep.Error = fmt.Sprintf("malformed request: one %s JSON line of at most %d bytes is required: %v", endpointSchemaV1, maxRequestBytes, err)
 	} else if req.Attempt != rep.Attempt || req.Launcher != e.self {
 		rep.Error = ErrEndpointMismatch.Error()
 	} else {
@@ -311,8 +337,9 @@ func (e *Endpoint) Close() error {
 }
 
 // Call sends op to the endpoint at path and returns the state it answers.
-// The reply must name attempt k and launcher, otherwise ErrEndpointMismatch;
-// a reply carrying an error is ErrEndpointRequest. ctx bounds the dial and
+// The reply must be protocol version 1, otherwise ErrEndpointProtocol, and
+// name attempt k and launcher, otherwise ErrEndpointMismatch; a reply carrying
+// an error, including the endpoint's refusal of the request, is ErrEndpointRequest. ctx bounds the dial and
 // the whole exchange. A failed dial says nothing about whether the owner is
 // alive: a silent endpoint never proves exit.
 func Call(ctx context.Context, path string, k AttemptKey, launcher Identity, op EndpointOp) (EndpointState, error) {
@@ -324,7 +351,7 @@ func Call(ctx context.Context, path string, k AttemptKey, launcher Identity, op 
 	defer func() { _ = c.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
 	defer stop()
-	if err := json.NewEncoder(c).Encode(endpointRequest{Op: op, Attempt: k.String(), Launcher: launcher}); err != nil {
+	if err := json.NewEncoder(c).Encode(endpointRequest{Schema: endpointSchemaV1, Op: op, Attempt: k.String(), Launcher: launcher}); err != nil {
 		return EndpointState{}, callErr(ctx, path, err)
 	}
 	line, err := bufio.NewReader(io.LimitReader(c, maxReplyBytes)).ReadBytes('\n')
@@ -332,8 +359,8 @@ func Call(ctx context.Context, path string, k AttemptKey, launcher Identity, op 
 		return EndpointState{}, callErr(ctx, path, err)
 	}
 	var rep endpointReply
-	if err := json.Unmarshal(line, &rep); err != nil {
-		return EndpointState{}, fmt.Errorf("artisan: endpoint %s: malformed reply: %w", path, err)
+	if err := strictjson.Decode(line, &rep, endpointOptions(maxReplyBytes)); err != nil {
+		return EndpointState{}, fmt.Errorf("artisan: %w: %s: %w", ErrEndpointProtocol, path, err)
 	}
 	if rep.Attempt != k.String() || rep.Launcher != launcher {
 		return EndpointState{}, fmt.Errorf("artisan: %w: %s answered for attempt %q launcher %d", ErrEndpointMismatch, path, rep.Attempt, rep.Launcher.PID)

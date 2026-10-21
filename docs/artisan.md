@@ -151,12 +151,33 @@ The endpoint directory is created `0700`, and on Unix the socket is made `0600`;
 
 ### Protocol
 
-A request is one JSON line of at most 4 KiB containing `op`, the expected `attempt` string, and the expected `launcher` identity (PID and token).
+The protocol is version 1 of `guildhall.attempt-control` ([decision](decisions/endpoint-protocol-v1.md)).
+A request is one JSON line of at most 4 KiB containing `"schema": "guildhall.attempt-control/1"`, `op`, the expected `attempt` string, and the expected `launcher` identity (PID and token):
+
+```json
+{"schema":"guildhall.attempt-control/1","op":"stop","attempt":"app/t-1/build/1","launcher":{"pid":4242,"token":"<boot id>:<start time>"}}
+```
+
+The endpoint decodes the request strictly with [`strictjson`](contracts/strictjson.md) and refuses, with an error reply and without matching identities or reaching any handler:
+
+| Request | Reply error |
+|---|---|
+| A newer version, such as `guildhall.attempt-control/2` | Unsupported protocol version, naming version 1 |
+| No `schema`, as a client before version 1 sent, or one that is not `guildhall.attempt-control/<n>` | Malformed request |
+| A duplicate key, such as two `op` keys, at any depth | Malformed request |
+| A field version 1 does not declare, at the top level or inside `launcher`, compared exactly, case included | Malformed request |
+| A `launcher` with an incompatible JSON type, such as a string or list, or a string `pid` | Malformed request |
+| Invalid JSON or UTF-8, or more than 4 KiB without a newline | Malformed request |
+
+Unversioned requests are refused rather than supported during a transition: the endpoint is not yet wired into a command, so no client of an earlier protocol exists.
+A newer version is refused rather than guessed at, because stop and cancel are destructive; serving a later version means naming it in the endpoint.
 Before dispatching status, stop or cancel, the endpoint checks that both identities match its bound attempt and launcher; missing or mismatched identities receive an error without invoking any handler.
-The reply is one JSON line naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
-A malformed or oversized request and an unknown operation get an error reply without reaching the handler.
+The reply is one JSON line carrying `"schema": "guildhall.attempt-control/1"`, including when refusing a request, and naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
+An unknown operation gets an error reply without reaching the handler.
 Requests are answered concurrently, so a `stop` that waits for the attempt to end does not delay a `status`.
-`Call` dials the endpoint within the caller's context, and refuses a reply naming another attempt or launcher with `ErrEndpointMismatch`; an error reply is `ErrEndpointRequest`.
+`Call` dials the endpoint within the caller's context and reads a newline-terminated reply of at most 1 MiB; read or framing failures return an exchange error.
+Once a complete line is read, it is decoded with the same strict rules: a reply that is malformed, unversioned, carries an unknown or duplicate field or is a newer version is `ErrEndpointProtocol` (a newer one also matches `strictjson.ErrNewerSchema`).
+It refuses a reply naming another attempt or launcher with `ErrEndpointMismatch`; an error reply is `ErrEndpointRequest`.
 A failed call never proves the owner exited: a silent endpoint is unknown until the owner's identity is proven gone.
 
 ## Tests
