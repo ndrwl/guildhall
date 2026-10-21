@@ -154,11 +154,12 @@ func (a *App) task(args []string) int {
 		return 1
 	}
 	var task store.Task
+	var accepted acceptedWorkflow
 	if sub == "new" {
 		// Resolve configuration and validate the effective workflow before opening the store.
 		// Task fields and dependencies are validated by CreateTask in the store.
 		var err error
-		if task, err = acceptTask(*cfgPath, *repo); err != nil {
+		if task, accepted, err = acceptTask(*cfgPath, *repo); err != nil {
 			return fail(err)
 		}
 		task.ID, task.Title, task.DependsOn = positional[0], *title, deps
@@ -173,7 +174,11 @@ func (a *App) task(args []string) int {
 	var out any
 	switch sub {
 	case "new":
-		out, err = s.CreateTask(mutationID("task", task.Repository, task.ID), task)
+		if err = admitWorkflow(s, accepted); err != nil {
+			err = fmt.Errorf("%w; the Guildmaster approves this revision with guildhall workflow approve --config <director.toml> --repo %s", err, *repo)
+		} else {
+			out, err = s.CreateTask(mutationID("task", task.Repository, task.ID), task)
+		}
 	case "show":
 		out, err = showTask(s, *repo, positional[0])
 	case "list":
@@ -216,34 +221,80 @@ func requestFullReview(s *store.Store, repo, id string) (store.Receipt, error) {
 	return s.RequestFullReview(mutationID("full-review", repo, id, strconv.Itoa(n)), repo, id)
 }
 
+// acceptedWorkflow is a repository's effective workflow and, when it validates on its own, the file it came from.
+type acceptedWorkflow struct {
+	effective, file *workflow.Definition
+}
+
 // acceptTask loads the Director config at cfgPath and returns a task for repository repo bound to the
-// repository's effective workflow revision and the configuration digest.
-func acceptTask(cfgPath, repo string) (store.Task, error) {
-	cfg, err := config.Load(cfgPath)
+// repository's effective workflow revision and the configuration digest, with the workflow admitWorkflow checks.
+func acceptTask(cfgPath, repo string) (store.Task, acceptedWorkflow, error) {
+	cfg, r, err := loadRepository(cfgPath, repo)
 	if err != nil {
-		return store.Task{}, fmt.Errorf("config: %w", err)
+		return store.Task{}, acceptedWorkflow{}, err
 	}
-	r, ok := cfg.Repository(repo)
-	if !ok {
-		return store.Task{}, fmt.Errorf("config %s has no repository %q", cfgPath, repo)
-	}
-	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), r)
+	w, err := repositoryWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), r)
 	if err != nil {
-		return store.Task{}, fmt.Errorf("repository %s: %w", repo, err)
+		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
-	if err := cfg.CheckProfiles(def); err != nil {
-		return store.Task{}, fmt.Errorf("repository %s: %w", repo, err)
+	if err := cfg.CheckProfiles(w.effective); err != nil {
+		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		return store.Task{}, fmt.Errorf("config digest: %w", err)
+		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("config digest: %w", err)
 	}
-	return store.Task{Repository: repo, Workflow: def.Revision(), ConfigDigest: string(digest.Of(data))}, nil
+	return store.Task{Repository: repo, Workflow: w.effective.Revision(), ConfigDigest: string(digest.Of(data))}, w, nil
 }
 
-// effectiveWorkflow returns the repository's workflow with its overrides applied and validated:
-// the shipped definition for "default", otherwise <dir>/<name>.json, whose name must match.
+// loadRepository loads the Director config at cfgPath and finds repository repo in it.
+func loadRepository(cfgPath, repo string) (*config.Config, config.Repository, error) {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return nil, config.Repository{}, fmt.Errorf("config: %w", err)
+	}
+	r, ok := cfg.Repository(repo)
+	if !ok {
+		return nil, config.Repository{}, fmt.Errorf("config %s has no repository %q", cfgPath, repo)
+	}
+	return cfg, r, nil
+}
+
+// admitWorkflow refuses a workflow that is neither shipped, nor approved in s, nor a non-weakening change of one
+// that meets the review floor (docs/configuration.md#workflow-edit-authority); the file before the repository's
+// overrides is the candidate baseline besides the shipped definitions.
+func admitWorkflow(s *store.Store, w acceptedWorkflow) error {
+	shipped, err := shippedDefinitions()
+	if err != nil {
+		return err
+	}
+	approvals, err := s.WorkflowApprovals()
+	if err != nil {
+		return err
+	}
+	approved := map[string]bool{}
+	for _, a := range approvals {
+		approved[a.Digest] = true
+	}
+	var candidates []*workflow.Definition
+	if w.file != nil {
+		candidates = append(candidates, w.file)
+	}
+	auth := workflow.Authority{Shipped: shipped, Approved: func(d string) bool { return approved[d] }}
+	_, err = auth.Admit(w.effective, candidates...)
+	return err
+}
+
+// effectiveWorkflow returns the repository's workflow with its overrides applied and validated.
 func effectiveWorkflow(dir string, r config.Repository) (*workflow.Definition, error) {
+	w, err := repositoryWorkflow(dir, r)
+	return w.effective, err
+}
+
+// repositoryWorkflow returns the repository's workflow with its overrides applied and validated, and the
+// definition before its overrides when that validates too: the shipped definition for "default",
+// otherwise <dir>/<name>.json, whose name must match.
+func repositoryWorkflow(dir string, r config.Repository) (acceptedWorkflow, error) {
 	name := r.Workflow
 	file := filepath.Join(dir, name+".json")
 	var def *workflow.Definition
@@ -260,15 +311,20 @@ func effectiveWorkflow(dir string, r config.Repository) (*workflow.Definition, e
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("workflow %q: %w", name, err)
+		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}
-	if def, err = workflow.ApplyOverrides(def, r.WorkflowOverrides); err != nil {
-		return nil, fmt.Errorf("workflow %q: %w", name, err)
+	effective, err := workflow.ApplyOverrides(def, r.WorkflowOverrides)
+	if err != nil {
+		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}
-	if err := workflow.Validate(def); err != nil {
-		return nil, fmt.Errorf("workflow %q: %w", name, err)
+	if err := workflow.Validate(effective); err != nil {
+		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}
-	return def, nil
+	w := acceptedWorkflow{effective: effective}
+	if workflow.Validate(def) == nil {
+		w.file = def
+	}
+	return w, nil
 }
 
 func showTask(s *store.Store, repo, id string) (taskDetail, error) {

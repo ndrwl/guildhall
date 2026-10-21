@@ -3,7 +3,8 @@
 // A workflow is a JSON file naming the built-in step kinds of one task in order,
 // with typed input wiring and bounded loop rules.
 // Parsing and validation are pure: they read no files, run nothing and grant no authority.
-// Deciding who may author, approve or activate a workflow edit is deliberately outside this package.
+// Authority.Admit applies the workflow-edit policy to a revision, given which revisions the caller knows are
+// shipped or approved; recording approvals and deciding who may give them are outside this package.
 package workflow
 
 import (

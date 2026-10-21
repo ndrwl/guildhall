@@ -39,6 +39,8 @@ The definition is parsed with `workflow.Parse`, the repository's `workflow_overr
 The effective workflow's profile references are then checked with `config.CheckProfiles`; every named profile must be declared in the loaded Director configuration.
 A missing or unreadable file, a parse error, a refused override, a validation problem or an undeclared profile refuses the task with the problems named, and the store is not opened, so nothing is written.
 
+The effective workflow must then be [authorized](configuration.md#enforcement-at-task-creation): shipped with the release, approved by the Guildmaster for its exact digest, or a change from a shipped or approved definition that meets the review floor and weakens nothing.
+An unauthorized workflow refuses the task with its digest and what it weakens named, and writes nothing.
 The task binds `workflow.Revision` of the overridden definition, its name and digest, so two repositories with different overrides of one workflow bind different digests.
 It also binds the configuration digest: `sha256:` and the lowercase hex sha256 of the loaded configuration's canonical JSON encoding.
 The digest covers the local and managed settings together and not the files' formatting; it is computed by this release, so a release that adds configuration fields may compute a different digest for the same files.

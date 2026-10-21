@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -18,6 +19,7 @@ import (
 
 const workflowUsage = `usage:
   guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+  guildhall workflow approve --store <path> --config <director.toml> --repo <id> --words-file <path|->
   guildhall workflow approvals --store <path> [--json]`
 
 // listedApproval is one line of workflow approvals: a definition shipped with this release
@@ -32,7 +34,8 @@ type listedApproval struct {
 
 // workflowCmd runs a workflow subcommand against an existing store.
 // approve validates the definition, computes its digest and records the Guildmaster's words before printing the receipt;
-// explicit approvals of shipped definitions are recorded like any other approval.
+// with --config and --repo the definition is the repository's effective workflow, resolved as task new resolves it.
+// Explicit approvals of shipped definitions are recorded like any other approval.
 // approvals lists the shipped definitions as approved by release, then the recorded approvals.
 // It exits 0 on success, 1 when the definition, words or store refuse or fail and 2 on a usage error.
 func (a *App) workflowCmd(args []string) int {
@@ -47,6 +50,8 @@ func (a *App) workflowCmd(args []string) int {
 	flags.SetOutput(io.Discard)
 	path := flags.String("store", "", "store file")
 	file := flags.String("file", "", "workflow definition")
+	cfgPath := flags.String("config", "", "Director config file")
+	repo := flags.String("repo", "", "repository id")
 	wordsFile := flags.String("words-file", "", "approval words file, or - for standard input")
 	asJSON := flags.Bool("json", false, "print JSON")
 	if err := flags.Parse(args[1:]); err != nil {
@@ -57,27 +62,42 @@ func (a *App) workflowCmd(args []string) int {
 		return a.workflowUsage("--store is required")
 	case flags.NArg() != 0:
 		return a.workflowUsage(fmt.Sprintf("workflow %s takes no arguments", sub))
-	case sub == "approve" && *file == "":
-		return a.workflowUsage("--file is required")
+	case sub == "approve" && *file != "" && *cfgPath != "":
+		return a.workflowUsage("--file and --config cannot be used together")
+	case sub == "approve" && (*cfgPath == "") != (*repo == ""):
+		return a.workflowUsage("--config and --repo go together")
+	case sub == "approve" && *file == "" && *cfgPath == "":
+		return a.workflowUsage("--file is required, or --config and --repo")
 	case sub == "approve" && *wordsFile == "":
 		return a.workflowUsage("--words-file is required")
 	case sub == "approve" && *asJSON:
 		return a.workflowUsage("--json applies only to workflow approvals")
 	case sub == "approvals" && (*file != "" || *wordsFile != ""):
 		return a.workflowUsage("--file and --words-file apply only to workflow approve")
+	case sub == "approvals" && (*cfgPath != "" || *repo != ""):
+		return a.workflowUsage("--config and --repo apply only to workflow approve")
 	}
 
 	fail := func(err error) int {
 		_, _ = fmt.Fprintf(a.Stderr, "guildhall: workflow %s: %v\n", sub, err)
 		return 1
 	}
-	shipped, err := shippedRevisions()
+	shipped, err := shippedDefinitions()
 	if err != nil {
 		return fail(err)
 	}
 	var approval store.WorkflowApproval
 	if sub == "approve" {
-		if approval, err = a.readApproval(*file, *wordsFile); err != nil {
+		var def *workflow.Definition
+		if *file != "" {
+			def, err = readDefinition(*file)
+		} else {
+			def, err = repositoryEffective(*cfgPath, *repo)
+		}
+		if err == nil {
+			approval, err = a.readApproval(def, *wordsFile)
+		}
+		if err != nil {
 			return fail(err)
 		}
 	}
@@ -103,7 +123,8 @@ func (a *App) workflowCmd(args []string) int {
 	}
 	if sub == "approvals" {
 		list := make([]listedApproval, 0, len(shipped)+len(recorded))
-		for _, rev := range shipped {
+		for _, def := range shipped {
+			rev := def.Revision()
 			list = append(list, listedApproval{Source: "release", Name: rev.Name, Digest: rev.Digest})
 		}
 		for _, r := range recorded {
@@ -120,30 +141,49 @@ func (a *App) workflowCmd(args []string) int {
 	return 0
 }
 
-// shippedRevisions returns the definitions this release ships, which count as approved by release.
-func shippedRevisions() ([]workflow.Revision, error) {
+// shippedDefinitions returns the definitions this release ships, which count as approved by release.
+func shippedDefinitions() ([]*workflow.Definition, error) {
 	def, err := workflow.Default()
 	if err != nil {
 		return nil, fmt.Errorf("shipped default workflow: %w", err)
 	}
-	return []workflow.Revision{def.Revision()}, nil
+	return []*workflow.Definition{def}, nil
 }
 
-// readApproval parses and validates the definition and reads the words, so nothing is written for a refused definition.
-func (a *App) readApproval(file, wordsFile string) (store.WorkflowApproval, error) {
+// readDefinition parses and validates a workflow file.
+func readDefinition(file string) (*workflow.Definition, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return store.WorkflowApproval{}, fmt.Errorf("workflow file: %w", err)
+		return nil, fmt.Errorf("workflow file: %w", err)
 	}
 	def, err := workflow.Parse(data)
 	if err == nil {
 		err = workflow.Validate(def)
 	}
 	if err != nil {
-		return store.WorkflowApproval{}, fmt.Errorf("%s: %w", file, err)
+		return nil, fmt.Errorf("%s: %w", file, err)
 	}
+	return def, nil
+}
+
+// repositoryEffective returns repository repo's effective workflow from the Director config at cfgPath.
+func repositoryEffective(cfgPath, repo string) (*workflow.Definition, error) {
+	_, r, err := loadRepository(cfgPath, repo)
+	if err != nil {
+		return nil, err
+	}
+	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), r)
+	if err != nil {
+		return nil, fmt.Errorf("repository %s: %w", repo, err)
+	}
+	return def, nil
+}
+
+// readApproval reads the words for approving def, a validated definition, so nothing is written for refused words.
+func (a *App) readApproval(def *workflow.Definition, wordsFile string) (store.WorkflowApproval, error) {
 	rev := def.Revision()
 	var words []byte
+	var err error
 	if wordsFile == "-" {
 		words, err = io.ReadAll(a.Stdin)
 	} else {

@@ -1,7 +1,11 @@
 package workflow
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 )
 
 // Weakening is one change from a baseline definition that the classifier cannot prove harmless.
@@ -22,8 +26,15 @@ func (w Weakening) String() string {
 // so the classifier treats every change to them that it cannot prove harmless as weakening:
 // review, document-review, guildmaster-approval, validate, publish and deliver.
 func Guarded(typ string) bool {
+	switch typ {
+	case "review", "document-review", "guildmaster-approval", "validate", "publish", "deliver":
+		return true
+	}
 	return false
 }
+
+// actorStrength ranks reviewers: a change to an actor of lower or unknown strength is weaker.
+var actorStrength = map[Actor]int{ArtisanActor: 1, GuildmasterActor: 2}
 
 // Weakenings classifies next as a change from base, both validated definitions, and returns every change
 // it cannot prove harmless, in base step order (docs/configuration.md#workflow-edit-authority).
@@ -34,11 +45,88 @@ func Guarded(typ string) bool {
 //   - drops any input reference it had (adding references is not weakening);
 //   - removes a loop rule, sends it to another step, or lowers its max (raising max or adding a rule is not weakening).
 //
-// Steps present in both that change relative order are weakening, whatever their kind.
+// A step whose type or version changed is reported once, for that change alone.
+// Steps present in both that change relative order are weakening, whatever their kind, and are reported first.
 // Changes to steps that are not guarded, steps added by next, the name and the description are not weakening.
 // It returns nil when next weakens nothing; base and next are not modified.
 func Weakenings(base, next *Definition) []Weakening {
-	return nil
+	var out []Weakening
+	var was, now []string
+	for _, s := range base.Steps {
+		if next.stepIndex(s.ID) >= 0 {
+			was = append(was, s.ID)
+		}
+	}
+	for _, s := range next.Steps {
+		if base.stepIndex(s.ID) >= 0 {
+			now = append(now, s.ID)
+		}
+	}
+	if !slices.Equal(was, now) {
+		out = append(out, Weakening{Reason: fmt.Sprintf("step order changed from %s to %s", strings.Join(was, ", "), strings.Join(now, ", "))})
+	}
+	for _, b := range base.Steps {
+		if !Guarded(b.Type) {
+			continue
+		}
+		i := next.stepIndex(b.ID)
+		if i < 0 {
+			out = append(out, Weakening{b.ID, "removed"})
+			continue
+		}
+		n := next.Steps[i]
+		if n.Type != b.Type || n.Version != b.Version {
+			out = append(out, Weakening{b.ID, fmt.Sprintf("type changed from %s version %d to %s version %d", b.Type, b.Version, n.Type, n.Version)})
+			continue
+		}
+		for _, w := range stepWeakenings(b, n) {
+			out = append(out, Weakening{b.ID, w})
+		}
+	}
+	return out
+}
+
+// stepWeakenings compares one guarded step of the same kind in base and next.
+func stepWeakenings(b, n Step) []string {
+	var out []string
+	if ba, na := b.Actor(), n.Actor(); ba != na && actorStrength[na] <= actorStrength[ba] {
+		out = append(out, fmt.Sprintf("actor %s -> %s is weaker", ba, na))
+	}
+	for _, key := range sortedKeys(union(b.Settings, n.Settings)) {
+		if key != ActorSetting && !bytes.Equal(b.Settings[key], n.Settings[key]) {
+			out = append(out, fmt.Sprintf("%s changed (reviewer-facing)", key))
+		}
+	}
+	for _, port := range sortedKeys(b.Inputs) {
+		for _, ref := range b.Inputs[port] {
+			if !slices.Contains(n.Inputs[port], ref) {
+				out = append(out, fmt.Sprintf("input %s no longer takes %s", port, ref))
+			}
+		}
+	}
+	for _, outcome := range sortedKeys(b.On) {
+		was := b.On[outcome]
+		switch now, ok := n.On[outcome]; {
+		case !ok:
+			out = append(out, fmt.Sprintf("loop on %s removed", outcome))
+		case now.Goto != was.Goto:
+			out = append(out, fmt.Sprintf("loop on %s goes to %s instead of %s", outcome, now.Goto, was.Goto))
+		case now.Max < was.Max:
+			out = append(out, fmt.Sprintf("loop on %s max lowered from %d to %d", outcome, was.Max, now.Max))
+		}
+	}
+	return out
+}
+
+func union[V any](a, b map[string]V) map[string]bool {
+	keys := map[string]bool{}
+	for k := range a {
+		keys[k] = true
+	}
+	for k := range b {
+		keys[k] = true
+	}
+	return keys
 }
 
 // FloorProblems returns why def, a validated definition, falls below the review floor, or nil when it meets it.
@@ -47,7 +135,30 @@ func Weakenings(base, next *Definition) []Weakening {
 // A review step is non-author by construction: its actor is a fresh Artisan session or the Guildmaster, never the build's session.
 // A definition with no deliver step delivers nothing and meets the floor.
 func FloorProblems(def *Definition) []string {
-	return nil
+	var out []string
+	for _, s := range def.Steps {
+		if s.Type != "deliver" {
+			continue
+		}
+		if !def.takesFrom(s, "review", "review") {
+			out = append(out, fmt.Sprintf("deliver step %q takes no review outcome", s.ID))
+		}
+		if !def.takesFrom(s, "validation", "validate") {
+			out = append(out, fmt.Sprintf("deliver step %q takes no validate result", s.ID))
+		}
+	}
+	return out
+}
+
+// takesFrom reports whether step s's input port references an output of a step of type typ.
+func (d *Definition) takesFrom(s Step, port, typ string) bool {
+	for _, ref := range s.Inputs[port] {
+		from, _, _ := strings.Cut(ref, ".")
+		if i := d.stepIndex(from); i >= 0 && d.Steps[i].Type == typ {
+			return true
+		}
+	}
+	return false
 }
 
 // Basis says why a new task may bind a workflow revision.
@@ -97,7 +208,22 @@ type Comparison struct {
 }
 
 func (e *RefusalError) Error() string {
-	return ErrNotAuthorized.Error()
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: %s %s is neither shipped nor approved", ErrNotAuthorized, e.Revision.Name, e.Revision.Digest)
+	for _, p := range e.Floor {
+		fmt.Fprintf(&b, "; below the review floor: %s", p)
+	}
+	if e.Floor == nil && len(e.Against) == 0 {
+		b.WriteString("; no shipped or approved baseline to compare it with")
+	}
+	for _, c := range e.Against {
+		ws := make([]string, len(c.Weakenings))
+		for i, w := range c.Weakenings {
+			ws[i] = w.String()
+		}
+		fmt.Fprintf(&b, "; weakens %s %s: %s", c.From.Name, c.From.Digest, strings.Join(ws, ", "))
+	}
+	return b.String()
 }
 
 func (e *RefusalError) Unwrap() error { return ErrNotAuthorized }
@@ -109,8 +235,42 @@ func (e *RefusalError) Unwrap() error { return ErrNotAuthorized }
 //
 // The baselines are a.Shipped in order, then candidates, validated definitions whose content the caller holds,
 // such as the repository's workflow file before its overrides; a candidate counts only when its own digest is
-// shipped or approved. Anything else returns a *RefusalError, which matches ErrNotAuthorized.
+// shipped or approved, and a baseline is compared once however often it is given.
+// Anything else returns a *RefusalError, which matches ErrNotAuthorized: below the floor, it lists the floor
+// problems and compares nothing; otherwise it lists every baseline compared with its weakenings.
 // Admit reads nothing and records nothing.
 func (a Authority) Admit(def *Definition, candidates ...*Definition) (Admission, error) {
-	return Admission{}, nil
+	rev := def.Revision()
+	switch {
+	case a.shipped(rev.Digest):
+		return Admission{Basis: ByRelease}, nil
+	case a.approved(rev.Digest):
+		return Admission{Basis: ByGuildmaster}, nil
+	}
+	refusal := &RefusalError{Revision: rev, Floor: FloorProblems(def)}
+	if refusal.Floor != nil {
+		return Admission{}, refusal
+	}
+	seen := map[string]bool{}
+	for _, base := range append(slices.Clone(a.Shipped), candidates...) {
+		from := base.Revision()
+		if seen[from.Digest] || !a.shipped(from.Digest) && !a.approved(from.Digest) {
+			continue
+		}
+		seen[from.Digest] = true
+		ws := Weakenings(base, def)
+		if ws == nil {
+			return Admission{Basis: NonWeakening, From: from}, nil
+		}
+		refusal.Against = append(refusal.Against, Comparison{From: from, Weakenings: ws})
+	}
+	return Admission{}, refusal
+}
+
+func (a Authority) shipped(digest string) bool {
+	return slices.ContainsFunc(a.Shipped, func(d *Definition) bool { return d.Digest() == digest })
+}
+
+func (a Authority) approved(digest string) bool {
+	return a.Approved != nil && a.Approved(digest)
 }
