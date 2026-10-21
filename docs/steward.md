@@ -161,7 +161,7 @@ Release binding and execution enforcement of R1.31 remain future work.
 
 ## Not implemented yet
 
-- The release pin and side-by-side release installs (R1.31).
+- The release pin and side-by-side release installs (R1.31), designed, not built, in [release upgrades](releases.md).
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50), audits and learnings (R1.32).
 - Enrolment through the setup wizard (R1.43-R1.51).
