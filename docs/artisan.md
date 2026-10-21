@@ -242,7 +242,7 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 
 - `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
-- Tier 2 pane runs, `artisan resume` and the retirement of the Windows-only worker stop path come with the next command-line slice.
+- This PR is L7 part 1: `internal/launch`, F2 real AttemptFiles, F3 attemptOutcome, `artisan run/stop/status`, and the P6 custody test. L7 part 2 holds `artisan resume` with `artisan.Sweep`, `resume_argv` registration through `pane report-agent --source guildhall`, the fake Artisan's P0 directives, the `artisan harness` subcommand, the Tier 2 lab runs, and retirement of the Windows-only worker stop path after the native Windows acceptance case passes.
 
 ## Heartbeat
 
@@ -323,7 +323,7 @@ They are the composition package `internal/launch`, whose [doc comments](../inte
 5. it records the store outcome with `FinishAttempt`, which releases the ownership.
 
 The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.
-Survivors after the last rung leave the attempt running and owned, so `status` reports them once the launcher has exited.
+Survivors after the last rung leave the attempt running and owned, and the endpoint reports a stop error. `outcome.json` records the survivors; `status` may still report a terminal decision from a marker or result, which does not prove termination.
 
 | Launcher outcome | Result | Store outcome | Exit status |
 |---|---|---|---|
@@ -335,8 +335,8 @@ Survivors after the last rung leave the attempt running and owned, so `status` r
 Any error, including a refused ownership and survivors, exits 1; a usage error exits 2.
 
 `artisan stop` asks the owner to stop through the endpoint its unreleased ownership record names and waits for the ladder's end within `--timeout` (one minute).
-Without a record, an endpoint or an answer it only classifies; it never signals a process itself.
-It prints what the endpoint did and the classification afterwards, and exits 1 when that is `running`, `stuck` or `unknown`.
+It never signals a process itself. Without a successful endpoint answer, success requires no ownership record, or a launcher proven gone and its recorded unit proven empty; missing containment is unverified, including during startup. A released record alone does not prove termination while its launcher still lives.
+It prints what the endpoint did and the classification afterwards. Endpoint stop errors, including surviving processes, are preserved and exit 1; unproven termination also exits 1 regardless of a `finished`, `cancelled` or `failed` classification.
 `artisan status` prints the [classification](#reconcile) and exits 0; an attempt with no directory and no ownership record is `absent`.
 
 ### Custody

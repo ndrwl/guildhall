@@ -55,8 +55,7 @@ import (
 // ResultFile is the result file's name in the attempt directory.
 const ResultFile = "result.json"
 
-// ErrNotStopped reports that after Stop the attempt may still be running:
-// its classification is running, stuck or unknown.
+// ErrNotStopped reports that Stop could not verify termination.
 var ErrNotStopped = errors.New("attempt is not proven stopped")
 
 // Attempt names one owned stage attempt: the Director store recording its
@@ -283,7 +282,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 
 // ProbeOwner is the containment-aware take-over probe: alive while the
 // recorded launcher identity lives, and gone only when it is gone and its
-// recorded unit, if any, is proven empty by artisan.Contained; contained
+// recorded unit is proven empty by artisan.Contained; missing containment,
 // survivors, or a unit that cannot be checked, are unverified.
 func ProbeOwner(o store.Ownership) (store.Liveness, error) {
 	lv, err := artisan.Probe(artisan.Identity(o.LauncherIdentity))
@@ -293,7 +292,7 @@ func ProbeOwner(o store.Ownership) (store.Liveness, error) {
 	case lv != artisan.Gone || err != nil:
 		return store.ProbeUnverified, err
 	case o.Containment == (store.Containment{}):
-		return store.ProbeGone, nil
+		return store.ProbeUnverified, nil
 	}
 	c := o.Containment
 	left, err := artisan.Contained(artisan.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}, artisan.Identity(c.Worker))
@@ -387,12 +386,14 @@ type StopReport struct {
 
 // Stop asks the attempt's owner, through the endpoint its unreleased
 // ownership record names, to stop it, waiting within ctx for the stop
-// ladder's end. Without a record, endpoint or answer it only classifies:
-// it never signals a process. Either way the report carries the
-// classification afterwards, and the error is ErrNotStopped when that is
-// running, stuck or unknown.
+// ladder's end. It never signals a process itself. Without a successful
+// answer, termination requires no ownership record, or a proven gone owner
+// and a recorded unit proven empty. Otherwise it returns ErrNotStopped.
+// Endpoint request errors are preserved. The report carries the classification
+// afterwards, which alone does not prove termination.
 func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 	var rep StopReport
+	var stopErr error
 	o, err := a.owner()
 	switch {
 	case err != nil:
@@ -405,16 +406,29 @@ func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 		rep.Endpoint = "not asked: no endpoint recorded"
 	default:
 		rep.Endpoint = "stopped"
-		if _, err := artisan.Call(ctx, o.Endpoint, a.Key, artisan.Identity(o.LauncherIdentity), artisan.OpStop); err != nil {
-			rep.Endpoint = "no stop: " + err.Error()
+		if _, stopErr = artisan.Call(ctx, o.Endpoint, a.Key, artisan.Identity(o.LauncherIdentity), artisan.OpStop); stopErr != nil {
+			rep.Endpoint = "no stop: " + stopErr.Error()
 		}
 	}
 	if rep.Classification, err = Status(ctx, a); err != nil {
-		return rep, err
+		return rep, errors.Join(stopErr, err)
 	}
-	switch rep.Classification.State {
-	case reconcile.Running, reconcile.Stuck, reconcile.Unknown:
-		return rep, fmt.Errorf("launch: %w: %s", ErrNotStopped, rep.Classification.Reason)
+	if rep.Endpoint == "stopped" {
+		return rep, nil
+	}
+	if errors.Is(stopErr, artisan.ErrEndpointRequest) {
+		return rep, errors.Join(ErrNotStopped, stopErr)
+	}
+	o, err = a.owner()
+	if err != nil {
+		return rep, errors.Join(ErrNotStopped, stopErr, err)
+	}
+	if o == nil {
+		return rep, nil
+	}
+	lv, err := ProbeOwner(*o)
+	if err != nil || lv != store.ProbeGone {
+		return rep, errors.Join(ErrNotStopped, stopErr, err)
 	}
 	return rep, nil
 }

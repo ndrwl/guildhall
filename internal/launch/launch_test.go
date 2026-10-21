@@ -243,8 +243,8 @@ func TestStopThroughTheEndpoint(t *testing.T) {
 	if m, err := a.Files().Marked(); !m || err != nil {
 		t.Errorf("marker %v, %v", m, err)
 	}
-	if rep, err := launch.Stop(context.Background(), a); err != nil || rep.Classification.State != reconcile.Cancelled {
-		t.Errorf("second Stop() = %+v, %v", rep, err)
+	if rep, err := launch.Stop(context.Background(), a); !errors.Is(err, launch.ErrNotStopped) || rep.Classification.State != reconcile.Cancelled {
+		t.Errorf("second Stop() with released but live launcher = %+v, %v; want ErrNotStopped", rep, err)
 	}
 }
 
