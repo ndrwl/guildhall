@@ -371,7 +371,7 @@ func (h *history) output(step, port string) (store.DocumentRef, string, error) {
 
 // reviewedRange returns the range the code review step's latest outcome reviewed, from the binding of the attempt that
 // recorded it; nil when the step has no outcome, its latest outcome is a loop exit's or the attempt recorded no range.
-func (h *history) reviewedRange(step string) (*git.Range, error) {
+func (h *history) reviewedRange(step string, revisions *workflow.Revisions) (*git.Range, error) {
 	i, err := h.latest(step, "outcome")
 	if err != nil || h.docPlaces[i].exit {
 		return nil, nil
@@ -380,7 +380,13 @@ func (h *history) reviewedRange(step string) (*git.Range, error) {
 		return nil, nil
 	}
 	b, err := h.binding(step, h.docPlaces[i].round)
-	return b.Range, err
+	if err != nil {
+		return nil, err
+	}
+	if b.Revisions == nil || revisions == nil || b.Revisions.SpecDigest != revisions.SpecDigest || b.Revisions.StandardsRevision != revisions.StandardsRevision {
+		return nil, nil
+	}
+	return b.Range, nil
 }
 
 // latest returns the index of the latest first document of one step's output port. Rounds order by number; an exit

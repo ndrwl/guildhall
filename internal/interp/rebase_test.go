@@ -33,6 +33,7 @@ func TestRebaseAwareReview(t *testing.T) {
 		calls    int
 	}{
 		{"rebase", bases(base1, base2), git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeRebase, 1},
+		{"changed standards", bases(base1, base2), git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
 		{"full", bases(base1, base2), git.Classification{Scope: git.ScopeFull, Reason: "range-diff shows a changed commit"}, git.ScopeFull, 1},
 		{"no base", nil, git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
 		{"base error", func(*int) func(string) (string, error) {
@@ -41,7 +42,11 @@ func TestRebaseAwareReview(t *testing.T) {
 	} {
 		for _, b := range backends {
 			t.Run(tc.name+"/"+b.name, func(t *testing.T) {
-				review2 := reviewExp(t, "review", "reviewer", 2, head2, &o1, o2)
+				nextOutcome := o2
+				if tc.name == "changed standards" {
+					nextOutcome.Revisions.StandardsRevision = "standards-2"
+				}
+				review2 := reviewExp(t, "review", "reviewer", 2, head2, &o1, nextOutcome)
 				if tc.scope == git.ScopeRebase {
 					review2.Inputs[interp.ResolutionPort] = "sha256:" + sum(resolution)
 				}
@@ -60,6 +65,9 @@ func TestRebaseAwareReview(t *testing.T) {
 				e.accepted(t)
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
+				if tc.name == "changed standards" {
+					e.eng.StandardsRevision = "standards-2"
+				}
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
 				want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}),
 					interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
@@ -75,13 +83,13 @@ func TestRebaseAwareReview(t *testing.T) {
 				if b2.Scope != tc.scope {
 					t.Errorf("review 2 scope = %q, want %q", b2.Scope, tc.scope)
 				}
-				if tc.base != nil && tc.calls > 0 && (b2.Range == nil || *b2.Range != (git.Range{Base: base2, Head: head2})) {
+				if tc.base != nil && tc.name != "base error" && (b2.Range == nil || *b2.Range != (git.Range{Base: base2, Head: head2})) {
 					t.Errorf("review 2 range = %+v, want base 2 and head 2", b2.Range)
 				}
 				var got workflow.ReviewOutcome
 				read(t, e, "review-2-outcome", &got)
-				if got.Revisions.Subject.CodeHead != head2 {
-					t.Errorf("outcome code_head = %s, want head 2", got.Revisions.Subject.CodeHead)
+				if got.Revisions != nextOutcome.Revisions {
+					t.Errorf("outcome revisions = %+v, want %+v", got.Revisions, nextOutcome.Revisions)
 				}
 			})
 		}

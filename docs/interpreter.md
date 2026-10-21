@@ -133,7 +133,8 @@ A Guildmaster review answered under an older standards revision does not satisfy
 A code review (`review`) attempt's binding records the commit range it reviews, `Engine.Base`'s answer for the task's repository and the attempt's code head, and its scope.
 `Engine.Base` is supplied by the caller; when it is nil, fails or returns something other than a full commit id, the attempt records no range and its scope is `full`.
 The range last reviewed is read only from records, through the history view: the binding of the attempt that recorded the step's latest outcome; a loop exit's outcome, or an attempt that recorded no range, gives none.
-When there is a last range with a different head, `Engine.Rebases` classifies the new range against it ([`internal/git`](contracts/git.md)); only `scope: rebase` narrows the round.
+Only when the previous outcome's binding has revisions matching the new attempt's accepted-spec digest and standards revision is its range eligible for reuse; missing revisions or a change to either field retains full scope without classification.
+When there is an eligible last range with a different head, `Engine.Rebases` classifies the new range against it ([`internal/git`](contracts/git.md)); only `scope: rebase` narrows the round.
 The resolution diff is then recorded first as document `<step>-<n>-resolution` and given on port `resolution`, beside the `previous` outcome, and the binding records `scope: rebase`.
 Anything else, including a classifier error or a nil `Engine.Rebases`, is a full review; a replay whose recorded resolution diff no longer matches is full too.
 The outcome still binds to the attempt's head, spec digest and standards revision, so the review gate is unchanged.

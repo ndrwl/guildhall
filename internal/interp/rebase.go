@@ -40,7 +40,7 @@ func (r *run) rebase(s workflow.Step, n int, head string, b *binding) ([]render.
 		return nil, nil
 	}
 	b.Range = &git.Range{Base: base, Head: head}
-	last, err := r.reviewedRange(s.ID)
+	last, err := r.reviewedRange(s.ID, b.Revisions)
 	i := slices.IndexFunc(r.e.Config.Repositories, func(c config.Repository) bool { return c.ID == r.task.Repository })
 	if err != nil || last == nil || last.Head == head || r.e.Rebases == nil || i < 0 {
 		return nil, err
