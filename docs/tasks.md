@@ -116,9 +116,10 @@ The [interpreter's Director-ruling contract](interpreter.md#director-rulings) de
 ## Full review
 
 The Director may force the task's next code review round to review the whole head, never only a rebase's resolution ([rebase-aware review](interpreter.md#rebase-aware-review)).
-`task review --full` records a full-review request, receipt record `full-review/<n>`, with the mutation `full-review:<repo>:<task>:<n>`, where `n` numbers the task's requests from 1.
+`task review --full` records a full-review request, receipt record `full-review/<n>`, with the mutation `full-review:<repo>:<task>:<n>`, hashed as for `task new` when longer than 128 bytes, where `n` numbers the task's requests from 1.
 At most one request is pending: a retry while it is pending prints the original receipt, and once a round consumed it the next command records request `n+1`.
 `--full` is required, so a later form of `task review` is not a breaking change; omitting it, `--repo` or the task, or passing `--json`, is a usage error (exit 2).
-An unknown task or one that is not open is refused with exit 1 and writes nothing.
-The request is consumed by the first code review attempt prepared after it, which records `scope: full` in its binding and is named in the request's `consumed_by`.
-The review outcome still binds to the exact head, spec digest and standards revision, so the review gate is unchanged.
+A new request for an unknown task or one that is not open is refused with exit 1 and writes nothing; replaying a pending request still returns its original receipt.
+The command does not launch a review, invalidate a completed review or change an already recorded attempt binding.
+The request applies to the next Artisan code review attempt whose binding has not yet been recorded, not to a human review decision or a document review.
+See the [interpreter's rebase-aware review contract](interpreter.md#rebase-aware-review) for consumption, replay and scope recording.

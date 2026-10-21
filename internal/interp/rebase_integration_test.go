@@ -18,7 +18,7 @@ import (
 // Exercise the engine with actual commit ranges and durable records. Only the
 // worker responses are scripted: this test neither requires nor invokes a model.
 func TestRebaseRealGitStore(t *testing.T) {
-	for _, scenario := range []string{"rebase", "edited-patch", "changed-standards", "missing-base", "unknown-head"} {
+	for _, scenario := range []string{"rebase", "requested-full", "requested-full-missing-base", "edited-patch", "changed-standards", "missing-base", "unknown-head"} {
 		t.Run(scenario, func(t *testing.T) {
 			repo := t.TempDir()
 			t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -79,7 +79,7 @@ func TestRebaseRealGitStore(t *testing.T) {
 			e.eng.Rebases = git.Program{}
 			calls := 0
 			e.eng.Base = bases(b1, b2)(&calls)
-			if scenario == "missing-base" {
+			if scenario == "missing-base" || scenario == "requested-full-missing-base" {
 				e.eng.Base = nil
 			}
 			e.accepted(t)
@@ -87,6 +87,15 @@ func TestRebaseRealGitStore(t *testing.T) {
 			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
 			if scenario == "changed-standards" {
 				e.eng.StandardsRevision = "standards-2"
+			}
+			requested := strings.HasPrefix(scenario, "requested-full")
+			if requested {
+				if classification.Scope != git.ScopeRebase {
+					t.Fatalf("fixture must otherwise qualify for rebase review: %+v", classification)
+				}
+				if _, err := e.h.RequestFullReview("full:app:t7:1", "app", "t7"); err != nil {
+					t.Fatal(err)
+				}
 			}
 			ev := interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}
 			next := e.advance(t, ev)
@@ -105,7 +114,7 @@ func TestRebaseRealGitStore(t *testing.T) {
 			if binding.Revisions != o2.Revisions {
 				t.Fatalf("binding revisions %+v, want %+v", binding.Revisions, o2.Revisions)
 			}
-			if scenario != "missing-base" && (binding.Range == nil || *binding.Range != (git.Range{Base: b2, Head: h2})) {
+			if e.eng.Base != nil && (binding.Range == nil || *binding.Range != (git.Range{Base: b2, Head: h2})) {
 				t.Fatalf("wrong range: %+v", binding.Range)
 			}
 			if _, ok := e.documents(t)["review-2-resolution"]; ok != (scope == git.ScopeRebase) {
@@ -117,10 +126,24 @@ func TestRebaseRealGitStore(t *testing.T) {
 			if outcome.Revisions != o2.Revisions {
 				t.Fatalf("outcome not bound to new revisions: %+v", outcome)
 			}
+			requests, err := e.h.Records.FullReviews("app", "t7")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if requested && (len(requests) != 1 || requests[0].ConsumedBy != "review-2") {
+				t.Fatalf("request not consumed exactly once by review-2: %+v", requests)
+			}
 			// Optional reviewer artifacts are copies of the product's persisted contracts.
 			if root := os.Getenv("GUILDHALL_TEST_EVIDENCE"); root != "" {
 				dir := filepath.Join(root, scenario)
 				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				requestData, err := json.MarshalIndent(requests, "", "  ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "full-review-requests.json"), requestData, 0600); err != nil {
 					t.Fatal(err)
 				}
 				for name, doc := range e.documents(t) {
