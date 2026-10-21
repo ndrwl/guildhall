@@ -234,7 +234,7 @@ Each sender type has its own wake policy in config:
 
 There is no per-sender limit: one Director sending many messages and many Directors sending one each draw on the same budget.
 
-On every wake, and at the start of every Director turn, the Director first sees the mailbox summary: the unread count per sender type, whether the director inbox is open, and one header per unread message (sender, type, subject, sequence), newest last, at most 20.
+On every wake, and at the start of every Director turn, the Director first sees the mailbox summary: the unread count per sender type, whether the director inbox is open, and one header per unread message (sender, message id, type, subject, sequence), newest last, at most 20.
 It then chooses to read, skim or skip; reading a message never acknowledges it, and acknowledging means the Director has dealt with it.
 
 ### Spam and a full mailbox
@@ -242,10 +242,10 @@ It then chooses to read, skim or skip; reading a message never acknowledges it, 
 When the Director agent judges that other Directors' messages are spam, it may close its director inbox with a reason.
 Closing raises a system alert: a `question` decision with options `reopen` and `keep-closed`, which `guildhall decide list` shows the Guildmaster.
 Only the Guildmaster reopens the inbox: `guildhall messages inbox open` is refused unless the alert's recorded answer is `reopen`, so the Director cannot reopen it on its own.
-While closed, a `director` message is refused at `receive` and the sender's outbox records the refusal; a `guildmaster` message is never refused by closing.
+While closed, a new `director` message is refused at `receive` and the sender's outbox records the refusal; a `guildmaster` message is never refused by closing.
 
 `mailbox_max` caps unacknowledged `director` messages.
-At the cap, `receive` refuses the message with `mailbox full`, stores nothing and tells the sender; a retry after the receiver acknowledges messages is accepted.
+At the cap, `receive` refuses a new message with `mailbox full`, stores nothing and tells the sender; a new delivery attempt after the receiver acknowledges messages can be accepted. Identical committed retries return their original receipt before either admission check, even when the inbox is now closed or full; conflicting envelopes are still refused.
 The Guildmaster's messages are never refused for a full mailbox.
 
 ### Transport between machines
@@ -276,8 +276,8 @@ A Director finds its peers in `[[peer]]` config entries: in a standalone copy wr
 Delivery between Directors is at least once, made exactly once in the receiver's store by message ids and idempotent receipts, as the local inbox already does.
 
 - The sender first records the message in its own store's outbox as `pending`, with mutation `outbox:<id>`, then calls `receive`.
-- The receiver stores it under mutation `dmessage:<from>:<id>`, so a retried delivery returns the original receipt and stores nothing new, and the same id from two senders never collides.
-  Reusing an id for a different envelope is refused with the store's mutation conflict.
+- At the shared local/SSH receive boundary, after envelope and transport-identity validation, the receiver resolves mutation `dmessage:<from>:<id>` before checking closure or capacity. An identical committed retry returns the original receipt, stores nothing new and never wakes again, including after acknowledgement, closure or reaching capacity. Reusing that identity for a different envelope is refused with the store's mutation conflict.
+  Only a new identity proceeds through admission, storage and the wake decision, serialized in the receiving store so concurrent retries cannot duplicate admission or waking.
 - The receiver's receipt, printed on standard output, is recorded in the sender's outbox as `delivered`; a refusal (`closed`, `mailbox full`, invalid) is recorded as `refused` with its reason and is not retried.
 - A lost result or a failed connection leaves the outbox entry `pending`.
   `guildhall messages outbox --retry` retries pending entries; nothing retries in the background.
@@ -286,18 +286,22 @@ Delivery between Directors is at least once, made exactly once in the receiver's
 ### Commands
 
 The existing `guildhall messages send|list|read|ack` keep their meaning for the local inbox.
+External messages use the full `(sender, message id)` identity in every lookup and reference. The `--sender <sender>` flag selects the exact external sender (including `guildmaster`), not the sender-type filter `--from`; omitting it on read or ack selects only the existing local inbox and never guesses an external sender. External list, read and summary output include both identity fields. External acknowledgements use mutation `dmessage-ack:<sender>:<id>` and return the original receipt on retry. The external API likewise takes both fields for read and ack; the existing local `Mailbox` API remains unchanged.
+
 The designed additions are:
 
 | Command | Does |
 |---|---|
 | `guildhall messages send --to <director> <envelope-file\|->` | A new form beside the existing positional-recipient `send`: records a Director message in the sender's outbox and delivers it to the named peer. `--as guildmaster` sends a Guildmaster `note`. |
-| `guildhall messages receive --from <sender> --to <director> <envelope-file\|->` | The receiving side: validates, applies the closed and `mailbox_max` rules, stores, decides and records the wake, and prints the receipt or the refusal. Run by `send` locally or over SSH, never by hand. |
+| `guildhall messages receive --from <sender> --to <director> <envelope-file\|->` | The receiving side: validates, resolves committed retries or conflicts first, then applies the closed and `mailbox_max` rules only to new messages, stores, decides and records the wake, and prints the receipt or the refusal. Run by `send` locally or over SSH, never by hand. |
 | `guildhall messages summary` | Prints the mailbox summary a wake shows: counts, inbox state and headers. |
-| `guildhall messages list --from director\|guildmaster` | The existing list, filtered by sender type. |
+| `guildhall messages list --from director\|guildmaster` | Lists external messages filtered by sender type, including sender and message id. |
+| `guildhall messages read --sender <sender> <message-id>` | Reads the exact external message, acknowledged or not, without acknowledging it. |
+| `guildhall messages ack --sender <sender> director <message-id>` | Acknowledges the exact external message addressed to this Director and prints its receipt. |
 | `guildhall messages outbox [--retry]` | Lists the sender's outbox entries and their states; `--retry` retries pending ones. |
 | `guildhall messages inbox close --reason <text>` | Closes the director inbox and raises the system alert. |
 | `guildhall messages inbox open` | Reopens it; refused unless the Guildmaster answered the alert `reopen`. |
-| `guildhall ticket file --from-message <id>` | Files a ticket from a `handoff-offer` or `dependency-notice` and opens its Guildmaster decision. |
+| `guildhall ticket file --sender <sender> --from-message <id>` | Requires both identity fields; files a ticket from that sender's `handoff-offer` or `dependency-notice` and opens its Guildmaster decision. |
 | `guildhall ticket list` | Lists tickets and their states. |
 
 Every command keeps the existing conventions: one JSON document on success, exit 1 on refusal or failure, exit 2 on a usage error, no command creates a store.
@@ -335,9 +339,9 @@ All are new records in the receiver's or sender's existing store, keyed outside 
 |---|---|---|
 | Director message | sender, message id | The envelope, the sender type, the sequence, and an inbox entry until acknowledged once; never changes another record. |
 | Outbox entry | message id | The envelope sent, the peer, and a state `pending`, `delivered` with the receiver's receipt, or `refused` with its reason. |
-| Wake | sequence | Each wake decision: the message, the sender type, `woke` or `queued` with the reason (`budget spent`, `no pane`, `never`), and the window it counted against. The budget is computed from these records, so it survives restarts. |
+| Wake | sequence | Each wake decision: the message's sender and id, the sender type, `woke` or `queued` with the reason (`budget spent`, `no pane`, `never`), and the window it counted against. The budget is computed from these records, so it survives restarts. |
 | Inbox state | `director` | `open` or `closed`, with the reason, the alert decision and who changed it. |
-| Ticket | repository, ticket id | The message it came from, the proposed title and repository, its decision, and a state `proposed`, `accepted` or `declined`, changed once. `accepted` records the task id later created. |
+| Ticket | repository, ticket id | The source message's full `(sender, message id)` reference, the proposed title and repository, its decision, and a state `proposed`, `accepted` or `declined`, changed once. `accepted` records the task id later created. |
 
 A ticket's decision is a decision of kind `question` with options `accept` and `decline`, and the inbox alert one with options `reopen` and `keep-closed`.
 Decisions are keyed by repository and task today, so both need the decision record's key to admit a ticket or the inbox as its subject; that is the first contract the ticket slice changes.
