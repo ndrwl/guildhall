@@ -7,6 +7,7 @@ A Steward-managed override of an adapted skill keeps that line.
 | Skill | Upstream source |
 |---|---|
 | `guildhall-grill-notes` | `skills/productivity/grilling/SKILL.md` |
+| `guildhall-spec` | `skills/engineering/to-spec/SKILL.md` (template) and `skills/engineering/triage/AGENT-BRIEF.md` (rules) |
 
 The upstream licence applies to the adapted text:
 
