@@ -50,6 +50,9 @@ type Harness struct {
 	// Ladder bounds the stop contract's rungs; zero keeps stopLadder. A unit
 	// whose interrupt is modelled rather than delivered needs no real waits.
 	Ladder artisan.Ladder
+	// Files returns the attempt files of a stop-contract case's attempt
+	// directory; nil means FilesOf(NewFiles(dir)), the byte-comparing double.
+	Files func(dir string) StopFiles
 }
 
 // Native is the harness for a backend containing real processes.

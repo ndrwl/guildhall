@@ -3,10 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,64 +130,6 @@ func TestFakeArtisanCommandUsageErrors(t *testing.T) {
 	}
 }
 
-func runArtisan(t *testing.T, extra ...string) (int, string, string, string) {
-	t.Helper()
-	prompt, result, dir := artisanFiles(t, strings.Join(extra[:1], ""))
-	app, stdout, stderr := newArtisanApp(t)
-	args := []string{"artisan", "run", "--adapter", "fake", "--task", "task-1", "--attempt", "attempt-1",
-		"--prompt", prompt, "--result", result, "--workdir", dir}
-	code := app.Run(append(args, extra[1:]...))
-	return code, stdout.String(), stderr.String(), result
-}
-
-func TestArtisanRunDirectChildRecordsResult(t *testing.T) {
-	t.Setenv(roleEnv, "guildhall")
-	code, stdout, stderr, _ := runArtisan(t, "Do it.\n", "--timeout", "60s")
-	if code != 0 {
-		t.Fatalf("exit %d; stderr %s", code, stderr)
-	}
-	var out struct {
-		Status string `json:"status"`
-		Task   string `json:"task_id"`
-	}
-	line := stdout[strings.LastIndex(strings.TrimSpace(stdout), "\n")+1:]
-	if err := json.Unmarshal([]byte(line), &out); err != nil || out.Status != "succeeded" || out.Task != "task-1" {
-		t.Errorf("last stdout line %q: %+v, %v", line, out, err)
-	}
-}
-
-func TestArtisanRunDirectChildOutcomes(t *testing.T) {
-	t.Setenv(roleEnv, "guildhall")
-	cases := []struct {
-		prompt string
-		code   int
-		want   string
-	}{
-		{"guildhall-fake: outcome=failed\n", 4, `"status":"failed"`},
-		{"guildhall-fake: fault=no-result\n", 1, "exited without a result"},
-		{"guildhall-fake: fault=malformed\n", 1, "malformed"},
-		{"guildhall-fake: fault=wrong-identity\n", 1, "another task attempt"},
-		{"guildhall-fake: fault=exit-error\n", 0, `"status":"succeeded"`},
-	}
-	for _, tc := range cases {
-		code, stdout, stderr, _ := runArtisan(t, tc.prompt, "--timeout", "60s")
-		if code != tc.code || !strings.Contains(stdout+stderr, tc.want) {
-			t.Errorf("prompt %q: exit %d (want %d); stdout %q stderr %q", tc.prompt, code, tc.code, stdout, stderr)
-		}
-	}
-}
-
-func TestArtisanRunTimeoutLeavesAttemptOpen(t *testing.T) {
-	t.Setenv(roleEnv, "guildhall")
-	code, _, stderr, result := runArtisan(t, "guildhall-fake: delay=5m\n", "--timeout", "300ms")
-	if code != 3 || !strings.Contains(stderr, "no result yet") {
-		t.Errorf("exit %d, stderr %q", code, stderr)
-	}
-	if _, err := os.Stat(result); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("result after timeout: %v", err)
-	}
-}
-
 func TestArtisanRunRefusesExistingResultAndBadFlags(t *testing.T) {
 	prompt, result, dir := artisanFiles(t, "x")
 	if err := os.WriteFile(result, []byte("{}"), 0o600); err != nil {
@@ -197,15 +137,15 @@ func TestArtisanRunRefusesExistingResultAndBadFlags(t *testing.T) {
 	}
 	app, _, stderr := newArtisanApp(t)
 	base := []string{"artisan", "run", "--adapter", "fake", "--task", "task-1", "--attempt", "attempt-1", "--prompt", prompt, "--result", result, "--workdir", dir}
-	if code := app.Run(base); code != 1 || !strings.Contains(stderr.String(), "already exists") {
+	inTab := append(append([]string{}, base...), "--herdr-session", "lab", "--herdr-workspace", "w1")
+	if code := app.Run(inTab); code != 1 || !strings.Contains(stderr.String(), "already exists") {
 		t.Errorf("existing result: exit %d, stderr %q", code, stderr)
 	}
 	for _, bad := range [][]string{
-		{"artisan", "run", "--adapter", "claude"},
+		{"artisan", "run", "--adapter", "claude", "--herdr-session", "lab", "--herdr-workspace", "w1"},
 		{"artisan", "launch"},
 		{"artisan"},
 		append(append([]string{}, base...), "--herdr-session", "lab"),
-		append(append([]string{}, base...), "--herdr-workspace", "w1"),
 		append(append([]string{}, base...), "--herdr-session", "default", "--herdr-workspace", "w1"),
 	} {
 		app, _, stderr := newArtisanApp(t)

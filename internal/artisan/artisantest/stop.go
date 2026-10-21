@@ -56,6 +56,22 @@ func (f Files) Mark() error {
 	return m.Close()
 }
 
+// StopFiles are one stop-contract case's attempt files.
+type StopFiles struct {
+	// Result and Marker are where the case's worker publishes its result and
+	// finds the cancel marker.
+	Result, Marker string
+	// Reader is what the launcher decides by.
+	Reader artisan.AttemptFiles
+	// Body is a result Reader accepts as valid.
+	Body string
+}
+
+// FilesOf returns f as stop-contract files: its own reader, accepting ResultBody.
+func FilesOf(f Files) StopFiles {
+	return StopFiles{Result: f.Result, Marker: f.Marker, Reader: f, Body: ResultBody}
+}
+
 // StopKey is the attempt every stop-contract launcher owns.
 var StopKey = artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
@@ -67,7 +83,7 @@ var stopLadder = artisan.Ladder{Cooperative: 2 * time.Second, Interrupt: 500 * t
 // with units from h; the scenario ids are those of the P0 lifecycle plan.
 func RunStopContract(t *testing.T, h Harness) {
 	t.Run("L6 a cooperative worker stops at rung 1", func(t *testing.T) {
-		c := h.launch(t, func(f Files) Worker { return Worker{Grandchildren: 1, CancelMarker: f.Marker} })
+		c := h.launch(t, func(f StopFiles) Worker { return Worker{Grandchildren: 1, CancelMarker: f.Marker} })
 		c.start(nil)
 		c.role("grandchild", 1)
 		c.stop(nil)
@@ -77,7 +93,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		c.assertGone(c.owned()...)
 	})
 	t.Run("L7 an ignored interrupt escalates with attribution", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{Grandchildren: 1, IgnoreInterrupt: true} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{Grandchildren: 1, IgnoreInterrupt: true} })
 		c.start(nil)
 		c.role("grandchild", 1)
 		c.stop(nil)
@@ -96,7 +112,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		c.assertGone(c.owned()...)
 	})
 	t.Run("L15 a stop before the worker starts cancels without starting it", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{} })
 		stopped := make(chan error, 1)
 		go func() { _, err := c.l.Stop(); stopped <- err }()
 		c.phase("stopping")
@@ -111,7 +127,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		}
 	})
 	t.Run("L15 a cancel before the worker starts cancels without starting it", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{} })
 		if _, err := c.l.Cancel(); err != nil {
 			t.Fatalf("Cancel() = %v", err)
 		}
@@ -122,14 +138,14 @@ func RunStopContract(t *testing.T, h Harness) {
 		}
 	})
 	t.Run("L15 a stop during startup leaves no owned process", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{Grandchildren: 1, IgnoreInterrupt: true} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{Grandchildren: 1, IgnoreInterrupt: true} })
 		c.start(nil)
 		c.stop(nil)
 		c.outcome(nil, artisan.Outcome{State: artisan.Cancelled, Rung: -1})
 		c.assertGone(c.owned()...)
 	})
 	t.Run("L16 a result before the stop finishes and the stop is a no-op", func(t *testing.T) {
-		c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result} })
+		c := h.launch(t, func(f StopFiles) Worker { return Worker{Result: f.Result} })
 		c.start(nil)
 		c.waitFile(c.files.Result)
 		c.stop(nil)
@@ -137,7 +153,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		c.marked(false)
 	})
 	t.Run("L16 a result after the marker is rejected as late", func(t *testing.T) {
-		c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result, ResultMarker: f.Marker} })
+		c := h.launch(t, func(f StopFiles) Worker { return Worker{Result: f.Result, ResultMarker: f.Marker} })
 		c.start(nil)
 		c.role("worker", 1)
 		c.stop(nil)
@@ -146,7 +162,7 @@ func RunStopContract(t *testing.T, h Harness) {
 	})
 	t.Run("L16 a result racing the stop is decided exactly once", func(t *testing.T) {
 		for range 4 {
-			c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result, ResultAfter: 100 * time.Millisecond} })
+			c := h.launch(t, func(f StopFiles) Worker { return Worker{Result: f.Result, ResultAfter: 100 * time.Millisecond} })
 			c.start(nil)
 			c.role("worker", 1)
 			time.Sleep(100 * time.Millisecond)
@@ -154,7 +170,7 @@ func RunStopContract(t *testing.T, h Harness) {
 			out := c.outcome(nil, artisan.Outcome{Rung: -1, State: "any"})
 			c.marked(out.State == artisan.Cancelled)
 			if out.State == artisan.Cancelled {
-				valid, _ := c.files.ValidResult()
+				valid, _ := c.files.Reader.ValidResult()
 				if valid != out.LateResultRejected {
 					t.Errorf("cancelled with a result present %v, late result rejected %v", valid, out.LateResultRejected)
 				}
@@ -163,7 +179,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		}
 	})
 	t.Run("L17 a result after cancel is rejected and the worker exits", func(t *testing.T) {
-		c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result, ResultMarker: f.Marker} })
+		c := h.launch(t, func(f StopFiles) Worker { return Worker{Result: f.Result, ResultMarker: f.Marker} })
 		c.start(nil)
 		c.role("worker", 1)
 		if _, err := c.l.Cancel(); err != nil {
@@ -176,7 +192,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		c.assertGone(c.owned()...)
 	})
 	t.Run("L18 concurrent and repeated stops share one ladder", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{Grandchildren: 1, IgnoreInterrupt: true} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{Grandchildren: 1, IgnoreInterrupt: true} })
 		c.start(nil)
 		c.role("grandchild", 1)
 		var wg sync.WaitGroup
@@ -201,7 +217,7 @@ func RunStopContract(t *testing.T, h Harness) {
 	})
 	for _, sig := range []os.Signal{syscall.SIGTERM, syscall.SIGHUP} {
 		t.Run("a "+sig.String()+" to the launcher stops the attempt", func(t *testing.T) {
-			c := h.launch(t, func(f Files) Worker { return Worker{CancelMarker: f.Marker} })
+			c := h.launch(t, func(f StopFiles) Worker { return Worker{CancelMarker: f.Marker} })
 			sigs := make(chan os.Signal, 1)
 			c.start(sigs)
 			c.role("worker", 1)
@@ -210,7 +226,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		})
 	}
 	t.Run("an interrupt to the launcher is forwarded to the worker", func(t *testing.T) {
-		c := h.launch(t, func(f Files) Worker { return Worker{IgnoreInterrupt: true, CancelMarker: f.Marker} })
+		c := h.launch(t, func(f StopFiles) Worker { return Worker{IgnoreInterrupt: true, CancelMarker: f.Marker} })
 		sigs := make(chan os.Signal, 1)
 		c.start(sigs)
 		c.role("worker", 1)
@@ -226,7 +242,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		c.outcome(nil, artisan.Outcome{State: artisan.Cancelled, Rung: 1})
 	})
 	t.Run("an invalid result does not finish the attempt", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{Lifetime: 500 * time.Millisecond} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{Lifetime: 500 * time.Millisecond} })
 		if err := os.WriteFile(c.files.Result, []byte("garbage"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -234,7 +250,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		c.outcome(nil, artisan.Outcome{State: artisan.Failed})
 	})
 	t.Run("an attempt with an outcome is not run again", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{} })
 		if err := os.WriteFile(filepath.Join(c.attempt, artisan.OutcomeFile), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -250,7 +266,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		}
 	})
 	t.Run("survivors after the last rung are reported", func(t *testing.T) {
-		c := h.launch(t, func(Files) Worker { return Worker{IgnoreInterrupt: true} })
+		c := h.launch(t, func(StopFiles) Worker { return Worker{IgnoreInterrupt: true} })
 		c.u.stuck = true
 		c.ladder = artisan.Ladder{Cooperative: 100 * time.Millisecond, Interrupt: 100 * time.Millisecond, Terminate: 100 * time.Millisecond, Kill: 100 * time.Millisecond}
 		c.start(nil)
@@ -268,7 +284,7 @@ type launch struct {
 	*run
 	u       *countingUnit
 	attempt string
-	files   Files
+	files   StopFiles
 	ladder  artisan.Ladder
 	built   artisan.Ladder
 	l       *artisan.Launcher
@@ -278,11 +294,15 @@ type launch struct {
 	err  error
 }
 
-func (h Harness) launch(t *testing.T, worker func(Files) Worker) *launch {
+func (h Harness) launch(t *testing.T, worker func(StopFiles) Worker) *launch {
 	t.Helper()
 	attempt := t.TempDir()
-	files := NewFiles(attempt)
+	files := FilesOf(NewFiles(attempt))
+	if h.Files != nil {
+		files = h.Files(attempt)
+	}
 	w := worker(files)
+	w.ResultBody = files.Body
 	if w.Lifetime == 0 {
 		w.Lifetime = 30 * time.Second
 	}
@@ -292,7 +312,7 @@ func (h Harness) launch(t *testing.T, worker func(Files) Worker) *launch {
 	}
 	c := &launch{run: h.begin(t, w), attempt: attempt, files: files, ladder: ladder, built: ladder, done: make(chan struct{})}
 	c.u = &countingUnit{Unit: c.run.u, n: map[string]int{}}
-	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: attempt, Unit: c.u, Files: files, Ladder: ladder, Key: StopKey})
+	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: attempt, Unit: c.u, Files: files.Reader, Ladder: ladder, Key: StopKey})
 	if err != nil {
 		t.Fatalf("NewLauncher() = %v", err)
 	}
@@ -310,7 +330,7 @@ func (h Harness) launch(t *testing.T, worker func(Files) Worker) *launch {
 // start starts Run in the background.
 func (c *launch) start(signals <-chan os.Signal) {
 	if c.ladder != c.built {
-		l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: c.attempt, Unit: c.u, Files: c.files, Ladder: c.ladder, Key: StopKey})
+		l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: c.attempt, Unit: c.u, Files: c.files.Reader, Ladder: c.ladder, Key: StopKey})
 		if err != nil {
 			c.t.Fatalf("NewLauncher() = %v", err)
 		}
@@ -366,7 +386,7 @@ func (c *launch) outcome(wantErr error, want artisan.Outcome) artisan.Outcome {
 
 func (c *launch) marked(want bool) {
 	c.t.Helper()
-	if got, err := c.files.Marked(); got != want || err != nil {
+	if got, err := c.files.Reader.Marked(); got != want || err != nil {
 		c.t.Errorf("cancel marker present %v (%v), want %v", got, err, want)
 	}
 }
