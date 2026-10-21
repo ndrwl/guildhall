@@ -189,7 +189,9 @@ func startHolder(t *testing.T, path string) *exec.Cmd {
 }
 
 func TestEndpointPath(t *testing.T) {
-	dir := shortDir(t)
+	// EndpointPath is pure: use a synthetic absolute directory so the host's
+	// temporary-directory prefix cannot crowd out the hashed fallback.
+	dir := filepath.Join(filepath.VolumeName(os.TempDir())+string(filepath.Separator), "state")
 	p, err := artisan.EndpointPath(dir, testKey)
 	if err != nil {
 		t.Fatalf("EndpointPath: %v", err)
@@ -418,12 +420,12 @@ func rawExchange(t *testing.T, path, request string) map[string]any {
 	}
 	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
-	if _, err := c.Write([]byte(request)); err != nil {
-		t.Fatal(err)
-	}
+	// An oversized request can be rejected before the whole write completes.
+	// The error reply, not consumption of the rejected bytes, is the contract.
+	_, writeErr := c.Write([]byte(request))
 	line, err := bufio.NewReader(c).ReadBytes('\n')
 	if err != nil {
-		t.Fatalf("no reply line to %.40q: %v", request, err)
+		t.Fatalf("no reply line to %.40q: %v (write error: %v)", request, err, writeErr)
 	}
 	var rep map[string]any
 	if err := json.Unmarshal(line, &rep); err != nil {
