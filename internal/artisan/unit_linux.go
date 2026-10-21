@@ -61,6 +61,16 @@ func (u *platformUnit) removeContainment() error {
 	return nil
 }
 
+func contained(c Containment, worker Identity) ([]Identity, error) {
+	switch c.Kind {
+	case KindCgroup:
+		return containedCgroup(c.Name)
+	case KindSubreaper:
+		return containedGroup(worker)
+	}
+	return nil, fmt.Errorf("containment %q on Linux: %w", c.Kind, errors.ErrUnsupported)
+}
+
 // newUnit contains the worker in a child cgroup when detection finds a
 // delegated cgroup v2, otherwise in a process group with the launcher as
 // child subreaper. A cgroup that cannot be created is an error, not a

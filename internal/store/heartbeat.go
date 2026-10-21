@@ -2,23 +2,17 @@ package store
 
 import (
 	"fmt"
-	"time"
 
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
 var bucketHeartbeats = []byte("heartbeats")
 
-type Heartbeat struct {
-	Repository   string    `json:"repository"`
-	TaskID       string    `json:"task_id"`
-	Step         string    `json:"step"`
-	Attempt      int       `json:"attempt"`
-	Sequence     uint64    `json:"sequence"`
-	Time         time.Time `json:"time"`
-	WorkerState  string    `json:"worker_state"`
-	LastOutputAt time.Time `json:"last_output_at"`
-}
+// Heartbeat is an attempt's launcher heartbeat, the record the launcher
+// writes to its attempt directory (artisan.HeartbeatFile), in the same shape.
+type Heartbeat = artisan.Heartbeat
 
 func (s *Store) Heartbeat(repository, taskID, step string, number int) (Heartbeat, error) {
 	var h Heartbeat

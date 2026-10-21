@@ -147,6 +147,15 @@ type LauncherConfig struct {
 	// ResultGrace is how long the worker may outlive its accepted result;
 	// zero means DefaultResultGrace.
 	ResultGrace time.Duration
+	// Key is the attempt the launcher owns, named by its heartbeat.
+	Key AttemptKey
+	// HeartbeatInterval is how often the heartbeat is written; zero means
+	// DefaultHeartbeatInterval.
+	HeartbeatInterval time.Duration
+	// LastOutput reports when the worker last produced output, for the
+	// heartbeat's LastOutputAt. Nil, or a zero time, reports the time Run
+	// began; a time after the beat reports the beat's time.
+	LastOutput func() time.Time
 }
 
 // Launcher supervises one attempt's worker. It is the EndpointHandler of
@@ -163,6 +172,10 @@ type Launcher struct {
 	started bool
 	err     error // Run's error, set before done closes
 	logErr  error
+
+	// began and seq are the heartbeat's, used only by Run's goroutine.
+	began time.Time
+	seq   uint64
 }
 
 var _ EndpointHandler = (*Launcher)(nil)
@@ -175,6 +188,9 @@ func NewLauncher(c LauncherConfig) (*Launcher, error) {
 	if c.Unit == nil || c.Files == nil {
 		return nil, errors.New("artisan: launcher needs a unit and attempt files")
 	}
+	if err := c.Key.validate(); err != nil {
+		return nil, err
+	}
 	if fi, err := os.Stat(c.Dir); err != nil || !fi.IsDir() || !filepath.IsAbs(c.Dir) {
 		return nil, fmt.Errorf("artisan: attempt directory %q must be an existing absolute directory: %v", c.Dir, err)
 	}
@@ -183,6 +199,9 @@ func NewLauncher(c LauncherConfig) (*Launcher, error) {
 	}
 	if c.ResultGrace == 0 {
 		c.ResultGrace = DefaultResultGrace
+	}
+	if c.HeartbeatInterval == 0 {
+		c.HeartbeatInterval = DefaultHeartbeatInterval
 	}
 	return &Launcher{c: c, stopReq: make(chan struct{}), done: make(chan struct{}), phase: "starting"}, nil
 }
@@ -221,6 +240,11 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	if d, err := l.decide(false, ""); err != nil || d.State != "" {
 		return l.finish(d, 0, nil, err)
 	}
+	l.began = time.Now()
+	if h, err := ReadHeartbeat(l.c.Dir); err == nil && h.Key() == l.c.Key {
+		l.seq = h.Sequence
+	}
+	l.heartbeat()
 	worker, err := l.c.Unit.Start(cmd)
 	if err != nil {
 		d, derr := l.decide(false, "start worker: "+err.Error())
@@ -235,6 +259,8 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	l.event("running", map[string]any{"worker": worker})
 	tick := time.NewTicker(pollInterval)
 	defer tick.Stop()
+	beat := time.NewTicker(l.c.HeartbeatInterval)
+	defer beat.Stop()
 	var decided *Outcome
 	var grace <-chan time.Time
 	for {
@@ -252,6 +278,8 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 					grace = time.After(l.c.ResultGrace)
 				}
 			}
+		case <-beat.C:
+			l.heartbeat()
 		case <-grace:
 			l.event("worker-outlived-result", nil)
 			return l.ladder(*decided, 2, nil, false, signals)
@@ -324,7 +352,7 @@ func (l *Launcher) locked(fn func() error) error {
 	}
 	// Closing the file releases the lock.
 	defer func() { _ = f.Close() }()
-	if err := lockFile(f); err != nil {
+	if err := lockFile(f, false); err != nil {
 		return err
 	}
 	return fn()
@@ -435,8 +463,12 @@ func (l *Launcher) cooperate(d Outcome, signals <-chan os.Signal, err error) (Ou
 	defer timer.Stop()
 	tick := time.NewTicker(pollInterval)
 	defer tick.Stop()
+	beat := time.NewTicker(l.c.HeartbeatInterval)
+	defer beat.Stop()
 	for {
 		select {
+		case <-beat.C:
+			l.heartbeat()
 		case <-tick.C:
 			if l.empty() {
 				l.event("rung-emptied", map[string]any{"rung": 1})
@@ -500,6 +532,31 @@ func (l *Launcher) finish(d Outcome, rung int, survivors []Identity, err error) 
 	}
 	l.event("ended", map[string]any{"outcome": d})
 	return d, err
+}
+
+// heartbeat writes the next beat to HeartbeatFile; a failed write is logged
+// and the next beat tries again.
+func (l *Launcher) heartbeat() {
+	now := time.Now()
+	out := l.began
+	if l.c.LastOutput != nil {
+		if t := l.c.LastOutput(); !t.IsZero() {
+			out = t
+		}
+	}
+	if out.After(now) {
+		out = now
+	}
+	l.mu.Lock()
+	phase := l.phase
+	l.mu.Unlock()
+	l.seq++
+	k := l.c.Key
+	h := Heartbeat{Repository: k.Repository, TaskID: k.TaskID, Step: k.Step, Attempt: k.Attempt,
+		Sequence: l.seq, Time: now.UTC(), WorkerState: phase, LastOutputAt: out.UTC()}
+	if err := replaceJSON(filepath.Join(l.c.Dir, HeartbeatFile), h); err != nil {
+		l.event("heartbeat-failed", map[string]any{"sequence": l.seq, "error": err.Error()})
+	}
 }
 
 // writeOnce publishes v as JSON at path, refusing to replace a file there.

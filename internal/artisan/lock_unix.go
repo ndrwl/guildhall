@@ -12,4 +12,12 @@ import (
 // SIGINT reaches the whole group.
 const interruptGraceful = true
 
-func lockFile(f *os.File) error { return unix.Flock(int(f.Fd()), unix.LOCK_EX) }
+func lockFile(f *os.File, nonblocking bool) error {
+	flags := unix.LOCK_EX
+	if nonblocking {
+		flags |= unix.LOCK_NB
+	}
+	return unix.Flock(int(f.Fd()), flags)
+}
+
+func lockBusy(err error) bool { return err == unix.EWOULDBLOCK }

@@ -32,13 +32,13 @@ Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` b
 
 ## Attempt heartbeats
 
-`PutHeartbeat` stores the latest fixture heartbeat per repository, task, step and attempt in the repository's `heartbeats` bucket, using the same key as an attempt.
+`PutHeartbeat` stores the latest heartbeat per repository, task, step and attempt in the repository's `heartbeats` bucket, using the same key as an attempt.
 The record contains `sequence`, `time`, `worker_state` and `last_output_at`.
 Sequence must be positive and increase; times must be nonzero and last output cannot follow heartbeat time; worker state is nonblank UTF-8 bounded by `MaxTextBytes`.
 Only a running, existing attempt accepts writes; missing attempts return `ErrNotFound`, while completed attempts and non-increasing sequence return `ErrInvalid`.
 Mutation replay is unchanged and receipts name `heartbeat/<step>/<number>`.
 `Heartbeat` returns the latest record or `ErrNotFound`; reading or writing a heartbeat never changes the attempt.
-These are fixtures for the interpreter now; launcher L6 will write about every five seconds.
+`Heartbeat` is an alias of `artisan.Heartbeat`, the record the launcher writes to its attempt directory about every five seconds ([launcher heartbeat](artisan.md#heartbeat)).
 Heartbeats are read separately, not through `TaskHistory`.
 
 The shared Records contract and worker-stalled integration tests were written before implementation, but no failure was observed then.

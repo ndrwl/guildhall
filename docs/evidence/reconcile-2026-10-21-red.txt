@@ -1,0 +1,48 @@
+=== RUN   TestClassifyFiles
+=== RUN   TestClassifyFiles/L22_the_outcome_decides_before_the_owner
+    reconcile_test.go:172: state "" (), want "failed": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestClassifyFiles/L22_the_cancel_marker_decides_before_a_result
+    reconcile_test.go:182: state "" (), want "cancelled": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestClassifyFiles/L22_a_valid_result_is_finished
+    reconcile_test.go:187: state "" (), want "finished": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestClassifyFiles/no_ownership_record_is_absent
+    reconcile_test.go:190: state "" (), want "absent": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+--- FAIL: TestClassifyFiles (0.01s)
+    --- FAIL: TestClassifyFiles/L22_the_outcome_decides_before_the_owner (0.00s)
+    --- FAIL: TestClassifyFiles/L22_the_cancel_marker_decides_before_a_result (0.00s)
+    --- FAIL: TestClassifyFiles/L22_a_valid_result_is_finished (0.00s)
+    --- FAIL: TestClassifyFiles/no_ownership_record_is_absent (0.00s)
+=== RUN   TestClassifyOwner
+=== RUN   TestClassifyOwner/L13_L14_a_launcher_proven_exited_with_an_emptied_unit_is_exited
+    reconcile_test.go:204: waited 20s for "exited"; last "" (): {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestClassifyOwner/L13_a_launcher_proven_exited_with_contained_survivors_is_unknown
+    reconcile_test.go:222: state "" (), want "unknown": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestClassifyOwner/L19_a_live_launcher_whose_endpoint_is_broken_is_unknown,_not_exited
+    reconcile_test.go:234: state "" (), want "unknown": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestClassifyOwner/L20_a_reused_PID_proves_the_recorded_launcher_exited
+    reconcile_test.go:242: state "" (), want "exited": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestClassifyOwner/L21_a_leftover_endpoint_file_does_not_keep_an_exited_owner_alive
+    reconcile_test.go:248: state "" (), want "exited": {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+--- FAIL: TestClassifyOwner (20.26s)
+    --- FAIL: TestClassifyOwner/L13_L14_a_launcher_proven_exited_with_an_emptied_unit_is_exited (20.08s)
+    --- FAIL: TestClassifyOwner/L13_a_launcher_proven_exited_with_contained_survivors_is_unknown (0.10s)
+    --- FAIL: TestClassifyOwner/L19_a_live_launcher_whose_endpoint_is_broken_is_unknown,_not_exited (0.01s)
+    --- FAIL: TestClassifyOwner/L20_a_reused_PID_proves_the_recorded_launcher_exited (0.01s)
+    --- FAIL: TestClassifyOwner/L21_a_leftover_endpoint_file_does_not_keep_an_exited_owner_alive (0.06s)
+=== RUN   TestHeartbeat
+=== RUN   TestHeartbeat/a_wedged_launcher_is_stuck_while_its_identity_and_endpoint_live
+    reconcile_test.go:342: waited 20s for "running"; last "" (): {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestHeartbeat/a_stalled_worker's_fresh_heartbeat_reaches_the_store_and_is_not_stuck
+    reconcile_test.go:356: waited 20s for "running"; last "" (): {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestHeartbeat/a_stale_heartbeat_while_alive_is_stuck,_refuses_a_relaunch_and_recovers
+    reconcile_test.go:380: waited 20s for "running"; last "" (): {State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+=== RUN   TestHeartbeat/a_crashed_launcher's_frozen_heartbeat_is_evidence;_the_identity_decides
+    reconcile_test.go:409: launcher process did not start its worker tree
+--- FAIL: TestHeartbeat (80.17s)
+    --- FAIL: TestHeartbeat/a_wedged_launcher_is_stuck_while_its_identity_and_endpoint_live (20.06s)
+    --- FAIL: TestHeartbeat/a_stalled_worker's_fresh_heartbeat_reaches_the_store_and_is_not_stuck (20.04s)
+    --- FAIL: TestHeartbeat/a_stale_heartbeat_while_alive_is_stuck,_refuses_a_relaunch_and_recovers (20.05s)
+    --- FAIL: TestHeartbeat/a_crashed_launcher's_frozen_heartbeat_is_evidence;_the_identity_decides (20.02s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/reconcile	100.442s
+FAIL
