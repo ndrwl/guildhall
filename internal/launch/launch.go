@@ -406,8 +406,9 @@ type StopReport struct {
 // ladder's end. It never signals a process itself. Without a successful
 // answer, termination requires no ownership record, or a proven gone owner
 // and a recorded unit proven empty. Otherwise it returns ErrNotStopped.
-// Endpoint request errors are preserved. The report carries the classification
-// afterwards, which alone does not prove termination.
+// Endpoint request errors are preserved; transport errors may be superseded
+// by verified termination. The report carries the classification afterwards,
+// which alone does not prove termination.
 func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 	var rep StopReport
 	var stopErr error

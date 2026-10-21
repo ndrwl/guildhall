@@ -349,7 +349,8 @@ It never signals a process itself.
 Without a successful endpoint answer, success requires no ownership record, or a launcher proven gone and its recorded unit proven empty; missing containment is unverified, including during startup.
 A released record alone does not prove termination while its launcher still lives.
 It prints what the endpoint did and the classification afterwards.
-Endpoint stop errors, including surviving processes, are preserved and exit 1; unproven termination also exits 1 regardless of a `finished`, `cancelled` or `failed` classification.
+Endpoint request errors, including reported surviving processes, are preserved and exit 1; a transport failure can still succeed if the fallback proves termination.
+Unproven termination exits 1 regardless of a `finished`, `cancelled` or `failed` classification.
 `artisan status` prints the [classification](#reconcile) and exits 0; an attempt with no directory and no ownership record is `absent`.
 
 ### Custody
