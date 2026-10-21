@@ -6,7 +6,7 @@ This page says which is meant where.
 ## Launcher
 
 - `artisan.Launcher` is the per-attempt process that owns one Artisan worker: it runs the worker in its containment unit, answers the control endpoint, writes the heartbeat and decides the attempt with the [stop ladder](artisan.md#stop-ladder).
-- `interp.Launcher` is the interpreter's seam for starting and stopping attempts ([mock agent](mock-agent.md)); its real implementation is to run `guildhall artisan run`, whose process is an `artisan.Launcher`.
+- `interp.Launcher` is the interpreter's seam for starting and stopping attempts ([mock agent](mock-agent.md)); its real implementation, `launch.Process`, runs `guildhall artisan run`, whose process is an `artisan.Launcher`.
 
 ## Outcome
 

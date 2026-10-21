@@ -23,7 +23,7 @@ It is the interpreter's own type; the conformance slice maps it onto `adapter.Sp
 
 ## Adapter guard
 
-Every implementation of `interp.Launcher` must call `interp.CheckAdapter` before it constructs or runs an adapter; `Script` is the only implementation today.
+Every implementation of `interp.Launcher` must call `interp.CheckAdapter` before it constructs or runs an adapter; `Script` and `launch.Process`, the real launcher, are its implementations.
 The guard's scope and allowed adapters are defined by [`CheckAdapter`](../internal/interp/launcher.go); it does not intercept direct adapter construction outside this seam.
 
 ## Scripts
@@ -84,7 +84,7 @@ The blocked question file is provisional: no runtime writes it yet, and the inte
 `interptest.RunLauncherContract(t, newHarness)` is the `Launcher` contract as a test suite: invalid specs refused with nothing written, completion from the result file for succeeded and failed outcomes with no temporary files left, a stopped attempt leaving no result, repeated stops, and a foreign handle refused.
 A harness renders each attempt with the step instructions its launcher needs, so the fake adapter can carry its prompt directives in the same suite.
 
-## Outstanding
+## Against the real launcher
 
-The suite runs only against the mock today.
-A double shares a suite with the real implementation only once the same suite runs against the fake adapter, in the adapter conformance slice; until then the mock's agreement with real launches is unproven.
+The suite runs against the mock and against `launch.Process` with the fake adapter (`internal/launch/process_test.go`), so the mock's agreement with real launches is proven for what the suite checks.
+The suite's stop case accepts a launcher that marks the stopped attempt cancelled, as the real one does, so the wait refuses it with `adapter.ErrAttemptCancelled` rather than reporting no result yet; either way no result exists.

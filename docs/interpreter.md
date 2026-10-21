@@ -3,7 +3,7 @@
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
 It follows `changes_requested` loop rules with their `max`, asks the Guildmaster at a loop's exit and checks the review gate before `deliver`; the checks gate, `publish`, `validate`, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
-Nothing on the command line calls the engine yet: result intake, launch and the watcher are later work.
+[`task start` and `step done`](running.md) run it from the command line; the per-task watcher is later work.
 
 ## Seams
 
@@ -12,7 +12,7 @@ The engine consumes five narrow interfaces, declared in `internal/interp` beside
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
 | `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
-| `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | none yet | `interptest.Script` | `interptest.RunLauncherContract` |
+| `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
@@ -41,7 +41,7 @@ There is no seam: like `launched.json` and `result.json`, the file is read from 
 | Event | Validated against the records | Recorded |
 |---|---|---|
 | `task-created` | The task exists and is open. | Nothing by itself. |
-| `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. |
+| `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. When its launcher already recorded the outcome, that outcome stands, and a succeeded one has its outputs recorded by the next advance, whatever its event. |
 | `decision-answered` | The named decision exists and is answered. | Nothing by itself: the answer is already recorded. |
 
 Any other event, or one that does not match the records, is refused with `ErrEvent` and changes nothing.

@@ -37,4 +37,5 @@ Its `requested full` case, red first against stubbed full-review records, reques
 The full-review case of `RunRecordsContract` (refusals, replay, one pending request, consuming once, numbering) was red first against stubs in the store and the double.
 The revision-change regression was added during review after implementation.
 It came with the implementation from an earlier branch; on 2026-10-21, with `rebase` stubbed to return a full scope and no range, the rebase cases failed (`manifest lacks required input "resolution"`) and so did the full cases' range check.
+`launcher_outcome_test.go` was written red first on both backends: a plan the launcher recorded succeeded before its intake, or before any event named it, failed with `plan.spec has no recorded document`, and now has its output recorded once and opens the approval; a stopped outcome standing over a succeeded result passed unchanged and pins that the launcher's outcome stands.
 `launcher_test.go` (the guard inside and outside a test binary); `Spec.Validate` through the shared suite in `interptest`.

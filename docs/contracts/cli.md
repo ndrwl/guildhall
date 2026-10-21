@@ -9,6 +9,8 @@ The `store`, `messages`, `task`, `decide`, `workflow approve` / `workflow approv
 `artisan harness inventory|kill-owned|probe --lab` is the lab's [test tooling](../artisan.md#harness), refused without `--lab`.
 `fake-artisan` is `fake.Main`.
 
+`task start` and `step done` ([running a task](../running.md)) run one `interp.Engine` advance over a store opened per record operation, the Director config and the state directory, under the task's lock, launching through `launch.Process`; `step done` refuses a result path other than the attempt's own and a result `adapter.ReadResult` refuses before calling the engine.
+
 `render <request.json>` reads one JSON rendering request with [`strictjson`](strictjson.md); decoding refusals are usage errors (exit code 2) before installation or rendering.
 It invokes `App.InstallSkills` to install a temporary first root named `release` before optional managed and Director roots.
 Before installing or rendering, it validates the step settings through `workflow.ValidateStepSettings`, rejecting malformed values, invalid or duplicate names, disallowed actors and unknown setting keys with exit code 2.
@@ -18,6 +20,10 @@ It returns the prompt manifest as JSON, retains the rendered attempt, removes th
 ## Tests
 
 `render_test.go` checks malformed settings are refused before installation or attempt creation.
+
+`advance_test.go` runs task app/t-1 over `testdata/run` (the fake-straight workflow, whose stage guides carry the fake adapter's directives) with the test binary playing every launcher: `TestTaskStartAndStepDone` and `TestStepDoneRefusesAResultItDoesNotTake` were written red first against a stub advance and failed with it; `TestTaskStartAndStepDoneUsage` passed against the stub, whose flag checks were already written.
+Each test's cleanup proves every attempt's launcher stopped with `artisan stop`.
+`TestTaskUsageErrors` used `task start` as its unknown subcommand; it now uses `task frobnicate`, because `task start` is an accepted command.
 
 `artisan_owned_test.go` was written red first against stub bodies: owned `run` exit codes and JSON for each fake outcome, `status` afterwards, usage errors and `stop` without an owner; `TestArtisanRunCustody` is the [custody acceptance](launch.md#tests).
 After the red commit one expectation was corrected because it contradicted the reconcile contract: a finished attempt whose result reports failure classifies `finished`, not `failed`.

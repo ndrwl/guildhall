@@ -9,5 +9,5 @@
 ## Tests
 
 `script_test.go`: the shared suite against `Script`; every failure mode against a recording `TB`; responses against golden result, review and question files; golden fixture manifests; unlaunched expectations; an existing result never replaced; concurrent launches.
-The launcher suite does not yet run against a real launcher ([outstanding](../mock-agent.md#outstanding)).
+The launcher suite also runs against `launch.Process` in `internal/launch/process_test.go`; its stop case was widened to accept `adapter.ErrAttemptCancelled` from the wait, because the real launcher's cancel marker ([adapters](../adapters.md)) makes the wait refuse a stopped attempt, and now also asserts no result file exists ([against the real launcher](../mock-agent.md#against-the-real-launcher)).
 The records suite runs against the store and the double in `internal/interp/engine_test.go`; the double was written with its suite, so its passing is not red-first evidence.
