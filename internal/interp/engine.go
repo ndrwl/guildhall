@@ -439,7 +439,8 @@ func (r *run) taken(s workflow.Step, n int) bool {
 }
 
 // takeResult records a finished attempt: its outputs as documents when it succeeded, then its outcome.
-// An outcome the launcher already recorded stands; unfinished intake still replays
+// The store's first finish stands, so an equal outcome the launcher already recorded is not an error;
+// unfinished intake still replays
 // documents, ruling contests and stall notifications before marking completion.
 func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	res, err := adapter.ReadResult(r.resultFile(s.ID, a.Number), r.identity(s.ID, a.Number))
@@ -462,16 +463,7 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	if a.Outcome == "" {
 		n := strconv.Itoa(a.Number)
 		if _, err := r.e.Records.FinishAttempt(r.mutation("attempt-finish", s.ID, n), r.task.Repository, r.task.ID, s.ID, a.Number, outcome); err != nil {
-			attempts, readErr := r.e.Records.Attempts(r.task.Repository, r.task.ID)
-			if readErr != nil {
-				return fmt.Errorf("interp: %w", errors.Join(err, readErr))
-			}
-			i := slices.IndexFunc(attempts, func(recorded store.StageAttempt) bool {
-				return recorded.Step == s.ID && recorded.Number == a.Number && recorded.Outcome == outcome
-			})
-			if i < 0 {
-				return fmt.Errorf("interp: %w", err)
-			}
+			return fmt.Errorf("interp: %w", err)
 		}
 		a.Outcome = outcome
 	}

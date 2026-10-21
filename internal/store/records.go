@@ -259,7 +259,9 @@ func startAttempt(tx *bolt.Tx, r *Receipt, repository, taskID, step string) (Sta
 }
 
 // FinishAttempt records the outcome of a running attempt and, in the same mutation,
-// releases its ownership record if it has one.
+// releases its ownership record if it has one. The first finish stands: finishing an
+// attempt again with the same outcome under another mutation id returns the first
+// finish's receipt and writes nothing, and another outcome is refused (docs/store.md#attempts).
 func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, number int, outcome AttemptOutcome) (Receipt, error) {
 	if err := validateIDs(repository, taskID, step); err != nil {
 		return Receipt{}, err
@@ -280,6 +282,11 @@ func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, numbe
 			return fmt.Errorf("attempt %d of %s/%s step %q: %w", number, repository, taskID, step, err)
 		}
 		if a.Outcome != "" {
+			if a.Outcome == outcome {
+				if first, ok := finishReceipt(tx, r.Repository, r.TaskID, r.Record); ok {
+					return standing{first}
+				}
+			}
 			return invalid("attempt %d of step %q already finished: %s", number, step, a.Outcome)
 		}
 		a.Outcome = outcome
@@ -288,6 +295,19 @@ func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, numbe
 		}
 		return releaseOwnership(tx, repository, taskID, step, number)
 	})
+}
+
+// finishReceipt is the receipt of the mutation that finished the attempt named record, false
+// when none names it because it was committed before receipts named their record.
+func finishReceipt(tx *bolt.Tx, repository, taskID, record string) (Receipt, bool) {
+	c := tx.Bucket(bucketReceipts).Cursor()
+	for k, v := c.First(); k != nil; k, v = c.Next() {
+		var r Receipt
+		if json.Unmarshal(v, &r) == nil && r.Operation == "finish-attempt" && r.Repository == repository && r.TaskID == taskID && r.Record == record {
+			return r, true
+		}
+	}
+	return Receipt{}, false
 }
 
 // PutDocument records a document reference. A reference never changes once recorded.

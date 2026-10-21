@@ -268,10 +268,15 @@ func (r *Records) FinishAttempt(mutationID, repository, taskID, step string, num
 		i := slices.IndexFunc(r.attempts, func(a store.StageAttempt) bool {
 			return a.Repository == repository && a.TaskID == taskID && a.Step == step && a.Number == number
 		})
-		switch {
-		case i < 0:
+		if i < 0 {
 			return fmt.Errorf("attempt %d of step %q: %w", number, step, store.ErrNotFound)
-		case r.attempts[i].Outcome != "":
+		}
+		if recorded := r.attempts[i].Outcome; recorded != "" {
+			for _, prior := range r.receipts {
+				if recorded == outcome && prior.op == "finish-attempt" && prior.r.Repository == rc.Repository && prior.r.TaskID == rc.TaskID && prior.r.Record == rc.Record {
+					return standing{prior.r}
+				}
+			}
 			return fmt.Errorf("%w: attempt %d of step %q already finished", store.ErrInvalid, number, step)
 		}
 		r.attempts[i].Outcome = outcome
@@ -334,12 +339,21 @@ func (r *Records) mutate(mutationID, op string, req any, apply func(rc *store.Re
 	}
 	rc := store.Receipt{MutationID: mutationID, Operation: op, Sequence: r.seq + 1}
 	if err := apply(&rc); err != nil {
+		if st, ok := err.(standing); ok {
+			return st.r, nil
+		}
 		return store.Receipt{}, fmt.Errorf("records: %s %s: %w", op, mutationID, err)
 	}
 	r.seq++
 	r.receipts[mutationID] = receipt{op, string(body), rc}
 	return rc, nil
 }
+
+// standing is returned by a mutation's apply when an earlier mutation, r, already wrote what it
+// asks for: the mutation writes nothing and returns r, as the store does.
+type standing struct{ r store.Receipt }
+
+func (standing) Error() string { return "an earlier mutation stands" }
 
 // RecordsHarness is one interp.Records implementation under the contract suite, with the writes
 // the engine never makes: creating a task, answering a decision, ruling on a finding and requesting a full review.

@@ -305,11 +305,20 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 		out = r
 		return nil
 	})
+	if st, ok := errors.AsType[standing](err); ok {
+		return st.r, nil
+	}
 	if err != nil {
 		return Receipt{}, fmt.Errorf("store: %s %s: %w", op, mutationID, storeErr(err))
 	}
 	return out, nil
 }
+
+// standing is returned by a mutation's apply when an earlier mutation, r, already wrote what
+// it asks for: the mutation rolls back, writing nothing, and returns r.
+type standing struct{ r Receipt }
+
+func (standing) Error() string { return "an earlier mutation stands" }
 
 // Receipt returns the receipt committed for mutationID.
 func (s *Store) Receipt(mutationID string) (Receipt, error) {
