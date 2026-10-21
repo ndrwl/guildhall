@@ -85,8 +85,8 @@ var (
 	// ErrOutcome reports a review outcome that breaks its round's contract: it is stale (not bound to the
 	// revisions its attempt was given) or leaves a finding of the previous round without a disposition.
 	ErrOutcome = errors.New("review outcome refused")
-	// ErrReviewGate reports a deliver step reached without an approved review outcome, bound to the
-	// current head, accepted spec and standards revision, for every review step before it.
+	// ErrReviewGate reports a deliver step reached without a current, non-blocking, non-rejected
+	// outcome for every preceding review or document-review step (docs/interpreter.md#review-gate).
 	ErrReviewGate = errors.New("review gate")
 )
 
@@ -762,7 +762,7 @@ func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 func (r *run) specGate(source string, doc store.DocumentRef) error {
 	d := r.decision(source)
 	switch {
-	case d == nil || !d.Answered || !(d.Kind == store.DecisionApproval && d.Choice == string(workflow.VerdictApproved) || d.Kind == store.DecisionLoopExit && d.Choice == "accept"):
+	case d == nil || !d.Answered || (d.Kind != store.DecisionApproval || d.Choice != string(workflow.VerdictApproved)) && (d.Kind != store.DecisionLoopExit || d.Choice != "accept"):
 		return fmt.Errorf("%w: %s has no approved decision", ErrSpecGate, doc.Name)
 	case d.Subject == nil || d.Subject.Digest != "sha256:"+doc.SHA256:
 		return fmt.Errorf("%w: accepted spec %s is sha256:%s, decision %s approved %v", ErrSpecGate, doc.Name, doc.SHA256, d.ID, d.Subject)
