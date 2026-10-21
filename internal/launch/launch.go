@@ -17,7 +17,9 @@
 //     empty; ctx ending, the endpoint's stop and a relayed stop signal each
 //     request the one stop ladder;
 //  5. it records the store outcome with FinishAttempt, translated by one
-//     rule (attemptOutcome), which also releases the ownership.
+//     rule (attemptOutcome), which also releases the ownership; an attempt
+//     the interpreter's result intake already finished with the same outcome
+//     is not an error, and one finished with another keeps the store's.
 //
 // When survivors outlive the last rung (artisan.ErrNotEmpty) the attempt is
 // left running and owned, so reconcile sees the survivors once this process
@@ -53,9 +55,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// ResultFile is the result file's name in the attempt directory.
-const ResultFile = "result.json"
-
 // ErrNotStopped reports that Stop could not verify termination.
 var ErrNotStopped = errors.New("attempt is not proven stopped")
 
@@ -68,22 +67,19 @@ type Attempt struct {
 	Key      artisan.AttemptKey
 }
 
-// Dir is the attempt directory, <StateDir>/<repository>/<task>/<step>-<n>,
-// as the interpreter prepares it.
-func (a Attempt) Dir() string {
-	k := a.Key
-	return filepath.Join(a.StateDir, k.Repository, k.TaskID, fmt.Sprintf("%s-%d", k.Step, k.Attempt))
-}
+// Dir is the attempt directory, artisan.AttemptKey.Dir of StateDir.
+func (a Attempt) Dir() string { return a.Key.Dir(a.StateDir) }
 
 // Identity is the adapter identity the attempt's result must name: its task
-// and "<step>-<n>".
+// and artisan.AttemptKey.AttemptID.
 func (a Attempt) Identity() adapter.Identity {
-	return adapter.Identity{TaskID: a.Key.TaskID, AttemptID: fmt.Sprintf("%s-%d", a.Key.Step, a.Key.Attempt)}
+	return adapter.Identity{TaskID: a.Key.TaskID, AttemptID: a.Key.AttemptID()}
 }
 
-// Files returns the attempt's result file and cancel marker.
+// Files returns the attempt's result file, artisan.ResultFile in Dir, and
+// cancel marker.
 func (a Attempt) Files() Files {
-	return Files{ResultFile: filepath.Join(a.Dir(), ResultFile), Identity: a.Identity()}
+	return Files{ResultFile: filepath.Join(a.Dir(), artisan.ResultFile), Identity: a.Identity()}
 }
 
 // Files is the real artisan.AttemptFiles: the adapter's result file, parsed
@@ -257,6 +253,10 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	finish := func(outcome store.AttemptOutcome, runErr error) (Report, error) {
 		err := a.write(func(s *store.Store) error {
 			_, err := s.FinishAttempt(mutation("finish"), k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
+			if err != nil && storedOutcome(s, k) == outcome {
+				// The interpreter's result intake recorded the same outcome first.
+				return nil
+			}
 			return err
 		})
 		if err == nil {
@@ -303,6 +303,17 @@ func Run(ctx context.Context, c Config) (Report, error) {
 func attemptTag(k artisan.AttemptKey, launcher artisan.Identity) string {
 	sum := sha256.Sum256([]byte(k.String() + "\n" + strconv.Itoa(launcher.PID) + "\n" + launcher.Token))
 	return hex.EncodeToString(sum[:16])
+}
+
+// storedOutcome is attempt k's store outcome, empty when it has none or cannot be read.
+func storedOutcome(s *store.Store, k artisan.AttemptKey) store.AttemptOutcome {
+	attempts, _ := s.Attempts(k.Repository, k.TaskID)
+	for _, at := range attempts {
+		if at.Step == k.Step && at.Number == k.Attempt {
+			return at.Outcome
+		}
+	}
+	return ""
 }
 
 // ProbeOwner is the containment-aware take-over probe: alive while the

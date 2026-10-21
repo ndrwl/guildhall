@@ -68,7 +68,9 @@ var (
 // and Windows.
 const MaxEndpointPath = maxEndpointPath
 
-// AttemptKey names one stage attempt as the store keys it.
+// AttemptKey names one stage attempt as the store keys it. It owns the
+// attempt layout: the interpreter prepares Dir and the launcher runs in it,
+// and neither spells the layout itself.
 type AttemptKey struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
@@ -80,6 +82,17 @@ type AttemptKey struct {
 // because ids cannot contain "/".
 func (k AttemptKey) String() string {
 	return fmt.Sprintf("%s/%s/%s/%d", k.Repository, k.TaskID, k.Step, k.Attempt)
+}
+
+// AttemptID returns "<step>-<n>", the attempt's adapter identity within its
+// task and its directory's name.
+func (k AttemptKey) AttemptID() string { return fmt.Sprintf("%s-%d", k.Step, k.Attempt) }
+
+// Dir returns the attempt directory under the absolute state directory
+// stateDir: "<stateDir>/<repository>/<task>/<step>-<n>". Its result file is
+// ResultFile in it.
+func (k AttemptKey) Dir(stateDir string) string {
+	return filepath.Join(stateDir, k.Repository, k.TaskID, k.AttemptID())
 }
 
 func (k AttemptKey) validate() error {

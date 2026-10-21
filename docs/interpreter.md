@@ -3,7 +3,7 @@
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
 It follows `changes_requested` loop rules with their `max`, asks the Guildmaster at a loop's exit and checks the review gate before `deliver`; the checks gate, `publish`, `validate`, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
-Nothing on the command line calls the engine yet: result intake, launch and the watcher are later work.
+[`task start` and `step done`](running.md) run it from the command line; the per-task watcher is later work.
 
 ## Seams
 
@@ -12,7 +12,7 @@ The engine consumes five narrow interfaces, declared in `internal/interp` beside
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
 | `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
-| `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | none yet | `interptest.Script` | `interptest.RunLauncherContract` |
+| `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
@@ -41,7 +41,7 @@ There is no seam: like `launched.json` and `result.json`, the file is read from 
 | Event | Validated against the records | Recorded |
 |---|---|---|
 | `task-created` | The task exists and is open. | Nothing by itself. |
-| `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. |
+| `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. When its launcher already recorded the outcome, that outcome stands, and a succeeded one has its outputs recorded by the next advance, whatever its event. |
 | `decision-answered` | The named decision exists and is answered. | Nothing by itself: the answer is already recorded. |
 
 Any other event, or one that does not match the records, is refused with `ErrEvent` and changes nothing.
@@ -174,8 +174,11 @@ Once `Launch` returns, the engine marks the attempt directory with `launched.jso
 An attempt recorded but neither marked launched nor holding a result is launched again with the same identity from its published preparation, never recorded again and never rendered again once prepared.
 A lost acknowledgement, or a crash after `Launch` returns but before the mark, relaunches the same identity with the same files; refusing a live duplicate belongs to the launcher's ownership record.
 An attempt's binding is recorded before the attempt, and a relaunch uses the recorded binding, so a replayed launch is given exactly the inputs of the first.
-A blocking result's stall message is sent before its attempt is finished, and a Guildmaster's answer is recorded as a document before the attempt it feeds, so a repeat completes both.
-`Advance` is not safe for concurrent use on one task; the store's single writer serialises processes.
+Result intake publishes `intake.json` atomically in the attempt directory only after every output document, ruling contest and stall notification succeeds and the attempt outcome is recorded or reconciled.
+A launcher-recorded success without this marker replays the intake operations idempotently; the first output document alone is not completion evidence.
+If the launcher concurrently records the same outcome, intake treats it as replay; a different persisted outcome stands and the advance reports an error.
+A Guildmaster's answer is recorded as a document before the attempt it feeds, so a repeat completes it.
+`Advance` is not safe for concurrent use on one task; callers must serialise whole advances, as the [CLI's task lock](running.md#what-an-advance-runs-over) does.
 
 ### Attempt preparation
 

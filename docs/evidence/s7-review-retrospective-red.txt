@@ -1,0 +1,154 @@
+go version go1.27.2 linux/amd64
+linux
+amd64
+Retrospective pre-fix production: 05b9d858747331add6ce56fac7f36936c7cdc2b4; corrected tests: 6cd47d5380b9e8800d9676884e24dc050f47787a
+=== RUN   TestProcessDuplicateLeavesOwnerRunning
+    process_test.go:140: duplicate launch released the original owner
+--- FAIL: TestProcessDuplicateLeavesOwnerRunning (3.24s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	3.246s
+=== RUN   TestInterruptedLauncherIntake
+=== RUN   TestInterruptedLauncherIntake/double
+    launcher_outcome_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    launcher_outcome_test.go:75: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    launcher_outcome_test.go:75: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    launcher_outcome_test.go:78: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    launcher_outcome_test.go:79: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    launcher_outcome_test.go:79: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    launcher_outcome_test.go:80: second output lost on recovery
+=== RUN   TestInterruptedLauncherIntake/store
+    launcher_outcome_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    launcher_outcome_test.go:75: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    launcher_outcome_test.go:75: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    launcher_outcome_test.go:78: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    launcher_outcome_test.go:79: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    launcher_outcome_test.go:79: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    launcher_outcome_test.go:80: second output lost on recovery
+--- FAIL: TestInterruptedLauncherIntake (0.12s)
+    --- FAIL: TestInterruptedLauncherIntake/double (0.02s)
+    --- FAIL: TestInterruptedLauncherIntake/store (0.10s)
+=== RUN   TestInterpreterFinishRace
+=== RUN   TestInterpreterFinishRace/double/succeeded
+    launcher_outcome_test.go:91: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    launcher_outcome_test.go:96: same outcome: {Wait: Step: Attempt:0 Decision:}, interp: records: finish-attempt attempt-finish:app:t7:plan:1: invalid store request: attempt 1 of step "plan" already finished
+=== RUN   TestInterpreterFinishRace/double/stopped
+    launcher_outcome_test.go:91: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+=== RUN   TestInterpreterFinishRace/double/failed
+    launcher_outcome_test.go:91: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+=== RUN   TestInterpreterFinishRace/store/succeeded
+    launcher_outcome_test.go:91: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    launcher_outcome_test.go:96: same outcome: {Wait: Step: Attempt:0 Decision:}, interp: store: finish-attempt attempt-finish:app:t7:plan:1: store: invalid store request: attempt 1 of step "plan" already finished: succeeded
+=== RUN   TestInterpreterFinishRace/store/stopped
+    launcher_outcome_test.go:91: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+=== RUN   TestInterpreterFinishRace/store/failed
+    launcher_outcome_test.go:91: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+--- FAIL: TestInterpreterFinishRace (0.29s)
+    --- FAIL: TestInterpreterFinishRace/double/succeeded (0.02s)
+    --- PASS: TestInterpreterFinishRace/double/stopped (0.02s)
+    --- PASS: TestInterpreterFinishRace/double/failed (0.02s)
+    --- FAIL: TestInterpreterFinishRace/store/succeeded (0.08s)
+    --- PASS: TestInterpreterFinishRace/store/stopped (0.08s)
+    --- PASS: TestInterpreterFinishRace/store/failed (0.08s)
+=== RUN   TestStallSignals
+=== RUN   TestStallSignals/double
+    loops_test.go:279: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    loops_test.go:279: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    loops_test.go:279: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1}) => {Wait:attempt Step:build Attempt:1 Decision:}
+    loops_test.go:280: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+    loops_test.go:281: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+    loops_test.go:283: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+    loops_test.go:291: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:attempt Step:build Attempt:3 Decision:}
+    loops_test.go:295: stall message after round 2 = "" (inbox map[app.t7.decision.accept-1:Decision accept-1 is open for step accept: approval])
+    script.go:165: mock agent: 2 expected launches never happened: review, build
+=== RUN   TestStallSignals/store
+    loops_test.go:279: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    loops_test.go:279: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    loops_test.go:279: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1}) => {Wait:attempt Step:build Attempt:1 Decision:}
+    loops_test.go:280: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+    loops_test.go:281: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+    loops_test.go:283: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+    loops_test.go:291: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:attempt Step:build Attempt:3 Decision:}
+    loops_test.go:295: stall message after round 2 = "" (inbox map[app.t7.decision.accept-1:Decision accept-1 is open for step accept: approval])
+    script.go:165: mock agent: 2 expected launches never happened: review, build
+--- FAIL: TestStallSignals (0.37s)
+    --- FAIL: TestStallSignals/double (0.08s)
+    --- FAIL: TestStallSignals/store (0.28s)
+=== RUN   TestDirectorRulings
+=== RUN   TestDirectorRulings/withdrawn/double
+    rulings_test.go:51: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    rulings_test.go:51: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    rulings_test.go:51: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1}) => {Wait:attempt Step:build Attempt:1 Decision:}
+    rulings_test.go:52: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+    rulings_test.go:53: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:8e4b96d879056d572b0c415d7e583649a3e59621197daf785aae7ca9b938304e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:9b6a3834dfe976a52aeee72d4af18655e56dd51e638898e2b623e94c71253c1c Review:0x974929cbbc0}
+    rulings_test.go:60: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+    rulings_test.go:71: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+    rulings_test.go:71: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+=== RUN   TestDirectorRulings/withdrawn/store
+    rulings_test.go:51: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    rulings_test.go:51: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    rulings_test.go:51: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1}) => {Wait:attempt Step:build Attempt:1 Decision:}
+    rulings_test.go:52: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+    rulings_test.go:53: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:8e4b96d879056d572b0c415d7e583649a3e59621197daf785aae7ca9b938304e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:9b6a3834dfe976a52aeee72d4af18655e56dd51e638898e2b623e94c71253c1c Review:0x97492b41e90}
+    rulings_test.go:60: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+    rulings_test.go:71: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+    rulings_test.go:71: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+=== RUN   TestDirectorRulings/contested/double
+    rulings_test.go:51: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    rulings_test.go:51: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    rulings_test.go:51: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1}) => {Wait:attempt Step:build Attempt:1 Decision:}
+    rulings_test.go:52: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+    rulings_test.go:53: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:8e4b96d879056d572b0c415d7e583649a3e59621197daf785aae7ca9b938304e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:9b6a3834dfe976a52aeee72d4af18655e56dd51e638898e2b623e94c71253c1c Review:0x974928d0720}
+    rulings_test.go:60: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+    rulings_test.go:71: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:attempt Step:build Attempt:3 Decision:}
+    rulings_test.go:71: next = {Wait:attempt Step:build Attempt:3 Decision:}, want {Wait:decision Step:review Attempt:0 Decision:review-x2}
+=== RUN   TestDirectorRulings/contested/store
+    rulings_test.go:51: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    rulings_test.go:51: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+    rulings_test.go:51: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1}) => {Wait:attempt Step:build Attempt:1 Decision:}
+    rulings_test.go:52: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+    rulings_test.go:53: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:8e4b96d879056d572b0c415d7e583649a3e59621197daf785aae7ca9b938304e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+    rulings_test.go:54: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:9b6a3834dfe976a52aeee72d4af18655e56dd51e638898e2b623e94c71253c1c Review:0x974929acf90}
+    rulings_test.go:60: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+    rulings_test.go:71: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision:}) => {Wait:attempt Step:build Attempt:3 Decision:}
+    rulings_test.go:71: next = {Wait:attempt Step:build Attempt:3 Decision:}, want {Wait:decision Step:review Attempt:0 Decision:review-x2}
+--- FAIL: TestDirectorRulings (0.79s)
+    --- PASS: TestDirectorRulings/withdrawn/double (0.08s)
+    --- PASS: TestDirectorRulings/withdrawn/store (0.31s)
+    --- FAIL: TestDirectorRulings/contested/double (0.11s)
+    --- FAIL: TestDirectorRulings/contested/store (0.28s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	1.564s
+FAIL
+
+Exit status: 1

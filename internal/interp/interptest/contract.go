@@ -110,6 +110,11 @@ func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			if r.Identity != spec.Identity || r.Status != tc.want {
 				t.Errorf("result = %+v, want status %s for %+v", r, tc.want, spec.Identity)
 			}
+			// A readable result does not mean the launcher has finished writing
+			// its outcome and heartbeat files. Stop joins it before checking cleanup.
+			if err := h.Launcher.Stop(hd); err != nil {
+				t.Fatalf("Stop after finishing = %v, want nil", err)
+			}
 			entries, err := os.ReadDir(filepath.Dir(spec.ResultFile))
 			if err != nil {
 				t.Fatal(err)
@@ -118,9 +123,6 @@ func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 				if strings.HasSuffix(e.Name(), ".tmp") {
 					t.Errorf("temporary file %s left beside the result", e.Name())
 				}
-			}
-			if err := h.Launcher.Stop(hd); err != nil {
-				t.Errorf("Stop after finishing = %v, want nil", err)
 			}
 		})
 	}
@@ -140,8 +142,12 @@ func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 				t.Fatalf("Stop %d = %v", i+1, err)
 			}
 		}
-		if _, err := wait(spec, 300*time.Millisecond); !errors.Is(err, adapter.ErrNoResultYet) {
-			t.Errorf("WaitResult after Stop = %v, want ErrNoResultYet", err)
+		// A launcher that marks the attempt cancelled (docs/adapters.md) makes the wait refuse it instead.
+		if _, err := wait(spec, 300*time.Millisecond); !errors.Is(err, adapter.ErrNoResultYet) && !errors.Is(err, adapter.ErrAttemptCancelled) {
+			t.Errorf("WaitResult after Stop = %v, want ErrNoResultYet or ErrAttemptCancelled", err)
+		}
+		if _, err := os.Stat(spec.ResultFile); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("a stopped attempt left a result: %v", err)
 		}
 	})
 

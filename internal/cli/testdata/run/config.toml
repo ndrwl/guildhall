@@ -1,0 +1,15 @@
+# The Director the task start and step done tests run: one repository on a
+# workflow whose Artisan stages are the fake adapter.
+schema_version = 1
+mode = "director"
+name = "alpha"
+
+[local]
+standards_revision = "standards-1"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+workflow = "fake-straight"

@@ -9,7 +9,7 @@ Agent-agnostic local engineering workflows, shared tooling and fleet setup.
 Guildhall is at its foundation stage: it builds and runs, but no platform or agent runtime is supported for real work yet.
 The specification is in `docs/requirements.md`.
 
-The current foundation provides configuration and workflow parsing and validation, the durable record store and a local message inbox on it, and the Steward's managed-settings rollouts, not a runnable Director or workflow executor.
+The current foundation provides configuration and workflow parsing and validation, the durable record store and a local message inbox on it, the Steward's managed-settings rollouts, and manual task advances with the fake adapter, but not a runnable Director.
 See [configuration and workflows](docs/configuration.md) for the format, examples and library usage, and [Steward rollouts](docs/steward.md) for rollouts.
 
 ## What the badges mean
@@ -106,7 +106,7 @@ flowchart TB
     INTERP --> RENDER
     INSP --> STORE
     MSG --- STORE
-    INTERP -. "not yet wired" .-> WRAP
+    INTERP --> WRAP
     WRAP --> ADAPT
     ADAPT --> RT
     WRAP -.-> EXEC
@@ -144,7 +144,7 @@ flowchart LR
 ```
 
 A repository can have the Guildmaster review instead of an Artisan without changing any other repository; see [configuration and workflows](docs/configuration.md).
-The [workflow interpreter](docs/interpreter.md) executes a supported subset as a Go library; no command runs a workflow yet.
+The [workflow interpreter](docs/interpreter.md) executes a supported subset; see [running a task](docs/running.md) for command-line advances and their current limits.
 
 ## Build
 
@@ -171,6 +171,7 @@ Each command is described in its own page; a new command adds its page and one l
 - `guildhall render <request.json>` renders a prompt with embedded release skills first; see [prompt rendering](docs/rendering.md).
 - `guildhall artisan run|stop|status|resume` runs, stops, classifies and resumes one owned Artisan attempt with the test-only fake adapter, and `guildhall fake-artisan` is that adapter; see [Artisan commands](docs/artisan.md#commands).
 - `guildhall task new|show|list|timeline|files|finding rule|review` creates and inspects tasks and records the Director's rulings on review findings and full-review requests, without launching anything; see [tasks](docs/tasks.md).
+- `guildhall task start` and `guildhall step done` advance a task through its workflow, launching each Artisan stage as an owned attempt; see [running a task](docs/running.md).
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.
 
@@ -271,6 +272,7 @@ sequenceDiagram
 - `docs/messaging.md`: the local Director and Artisan message inbox.
 - `docs/adapters.md`: the Artisan adapter contract, result file and Herdr access.
 - `docs/tasks.md`: creating Director tasks and the workflow and configuration they bind.
+- `docs/running.md`: advancing a task with `task start` and `step done`.
 - `docs/rendering.md`: Artisan prompts, skills, their manifest and Guildmaster questions.
 - `docs/artisan.md`: the Artisan launcher's process identity, containment, control endpoint, stop ladder, heartbeat, reconcile classification and commands.
 - `docs/glossary.md`: terms several packages use with different meanings.
