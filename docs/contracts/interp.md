@@ -23,7 +23,8 @@ Its integration case launches the test binary as a child that reads its copied i
 `history_test.go` (new, red first against the engine before the view existed): the name parser, exit ordering with interleaved rounds and exits, numeric step suffixes, missing and corrupt originating history and reads after each write; the existing exit-ordering assertions are preserved, adapted to the history view.
 `TestRoundTraceThreeReviews` also runs with step ids `review`, `review-2` and `review-x2`; that variant pins behaviour the old parser already had.
 `history_replay_test.go`: `TestReplayAfterEachWrite` fails each record write of a loop that continues once and is accepted at its second exit, before and after the write commits, against `interptest.Records`; against the real store it fails only the first write of each category.
-`TestReplaySampleCoversEveryWriteKind` checks that the executed flow includes all five required categories: attempt start, document put, decision open, decision answer (a write while applying an answered decision), and attempt finish.
+The flow requests a full review before review 2 and checks that exactly one request remains consumed by `review-2` with round scope `full`, including after failures before and after consumption commits.
+`TestReplaySampleCoversEveryWriteKind` checks that the executed flow includes every category in `writeKinds` in `history_replay_test.go`, including full-review consumption.
 Store durability remains covered by the [store contract tests](store.md#tests).
 Repeating the advance must end with the records, launch count and wait of a run without a failure.
 `TestRecordsContract` runs the shared `Records` suite against `*store.Store` and `interptest.Records`; its rulings case (listing, contesting once, an unknown ruling) was written with the double and passed on its first run against the store, which already implemented it.
