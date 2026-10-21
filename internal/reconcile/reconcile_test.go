@@ -316,6 +316,15 @@ func launch(t *testing.T, lastOutput func() time.Time, prepare func(dir string))
 	return c
 }
 
+// beating waits until the launcher runs and has written a heartbeat, so a
+// later wedge or suspension stops beats rather than preventing the first.
+func (c *live) beating(t *testing.T) {
+	t.Helper()
+	for cl := await(t, c.dir, c.owner, reconcile.Running); cl.Heartbeat == nil; cl = await(t, c.dir, c.owner, reconcile.Running) {
+		time.Sleep(beat)
+	}
+}
+
 // ownedStore is a real store holding the attempt with c's owner.
 func ownedStore(t *testing.T, c *live) *store.Store {
 	t.Helper()
@@ -340,7 +349,7 @@ func ownedStore(t *testing.T, c *live) *store.Store {
 func TestHeartbeat(t *testing.T) {
 	t.Run("a wedged launcher is stuck while its identity and endpoint live", func(t *testing.T) {
 		c := launch(t, nil, nil)
-		await(t, c.dir, c.owner, reconcile.Running)
+		c.beating(t)
 		c.files.shut.Store(true)
 		cl := await(t, c.dir, c.owner, reconcile.Stuck)
 		if cl.Launcher != "alive" || cl.Heartbeat == nil || cl.HeartbeatAge <= stale {
@@ -378,7 +387,7 @@ func TestHeartbeat(t *testing.T) {
 			}
 			return time.Time{}
 		}, nil)
-		await(t, c.dir, c.owner, reconcile.Running)
+		c.beating(t)
 		s := ownedStore(t, c)
 		hold.Store(true)
 		await(t, c.dir, c.owner, reconcile.Stuck)
