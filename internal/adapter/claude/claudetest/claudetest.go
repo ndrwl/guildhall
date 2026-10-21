@@ -23,10 +23,14 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/interp"
 )
 
 // Directive starts the prompt line that chooses the stub's behaviour.
 const Directive = "claude-stub:"
+
+// Summary is the summary of every result the stub writes.
+const Summary = "The stub did the task."
 
 // HangLimit bounds how long a hanging stub works when nothing stops it.
 const HangLimit = 2 * time.Minute
@@ -43,7 +47,8 @@ func Prompt(b adaptertest.Behaviour) string {
 }
 
 // Install puts the stub on PATH as `claude` for t and its child processes,
-// ahead of any real Claude Code.
+// ahead of any real Claude Code, and names it in interp.ClaudeStubEnv so the
+// interpreter's test-binary guard admits the claude adapter.
 func Install(t *testing.T) {
 	t.Helper()
 	exe, err := os.Executable()
@@ -62,6 +67,7 @@ func Install(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(interp.ClaudeStubEnv, dst)
 }
 
 func copyFile(src, dst string) error {
@@ -152,7 +158,7 @@ func stub(args []string) error {
 	result := map[string]any{
 		"schema": adapter.ResultSchema, "version": adapter.ResultVersion,
 		"task_id": id.TaskID, "attempt_id": id.AttemptID,
-		"status": "succeeded", "summary": "The stub did the task.", "outputs": []any{},
+		"status": "succeeded", "summary": Summary, "outputs": []any{},
 	}
 	switch b {
 	case adaptertest.Succeed, adaptertest.ExitErrorAfterResult:

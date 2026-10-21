@@ -352,7 +352,8 @@ The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s)
 
 `guildhall artisan start`, `stop`, `status` and `resume` name an owned attempt with `--store <file> --state <dir> --repository <id> --task <id> --step <id> --attempt <n>`.
 The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
-`artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`) for both.
+`artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`, `ModelDir`) for both.
+`model` in the attempt directory is the only part a model-run Artisan may write, holding the copy of its prompt and its draft result, which its wrapper publishes as `result.json`; the result, its cancel marker, `outcome.json`, the lock, the events file and `launcher.log` are never in it.
 They are the composition package `internal/launch`, whose [doc comments](../internal/launch/launch.go) own the API contract.
 
 With those identity flags, `artisan start --adapter fake|claude --prompt <file> --workdir <dir>` runs an attempt the store already records as running; it does not create or begin a store attempt.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -22,8 +23,14 @@ type runDirector struct {
 
 func newRunDirector(t *testing.T) runDirector {
 	t.Helper()
+	return newRunDirectorWith(t, "config.toml")
+}
+
+// newRunDirectorWith is newRunDirector with the config file name in testdata/run.
+func newRunDirectorWith(t *testing.T, config string) runDirector {
+	t.Helper()
 	t.Setenv(roleEnv, "guildhall")
-	cfg, err := filepath.Abs(filepath.Join("testdata", "run", "config.toml"))
+	cfg, err := filepath.Abs(filepath.Join("testdata", "run", config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +144,23 @@ func TestTaskStartAndStepDone(t *testing.T) {
 	// The answer alone advances nothing; start with the decision does.
 	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...); code != 1 || !strings.Contains(stderr, "not answered") {
 		t.Errorf("start on an unanswered decision: exit %d, stderr %s", code, stderr)
+	}
+}
+
+// TestTaskStartLaunchesClaude: a profile naming the claude adapter makes task start launch the attempt
+// through launch.Process as an owned claude attempt, over the stub Claude Code, whose draft the
+// wrapper publishes as the attempt's result.
+func TestTaskStartLaunchesClaude(t *testing.T) {
+	claudetest.Install(t)
+	d := newRunDirectorWith(t, "claude.toml")
+	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitResult(t, "plan", 1)
+	r, err := adapter.ReadResult(d.result("plan", 1), adapter.Identity{TaskID: "t-1", AttemptID: "plan-1"})
+	if err != nil || r.Summary != claudetest.Summary {
+		t.Errorf("plan-1 result %+v, %v; want the stub Claude's", r, err)
 	}
 }
 

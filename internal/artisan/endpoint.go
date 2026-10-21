@@ -90,10 +90,17 @@ func (k AttemptKey) AttemptID() string { return fmt.Sprintf("%s-%d", k.Step, k.A
 
 // Dir returns the attempt directory under the absolute state directory
 // stateDir: "<stateDir>/<repository>/<task>/<step>-<n>". Its result file is
-// ResultFile in it.
+// ResultFile in it, and ModelDir in it is the only part a model may write.
 func (k AttemptKey) Dir(stateDir string) string {
 	return filepath.Join(stateDir, k.Repository, k.TaskID, k.AttemptID())
 }
+
+// ModelDir is the subdirectory of the attempt directory a model-run Artisan
+// may write: the copy of its prompt it reads and the draft result it writes,
+// which its wrapper publishes as ResultFile. The attempt's control files,
+// ResultFile, its cancel marker, OutcomeFile, LockFile, EventsFile and the
+// launcher's log, are never in it.
+const ModelDir = "model"
 
 func (k AttemptKey) validate() error {
 	for _, id := range []string{k.Repository, k.TaskID, k.Step} {

@@ -23,6 +23,7 @@ It returns the prompt manifest as JSON, retains the rendered attempt, removes th
 `render_test.go` checks malformed settings are refused before installation or attempt creation.
 
 `advance_test.go` runs task app/t-1 over `testdata/run` (the fake-straight workflow, whose stage guides carry the fake adapter's directives) with the test binary playing every launcher: `TestTaskStartAndStepDone` and `TestStepDoneRefusesAResultItDoesNotTake` were written red first against a stub advance and failed with it; `TestTaskStartAndStepDoneUsage` passed against the stub, whose flag checks were already written.
+`TestTaskStartLaunchesClaude` runs `testdata/run/claude.toml`, whose claude-straight workflow runs its plan by a profile naming `claude`, through `launch.Process` over the stub Claude Code.
 Each test's cleanup proves every attempt's launcher stopped with `artisan stop`.
 `TestTaskUsageErrors` used `task start` as its unknown subcommand; it now uses `task frobnicate`, because `task start` is an accepted command.
 

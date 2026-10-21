@@ -97,17 +97,18 @@ The Claude adapter runs one attempt as a non-interactive Claude Code session, wi
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
-claude --print <instruction> --permission-mode acceptEdits --add-dir <prompt directory> [<result directory>]
+claude --print <instruction> --permission-mode acceptEdits --add-dir <model directory>
 ```
 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
-- The instruction names the prompt file and a draft result file, `<result>.draft`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
-- `acceptEdits` lets Claude edit files in the working directory and the added directories; every other tool that needs permission, such as shell commands, is denied, because a print-mode session has no one to ask.
+- The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
+- The instruction names the prompt copy and a draft result file, `model/result.json`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
+- `acceptEdits` lets Claude edit files in the working directory and the model directory; every other tool that needs permission, such as shell commands, is denied, because a print-mode session has no one to ask.
 - Claude gets no standard input; its output goes to the wrapper's.
 
 The wrapper keeps the result protocol, not the model:
 
-- it refuses to start, starting nothing, when the result file exists or the attempt is cancelled, and removes a stale draft first;
+- it refuses to start, starting nothing, when the result file exists or the attempt is cancelled, and a prompt inside the model directory is refused, since replacing the directory removes any stale draft;
 - once Claude exits it publishes the draft's bytes at the result file by a hard link, never replacing a result; it does not validate them, so a malformed or misidentified draft is rejected by the reader like any other result, and no draft means no result;
 - the cancel marker, an interrupt or the end of its context asks Claude to stop (an interrupt on Unix, termination on Windows), kills it after 10 seconds, and publishes nothing; so the owned launcher's stop ends at rung 1;
 - Claude's exit status does not decide completion: a failing exit after a published draft is still reported.
@@ -122,6 +123,7 @@ The suite makes no model calls; a runtime proves each behaviour through prompts 
 
 The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the reference mapping the suite uses; production launch builds its own spec today.
 The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names and plays the behaviour a `claude-stub:` prompt line asks for, with no model call.
+Inside a test binary the interpreter's adapter guard admits `claude` only while `claude` on `PATH` is the stub `claudetest.Install` names in `GUILDHALL_TEST_CLAUDE_STUB`, so `task start` runs a profile naming `claude` over the stub and never a real Claude Code.
 `TestLiveClaude` runs one real session instead when `GUILDHALL_CLAUDE_LIVE=1` is set; CI never sets it:
 
 ```sh

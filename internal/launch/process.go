@@ -22,7 +22,7 @@ const LogFile = "launcher.log"
 
 // Adapters are the runtime adapters `artisan start` runs as an owned
 // attempt, so the ones Process launches.
-var Adapters = []string{interp.FakeAdapter, "claude"}
+var Adapters = []string{interp.FakeAdapter, interp.ClaudeAdapter}
 
 // Process is the real interp.Launcher: it runs each attempt as its own
 // `guildhall artisan start` process, the attempt's owned launcher (Run),

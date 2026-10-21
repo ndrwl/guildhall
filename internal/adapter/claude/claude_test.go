@@ -181,6 +181,7 @@ func TestParseArgsRefuses(t *testing.T) {
 		"extra argument":   append(slices.Clone(good), "more"),
 		"unknown flag":     append(slices.Clone(good), "--model", "x"),
 		"relative program": append(slices.Clone(good), "--claude", "bin/claude"),
+		"prompt in model":  {"--task", "task-1", "--attempt", "attempt-1", "--prompt", claude.PromptCopy(spec.ResultFile), "--result", spec.ResultFile},
 	} {
 		if _, err := claude.ParseArgs(argv); err == nil {
 			t.Errorf("%s: ParseArgs(%q) accepted", name, argv)
@@ -196,13 +197,17 @@ func TestClaudeArgs(t *testing.T) {
 	spec := testSpec(t)
 	a := args(spec)
 	got := claude.ClaudeArgs(a)
-	want := []string{"--print", claude.Instruction(a), "--permission-mode", claude.PermissionMode, "--add-dir", filepath.Dir(spec.PromptFile)}
+	model := filepath.Join(filepath.Dir(spec.ResultFile), artisan.ModelDir)
+	want := []string{"--print", claude.Instruction(a), "--permission-mode", claude.PermissionMode, "--add-dir", model}
 	if !slices.Equal(got, want) {
 		t.Errorf("ClaudeArgs = %q, want %q", got, want)
 	}
+	if claude.PromptCopy(spec.ResultFile) != filepath.Join(model, "prompt.md") || claude.DraftFile(spec.ResultFile) != filepath.Join(model, artisan.ResultFile) {
+		t.Errorf("prompt copy %s and draft %s; want both in %s", claude.PromptCopy(spec.ResultFile), claude.DraftFile(spec.ResultFile), model)
+	}
 	in := claude.Instruction(a)
 	for _, s := range []string{
-		claudetest.PromptLine + spec.PromptFile + "\n",
+		claudetest.PromptLine + claude.PromptCopy(spec.ResultFile) + "\n",
 		claudetest.DraftLine + claude.DraftFile(spec.ResultFile) + "\n",
 		`"schema":"guildhall.artisan-result"`, `"version":1`, `"task_id":"task-1"`, `"attempt_id":"attempt-1"`,
 		`"succeeded"`, `"failed"`, "outputs",
@@ -211,13 +216,31 @@ func TestClaudeArgs(t *testing.T) {
 			t.Errorf("Instruction lacks %q:\n%s", s, in)
 		}
 	}
-	if strings.Contains(in, spec.ResultFile+"\n") {
-		t.Errorf("Instruction names the result file itself, which only the wrapper writes:\n%s", in)
+	if strings.Contains(in, spec.ResultFile+"\n") || strings.Contains(in, spec.PromptFile+"\n") {
+		t.Errorf("Instruction names the result or prompt file itself, outside the model directory:\n%s", in)
 	}
-	other := a
-	other.ResultFile = filepath.Join(t.TempDir(), "result.json")
-	if got := claude.ClaudeArgs(other); len(got) < 2 || !slices.Equal(got[len(got)-2:], []string{filepath.Dir(spec.PromptFile), filepath.Dir(other.ResultFile)}) {
-		t.Errorf("ClaudeArgs with separate result directory = %q; want both directories added", got)
+}
+
+// TestModelDirExcludesControlFiles: the only directory Claude may write
+// beyond its working directory holds none of the attempt's control files, so
+// the model cannot write the result, the outcome or the cancel marker, nor
+// touch the launcher's lock, events or log.
+func TestModelDirExcludesControlFiles(t *testing.T) {
+	spec := interptest.AdapterSpec(t, interp.FakeAdapter, "Do the task.\n")
+	got := claude.ClaudeArgs(args(spec))
+	i := slices.Index(got, "--add-dir")
+	if i < 0 || i+1 >= len(got) {
+		t.Fatalf("ClaudeArgs = %q; want --add-dir and its directories", got)
+	}
+	added := got[i+1:]
+	attempt := filepath.Dir(spec.ResultFile)
+	for _, f := range []string{artisan.ResultFile, artisan.ResultFile + ".cancelled", artisan.OutcomeFile, artisan.LockFile, artisan.EventsFile, launch.LogFile} {
+		path := filepath.Join(attempt, f)
+		for _, d := range added {
+			if rel, err := filepath.Rel(d, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				t.Errorf("Claude may write %s: it is inside the added directory %s", path, d)
+			}
+		}
 	}
 }
 
@@ -258,12 +281,16 @@ func TestRunRefusesWithoutStartingClaude(t *testing.T) {
 	})
 }
 
-// TestRunDraftHandling: a stale draft is never published, and a draft whose
-// result already appeared is not published over it.
+// TestRunDraftHandling: a stale draft is never published, and a draft is
+// published once from a model directory holding the prompt copy and the
+// inputs and skills beside the prompt.
 func TestRunDraftHandling(t *testing.T) {
 	claudetest.Install(t)
 	t.Run("stale draft removed", func(t *testing.T) {
 		spec := testSpec(t)
+		if err := os.MkdirAll(claude.ModelDir(spec.ResultFile), 0o700); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(claude.DraftFile(spec.ResultFile), []byte("stale"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -278,13 +305,21 @@ func TestRunDraftHandling(t *testing.T) {
 		}
 	})
 	t.Run("published once", func(t *testing.T) {
-		spec := testSpec(t)
+		spec := interptest.AdapterSpec(t, interp.FakeAdapter, "Do the task.\n")
 		if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
 			t.Fatal(err)
 		}
 		r, err := adapter.ReadResult(spec.ResultFile, spec.Identity)
 		if err != nil || r.Status != adapter.StatusSucceeded {
 			t.Errorf("ReadResult = %+v, %v", r, err)
+		}
+		model := claude.ModelDir(spec.ResultFile)
+		for _, name := range []string{"inputs", "skills"} {
+			want, _ := os.ReadDir(filepath.Join(filepath.Dir(spec.PromptFile), name))
+			got, err := os.ReadDir(filepath.Join(model, name))
+			if err != nil || len(got) != len(want) {
+				t.Errorf("model directory %s: %d entries, %v; want the %d beside the prompt", name, len(got), err, len(want))
+			}
 		}
 	})
 }

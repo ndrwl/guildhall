@@ -3,7 +3,9 @@
 //
 // The adapter's command is `guildhall claude-artisan`, a wrapper that runs
 // `claude --print` in the attempt's working directory with an instruction
-// naming the prompt file and a draft result file, then publishes the draft as
+// naming a copy of the prompt file and a draft result file, both in the model
+// directory beside the result file (artisan.ModelDir), the only directory
+// Claude may write besides the working directory, then publishes the draft as
 // the attempt's result file exactly once. The wrapper, not the model, keeps the
 // result protocol of docs/adapters.md: it refuses to start when the result
 // file exists or the attempt is cancelled, never replaces a result, honours
@@ -31,6 +33,8 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/render"
 )
 
 // Subcommand is the guildhall subcommand that runs the Claude wrapper.
@@ -41,14 +45,10 @@ const Subcommand = "claude-artisan"
 const Program = "claude"
 
 // PermissionMode is the Claude Code permission mode of every attempt: file
-// edits are allowed in the working directory and the prompt and result
-// directories, and every other tool needing permission is denied, since a
-// non-interactive session has no one to ask.
+// edits are allowed in the working directory and the model directory, and
+// every other tool needing permission is denied, since a non-interactive
+// session has no one to ask.
 const PermissionMode = "acceptEdits"
-
-// DraftSuffix is appended to the result file's path to name the draft Claude
-// writes; the wrapper publishes it as the result.
-const DraftSuffix = ".draft"
 
 // StopGrace is how long the wrapper waits for Claude to exit after asking it
 // to stop before killing it.
@@ -99,7 +99,8 @@ type Args struct {
 }
 
 // ParseArgs parses `--task --attempt --prompt --result [--claude]`; every
-// path must be absolute and the prompt and result files must differ.
+// path must be absolute, the prompt and result files must differ and the
+// prompt must not be in the model directory, which every run replaces.
 func ParseArgs(argv []string) (Args, error) {
 	fs := flag.NewFlagSet(Subcommand, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -130,14 +131,32 @@ func ParseArgs(argv []string) (Args, error) {
 	if filepath.Clean(a.PromptFile) == filepath.Clean(a.ResultFile) {
 		return Args{}, errors.New("--prompt and --result must differ")
 	}
+	if rel, err := filepath.Rel(ModelDir(a.ResultFile), a.PromptFile); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return Args{}, fmt.Errorf("--prompt must not be in the model directory %s", ModelDir(a.ResultFile))
+	}
 	return a, nil
 }
 
-// DraftFile is the draft result Claude writes for the result file result.
-func DraftFile(result string) string { return result + DraftSuffix }
+// ModelDir is the directory Claude may write besides the working directory
+// for the result file result: artisan.ModelDir beside it.
+func ModelDir(result string) string {
+	return filepath.Join(filepath.Dir(result), artisan.ModelDir)
+}
+
+// DraftFile is the draft result Claude writes in the model directory for the
+// result file result.
+func DraftFile(result string) string {
+	return filepath.Join(ModelDir(result), artisan.ResultFile)
+}
+
+// PromptCopy is the copy of the prompt file Claude reads in the model
+// directory for the result file result.
+func PromptCopy(result string) string {
+	return filepath.Join(ModelDir(result), render.PromptFile)
+}
 
 // Instruction is the prompt Claude Code is given for attempt a: read and
-// follow the prompt file, then write the version 1 result for a's identity to
+// follow the prompt copy, then write the version 1 result for a's identity to
 // the draft file, once, as the last action.
 func Instruction(a Args) string {
 	tmpl, _ := json.Marshal(struct {
@@ -153,7 +172,7 @@ func Instruction(a Args) string {
 		fmt.Sprintf("You are a Guildhall Artisan working on task %s, attempt %s, in the current directory.", a.TaskID, a.AttemptID),
 		"Read the prompt file below and follow it; the inputs and skills directories it names are beside it.",
 		"",
-		"Prompt file: " + a.PromptFile,
+		"Prompt file: " + PromptCopy(a.ResultFile),
 		"Result file: " + DraftFile(a.ResultFile),
 		"",
 		"When you have finished, or cannot go on, write your result to the result file above, once, as your last action, and nowhere else.",
@@ -167,14 +186,10 @@ func Instruction(a Args) string {
 }
 
 // ClaudeArgs are the arguments after the program for attempt a: print mode
-// with Instruction as the prompt, PermissionMode, and the prompt and result
-// directories added for tool access.
+// with Instruction as the prompt, PermissionMode, and only the model
+// directory added for tool access.
 func ClaudeArgs(a Args) []string {
-	dirs := []string{filepath.Dir(a.PromptFile)}
-	if d := filepath.Dir(a.ResultFile); d != dirs[0] {
-		dirs = append(dirs, d)
-	}
-	return append([]string{"--print", Instruction(a), "--permission-mode", PermissionMode, "--add-dir"}, dirs...)
+	return []string{"--print", Instruction(a), "--permission-mode", PermissionMode, "--add-dir", ModelDir(a.ResultFile)}
 }
 
 // Main runs `guildhall claude-artisan` with args, the arguments after the
@@ -201,7 +216,9 @@ var errMarked = errors.New("cancel marker present")
 
 // Run is the wrapper. It refuses, starting nothing, a cancelled attempt
 // (adapter.ErrAttemptCancelled) or an existing result file
-// (adapter.ErrResultExists); it removes a stale draft, then runs Claude in the
+// (adapter.ErrResultExists); it replaces the model directory with one holding
+// only the prompt copy and the inputs and skills directories beside the prompt
+// file, so a stale draft is never published, then runs Claude in the
 // current directory with ClaudeArgs, no standard input, and its output on
 // stdout and stderr. An interrupt, the end of ctx, or the attempt's cancel
 // marker asks Claude to stop (an interrupt on Unix, termination on Windows),
@@ -219,10 +236,6 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	draft := DraftFile(a.ResultFile)
-	if err := os.Remove(draft); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
 	program := a.Claude
 	if program == "" {
 		program = Program
@@ -230,6 +243,9 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	path, err := exec.LookPath(program)
 	if err != nil {
 		return fmt.Errorf("claude adapter: %w", err)
+	}
+	if err := prepareModelDir(a); err != nil {
+		return fmt.Errorf("claude adapter: model directory: %w", err)
 	}
 	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt)
 	defer stopSignals()
@@ -247,11 +263,44 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 		}
 		return fmt.Errorf("claude adapter: stopped without a result: %w", context.Cause(ctx))
 	}
-	if err := publish(draft, a); err != nil {
+	if err := publish(DraftFile(a.ResultFile), a); err != nil {
 		return errors.Join(err, runErr)
 	}
 	if runErr != nil {
 		return fmt.Errorf("claude adapter: Claude exited after writing its result: %w", runErr)
+	}
+	return nil
+}
+
+// prepareModelDir replaces a's model directory with one holding the prompt
+// copy and the inputs and skills directories beside the prompt file.
+func prepareModelDir(a Args) error {
+	dir := ModelDir(a.ResultFile)
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(a.PromptFile)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(PromptCopy(a.ResultFile), data, 0o600); err != nil {
+		return err
+	}
+	for _, name := range []string{render.InputsDir, render.SkillsDir} {
+		src := filepath.Join(filepath.Dir(a.PromptFile), name)
+		st, err := os.Stat(src)
+		if errors.Is(err, fs.ErrNotExist) || err == nil && !st.IsDir() {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := os.CopyFS(filepath.Join(dir, name), os.DirFS(src)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
