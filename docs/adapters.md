@@ -141,7 +141,7 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 | Stop by Ctrl+C ends the fake Artisan | Windows PowerShell 5.1 panes | Failed: the process kept running after Ctrl+C; Ctrl+C stopping remains unsupported in these panes |
 | Identity-bound native handle stop; no later success, unrelated worker survival and unfinished-work preservation | Native Windows PowerShell 5.1 in an isolated named Herdr session, using the current locally built artifact with matching local/remote SHA-256 | Passed |
 | Cancellation rejection, failed-stop semantics, handshake identity rejection and exact-process termination | Focused portable contract tests plus the native Windows test executable | Passed |
-| Rendered command lines pass every argument unchanged when executed | `sh`, `bash`, `dash` and `zsh` on Linux; `sh`, `bash`, `dash` and Windows PowerShell 5.1 on native Windows; a shell missing from a host is skipped by name | Passed |
+| Rendered command lines pass every argument unchanged when executed | `sh`, `bash`, `dash` and `zsh` on Linux; `sh`, `bash`, `dash` and Windows PowerShell 5.1 on native Windows; missing shells follow the [test environment contract](contracts/testenv.md) | Passed |
 | Native handle stop contract: verified termination, repeated and concurrent stops, natural exit, ended context, idempotent close, no use of a released handle | Native Windows test executable against a live helper process | Passed |
 | macOS in Herdr | Not run | macOS has CI only, not live acceptance (R1.30) |
 

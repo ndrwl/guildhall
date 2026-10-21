@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
 	"github.com/ndrwl/guildhall/skills"
 )
@@ -336,7 +337,7 @@ func TestScriptsAreTwinnedAndParse(t *testing.T) {
 	}
 }
 
-// parses checks a script's syntax in its own shell without running it, skipping a shell that is not installed.
+// parses checks a script's syntax in its own shell without running it, skipping a shell that is not installed unless the runner requires it.
 func parses(t *testing.T, file string) {
 	shell, args := "sh", []string{"-n", file}
 	if filepath.Ext(file) == ".ps1" {
@@ -346,7 +347,7 @@ func parses(t *testing.T, file string) {
 				", [ref]$null, [ref]$e); if ($e) { $e | Out-String; exit 1 }"}
 	}
 	if _, err := exec.LookPath(shell); err != nil {
-		t.Skipf("%s is not installed", shell)
+		testenv.SkipUnlessRequired(t, shell, "%s is not installed", shell)
 	}
 	if out, err := exec.Command(shell, args...).CombinedOutput(); err != nil {
 		t.Errorf("%s does not parse in %s: %v\n%s", file, shell, err, out)
@@ -396,7 +397,7 @@ func TestContractTDDCheckTwinsAgree(t *testing.T) {
 	for _, shell := range []string{"sh", "pwsh"} {
 		t.Run(shell, func(t *testing.T) {
 			if _, err := exec.LookPath(shell); err != nil {
-				t.Skipf("%s is not installed", shell)
+				testenv.SkipUnlessRequired(t, shell, "%s is not installed", shell)
 			}
 			for _, c := range cases {
 				t.Run(c.name, func(t *testing.T) {
@@ -423,6 +424,41 @@ func TestContractTDDCheckTwinsAgree(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
+	const name = "guildhall-review"
+	var files []string
+	err := fs.WalkDir(skills.Release(), name, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files = append(files, strings.TrimPrefix(p, name+"/"))
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"CREDITS.md", "SKILL.md", "smells.md"}; !slices.Equal(files, want) {
+		t.Errorf("files = %q, want %q: no scripts and no sub-agent definitions", files, want)
+	}
+	data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+
+	_, example, ok := strings.Cut(text, "```json\n")
+	example, _, closed := strings.Cut(example, "```")
+	if !ok || !closed {
+		t.Fatal("SKILL.md has no fenced json example outcome")
+	}
+	o, err := workflow.ParseReviewOutcome([]byte(example))
+	if err != nil {
+		t.Fatalf("example outcome: %v", err)
+	}
+	if !o.Blocking() || len(o.Dispositions) == 0 || !slices.ContainsFunc(o.Findings, func(f workflow.Finding) bool { return f.Rule == "" }) {
+		t.Errorf("example should show a blocking round with dispositions and a suggestion: %+v", o)
 	}
 }
 
