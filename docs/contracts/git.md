@@ -24,7 +24,8 @@ Platform differences: none in the contract; git is found on `PATH` unless `Progr
 
 ## Tests
 
-`contract_test.go` defines `RunClassifierContract` and the scripted double `Script` within the package's tests. `git_test.go` runs the suite against `Program` over histories built with real git in temporary repositories, with global and system configuration excluded, on every CI platform, and against `Script`.
+`contract_test.go` defines `RunClassifierContract` and the scripted double `Script` within the package's tests.
+`git_test.go` runs the suite against `Program` over histories built with real git in temporary repositories, with global and system configuration excluded during history setup, on every CI platform, and against `Script`.
 The cases are an identical-patch rebase (rebase, with a diff), a rebase that also edits a task file, a base change to a file the task touches that leaves the task's patches identical, a new head on the same base and an unknown commit (all full), a repeated call giving the same answer, and an ended context (an error).
 Submodule histories with both diff-wide and per-submodule ignore settings enabled cover a valid rebase whose reviewer diff includes the pointer and a base/task gitlink overlap requiring full review.
 The suite was written red first against a stub `Classify` returning zero values: every `program` case failed (`scope = "", want ...` and the ended context succeeding) while the `script` cases passed.
