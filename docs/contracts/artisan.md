@@ -11,10 +11,13 @@ The stop ladder ([decision](../decisions/0041-stop-ladder-precedence.md)): `Laun
 See [stop ladder](../artisan.md#stop-ladder).
 The heartbeat ([heartbeat](../artisan.md#heartbeat)): `Heartbeat`, `HeartbeatFile`, `HeartbeatSchema` (`guildhall.attempt-heartbeat/1`), `DefaultHeartbeatInterval`, `WriteHeartbeat`, `ReadHeartbeat` with `ErrNoHeartbeat`, `ErrInvalidHeartbeat` and a wrapped `strictjson.ErrNewerSchema`, and the `LauncherConfig` fields `Key`, `HeartbeatInterval` and `LastOutput`; written atomically from the supervision loop with an increasing sequence.
 Resume ([resume](../artisan.md#resume)): `Kill` ends a process only while its PID and token still match; `Sweep` kills what is still in a recorded unit from outside its launcher (job terminated by name, `cgroup.kill` then removal of an empty cgroup, process-group members by `Kill`), refusing an unknown kind with `errors.ErrUnsupported` and proving nothing until `Contained` is empty; `Settle` decides an attempt whose launcher is gone from its files with the launcher's precedence, keeping an existing `outcome.json`, under the caller's attempt lock.
+`AttemptKey` owns the attempt layout: `Dir(stateDir)` is `<stateDir>/<repository>/<task>/<step>-<n>`, `AttemptID()` is `<step>-<n>` and `ResultFile` is `result.json`; the interpreter prepares that directory and the launcher runs in it, and neither spells the layout itself.
 `NewUnit` returns this platform's unit; `Contained` lists a recorded unit's live processes from outside its launcher, for [reconcile](reconcile.md).
 Requests and replies are protocol `guildhall.attempt-control/1`, decoded with [`strictjson`](strictjson.md); a request that is unversioned, newer, or carries a duplicate or undeclared field at any depth is refused before identities are matched or any handler runs ([decision](../decisions/0038-endpoint-protocol-v1.md)).
 
 ## Tests
+
+`layout_test.go` was written red first (the build failed on the missing `Dir`, `AttemptID` and `ResultFile`): `TestAttemptKeyLayout` pins the attempt directory and attempt id with literal paths, including a hyphenated step id, and the result file name; `TestFilesReadTheAdaptersResultAndMarker`, `TestStopContractRealFiles`, the interpreter's preparation tests and `interptest`'s fixtures pin the consumers and passed unchanged.
 
 `TestRecordContainment` was written with the function and passed on first run; it did not precede implementation.
 The review retrofit is explicitly authorized.

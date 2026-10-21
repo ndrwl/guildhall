@@ -21,7 +21,7 @@ func (r *run) workerStalled(step string, number int) error {
 	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
-	if h.Key() != (artisan.AttemptKey{Repository: r.task.Repository, TaskID: r.task.ID, Step: step, Attempt: number}) {
+	if h.Key() != r.key(step, number) {
 		return nil
 	}
 	now := time.Now()

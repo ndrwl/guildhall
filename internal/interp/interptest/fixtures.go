@@ -2,13 +2,13 @@ package interptest
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/render"
@@ -111,11 +111,11 @@ func (a Attempt) Render(t testing.TB) interp.Spec {
 		t.Fatal(err)
 	}
 	return interp.Spec{
-		Identity:   adapter.Identity{TaskID: "t7", AttemptID: fmt.Sprintf("%s-%d", a.Step.ID, a.Number)},
+		Identity:   adapter.Identity{TaskID: "t7", AttemptID: artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: a.Step.ID, Attempt: a.Number}.AttemptID()},
 		Adapter:    a.Adapter,
 		WorkDir:    t.TempDir(),
 		PromptFile: r.PromptPath,
-		ResultFile: filepath.Join(dir, "result.json"),
+		ResultFile: filepath.Join(dir, artisan.ResultFile),
 		Manifest:   r.Manifest,
 	}
 }

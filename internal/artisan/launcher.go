@@ -74,6 +74,8 @@ const (
 	EventsFile = "events.jsonl"
 	// LockFile is the attempt lock every decision is taken under.
 	LockFile = "attempt.lock"
+	// ResultFile is the adapter's result file, written by the worker.
+	ResultFile = "result.json"
 )
 
 // OutcomeSchema identifies version 1 of the outcome file.

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -503,7 +504,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		}
 		d := store.DocumentRef{
 			Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
-			Path:   path.Join("tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d", s.ID, n), o.Path),
+			Path:   path.Join("tasks", r.task.Repository, r.task.ID, r.key(s.ID, n).AttemptID(), o.Path),
 			SHA256: digest.Of(data).Hex(),
 		}
 		if i == 0 {
@@ -878,16 +879,18 @@ func (r *run) mutation(kind string, parts ...string) string {
 	return kind + ":" + string(digest.Of([]byte(id)))
 }
 
-func (r *run) identity(step string, n int) adapter.Identity {
-	return adapter.Identity{TaskID: r.task.ID, AttemptID: fmt.Sprintf("%s-%d", step, n)}
+func (r *run) key(step string, n int) artisan.AttemptKey {
+	return artisan.AttemptKey{Repository: r.task.Repository, TaskID: r.task.ID, Step: step, Attempt: n}
 }
 
-func (r *run) attemptDir(step string, n int) string {
-	return filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d", step, n))
+func (r *run) identity(step string, n int) adapter.Identity {
+	return adapter.Identity{TaskID: r.task.ID, AttemptID: r.key(step, n).AttemptID()}
 }
+
+func (r *run) attemptDir(step string, n int) string { return r.key(step, n).Dir(r.e.StateDir) }
 
 func (r *run) resultFile(step string, n int) string {
-	return filepath.Join(r.attemptDir(step, n), "result.json")
+	return filepath.Join(r.attemptDir(step, n), artisan.ResultFile)
 }
 
 func exists(p string) bool {

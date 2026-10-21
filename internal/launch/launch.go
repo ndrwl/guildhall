@@ -53,9 +53,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// ResultFile is the result file's name in the attempt directory.
-const ResultFile = "result.json"
-
 // ErrNotStopped reports that Stop could not verify termination.
 var ErrNotStopped = errors.New("attempt is not proven stopped")
 
@@ -68,22 +65,19 @@ type Attempt struct {
 	Key      artisan.AttemptKey
 }
 
-// Dir is the attempt directory, <StateDir>/<repository>/<task>/<step>-<n>,
-// as the interpreter prepares it.
-func (a Attempt) Dir() string {
-	k := a.Key
-	return filepath.Join(a.StateDir, k.Repository, k.TaskID, fmt.Sprintf("%s-%d", k.Step, k.Attempt))
-}
+// Dir is the attempt directory, artisan.AttemptKey.Dir of StateDir.
+func (a Attempt) Dir() string { return a.Key.Dir(a.StateDir) }
 
 // Identity is the adapter identity the attempt's result must name: its task
-// and "<step>-<n>".
+// and artisan.AttemptKey.AttemptID.
 func (a Attempt) Identity() adapter.Identity {
-	return adapter.Identity{TaskID: a.Key.TaskID, AttemptID: fmt.Sprintf("%s-%d", a.Key.Step, a.Key.Attempt)}
+	return adapter.Identity{TaskID: a.Key.TaskID, AttemptID: a.Key.AttemptID()}
 }
 
-// Files returns the attempt's result file and cancel marker.
+// Files returns the attempt's result file, artisan.ResultFile in Dir, and
+// cancel marker.
 func (a Attempt) Files() Files {
-	return Files{ResultFile: filepath.Join(a.Dir(), ResultFile), Identity: a.Identity()}
+	return Files{ResultFile: filepath.Join(a.Dir(), artisan.ResultFile), Identity: a.Identity()}
 }
 
 // Files is the real artisan.AttemptFiles: the adapter's result file, parsed
