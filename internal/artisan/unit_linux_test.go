@@ -90,7 +90,7 @@ func TestSubreaperRecordsReparent(t *testing.T) {
 	for end := time.Now().Add(10 * time.Second); gc.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		inv, _ := artisantest.Inventory(dir)
 		for _, e := range inv {
-			if e.Role == "grandchild" {
+			if e.Role == "grandchild-setsid" {
 				gc = e.Identity
 			}
 		}

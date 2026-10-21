@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"flag"
 	"io"
 	"os"
@@ -98,14 +97,10 @@ func launcherProcess(t *testing.T, o ownedAttempt) (*exec.Cmd, chan struct{}, *b
 func inventoryOf(t *testing.T, inv string, n int) []artisan.Identity {
 	t.Helper()
 	for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
-		names, _ := filepath.Glob(filepath.Join(inv, "*.json"))
+		recs, _ := artisan.ReadProcessRecords(inv)
 		var ids []artisan.Identity
-		for _, n := range names {
-			b, err := os.ReadFile(n)
-			var id artisan.Identity
-			if err == nil && json.Unmarshal(b, &id) == nil && id.PID != 0 {
-				ids = append(ids, id)
-			}
+		for _, r := range recs {
+			ids = append(ids, r.Identity)
 		}
 		if len(ids) >= n {
 			return ids

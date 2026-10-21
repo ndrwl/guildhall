@@ -2,7 +2,9 @@
 
 ## Contract
 
-`RunUnitContract`, the containment contract every `Unit` passes, and the worker the test binary plays, which records its own identity in an inventory.
+`RunUnitContract`, the containment contract every `Unit` passes, and the worker the test binary plays, which records its own identity in an inventory through `artisan.RecordProcess`; `Inventory` reads it as `Entry`, an alias of `artisan.ProcessRecord`, and treats a directory not yet created as empty.
+The roles `grandchild-setsid`, `breakaway-refused` and `breakaway-succeeded` carry test metadata.
+A breakaway request is recorded under the worker's own identity, since a record needs a token.
 A harness states what its backend can do: terminate, whether a `setsid` grandchild escapes or stays a member, refused breakaway, and the containment kind it reports.
 A worker can exit right after starting its grandchildren, orphaning them, honour a cancel marker by exiting, or publish a result using the delay and marker handshake defined by [`Worker`](../../internal/artisan/artisantest/worker.go).
 `RunStopContract`, the launcher's stop ladder and precedence contract, runs a `Launcher` over units from a harness with `Files`, the double of `artisan.AttemptFiles` over a result file and a marker file.

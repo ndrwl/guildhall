@@ -3,7 +3,6 @@ package fake
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
-	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // This file holds the P0 lifecycle directives: the process tree, the cancel
@@ -130,20 +128,9 @@ func recordSelf(dir, role string) error {
 	return record(dir, role, self)
 }
 
-// record writes one inventory entry, <role>-<pid>.json holding the
-// identity and role, as artisantest.Inventory reads it.
+// record writes one inventory record with artisan.RecordProcess.
 func record(dir, role string, id artisan.Identity) error {
-	b, err := json.Marshal(struct {
-		artisan.Identity
-		Role string `json:"role"`
-	}{id, role})
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	return atomicfile.Write(filepath.Join(dir, fmt.Sprintf("%s-%d.json", role, id.PID)), b)
+	return artisan.RecordProcess(dir, artisan.ProcessRecord{Identity: id, Role: role})
 }
 
 // publishLate publishes r although the attempt is cancelled, as an Artisan

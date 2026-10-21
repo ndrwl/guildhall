@@ -78,7 +78,7 @@ func TestFakeUnitEscapeAfterWait(t *testing.T) {
 				synctest.Wait()
 				for _, entry := range entries {
 					want := artisan.Gone
-					if entry.Role == "grandchild" && action != "release" {
+					if entry.Role == "grandchild-setsid" && action != "release" {
 						want = artisan.Alive
 					}
 					if got, err := h.Probe(entry.Identity); err != nil || got != want {
