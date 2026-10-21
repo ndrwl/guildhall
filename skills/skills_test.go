@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
 	"github.com/ndrwl/guildhall/skills"
 )
@@ -336,7 +337,7 @@ func TestScriptsAreTwinnedAndParse(t *testing.T) {
 	}
 }
 
-// parses checks a script's syntax in its own shell without running it, skipping a shell that is not installed.
+// parses checks a script's syntax in its own shell without running it, skipping a shell that is not installed unless the runner requires it.
 func parses(t *testing.T, file string) {
 	shell, args := "sh", []string{"-n", file}
 	if filepath.Ext(file) == ".ps1" {
@@ -346,7 +347,7 @@ func parses(t *testing.T, file string) {
 				", [ref]$null, [ref]$e); if ($e) { $e | Out-String; exit 1 }"}
 	}
 	if _, err := exec.LookPath(shell); err != nil {
-		t.Skipf("%s is not installed", shell)
+		testenv.SkipUnlessRequired(t, shell, "%s is not installed", shell)
 	}
 	if out, err := exec.Command(shell, args...).CombinedOutput(); err != nil {
 		t.Errorf("%s does not parse in %s: %v\n%s", file, shell, err, out)
@@ -396,7 +397,7 @@ func TestContractTDDCheckTwinsAgree(t *testing.T) {
 	for _, shell := range []string{"sh", "pwsh"} {
 		t.Run(shell, func(t *testing.T) {
 			if _, err := exec.LookPath(shell); err != nil {
-				t.Skipf("%s is not installed", shell)
+				testenv.SkipUnlessRequired(t, shell, "%s is not installed", shell)
 			}
 			for _, c := range cases {
 				t.Run(c.name, func(t *testing.T) {

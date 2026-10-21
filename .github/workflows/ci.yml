@@ -20,6 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # Tools and platforms each runner supplies: a test that would skip
+        # for one of them fails the job instead (docs/contracts/testenv.md).
+        include:
+          - os: ubuntu-latest
+            require: pwsh
+          - os: windows-latest
+            require: pwsh,powershell,windows
+          - os: macos-latest
+            require: ksh,pwsh
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -44,6 +53,8 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
+        env:
+          GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
         run: go test ./...
       - name: Lint
         uses: golangci/golangci-lint-action@v9

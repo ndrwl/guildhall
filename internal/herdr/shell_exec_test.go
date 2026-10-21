@@ -12,13 +12,16 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // ShellCommand's contract is that the line it renders, typed into the named
 // shell, runs argv[0] with exactly argv[1:]. These tests execute the rendered
 // line in each supported shell found on the host and compare the arguments an
 // echo child receives. A shell that is not installed is skipped by name, so the
-// matrix of native CI runners decides which shells are proven where.
+// matrix of native CI runners decides which shells are proven where; a runner
+// that names the shell in testenv.RequireEnv fails instead of skipping.
 
 // roundTripArgs are arguments every supported shell must pass unchanged.
 var roundTripArgs = []string{
@@ -37,12 +40,13 @@ type shellRunner struct {
 	run  func(path, line string) *exec.Cmd
 }
 
-// find returns the shell's path, or skips the test naming why it cannot run.
+// find returns the shell's path, or skips the test naming why it cannot run;
+// a missing shell the runner requires fails it.
 func (s shellRunner) find(t *testing.T) string {
 	t.Helper()
 	path, err := exec.LookPath(s.name)
 	if err != nil {
-		t.Skipf("%s is not installed on this host", s.name)
+		testenv.SkipUnlessRequired(t, s.name, "%s is not installed on this host", s.name)
 	}
 	if runtime.GOOS == "windows" && strings.Contains(strings.ToLower(path), `\system32\bash`) {
 		t.Skipf("%s resolves to %s, the WSL launcher, not a native shell", s.name, path)

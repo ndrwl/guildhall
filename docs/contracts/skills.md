@@ -20,5 +20,5 @@ Pure over embedded files: no interface and no double.
 
 ## Tests
 
-`skills_test.go`: the rules above over the embedded and checked-out root, the golden digests on the CI platform matrix with LF checkout enforced by `.gitattributes`, script parsing with `sh -n` and the PowerShell parser, the `check` twins run in those shells against the test binary acting as `go` and `gofmt` in a clean run and each failure case (a missing shell is skipped by name in both), and `Install` rendered through `render.Prompt` ahead of a decoy managed root.
+`skills_test.go`: the rules above over the embedded and checked-out root, the golden digests on the CI platform matrix with LF checkout enforced by `.gitattributes`, script parsing with `sh -n` and the PowerShell parser, the `check` twins run in those shells against the test binary acting as `go` and `gofmt` in a clean run and each failure case (a missing shell is skipped by name in both, and fails a runner that requires it), and `Install` rendered through `render.Prompt` ahead of a decoy managed root.
 No test starts a model.
