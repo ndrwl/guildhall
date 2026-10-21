@@ -222,6 +222,10 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
+	outcomePath := filepath.Join(a.Dir(), artisan.OutcomeFile)
+	if _, err := os.Lstat(outcomePath); !errors.Is(err, fs.ErrNotExist) {
+		return rep, fmt.Errorf("launch: %w: %s", artisan.ErrDecided, outcomePath)
+	}
 	if err := os.MkdirAll(a.Dir(), 0o700); err != nil {
 		return rep, err
 	}
