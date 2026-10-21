@@ -17,6 +17,14 @@ func kill(id Identity) error {
 		return nil
 	}
 	if err != nil {
+		// A job closing can terminate this process between inventory and
+		// OpenProcess. Windows may deny termination access during exit;
+		// suppress that error only if the recorded identity is proven gone.
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			if lv, _ := Probe(id); lv == Gone {
+				return nil
+			}
+		}
 		return err
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
