@@ -168,7 +168,7 @@ func TestRunFinishesAndRecordsTheAttempt(t *testing.T) {
 			}
 			o := ownership(t, a)
 			self, _ := artisan.Self()
-			if o.State != store.OwnerReleased || o.LauncherIdentity != self || o.Endpoint == "" || o.Containment.Kind == "" {
+			if o.State != store.OwnerReleased || o.LauncherIdentity != store.ProcessIdentity(self) || o.Endpoint == "" || o.Containment.Kind == "" {
 				t.Errorf("ownership %+v; want released, naming this launcher, its endpoint and containment", o)
 			}
 			if _, err := os.Stat(o.Endpoint); !errors.Is(err, os.ErrNotExist) {
@@ -203,9 +203,9 @@ func TestRunRefusesALiveOwnerAndStartsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prior := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, LauncherIdentity: self}
+	prior := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, LauncherIdentity: store.ProcessIdentity(self)}
 	withStore(t, a, func(s *store.Store) {
-		if _, err := s.TakeOwnership("prior", prior, nil); err != nil {
+		if _, err := s.TakeOwnership("prior", prior, launch.ProbeOwner); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -218,7 +218,7 @@ func TestRunRefusesALiveOwnerAndStartsNothing(t *testing.T) {
 	if entries, _ := artisantest.Inventory(inv); len(entries) != 0 {
 		t.Errorf("a refused run started %v", entries)
 	}
-	if o := ownership(t, a); o.LauncherIdentity != self || o.Endpoint != "" || o.State != store.OwnerStarting {
+	if o := ownership(t, a); o.LauncherIdentity != store.ProcessIdentity(self) || o.Endpoint != "" || o.State != store.OwnerStarting {
 		t.Errorf("ownership changed: %+v", o)
 	}
 	if storedOutcome(t, a) != "" {
@@ -278,9 +278,9 @@ func TestStopASilentLiveOwnerIsNotStopped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, LauncherIdentity: self}
+	o := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, LauncherIdentity: store.ProcessIdentity(self)}
 	withStore(t, a, func(s *store.Store) {
-		if _, err := s.TakeOwnership("own", o, nil); err != nil {
+		if _, err := s.TakeOwnership("own", o, launch.ProbeOwner); err != nil {
 			t.Fatal(err)
 		}
 		o.Endpoint, o.State = path, store.OwnerRunning

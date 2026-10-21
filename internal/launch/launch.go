@@ -215,7 +215,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 		return rep, errors.New("launch: the worker command is empty")
 	}
 	k := a.Key
-	own := store.Ownership{Repository: k.Repository, TaskID: k.TaskID, Step: k.Step, Attempt: k.Attempt, LauncherIdentity: self, State: store.OwnerStarting}
+	own := store.Ownership{Repository: k.Repository, TaskID: k.TaskID, Step: k.Step, Attempt: k.Attempt, LauncherIdentity: store.ProcessIdentity(self), State: store.OwnerStarting}
 	sum := sha256.Sum256([]byte(k.String() + "\n" + strconv.Itoa(self.PID) + "\n" + self.Token))
 	tag := hex.EncodeToString(sum[:16])
 	mutation := func(op string) string { return "launch-" + op + ":" + tag }
@@ -285,20 +285,25 @@ func Run(ctx context.Context, c Config) (Report, error) {
 // recorded launcher identity lives, and gone only when it is gone and its
 // recorded unit, if any, is proven empty by artisan.Contained; contained
 // survivors, or a unit that cannot be checked, are unverified.
-func ProbeOwner(o store.Ownership) (artisan.Liveness, error) {
-	lv, err := artisan.Probe(o.LauncherIdentity)
-	if lv != artisan.Gone || err != nil || o.Containment == (store.Containment{}) {
-		return lv, err
+func ProbeOwner(o store.Ownership) (store.Liveness, error) {
+	lv, err := artisan.Probe(artisan.Identity(o.LauncherIdentity))
+	switch {
+	case lv == artisan.Alive:
+		return store.ProbeAlive, err
+	case lv != artisan.Gone || err != nil:
+		return store.ProbeUnverified, err
+	case o.Containment == (store.Containment{}):
+		return store.ProbeGone, nil
 	}
 	c := o.Containment
-	left, err := artisan.Contained(artisan.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}, c.Worker)
+	left, err := artisan.Contained(artisan.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}, artisan.Identity(c.Worker))
 	switch {
 	case err != nil:
-		return artisan.Unverified, err
+		return store.ProbeUnverified, err
 	case len(left) > 0:
-		return artisan.Unverified, fmt.Errorf("%d contained processes survive", len(left))
+		return store.ProbeUnverified, fmt.Errorf("%d contained processes survive", len(left))
 	}
-	return artisan.Gone, nil
+	return store.ProbeGone, nil
 }
 
 // recordingUnit records the containment once the unit reports the worker,
@@ -318,7 +323,7 @@ func (u *recordingUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 	}
 	c := u.Containment()
 	own := u.own
-	own.Containment = store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason, Worker: w}
+	own.Containment = store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason, Worker: store.ProcessIdentity(w)}
 	own.State = store.OwnerRunning
 	err = errors.Join(artisan.RecordContainment(u.a.Dir(), c),
 		u.a.write(func(s *store.Store) error { _, err := s.UpdateOwnership(u.mutation, own); return err }))
@@ -369,7 +374,7 @@ func (a Attempt) launcher() (artisan.Identity, error) {
 	case o.State == store.OwnerReleased:
 		return artisan.Identity{}, errors.New("ownership released")
 	}
-	return o.LauncherIdentity, nil
+	return artisan.Identity(o.LauncherIdentity), nil
 }
 
 // StopReport is what Stop did and the attempt's classification afterwards.
@@ -400,7 +405,7 @@ func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 		rep.Endpoint = "not asked: no endpoint recorded"
 	default:
 		rep.Endpoint = "stopped"
-		if _, err := artisan.Call(ctx, o.Endpoint, a.Key, o.LauncherIdentity, artisan.OpStop); err != nil {
+		if _, err := artisan.Call(ctx, o.Endpoint, a.Key, artisan.Identity(o.LauncherIdentity), artisan.OpStop); err != nil {
 			rep.Endpoint = "no stop: " + err.Error()
 		}
 	}
