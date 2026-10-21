@@ -14,7 +14,28 @@ import (
 // recoveryRecord is the launcher's field-for-field copy of a unit's
 // containment and its worker into the store's recovery description.
 func recoveryRecord(c artisan.Containment, worker artisan.Identity) store.Containment {
-	return store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason, Worker: worker}
+	return store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason, Worker: store.ProcessIdentity(worker)}
+}
+
+// launcherProbe is the launcher composition's owner probe: the store's
+// conservative policy over Probe, mapping its verdict to the store's word.
+var launcherProbe = store.ProbeLauncher(func(id store.ProcessIdentity) (store.Liveness, error) {
+	lv, err := artisan.Probe(artisan.Identity(id))
+	return store.Liveness(lv.String()), err
+})
+
+// TestStoreLivenessIsProbeVerdict pins that the store's liveness values are
+// the words Probe reports, so a launcher composition maps a verdict by name.
+func TestStoreLivenessIsProbeVerdict(t *testing.T) {
+	for lv, want := range map[artisan.Liveness]store.Liveness{
+		artisan.Gone:       store.ProbeGone,
+		artisan.Alive:      store.ProbeAlive,
+		artisan.Unverified: store.ProbeUnverified,
+	} {
+		if got := store.Liveness(lv.String()); got != want {
+			t.Errorf("artisan %d maps to store %q, want %q", lv, got, want)
+		}
+	}
 }
 
 // ownedStore opens a store holding attempt 1 of app/t-1 build, owned and
@@ -30,7 +51,7 @@ func ownedStore(t *testing.T, self artisan.Identity) (*store.Store, store.Owners
 	if _, err := st.CreateTask("m-task", store.Task{Repository: "app", ID: "t-1", Title: "Containment", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}); err != nil {
 		t.Fatal(err)
 	}
-	own := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", LauncherIdentity: self}
+	own := store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", LauncherIdentity: store.ProcessIdentity(self)}
 	if _, err := st.StartOwnedAttempt("m-start", own); err != nil {
 		t.Fatal(err)
 	}

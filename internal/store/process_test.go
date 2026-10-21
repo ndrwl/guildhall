@@ -13,6 +13,26 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
+// probeNative is the launcher composition's identity probe: Artisan's native
+// probe, whose verdict words are the store's Liveness values.
+func probeNative(id ProcessIdentity) (Liveness, error) {
+	lv, err := artisan.Probe(artisan.Identity(id))
+	return Liveness(lv.String()), err
+}
+
+// lookupNative reads a live process's identity with Artisan's native lookup.
+func lookupNative(pid int) (ProcessIdentity, error) {
+	id, err := artisan.Lookup(pid)
+	return ProcessIdentity(id), err
+}
+
+// nativeProbe is the owner probe a launcher passes to TakeOwnership.
+var nativeProbe = ProbeLauncher(probeNative)
+
+// alwaysGone claims every identity exited, as a launcher-only probe would
+// after the launcher's exit; recorded containment must still refuse.
+func alwaysGone(ProcessIdentity) (Liveness, error) { return ProbeGone, nil }
+
 const helperEnv = "GUILDHALL_STORE_TEST_HOLDER"
 
 // TestHelperHoldStore is not a test: the process tests run it as a separate
@@ -109,7 +129,7 @@ func TestHelperOwnAttempt(t *testing.T) {
 		t.Skip("helper process only")
 	}
 	err := func() error {
-		self, err := artisan.Self()
+		self, err := lookupNative(os.Getpid())
 		if err != nil {
 			return err
 		}
@@ -136,12 +156,12 @@ func TestTakeOwnershipPreservesContainmentAfterLauncherExit(t *testing.T) {
 	for _, kind := range []string{ContainmentGroup, ContainmentSubreaper, ContainmentCgroup, ContainmentJob} {
 		t.Run(kind, func(t *testing.T) {
 			launcher, _ := startHolder(t, filepath.Join(t.TempDir(), "launcher.store"))
-			launcherID, err := artisan.Lookup(launcher.Process.Pid)
+			launcherID, err := lookupNative(launcher.Process.Pid)
 			if err != nil {
 				t.Fatal(err)
 			}
 			worker, _ := startHolder(t, filepath.Join(t.TempDir(), "worker.store"))
-			workerID, err := artisan.Lookup(worker.Process.Pid)
+			workerID, err := lookupNative(worker.Process.Pid)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -167,10 +187,10 @@ func TestTakeOwnershipPreservesContainmentAfterLauncherExit(t *testing.T) {
 				t.Fatal(err)
 			}
 			_ = launcher.Wait()
-			if lv, err := artisan.Probe(launcherID); err != nil || lv != artisan.Gone {
+			if lv, err := probeNative(launcherID); err != nil || lv != ProbeGone {
 				t.Fatalf("launcher = %v, %v; want Gone", lv, err)
 			}
-			for i, probe := range []OwnerProbe{nil, ProbeLauncher} {
+			for i, probe := range []OwnerProbe{nativeProbe, ProbeLauncher(alwaysGone)} {
 				mutation := fmt.Sprintf("m-take-%d", i)
 				if _, err := s.TakeOwnership(mutation, takeB(1), probe); !errors.Is(err, ErrOwnerUnknown) {
 					t.Errorf("take with recorded %s: %v; want ErrOwnerUnknown", kind, err)
@@ -182,18 +202,18 @@ func TestTakeOwnershipPreservesContainmentAfterLauncherExit(t *testing.T) {
 					t.Errorf("refused takeover left receipt: %v", err)
 				}
 			}
-			if lv, err := artisan.Probe(workerID); err != nil || lv != artisan.Alive {
+			if lv, err := probeNative(workerID); err != nil || lv != ProbeAlive {
 				t.Fatalf("surviving worker = %v, %v; want Alive", lv, err)
 			}
 			if err := worker.Process.Kill(); err != nil {
 				t.Fatal(err)
 			}
 			_ = worker.Wait()
-			if _, err := s.TakeOwnership("m-take-0", takeB(1), func(o Ownership) (artisan.Liveness, error) {
+			if _, err := s.TakeOwnership("m-take-0", takeB(1), func(o Ownership) (Liveness, error) {
 				if o != owner {
 					t.Errorf("recovery probe lost evidence: %+v", o)
 				}
-				return artisan.Probe(o.Containment.Worker)
+				return probeNative(o.Containment.Worker)
 			}); err != nil {
 				t.Fatalf("explicit recovery after worker exit: %v", err)
 			}
@@ -206,12 +226,12 @@ func TestTakeOwnershipPreservesContainmentAfterLauncherExit(t *testing.T) {
 // containment and refuses a take-over while the recorded worker survives.
 func TestProgressUpdateCannotEraseRecoveryEvidence(t *testing.T) {
 	launcher, _ := startHolder(t, filepath.Join(t.TempDir(), "launcher.store"))
-	launcherID, err := artisan.Lookup(launcher.Process.Pid)
+	launcherID, err := lookupNative(launcher.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
 	}
 	worker, _ := startHolder(t, filepath.Join(t.TempDir(), "worker.store"))
-	workerID, err := artisan.Lookup(worker.Process.Pid)
+	workerID, err := lookupNative(worker.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,13 +260,13 @@ func TestProgressUpdateCannotEraseRecoveryEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = launcher.Wait()
-	if lv, err := artisan.Probe(launcherID); err != nil || lv != artisan.Gone {
+	if lv, err := probeNative(launcherID); err != nil || lv != ProbeGone {
 		t.Fatalf("launcher = %v, %v; want Gone", lv, err)
 	}
-	if lv, err := artisan.Probe(workerID); err != nil || lv != artisan.Alive {
+	if lv, err := probeNative(workerID); err != nil || lv != ProbeAlive {
 		t.Fatalf("worker = %v, %v; want Alive", lv, err)
 	}
-	for i, probe := range []OwnerProbe{nil, ProbeLauncher} {
+	for i, probe := range []OwnerProbe{nativeProbe, ProbeLauncher(alwaysGone)} {
 		if _, err := s.TakeOwnership(fmt.Sprintf("m-take-%d", i), takeB(1), probe); !errors.Is(err, ErrOwnerUnknown) {
 			t.Errorf("take with a live recorded worker: %v; want ErrOwnerUnknown", err)
 		}
@@ -288,14 +308,41 @@ func TestOwnerInAnotherProcessIsRefused(t *testing.T) {
 	if owner.LauncherIdentity.PID != cmd.Process.Pid {
 		t.Fatalf("recorded owner = %+v, want the helper's pid %d", owner.LauncherIdentity, cmd.Process.Pid)
 	}
-	if _, err := s.TakeOwnership("m-take", takeB(1), nil); !errors.Is(err, ErrOwnerLive) {
+	if _, err := s.TakeOwnership("m-take", takeB(1), nativeProbe); !errors.Is(err, ErrOwnerLive) {
 		t.Fatalf("take while the owning process lives: err = %v, want ErrOwnerLive", err)
 	}
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
 	_ = cmd.Wait()
-	if _, err := s.TakeOwnership("m-take", takeB(1), nil); err != nil {
+	if _, err := s.TakeOwnership("m-take", takeB(1), nativeProbe); err != nil {
 		t.Fatalf("take after the owning process was killed and reaped: %v", err)
+	}
+}
+
+// Pinned from the scratch launcher (L20, L04/L05): the real probe treats a
+// live PID with another token as exited, and refuses the live owner itself.
+func TestProbeLauncherAgainstRealProcesses(t *testing.T) {
+	self, err := lookupNative(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
+	if _, err := s.StartOwnedAttempt("m-start", sampleOwnership(self)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.TakeOwnership("m-take-live", takeB(1), nativeProbe); !errors.Is(err, ErrOwnerLive) {
+		t.Fatalf("take from this live process: err = %v, want ErrOwnerLive", err)
+	}
+
+	s2, _ := newStore(t)
+	mustCreate(t, s2, "m-task", sampleTask("app", "t-1"))
+	reused := ProcessIdentity{PID: self.PID, Token: self.Token + "-earlier"}
+	if _, err := s2.StartOwnedAttempt("m-start", sampleOwnership(reused)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s2.TakeOwnership("m-take-reused", takeB(1), nativeProbe); err != nil {
+		t.Fatalf("take from a reused PID: %v", err)
 	}
 }

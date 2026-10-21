@@ -6,11 +6,9 @@ import (
 	"testing"
 
 	bolt "go.etcd.io/bbolt"
-
-	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
-var worker = artisan.Identity{PID: 303, Token: "boot:3"}
+var worker = ProcessIdentity{PID: 303, Token: "boot:3"}
 
 // running returns launcherA's running record of attempt 1 contained by c.
 func running(c Containment) Ownership {
@@ -56,8 +54,8 @@ func TestContainmentRequiresRecoveryEvidence(t *testing.T) {
 		{"subreaper without worker", Containment{Kind: ContainmentSubreaper, Reason: "no cgroup v2"}},
 		{"group with a group id for a name", Containment{Kind: ContainmentGroup, Name: "4242", Worker: worker}},
 		{"subreaper with a name", Containment{Kind: ContainmentSubreaper, Name: "4242"}},
-		{"worker without pid", Containment{Kind: ContainmentGroup, Worker: artisan.Identity{Token: "boot:3"}}},
-		{"worker without token", Containment{Kind: ContainmentGroup, Worker: artisan.Identity{PID: 303}}},
+		{"worker without pid", Containment{Kind: ContainmentGroup, Worker: ProcessIdentity{Token: "boot:3"}}},
+		{"worker without token", Containment{Kind: ContainmentGroup, Worker: ProcessIdentity{PID: 303}}},
 		{"blank name", Containment{Kind: ContainmentJob, Name: " "}},
 		{"long name", Containment{Kind: ContainmentCgroup, Name: strings.Repeat("n", MaxContainmentBytes+1)}},
 		{"invalid reason", Containment{Kind: ContainmentGroup, Reason: "\xff", Worker: worker}},
@@ -122,7 +120,7 @@ func TestLegacyContainmentRecords(t *testing.T) {
 				t.Fatalf("doctor = %+v, %v", rep, err)
 			}
 			calls := 0
-			_, err := s.TakeOwnership("m-take", takeB(1), probeSays(artisan.Gone, nil, &calls))
+			_, err := s.TakeOwnership("m-take", takeB(1), probeSays(ProbeGone, nil, &calls))
 			if tc.recoverable {
 				if err != nil {
 					t.Fatalf("take from an exited launcher: %v", err)

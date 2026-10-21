@@ -3,34 +3,33 @@ package store
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
 var (
-	launcherA = artisan.Identity{PID: 101, Token: "boot:1"}
-	launcherB = artisan.Identity{PID: 202, Token: "boot:2"}
+	launcherA = ProcessIdentity{PID: 101, Token: "boot:1"}
+	launcherB = ProcessIdentity{PID: 202, Token: "boot:2"}
 )
 
-func sampleOwnership(id artisan.Identity) Ownership {
+func sampleOwnership(id ProcessIdentity) Ownership {
 	return Ownership{Repository: "app", TaskID: "t-1", Step: "build", LauncherIdentity: id}
 }
 
 // probeSays returns a probe answering lv and err, counting its calls.
-func probeSays(lv artisan.Liveness, err error, calls *int) OwnerProbe {
-	return func(Ownership) (artisan.Liveness, error) {
+func probeSays(lv Liveness, err error, calls *int) OwnerProbe {
+	return func(Ownership) (Liveness, error) {
 		*calls++
 		return lv, err
 	}
 }
 
 func noProbe(t *testing.T) OwnerProbe {
-	return func(o Ownership) (artisan.Liveness, error) {
+	return func(o Ownership) (Liveness, error) {
 		t.Errorf("probe called for %+v; the take must not probe", o)
-		return artisan.Unverified, nil
+		return ProbeUnverified, nil
 	}
 }
 
@@ -106,7 +105,7 @@ func TestTakeOwnershipRefusesLiveOwner(t *testing.T) {
 	s, _ := newStore(t)
 	ownedAttempt(t, s)
 	calls := 0
-	_, err := s.TakeOwnership("m-take", takeB(1), probeSays(artisan.Alive, nil, &calls))
+	_, err := s.TakeOwnership("m-take", takeB(1), probeSays(ProbeAlive, nil, &calls))
 	if !errors.Is(err, ErrOwnerLive) || calls != 1 {
 		t.Fatalf("take from a live owner: err = %v after %d probes, want ErrOwnerLive after 1", err, calls)
 	}
@@ -121,13 +120,14 @@ func TestTakeOwnershipRefusesLiveOwner(t *testing.T) {
 func TestTakeOwnershipRefusesUnknownOwner(t *testing.T) {
 	cases := []struct {
 		name string
-		lv   artisan.Liveness
+		lv   Liveness
 		err  error
 	}{
-		{"unverified", artisan.Unverified, nil},
-		{"unverified with error", artisan.Unverified, errors.New("permission denied")},
-		{"gone with error", artisan.Gone, errors.New("partial read")},
-		{"unrecognised liveness", artisan.Liveness(99), nil},
+		{"unverified", ProbeUnverified, nil},
+		{"unverified with error", ProbeUnverified, errors.New("permission denied")},
+		{"gone with error", ProbeGone, errors.New("partial read")},
+		{"unrecognised liveness", Liveness("stale"), nil},
+		{"no verdict", Liveness(""), nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,6 +144,77 @@ func TestTakeOwnershipRefusesUnknownOwner(t *testing.T) {
 	}
 }
 
+// TestStoreDoesNotImportArtisan pins the dependency direction: owner identity
+// and probe verdicts are store data, and the OS probe comes from the caller.
+func TestStoreDoesNotImportArtisan(t *testing.T) {
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+	out, err := exec.Command(gobin, "list", "-deps", "-f", "{{.ImportPath}}", ".").Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	for _, dep := range strings.Fields(string(out)) {
+		if dep == "github.com/ndrwl/guildhall/internal/artisan" {
+			t.Fatalf("internal/store depends on %s", dep)
+		}
+	}
+}
+
+// TestTakeOwnershipRequiresProbe: a nil probe is refused with ErrInvalid and
+// writes nothing, whether or not the attempt has an owner.
+func TestTakeOwnershipRequiresProbe(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
+	if _, err := s.StartAttempt("m-start-unowned", "app", "t-1", "build"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.TakeOwnership("m-take-unowned", takeB(1), nil); !errors.Is(err, ErrInvalid) {
+		t.Errorf("take of an unowned attempt without a probe: %v; want ErrInvalid", err)
+	}
+	if _, err := s.Ownership("app", "t-1", "build", 1); !errors.Is(err, ErrNotFound) {
+		t.Errorf("refused take recorded an owner: %v", err)
+	}
+	if _, err := s.FinishAttempt("m-finish", "app", "t-1", "build", 1, AttemptSucceeded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartOwnedAttempt("m-start-owned", sampleOwnership(launcherA)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.TakeOwnership("m-take-owned", takeB(2), nil); !errors.Is(err, ErrInvalid) {
+		t.Errorf("take of an owned attempt without a probe: %v; want ErrInvalid", err)
+	}
+	if got := mustOwnership(t, s, 2); got.LauncherIdentity != launcherA {
+		t.Errorf("owner after refusal = %+v", got.LauncherIdentity)
+	}
+	for _, m := range []string{"m-take-unowned", "m-take-owned"} {
+		if _, err := s.Receipt(m); !errors.Is(err, ErrNotFound) {
+			t.Errorf("refused take %s left a receipt: %v", m, err)
+		}
+	}
+}
+
+// TestProbeLauncherNeverClassifiesSurvivorsGone: with containment recorded the
+// identity probe is not consulted and the verdict is ProbeUnverified, even when
+// the identity probe would call every process gone; without containment the
+// recorded launcher's verdict is returned unchanged.
+func TestProbeLauncherNeverClassifiesSurvivorsGone(t *testing.T) {
+	var probed []ProcessIdentity
+	identity := func(id ProcessIdentity) (Liveness, error) {
+		probed = append(probed, id)
+		return ProbeGone, nil
+	}
+	contained := sampleOwnership(launcherA)
+	contained.Containment = Containment{Kind: ContainmentGroup, Worker: worker}
+	if lv, err := ProbeLauncher(identity)(contained); lv != ProbeUnverified || err != nil || len(probed) != 0 {
+		t.Errorf("contained owner = %q, %v after probing %v; want unverified without probing", lv, err, probed)
+	}
+	if lv, err := ProbeLauncher(identity)(sampleOwnership(launcherA)); lv != ProbeGone || err != nil || len(probed) != 1 || probed[0] != launcherA {
+		t.Errorf("uncontained owner = %q, %v after probing %v; want gone from probing %v", lv, err, probed, launcherA)
+	}
+}
+
 func TestTakeOwnershipAfterProvenExit(t *testing.T) {
 	s, _ := newStore(t)
 	ownedAttempt(t, s)
@@ -154,9 +225,9 @@ func TestTakeOwnershipAfterProvenExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	var probed Ownership
-	r, err := s.TakeOwnership("m-take", takeB(1), func(o Ownership) (artisan.Liveness, error) {
+	r, err := s.TakeOwnership("m-take", takeB(1), func(o Ownership) (Liveness, error) {
 		probed = o
-		return artisan.Gone, nil
+		return ProbeGone, nil
 	})
 	if err != nil {
 		t.Fatalf("take from a proven-exited owner: %v", err)
@@ -233,7 +304,7 @@ func TestTakeOwnershipReplaysByMutationID(t *testing.T) {
 	s, _ := newStore(t)
 	ownedAttempt(t, s)
 	calls := 0
-	first, err := s.TakeOwnership("m-take", takeB(1), probeSays(artisan.Gone, nil, &calls))
+	first, err := s.TakeOwnership("m-take", takeB(1), probeSays(ProbeGone, nil, &calls))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +371,7 @@ func TestUpdateOwnershipKeepsRecoveryEvidence(t *testing.T) {
 	ownedAttempt(t, s)
 	running := sampleOwnership(launcherA)
 	running.Attempt, running.State = 1, OwnerRunning
-	running.Containment = Containment{Kind: ContainmentGroup, Worker: artisan.Identity{PID: 4242, Token: "boot:w"}}
+	running.Containment = Containment{Kind: ContainmentGroup, Worker: ProcessIdentity{PID: 4242, Token: "boot:w"}}
 	if _, err := s.UpdateOwnership("m-contained", running); err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +389,7 @@ func TestUpdateOwnershipKeepsRecoveryEvidence(t *testing.T) {
 	}{
 		{"clearing containment", func(o *Ownership) { o.Containment = Containment{} }},
 		{"changing its kind", func(o *Ownership) { o.Containment.Kind = ContainmentSubreaper }},
-		{"changing the worker", func(o *Ownership) { o.Containment.Worker = artisan.Identity{PID: 4343, Token: "boot:x"} }},
+		{"changing the worker", func(o *Ownership) { o.Containment.Worker = ProcessIdentity{PID: 4343, Token: "boot:x"} }},
 		{"clearing the endpoint", func(o *Ownership) { o.Endpoint = "" }},
 		{"changing the endpoint", func(o *Ownership) { o.Endpoint = "/state/a1/other.sock" }},
 	}
@@ -402,11 +473,11 @@ func TestConcurrentTakeOversHaveOneWinner(t *testing.T) {
 	s, _ := newStore(t)
 	ownedAttempt(t, s)
 	// The dead owner is launcherA; every other identity is live.
-	probe := func(o Ownership) (artisan.Liveness, error) {
+	probe := func(o Ownership) (Liveness, error) {
 		if o.LauncherIdentity == launcherA {
-			return artisan.Gone, nil
+			return ProbeGone, nil
 		}
-		return artisan.Alive, nil
+		return ProbeAlive, nil
 	}
 	const n = 8
 	errs := make([]error, n)
@@ -414,7 +485,7 @@ func TestConcurrentTakeOversHaveOneWinner(t *testing.T) {
 	for i := range n {
 		wg.Go(func() {
 			o := takeB(1)
-			o.LauncherIdentity = artisan.Identity{PID: 1000 + i, Token: "boot:x"}
+			o.LauncherIdentity = ProcessIdentity{PID: 1000 + i, Token: "boot:x"}
 			_, errs[i] = s.TakeOwnership(fmt.Sprintf("m-take-%d", i), o, probe)
 		})
 	}
@@ -430,33 +501,6 @@ func TestConcurrentTakeOversHaveOneWinner(t *testing.T) {
 	}
 	if won != 1 {
 		t.Fatalf("%d take-overs succeeded, want exactly 1", won)
-	}
-}
-
-// Pinned from the scratch launcher (L20, L04/L05): the real probe treats a
-// live PID with another token as exited, and refuses the live owner itself.
-func TestProbeLauncherAgainstRealProcesses(t *testing.T) {
-	self, err := artisan.Self()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, _ := newStore(t)
-	mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
-	if _, err := s.StartOwnedAttempt("m-start", sampleOwnership(self)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.TakeOwnership("m-take-live", takeB(1), nil); !errors.Is(err, ErrOwnerLive) {
-		t.Fatalf("take from this live process: err = %v, want ErrOwnerLive", err)
-	}
-
-	s2, _ := newStore(t)
-	mustCreate(t, s2, "m-task", sampleTask("app", "t-1"))
-	reused := artisan.Identity{PID: self.PID, Token: self.Token + "-earlier"}
-	if _, err := s2.StartOwnedAttempt("m-start", sampleOwnership(reused)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s2.TakeOwnership("m-take-reused", takeB(1), nil); err != nil {
-		t.Fatalf("take from a reused PID: %v", err)
 	}
 }
 
