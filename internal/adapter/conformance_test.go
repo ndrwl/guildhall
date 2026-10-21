@@ -11,6 +11,8 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
+	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/interp/interptest"
 )
 
 // scriptedRuntime is a deterministic runtime double: the test binary, started
@@ -49,6 +51,30 @@ func TestScriptedRuntimeConformance(t *testing.T) {
 	})
 }
 
+// TestScriptedRuntimeConformanceOnInterpreterAttempts runs the suite on
+// attempts rendered from internal/interp/testdata and mapped through
+// interp.Spec.AdapterSpec, with the behaviour carried in the step instructions.
+func TestScriptedRuntimeConformanceOnInterpreterAttempts(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.RunConformance(t, func(t *testing.T) adaptertest.Subject {
+		return adaptertest.Subject{
+			Runtime:      scriptedRuntime{exe: exe},
+			Capabilities: adapter.Capabilities{StructuredOutput: true},
+			Prompt:       func(b adaptertest.Behaviour) string { return string(b) },
+			Attempt: func(t *testing.T, prompt string) adapter.Spec {
+				return interptest.AdapterSpec(t, interp.MockAdapter, scriptedLine+prompt)
+			},
+		}
+	})
+}
+
+// scriptedLine starts the prompt line that carries the scripted runtime's
+// behaviour inside a rendered prompt; a bare prompt is the behaviour itself.
+const scriptedLine = "scripted-runtime: "
+
 // TestScriptedRuntimeHelper is not a test: it is the scripted runtime.
 func TestScriptedRuntimeHelper(t *testing.T) {
 	at := slices.Index(os.Args, "--")
@@ -70,7 +96,13 @@ func TestScriptedRuntimeHelper(t *testing.T) {
 		}
 	}
 	ok := adapter.Result{Identity: id, Status: adapter.StatusSucceeded, Summary: "scripted"}
-	switch adaptertest.Behaviour(strings.TrimSpace(string(prompt))) {
+	behaviour := strings.TrimSpace(string(prompt))
+	for line := range strings.Lines(string(prompt)) {
+		if b, ok := strings.CutPrefix(strings.TrimSpace(line), scriptedLine); ok {
+			behaviour = b
+		}
+	}
+	switch adaptertest.Behaviour(behaviour) {
 	case adaptertest.Succeed:
 		write(ok)
 	case adaptertest.Fail:

@@ -53,6 +53,12 @@ type Subject struct {
 	Capabilities adapter.Capabilities
 	// Prompt is the prompt text that makes the runtime produce b.
 	Prompt func(b Behaviour) string
+	// Attempt, when set, lays out one attempt whose prompt carries prompt and
+	// returns its spec, the way the launch path feeding this runtime does, such
+	// as a prompt rendered by the interpreter and mapped through
+	// interp.Spec.AdapterSpec; nil writes prompt as the whole prompt file in a
+	// new temporary directory.
+	Attempt func(t *testing.T, prompt string) adapter.Spec
 	// Start, when set, starts the runtime's command for spec the way a
 	// launch path runs it, such as inside the Artisan launcher with its stop
 	// ladder; nil starts it as a direct child process (adapter.StartProcess).
@@ -176,6 +182,9 @@ func RunConformance(t *testing.T, newSubject func(t *testing.T) Subject) {
 
 func newSpec(t *testing.T, s Subject, b Behaviour) adapter.Spec {
 	t.Helper()
+	if s.Attempt != nil {
+		return s.Attempt(t, s.Prompt(b))
+	}
 	dir := t.TempDir()
 	spec := adapter.Spec{
 		Identity:   adapter.Identity{TaskID: "task-1", AttemptID: "attempt-1"},

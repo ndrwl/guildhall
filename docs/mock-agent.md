@@ -19,7 +19,7 @@ Both operations are safe for concurrent use.
 
 `interp.Spec` carries the attempt identity, the adapter name from the stage's profile, the absolute working directory, prompt file and result file, and the manifest `render.Prompt` returned for that prompt ([prompt rendering](rendering.md#manifest)).
 The prompt's `inputs` and `skills` directories are beside the prompt file.
-It is the interpreter's own type; the conformance slice maps it onto `adapter.Spec` for the real adapters.
+It is the interpreter's own type; `Spec.AdapterSpec` maps it onto the `adapter.Spec` a runtime adapter receives: the same identity, working directory, prompt file and result file, and no extra environment.
 
 ## Adapter guard
 
@@ -74,9 +74,10 @@ The blocked question file is provisional: no runtime writes it yet, and the inte
 
 ## Fixtures
 
-`internal/interp/testdata` is the one fixture tree for launch tests, which the interpreter and adapter conformance slices reuse.
+`internal/interp/testdata` is the one fixture tree for launch tests, which the interpreter and the [adapter conformance suite](adapters.md#conformance) reuse.
 `interptest.Attempt.Render` renders a prompt from its baseline, documents and skills into a temporary attempt directory and returns the `Spec`; `interptest.Build` and `interptest.AutomatedReview` are the two attempts it describes, and `docs/spec-v1.md` and `docs/spec-v2.md` are two revisions of one artefact.
 `AutomatedReview` uses the `review` kind with actor `artisan` and the `stages/review.md` guide.
+`interptest.AdapterSpec` renders the build attempt with given step instructions and maps it through `Spec.AdapterSpec`, the attempt the adapter conformance suite runs a runtime on.
 `manifests/` pins the manifests those renders produce, `results/` the files the mock writes and `reviews/` the review outcomes it returns. Review outcomes bind the reviewed code head at `revisions.subject.code_head`, alongside `revisions.spec_digest` and `revisions.standards_revision`.
 
 ## Shared contract suite
