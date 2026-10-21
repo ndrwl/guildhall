@@ -11,6 +11,7 @@ import (
 
 func TestMain(m *testing.M) {
 	artisantest.MainIfWorker()
+	mainIfEndpointHolder()
 	os.Exit(m.Run())
 }
 

@@ -1,8 +1,8 @@
 # Artisan launcher
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
-This page describes what is built today: the operating-system seams the launcher stands on, process identity and the containment unit.
-The [ownership record](store.md#attempt-ownership) is in the store; the control endpoint, stop ladder, heartbeat and integration into launcher commands are later work, and nothing here is wired into a command yet.
+This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit and the control endpoint.
+The [ownership record](store.md#attempt-ownership) is in the store; the stop ladder, heartbeat and integration into launcher commands are later work, and nothing here is wired into a command yet.
 The existing fake-adapter `artisan run` command is described in [adapters](adapters.md#running-an-attempt).
 The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
@@ -121,6 +121,42 @@ These are reported, not guaranteed:
 - macOS is covered by the contract suite on its CI runner only; no interactive macOS run has been made.
 - Interactive terminal foreground hand-over is not covered by CI; the Linux failed-exec restoration case uses a pseudo-terminal (see the [package test inventory](contracts/artisan.md#tests)).
 
+## Control endpoint
+
+Each owned attempt has one control endpoint: an AF_UNIX stream socket under the Guildhall state directory, on Windows 10 and later as on Unix ([decision](decisions/attempt-endpoint-af-unix.md)).
+The launcher binds it, records its path in the ownership record with `UpdateOwnership`, and answers `status`, `stop` and `cancel` on it; what `stop` and `cancel` do is the launcher's handler, which the stop ladder supplies later.
+
+### Path
+
+`EndpointPath` gives `<state>/endpoints/<repository>.<task>.<step>.<attempt>.sock`, from the absolute state directory and the attempt key alone.
+An AF_UNIX path holds at most 103 bytes on macOS and 107 on Linux and Windows (`MaxEndpointPath`).
+A longer readable path falls back to `<state>/endpoints/<32 hex digits>.sock`, the first 16 bytes of the SHA-256 of `<repository>/<task>/<step>/<attempt>`; a state directory too long for that is refused with `ErrEndpointPath`.
+
+### Binding
+
+`Listen` binds only when the attempt's ownership record names this launcher and is not released; otherwise it returns `ErrNotOwner` and creates nothing.
+A leftover file at the path follows the stale-file rule:
+
+| Leftover | Result |
+|---|---|
+| None | Bound |
+| Connecting is refused: nothing listens | Removed and bound, because taking the record proved the previous owner exited |
+| Connecting succeeds: an endpoint no record names | `ErrEndpointAnswers`; the file is kept |
+| Anything else, such as access refused or a directory | `ErrEndpointUnknown`; the file is kept |
+
+The endpoint directory is created `0700`, and on Unix the socket is made `0600`; the endpoint does not authenticate peers.
+`Close` stops accepting and removes the socket file; a request already being answered still gets its reply.
+
+### Protocol
+
+A request is one JSON line of at most 4 KiB containing `op`, the expected `attempt` string, and the expected `launcher` identity (PID and token).
+Before dispatching status, stop or cancel, the endpoint checks that both identities match its bound attempt and launcher; missing or mismatched identities receive an error without invoking any handler.
+The reply is one JSON line naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
+A malformed or oversized request and an unknown operation get an error reply without reaching the handler.
+Requests are answered concurrently, so a `stop` that waits for the attempt to end does not delay a `status`.
+`Call` dials the endpoint within the caller's context, and refuses a reply naming another attempt or launcher with `ErrEndpointMismatch`; an error reply is `ErrEndpointRequest`.
+A failed call never proves the owner exited: a silent endpoint is unknown until the owner's identity is proven gone.
+
 ## Tests
 
 `artisantest.RunUnitContract` is the containment contract.
@@ -149,3 +185,4 @@ Every case follows the harness rules: it records every identity it caused and ch
 `TestIdentityContract` checks the identity rules against live, reused, zombie and reaped processes.
 `TestDetectCgroup` is the detection table over recorded host files: cgroup v2 delegated by a systemd user manager, on WSL and inside a cgroup namespace; cgroup v2 not delegated as a system service, on WSL without systemd and with `cgroup.procs` locked; no `cgroup.kill`; a cgroup outside the mounted subtree; cgroup v1; hybrid; no cgroup filesystem; unreadable mountinfo.
 `TestCgroupKillEmpties` shows `cgroup.kill` ending a grandchild that left the process group and `Close` removing the cgroup; `TestSubreaperRecordsReparent` shows an orphaned `setsid` grandchild reparented to the launcher and reported by `Escapes`, not `Members`.
+The endpoint tests bind real sockets in a short temporary state directory on every runner; their inventory is in the [package contract](contracts/artisan.md#tests).
