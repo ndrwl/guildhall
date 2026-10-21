@@ -82,9 +82,9 @@ The ownership record holds the current launcher identity; the receipt holds the 
   Without containment it checks the recorded launcher identity, so a reused PID with a different creation token counts as exited.
   Recovery of recorded containment requires an explicit containment-aware probe proving both launcher exit and absence of survivors; it reports surviving members as live or unknown, never as exited.
   `artisan start` passes `launch.ProbeOwner`, that containment-aware probe: alive while the launcher lives, gone once it is gone and `artisan.Contained` proves its unit empty.
-- Both record the owner as `starting`.
+- Both record the owner as `starting`, with the containment the request carries: `artisan start` records a job or cgroup unit's description, without a worker, from the moment it takes ownership.
   `UpdateOwnership` then lets the same launcher identity record its containment unit, its endpoint and `running`; another launcher's update is refused with `ErrOwnerLive`, and `running` never returns to `starting`.
-  Recovery evidence is monotonic: once the record holds a containment or an endpoint, every later update must carry an equal value; an update that clears or changes either is refused with `ErrInvalid` and writes nothing, so a stale or partial progress write cannot turn a contained attempt into one `ProbeLauncher` lets be taken over.
+  Recovery evidence is monotonic: once the record holds a containment or an endpoint, every later update must carry an equal value, except that a containment recorded without its worker may have the worker identity added once; an update that otherwise clears or changes either is refused with `ErrInvalid` and writes nothing, so a stale or partial progress write cannot turn a contained attempt into one `ProbeLauncher` lets be taken over.
 - `FinishAttempt` releases the attempt's ownership record in the same mutation and keeps it, still naming its launcher; a released record is never updated or taken again, because a finished attempt cannot be owned.
 - A replayed mutation id returns its original receipt without probing, as every mutation does.
 
@@ -139,5 +139,5 @@ bbolt records the page size in the file, and every release target is little-endi
 
 ## `guildhall store doctor`
 
-`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count and each repository's record counts, including rulings, ownership records, messages and how many are unread.
+`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count and each repository's record counts, including rulings, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.

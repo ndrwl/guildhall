@@ -148,8 +148,10 @@ type Ownership struct {
 	// Attempt is the stage attempt's number; StartOwnedAttempt assigns it.
 	Attempt          int             `json:"attempt"`
 	LauncherIdentity ProcessIdentity `json:"launcher_identity"`
-	// Containment is empty until the owner's worker has been placed in a unit;
-	// once set it must be Recoverable.
+	// Containment is empty until the owner's unit is known: a named unit (job,
+	// cgroup) is recorded when ownership is taken, its worker added by the
+	// running update, and a process group once its worker runs. Once set it
+	// must be Recoverable.
 	Containment Containment `json:"containment,omitzero"`
 	// Endpoint is the owner's control endpoint, empty until it is bound.
 	Endpoint string         `json:"endpoint,omitempty"`
@@ -265,8 +267,9 @@ func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) 
 // starting. Only the recorded launcher identity may update; a record owned by
 // another launcher is refused with ErrOwnerLive, and a released one with ErrInvalid.
 // Recovery evidence is monotonic: a recorded containment or endpoint may be set
-// from empty but never cleared or changed, and an update that would is refused
-// with ErrInvalid and writes nothing.
+// from empty but never cleared or changed, except that a containment recorded
+// without its worker may have the worker added once; an update that would
+// otherwise change either is refused with ErrInvalid and writes nothing.
 func (s *Store) UpdateOwnership(mutationID string, o Ownership) (Receipt, error) {
 	if err := validateOwnership(o, true, OwnerStarting, OwnerRunning); err != nil {
 		return Receipt{}, err
@@ -283,13 +286,24 @@ func (s *Store) UpdateOwnership(mutationID string, o Ownership) (Receipt, error)
 			return fmt.Errorf("%w: attempt %d of step %q is owned by launcher %d", ErrOwnerLive, o.Attempt, o.Step, cur.LauncherIdentity.PID)
 		case cur.State == OwnerRunning && o.State == OwnerStarting:
 			return invalid("ownership of attempt %d of step %q is running and cannot return to starting", o.Attempt, o.Step)
-		case cur.Containment != (Containment{}) && o.Containment != cur.Containment:
+		case cur.Containment != (Containment{}) && o.Containment != cur.Containment && !addsWorker(cur.Containment, o.Containment):
 			return invalid("ownership of attempt %d of step %q has recorded containment %+v, which an update must keep", o.Attempt, o.Step, cur.Containment)
 		case cur.Endpoint != "" && o.Endpoint != cur.Endpoint:
 			return invalid("ownership of attempt %d of step %q has recorded endpoint %q, which an update must keep", o.Attempt, o.Step, cur.Endpoint)
 		}
 		return putOwnership(tx, o)
 	})
+}
+
+// addsWorker reports whether next is recorded unit cur with the worker
+// identity added: a named unit is recorded when ownership is taken, before
+// its worker exists, and the running update adds the worker once.
+func addsWorker(cur, next Containment) bool {
+	if cur.Worker != (ProcessIdentity{}) || next.Worker == (ProcessIdentity{}) {
+		return false
+	}
+	next.Worker = ProcessIdentity{}
+	return next == cur
 }
 
 // Ownership returns the ownership record of one attempt, or ErrNotFound when it has none.

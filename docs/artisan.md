@@ -76,6 +76,7 @@ The methods are safe for concurrent use.
 | `pgroup` | macOS process group | none |
 
 The store's ownership record keeps the same description, with the worker identity in place of a name for a process group ([containment record](store.md#containment-record)).
+A job or cgroup exists, named, from the moment the unit is created, so `artisan start` records it with the ownership, before the worker starts, and the `running` update adds the worker identity; a process group is recorded only once its worker runs.
 
 ### Linux: detection
 
@@ -124,6 +125,8 @@ These are reported, not guaranteed:
 - A Unix descendant that leaves the group with `setsid` or `setpgid` is not a member of a process-group unit and survives `Kill`; the contract suite records it as an escape, and the Linux fallback reports it through `Escapes` once it is orphaned.
 - When the launcher dies, the Linux parent-death signal kills the worker only; descendants in a cgroup unit remain in its named cgroup.
 - macOS has no parent-death signal.
+- A process-group unit (macOS, the Linux fallback) is found by its worker, which is the group id, so it is recorded only once the worker runs: a launcher gone between taking ownership and recording its worker leaves an owner in `starting` with no containment, which `status` calls `exited` but `resume` and `start` refuse as unverified, and `store doctor` counts as starting without containment.
+  A job or cgroup is recorded with the ownership and has no such window.
 - macOS is covered by the contract suite on its CI runner only; no interactive macOS run has been made.
 - Interactive terminal foreground hand-over is not covered by CI; the Linux failed-exec restoration case uses a pseudo-terminal (see the [package test inventory](contracts/artisan.md#tests)).
 
@@ -324,7 +327,7 @@ The first rule that applies decides:
 | 2 | Cancel marker | `cancelled` |
 | 3 | Valid result | `finished` |
 | 4 | No ownership record | `absent` |
-| 5 | Launcher identity gone, and no containment recorded or `Contained` proves the unit empty | `exited` |
+| 5 | Launcher identity gone, and no containment recorded or `Contained` proves the unit empty; a recorded job or cgroup without its worker is checked by name | `exited` |
 | 6 | Launcher identity gone, and contained processes survive or cannot be checked | `unknown`, with the survivors |
 | 7 | Launcher identity live, heartbeat that `ReadHeartbeat` refuses | `unknown`, whatever the endpoint answers |
 | 8 | Launcher identity live, heartbeat older than the stale threshold (`DefaultStaleAfter`, 30 s) | `stuck`, whatever the endpoint answers |
@@ -334,6 +337,7 @@ The first rule that applies decides:
 `Classify` reads outcome, marker and result while holding the same exclusive `attempt.lock` as launcher decisions, using `artisan.LockAttempt`.
 An in-flight cancel or stop must finish publishing its marker before classification can accept a result, even when the worker publishes between the launcher's result check and marker write.
 Lock acquisition is bounded by the caller's context and `LockTimeout` (2 s); failure yields `unknown` with the lock error.
+An ownership record whose attempt directory does not exist has no files to read: it is classified by the owner checks alone, rules 5 to 10, and `Reason` ends with `no attempt directory`; classifying creates nothing.
 Acquiring the lock may create its file but writes no attempt state.
 The lock is released before owner and endpoint checks.
 
@@ -360,10 +364,10 @@ The lock is released before endpoint binding and worker startup.
 These setup failures leave ownership unchanged and start no worker, so correcting the setup permits a retry.
 Refusing an already-decided attempt preserves its ownership record and containment evidence; [`artisan resume`](#resume) finishes that attempt from `outcome.json` once its launcher is gone, not `run`.
 
-1. it takes the attempt's ownership; a live owner refuses it with `ErrOwnerLive`, and an owner that cannot be proven exited, or whose recorded unit still has members, with `ErrOwnerUnknown`, before anything starts;
+1. it takes the attempt's ownership, recording a job or cgroup unit's description with it; a live owner refuses it with `ErrOwnerLive`, and an owner that cannot be proven exited, or whose recorded unit still has members, with `ErrOwnerUnknown`, before anything starts;
 2. it binds the control endpoint and records its path; failure at either step records the attempt as failed with `FinishAttempt`, releasing ownership without starting the worker, and returns the setup error joined with any finalization error.
    A finalized failed attempt requires a new attempt for subsequent work;
-3. it starts the worker in a fresh containment unit and records the containment in `containment.json` and the ownership record, with state `running`;
+3. it starts the worker in the attempt's containment unit and records the containment in `containment.json` and, with the worker identity, in the ownership record, with state `running`;
 4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; a positive `--timeout` requests the stop ladder when it expires (zero, the default, imposes no limit), as do the endpoint's `stop` and SIGTERM or SIGHUP;
 5. it records the store outcome with `FinishAttempt`, which releases the ownership.
 
@@ -397,8 +401,10 @@ It is `launch.Resume`, whose [doc comments](../internal/launch/resume.go) own th
 
 1. With no ownership record, or a released one, there is nothing to resume.
 2. A live launcher identity is refused (`owner: live`), and one that cannot be proven gone, or a record without containment, is refused as unverified; nothing is signalled or written.
+   A job or cgroup is recorded with the ownership, so a record without containment is a process group's owner gone before its worker was recorded ([limits](#limits)).
 3. With the launcher proven gone, it sweeps the recorded unit with `artisan.Sweep` until the owner-gone rule proves it empty, within ten seconds (`SweepTimeout`); a unit that does not empty is an error and the attempt stays owned.
 4. Under the attempt lock, while the record still names that launcher, `artisan.Settle` decides the attempt with the launcher's precedence and keeps an existing `outcome.json`, and `FinishAttempt` records the store outcome and releases the ownership.
+   An owner still in `starting` that the files do not decide is `failed: launcher exited before its worker was recorded`; any other is `failed: launcher exited without a decision`.
 
 A second resume finds the record released; a resume interrupted after `outcome.json` was written records the same outcome when run again, because its store write's mutation id comes from the attempt and the gone launcher's identity.
 It prints one JSON line, the owner it found (`none`, `released`, `live`, `unverified` or `exited`), the processes it swept, the outcome, the store outcome and the classification afterwards, and exits 0 when nothing was left to resume or the attempt was settled, otherwise 1.

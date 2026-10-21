@@ -522,3 +522,93 @@ func TestDoctorCountsOwnershipRecords(t *testing.T) {
 		t.Fatalf("repositories = %+v, want one owner", rep.Repositories)
 	}
 }
+
+// TestTakeOwnershipRecordsANamedUnitBeforeItsWorker pins F20's store half: a
+// job or cgroup is found by its name, so ownership is taken with the unit's
+// description and no worker, the running update adds the worker once, and a
+// process group, found only by its worker, is refused without one.
+func TestTakeOwnershipRecordsANamedUnitBeforeItsWorker(t *testing.T) {
+	named := Containment{Kind: ContainmentCgroup, Name: "/sys/fs/cgroup/app.slice/guildhall-a1", Reason: "cgroup v2 delegated"}
+	if err := named.Recoverable(); err != nil {
+		t.Fatalf("a cgroup without a worker: Recoverable() = %v", err)
+	}
+	if err := (Containment{Kind: ContainmentJob, Name: `Local\guildhall-a1`}).Recoverable(); err != nil {
+		t.Fatalf("a job without a worker: Recoverable() = %v", err)
+	}
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
+	if _, err := s.StartAttempt("m-start", "app", "t-1", "build"); err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []string{ContainmentGroup, ContainmentSubreaper} {
+		o := takeB(1)
+		o.Containment = Containment{Kind: group}
+		if _, err := s.TakeOwnership("m-take-"+group, o, noProbe(t)); !errors.Is(err, ErrInvalid) || !errors.Is(err, ErrUnrecoverable) {
+			t.Fatalf("take with a %s and no worker: err = %v, want ErrInvalid and ErrUnrecoverable", group, err)
+		}
+	}
+	starting := takeB(1)
+	starting.Containment = named
+	if _, err := s.TakeOwnership("m-take", starting, noProbe(t)); err != nil {
+		t.Fatalf("take with a named unit and no worker: %v", err)
+	}
+	starting.State = OwnerStarting
+	if got := mustOwnership(t, s, 1); got != starting {
+		t.Fatalf("ownership = %+v, want %+v", got, starting)
+	}
+	for name, mutate := range map[string]func(*Ownership){
+		"renaming the unit": func(o *Ownership) { o.Containment.Name += "-other" },
+		"clearing the unit": func(o *Ownership) { o.Containment = Containment{Worker: worker} },
+		"changing its kind": func(o *Ownership) { o.Containment.Kind = ContainmentJob },
+	} {
+		update := starting
+		update.State, update.Containment.Worker = OwnerRunning, worker
+		mutate(&update)
+		if _, err := s.UpdateOwnership("m-"+name, update); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%s while adding the worker: err = %v, want ErrInvalid", name, err)
+		}
+	}
+	running := starting
+	running.State, running.Containment.Worker = OwnerRunning, worker
+	if _, err := s.UpdateOwnership("m-run", running); err != nil {
+		t.Fatalf("adding the worker to the recorded unit: %v", err)
+	}
+	if got := mustOwnership(t, s, 1); got != running {
+		t.Fatalf("ownership = %+v, want %+v", got, running)
+	}
+	cleared := running
+	cleared.Containment.Worker = ProcessIdentity{}
+	if _, err := s.UpdateOwnership("m-clear-worker", cleared); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("clearing a recorded worker: err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestDoctorCountsOwnersStartingWithoutContainment: an owner in starting with
+// no containment cannot be proven exited once its launcher is gone, so doctor
+// counts them apart from the other owners.
+func TestDoctorCountsOwnersStartingWithoutContainment(t *testing.T) {
+	s, _ := newStore(t)
+	ownedAttempt(t, s)
+	mustCreate(t, s, "m-task-2", sampleTask("app", "t-2"))
+	named := Ownership{Repository: "app", TaskID: "t-2", Step: "build", LauncherIdentity: launcherB,
+		Containment: Containment{Kind: ContainmentJob, Name: `Local\guildhall-a2`}}
+	if _, err := s.StartOwnedAttempt("m-start-2", named); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := s.Doctor()
+	if err != nil || len(rep.Problems) != 0 {
+		t.Fatalf("doctor = %+v, %v", rep, err)
+	}
+	if len(rep.Repositories) != 1 || rep.Repositories[0].Owners != 2 || rep.Repositories[0].UncontainedStarting != 1 {
+		t.Fatalf("repositories = %+v, want two owners, one starting without containment", rep.Repositories)
+	}
+	running := sampleOwnership(launcherA)
+	running.Attempt, running.State = 1, OwnerRunning
+	running.Containment = Containment{Kind: ContainmentGroup, Worker: worker}
+	if _, err := s.UpdateOwnership("m-run", running); err != nil {
+		t.Fatal(err)
+	}
+	if rep, err = s.Doctor(); err != nil || rep.Repositories[0].UncontainedStarting != 0 {
+		t.Fatalf("doctor after the running update = %+v, %v; want none starting without containment", rep, err)
+	}
+}

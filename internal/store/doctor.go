@@ -20,16 +20,20 @@ type Report struct {
 
 // RepositoryCounts counts one repository's records.
 type RepositoryCounts struct {
-	Repository     string
-	Tasks          int
-	Attempts       int
-	Documents      int
-	PaneBindings   int
-	Decisions      int
-	Rulings        int
-	Owners         int
-	Messages       int
-	UnreadMessages int
+	Repository   string
+	Tasks        int
+	Attempts     int
+	Documents    int
+	PaneBindings int
+	Decisions    int
+	Rulings      int
+	Owners       int
+	// UncontainedStarting counts the owners in starting with no containment
+	// recorded: once their launcher is gone nothing can prove them exited
+	// (docs/artisan.md#limits).
+	UncontainedStarting int
+	Messages            int
+	UnreadMessages      int
 }
 
 // maxProblems bounds the problems Doctor collects from a badly damaged file.
@@ -82,8 +86,11 @@ func (s *Store) Doctor() (Report, error) {
 				}
 				_ = b.ForEach(func(k, v []byte) error {
 					*n++
-					if err := decodeRecord(name, k, v); err != nil {
+					rec, err := decodeRecord(name, k, v)
+					if err != nil {
 						problem("repository %s: %v", repo, err)
+					} else if o, ok := rec.(*Ownership); ok && o.State == OwnerStarting && o.Containment == (Containment{}) {
+						counts.UncontainedStarting++
 					}
 					return nil
 				})
@@ -98,29 +105,31 @@ func (s *Store) Doctor() (Report, error) {
 	return rep, nil
 }
 
-func decodeRecord(bucket string, k, v []byte) error {
+func decodeRecord(bucket string, k, v []byte) (any, error) {
+	var rec any
 	switch bucket {
 	case string(bucketTasks):
-		return decode(k, v, new(Task))
+		rec = new(Task)
 	case string(bucketAttempts):
-		return decode(k, v, new(StageAttempt))
+		rec = new(StageAttempt)
 	case string(bucketDocuments):
-		return decode(k, v, new(DocumentRef))
+		rec = new(DocumentRef)
 	case string(bucketPanes):
-		return decode(k, v, new(PaneBinding))
+		rec = new(PaneBinding)
 	case string(bucketRulings):
-		return decode(k, v, new(Ruling))
+		rec = new(Ruling)
 	case string(bucketOwners):
-		return decode(k, v, new(Ownership))
+		rec = new(Ownership)
 	case string(bucketMessages):
-		return decode(k, v, new(Message))
+		rec = new(Message)
 	case string(bucketInbox):
 		// Inbox entries index messages by id rather than holding JSON.
 		if v == nil || !messageIDPattern.Match(v) {
-			return fmt.Errorf("%w: inbox entry %q", ErrNotStore, k)
+			return nil, fmt.Errorf("%w: inbox entry %q", ErrNotStore, k)
 		}
-		return nil
+		return nil, nil
 	default:
-		return decode(k, v, new(Decision))
+		rec = new(Decision)
 	}
+	return rec, decode(k, v, rec)
 }

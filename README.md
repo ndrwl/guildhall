@@ -223,7 +223,7 @@ schema_version: 1 (supported: 1)
 integrity: ok
 receipts: 9
 workflow approvals: 0
-repository app: tasks 1, attempts 1, documents 1, pane bindings 1, decisions 1, messages 1 (0 unread)
+repository app: tasks 1, attempts 1, documents 1, pane bindings 1, decisions 1, rulings 0, owners 0 (0 starting without containment), messages 1 (0 unread)
 ```
 
 ### Preview a Steward rollout
