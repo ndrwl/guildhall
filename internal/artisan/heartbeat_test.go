@@ -95,6 +95,7 @@ func TestReadHeartbeatRefuses(t *testing.T) {
 		"zero sequence":     `{"schema":"guildhall.attempt-heartbeat/1",` + strings.Replace(fields, `"sequence":1`, `"sequence":0`, 1) + `}`,
 		"blank state":       `{"schema":"guildhall.attempt-heartbeat/1",` + strings.Replace(fields, `"running"`, `""`, 1) + `}`,
 		"output after time": `{"schema":"guildhall.attempt-heartbeat/1",` + strings.Replace(fields, "2025-12-31T23:59:00Z", "2026-01-01T00:00:01Z", 1) + `}`,
+		"trailing data":     `{"schema":"guildhall.attempt-heartbeat/1",` + fields + `} {}`,
 		"torn":              `{"schema":"guildhall.attempt-heartbeat/1",`,
 		"empty":             ``,
 	} {

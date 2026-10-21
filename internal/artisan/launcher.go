@@ -136,6 +136,22 @@ type Outcome struct {
 	Survivors []Identity `json:"survivors,omitempty"`
 }
 
+// ErrInvalidOutcome reports an OutcomeFile that is malformed or names no
+// outcome state. A newer schema matches strictjson.ErrNewerSchema instead.
+var ErrInvalidOutcome = errors.New("artisan: invalid outcome")
+
+// ReadOutcome reads OutcomeFile in the attempt directory dir.
+// See docs/artisan.md#stop-ladder for validation and error semantics.
+func ReadOutcome(dir string) (Outcome, error) {
+	// Red stub: the lenient read reconcile used.
+	b, err := os.ReadFile(filepath.Join(dir, OutcomeFile))
+	if err != nil {
+		return Outcome{}, err
+	}
+	var out Outcome
+	return out, json.Unmarshal(b, &out)
+}
+
 // LauncherConfig configures a Launcher.
 type LauncherConfig struct {
 	// Dir is the existing attempt directory.

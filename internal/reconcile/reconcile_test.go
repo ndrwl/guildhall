@@ -205,6 +205,24 @@ func TestClassifyFiles(t *testing.T) {
 	t.Run("no ownership record is absent", func(t *testing.T) {
 		want(t, classify(t.TempDir(), nil), reconcile.Absent)
 	})
+	// An outcome that cannot be read is unknown and never falls through to
+	// the marker, result or owner; a newer schema says so, apart from damage.
+	for name, c := range map[string]struct{ body, reason string }{
+		"a newer outcome":          {`{"schema":"guildhall.attempt-outcome/2","state":"finished","detail":""}`, "newer outcome: "},
+		"a damaged outcome":        {`{"schema":"guildhall.attempt-outcome/1","state":"finished","detail":"","extra":true}`, "unreadable outcome: "},
+		"an unknown outcome state": {`{"schema":"guildhall.attempt-outcome/1","state":"running","detail":""}`, "unreadable outcome: "},
+	} {
+		t.Run(name+" is unknown", func(t *testing.T) {
+			dir := t.TempDir()
+			write(t, filepath.Join(dir, artisan.OutcomeFile), c.body)
+			write(t, artisantest.NewFiles(dir).Result, artisantest.ResultBody)
+			got := classify(dir, live)
+			want(t, got, reconcile.Unknown)
+			if !strings.HasPrefix(got.Reason, c.reason) || got.Outcome != nil || got.Launcher != "" {
+				t.Errorf("classification %+v, want reason %q and no outcome or owner check", got, c.reason)
+			}
+		})
+	}
 }
 
 type blockedMarkerFiles struct {
