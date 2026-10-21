@@ -162,4 +162,3 @@ func (p *Process) stop(c *child) error {
 	}
 	return err
 }
-
