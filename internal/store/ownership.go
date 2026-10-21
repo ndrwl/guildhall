@@ -143,8 +143,13 @@ type Ownership struct {
 // reports survivors as Alive or Unverified, never Gone.
 type OwnerProbe func(Ownership) (artisan.Liveness, error)
 
-// ProbeLauncher probes the recorded launcher identity with artisan.Probe.
+// ProbeLauncher returns Unverified when containment is recorded, since launcher
+// exit cannot prove absence of contained survivors. Without containment it probes
+// the recorded launcher identity with artisan.Probe.
 func ProbeLauncher(o Ownership) (artisan.Liveness, error) {
+	if o.Containment != (Containment{}) {
+		return artisan.Unverified, nil
+	}
 	return artisan.Probe(o.LauncherIdentity)
 }
 
@@ -179,7 +184,9 @@ func (s *Store) StartOwnedAttempt(mutationID string, o Ownership) (Receipt, erro
 // ErrOwnerLive or ErrOwnerUnknown otherwise and writes nothing. A recorded
 // containment that is not Recoverable refuses with ErrOwnerUnknown without
 // probing, since its unit could not be swept. A nil probe
-// means ProbeLauncher. The probe runs inside the mutation, under the store's
+// means ProbeLauncher, which refuses recorded containment with ErrOwnerUnknown;
+// recovery requires an explicit containment-aware probe proving no survivors.
+// The probe runs inside the mutation, under the store's
 // single-writer lock, so two take-overs never both succeed. A replayed
 // mutation id returns its original receipt without probing.
 func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) (Receipt, error) {

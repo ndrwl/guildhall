@@ -72,7 +72,7 @@ The ownership record holds the current launcher identity; the receipt holds the 
   An attempt with no owner is taken at once.
   An attempt with an owner is probed first: a live owner refuses the take with `ErrOwnerLive`, and an owner that cannot be proven exited refuses it with `ErrOwnerUnknown`; a refusal writes nothing.
   Only an owner proven exited, with no probe error, may be replaced.
-  The default probe checks the recorded launcher identity, so a reused PID with a different creation token counts as exited; a caller that also knows what the owner contained reports surviving members as live or unknown, never as exited.
+  The default probe (`ProbeLauncher`, also selected by nil) refuses with `ErrOwnerUnknown` whenever containment is recorded; launcher exit alone cannot establish absence of contained survivors. Without containment it checks the recorded launcher identity, so a reused PID with a different creation token counts as exited. Recovery of recorded containment requires an explicit containment-aware probe proving both launcher exit and absence of survivors; it reports surviving members as live or unknown, never as exited.
 - Both record the owner as `starting`.
   `UpdateOwnership` then lets the same launcher identity record its containment unit, its endpoint and `running`; another launcher's update is refused with `ErrOwnerLive`, and `running` never returns to `starting`.
 - `FinishAttempt` releases the attempt's ownership record in the same mutation and keeps it, still naming its launcher; a released record is never updated or taken again, because a finished attempt cannot be owned.

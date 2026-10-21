@@ -132,6 +132,75 @@ func TestHelperOwnAttempt(t *testing.T) {
 	os.Exit(0)
 }
 
+func TestTakeOwnershipPreservesContainmentAfterLauncherExit(t *testing.T) {
+	for _, kind := range []string{ContainmentGroup, ContainmentSubreaper, ContainmentCgroup, ContainmentJob} {
+		t.Run(kind, func(t *testing.T) {
+			launcher, _ := startHolder(t, filepath.Join(t.TempDir(), "launcher.store"))
+			launcherID, err := artisan.Lookup(launcher.Process.Pid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			worker, _ := startHolder(t, filepath.Join(t.TempDir(), "worker.store"))
+			workerID, err := artisan.Lookup(worker.Process.Pid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s, path := newStore(t)
+			mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
+			if _, err := s.StartOwnedAttempt("m-start", sampleOwnership(launcherID)); err != nil {
+				t.Fatal(err)
+			}
+			owner := mustOwnership(t, s, 1)
+			owner.State = OwnerRunning
+			owner.Containment = Containment{Kind: kind, Worker: workerID, Reason: "recorded detection result"}
+			if kind == ContainmentCgroup || kind == ContainmentJob {
+				owner.Containment.Name = "recorded-unit"
+			}
+			if _, err := s.UpdateOwnership("m-running", owner); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			s = openTest(t, path)
+			if err := launcher.Process.Kill(); err != nil {
+				t.Fatal(err)
+			}
+			_ = launcher.Wait()
+			if lv, err := artisan.Probe(launcherID); err != nil || lv != artisan.Gone {
+				t.Fatalf("launcher = %v, %v; want Gone", lv, err)
+			}
+			for i, probe := range []OwnerProbe{nil, ProbeLauncher} {
+				mutation := fmt.Sprintf("m-take-%d", i)
+				if _, err := s.TakeOwnership(mutation, takeB(1), probe); !errors.Is(err, ErrOwnerUnknown) {
+					t.Errorf("take with recorded %s: %v; want ErrOwnerUnknown", kind, err)
+				}
+				if got := mustOwnership(t, s, 1); got != owner {
+					t.Errorf("ownership evidence changed: %+v; want %+v", got, owner)
+				}
+				if _, err := s.Receipt(mutation); !errors.Is(err, ErrNotFound) {
+					t.Errorf("refused takeover left receipt: %v", err)
+				}
+			}
+			if lv, err := artisan.Probe(workerID); err != nil || lv != artisan.Alive {
+				t.Fatalf("surviving worker = %v, %v; want Alive", lv, err)
+			}
+			if err := worker.Process.Kill(); err != nil {
+				t.Fatal(err)
+			}
+			_ = worker.Wait()
+			if _, err := s.TakeOwnership("m-take-0", takeB(1), func(o Ownership) (artisan.Liveness, error) {
+				if o != owner {
+					t.Errorf("recovery probe lost evidence: %+v", o)
+				}
+				return artisan.Probe(o.Containment.Worker)
+			}); err != nil {
+				t.Fatalf("explicit recovery after worker exit: %v", err)
+			}
+		})
+	}
+}
+
 func TestOwnerInAnotherProcessIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "guildhall.store")
 	s := openTest(t, path)
