@@ -69,8 +69,9 @@ func guildhall(t *testing.T, stdin string, args ...string) (int, string, string)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	done := make(chan struct{})
+	// The exit code, not Wait's error, is the result.
+	go func() { _ = cmd.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(30 * time.Second):
@@ -104,14 +105,16 @@ func TestArtisanRunOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
 		prompt, extra string
 		code          int
 		outcome       string
+		// status is the classification afterwards: the launcher's decision.
+		status string
 	}{
-		{"Do it.\n", "", 0, "succeeded"},
-		{"guildhall-fake: fault=exit-error\n", "", 0, "succeeded"},
-		{"guildhall-fake: outcome=failed\n", "", 4, "failed"},
-		{"guildhall-fake: fault=no-result\n", "", 4, "failed"},
-		{"guildhall-fake: fault=malformed\n", "", 4, "failed"},
-		{"guildhall-fake: fault=wrong-identity\n", "", 4, "failed"},
-		{"guildhall-fake: delay=5m\n", "300ms", 5, "stopped"},
+		{"Do it.\n", "", 0, "succeeded", "finished"},
+		{"guildhall-fake: fault=exit-error\n", "", 0, "succeeded", "finished"},
+		{"guildhall-fake: outcome=failed\n", "", 4, "failed", "finished"},
+		{"guildhall-fake: fault=no-result\n", "", 4, "failed", "failed"},
+		{"guildhall-fake: fault=malformed\n", "", 4, "failed", "failed"},
+		{"guildhall-fake: fault=wrong-identity\n", "", 4, "failed", "failed"},
+		{"guildhall-fake: delay=5m\n", "300ms", 5, "stopped", "cancelled"},
 	}
 	for _, tc := range cases {
 		t.Run(strings.TrimSpace(tc.prompt), func(t *testing.T) {
@@ -135,9 +138,8 @@ func TestArtisanRunOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
 				t.Errorf("ownership %+v not released", own)
 			}
 			code, stdout, _ = guildhall(t, "", o.args("status")...)
-			want := map[string]string{"succeeded": "finished", "failed": "failed", "stopped": "cancelled"}[tc.outcome]
-			if c := decodeJSON[classification](t, stdout); code != 0 || c.State != want {
-				t.Errorf("status exit %d: %+v; want %s", code, c, want)
+			if c := decodeJSON[classification](t, stdout); code != 0 || c.State != tc.status {
+				t.Errorf("status exit %d: %+v; want %s", code, c, tc.status)
 			}
 		})
 	}

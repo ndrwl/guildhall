@@ -394,6 +394,7 @@ func (l *Launcher) ladder(d Outcome, first int, err error, explicit bool, signal
 	}
 	if l.empty() {
 		if first == 1 {
+			// The marker emptied the tree before the first check.
 			l.event("rung-emptied", map[string]any{"rung": 1})
 			return l.finish(d, 1, nil, err)
 		}
