@@ -20,6 +20,7 @@ import (
 	"errors"
 
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // SchemaPrefix and SchemaVersion form the envelope "schema" value, "guildhall.message/1".
@@ -35,7 +36,8 @@ var (
 	// ErrInvalid reports a malformed envelope or recipient, or a recipient that does not match the envelope.
 	ErrInvalid = errors.New("invalid message")
 	// ErrNewerSchema reports an envelope written for a newer Guildhall; it is refused rather than guessed at.
-	ErrNewerSchema = errors.New("message schema is newer than this Guildhall supports")
+	// It is strictjson.ErrNewerSchema.
+	ErrNewerSchema = strictjson.ErrNewerSchema
 )
 
 // Envelope is the versioned wire form of one message.
