@@ -38,15 +38,15 @@ func newStore(t *testing.T) (*Store, string) {
 	return openTest(t, path), path
 }
 
-func digest(c byte) string { return "sha256:" + strings.Repeat(string(c), 64) }
+func sampleDigest(c byte) string { return "sha256:" + strings.Repeat(string(c), 64) }
 
 func sampleTask(repo, id string) Task {
 	return Task{
 		Repository:   repo,
 		ID:           id,
 		Title:        "Add the store",
-		Workflow:     workflow.Revision{Name: "default", Digest: digest('a')},
-		ConfigDigest: digest('b'),
+		Workflow:     workflow.Revision{Name: "default", Digest: sampleDigest('a')},
+		ConfigDigest: sampleDigest('b'),
 	}
 }
 

@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -14,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -194,8 +193,7 @@ func acceptTask(cfgPath, repo string) (store.Task, error) {
 	if err != nil {
 		return store.Task{}, fmt.Errorf("config digest: %w", err)
 	}
-	sum := sha256.Sum256(data)
-	return store.Task{Repository: repo, Workflow: def.Revision(), ConfigDigest: "sha256:" + hex.EncodeToString(sum[:])}, nil
+	return store.Task{Repository: repo, Workflow: def.Revision(), ConfigDigest: string(digest.Of(data))}, nil
 }
 
 // effectiveWorkflow returns the repository's workflow with its overrides applied and validated:

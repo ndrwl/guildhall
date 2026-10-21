@@ -10,6 +10,8 @@ import (
 	"strconv"
 
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // Message bounds; larger content belongs in a referenced artifact.
@@ -356,7 +358,7 @@ func ValidateMessage(m Message) error {
 		if !validDocumentPath(a.Path) {
 			return invalid("artifact path %q must be a clean relative slash-separated path", a.Path)
 		}
-		if !isLowerHex(a.SHA256, 64) {
+		if _, err := digest.ParseHex(a.SHA256); err != nil {
 			return invalid("artifact sha256 %q must be 64 lowercase hex characters", a.SHA256)
 		}
 	}

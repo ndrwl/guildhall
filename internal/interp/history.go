@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -239,7 +240,7 @@ func (h *history) firings(s workflow.Step) ([]firing, error) {
 		for _, d := range h.rounds(s.ID) {
 			if d.Answered && d.Choice == changesRequested {
 				p := path.Join("tasks", h.repository, h.task, d.ID, "answer.md")
-				out = append(out, firing{path: p, sha256: digest([]byte(d.Answer)), answer: d, round: h.round(d)})
+				out = append(out, firing{path: p, sha256: digest.Of([]byte(d.Answer)).Hex(), answer: d, round: h.round(d)})
 			}
 		}
 		return out, nil

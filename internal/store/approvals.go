@@ -2,11 +2,11 @@ package store
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -38,7 +38,7 @@ func (s *Store) ApproveWorkflow(a WorkflowApproval) (Receipt, error) {
 	if !workflow.ValidID(a.Name) {
 		return Receipt{}, invalid("workflow name %q is not a valid id", a.Name)
 	}
-	if hexPart, ok := strings.CutPrefix(a.Digest, "sha256:"); !ok || !isLowerHex(hexPart, 64) {
+	if _, err := digest.Parse(a.Digest); err != nil {
 		return Receipt{}, invalid(`workflow digest %q must be "sha256:<64 lowercase hex>"`, a.Digest)
 	}
 	if err := validateText("words", a.Words, MaxTextBytes); err != nil {

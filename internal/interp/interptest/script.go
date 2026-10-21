@@ -7,8 +7,6 @@ package interptest
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -254,11 +253,11 @@ func match(e Expectation, m render.Manifest) []string {
 		got[in.Port] = in.Digest
 	}
 	for _, port := range sortedKeys(e.Inputs) {
-		switch digest, ok := got[port]; {
+		switch sum, ok := got[port]; {
 		case !ok:
 			problems = append(problems, fmt.Sprintf("manifest lacks required input %q", port))
-		case digest != e.Inputs[port]:
-			problems = append(problems, fmt.Sprintf("wrong artefact revision on input %q: %s, want %s", port, digest, e.Inputs[port]))
+		case sum != e.Inputs[port]:
+			problems = append(problems, fmt.Sprintf("wrong artefact revision on input %q: %s, want %s", port, sum, e.Inputs[port]))
 		}
 	}
 	for _, port := range sortedKeys(got) {
@@ -322,7 +321,7 @@ func verifyFiles(spec interp.Spec) []string {
 		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", what, err))
-		} else if got := digest(data); got != want {
+		} else if got := string(digest.Of(data)); got != want {
 			problems = append(problems, fmt.Sprintf("%s does not match the manifest: %s, manifest names %s", what, got, want))
 		}
 	}
@@ -330,7 +329,7 @@ func verifyFiles(spec interp.Spec) []string {
 		data, err := os.ReadFile(spec.PromptFile)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("prompt file: %v", err))
-		} else if got := digest(data); got != m.Prompt.Digest {
+		} else if got := string(digest.Of(data)); got != m.Prompt.Digest {
 			problems = append(problems, fmt.Sprintf("prompt file does not match the manifest: %s, manifest names %s", got, m.Prompt.Digest))
 		}
 	}
@@ -346,11 +345,6 @@ func verifyFiles(spec interp.Spec) []string {
 		}
 	}
 	return problems
-}
-
-func digest(data []byte) string {
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // respond writes the response's files, then its result.

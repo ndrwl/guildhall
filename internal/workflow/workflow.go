@@ -8,9 +8,7 @@ package workflow
 
 import (
 	"bytes"
-	"crypto/sha256"
 	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +19,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // SchemaPrefix and SchemaVersion form the workflow "schema" value, for example "guildhall.workflow/1".
@@ -225,8 +225,7 @@ func (d *Definition) Digest() string {
 	if err != nil {
 		panic(fmt.Sprintf("workflow: canonical encoding failed: %v", err))
 	}
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:])
+	return string(digest.Of(data))
 }
 
 // Revision returns the immutable revision a task binds.

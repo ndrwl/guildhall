@@ -3,8 +3,6 @@ package steward
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // Plan and receipt schemas.
@@ -107,7 +106,7 @@ func LoadRollout(privateDir string, t Copier) (*Rollout, error) {
 	}
 	return &Rollout{
 		Roster: roster, Managed: managed, privateDir: privateDir,
-		rosterDigest: digest(rosterData), managedDigest: digest(managedData),
+		rosterDigest: string(digest.Of(rosterData)), managedDigest: string(digest.Of(managedData)),
 		Transport: t, Now: time.Now,
 	}, nil
 }
@@ -241,7 +240,7 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 		c.Status, c.Problem = StatusRefused, err.Error()
 		return
 	}
-	c.LocalSHA256 = digestHex(local)
+	c.LocalSHA256 = digest.Of(local).Hex()
 	remote := Remote{c.SSHAlias, c.Target}
 	if err := r.Transport.Fetch(ctx, remote, fetched); err != nil {
 		c.Status, c.Problem = StatusRefused, "fetching "+remote.String()+": "+err.Error()
@@ -252,7 +251,7 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 		c.Status, c.Problem = StatusRefused, err.Error()
 		return
 	}
-	c.before, c.BeforeSHA256 = before, digestHex(before)
+	c.before, c.BeforeSHA256 = before, digest.Of(before).Hex()
 	cfg, err := config.ParseCombined(local, before)
 	if err == nil {
 		err = checkTarget(cfg, Target{Machine: c.Machine, Director: d})
@@ -270,7 +269,7 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 		c.Status, c.Problem = StatusRefused, err.Error()
 		return
 	}
-	c.after, c.AfterSHA256, c.Changes = after, digestHex(after), changes
+	c.after, c.AfterSHA256, c.Changes = after, digest.Of(after).Hex(), changes
 	if bytes.Equal(before, after) {
 		c.Status = StatusUnchanged
 		return
@@ -291,7 +290,7 @@ func (p *Plan) digest() string {
 	if err != nil {
 		panic(err) // A plan is plain data and always encodes.
 	}
-	return digest(data)
+	return string(digest.Of(data))
 }
 
 // WritePlan writes plan.json and each changed copy's previous.toml and managed.toml previews into a new stage directory.
@@ -495,7 +494,7 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 		cr.Status, cr.Error = StatusFailed, err.Error()
 		return cr
 	}
-	cr.VerifiedSHA256 = digestHex(verified)
+	cr.VerifiedSHA256 = digest.Of(verified).Hex()
 	if cr.VerifiedSHA256 != c.AfterSHA256 {
 		cr.Status, cr.Error = StatusVerifyFailed, "the copy read back does not match the rolled-out config"
 		return cr
@@ -503,10 +502,3 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 	cr.Status = StatusApplied
 	return cr
 }
-
-func digestHex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func digest(data []byte) string { return "sha256:" + digestHex(data) }

@@ -93,12 +93,12 @@ func TestTaskRevisionIsImmutable(t *testing.T) {
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
 	changed := sampleTask("app", "t-1")
-	changed.Workflow = workflow.Revision{Name: "default", Digest: digest('f')}
+	changed.Workflow = workflow.Revision{Name: "default", Digest: sampleDigest('f')}
 	if _, err := s.CreateTask("m-2", changed); !errors.Is(err, ErrExists) {
 		t.Fatalf("rebinding workflow: err = %v, want ErrExists", err)
 	}
 	got, _ := s.Task("app", "t-1")
-	if got.Workflow.Digest != digest('a') {
+	if got.Workflow.Digest != sampleDigest('a') {
 		t.Fatalf("workflow revision changed to %q", got.Workflow.Digest)
 	}
 }
@@ -266,7 +266,7 @@ func TestPaneBindings(t *testing.T) {
 func sampleDecision(id string) Decision {
 	return Decision{
 		Repository: "app", TaskID: "t-1", ID: id, Kind: DecisionApproval,
-		Subject:  &Subject{Kind: SubjectDocument, Digest: digest('c')},
+		Subject:  &Subject{Kind: SubjectDocument, Digest: sampleDigest('c')},
 		Options:  []string{"approve", "reject"},
 		Question: "Approve the plan?",
 	}

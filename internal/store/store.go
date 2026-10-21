@@ -20,8 +20,6 @@
 package store
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +31,8 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 	berrors "go.etcd.io/bbolt/errors"
+
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // SchemaVersion is the newest store schema this Guildhall reads and the one it writes.
@@ -270,8 +270,7 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 	if err != nil {
 		return Receipt{}, fmt.Errorf("store: %w", err)
 	}
-	sum := sha256.Sum256(body)
-	digest := "sha256:" + hex.EncodeToString(sum[:])
+	requestDigest := string(digest.Of(body))
 
 	var out Receipt
 	err = s.db.Update(func(tx *bolt.Tx) error {
@@ -280,7 +279,7 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 			if err := json.Unmarshal(prior, &out); err != nil {
 				return fmt.Errorf("receipt %q: %w", mutationID, err)
 			}
-			if out.Operation != op || out.RequestDigest != digest {
+			if out.Operation != op || out.RequestDigest != requestDigest {
 				return fmt.Errorf("%w: %q was %s", ErrMutationConflict, mutationID, out.Operation)
 			}
 			return nil
@@ -290,7 +289,7 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 		if err != nil {
 			return err
 		}
-		r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: digest, Sequence: seq}
+		r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: requestDigest, Sequence: seq}
 		if err := apply(tx, &r); err != nil {
 			return err
 		}

@@ -1,14 +1,13 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -65,6 +64,5 @@ func mutationID(kind string, ids ...string) string {
 	if len(id) <= 128 {
 		return id
 	}
-	sum := sha256.Sum256([]byte(id))
-	return kind + ":sha256:" + hex.EncodeToString(sum[:])
+	return kind + ":" + string(digest.Of([]byte(id)))
 }

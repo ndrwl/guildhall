@@ -2,7 +2,6 @@ package store
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -13,6 +12,7 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -289,7 +289,7 @@ func (s *Store) PutDocument(mutationID string, d DocumentRef) (Receipt, error) {
 	if !validDocumentPath(d.Path) {
 		return Receipt{}, invalid("document path %q must be a clean relative slash-separated path", d.Path)
 	}
-	if !isLowerHex(d.SHA256, 64) {
+	if _, err := digest.ParseHex(d.SHA256); err != nil {
 		return Receipt{}, invalid("document sha256 %q must be 64 lowercase hex characters", d.SHA256)
 	}
 	return s.mutate(mutationID, "put-document", d, func(tx *bolt.Tx, r *Receipt) error {
@@ -591,7 +591,7 @@ func validateTask(t Task) error {
 		return invalid("workflow name %q is not a valid id", t.Workflow.Name)
 	}
 	for name, d := range map[string]string{"workflow digest": t.Workflow.Digest, "config digest": t.ConfigDigest} {
-		if hexPart, ok := strings.CutPrefix(d, "sha256:"); !ok || !isLowerHex(hexPart, 64) {
+		if _, err := digest.Parse(d); err != nil {
 			return invalid(`%s %q must be "sha256:<64 lowercase hex>"`, name, d)
 		}
 	}
@@ -623,11 +623,11 @@ func validateDecision(d Decision) error {
 		return invalid("decision kind %q must be one of approval, review, loop-exit, merge or question", d.Kind)
 	}
 	if sub := d.Subject; sub != nil {
-		hexPart, prefixed := strings.CutPrefix(sub.Digest, "sha256:")
+		_, err := digest.Parse(sub.Digest)
 		switch {
-		case sub.Kind == SubjectDocument && (!prefixed || !isLowerHex(hexPart, 64)):
+		case sub.Kind == SubjectDocument && err != nil:
 			return invalid(`document subject digest %q must be "sha256:<64 lowercase hex>"`, sub.Digest)
-		case sub.Kind == SubjectHead && !isLowerHex(sub.Digest, 40) && !isLowerHex(sub.Digest, 64):
+		case sub.Kind == SubjectHead && !digest.ValidHead(sub.Digest):
 			return invalid("head subject digest %q must be a 40 or 64 lowercase hex object id", sub.Digest)
 		case sub.Kind != SubjectDocument && sub.Kind != SubjectHead:
 			return invalid("subject kind %q must be %q or %q", sub.Kind, SubjectDocument, SubjectHead)
@@ -657,12 +657,4 @@ func validateDecision(d Decision) error {
 func validDocumentPath(p string) bool {
 	return p != "" && utf8.ValidString(p) && len(p) <= 1024 && !strings.Contains(p, `\`) && path.Clean(p) == p &&
 		!path.IsAbs(p) && filepath.IsLocal(filepath.FromSlash(p)) && !strings.Contains(p, ":")
-}
-
-func isLowerHex(s string, n int) bool {
-	if len(s) != n || strings.ToLower(s) != s {
-		return false
-	}
-	_, err := hex.DecodeString(s)
-	return err == nil
 }
