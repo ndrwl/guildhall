@@ -16,7 +16,7 @@
 //     - gone: exited when no containment is recorded or artisan.Contained
 //     proves the recorded unit empty (see artisan.Contained);
 //     unknown when contained processes survive or cannot be checked;
-//     - alive with a heartbeat that cannot be read: unknown;
+//     - alive with a refused heartbeat (other than ErrNoHeartbeat): unknown;
 //     - alive with a heartbeat older than the stale threshold: stuck,
 //     whatever the endpoint answers;
 //     - alive and the recorded endpoint answers status for this attempt and
@@ -33,10 +33,10 @@
 // The heartbeat is evidence, never proof: stuck is not exit and grants no
 // relaunch, take-over or sweep, and a gone launcher's frozen heartbeat is
 // reported while the identity decides. A heartbeat naming another attempt is
-// ignored. A heartbeat artisan.ReadHeartbeat refuses, such as a newer schema
-// or a malformed file, is never read as no heartbeat: the reader's error is
-// appended to Reason, and a live launcher with one is unknown, whatever its
-// endpoint answers.
+// ignored. During owner checks, a heartbeat artisan.ReadHeartbeat refuses,
+// such as a newer schema or a malformed file, is never read as no heartbeat:
+// the reader's error is appended to Reason, and a live launcher with one is
+// unknown, whatever its endpoint answers. ErrNoHeartbeat remains no heartbeat.
 package reconcile
 
 import (

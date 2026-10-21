@@ -310,7 +310,8 @@ The lock is released before owner and endpoint checks.
 The classification carries its evidence: the launcher's liveness, what the endpoint answered, the last heartbeat and its age, and any survivors.
 A heartbeat is evidence only: `stuck` is never exit and grants no relaunch, take-over or sweep, and a crashed launcher's frozen heartbeat is reported while the identity rule classifies it `exited`.
 A heartbeat that names another attempt is ignored.
-A heartbeat file that `ReadHeartbeat` refuses, a newer schema or a malformed or rule-breaking file, is reported, never read as no heartbeat: the reader's error is appended to `Reason` whatever decides, so a newer launcher's schema can neither hide a stuck launcher nor be mistaken for a missing file; a missing file is no heartbeat.
+When classification reaches the owner checks, a heartbeat file that `ReadHeartbeat` refuses is reported in `Reason`, even if the launcher is gone or unverified; earlier file decisions and an absent owner do not read the heartbeat.
+A missing file (`ErrNoHeartbeat`) remains no heartbeat; see the [API contract](../internal/reconcile/reconcile.go) for refusal handling.
 The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s).
 
 ## Commands
