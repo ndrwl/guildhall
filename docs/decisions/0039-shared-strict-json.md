@@ -8,3 +8,9 @@ A newer schema is reported before unknown keys or shapes, because a newer versio
 The prompt manifest, workflow and review outcome, result-file, steward rollout plan and `guildhall render` request readers moved over next, each keeping its schema name, size limit and error sentinel, with its refusal tests as the pin; their key walkers and schema checks are deleted.
 The result file keeps its separate `schema` name and integer `version` fields, so strictjson checks only its shape.
 None of the hand-written strict readers this record listed remains; the steward roster and managed settings are TOML and stay outside this package.
+
+The ledger of JSON readers outside this package's formats:
+
+- The attempt's `outcome.json` and `heartbeat.json` are strict: `artisan.ReadOutcome` and `artisan.ReadHeartbeat` decode them with their schema names, `guildhall.attempt-outcome/` and `guildhall.attempt-heartbeat/`, at version 1, so a newer file is told apart from damage and reconcile reads only through them.
+- The adapter's `.cancelled` sidecar is a bare `json.Unmarshal` of an identity; it is left as it is because the `artisan run` slice retires it in favour of the launcher's cancel marker ([stop ladder](0041-stop-ladder-precedence.md)).
+- Documents the engine writes and reads back itself, such as store records, attempt input bindings and revision lists, stay `json.Unmarshal` by choice: no person or other process writes them, and the store's own schema governs their versions.

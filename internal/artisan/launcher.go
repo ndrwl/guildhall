@@ -12,6 +12,9 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // # Stop ladder and precedence
@@ -74,7 +77,15 @@ const (
 )
 
 // OutcomeSchema identifies version 1 of the outcome file.
-const OutcomeSchema = "guildhall.attempt-outcome/1"
+const OutcomeSchema = outcomeSchema + "1"
+
+const (
+	outcomeSchema  = "guildhall.attempt-outcome/"
+	outcomeVersion = 1
+	// maxOutcomeBytes bounds OutcomeFile; it only tells damage from a
+	// document, so it is generous.
+	maxOutcomeBytes = 1 << 20
+)
 
 // Ladder bounds how long each rung waits for the unit to empty.
 type Ladder struct {
@@ -140,16 +151,27 @@ type Outcome struct {
 // outcome state. A newer schema matches strictjson.ErrNewerSchema instead.
 var ErrInvalidOutcome = errors.New("artisan: invalid outcome")
 
-// ReadOutcome reads OutcomeFile in the attempt directory dir.
-// See docs/artisan.md#stop-ladder for validation and error semantics.
+// ReadOutcome reads OutcomeFile in the attempt directory dir. A missing file
+// matches fs.ErrNotExist and a newer schema strictjson.ErrNewerSchema; a
+// malformed file, or one naming no outcome state, is ErrInvalidOutcome.
 func ReadOutcome(dir string) (Outcome, error) {
-	// Red stub: the lenient read reconcile used.
-	b, err := os.ReadFile(filepath.Join(dir, OutcomeFile))
+	b, err := atomicfile.Read(filepath.Join(dir, OutcomeFile))
 	if err != nil {
-		return Outcome{}, err
+		return Outcome{}, fmt.Errorf("artisan: outcome: %w", err)
 	}
 	var out Outcome
-	return out, json.Unmarshal(b, &out)
+	err = strictjson.Decode(b, &out, strictjson.Options{Schema: outcomeSchema, Version: outcomeVersion, MaxBytes: maxOutcomeBytes})
+	if errors.Is(err, strictjson.ErrNewerSchema) {
+		return Outcome{}, fmt.Errorf("artisan: outcome: %w", err)
+	}
+	if err != nil {
+		return Outcome{}, fmt.Errorf("%w: %w", ErrInvalidOutcome, err)
+	}
+	switch out.State {
+	case Finished, Cancelled, Failed:
+		return out, nil
+	}
+	return Outcome{}, fmt.Errorf("%w: unknown state %q", ErrInvalidOutcome, out.State)
 }
 
 // LauncherConfig configures a Launcher.

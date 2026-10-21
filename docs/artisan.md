@@ -211,6 +211,8 @@ A marker or result already present, or a stop requested, before the worker start
 }
 ```
 
+`ReadOutcome` decodes the file with [`strictjson`](contracts/strictjson.md) and never guesses: no file matches `fs.ErrNotExist`, a newer schema matches `strictjson.ErrNewerSchema`, and an unversioned or malformed file, or one whose state is not `finished`, `cancelled` or `failed`, is `ErrInvalidOutcome`.
+
 ### Rungs
 
 | Rung | Action | Bound (`DefaultLadder`) |
@@ -285,7 +287,7 @@ The first rule that applies decides:
 
 | Order | Evidence | State |
 |---|---|---|
-| 1 | `outcome.json` | its state: `finished`, `cancelled` or `failed` |
+| 1 | `outcome.json` | its state: `finished`, `cancelled` or `failed`; `unknown` when it cannot be read, a newer schema reported apart from damage |
 | 2 | Cancel marker | `cancelled` |
 | 3 | Valid result | `finished` |
 | 4 | No ownership record | `absent` |
