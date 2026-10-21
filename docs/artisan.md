@@ -219,6 +219,7 @@ A marker or result already present, or a stop requested, before the worker start
 During escalation, a rung succeeds only when the unit is empty within its bound; otherwise the next rung runs, and after rung 4 the members still alive are the outcome's survivors and `Run` and `Stop` return `ErrNotEmpty`.
 Marker-only cancellation instead continues cooperative supervision as described under [stop requests](#stop-requests).
 An explicit stop of a cancelled attempt climbs from rung 1; a finished or failed attempt whose tree is still running, or a worker outliving its accepted result by the result grace (3 s), climbs from rung 2.
+For a started worker, a stop that writes or finds the cancel marker records rung 1 even if the tree empties before the ladder's first check: the marker itself is the rung. Attempts stopped before starting, and empty trees needing no ladder rung, retain rung 0.
 Each rung is logged to `events.jsonl` with its bound; signal rungs also record the members they acted on and any error.
 A timed-out rung names the processes still alive, and a skipped rung says why.
 

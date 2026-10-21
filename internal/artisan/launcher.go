@@ -358,7 +358,13 @@ func (l *Launcher) stop(decided *Outcome) (Outcome, error) {
 // Automatic cleanup switches to cooperative supervision if cancellation wins
 // the attempt lock before signal dispatch.
 func (l *Launcher) ladder(d Outcome, first int, err error, explicit bool, signals <-chan os.Signal) (Outcome, error) {
-	if !l.started || l.empty() {
+	if !l.started {
+		return l.finish(d, 0, nil, err)
+	}
+	if l.empty() {
+		if first == 1 {
+			return l.finish(d, 1, nil, err)
+		}
 		return l.finish(d, 0, nil, err)
 	}
 	rungs := []struct {
