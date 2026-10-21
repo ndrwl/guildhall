@@ -16,7 +16,8 @@ import (
 
 // inspectStore builds a store with a fixed clock that advances one minute per mutation, so timeline
 // times and durations are stable: task app/t-2 has a failed and a succeeded plan attempt, a running
-// build attempt, two documents, an answered and an open decision and a message; app/t-1 and lib/t-2
+// build attempt, three documents (one a review outcome with a finding), an answered and an open decision,
+// a message and a ruling on the finding; app/t-1 and lib/t-2
 // have records that must not appear in t-2's reads.
 func inspectStore(t *testing.T) string {
 	t.Helper()
@@ -75,6 +76,16 @@ func inspectStore(t *testing.T) string {
 			return s.OpenDecision("i-15", store.Decision{Repository: "app", TaskID: "t-2", ID: "which-branch", Kind: store.DecisionQuestion, Question: "Which branch?"})
 		},
 		func() (store.Receipt, error) { return s.CreateTask("i-16", task("app", "t-3", "Later task")) },
+		func() (store.Receipt, error) {
+			d := doc("t-2", "review-1-outcome", "d")
+			d.Review = &store.Review{Findings: []workflow.Finding{{ID: "f1", Rule: "S2", File: "login.go", Line: 12, Summary: "No red test shown."}},
+				Dispositions: []workflow.Disposition{{Finding: "f0", State: workflow.Resolved}}}
+			return s.PutDocument("i-17", d)
+		},
+		func() (store.Receipt, error) {
+			return s.RuleFinding("i-18", store.Ruling{Repository: "app", TaskID: "t-2", Document: "review-1-outcome", Finding: "f1",
+				Move: store.RulingOutOfScope, Reason: "The spec defers tests to t-3."})
+		},
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
@@ -101,7 +112,7 @@ func TestTaskTimelineGolden(t *testing.T) {
 
 	// A task with only its creation has empty lists, not null ones.
 	code, out, _ = runTask(t, "timeline", "--store", path, "--repo", "app", "t-3", "--json")
-	if code != 0 || !strings.Contains(out, `"attempts":[],"decisions":[]`) || !strings.Contains(out, `"sequence":17`) {
+	if code != 0 || !strings.Contains(out, `"attempts":[],"decisions":[],"findings":[],"rulings":[]`) || !strings.Contains(out, `"sequence":19`) {
 		t.Fatalf("task without records: exit %d, %s", code, out)
 	}
 	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
@@ -145,10 +156,10 @@ func TestTaskInspectionScope(t *testing.T) {
 			if err := json.Unmarshal([]byte(out), &got); err != nil {
 				t.Fatal(err)
 			}
-			if !got.AsOf.Partial || !reflect.DeepEqual(got.AsOf.Excluded, []string{"live worker state", "worker files", "transcript"}) || got.AsOf.Sequence != 17 || got.AsOf.CommittedAt.IsZero() || got.AsOf.Workflow.Digest == "" {
+			if !got.AsOf.Partial || !reflect.DeepEqual(got.AsOf.Excluded, []string{"live worker state", "worker files", "transcript"}) || got.AsOf.Sequence != 19 || got.AsOf.CommittedAt.IsZero() || got.AsOf.Workflow.Digest == "" {
 				t.Fatalf("inspection label = %+v", got.AsOf)
 			}
-			if sub == "timeline" && !reflect.DeepEqual(got.OmittedKinds, map[string]string{"findings": "not yet recorded by this version", "director_rulings": "not yet recorded by this version"}) {
+			if sub == "timeline" && !reflect.DeepEqual(got.OmittedKinds, map[string]string{}) {
 				t.Fatalf("omitted kinds = %v", got.OmittedKinds)
 			}
 		})
@@ -233,5 +244,74 @@ func TestTimelineWithoutRecordNames(t *testing.T) {
 	}
 	if d := got.Decisions[1]; d.ID != "q-1" || d.OpenedAt != nil || d.AnsweredAt == nil || !d.AnsweredAt.Equal(answered) || d.WaitSeconds != nil {
 		t.Fatalf("mixed-version decision = %+v", d)
+	}
+}
+
+// TestTaskFindingRule records a Director ruling through the command line and shows it, with the finding it
+// rules on, in the timeline in recording order.
+func TestTaskFindingRule(t *testing.T) {
+	path := inspectStore(t)
+	rule := func(args ...string) (int, string, string) {
+		return runTask(t, append([]string{"finding", "rule", "--store", path, "--repo", "app"}, args...)...)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+		code int
+		err  string
+	}{
+		{"no move", []string{"--outcome", "review-1-outcome", "--finding", "f1", "--reason", "x", "t-2"}, 2, "requires --outcome, --finding, --move and --reason"},
+		{"json", []string{"--outcome", "review-1-outcome", "--finding", "f1", "--move", "defer", "--reason", "x", "--json", "t-2"}, 2, "--json does not apply"},
+		{"unknown finding", []string{"--outcome", "review-1-outcome", "--finding", "f9", "--move", "duplicate", "--reason", "Same as f1.", "t-2"}, 1, store.ErrNotFound.Error()},
+		{"defer a rule finding", []string{"--outcome", "review-1-outcome", "--finding", "f1", "--move", "defer", "--reason", "Later.", "t-2"}, 1, "may be deferred"},
+	} {
+		code, out, stderr := rule(tc.args...)
+		if code != tc.code || out != "" || !strings.Contains(stderr, tc.err) {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q; want exit %d with %q", tc.name, code, out, stderr, tc.code, tc.err)
+		}
+	}
+	if code, _, stderr := runTask(t, "finding", "contest", "--store", path); code != 2 || !strings.Contains(stderr, "unknown task finding subcommand") {
+		t.Errorf("finding contest: exit %d, %s", code, stderr)
+	}
+	if code, _, stderr := rule("--outcome", "review-1-outcome", "--finding", "f1", "--move", "duplicate", "--reason", "Same as f1.", "t-2"); code != 1 || !strings.Contains(stderr, "already exists") {
+		t.Fatalf("second ruling on f1: exit %d, %s", code, stderr)
+	}
+
+	code, out, _ := runTask(t, "timeline", "--store", path, "--repo", "app", "--json", "t-2")
+	var got taskTimeline
+	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil {
+		t.Fatalf("timeline: exit %d, %v", code, err)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Document != "review-1-outcome" || got.Findings[0].Findings[0].Rule != "S2" ||
+		got.Findings[0].Dispositions[0].State != workflow.Resolved || got.Findings[0].RecordedAt == nil {
+		t.Fatalf("findings = %+v", got.Findings)
+	}
+	if len(got.Rulings) != 1 || got.Rulings[0].Move != store.RulingOutOfScope || got.Rulings[0].Contested || got.Rulings[0].RuledAt == nil ||
+		!got.Rulings[0].RuledAt.After(*got.Findings[0].RecordedAt) || len(got.OmittedKinds) != 0 {
+		t.Fatalf("rulings = %+v, omitted %v", got.Rulings, got.OmittedKinds)
+	}
+}
+
+func TestTaskFindingRuleRecords(t *testing.T) {
+	path := inspectStore(t)
+	args := []string{"finding", "rule", "--store", path, "--repo", "lib", "--outcome", "review-1-outcome", "--finding", "f2", "--move", "defer", "--reason", "Follow-up task.", "t-2"}
+	s, err := store.Open(path, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := store.DocumentRef{Repository: "lib", TaskID: "t-2", Name: "review-1-outcome", Path: "tasks/t-2/review.json", SHA256: strings.Repeat("d", 64),
+		Review: &store.Review{Findings: []workflow.Finding{{ID: "f2", Summary: "Prefer a table."}}}}
+	if _, err := s.PutDocument("lib-review", d); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, first, stderr := runTask(t, args...)
+	if code != 0 || !strings.Contains(first, `"mutation_id":"ruling:lib:t-2:review-1-outcome:f2"`) || !strings.Contains(first, `"record":"ruling/review-1-outcome/f2"`) {
+		t.Fatalf("exit %d, stdout %s, stderr %s", code, first, stderr)
+	}
+	if code, again, _ := runTask(t, args...); code != 0 || again != first {
+		t.Fatalf("retry: exit %d, %s, want the original receipt %s", code, again, first)
 	}
 }

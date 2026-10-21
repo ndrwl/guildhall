@@ -11,7 +11,7 @@ The engine consumes four narrow interfaces, declared in `internal/interp` beside
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents and decisions; start and finish attempts, record documents and open decisions | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
+| `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | none yet | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
@@ -68,6 +68,7 @@ Before recording attempt `n` of an Artisan step, the engine records its binding 
 Besides its wired inputs, an attempt may be given:
 
 - `previous`: a review step's own latest outcome, whose findings the new outcome must disposition;
+- `rulings`: the Director's [rulings](#director-rulings) on findings of a review step's previous outcome, recorded first as document `<step>-<n>-rulings` (`tasks/<repo>/<task>/<step>-<n>.rulings.json`), a JSON array of rulings;
 - `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`).
 
 A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.
@@ -89,6 +90,14 @@ Each blocking result of a step is one round of its `on.changes_requested` rule; 
 - **No rule.** The task waits for the Director, told as `<repo>.<task>.changes-requested.<step>-<n>` (or `.<decision>`).
 
 When an attempt's review outcome arrives, it is refused with `ErrOutcome`, recording nothing, if it is not bound to the revisions in its binding (a stale outcome) or if it gives no disposition for a finding id of the previous outcome it was given.
+
+### Director rulings
+
+A review step's attempt is given the [rulings](tasks.md#director-rulings) recorded on its previous outcome before it started.
+When its outcome keeps a ruled finding `still-open`, the attempt contests that ruling: the engine records it once, before the attempt is finished, naming the attempt.
+A contested ruling on a rule-cited finding of a blocking outcome is a dispute: the engine opens that round's loop exit `<step>-x<round>`, even within `max`, with a question quoting each disputed finding, the Director's ruling and the head or document, and neither the loop's target nor the step runs until it is answered.
+`continue` upholds the finding and the loop goes on, with one more round allowed; `accept` and `reject` are as at any loop exit.
+A finding the attempt withdraws or resolves leaves its ruling uncontested.
 
 ### Stall signals
 
@@ -160,5 +169,6 @@ It checks each event's effect on the records, the approval bound to the plan doc
 `loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`) against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
 Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
 Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
+`rulings_test.go` checks [Director rulings](#director-rulings) on both backends: a ruling given to the next review, withdrawn or contested once, and a contested blocker opening the loop exit within `max`.
 See the [interpreter contract tests](contracts/interp.md#tests) for history-view and per-write replay coverage.
 `TestRecordsContract` runs `interptest.RunRecordsContract` against the store and the double, including concurrent list readers and record writers.

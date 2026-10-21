@@ -22,7 +22,8 @@ const taskUsage = `usage:
   guildhall task show --store <path> --repo <id> <task> --json
   guildhall task list --store <path> [--repo <id>] --json
   guildhall task timeline --store <path> --repo <id> <task> --json
-  guildhall task files --store <path> --repo <id> <task> --json`
+  guildhall task files --store <path> --repo <id> <task> --json
+  guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move out-of-scope|duplicate|defer --reason <text> <task>`
 
 // dependsOn collects repeated --depends-on flags in the order given.
 type dependsOn []store.TaskRef
@@ -50,6 +51,8 @@ type taskDetail struct {
 // task new binds the repository's effective workflow revision and the configuration digest, and records the
 // mutation "task:<repo>:<task>" (or "task:sha256:<hex digest>" of that string if over 128 bytes),
 // so a retry prints the original receipt; show, list, timeline and files only read.
+// task finding rule records the Director's ruling on one finding of a review outcome document with the mutation
+// "ruling:<repo>:<task>:<document>:<finding>" (hashed the same way), and prints its receipt.
 // timeline and files are the Director's inspection reads, labelled with the store sequence and
 // workflow revision they describe (docs/tasks.md#inspection).
 // It exits 0 on success, 1 when the configuration, workflow or store refuses or fails and 2 on a usage error.
@@ -58,6 +61,12 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("missing task subcommand")
 	}
 	sub := args[0]
+	if sub == "finding" {
+		if len(args) < 2 || args[1] != "rule" {
+			return a.taskUsage("unknown task finding subcommand; the only one is rule")
+		}
+		sub, args = "finding rule", args[1:]
+	}
 	flags := flag.NewFlagSet("task "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	path := flags.String("store", "", "store file")
@@ -65,6 +74,10 @@ func (a *App) task(args []string) int {
 	repo := flags.String("repo", "", "repository id")
 	title := flags.String("title", "", "task title")
 	asJSON := flags.Bool("json", false, "print JSON")
+	outcome := flags.String("outcome", "", "review outcome document")
+	finding := flags.String("finding", "", "finding id")
+	move := flags.String("move", "", "ruling move")
+	reason := flags.String("reason", "", "ruling reason")
 	var deps dependsOn
 	flags.Var(&deps, "depends-on", "task this one depends on")
 	var want int
@@ -76,6 +89,8 @@ func (a *App) task(args []string) int {
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "json": true}
 	case "list":
 		want, allowed = 0, map[string]bool{"store": true, "repo": true, "json": true}
+	case "finding rule":
+		want, allowed = 1, map[string]bool{"store": true, "repo": true, "outcome": true, "finding": true, "move": true, "reason": true}
 	default:
 		return a.taskUsage(fmt.Sprintf("unknown task subcommand %q", sub))
 	}
@@ -116,7 +131,9 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("task new requires --config, --repo and --title")
 	case sub != "new" && sub != "list" && *repo == "":
 		return a.taskUsage(fmt.Sprintf("task %s requires --repo", sub))
-	case sub != "new" && !*asJSON:
+	case sub == "finding rule" && (*outcome == "" || *finding == "" || *move == "" || *reason == ""):
+		return a.taskUsage("task finding rule requires --outcome, --finding, --move and --reason")
+	case sub != "new" && sub != "finding rule" && !*asJSON:
 		return a.taskUsage(fmt.Sprintf("task %s prints JSON only; pass --json", sub))
 	case len(positional) != want:
 		return a.taskUsage(fmt.Sprintf("task %s takes %d arguments", sub, want))
@@ -139,7 +156,7 @@ func (a *App) task(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(fmt.Errorf("no store at %s", *path))
 	}
-	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new", RequireStore: true})
+	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule", RequireStore: true})
 	if err != nil {
 		return fail(err)
 	}
@@ -151,6 +168,9 @@ func (a *App) task(args []string) int {
 		out, err = showTask(s, *repo, positional[0])
 	case "list":
 		out, err = listTasks(s, *repo)
+	case "finding rule":
+		r := store.Ruling{Repository: *repo, TaskID: positional[0], Document: *outcome, Finding: *finding, Move: store.RulingMove(*move), Reason: *reason}
+		out, err = s.RuleFinding(mutationID("ruling", r.Repository, r.TaskID, r.Document, r.Finding), r)
 	case "timeline", "files":
 		var h store.TaskHistory
 		if h, err = s.TaskHistory(*repo, positional[0]); err == nil && sub == "timeline" {

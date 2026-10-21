@@ -13,6 +13,7 @@ Every command takes `--store <path>`, an existing store file; no command creates
 - `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
 - `guildhall task list --store <path> [--repo <id>] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
 - `guildhall task timeline --store <path> --repo <id> <task> --json` and `guildhall task files --store <path> --repo <id> <task> --json` are the [inspection reads](#inspection).
+- `guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move <move> --reason <text> <task>` records a [Director ruling](#director-rulings) and prints its receipt.
 
 For every command but `list`, the positional task id may appear before or after flags.
 `show`, `list`, `timeline` and `files` open the store read-only and change nothing.
@@ -74,10 +75,12 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 
 `task timeline` prints:
 
-- `omitted_kinds`: `findings` and `director_rulings`, each labelled `not yet recorded by this version`.
+- `omitted_kinds`: the record kinds this version leaves out, each with why; empty now that findings and rulings are recorded.
 - `task`: the task record.
 - `attempts`: every stage attempt with its outcome (absent while running), `started_at`, `finished_at` and `duration_seconds` between them, ordered by when they started.
 - `decisions`: every decision with its kind, subject, options, question and the Guildmaster's exact words (`answer`, `choice`, `note`), plus `opened_at`, `answered_at` and `wait_seconds` between them, ordered by when they opened.
+- `findings`: every review outcome document with its findings (`id`, `rule`, `file`, `line`, `summary`) and its `dispositions` of the previous round's findings, read from the store's projection, with `recorded_at`, ordered by when they were recorded.
+- `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `events`: every receipt of the task in commit order, each naming its operation, mutation id, sequence, commit time and the record it wrote (`record`, for example `attempt/build/2`, `decision/accept-plan` or `message/q-1`).
   These are the moves made on the task, including messages sent and acknowledged for it.
 
@@ -89,5 +92,20 @@ Unknown timestamps are omitted from the JSON.
 Timestamps are matched by operation: an attempt finished or a decision answered after an upgrade can have a known completion time with an unknown start.
 Durations require both endpoints; attempts and decisions without a start time follow the timed ones in store order.
 The timeline includes every recorded event kind in commit order.
-Review findings and Director rulings are not yet recorded by this version, as explicitly listed in `omitted_kinds`; their persistence belongs to the interpreter slices.
+Findings come from the projection the engine records with each review outcome document, so the timeline never opens the outcome file.
 Reading a task's diff, process status or transcript needs its worktree and adapter, and is separate work.
+
+## Director rulings
+
+The Director may rule on one finding of a review outcome document instead of waiting for the reviewer (report §5.4).
+`task finding rule` records the ruling with the mutation `ruling:<repo>:<task>:<document>:<finding>`, hashed as for `task new` when longer than 128 bytes, so a retry prints the original receipt.
+`--outcome` names the outcome document as the timeline's `findings` show it, such as `review-2-outcome`, and `--finding` one of its finding ids.
+`--move` is one of:
+
+- `out-of-scope`: the finding is outside the accepted spec; the reason cites the spec section;
+- `duplicate`: the finding repeats another one;
+- `defer`: the finding moves to a follow-up task; only a finding that cites no rule may be deferred.
+
+A finding is ruled on once per document; a second ruling, an unknown document or finding, a blank reason, an unknown move, deferring a rule-cited finding or a task that is not open is refused with exit 1 and writes nothing.
+A ruling never resolves or withdraws a finding and never changes a verdict.
+The step's next review attempt is given the rulings on its previous outcome, and may contest each once by keeping the finding open; a contested rule-cited blocker goes to the Guildmaster ([interpreter](interpreter.md#director-rulings)).

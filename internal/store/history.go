@@ -19,7 +19,7 @@ type Snapshot struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// TaskHistory is a task, its attempts, documents and decisions, together with
+// TaskHistory is a task, its attempts, documents, decisions and rulings, together with
 // the receipt of every mutation that touched it; ownership records are read separately.
 // Its contents are read in one transaction and describe exactly the store state AsOf names.
 // Its lists are empty rather than nil when the task has no such records.
@@ -29,6 +29,7 @@ type TaskHistory struct {
 	Attempts  []StageAttempt
 	Documents []DocumentRef
 	Decisions []Decision
+	Rulings   []Ruling
 	// Receipts are the receipts whose repository and task are this task's, in sequence order:
 	// its records' mutations and the messages sent to or acknowledged for it.
 	Receipts []Receipt
@@ -37,7 +38,7 @@ type TaskHistory struct {
 // TaskHistory reads one task's history without writing; it returns ErrNotFound for an unknown task.
 // It scans every receipt in the store, so its cost grows with the store's mutation count.
 func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
-	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Receipts: []Receipt{}}
+	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Rulings: []Ruling{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var err error
 		if h.Task, err = getTask(tx, repository, taskID); err != nil {
@@ -51,6 +52,9 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketDecisions), prefix, &h.Decisions); err != nil {
+			return err
+		}
+		if err := scan(repoBucket(tx, repository, bucketRulings), prefix, &h.Rulings); err != nil {
 			return err
 		}
 		return tx.Bucket(bucketReceipts).ForEach(func(k, v []byte) error {

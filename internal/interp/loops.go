@@ -20,6 +20,9 @@ const (
 	FeedbackPort = "feedback"
 	// PreviousPort carries a review step's own previous outcome, whose findings the new outcome dispositions.
 	PreviousPort = "previous"
+	// RulingsPort carries the Director's rulings on findings of the previous outcome, as a JSON array of
+	// store.Ruling; a finding the new outcome keeps still-open contests its ruling.
+	RulingsPort = "rulings"
 )
 
 // changesRequested is the only outcome whose loop rules the engine follows.
@@ -71,13 +74,28 @@ func (r *run) boundInputs(b binding) []render.Input {
 	return out
 }
 
-// extras returns the inputs the engine adds to a new attempt of s: its previous outcome for a review
-// step, then every loop it has not yet served.
-func (r *run) extras(s workflow.Step) ([]render.Input, error) {
+// extras returns the inputs the engine adds to attempt n of s: for a review step its previous outcome and
+// the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served.
+func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 	var out []render.Input
 	if isReview(s) {
 		if doc, _, err := r.output(s.ID, "outcome"); err == nil {
 			out = append(out, render.Input{Port: PreviousPort, Name: doc.Path, SHA256: doc.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path))})
+			name := documentName(place{step: s.ID, round: n, part: RulingsPort})
+			if rulings := r.rulingsOn(doc.Name); len(rulings) > 0 && r.document(name) == nil {
+				data, err := json.Marshal(rulings)
+				if err != nil {
+					return nil, err
+				}
+				d := store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
+					Path: path.Join("tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d.rulings.json", s.ID, n)), SHA256: digest.Of(data).Hex()}
+				if err := r.put(d, data); err != nil {
+					return nil, err
+				}
+			}
+			if d := r.document(name); d != nil {
+				out = append(out, render.Input{Port: RulingsPort, Name: d.Path, SHA256: d.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(d.Path))})
+			}
 		}
 	}
 	pending, err := r.pending(s)
@@ -123,7 +141,7 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	}
 	var given []render.Input
 	for _, in := range r.boundInputs(b) {
-		if in.Port != FeedbackPort && in.Port != PreviousPort {
+		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort {
 			given = append(given, in)
 		}
 	}
@@ -154,7 +172,13 @@ func (r *run) pending(t workflow.Step) ([]render.Input, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, f := range fs[:min(len(fs), r.allowed(s))] {
+		for i, f := range fs[:min(len(fs), r.allowed(s))] {
+			if dispute, err := r.held(s, i+1, f); err != nil || dispute != "" {
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if done, err := r.served(t.ID, f); err != nil || done {
 				if err != nil {
 					return nil, err
@@ -191,6 +215,16 @@ func (r *run) reviewed(s workflow.Step, n int) (bool, Next, error) {
 	if s.Type == "document-review" {
 		subject = &store.Subject{Kind: store.SubjectDocument, Digest: o.Revisions.Subject.DocumentDigest}
 	}
+	fs, err := r.firings(s)
+	if err != nil {
+		return false, Next{}, err
+	}
+	if dispute, err := r.held(s, len(fs), fs[len(fs)-1]); err != nil || dispute != "" {
+		if err != nil {
+			return false, Next{}, err
+		}
+		return r.exit(s, len(fs), subject, dispute)
+	}
 	return r.changes(s, Next{Wait: WaitDirector, Step: s.ID, Attempt: n}, subject)
 }
 
@@ -212,7 +246,7 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 	}
 	k := len(fs)
 	if k > r.allowed(s) {
-		return r.exit(s, k, subject)
+		return r.exit(s, k, subject, "")
 	}
 	i := slices.IndexFunc(r.def.Steps, func(t workflow.Step) bool { return t.ID == rule.Goto })
 	if actor := r.def.Steps[i].Actor(); actor != workflow.ArtisanActor {
@@ -231,16 +265,19 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 	return false, next, err
 }
 
-// exit asks the Guildmaster how to leave a loop whose max is exhausted by firing k, decision <step>-x<k>.
-func (r *run) exit(s workflow.Step, k int, subject *store.Subject) (bool, Next, error) {
+// exit asks the Guildmaster how to leave a loop at firing k, decision <step>-x<k>: because max is exhausted,
+// or, when dispute is not empty, because a rule-cited blocker's ruling was contested.
+func (r *run) exit(s workflow.Step, k int, subject *store.Subject, dispute string) (bool, Next, error) {
 	id := decisionID(s.ID, k, true)
 	d := r.decision(id)
 	if d == nil {
+		why := fmt.Sprintf("Step %s of %s/%s still requests changes after %d rounds, its max of %d.", s.ID, r.task.Repository, r.task.ID, k, s.On[changesRequested].Max)
+		if dispute != "" {
+			why = fmt.Sprintf("Round %d of step %s of %s/%s on %s %s:\n%s", k, s.ID, r.task.Repository, r.task.ID, subject.Kind, subject.Digest, dispute)
+		}
 		nd := store.Decision{
 			Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionLoopExit, Subject: subject, Options: exitOptions,
-			Question: fmt.Sprintf("Step %s of %s/%s still requests changes after %d rounds, its max of %d.\n\n"+
-				"Answer with one of: continue (one more round), accept (record your approval as the step's outcome), reject.\n",
-				s.ID, r.task.Repository, r.task.ID, k, s.On[changesRequested].Max),
+			Question: why + "\n\nAnswer with one of: continue (one more round), accept (record your approval as the step's outcome), reject.\n",
 		}
 		if _, err := r.e.Records.OpenDecision(r.mutation("decision", id), nd); err != nil {
 			return false, Next{}, err
@@ -311,33 +348,95 @@ func (r *run) acceptOutcome(s workflow.Step, d store.Decision, origin firing) er
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest.Of(data).Hex()}, data)
 }
 
-// checkOutcome refuses a review attempt's outcome that is not bound to the revisions the attempt was given,
-// or that leaves a finding of the previous outcome it was given without a disposition.
-func (r *run) checkOutcome(s workflow.Step, n int, data []byte) error {
+// checkOutcome parses a review attempt's outcome and refuses one that is not bound to the revisions the
+// attempt was given, or that leaves a finding of the previous outcome it was given without a disposition.
+func (r *run) checkOutcome(s workflow.Step, n int, data []byte) (*workflow.ReviewOutcome, error) {
 	o, err := workflow.ParseReviewOutcome(data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	b, err := r.binding(s.ID, n)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if b.Revisions == nil {
-		return fmt.Errorf("%w: attempt %d recorded no revisions to bind its outcome to", ErrOutcome, n)
+		return nil, fmt.Errorf("%w: attempt %d recorded no revisions to bind its outcome to", ErrOutcome, n)
 	}
 	if err := o.BoundTo(*b.Revisions); err != nil {
-		return fmt.Errorf("%w: %v", ErrOutcome, err)
+		return nil, fmt.Errorf("%w: %v", ErrOutcome, err)
 	}
 	prev, err := r.previous(b)
 	if err != nil || prev == nil {
-		return err
+		return o, err
 	}
 	for _, f := range prev.Findings {
 		if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.Finding == f.ID }) {
-			return fmt.Errorf("%w: previous finding %q has no disposition", ErrOutcome, f.ID)
+			return nil, fmt.Errorf("%w: previous finding %q has no disposition", ErrOutcome, f.ID)
 		}
 	}
+	return o, nil
+}
+
+// reviewOf is the store's projection of an outcome.
+func reviewOf(o workflow.ReviewOutcome) *store.Review {
+	return &store.Review{Findings: o.Findings, Dispositions: o.Dispositions}
+}
+
+// contest records, once, that attempt n of a review step contested each ruling it was given whose finding
+// its outcome keeps still-open.
+func (r *run) contest(s workflow.Step, n int) error {
+	d := r.document(documentName(place{step: s.ID, round: n, part: RulingsPort}))
+	if !isReview(s) || d == nil {
+		return nil
+	}
+	o, err := r.outcome(s.ID, n)
+	if err != nil || o == nil {
+		return err
+	}
+	data, err := r.read(*d)
+	if err != nil {
+		return err
+	}
+	var given []store.Ruling
+	if err := json.Unmarshal(data, &given); err != nil {
+		return err
+	}
+	for _, g := range given {
+		if !slices.Contains(o.Dispositions, workflow.Disposition{Finding: g.Finding, State: workflow.StillOpen}) ||
+			slices.ContainsFunc(r.contestedBy(s.ID, n), func(c store.Ruling) bool { return c.Document == g.Document && c.Finding == g.Finding }) {
+			continue
+		}
+		if _, err := r.e.Records.ContestRuling(r.mutation("contest", g.Document, g.Finding), r.task.Repository, r.task.ID, g.Document, g.Finding, r.identity(s.ID, n).AttemptID); err != nil {
+			return err
+		}
+		r.markContested(g.Document, g.Finding, s.ID, n)
+	}
 	return nil
+}
+
+// held returns the dispute that holds firing k of step s for the Guildmaster: a rule-cited finding of its
+// outcome whose ruling the attempt contested, until loop exit k is answered continue; empty when none does.
+func (r *run) held(s workflow.Step, k int, f firing) (string, error) {
+	if f.answer != nil {
+		return "", nil
+	}
+	if d := r.decision(decisionID(s.ID, k, true)); d != nil && d.Answered && d.Choice == "continue" {
+		return "", nil
+	}
+	o, err := r.outcome(s.ID, f.round)
+	if err != nil || o == nil {
+		return "", err
+	}
+	var lines []string
+	for _, c := range r.contestedBy(s.ID, f.round) {
+		for _, f := range o.Findings {
+			if f.ID == c.Finding && f.Rule != "" {
+				lines = append(lines, fmt.Sprintf("- Finding %s (%s, %s:%d): %s\n  The Director ruled it %s: %s\n  Attempt %s contested the ruling and keeps the finding open.",
+					f.ID, f.Rule, f.File, f.Line, f.Summary, c.Move, c.Reason, c.ContestedBy))
+			}
+		}
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // previous returns the previous outcome an attempt was given, or nil.

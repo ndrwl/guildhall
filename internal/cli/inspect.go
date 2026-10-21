@@ -46,6 +46,25 @@ type timedDocument struct {
 	RecordedAt *time.Time `json:"recorded_at,omitempty"`
 }
 
+// timedFindings is one review outcome document's findings and its dispositions of the previous round's,
+// from the store's projection, with the commit time it was recorded at.
+type timedFindings struct {
+	Document     string                 `json:"document"`
+	Findings     []workflow.Finding     `json:"findings"`
+	Dispositions []workflow.Disposition `json:"dispositions"`
+	RecordedAt   *time.Time             `json:"recorded_at,omitempty"`
+	seq          uint64
+}
+
+// timedRuling is a Director ruling with the commit times it was made and contested at.
+type timedRuling struct {
+	store.Ruling
+	Contested   bool       `json:"contested"`
+	RuledAt     *time.Time `json:"ruled_at,omitempty"`
+	ContestedAt *time.Time `json:"contested_at,omitempty"`
+	seq         uint64
+}
+
 // taskTimeline is what task timeline prints. Events are every receipt of the task in commit order:
 // the moves made on it, including those Guildhall records for the Director.
 type taskTimeline struct {
@@ -53,6 +72,8 @@ type taskTimeline struct {
 	Task         store.Task        `json:"task"`
 	Attempts     []timedAttempt    `json:"attempts"`
 	Decisions    []timedDecision   `json:"decisions"`
+	Findings     []timedFindings   `json:"findings"`
+	Rulings      []timedRuling     `json:"rulings"`
 	Events       []store.Receipt   `json:"events"`
 	OmittedKinds map[string]string `json:"omitted_kinds"`
 }
@@ -98,8 +119,8 @@ func span(rs []store.Receipt, startOp, endOp string) (start, end *time.Time, sec
 // the store's order after the timed ones.
 func timeline(h store.TaskHistory) taskTimeline {
 	byRecord := recordReceipts(h.Receipts)
-	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Events: h.Receipts,
-		OmittedKinds: map[string]string{"findings": "not yet recorded by this version", "director_rulings": "not yet recorded by this version"}}
+	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Findings: []timedFindings{},
+		Rulings: []timedRuling{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
 	for _, a := range h.Attempts {
 		t := timedAttempt{StageAttempt: a}
 		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)], "start-attempt", "finish-attempt")
@@ -110,8 +131,23 @@ func timeline(h store.TaskHistory) taskTimeline {
 		t.OpenedAt, t.AnsweredAt, t.WaitSeconds, t.seq = span(byRecord["decision/"+d.ID], "open-decision", "answer-decision")
 		out.Decisions = append(out.Decisions, t)
 	}
+	for _, d := range h.Documents {
+		if d.Review == nil {
+			continue
+		}
+		t := timedFindings{Document: d.Name, Findings: append([]workflow.Finding{}, d.Review.Findings...), Dispositions: append([]workflow.Disposition{}, d.Review.Dispositions...)}
+		t.RecordedAt, _, _, t.seq = span(byRecord["document/"+d.Name], "put-document", "")
+		out.Findings = append(out.Findings, t)
+	}
+	for _, r := range h.Rulings {
+		t := timedRuling{Ruling: r, Contested: r.ContestedBy != ""}
+		t.RuledAt, t.ContestedAt, _, t.seq = span(byRecord["ruling/"+r.Document+"/"+r.Finding], "rule-finding", "contest-ruling")
+		out.Rulings = append(out.Rulings, t)
+	}
 	slices.SortStableFunc(out.Attempts, func(a, b timedAttempt) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Decisions, func(a, b timedDecision) int { return byStart(a.seq, b.seq) })
+	slices.SortStableFunc(out.Findings, func(a, b timedFindings) int { return byStart(a.seq, b.seq) })
+	slices.SortStableFunc(out.Rulings, func(a, b timedRuling) int { return byStart(a.seq, b.seq) })
 	return out
 }
 

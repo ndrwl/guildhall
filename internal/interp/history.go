@@ -101,6 +101,8 @@ type history struct {
 	attempts  []store.StageAttempt
 	documents []store.DocumentRef
 	decisions []store.Decision
+	// rulings are the Director's rulings, each on a finding of one outcome document, named by Document.
+	rulings []store.Ruling
 	// docPlaces and decisionPlaces parallel documents and decisions; ok is false for a name of another form.
 	docPlaces      []parsed
 	decisionPlaces []parsed
@@ -141,6 +143,37 @@ func (h *history) addDecision(d store.Decision) *store.Decision {
 	h.decisions = append(h.decisions, d)
 	h.decisionPlaces = append(h.decisionPlaces, parsed{p, ok})
 	return &h.decisions[len(h.decisions)-1]
+}
+
+// rulingsOn returns the rulings on findings of the named outcome document.
+func (h *history) rulingsOn(document string) []store.Ruling {
+	var out []store.Ruling
+	for _, r := range h.rulings {
+		if r.Document == document {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// markContested marks the ruling on a finding of document as contested by attempt n of step.
+func (h *history) markContested(document, finding, step string, n int) {
+	for i, r := range h.rulings {
+		if r.Document == document && r.Finding == finding {
+			h.rulings[i].ContestedBy = decisionID(step, n, false)
+		}
+	}
+}
+
+// contestedBy returns the rulings attempt n of step contested.
+func (h *history) contestedBy(step string, n int) []store.Ruling {
+	var out []store.Ruling
+	for _, r := range h.rulings {
+		if r.ContestedBy == decisionID(step, n, false) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (h *history) attempt(step string, n int) *store.StageAttempt {
