@@ -218,8 +218,9 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	sum := sha256.Sum256([]byte(k.String() + "\n" + strconv.Itoa(self.PID) + "\n" + self.Token))
 	tag := hex.EncodeToString(sum[:16])
 	mutation := func(op string) string { return "launch-" + op + ":" + tag }
-	if err := a.write(func(s *store.Store) error { _, err := s.TakeOwnership(mutation("own"), own, ProbeOwner); return err }); err != nil {
-		return rep, fmt.Errorf("launch: take ownership of %s: %w", k, err)
+	path, err := artisan.EndpointPath(a.StateDir, k)
+	if err != nil {
+		return rep, err
 	}
 	if err := os.MkdirAll(a.Dir(), 0o700); err != nil {
 		return rep, err
@@ -235,18 +236,27 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	path, err := artisan.EndpointPath(a.StateDir, k)
-	if err != nil {
-		return rep, err
+	if err := a.write(func(s *store.Store) error { _, err := s.TakeOwnership(mutation("own"), own, ProbeOwner); return err }); err != nil {
+		return rep, fmt.Errorf("launch: take ownership of %s: %w", k, err)
+	}
+	finish := func(outcome store.AttemptOutcome, runErr error) (Report, error) {
+		err := a.write(func(s *store.Store) error {
+			_, err := s.FinishAttempt(mutation("finish"), k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
+			return err
+		})
+		if err == nil {
+			rep.AttemptOutcome = outcome
+		}
+		return rep, errors.Join(runErr, err)
 	}
 	ep, err := artisan.Listen(path, k, self, a.launcher, l)
 	if err != nil {
-		return rep, err
+		return finish(store.AttemptFailed, err)
 	}
 	defer func() { _ = ep.Close() }()
 	own.Endpoint = path
 	if err := a.write(func(s *store.Store) error { _, err := s.UpdateOwnership(mutation("endpoint"), own); return err }); err != nil {
-		return rep, err
+		return finish(store.AttemptFailed, err)
 	}
 	recorded.own = own
 	cmd := exec.Command(c.Command.Argv[0], c.Command.Argv[1:]...)
@@ -270,14 +280,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	if err != nil {
 		return rep, errors.Join(runErr, err)
 	}
-	err = a.write(func(s *store.Store) error {
-		_, err := s.FinishAttempt(mutation("finish"), k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
-		return err
-	})
-	if err == nil {
-		rep.AttemptOutcome = outcome
-	}
-	return rep, errors.Join(runErr, err)
+	return finish(outcome, runErr)
 }
 
 // ProbeOwner is the containment-aware take-over probe: alive while the

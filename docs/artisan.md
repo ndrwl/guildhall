@@ -316,8 +316,10 @@ They are the composition package `internal/launch`, whose [doc comments](../inte
 
 `artisan run --adapter fake --prompt <file> --workdir <dir>` runs the attempt as its launcher:
 
+Before taking ownership, it validates the command and endpoint path, creates the attempt directory and containment unit, and constructs the launcher. These setup failures leave ownership unchanged and start no worker, so correcting the setup permits a retry.
+
 1. it takes the attempt's ownership, which the store records as running already; a live owner refuses it with `ErrOwnerLive`, and an owner that cannot be proven exited, or whose recorded unit still has members, with `ErrOwnerUnknown`, before anything starts;
-2. it binds the control endpoint and records its path;
+2. it binds the control endpoint and records its path; failure at either step records the attempt as failed with `FinishAttempt`, releasing ownership without starting the worker, and returns the setup error joined with any finalization error. A finalized failed attempt requires a new attempt for subsequent work;
 3. it starts the worker in a fresh containment unit and records the containment in `containment.json` and the ownership record, with state `running`;
 4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; `--timeout`, when given, requests the stop ladder, as do the endpoint's `stop` and SIGTERM or SIGHUP;
 5. it records the store outcome with `FinishAttempt`, which releases the ownership.
