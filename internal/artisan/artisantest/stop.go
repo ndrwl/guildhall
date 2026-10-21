@@ -55,6 +55,9 @@ func (f Files) Mark() error {
 	return m.Close()
 }
 
+// StopKey is the attempt every stop-contract launcher owns.
+var StopKey = artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
+
 // stopLadder keeps the contract's waits short: a worker ignoring every
 // graceful rung takes its interrupt and cooperative bounds to stop.
 var stopLadder = artisan.Ladder{Cooperative: 2 * time.Second, Interrupt: 500 * time.Millisecond, Terminate: 2 * time.Second, Kill: 5 * time.Second}
@@ -283,7 +286,7 @@ func (h Harness) launch(t *testing.T, worker func(Files) Worker) *launch {
 	}
 	c := &launch{run: h.begin(t, w), attempt: attempt, files: files, ladder: stopLadder, done: make(chan struct{})}
 	c.u = &countingUnit{Unit: c.run.u, n: map[string]int{}}
-	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: attempt, Unit: c.u, Files: files, Ladder: stopLadder})
+	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: attempt, Unit: c.u, Files: files, Ladder: stopLadder, Key: StopKey})
 	if err != nil {
 		t.Fatalf("NewLauncher() = %v", err)
 	}
@@ -301,7 +304,7 @@ func (h Harness) launch(t *testing.T, worker func(Files) Worker) *launch {
 // start starts Run in the background.
 func (c *launch) start(signals <-chan os.Signal) {
 	if c.ladder != stopLadder {
-		l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: c.attempt, Unit: c.u, Files: c.files, Ladder: c.ladder})
+		l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: c.attempt, Unit: c.u, Files: c.files, Ladder: c.ladder, Key: StopKey})
 		if err != nil {
 			c.t.Fatalf("NewLauncher() = %v", err)
 		}

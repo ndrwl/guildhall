@@ -62,7 +62,7 @@ func TestLauncherCancelDuringCleanup(t *testing.T) {
 	dir := t.TempDir()
 	files := artisantest.NewFiles(dir)
 	u := &exitedLauncherUnit{exited: make(chan struct{})}
-	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files})
+	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files, Key: artisantest.StopKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestLauncherCancelBeforeAutomaticSignal(t *testing.T) {
 			dir := t.TempDir()
 			files := artisantest.NewFiles(dir)
 			u := &exitedLauncherUnit{exited: make(chan struct{}), alive: true, keepAlive: cancelAt == 5}
-			l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files,
+			l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files, Key: artisantest.StopKey,
 				Ladder: artisan.Ladder{Cooperative: time.Millisecond, Interrupt: -time.Nanosecond, Terminate: time.Millisecond, Kill: time.Millisecond}})
 			if err != nil {
 				t.Fatal(err)
@@ -141,7 +141,7 @@ func TestLauncherCancelledDescendantsRequireStop(t *testing.T) {
 			t.Error("interrupted descendants before explicit stop")
 		}
 	}
-	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files,
+	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files, Key: artisantest.StopKey,
 		Ladder: artisan.Ladder{Cooperative: time.Millisecond, Interrupt: time.Millisecond, Terminate: time.Millisecond, Kill: time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)

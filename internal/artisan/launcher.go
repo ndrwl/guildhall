@@ -147,6 +147,15 @@ type LauncherConfig struct {
 	// ResultGrace is how long the worker may outlive its accepted result;
 	// zero means DefaultResultGrace.
 	ResultGrace time.Duration
+	// Key is the attempt the launcher owns, named by its heartbeat.
+	Key AttemptKey
+	// HeartbeatInterval is how often the heartbeat is written; zero means
+	// DefaultHeartbeatInterval.
+	HeartbeatInterval time.Duration
+	// LastOutput reports when the worker last produced output, for the
+	// heartbeat's LastOutputAt. Nil, or a zero time, reports the time Run
+	// began; a time after the beat reports the beat's time.
+	LastOutput func() time.Time
 }
 
 // Launcher supervises one attempt's worker. It is the EndpointHandler of
@@ -175,6 +184,9 @@ func NewLauncher(c LauncherConfig) (*Launcher, error) {
 	if c.Unit == nil || c.Files == nil {
 		return nil, errors.New("artisan: launcher needs a unit and attempt files")
 	}
+	if err := c.Key.validate(); err != nil {
+		return nil, err
+	}
 	if fi, err := os.Stat(c.Dir); err != nil || !fi.IsDir() || !filepath.IsAbs(c.Dir) {
 		return nil, fmt.Errorf("artisan: attempt directory %q must be an existing absolute directory: %v", c.Dir, err)
 	}
@@ -183,6 +195,9 @@ func NewLauncher(c LauncherConfig) (*Launcher, error) {
 	}
 	if c.ResultGrace == 0 {
 		c.ResultGrace = DefaultResultGrace
+	}
+	if c.HeartbeatInterval == 0 {
+		c.HeartbeatInterval = DefaultHeartbeatInterval
 	}
 	return &Launcher{c: c, stopReq: make(chan struct{}), done: make(chan struct{}), phase: "starting"}, nil
 }

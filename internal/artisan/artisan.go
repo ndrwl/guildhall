@@ -112,6 +112,11 @@ type Unit interface {
 	Containment() Containment
 }
 
+// NewUnit returns an unstarted unit of this platform's backend, named name
+// where the backend names its containment (job Local\guildhall-<name>,
+// cgroup guildhall-<name>); a name already in use is refused.
+func NewUnit(name string) (Unit, error) { return newUnit(name) }
+
 // Containment kinds.
 const (
 	// KindJob is a Windows Job Object.
@@ -136,6 +141,19 @@ type Containment struct {
 	// Reason is the detection result that chose Kind on Linux, such as why
 	// no delegated cgroup v2 was usable.
 	Reason string `json:"reason,omitempty"`
+}
+
+// Contained lists the live processes still in the unit recorded as c, whose
+// worker Start returned as worker, looked up from outside the launcher that
+// created it, as reconcile does once that launcher is gone. A job is opened
+// by its name and a cgroup read from its directory; a job that no longer
+// opens, or a cgroup directory that no longer exists, holds nothing. A
+// process group is found by its leader, the worker: a live process at the
+// group id that is not worker means the group is gone and holds nothing. A
+// kind this platform does not have is an error matching errors.ErrUnsupported.
+// An empty list with a nil error proves the unit empty; an error proves nothing.
+func Contained(c Containment, worker Identity) ([]Identity, error) {
+	return contained(c, worker)
 }
 
 // ContainmentFile is the file RecordContainment writes in the attempt
