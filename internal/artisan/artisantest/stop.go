@@ -277,6 +277,16 @@ func RunStopContract(t *testing.T, h Harness) {
 			t.Errorf("survivors %v do not name the worker %v", out.Survivors, worker)
 		}
 	})
+	runPlatformStopCases(t, h)
+}
+
+// StopFiles returns the attempt files of the attempt directory dir: those
+// Files gives, or the byte-comparing double when it is nil.
+func (h Harness) StopFiles(dir string) StopFiles {
+	if h.Files != nil {
+		return h.Files(dir)
+	}
+	return FilesOf(NewFiles(dir))
 }
 
 // launch is one stop-contract case: a run whose unit a Launcher drives.
@@ -297,10 +307,7 @@ type launch struct {
 func (h Harness) launch(t *testing.T, worker func(StopFiles) Worker) *launch {
 	t.Helper()
 	attempt := t.TempDir()
-	files := FilesOf(NewFiles(attempt))
-	if h.Files != nil {
-		files = h.Files(attempt)
-	}
+	files := h.StopFiles(attempt)
 	w := worker(files)
 	w.ResultBody = files.Body
 	if w.Lifetime == 0 {

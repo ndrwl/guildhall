@@ -98,9 +98,10 @@ var StopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 // AttemptFiles is the attempt's result and cancel marker as the launcher
 // consumes them. The launcher calls them only while holding the attempt lock.
-// An error decides the attempt failed, so result reads use the bounded
-// publication-race retry policy in docs/contracts/atomicfile.md before
-// returning an error to the launcher.
+// An error decides the attempt failed, so every adapter reads the result
+// through the bounded publication-race retry (internal/atomicfile,
+// docs/contracts/atomicfile.md) before returning an error to the launcher;
+// artisantest.RunStopContract checks it on Windows.
 type AttemptFiles interface {
 	// ValidResult reports whether a valid result for this attempt is
 	// published. A missing or invalid result is false with no error.

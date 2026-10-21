@@ -190,6 +190,7 @@ A `Launcher` runs one attempt's worker in its unit, decides the attempt once and
 It is the endpoint's handler, and its [doc comments](../internal/artisan/launcher.go) own the API contract.
 It reads the attempt's result and writes its cancel marker through `AttemptFiles`, and writes `outcome.json`, `events.jsonl` and `attempt.lock` in the attempt directory.
 The real `AttemptFiles` is `launch.Files`: the adapter's result file parsed with `adapter.ParseResult`, bound to the attempt identity and version-checked, and the adapter's `.cancelled` sidecar as the marker; launcher and `reconcile.Classify` both read through it, so marker and result have one reader each.
+Every `AttemptFiles` adapter reads the result through the bounded [publication-race retry](contracts/atomicfile.md), because a read error decides the attempt failed; the shared stop suite holds that on Windows.
 
 ### Precedence
 
@@ -392,6 +393,7 @@ The endpoint tests bind real sockets in a short temporary state directory on eve
 It runs against this platform's backend in `launcher_test.go` on the Linux, Windows and macOS runners, and against `fakeUnit`, with the test binary playing a worker that can honour the marker, publish its result after a delay or ignore interrupts, and a file double for the result and marker.
 Its cases are the P0 lifecycle scenarios: a cooperative worker stopping at rung 1 (L6); an ignored interrupt escalating, with every timed-out rung naming the processes alive (L7); a stop or cancel before the worker starts, and a stop during startup leaving no owned process (L15); a result before the stop finishing with no marker, a result after the marker rejected as late, and a result racing the stop decided exactly once (L16); a result after cancel rejected while the worker exits (L17); concurrent and repeated stops sharing one ladder, with one interrupt and at most one kill (L18).
 It also covers SIGTERM and SIGHUP stopping the attempt, a forwarded interrupt leaving it running, an invalid result failing it, a decided attempt not run again, and survivors reported after the last rung.
+On Windows it also holds a published result without sharing while the launcher decides, as a rename in progress does, and requires the attempt finished; every `AttemptFiles` adapter, the double and `launch.Files`, must pass it.
 
 `internal/reconcile/reconcile_test.go` runs `Classify` against recorded attempt directories and live processes: the test binary plays the worker tree, an in-process launcher with a bound endpoint, and a separate launcher process for the crash.
 The four heartbeat cases are a wedged launcher whose supervision loop is really blocked (stuck while its identity and endpoint live, then running again); a stalled worker whose fresh heartbeat with an old `last_output_at` is running, not stuck; a stale heartbeat while the launcher lives (stuck, take-over refused with `ErrOwnerLive`, running once beats resume); and a killed launcher process whose frozen heartbeat is reported while the identity decides, `unknown` while contained processes survive and `exited` once they are gone.
