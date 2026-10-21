@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -75,6 +76,32 @@ func TestRetryWithoutAReasonSendsNoMessage(t *testing.T) {
 	want(t, e.advance(t, retried("plan", 1, "")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
 	if got := e.inbox(t); !slices.Equal(got, []string{"app.t7.attempt-failed.plan-1"}) {
 		t.Errorf("Director inbox = %q", got)
+	}
+}
+
+// TestRetryRefusedAtStartSendsNoReason: when the next attempt cannot start, the reason is not sent, so a
+// later retry with another reason is not refused as a conflicting message.
+func TestRetryRefusedAtStartSendsNoReason(t *testing.T) {
+	plan2 := planExpectation(t, interptest.Fail("still no plan"))
+	plan2.Attempt = 2
+	e := newEnv(t, backends[0], planExpectation(t, interptest.Fail("no plan")), plan2)
+	e.advance(t, interp.Event{Kind: interp.TaskCreated})
+	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
+	planner := e.eng.Config.Profiles["planner"]
+	delete(e.eng.Config.Profiles, "planner")
+	if err := advanceErr(t, e, retried("plan", 1, "first reason")); !errors.Is(err, config.ErrUnknownProfile) {
+		t.Fatalf("retry with no planner profile = %v, want ErrUnknownProfile", err)
+	}
+	if got := e.messages(t)["app.t7.attempt-retried.plan-1"]; got != "" {
+		t.Errorf("a refused start sent the reason %q", got)
+	}
+	if got := e.attempts(t); len(got) != 1 {
+		t.Errorf("a refused start recorded attempts: %+v", got)
+	}
+	e.eng.Config.Profiles["planner"] = planner
+	want(t, e.advance(t, retried("plan", 1, "second reason")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
+	if got := e.messages(t)["app.t7.attempt-retried.plan-1"]; got != "second reason" {
+		t.Errorf("reason message = %q, want the second reason", got)
 	}
 }
 

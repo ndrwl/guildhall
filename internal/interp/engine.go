@@ -230,8 +230,8 @@ type run struct {
 	ctx  context.Context
 	task store.Task
 	def  *workflow.Definition
-	// retry is the failed or stopped attempt an attempt-retried event asked the walk to follow with the next.
-	retry *store.StageAttempt
+	// retry is the attempt-retried event whose failed or stopped attempt the walk follows with the next.
+	retry *Event
 	*history
 }
 
@@ -295,8 +295,7 @@ func (r *run) intake(ev Event) error {
 
 // retried validates a retry of attempt n of a step: n must have finished failed or stopped and be the step's
 // latest attempt, which the walk then follows with the next. When attempt n+1 already exists the event is a
-// replay and changes nothing; any other attempt is refused. The reason is sent before anything is recorded,
-// under an id derived from the attempt, so a crash before the start resends it unchanged.
+// replay and changes nothing; any other attempt is refused.
 func (r *run) retried(ev Event) error {
 	a := r.attempt(ev.Step, ev.Attempt)
 	if !slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == ev.Step }) || a == nil {
@@ -316,12 +315,7 @@ func (r *run) retried(ev Event) error {
 	default:
 		return fmt.Errorf("interp: %w: attempt %d of step %s is not its latest, %d", ErrEvent, a.Number, a.Step, latest)
 	}
-	if ev.Reason != "" {
-		if err := r.notify(fmt.Sprintf("attempt-retried.%s-%d", a.Step, a.Number), "attempt-retried", ev.Reason); err != nil {
-			return fmt.Errorf("interp: %w", err)
-		}
-	}
-	r.retry = a
+	r.retry = &ev
 	return nil
 }
 
@@ -366,9 +360,8 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 			return false, Next{}, err
 		}
 		return false, next, r.launch(s, a.Number, name, r.boundInputs(b))
-	case a.Outcome != store.AttemptSucceeded && r.retry != nil && r.retry.Step == s.ID && r.retry.Number == a.Number:
-		r.retry = nil
-		next, err := r.start(s)
+	case a.Outcome != store.AttemptSucceeded && r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt == a.Number:
+		next, err := r.retryAttempt(s, a.Number)
 		return false, next, err
 	case a.Outcome != store.AttemptSucceeded:
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), "attempt-failed",
@@ -411,6 +404,24 @@ func (r *run) prepare(s workflow.Step) (string, []render.Input, error) {
 	return name, inputs, err
 }
 
+// retryAttempt starts the attempt after attempt n. The Director's reason is sent once the start is known to be
+// possible and before anything is recorded, under an id derived from the attempt, so a refused start sends
+// nothing and a crash before the start resends it unchanged.
+func (r *run) retryAttempt(s workflow.Step, n int) (Next, error) {
+	reason := r.retry.Reason
+	r.retry = nil
+	name, inputs, err := r.prepare(s)
+	if err != nil {
+		return Next{}, err
+	}
+	if reason != "" {
+		if err := r.notify(fmt.Sprintf("attempt-retried.%s-%d", s.ID, n), "attempt-retried", reason); err != nil {
+			return Next{}, err
+		}
+	}
+	return r.begin(s, name, inputs)
+}
+
 // start records the step's binding and its next attempt, then launches it with its wired inputs plus
 // the engine's extras (previous outcome, loop feedback).
 func (r *run) start(s workflow.Step) (Next, error) {
@@ -418,6 +429,11 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	if err != nil {
 		return Next{}, err
 	}
+	return r.begin(s, name, inputs)
+}
+
+// begin is start once the adapter and inputs are resolved.
+func (r *run) begin(s workflow.Step, name string, inputs []render.Input) (Next, error) {
 	n := 1
 	if a := r.latestAttempt(s.ID); a != nil {
 		n = a.Number + 1
