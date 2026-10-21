@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
+	"unicode/utf8"
 
 	bolt "go.etcd.io/bbolt"
 
@@ -32,11 +34,88 @@ const (
 	OwnerReleased OwnershipState = "released"
 )
 
-// Containment names the unit an owner's worker runs in, such as a Windows job
-// name or a Unix process group id. The store records it and does not interpret it.
+// Containment kinds a recovery description may name. They are the kinds
+// artisan.Unit backends report, held here as record values.
+const (
+	// ContainmentJob is a Windows Job Object, found by its name.
+	ContainmentJob = "job"
+	// ContainmentCgroup is a Linux cgroup v2 child, found by its directory.
+	ContainmentCgroup = "cgroup"
+	// ContainmentSubreaper is a Linux process group with the launcher as
+	// child subreaper, found by its leader, the worker.
+	ContainmentSubreaper = "subreaper+pgroup"
+	// ContainmentGroup is a process group alone (macOS), found by its leader.
+	ContainmentGroup = "pgroup"
+)
+
+// ErrUnrecoverable reports a containment record that cannot identify its unit,
+// so it never authorises a sweep or a take-over.
+var ErrUnrecoverable = errors.New("containment record cannot identify its unit")
+
+// MaxContainmentBytes bounds a containment record's name, reason and worker token.
+const MaxContainmentBytes = 1024
+
+// Containment is the recovery description of the unit an owner's worker runs
+// in: an artisan.Containment field for field, plus the worker identity Start
+// returned (docs/store.md#containment-record). A job or cgroup is found by its
+// Name; a process group has no name and is found by its leader, the Worker.
 type Containment struct {
+	// Kind is one of the Containment kind constants.
 	Kind string `json:"kind"`
-	Name string `json:"name"`
+	// Name is the job name or cgroup directory; it is empty for a process group.
+	Name string `json:"name,omitempty"`
+	// Reason is the Linux detection result that chose Kind.
+	Reason string `json:"reason,omitempty"`
+	// Worker is the contained worker; a process group requires it.
+	Worker artisan.Identity `json:"worker,omitzero"`
+}
+
+// Recoverable reports, with an error wrapping ErrUnrecoverable, a record that
+// cannot identify its unit: an unknown kind, a job or cgroup without a name, a
+// process group without a worker identity or with a name, an invalid worker
+// identity, or an oversized or invalid name or reason.
+func (c Containment) Recoverable() error {
+	unrecoverable := func(format string, args ...any) error {
+		return fmt.Errorf("%w: %s", ErrUnrecoverable, fmt.Sprintf(format, args...))
+	}
+	text := func(name, v string) error {
+		switch {
+		case strings.TrimSpace(v) == "":
+			return unrecoverable("%s %s must not be empty", c.Kind, name)
+		case len(v) > MaxContainmentBytes:
+			return unrecoverable("%s %s is %d bytes; the limit is %d", c.Kind, name, len(v), MaxContainmentBytes)
+		case !utf8.ValidString(v):
+			return unrecoverable("%s %s is not valid UTF-8", c.Kind, name)
+		}
+		return nil
+	}
+	switch c.Kind {
+	case ContainmentJob, ContainmentCgroup:
+		if err := text("name", c.Name); err != nil {
+			return err
+		}
+	case ContainmentSubreaper, ContainmentGroup:
+		if c.Name != "" {
+			return unrecoverable("a %s has no name; it is found by its worker, not %q", c.Kind, c.Name)
+		}
+		if c.Worker == (artisan.Identity{}) {
+			return unrecoverable("a %s needs its worker identity", c.Kind)
+		}
+	default:
+		return unrecoverable("unknown containment kind %q", c.Kind)
+	}
+	if c.Worker != (artisan.Identity{}) {
+		if c.Worker.PID < 1 {
+			return unrecoverable("worker pid %d must be positive", c.Worker.PID)
+		}
+		if err := text("worker token", c.Worker.Token); err != nil {
+			return err
+		}
+	}
+	if c.Reason != "" {
+		return text("reason", c.Reason)
+	}
+	return nil
 }
 
 // Ownership records which launcher owns one running stage attempt (docs/store.md).
@@ -49,7 +128,8 @@ type Ownership struct {
 	// Attempt is the stage attempt's number; StartOwnedAttempt assigns it.
 	Attempt          int              `json:"attempt"`
 	LauncherIdentity artisan.Identity `json:"launcher_identity"`
-	// Containment is empty until the owner's worker has been placed in a unit.
+	// Containment is empty until the owner's worker has been placed in a unit;
+	// once set it must be Recoverable.
 	Containment Containment `json:"containment,omitzero"`
 	// Endpoint is the owner's control endpoint, empty until it is bound.
 	Endpoint string         `json:"endpoint,omitempty"`
@@ -63,8 +143,13 @@ type Ownership struct {
 // reports survivors as Alive or Unverified, never Gone.
 type OwnerProbe func(Ownership) (artisan.Liveness, error)
 
-// ProbeLauncher probes the recorded launcher identity with artisan.Probe.
+// ProbeLauncher returns Unverified when containment is recorded, since launcher
+// exit cannot prove absence of contained survivors. Without containment it probes
+// the recorded launcher identity with artisan.Probe.
 func ProbeLauncher(o Ownership) (artisan.Liveness, error) {
+	if o.Containment != (Containment{}) {
+		return artisan.Unverified, nil
+	}
 	return artisan.Probe(o.LauncherIdentity)
 }
 
@@ -96,8 +181,12 @@ func (s *Store) StartOwnedAttempt(mutationID string, o Ownership) (Receipt, erro
 // TakeOwnership records o's launcher as the owner of the running attempt
 // o.Attempt; o.State must be empty or OwnerStarting and is stored as OwnerStarting. It takes an attempt with no owner, and
 // takes over one whose recorded owner probe proves exited; it refuses with
-// ErrOwnerLive or ErrOwnerUnknown otherwise and writes nothing. A nil probe
-// means ProbeLauncher. The probe runs inside the mutation, under the store's
+// ErrOwnerLive or ErrOwnerUnknown otherwise and writes nothing. A recorded
+// containment that is not Recoverable refuses with ErrOwnerUnknown without
+// probing, since its unit could not be swept. A nil probe
+// means ProbeLauncher, which refuses recorded containment with ErrOwnerUnknown;
+// recovery requires an explicit containment-aware probe proving no survivors.
+// The probe runs inside the mutation, under the store's
 // single-writer lock, so two take-overs never both succeed. A replayed
 // mutation id returns its original receipt without probing.
 func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) (Receipt, error) {
@@ -123,6 +212,11 @@ func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) 
 		case err != nil:
 			return err
 		default:
+			if prev.Containment != (Containment{}) {
+				if err := prev.Containment.Recoverable(); err != nil {
+					return fmt.Errorf("%w: launcher %d: %w", ErrOwnerUnknown, prev.LauncherIdentity.PID, err)
+				}
+			}
 			lv, perr := probe(prev)
 			switch {
 			case lv == artisan.Alive:
@@ -227,10 +321,8 @@ func validateOwnership(o Ownership, numbered bool, states ...OwnershipState) err
 		return err
 	}
 	if o.Containment != (Containment{}) {
-		for name, v := range map[string]string{"containment kind": o.Containment.Kind, "containment name": o.Containment.Name} {
-			if err := validateText(name, v, 256); err != nil {
-				return err
-			}
+		if err := o.Containment.Recoverable(); err != nil {
+			return fmt.Errorf("store: %w: %w", ErrInvalid, err)
 		}
 	}
 	if o.Endpoint != "" {

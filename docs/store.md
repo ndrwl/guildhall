@@ -17,14 +17,15 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Workflow approval | workflow digest | The Guildmaster's approval of one exact workflow revision for this Director: the workflow name, its `sha256:` digest, the approval words exactly as given and the UTC time it was recorded. Recorded once per digest; see [workflow-edit authority](configuration.md#workflow-edit-authority). Not per repository and never changes a task. |
 | Decision | repository, task, decision id | A question for the Guildmaster and, once, the exact answer (R1.61). A decision is typed: its kind is `approval`, `review`, `loop-exit`, `merge` or `question`; every kind but `question` names the subject the answer binds to, a document (`sha256:<64 lowercase hex>` digest) or a head (40 or 64 lowercase hex object id); and it may offer up to 16 one-line options. When it offers options, the answer's first line (the text before the first LF, with only a single trailing CR removed) must equal one exactly or the answer is refused and nothing is written; the answer is still recorded verbatim, with the matched option as `choice` and the trimmed text after the first line as `note`. Decisions recorded before typed decisions have no kind, subject or options and take any answer. Answering records the answer only and never advances the task. |
-| Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its containment unit's kind and name, its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
+| Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its [containment recovery description](#containment-record), its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
 Options must be non-blank valid UTF-8 without line breaks or surrounding white space, distinct and at most 256 bytes each.
 Titles, questions, answers and approval words must be non-blank valid UTF-8 and are limited to 64 KiB per field; larger content belongs in a referenced document.
 Message payload limits and artifact requirements are defined in the [envelope contract](messaging.md#envelope).
 Pane binding fields must be non-blank valid UTF-8 and are limited to 256 bytes each.
-An ownership record's launcher token and containment kind and name are limited to 256 bytes each, and its endpoint to 1024 bytes.
+An ownership record's launcher token is limited to 256 bytes, and its endpoint to 1024 bytes.
+Containment fields follow the [containment record](#containment-record) rules.
 Document paths are relative to the Director's document directory and must be clean, local, slash-separated paths of at most 1024 bytes, without backslashes or colons.
 Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
 
@@ -72,11 +73,37 @@ The ownership record holds the current launcher identity; the receipt holds the 
   An attempt with no owner is taken at once.
   An attempt with an owner is probed first: a live owner refuses the take with `ErrOwnerLive`, and an owner that cannot be proven exited refuses it with `ErrOwnerUnknown`; a refusal writes nothing.
   Only an owner proven exited, with no probe error, may be replaced.
-  The default probe checks the recorded launcher identity, so a reused PID with a different creation token counts as exited; a caller that also knows what the owner contained reports surviving members as live or unknown, never as exited.
+  The default probe (`ProbeLauncher`, also selected by nil) refuses with `ErrOwnerUnknown` whenever containment is recorded; launcher exit alone cannot establish absence of contained survivors.
+  Without containment it checks the recorded launcher identity, so a reused PID with a different creation token counts as exited.
+  Recovery of recorded containment requires an explicit containment-aware probe proving both launcher exit and absence of survivors; it reports surviving members as live or unknown, never as exited.
 - Both record the owner as `starting`.
   `UpdateOwnership` then lets the same launcher identity record its containment unit, its endpoint and `running`; another launcher's update is refused with `ErrOwnerLive`, and `running` never returns to `starting`.
 - `FinishAttempt` releases the attempt's ownership record in the same mutation and keeps it, still naming its launcher; a released record is never updated or taken again, because a finished attempt cannot be owned.
 - A replayed mutation id returns its original receipt without probing, as every mutation does.
+
+### Containment record
+
+The ownership record's `containment` is the recovery description of the unit the owner's worker runs in, so a later sweep can find that unit after the launcher is gone.
+Every [Artisan containment kind](artisan.md#recording-the-containment) has one, copied field for field from the unit's `Containment` plus the worker identity `Start` returned:
+
+```json
+{"kind": "subreaper+pgroup", "reason": "no cgroup v2 mounted at /sys/fs/cgroup", "worker": {"pid": 4242, "token": "boot:…:91234"}}
+```
+
+| Kind | `name` | `worker` |
+|---|---|---|
+| `job` | The job name, required | Optional |
+| `cgroup` | The cgroup directory, required | Optional |
+| `subreaper+pgroup` | Must be empty | Required: the group is found by its leader, the worker |
+| `pgroup` | Must be empty | Required: the group is found by its leader, the worker |
+
+A process group has no name of its own, and no group id or other invented name may stand in for the worker identity, because a group id is reused once its leader is gone.
+`reason` keeps the Linux detection result that chose the kind, such as why no delegated cgroup v2 was usable; it may be omitted.
+When present, `name`, `reason` and the worker token must be non-blank valid UTF-8 within `MaxContainmentBytes` (1024 bytes each); a recorded worker must also have a positive PID.
+`Containment.Recoverable` checks structural recovery evidence, not identity liveness or whether the unit is empty.
+It fails with `ErrUnrecoverable` for an unknown kind or a violation of these field requirements.
+Writes refuse a containment that is not recoverable with `ErrInvalid`.
+Records written before this rule, whose containment held only `kind` and `name`, still read unchanged; a recoverable one keeps working, and one that is not never authorises a sweep or a take-over: `TakeOwnership` refuses it with `ErrOwnerUnknown` without probing, even when its launcher has exited.
 
 Taking ownership records the mutation id the caller chooses.
 The planned launcher convention is `own:<repository>:<task>:<step>:<number>:<launcher pid>`, because mutation ids cannot contain `/`; launcher command integration is not implemented yet.
