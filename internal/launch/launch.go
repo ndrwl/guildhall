@@ -222,10 +222,6 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	outcomePath := filepath.Join(a.Dir(), artisan.OutcomeFile)
-	if _, err := os.Lstat(outcomePath); !errors.Is(err, fs.ErrNotExist) {
-		return rep, fmt.Errorf("launch: %w: %s", artisan.ErrDecided, outcomePath)
-	}
 	if err := os.MkdirAll(a.Dir(), 0o700); err != nil {
 		return rep, err
 	}
@@ -240,7 +236,21 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	if err := a.write(func(s *store.Store) error { _, err := s.TakeOwnership(mutation("own"), own, ProbeOwner); return err }); err != nil {
+	err = func() error {
+		lockCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		release, err := artisan.LockAttempt(lockCtx, a.Dir())
+		if err != nil {
+			return err
+		}
+		defer release()
+		outcomePath := filepath.Join(a.Dir(), artisan.OutcomeFile)
+		if _, err := os.Lstat(outcomePath); !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("launch: %w: %s", artisan.ErrDecided, outcomePath)
+		}
+		return a.write(func(s *store.Store) error { _, err := s.TakeOwnership(mutation("own"), own, ProbeOwner); return err })
+	}()
+	if err != nil {
 		return rep, fmt.Errorf("launch: take ownership of %s: %w", k, err)
 	}
 	finish := func(outcome store.AttemptOutcome, runErr error) (Report, error) {
