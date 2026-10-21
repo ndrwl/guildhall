@@ -52,8 +52,10 @@ func TestQueueAddMakesJobNext(t *testing.T) {
 
 ## A shared contract suite
 
-One unexported function holds the cases, and each adapter gets a short test that hands it a constructor.
+Guildhall's own examples are `testToolBoundary` in `internal/cli/tools_test.go` and `messagingtest.RunMailboxContract` in `internal/messaging/messagingtest/contract.go`, as described in `docs/contracts.md`.
+One function holds the cases, and each adapter gets a short test that hands it a constructor.
 The double is trusted only because it passes the same cases as the real adapter.
+For repositories without those examples, this fictional mailbox illustrates the same pattern.
 
 ```go
 // testMailbox is the Mailbox contract; every adapter must pass it.

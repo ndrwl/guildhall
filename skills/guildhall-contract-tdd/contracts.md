@@ -28,6 +28,7 @@ These are the words the build and review stages share; use them exactly.
 - Contract test: a test that exercises a contract only through its interface.
 - Test double: a stand-in for a real boundary, used only at system boundaries.
 - Shared contract suite: one test function that takes a constructor and runs the same cases against the real adapter and the double.
+  Guildhall's own examples are `testToolBoundary` in `internal/cli/tools_test.go` and `messagingtest.RunMailboxContract` in `internal/messaging/messagingtest/contract.go`.
 - Red run: the run where a new case fails on behaviour, before the implementation that passes it.
 - Green run: the run where every case and the repository's checks pass.
 - Pin: a new test that passed on its first run against existing behaviour; it pins the contract but is not red-then-green evidence.

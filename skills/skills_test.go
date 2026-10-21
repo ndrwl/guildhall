@@ -190,12 +190,46 @@ func frontmatter(text string) (map[string]string, error) {
 		case fields[key] != "":
 			return nil, fmt.Errorf("field %q repeated", key)
 		}
+		value = strings.TrimSpace(value)
+		if strings.ContainsAny(value[:1], "-?:,[]{}#&*!|>'\"%@`") ||
+			strings.Contains(value, ": ") || strings.Contains(value, ":\t") || strings.HasSuffix(value, ":") ||
+			strings.Contains(value, " #") || strings.Contains(value, "\t#") {
+			return nil, fmt.Errorf("field %q must be a plain YAML scalar without indicators, mapping separators or comments", key)
+		}
 		fields[key] = value
 	}
 	if fields["name"] == "" || fields["description"] == "" {
 		return nil, errors.New("needs a name and a description")
 	}
 	return fields, nil
+}
+
+func TestFrontmatterPlainScalars(t *testing.T) {
+	for _, field := range []string{"name", "description"} {
+		values := []string{"contract first: state", "contract first:\tstate", "contract:", "text # comment", "text\t# comment"}
+		for _, indicator := range "-?:,[]{}#&*!|>'\"%@`" {
+			values = append(values, string(indicator)+"value")
+		}
+		for _, value := range values {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				fields := map[string]string{"name": "guildhall-example", "description": "Use for contract tests."}
+				fields[field] = value
+				text := fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n", fields["name"], fields["description"])
+				if got, err := frontmatter(text); err == nil {
+					t.Fatalf("frontmatter accepted unsupported scalar %q: %v", value, got)
+				}
+			})
+		}
+	}
+	t.Run("plain strings", func(t *testing.T) {
+		got, err := frontmatter("---\nname: guildhall-example\ndescription: Use https://example.com for contract-first tests.\n---\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got["name"] != "guildhall-example" || got["description"] != "Use https://example.com for contract-first tests." {
+			t.Fatalf("frontmatter = %v", got)
+		}
+	})
 }
 
 func TestSkillFrontmatter(t *testing.T) {

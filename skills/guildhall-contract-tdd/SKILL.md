@@ -1,6 +1,6 @@
 ---
 name: guildhall-contract-tdd
-description: Use in a build or fix stage to implement an accepted spec contract first: state each contract it names, write that contract's tests red, implement to green one slice at a time, and record both runs.
+description: Use in a build or fix stage to implement an accepted spec contract first; state each contract it names, write that contract's tests red, implement to green one slice at a time, and record both runs.
 ---
 
 Adapted from `tdd` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
@@ -27,6 +27,7 @@ Add no interface for a pure function, a value type or a dependency with one impl
    A case that does not compile is not red: give it the stated types with empty bodies so it fails on behaviour, and keep the failing output.
 3. Implement only enough to turn that case green, then take the next case.
 4. Where a test double replaces a real boundary, run one contract test function against both the real implementation and the double.
+   Guildhall's own examples are `testToolBoundary` in `internal/cli/tools_test.go` and `messagingtest.RunMailboxContract` in `internal/messaging/messagingtest/contract.go`.
 5. Run the repository's full checks and keep the passing output.
 
 In a fix stage, each finding that changes behaviour starts at step 2 with a case that reproduces it.
