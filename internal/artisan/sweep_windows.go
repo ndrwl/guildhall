@@ -3,7 +3,6 @@ package artisan
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -13,7 +12,7 @@ import (
 const jobTerminate = 0x0008
 
 func kill(id Identity) error {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE, false, uint32(id.PID))
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(id.PID))
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return nil
 	}
@@ -21,14 +20,23 @@ func kill(id Identity) error {
 		return err
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
-	var c, e, k, u windows.Filetime
-	if err := windows.GetProcessTimes(h, &c, &e, &k, &u); err != nil {
-		return err
-	}
-	if strconv.FormatInt(c.Nanoseconds(), 10) != id.Token {
+	current, err := identityFromHandle(id.PID, h)
+	if errors.Is(err, errNoProcess) {
 		return nil
 	}
-	return windows.TerminateProcess(h, 1)
+	if err != nil {
+		return err
+	}
+	if current != id {
+		return nil
+	}
+	if err := windows.TerminateProcess(h, 1); err != nil {
+		if _, checkErr := identityFromHandle(id.PID, h); errors.Is(checkErr, errNoProcess) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // sweep terminates the named job when it still holds members.

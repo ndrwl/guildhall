@@ -65,4 +65,7 @@ func TestIdentityExited259(t *testing.T) {
 	if lv, err := artisan.Probe(id); lv != artisan.Gone || err != nil {
 		t.Fatalf("Probe after exit 259 with retained handle = %v, %v; want gone", lv, err)
 	}
+	if err := artisan.Kill(id); err != nil {
+		t.Fatalf("Kill after exit 259 with retained handle = %v; want nil", err)
+	}
 }
