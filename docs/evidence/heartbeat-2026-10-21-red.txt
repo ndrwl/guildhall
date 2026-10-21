@@ -1,0 +1,31 @@
+=== RUN   TestRecordsContract
+=== RUN   TestRecordsContract/store
+=== RUN   TestRecordsContract/store/heartbeat
+    records.go:389: heartbeat = {Repository: TaskID: Step: Attempt:0 Sequence:0 Time:0001-01-01 00:00:00 +0000 UTC WorkerState: LastOutputAt:0001-01-01 00:00:00 +0000 UTC}, record not found
+=== RUN   TestRecordsContract/double
+=== RUN   TestRecordsContract/double/heartbeat
+    records.go:389: heartbeat = {Repository: TaskID: Step: Attempt:0 Sequence:0 Time:0001-01-01 00:00:00 +0000 UTC WorkerState: LastOutputAt:0001-01-01 00:00:00 +0000 UTC}, record not found
+--- FAIL: TestRecordsContract (0.06s)
+    --- FAIL: TestRecordsContract/store (0.06s)
+        --- FAIL: TestRecordsContract/store/heartbeat (0.06s)
+    --- FAIL: TestRecordsContract/double (0.00s)
+        --- FAIL: TestRecordsContract/double/heartbeat (0.00s)
+=== RUN   TestWorkerStalled
+=== RUN   TestWorkerStalled/double
+    worker_stalled_test.go:22: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:44: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:54: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:60: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:61: stalls = 0, want 1
+=== RUN   TestWorkerStalled/store
+    worker_stalled_test.go:22: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:44: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:54: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:60: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:61: stalls = 0, want 1
+--- FAIL: TestWorkerStalled (0.09s)
+    --- FAIL: TestWorkerStalled/double (0.01s)
+    --- FAIL: TestWorkerStalled/store (0.08s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.163s
+FAIL
