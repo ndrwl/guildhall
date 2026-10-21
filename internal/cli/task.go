@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/config"
@@ -23,7 +24,8 @@ const taskUsage = `usage:
   guildhall task list --store <path> [--repo <id>] --json
   guildhall task timeline --store <path> --repo <id> <task> --json
   guildhall task files --store <path> --repo <id> <task> --json
-  guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move out-of-scope|duplicate|defer --reason <text> <task>`
+  guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move out-of-scope|duplicate|defer --reason <text> <task>
+  guildhall task review --full --store <path> --repo <id> <task>`
 
 // dependsOn collects repeated --depends-on flags in the order given.
 type dependsOn []store.TaskRef
@@ -53,6 +55,8 @@ type taskDetail struct {
 // so a retry prints the original receipt; show, list, timeline and files only read.
 // task finding rule records the Director's ruling on one finding of a review outcome document with the mutation
 // "ruling:<repo>:<task>:<document>:<finding>" (hashed the same way), and prints its receipt.
+// task review --full records a full-review request with the mutation "full-review:<repo>:<task>:<n>", n the request's
+// number, and prints its receipt; a retry while the request is pending prints the original receipt.
 // timeline and files are the Director's inspection reads, labelled with the store sequence and
 // workflow revision they describe (docs/tasks.md#inspection).
 // It exits 0 on success, 1 when the configuration, workflow or store refuses or fails and 2 on a usage error.
@@ -78,6 +82,7 @@ func (a *App) task(args []string) int {
 	finding := flags.String("finding", "", "finding id")
 	move := flags.String("move", "", "ruling move")
 	reason := flags.String("reason", "", "ruling reason")
+	full := flags.Bool("full", false, "request a full review")
 	var deps dependsOn
 	flags.Var(&deps, "depends-on", "task this one depends on")
 	var want int
@@ -91,6 +96,8 @@ func (a *App) task(args []string) int {
 		want, allowed = 0, map[string]bool{"store": true, "repo": true, "json": true}
 	case "finding rule":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "outcome": true, "finding": true, "move": true, "reason": true}
+	case "review":
+		want, allowed = 1, map[string]bool{"store": true, "repo": true, "full": true}
 	default:
 		return a.taskUsage(fmt.Sprintf("unknown task subcommand %q", sub))
 	}
@@ -108,7 +115,7 @@ func (a *App) task(args []string) int {
 		}
 		n := 1
 		name, _, inline := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(arg, "-"), "-"), "=")
-		if f := flags.Lookup(name); f != nil && !inline && name != "json" && len(remaining) > 1 {
+		if f := flags.Lookup(name); f != nil && !inline && name != "json" && name != "full" && len(remaining) > 1 {
 			n = 2
 		}
 		if err := flags.Parse(remaining[:n]); err != nil {
@@ -133,7 +140,9 @@ func (a *App) task(args []string) int {
 		return a.taskUsage(fmt.Sprintf("task %s requires --repo", sub))
 	case sub == "finding rule" && (*outcome == "" || *finding == "" || *move == "" || *reason == ""):
 		return a.taskUsage("task finding rule requires --outcome, --finding, --move and --reason")
-	case sub != "new" && sub != "finding rule" && !*asJSON:
+	case sub == "review" && !*full:
+		return a.taskUsage("task review requires --full")
+	case sub != "new" && sub != "finding rule" && sub != "review" && !*asJSON:
 		return a.taskUsage(fmt.Sprintf("task %s prints JSON only; pass --json", sub))
 	case len(positional) != want:
 		return a.taskUsage(fmt.Sprintf("task %s takes %d arguments", sub, want))
@@ -156,7 +165,7 @@ func (a *App) task(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(fmt.Errorf("no store at %s", *path))
 	}
-	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule", RequireStore: true})
+	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule" && sub != "review", RequireStore: true})
 	if err != nil {
 		return fail(err)
 	}
@@ -171,6 +180,8 @@ func (a *App) task(args []string) int {
 	case "finding rule":
 		r := store.Ruling{Repository: *repo, TaskID: positional[0], Document: *outcome, Finding: *finding, Move: store.RulingMove(*move), Reason: *reason}
 		out, err = s.RuleFinding(mutationID("ruling", r.Repository, r.TaskID, r.Document, r.Finding), r)
+	case "review":
+		out, err = requestFullReview(s, *repo, positional[0])
 	case "timeline", "files":
 		var h store.TaskHistory
 		if h, err = s.TaskHistory(*repo, positional[0]); err == nil && sub == "timeline" {
@@ -189,6 +200,19 @@ func (a *App) task(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// requestFullReview records the task's next full-review request, or replays the pending one's mutation.
+func requestFullReview(s *store.Store, repo, id string) (store.Receipt, error) {
+	all, err := s.FullReviews(repo, id)
+	if err != nil {
+		return store.Receipt{}, err
+	}
+	n := len(all) + 1
+	if len(all) > 0 && all[len(all)-1].ConsumedBy == "" {
+		n = len(all)
+	}
+	return s.RequestFullReview(mutationID("full-review", repo, id, strconv.Itoa(n)), repo, id)
 }
 
 // acceptTask loads the Director config at cfgPath and returns a task for repository repo bound to the

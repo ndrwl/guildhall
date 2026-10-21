@@ -104,6 +104,8 @@ type history struct {
 	decisions []store.Decision
 	// rulings are the Director's rulings, each on a finding of one outcome document, named by Document.
 	rulings []store.Ruling
+	// fullReviews are the Director's full-review requests, by number.
+	fullReviews []store.FullReview
 	// docPlaces and decisionPlaces parallel documents and decisions; ok is false for a name of another form.
 	docPlaces      []parsed
 	decisionPlaces []parsed
@@ -175,6 +177,20 @@ func (h *history) contestedBy(step string, n int) []store.Ruling {
 		}
 	}
 	return out
+}
+
+// fullReview returns the full-review request attempt by consumed, or else the pending one, or nil.
+func (h *history) fullReview(by string) *store.FullReview {
+	var pending *store.FullReview
+	for i, f := range h.fullReviews {
+		switch f.ConsumedBy {
+		case by:
+			return &h.fullReviews[i]
+		case "":
+			pending = &h.fullReviews[i]
+		}
+	}
+	return pending
 }
 
 func (h *history) attempt(step string, n int) *store.StageAttempt {

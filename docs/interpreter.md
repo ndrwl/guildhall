@@ -129,6 +129,7 @@ A Guildmaster review answered under an older standards revision does not satisfy
 ## Rebase-aware review
 
 A code review (`review`) attempt's binding records the commit range it reviews, `Engine.Base`'s answer for the task's repository and the attempt's code head, and its scope.
+A pending [full-review request](tasks.md#full-review), read from records through the history view, makes the attempt full without classifying: the attempt consumes it with `Records.ConsumeFullReview`, as `<step>-<n>`, before recording its binding, and a replay finds it consumed by the same attempt and stays full.
 `Engine.Base` is supplied by the caller; when it is nil, fails or returns something other than a full commit id, the attempt records no range and its scope is `full`.
 The range last reviewed is read only from records, through the history view: the binding of the attempt that recorded the step's latest outcome; a loop exit's outcome, or an attempt that recorded no range, gives none.
 Only when the previous outcome's binding has revisions matching the new attempt's accepted-spec digest and standards revision is its range eligible for reuse; missing revisions or a change to either field retains full scope without classification.

@@ -14,6 +14,7 @@ Every command takes `--store <path>`, an existing store file; no command creates
 - `guildhall task list --store <path> [--repo <id>] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
 - `guildhall task timeline --store <path> --repo <id> <task> --json` and `guildhall task files --store <path> --repo <id> <task> --json` are the [inspection reads](#inspection).
 - `guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move <move> --reason <text> <task>` records a [Director ruling](#director-rulings) and prints its receipt.
+- `guildhall task review --full --store <path> --repo <id> <task>` records a [full-review request](#full-review) and prints its receipt.
 
 For every command but `list`, the positional task id may appear before or after flags.
 `show`, `list`, `timeline` and `files` open the store read-only and change nothing.
@@ -81,6 +82,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `decisions`: every decision with its kind, subject, options, question and the Guildmaster's exact words (`answer`, `choice`, `note`), plus `opened_at`, `answered_at` and `wait_seconds` between them, ordered by when they opened.
 - `findings`: every review outcome document with its findings (`id`, `rule`, `file`, `line`, `summary`) and its `dispositions` of the previous round's findings, read from the store's projection, with `recorded_at`, ordered by when they were recorded.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
+- `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
 - `events`: every receipt of the task in commit order, each naming its operation, mutation id, sequence, commit time and the record it wrote (`record`, for example `attempt/build/2`, `decision/accept-plan` or `message/q-1`).
   These are the moves made on the task, including messages sent and acknowledged for it.
 
@@ -110,3 +112,13 @@ A finding is ruled on once per document; a conflicting retry, an unknown documen
 An omitted or empty required flag, including `--reason`, is a usage error (exit 2).
 A ruling never resolves or withdraws a finding and never changes a verdict.
 The [interpreter's Director-ruling contract](interpreter.md#director-rulings) defines when rulings enter an attempt's immutable inputs, how they are contested, and when disputes reach the Guildmaster.
+
+## Full review
+
+The Director may force the task's next code review round to review the whole head, never only a rebase's resolution ([rebase-aware review](interpreter.md#rebase-aware-review)).
+`task review --full` records a full-review request, receipt record `full-review/<n>`, with the mutation `full-review:<repo>:<task>:<n>`, where `n` numbers the task's requests from 1.
+At most one request is pending: a retry while it is pending prints the original receipt, and once a round consumed it the next command records request `n+1`.
+`--full` is required, so a later form of `task review` is not a breaking change; omitting it, `--repo` or the task, or passing `--json`, is a usage error (exit 2).
+An unknown task or one that is not open is refused with exit 1 and writes nothing.
+The request is consumed by the first code review attempt prepared after it, which records `scope: full` in its binding and is named in the request's `consumed_by`.
+The review outcome still binds to the exact head, spec digest and standards revision, so the review gate is unchanged.
