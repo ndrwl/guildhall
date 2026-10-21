@@ -211,7 +211,7 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 		problems []string
 	}{
 		{name: "missing file", toml: directorTOML, file: "-", problems: []string{"human-review.json"}},
-		{name: "malformed JSON", toml: directorTOML, file: "{", problems: []string{"malformed JSON"}},
+		{name: "malformed JSON", toml: directorTOML, file: "{", problems: []string{"not one JSON value"}},
 		{name: "unknown field", toml: directorTOML, file: strings.Replace(string(valid), `"name"`, `"colour": "red", "name"`, 1), problems: []string{"colour"}},
 		{name: "validation problems", toml: directorTOML,
 			file:     strings.Replace(strings.Replace(string(valid), `"plan.spec"`, `"plan.nothing"`, 1), `"max": 3`, `"max": 99`, 1),

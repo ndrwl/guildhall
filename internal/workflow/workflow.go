@@ -7,20 +7,15 @@
 package workflow
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
-	"reflect"
 	"regexp"
 	"slices"
-	"strconv"
-	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // SchemaPrefix and SchemaVersion form the workflow "schema" value, for example "guildhall.workflow/1".
@@ -33,7 +28,7 @@ const (
 const MaxLoopRounds = 10
 
 // ErrNewerSchema reports a document written for a newer Guildhall; it is refused rather than guessed at.
-var ErrNewerSchema = errors.New("schema is newer than this Guildhall supports")
+var ErrNewerSchema = strictjson.ErrNewerSchema
 
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
@@ -116,107 +111,11 @@ func Default() (*Definition, error) {
 // Parse decodes a workflow strictly: unknown fields, duplicate keys, trailing data
 // and unknown or newer schemas are refused. It does not validate wiring; call Validate.
 func Parse(data []byte) (*Definition, error) {
-	if err := checkSchema(data, SchemaPrefix, SchemaVersion); err != nil {
-		return nil, err
-	}
 	var def Definition
-	if err := decodeStrict(data, &def); err != nil {
+	if err := strictjson.Decode(data, &def, strictjson.Options{Schema: SchemaPrefix, Version: SchemaVersion}); err != nil {
 		return nil, fmt.Errorf("workflow: %w", err)
 	}
 	return &def, nil
-}
-
-// checkSchema reads only the "schema" field so a newer document is refused before strict decoding.
-func checkSchema(data []byte, prefix string, supported int) error {
-	var head map[string]json.RawMessage
-	if err := json.Unmarshal(data, &head); err != nil {
-		return fmt.Errorf("malformed JSON: %w", err)
-	}
-	var schema string
-	if err := json.Unmarshal(head["schema"], &schema); err != nil {
-		return fmt.Errorf("schema: %w", err)
-	}
-	num, ok := strings.CutPrefix(schema, prefix)
-	version, err := strconv.Atoi(num)
-	if !ok || err != nil || version < 1 {
-		return fmt.Errorf("schema %q is not %s<version>", schema, prefix)
-	}
-	if version > supported {
-		return fmt.Errorf("%w: %q (supported: %s%d)", ErrNewerSchema, schema, prefix, supported)
-	}
-	return nil
-}
-
-func decodeStrict(data []byte, v any) error {
-	if err := checkJSONKeys(json.NewDecoder(bytes.NewReader(data)), reflect.TypeOf(v).Elem()); err != nil {
-		return err
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return errors.New("unexpected data after the JSON document")
-	}
-	return nil
-}
-
-func checkJSONKeys(dec *json.Decoder, typ reflect.Type) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	switch tok {
-	case json.Delim('{'):
-		seen := map[string]bool{}
-		for dec.More() {
-			key, err := dec.Token()
-			if err != nil {
-				return err
-			}
-			name := key.(string)
-			if seen[name] {
-				return fmt.Errorf("duplicate key %q", name)
-			}
-			seen[name] = true
-			var child reflect.Type
-			if typ != nil {
-				switch typ.Kind() {
-				case reflect.Struct:
-					for i := 0; i < typ.NumField(); i++ {
-						field := typ.Field(i)
-						tag, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-						if tag == name {
-							child = field.Type
-							break
-						}
-					}
-					if child == nil {
-						return fmt.Errorf("unknown field %q", name)
-					}
-				case reflect.Map:
-					child = typ.Elem()
-				}
-			}
-			if err := checkJSONKeys(dec, child); err != nil {
-				return err
-			}
-		}
-		_, err = dec.Token()
-	case json.Delim('['):
-		var child reflect.Type
-		if typ != nil && typ.Kind() == reflect.Slice {
-			child = typ.Elem()
-		}
-		for dec.More() {
-			if err := checkJSONKeys(dec, child); err != nil {
-				return err
-			}
-		}
-		_, err = dec.Token()
-	}
-	return err
 }
 
 // Digest is the sha256 of the definition's canonical JSON encoding, so formatting does not change it.

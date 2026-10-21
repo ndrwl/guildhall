@@ -55,7 +55,7 @@ The result file is JSON, one object, version 1:
 | `outputs` | Required, possibly empty; each `path` is a clean relative path with `/` separators inside the working directory |
 | `landed_ref` | Optional; no whitespace or control characters |
 
-Guildhall rejects a result file that is larger than 1 MiB, is not exactly one JSON object, repeats a key, has an unknown or missing field, or breaks a rule above.
+Guildhall rejects a result file that is larger than 1 MiB, is UTF-16 or not exactly one JSON object, repeats a key, has an unknown or missing field, or breaks a rule above.
 All field names, including nested output fields, must use the exact lowercase spelling shown above; alternate casing and case-folded duplicates are rejected.
 A rejected result is reported as rejected; it is never treated as success or failure of the work.
 

@@ -13,12 +13,16 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
-// Plan and receipt schemas.
+// Plan and receipt schemas; PlanSchema is planSchemaPrefix followed by planSchemaVersion.
 const (
-	PlanSchema    = "guildhall.rollout-plan/1"
+	PlanSchema    = planSchemaPrefix + "1"
 	ReceiptSchema = "guildhall.rollout-receipt/1"
+
+	planSchemaPrefix  = "guildhall.rollout-plan/"
+	planSchemaVersion = 1
 )
 
 // Copy plan statuses.
@@ -330,11 +334,8 @@ func ReadPlan(stageDir string) (*Plan, error) {
 		return nil, err
 	}
 	var p Plan
-	if err := json.Unmarshal(data, &p); err != nil {
+	if err := strictjson.Decode(data, &p, strictjson.Options{Schema: planSchemaPrefix, Version: planSchemaVersion}); err != nil {
 		return nil, fmt.Errorf("plan: %w", err)
-	}
-	if p.Schema != PlanSchema {
-		return nil, fmt.Errorf("plan: unsupported schema %q", p.Schema)
 	}
 	return &p, nil
 }

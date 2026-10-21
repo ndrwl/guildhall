@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 const toolsPath = "/home/guild/directors/tools/config.toml"
@@ -232,5 +233,42 @@ func TestPlanRefusesUnknownOrRepeatedMachines(t *testing.T) {
 		if _, err := r.Plan(context.Background(), machines, t.TempDir()); err == nil {
 			t.Fatal("accepted", machines)
 		}
+	}
+}
+
+func TestReadPlanIsStrict(t *testing.T) {
+	const valid = `{"schema":"guildhall.rollout-plan/1","digest":"d","roster_digest":"r","managed_digest":"m","machines":["laptop"],"stage_dir":"s","copies":[{"machine":"laptop","director":"docs","ssh_alias":"laptop","target":"t","status":"changed"}]}`
+	for name, tc := range map[string]struct {
+		data  string
+		newer bool
+	}{
+		"valid":                {data: valid},
+		"duplicate key":        {data: strings.Replace(valid, `"digest":"d",`, `"digest":"d","digest":"e",`, 1)},
+		"unknown field":        {data: strings.Replace(valid, `"digest":"d",`, `"digest":"d","extra":1,`, 1)},
+		"unknown copy field":   {data: strings.Replace(valid, `"machine":"laptop",`, `"machine":"laptop","extra":1,`, 1)},
+		"trailing data":        {data: valid + `{}`},
+		"unknown schema":       {data: strings.Replace(valid, "rollout-plan/1", "rollout-receipt/1", 1)},
+		"newer schema":         {data: strings.Replace(valid, "rollout-plan/1", "rollout-plan/2", 1), newer: true},
+		"newer schema, extras": {data: strings.Replace(strings.Replace(valid, "rollout-plan/1", "rollout-plan/2", 1), `"digest":"d",`, `"digest":"d","extra":1,`, 1), newer: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "plan.json"), []byte(tc.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			p, err := ReadPlan(dir)
+			if name == "valid" {
+				if err != nil || p.Copies[0].Director != "docs" {
+					t.Fatalf("ReadPlan = %+v, %v", p, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			if got := errors.Is(err, strictjson.ErrNewerSchema); got != tc.newer {
+				t.Fatalf("errors.Is(ErrNewerSchema) = %v, err = %v", got, err)
+			}
+		})
 	}
 }
