@@ -213,3 +213,37 @@ func TestParseArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestRunOutputDirective(t *testing.T) {
+	work := t.TempDir()
+	t.Chdir(work)
+	args := setup(t, "Plan the change.\nguildhall-fake: output=notes/spec.md:Sort tasks by id.\n")
+	if _, err := run(t, args); err != nil {
+		t.Fatal(err)
+	}
+	r, err := adapter.ReadResult(args.ResultFile, testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != adapter.StatusSucceeded || len(r.Outputs) != 1 || r.Outputs[0].Path != "notes/spec.md" {
+		t.Errorf("result = %+v, want one output notes/spec.md", r)
+	}
+	if got, err := os.ReadFile(filepath.Join(work, "notes", "spec.md")); err != nil || string(got) != "Sort tasks by id.\n" {
+		t.Errorf("output file = %q, %v", got, err)
+	}
+	for _, prompt := range []string{
+		"guildhall-fake: output=spec.md\n",
+		"guildhall-fake: output=:text\n",
+		"guildhall-fake: output=../spec.md:text\n",
+		"guildhall-fake: output=/tmp/spec.md:text\n",
+		`guildhall-fake: output=notes\spec.md:text` + "\n",
+	} {
+		args := setup(t, prompt)
+		if _, err := run(t, args); err == nil {
+			t.Errorf("prompt %q accepted", prompt)
+		}
+		if _, err := os.Stat(args.ResultFile); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("prompt %q wrote a result", prompt)
+		}
+	}
+}

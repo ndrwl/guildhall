@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // Subcommand is the guildhall subcommand that runs the fake Artisan.
@@ -169,6 +170,8 @@ type directives struct {
 	result          string
 	lifetime        time.Duration
 	inventory       string
+	// output is one file to write into the working directory and list as the result's output.
+	output, text string
 }
 
 var faults = map[string]bool{"none": true, "no-result": true, "malformed": true, "wrong-identity": true, "exit-error": true}
@@ -248,6 +251,12 @@ func parseDirectives(prompt []byte) (directives, error) {
 				return d, fmt.Errorf("inventory %q must be an absolute directory", value)
 			}
 			d.inventory = value
+		case "output":
+			path, text, ok := strings.Cut(value, ":")
+			if !ok || !filepath.IsLocal(path) || filepath.IsAbs(path) || strings.Contains(path, `\`) || path != filepath.ToSlash(filepath.Clean(path)) {
+				return d, fmt.Errorf("output %q must be <relative slash-separated path>:<text>", value)
+			}
+			d.output, d.text = path, text
 		default:
 			return d, fmt.Errorf("unknown directive %q", key)
 		}
@@ -330,7 +339,11 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 			}
 			if d.result == resultAfterCancel {
 				say("cancel marker present; publishing a late result")
-				return publishLate(a, newResult(a, d, prompt))
+				result, err := newResult(a, d, prompt)
+				if err != nil {
+					return err
+				}
+				return publishLate(a, result)
 			}
 			say("cancel marker present; stopping without a result")
 			return nil
@@ -340,7 +353,10 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 		say("lifetime %s over without a result", d.lifetime)
 		return nil
 	}
-	result := newResult(a, d, prompt)
+	result, err := newResult(a, d, prompt)
+	if err != nil {
+		return err
+	}
 	switch d.fault {
 	case "no-result":
 		say("exiting without a result (simulated fault)")
@@ -365,13 +381,23 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 }
 
 // newResult is the result the prompt asks for.
-func newResult(a Args, d directives, prompt []byte) adapter.Result {
-	return adapter.Result{
+func newResult(a Args, d directives, prompt []byte) (adapter.Result, error) {
+	result := adapter.Result{
 		Identity: a.Identity,
 		Status:   d.outcome,
 		Summary:  fmt.Sprintf("fake artisan read %d bytes of prompt, sha256 %x", len(prompt), sha256.Sum256(prompt)),
 		Outputs:  []adapter.Output{},
 	}
+	if d.output != "" {
+		if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(d.output)), 0o755); err != nil {
+			return adapter.Result{}, err
+		}
+		if err := atomicfile.Write(filepath.FromSlash(d.output), []byte(d.text+"\n")); err != nil {
+			return adapter.Result{}, err
+		}
+		result.Outputs = []adapter.Output{{Path: d.output}}
+	}
+	return result, nil
 }
 
 // writeNew creates path with data, refusing to replace an existing file.
