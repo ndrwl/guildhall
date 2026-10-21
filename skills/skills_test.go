@@ -427,6 +427,68 @@ func TestContractTDDCheckTwinsAgree(t *testing.T) {
 	}
 }
 
+// TestReviewSkillSpeaksTheOutcomeContract holds guildhall-review to the review outcome contract and docs/review.md,
+// so the skill cannot teach a format or a rule the engine and the standard do not have.
+func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
+	const name = "guildhall-review"
+	var files []string
+	err := fs.WalkDir(skills.Release(), name, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files = append(files, strings.TrimPrefix(p, name+"/"))
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"CREDITS.md", "SKILL.md", "smells.md"}; !slices.Equal(files, want) {
+		t.Errorf("files = %q, want %q: no scripts and no sub-agent definitions", files, want)
+	}
+	data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+
+	_, example, ok := strings.Cut(text, "```json\n")
+	example, _, closed := strings.Cut(example, "```")
+	if !ok || !closed {
+		t.Fatal("SKILL.md has no fenced json example outcome")
+	}
+	o, err := workflow.ParseReviewOutcome([]byte(example))
+	if err != nil {
+		t.Fatalf("example outcome: %v", err)
+	}
+	if !o.Blocking() || len(o.Dispositions) == 0 || !slices.ContainsFunc(o.Findings, func(f workflow.Finding) bool { return f.Rule == "" }) {
+		t.Errorf("example should show a blocking round with dispositions and a suggestion: %+v", o)
+	}
+
+	for _, word := range []string{
+		string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested), string(workflow.VerdictRejected),
+		string(workflow.Resolved), string(workflow.StillOpen), string(workflow.Withdrawn),
+	} {
+		if !strings.Contains(text, "`"+word+"`") {
+			t.Errorf("SKILL.md does not name `%s`", word)
+		}
+	}
+
+	standard, err := os.ReadFile(filepath.Join("..", "docs", "review.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		body, err := fs.ReadFile(skills.Release(), name+"/"+f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, rule := range regexp.MustCompile(`\bS\d+\b`).FindAllString(string(body), -1) {
+			if !strings.Contains(string(standard), "**"+rule+" ") {
+				t.Errorf("%s cites %s, which docs/review.md does not define", f, rule)
+			}
+		}
+	}
+}
+
 func copyFile(t *testing.T, from, to string) {
 	t.Helper()
 	data, err := os.ReadFile(from)
