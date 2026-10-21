@@ -9,6 +9,7 @@ A Steward-managed override of an adapted skill keeps that line.
 | `guildhall-grill-notes` | `skills/productivity/grilling/SKILL.md` |
 | `guildhall-spec` | `skills/engineering/to-spec/SKILL.md` (template) and `skills/engineering/triage/AGENT-BRIEF.md` (rules) |
 | `guildhall-hallmark` | `skills/engineering/improve-codebase-architecture/SKILL.md` (scan and report) and `skills/engineering/codebase-design/SKILL.md` (vocabulary and principles) |
+| `guildhall-contract-tdd` | `skills/engineering/tdd/SKILL.md`, `tests.md` and `mocking.md` |
 
 The upstream licence applies to the adapted text:
 

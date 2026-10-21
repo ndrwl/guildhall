@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -25,6 +26,40 @@ import (
 )
 
 var update = flag.Bool("update", false, "rewrite the digest golden")
+
+// roleEnv makes the test binary act as go or gofmt in a child process, named by its executable.
+const roleEnv = "GUILDHALL_SKILLS_TEST_ROLE"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(roleEnv) == "tool" {
+		os.Exit(fakeTool(os.Args[1:]))
+	}
+	os.Exit(m.Run())
+}
+
+// fakeTool logs one line per call to FAKE_TOOL_LOG: the tool name, its arguments and the download settings it saw.
+// It exits 3 when FAKE_TOOL_FAIL names the tool and its first argument, and gofmt prints FAKE_GOFMT_LIST.
+func fakeTool(args []string) int {
+	name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+	call := strings.Join(append([]string{name}, args...), " ")
+	f, err := os.OpenFile(os.Getenv("FAKE_TOOL_LOG"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	_, err = fmt.Fprintf(f, "%s GOPROXY=%s GOTOOLCHAIN=%s\n", call, os.Getenv("GOPROXY"), os.Getenv("GOTOOLCHAIN"))
+	if err = errors.Join(err, f.Close()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if len(args) > 0 && os.Getenv("FAKE_TOOL_FAIL") == name+" "+args[0] {
+		return 3
+	}
+	if name == "gofmt" {
+		fmt.Print(os.Getenv("FAKE_GOFMT_LIST"))
+	}
+	return 0
+}
 
 // maxDescription caps a skill's description, the only part a runtime loads before the skill fires.
 const maxDescription = 256
@@ -155,12 +190,46 @@ func frontmatter(text string) (map[string]string, error) {
 		case fields[key] != "":
 			return nil, fmt.Errorf("field %q repeated", key)
 		}
+		value = strings.TrimSpace(value)
+		if strings.ContainsAny(value[:1], "-?:,[]{}#&*!|>'\"%@`") ||
+			strings.Contains(value, ": ") || strings.Contains(value, ":\t") || strings.HasSuffix(value, ":") ||
+			strings.Contains(value, " #") || strings.Contains(value, "\t#") {
+			return nil, fmt.Errorf("field %q must be a plain YAML scalar without indicators, mapping separators or comments", key)
+		}
 		fields[key] = value
 	}
 	if fields["name"] == "" || fields["description"] == "" {
 		return nil, errors.New("needs a name and a description")
 	}
 	return fields, nil
+}
+
+func TestFrontmatterPlainScalars(t *testing.T) {
+	for _, field := range []string{"name", "description"} {
+		values := []string{"contract first: state", "contract first:\tstate", "contract:", "text # comment", "text\t# comment"}
+		for _, indicator := range "-?:,[]{}#&*!|>'\"%@`" {
+			values = append(values, string(indicator)+"value")
+		}
+		for _, value := range values {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				fields := map[string]string{"name": "guildhall-example", "description": "Use for contract tests."}
+				fields[field] = value
+				text := fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n", fields["name"], fields["description"])
+				if got, err := frontmatter(text); err == nil {
+					t.Fatalf("frontmatter accepted unsupported scalar %q: %v", value, got)
+				}
+			})
+		}
+	}
+	t.Run("plain strings", func(t *testing.T) {
+		got, err := frontmatter("---\nname: guildhall-example\ndescription: Use https://example.com for contract-first tests.\n---\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got["name"] != "guildhall-example" || got["description"] != "Use https://example.com for contract-first tests." {
+			t.Fatalf("frontmatter = %v", got)
+		}
+	})
 }
 
 func TestSkillFrontmatter(t *testing.T) {
@@ -281,6 +350,90 @@ func parses(t *testing.T, file string) {
 	}
 	if out, err := exec.Command(shell, args...).CombinedOutput(); err != nil {
 		t.Errorf("%s does not parse in %s: %v\n%s", file, shell, err, out)
+	}
+}
+
+// TestContractTDDCheckTwinsAgree runs both installed check scripts against the test binary acting as go and gofmt:
+// each makes the same calls with downloads off and reaches the same pass or fail decision.
+func TestContractTDDCheckTwinsAgree(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "release")
+	if err := skills.Install(root); err != nil {
+		t.Fatal(err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	for _, tool := range []string{"go", "gofmt"} {
+		if runtime.GOOS == "windows" {
+			tool += ".exe"
+		}
+		copyFile(t, self, filepath.Join(bin, tool))
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(roleEnv, "tool")
+	t.Setenv("GOPROXY", "https://proxy.golang.org")
+	t.Setenv("GOTOOLCHAIN", "auto")
+
+	const env = " GOPROXY=off GOTOOLCHAIN=local"
+	gofmt, vet, test := "gofmt -l ."+env, "go vet ./..."+env, "go test ./..."+env
+	cases := []struct {
+		name, fail, list string
+		calls            []string
+		ok               bool
+	}{
+		{name: "clean", calls: []string{gofmt, vet, test}, ok: true},
+		{name: "unformatted file", list: "bad.go\n", calls: []string{gofmt}},
+		{name: "gofmt fails", fail: "gofmt -l", calls: []string{gofmt}},
+		{name: "vet fails", fail: "go vet", calls: []string{gofmt, vet}},
+		{name: "test fails", fail: "go test", calls: []string{gofmt, vet, test}},
+	}
+	scripts := map[string][]string{
+		"sh":   {filepath.Join(root, "guildhall-contract-tdd", "scripts", "check.sh")},
+		"pwsh": {"-NoProfile", "-NonInteractive", "-File", filepath.Join(root, "guildhall-contract-tdd", "scripts", "check.ps1")},
+	}
+	for _, shell := range []string{"sh", "pwsh"} {
+		t.Run(shell, func(t *testing.T) {
+			if _, err := exec.LookPath(shell); err != nil {
+				t.Skipf("%s is not installed", shell)
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					log := filepath.Join(t.TempDir(), "calls")
+					t.Setenv("FAKE_TOOL_LOG", log)
+					t.Setenv("FAKE_TOOL_FAIL", c.fail)
+					t.Setenv("FAKE_GOFMT_LIST", c.list)
+					cmd := exec.Command(shell, scripts[shell]...)
+					cmd.Dir = t.TempDir()
+					out, err := cmd.CombinedOutput()
+					if ok := err == nil; ok != c.ok {
+						t.Errorf("passed = %t, want %t: %v\n%s", ok, c.ok, err, out)
+					}
+					if c.list != "" && !strings.Contains(string(out), strings.TrimSpace(c.list)) {
+						t.Errorf("output does not name %q:\n%s", c.list, out)
+					}
+					data, err := os.ReadFile(log)
+					if err != nil && !errors.Is(err, fs.ErrNotExist) {
+						t.Fatal(err)
+					}
+					if got := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n"); !slices.Equal(got, c.calls) {
+						t.Errorf("calls = %q, want %q\n%s", got, c.calls, out)
+					}
+				})
+			}
+		})
+	}
+}
+
+func copyFile(t *testing.T, from, to string) {
+	t.Helper()
+	data, err := os.ReadFile(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(to, data, 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
 
