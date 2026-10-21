@@ -7,5 +7,6 @@ The review step gets its own previous outcome on port `previous` and the loop's 
 The [rounds and loops contract](../interpreter.md#rounds-and-loops) defines blocking results and exit answers; review acceptance uses the shared review outcome contract so the review gate needs no waiver path.
 Stall signals are Director messages and never change a loop (report §5.3); the [rounds and loops contract](../interpreter.md#rounds-and-loops) defines when a loop exit asks the Guildmaster.
 The [review gate](../interpreter.md#review-gate) re-checks outcomes from records at `deliver`, independently of the walk's stale-attempt handling, so a later change to the walk cannot bypass it.
-Loops back to Guildmaster, Director or engine steps and rebase-aware re-review are later slices.
+Loops back to Guildmaster, Director or engine steps are later slices.
+See [rebase-aware review](../interpreter.md#rebase-aware-review) for subsequent re-review support.
 See [Director rulings](director-rulings.md) for the subsequent ruling and heartbeat slice.

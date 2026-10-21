@@ -370,7 +370,8 @@ func (h *history) output(step, port string) (store.DocumentRef, string, error) {
 }
 
 // reviewedRange returns the range the code review step's latest outcome reviewed, from the binding of the attempt that
-// recorded it; nil when the step has no outcome, its latest outcome is a loop exit's or the attempt recorded no range.
+// recorded it. Reuse requires matching accepted-spec and standards revisions; otherwise review must remain full.
+// It returns nil when no eligible range is available.
 func (h *history) reviewedRange(step string, revisions *workflow.Revisions) (*git.Range, error) {
 	i, err := h.latest(step, "outcome")
 	if err != nil || h.docPlaces[i].exit {
