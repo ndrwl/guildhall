@@ -1,8 +1,8 @@
 # Artisan launcher
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
-This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit, the control endpoint and the stop ladder.
-The [ownership record](store.md#attempt-ownership) is in the store; the heartbeat and integration into launcher commands are later work, and nothing here is wired into a command yet.
+This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit, the control endpoint, the stop ladder, the heartbeat and reconcile's classification.
+The [ownership record](store.md#attempt-ownership) is in the store; integration into launcher commands is later work, and nothing here is wired into a command yet.
 The existing fake-adapter `artisan run` command is described in [adapters](adapters.md#running-an-attempt).
 The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
@@ -38,6 +38,10 @@ A unit holds one worker and every descendant that stays inside it.
 | `Exited()` | Closed once the worker, the direct child, has exited. |
 | `Close()` | Cleanup and retry semantics are defined in the [`Unit.Close` contract](../internal/artisan/artisan.go). |
 | `Containment()` | Which backend contains the unit, fixed at creation: its kind, the name a later sweep finds it by, and on Linux the detection reason. |
+
+`NewUnit(name)` returns an unstarted unit of this platform's backend.
+`Contained(containment, worker)` lists the live processes of a recorded unit from outside the launcher that created it, for reconciling an attempt whose launcher is gone: a job is opened by name and a cgroup read from its directory, and a job that no longer opens or a removed cgroup holds nothing; a process group is found by its leader, and a live process at the group id that is not the recorded worker means the group is gone.
+An empty list proves the unit empty; an error, including a kind the platform does not have (`errors.ErrUnsupported`), proves nothing.
 
 `Members` and the stop operations before `Start` are `ErrNotStarted`.
 A stop rung counts as successful only when `Members` is empty afterwards; delivering a signal proves nothing.
@@ -88,7 +92,7 @@ A cgroup that detection allowed but that cannot be created is an error, not a fa
 
 ### Linux: cgroup
 
-- `newUnit` creates `guildhall-<name>` inside the launcher's own cgroup; a name already in use, empty, `.`, `..` or containing `/` is refused rather than joined.
+- `NewUnit` creates `guildhall-<name>` inside the launcher's own cgroup; a name already in use, empty, `.`, `..` or containing `/` is refused rather than joined.
 - The worker is created inside it with `CLONE_INTO_CGROUP`, so no descendant can start outside it, and also leads its own process group with the terminal hand-over below.
 - `Start` verifies that the worker's `/proc/<pid>/cgroup` names the unit's cgroup before reporting it running.
 - `Members` reads `cgroup.procs`, so a descendant that calls `setsid` is still a member.
@@ -239,6 +243,55 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
 - The ladder is driven through the Go API only; the `artisan run`, `stop` and `status` commands, the adapter's result and marker files and Tier 2 pane runs come with the command-line slice.
 
+## Heartbeat
+
+The launcher writes `heartbeat.json` in the attempt directory once when `Run` starts the worker and then every `HeartbeatInterval` (`DefaultHeartbeatInterval`, 5 s), replacing it atomically:
+
+```json
+{
+  "repository": "app",
+  "task_id": "t-1",
+  "step": "build",
+  "attempt": 1,
+  "sequence": 42,
+  "time": "2026-10-21T10:00:05Z",
+  "worker_state": "running",
+  "last_output_at": "2026-10-21T09:58:12Z"
+}
+```
+
+- It is `artisan.Heartbeat`, which is also the store's heartbeat record (`store.Heartbeat` is an alias), so the record the interpreter reads for [`worker-stalled`](interpreter.md#worker-stalled-observations) has the shape the launcher writes; feeding the file to `PutHeartbeat` is the command-line slice's.
+- `sequence` increases with every write, continuing from a heartbeat an earlier launcher of the attempt left, as the store requires.
+- `worker_state` is the launcher's phase: `starting`, `running` or `stopping`.
+- `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began. A later time than the beat is reported as the beat's time.
+- The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live. Beats pause while the stop ladder waits on a signal rung or the result grace.
+- A failed write is logged as `heartbeat-failed` in `events.jsonl` and retried on the next beat; it never ends the attempt.
+- `ReadHeartbeat` reads the file.
+
+## Reconcile
+
+`reconcile.Classify` classifies an owned attempt from what outlives its launcher: the attempt directory, the store's ownership record, and the live state of the identity, endpoint and containment the record names.
+Its [doc comments](../internal/reconcile/reconcile.go) own the API contract. It never signals, writes, takes over or relaunches anything.
+
+The first rule that applies decides:
+
+| Order | Evidence | State |
+|---|---|---|
+| 1 | `outcome.json` | its state: `finished`, `cancelled` or `failed` |
+| 2 | Cancel marker | `cancelled` |
+| 3 | Valid result | `finished` |
+| 4 | No ownership record | `absent` |
+| 5 | Launcher identity gone, and no containment recorded or `Contained` proves the unit empty | `exited` |
+| 6 | Launcher identity gone, and contained processes survive or cannot be checked | `unknown`, with the survivors |
+| 7 | Launcher identity live, heartbeat older than the stale threshold (`DefaultStaleAfter`, 30 s) | `stuck`, whatever the endpoint answers |
+| 8 | Launcher identity live, endpoint answers `status` for this attempt and launcher | `running` |
+| 9 | Anything else, such as a live launcher with a silent endpoint or an unverified identity | `unknown` |
+
+The classification carries its evidence: the launcher's liveness, what the endpoint answered, the last heartbeat and its age, and any survivors.
+A heartbeat is evidence only: `stuck` is never exit and grants no relaunch, take-over or sweep, and a crashed launcher's frozen heartbeat is reported while the identity rule classifies it `exited`.
+A heartbeat that names another attempt is ignored.
+The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s).
+
 ## Tests
 
 `artisantest.RunUnitContract` is the containment contract.
@@ -273,3 +326,8 @@ The endpoint tests bind real sockets in a short temporary state directory on eve
 It runs against this platform's backend in `launcher_test.go` on the Linux, Windows and macOS runners, and against `fakeUnit`, with the test binary playing a worker that can honour the marker, publish its result after a delay or ignore interrupts, and a file double for the result and marker.
 Its cases are the P0 lifecycle scenarios: a cooperative worker stopping at rung 1 (L6); an ignored interrupt escalating, with every timed-out rung naming the processes alive (L7); a stop or cancel before the worker starts, and a stop during startup leaving no owned process (L15); a result before the stop finishing with no marker, a result after the marker rejected as late, and a result racing the stop decided exactly once (L16); a result after cancel rejected while the worker exits (L17); concurrent and repeated stops sharing one ladder, with one interrupt and at most one kill (L18).
 It also covers SIGTERM and SIGHUP stopping the attempt, a forwarded interrupt leaving it running, an invalid result failing it, a decided attempt not run again, and survivors reported after the last rung.
+
+`internal/reconcile/reconcile_test.go` runs `Classify` against recorded attempt directories and live processes: the test binary plays the worker tree, an in-process launcher with a bound endpoint, and a separate launcher process for the crash.
+The four heartbeat cases are a wedged launcher whose supervision loop is really blocked (stuck while its identity and endpoint live, then running again); a stalled worker whose fresh heartbeat with an old `last_output_at` is running, not stuck, and is accepted and read back by a real store; a stale heartbeat while the launcher lives (stuck, take-over refused with `ErrOwnerLive`, running once beats resume); and a killed launcher process whose frozen heartbeat is reported while the identity decides, `unknown` while contained processes survive and `exited` once they are gone.
+The pinned scratch cases are the files deciding first (L22), a gone launcher with an emptied or surviving unit (L13, L14), a broken endpoint of a live launcher (L19), a reused PID (L20) and a leftover endpoint file (L21).
+Every case checks that the processes it caused are gone.

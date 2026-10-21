@@ -163,16 +163,20 @@ const ContainmentFile = "containment.json"
 // RecordContainment writes c to ContainmentFile in the attempt directory dir,
 // replacing any earlier record atomically.
 func RecordContainment(dir string, c Containment) error {
-	b, err := json.MarshalIndent(c, "", "  ")
+	return replaceJSON(filepath.Join(dir, ContainmentFile), c)
+}
+
+// replaceJSON writes v as JSON at path, replacing any file there atomically.
+func replaceJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	name := filepath.Join(dir, ContainmentFile)
-	tmp := name + ".tmp"
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, name)
+	return os.Rename(tmp, path)
 }
 
 // Identity names one process: its PID plus an OS creation token (Linux: boot

@@ -184,6 +184,30 @@ func (c *cgroup) pids() ([]int, error) {
 	return out, nil
 }
 
+// containedCgroup lists the live processes in the cgroup directory dir from
+// outside its unit; a directory that no longer exists holds nothing.
+func containedCgroup(dir string) ([]Identity, error) {
+	pids, err := (&cgroup{dir: dir}).pids()
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []Identity
+	for _, pid := range pids {
+		id, err := Lookup(pid)
+		switch {
+		case errors.Is(err, errNoProcess):
+		case err != nil:
+			return nil, err
+		default:
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
 // members lists the live processes in the cgroup.
 func (c *cgroup) members() ([]Identity, error) {
 	pids, err := c.pids()

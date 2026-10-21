@@ -39,6 +39,20 @@ func newGroupUnit(c Containment) *groupUnit {
 
 func (u *groupUnit) Containment() Containment { return u.containment }
 
+// containedGroup lists the live members of the process group worker led.
+// A group id is not reused while the group has members, so a live process at
+// it that is not worker means the group is gone.
+func containedGroup(worker Identity) ([]Identity, error) {
+	leader, err := Lookup(worker.PID)
+	switch {
+	case err == nil && leader != worker:
+		return nil, nil
+	case err != nil && !errors.Is(err, errNoProcess):
+		return nil, err
+	}
+	return groupMembers(worker.PID)
+}
+
 func isTerminal(fd int) bool {
 	_, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	return err == nil

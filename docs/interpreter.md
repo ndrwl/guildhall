@@ -31,7 +31,7 @@ Configure `Engine.StallInterval` to a positive duration to enable heartbeat obse
 When an advance reaches a launched, unfinished attempt with no result, a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
 Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
 Attempts, their records and waits are unchanged.
-Missing or stale heartbeats emit nothing; stale-heartbeat reconciliation is later work.
+Missing or stale heartbeats emit nothing; a stale heartbeat of a live launcher is reconcile's [`stuck`](artisan.md#reconcile).
 
 `Records.Heartbeat` is a narrow read implemented by the store and double; see [attempt heartbeats](store.md#attempt-heartbeats) for fixture writes and launcher ownership.
 The tests were written before implementation but were not observed failing then.

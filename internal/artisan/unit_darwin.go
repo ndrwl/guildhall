@@ -2,6 +2,7 @@ package artisan
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"syscall"
 	"time"
@@ -28,6 +29,13 @@ func (u *platformUnit) removeContainment() error { return nil }
 // newUnit contains the worker in a process group: macOS has no cgroup and no
 // subreaper.
 func newUnit(string) (Unit, error) { return newGroupUnit(Containment{Kind: KindGroup}), nil }
+
+func contained(c Containment, worker Identity) ([]Identity, error) {
+	if c.Kind != KindGroup {
+		return nil, fmt.Errorf("containment %q on macOS: %w", c.Kind, errors.ErrUnsupported)
+	}
+	return containedGroup(worker)
+}
 
 // setParentDeath: macOS has no parent-death signal.
 func setParentDeath(*syscall.SysProcAttr) {}

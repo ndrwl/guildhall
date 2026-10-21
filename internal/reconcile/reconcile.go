@@ -29,6 +29,12 @@ package reconcile
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -98,5 +104,91 @@ type Classification struct {
 // Classify classifies attempt a; ctx bounds the endpoint call, which also
 // gives up after EndpointTimeout.
 func Classify(ctx context.Context, a Attempt, o Options) Classification {
-	return Classification{}
+	unknown := func(format string, args ...any) Classification {
+		return Classification{State: Unknown, Reason: fmt.Sprintf(format, args...)}
+	}
+	var out artisan.Outcome
+	switch b, err := os.ReadFile(filepath.Join(a.Dir, artisan.OutcomeFile)); {
+	case err == nil:
+		if err := json.Unmarshal(b, &out); err != nil || out.Schema != artisan.OutcomeSchema {
+			return unknown("unreadable outcome: %v", err)
+		}
+		return Classification{State: State(out.State), Reason: "launcher outcome: " + out.Detail, Outcome: &out}
+	case !errors.Is(err, fs.ErrNotExist):
+		return unknown("outcome: %v", err)
+	}
+	if m, err := a.Files.Marked(); err != nil || m {
+		if err != nil {
+			return unknown("cancel marker: %v", err)
+		}
+		return Classification{State: Cancelled, Reason: "cancel marker present; any result is late"}
+	}
+	if v, err := a.Files.ValidResult(); err != nil || v {
+		if err != nil {
+			return unknown("result: %v", err)
+		}
+		return Classification{State: Finished, Reason: "valid result"}
+	}
+	if a.Owner == nil {
+		return Classification{State: Absent, Reason: "no ownership record"}
+	}
+	return classifyOwner(ctx, a, o)
+}
+
+func classifyOwner(ctx context.Context, a Attempt, o Options) Classification {
+	own := *a.Owner
+	k := artisan.AttemptKey{Repository: own.Repository, TaskID: own.TaskID, Step: own.Step, Attempt: own.Attempt}
+	c := Classification{State: Unknown}
+	if h, err := artisan.ReadHeartbeat(a.Dir); err == nil && h.Key() == k {
+		now := time.Now
+		if o.Now != nil {
+			now = o.Now
+		}
+		c.Heartbeat, c.HeartbeatAge = &h, now().Sub(h.Time)
+	}
+	lv, perr := artisan.Probe(own.LauncherIdentity)
+	c.Launcher = lv.String()
+	switch lv {
+	case artisan.Gone:
+		if own.Containment == (store.Containment{}) {
+			c.State, c.Reason = Exited, "launcher identity gone; no containment recorded"
+			return c
+		}
+		cn := own.Containment
+		left, err := artisan.Contained(artisan.Containment{Kind: cn.Kind, Name: cn.Name, Reason: cn.Reason}, cn.Worker)
+		switch {
+		case err != nil:
+			c.Reason = "launcher identity gone; contained processes cannot be checked: " + err.Error()
+		case len(left) > 0:
+			c.Reason, c.Survivors = fmt.Sprintf("launcher identity gone; %d contained processes survive", len(left)), left
+		default:
+			c.State, c.Reason = Exited, "launcher identity gone; its unit is empty"
+		}
+		return c
+	case artisan.Alive:
+	default:
+		c.Reason = fmt.Sprintf("launcher identity unverified: %v", perr)
+		return c
+	}
+	stale := o.StaleAfter
+	if stale <= 0 {
+		stale = DefaultStaleAfter
+	}
+	c.Endpoint = "answers"
+	ctx, cancel := context.WithTimeout(ctx, EndpointTimeout)
+	defer cancel()
+	if own.Endpoint == "" {
+		c.Endpoint = "not recorded"
+	} else if _, err := artisan.Call(ctx, own.Endpoint, k, own.LauncherIdentity, artisan.OpStatus); err != nil {
+		c.Endpoint = err.Error()
+	}
+	switch {
+	case c.Heartbeat != nil && c.HeartbeatAge > stale:
+		c.State, c.Reason = Stuck, fmt.Sprintf("launcher identity live; heartbeat %d is %v old, over %v", c.Heartbeat.Sequence, c.HeartbeatAge, stale)
+	case c.Endpoint == "answers":
+		c.State, c.Reason = Running, "endpoint answers and launcher identity is live"
+	default:
+		c.Reason = "launcher identity live; endpoint silent: " + c.Endpoint
+	}
+	return c
 }

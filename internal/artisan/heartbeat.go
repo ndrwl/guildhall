@@ -9,15 +9,15 @@ import (
 
 // # Heartbeat
 //
-// A running Launcher writes HeartbeatFile in the attempt directory once when
-// Run begins and then every heartbeat interval from its own supervision loop,
-// so a launcher whose loop is blocked stops beating even while its process
-// and endpoint live (docs/artisan.md#heartbeat). Each write replaces the file
-// atomically and increases Sequence, continuing from a heartbeat an earlier
-// launcher of the attempt left. Beats pause while the stop ladder waits on a
-// rung. A failed write is logged to EventsFile and retried on the next beat;
-// it never ends the attempt. A heartbeat is evidence only: a stale one never
-// proves the launcher exited.
+// A Launcher writes HeartbeatFile in the attempt directory once before Run
+// starts the worker and then every heartbeat interval from its supervision
+// loop, so a launcher whose loop is blocked stops beating even while its
+// process and endpoint live (docs/artisan.md#heartbeat). Each write replaces
+// the file atomically and increases Sequence, continuing from a heartbeat an
+// earlier launcher of the attempt left. Beats pause while the stop ladder
+// waits on a signal rung or the result grace. A failed write is logged to
+// EventsFile and retried on the next beat; it never ends the attempt. A
+// heartbeat is evidence only: a stale one never proves the launcher exited.
 
 // HeartbeatFile is the launcher's heartbeat in the attempt directory.
 const HeartbeatFile = "heartbeat.json"

@@ -64,7 +64,7 @@ func TestMemberRejectsProcessOutsideJob(t *testing.T) {
 	}
 	u := unit.(*jobUnit)
 	t.Cleanup(func() { _ = u.Close() })
-	if id, err := u.member(os.Getpid()); !errors.Is(err, errNoProcess) {
+	if id, err := jobMember(u.job, os.Getpid()); !errors.Is(err, errNoProcess) {
 		t.Fatalf("outside process returned as member: %v, %v", id, err)
 	}
 }

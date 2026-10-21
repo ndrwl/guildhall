@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -382,6 +383,7 @@ func TestHeartbeat(t *testing.T) {
 		hold.Store(true)
 		await(t, c.dir, c.owner, reconcile.Stuck)
 		next := *owner(artisan.Identity{PID: 1, Token: "relauncher"})
+		next.State = ""
 		if _, err := s.TakeOwnership("relaunch", next, store.ProbeLauncher); !errors.Is(err, store.ErrOwnerLive) {
 			t.Errorf("take-over of a stuck attempt = %v, want ErrOwnerLive", err)
 		}
@@ -424,11 +426,13 @@ func TestHeartbeat(t *testing.T) {
 		}
 		_ = cmd.Wait()
 		frozen := must(artisan.ReadHeartbeat(dir))
-		if cl := classify(dir, o); len(cl.Survivors) > 0 && cl.State != reconcile.Unknown {
+		cl := classify(dir, o)
+		t.Logf("%s launcher killed: %s (%s)", o.Containment.Kind, cl.State, cl.Reason)
+		if len(cl.Survivors) > 0 && cl.State != reconcile.Unknown {
 			t.Errorf("survivors %v classified %q, want unknown", cl.Survivors, cl.State)
 		}
 		killAll(t, inv)
-		cl := await(t, dir, o, reconcile.Exited)
+		cl = await(t, dir, o, reconcile.Exited)
 		if cl.Launcher != "gone" || cl.Heartbeat == nil || cl.Heartbeat.Sequence != frozen.Sequence {
 			t.Errorf("exited without the frozen heartbeat %+v as evidence: %+v", frozen, cl)
 		}
@@ -459,7 +463,7 @@ func mainIfLauncher() {
 		return
 	}
 	fail := func(err error) {
-		os.Stderr.WriteString("reconcile launcher: " + err.Error() + "\n")
+		fmt.Fprintln(os.Stderr, "reconcile launcher:", err)
 		os.Exit(2)
 	}
 	inv := filepath.Join(dir, "inventory")

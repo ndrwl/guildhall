@@ -16,6 +16,7 @@ var (
 	kernel32            = windows.NewLazySystemDLL("kernel32.dll")
 	ntdll               = windows.NewLazySystemDLL("ntdll.dll")
 	procCreateJobObject = kernel32.NewProc("CreateJobObjectW")
+	procOpenJobObject   = kernel32.NewProc("OpenJobObjectW")
 	procIsProcessInJob  = kernel32.NewProc("IsProcessInJob")
 	procNtResumeProcess = ntdll.NewProc("NtResumeProcess")
 )
@@ -134,17 +135,43 @@ func (u *jobUnit) Members() ([]Identity, error) {
 	if err := u.usable(); err != nil {
 		return nil, err
 	}
+	return jobMembers(u.job, u.name)
+}
+
+// jobQuery is JOB_OBJECT_QUERY, the access jobMembers needs.
+const jobQuery = 0x0004
+
+func contained(c Containment, _ Identity) ([]Identity, error) {
+	if c.Kind != KindJob {
+		return nil, fmt.Errorf("containment %q on Windows: %w", c.Kind, errors.ErrUnsupported)
+	}
+	p, err := windows.UTF16PtrFromString(c.Name)
+	if err != nil {
+		return nil, err
+	}
+	r, _, e := procOpenJobObject.Call(jobQuery, 0, uintptr(unsafe.Pointer(p)))
+	if r == 0 {
+		if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("OpenJobObject %s: %w", c.Name, e)
+	}
+	defer func() { _ = windows.CloseHandle(windows.Handle(r)) }()
+	return jobMembers(windows.Handle(r), c.Name)
+}
+
+func jobMembers(job windows.Handle, name string) ([]Identity, error) {
 	var l processIDList
-	if err := windows.QueryInformationJobObject(u.job, windows.JobObjectBasicProcessIdList,
+	if err := windows.QueryInformationJobObject(job, windows.JobObjectBasicProcessIdList,
 		uintptr(unsafe.Pointer(&l)), uint32(unsafe.Sizeof(l)), nil); err != nil {
 		return nil, err
 	}
 	if l.Assigned > l.InList {
-		return nil, fmt.Errorf("job %s has %d processes, more than the %d listed", u.name, l.Assigned, l.InList)
+		return nil, fmt.Errorf("job %s has %d processes, more than the %d listed", name, l.Assigned, l.InList)
 	}
 	var out []Identity
 	for _, pid := range l.IDs[:l.InList] {
-		id, err := u.member(int(pid))
+		id, err := jobMember(job, int(pid))
 		switch {
 		case errors.Is(err, errNoProcess):
 		case err != nil:
@@ -156,7 +183,7 @@ func (u *jobUnit) Members() ([]Identity, error) {
 	return out, nil
 }
 
-func (u *jobUnit) member(pid int) (Identity, error) {
+func jobMember(job windows.Handle, pid int) (Identity, error) {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return Identity{}, errNoProcess
@@ -166,7 +193,7 @@ func (u *jobUnit) member(pid int) (Identity, error) {
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
 	var in int32
-	if r, _, e := procIsProcessInJob.Call(uintptr(h), uintptr(u.job), uintptr(unsafe.Pointer(&in))); r == 0 {
+	if r, _, e := procIsProcessInJob.Call(uintptr(h), uintptr(job), uintptr(unsafe.Pointer(&in))); r == 0 {
 		return Identity{}, e
 	}
 	if in == 0 {
