@@ -18,7 +18,7 @@ The engine consumes five narrow interfaces, declared in `internal/interp` beside
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
-The engine does not read workflow approvals; enforcing them at task creation is separate work.
+The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
 `Engine.Workflow` returns the definition a task's revision names, and the engine refuses one whose name or digest differs (`ErrRevision`).
 `Engine.Config` gives each profile's adapter and each repository's merge policy; a step without a profile runs `Engine.DefaultAdapter`.
 `Engine.StandardsRevision` must name the central standards revision presented for human reviews.
