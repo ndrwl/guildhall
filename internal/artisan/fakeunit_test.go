@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ type fakeUnit struct {
 	worker  artisan.Identity
 	members map[artisan.Identity]bool
 	ignore  bool
+	release string
 	exited  chan struct{}
 }
 
@@ -105,7 +107,10 @@ func (u *fakeUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 	if !ok {
 		return artisan.Identity{}, fmt.Errorf("fake unit: %s is not an artisantest worker: %w", cmd.Path, os.ErrNotExist)
 	}
-	u.started, u.ignore = true, w.IgnoreInterrupt
+	u.started, u.ignore, u.release = true, w.IgnoreInterrupt, w.Release
+	if u.release == "" {
+		u.release = filepath.Join(w.Inventory, "release")
+	}
 	u.worker = u.procs.spawn()
 	u.members[u.worker] = true
 	record := func(e artisantest.Entry) error { return artisantest.Record(w.Inventory, e) }
@@ -139,8 +144,12 @@ func (u *fakeUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 	return u.worker, nil
 }
 
-// endLocked ends every member and the worker.
+// endLocked ends every member and the worker, releasing the modelled
+// worker's wait so it publishes nothing once ended.
 func (u *fakeUnit) endLocked() {
+	if u.release != "" {
+		_ = os.WriteFile(u.release, nil, 0o600)
+	}
 	for id := range u.members {
 		u.procs.end(id)
 		delete(u.members, id)

@@ -34,6 +34,13 @@ type Worker struct {
 	// Lifetime bounds every process; zero means one minute.
 	Lifetime time.Duration `json:"lifetime,omitempty"`
 	Release  string        `json:"release,omitempty"`
+	// CancelMarker makes every process honour the cancel marker: it exits
+	// once that file exists.
+	CancelMarker string `json:"cancel_marker,omitempty"`
+	// Result makes the worker publish ResultBody at that path ResultAfter
+	// after it starts waiting, whatever the cancel marker says, then exit.
+	Result      string        `json:"result,omitempty"`
+	ResultAfter time.Duration `json:"result_after,omitempty"`
 
 	Role      string `json:"role,omitempty"`
 	Inventory string `json:"inventory,omitempty"`
@@ -163,7 +170,10 @@ func (w Worker) run() int {
 	return 0
 }
 
+// Wait returns when the release file or the honoured cancel marker exists,
+// once the result is published, or at the end of the lifetime.
 func (w Worker) Wait() {
+	start := time.Now()
 	lifetime := w.Lifetime
 	if lifetime == 0 {
 		lifetime = time.Minute
@@ -176,12 +186,28 @@ func (w Worker) Wait() {
 		if _, err := os.Stat(release); err == nil {
 			return
 		}
+		if _, err := os.Stat(w.CancelMarker); w.CancelMarker != "" && err == nil {
+			return
+		}
+		if w.Result != "" && time.Since(start) >= w.ResultAfter {
+			_ = publish(w.Result, ResultBody)
+			return
+		}
 	}
+}
+
+// publish writes body to path atomically.
+func publish(path, body string) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func (w Worker) spawnGrandchild() error {
 	g := w
-	g.Role, g.Grandchildren, g.ExitAfterSpawn = "grandchild", 0, false
+	g.Role, g.Grandchildren, g.ExitAfterSpawn, g.Result = "grandchild", 0, false, ""
 	if w.BreakawayGrandchild && breakawayAvailable {
 		c := g.command()
 		applyBreakaway(c)

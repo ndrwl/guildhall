@@ -18,6 +18,10 @@ func TestMain(m *testing.M) {
 // TestUnitContract runs the containment contract against this platform's
 // backend; platformHarness sets what the backend's platform can and cannot do.
 func TestUnitContract(t *testing.T) {
+	artisantest.RunUnitContract(t, nativeHarness(t))
+}
+
+func nativeHarness(t *testing.T) artisantest.Harness {
 	h := artisantest.Native(func(t *testing.T) artisan.Unit {
 		u, err := artisan.NewUnit("contract-" + rand.Text()[:8])
 		if err != nil {
@@ -26,7 +30,7 @@ func TestUnitContract(t *testing.T) {
 		return u
 	})
 	platformHarness(t, &h)
-	artisantest.RunUnitContract(t, h)
+	return h
 }
 
 // TestFakeUnitContract keeps the double the launcher's tests use honest.
