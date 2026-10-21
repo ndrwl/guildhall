@@ -53,7 +53,7 @@ Installing, pinning and rolling back releases side by side is planned; see [rele
 
 Each step below says what works today and what is planned.
 Today's commands take the Director's store file with `--store`; no command creates a store yet, so to try them, copy the test store `internal/store/testdata/schema-v1.store` to `demo.store` (it holds task `t-1` in repository `app`) and never use the committed file.
-The `task new` and `task start` lines also need a Director config, such as the examples in [configuration and workflows](docs/configuration.md).
+The `task new` and `task start` lines also need a Director config, `director.toml`, that declares a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](docs/configuration.md) name other repositories, so change one to `app` before using it.
 
 ### 1. Set up a Director
 
