@@ -5,131 +5,68 @@
 [![License](https://img.shields.io/github/license/ndrwl/guildhall)](LICENSE)
 
 Guildhall lets you, the **Guildmaster**, run coding agents on the machines you own without babysitting them.
-You give a Director a task; it plans the work, launches Artisan agents to do it in isolated copies of your repository, and comes back to you only when it needs a decision or your approval.
+You talk to a Director in plain English; it plans the work, launches Artisan agents to do it in isolated copies of your repository, and comes back to you only when it needs a decision or your approval.
 Everything it knows lives in one durable store per Director, so closing a terminal, restarting or switching agent runtime never loses work.
 
 > **Status: foundation stage.**
 > Guildhall builds and runs, but no platform or agent runtime is supported for real work yet.
-> Today you can create tasks, advance them by hand with the test-only fake adapter or the minimal [Claude adapter](docs/adapters.md#claude-adapter), whose live acceptance is pending, answer decisions and preview Steward rollouts.
-> A runnable Director is planned, not built; this page marks every planned step and links its design.
+> A conversational Director is planned, not built: everything under [Talking to your Director](#talking-to-your-director-planned) describes how Guildhall will be used, not what runs today.
+> Today you drive the same steps yourself with the `guildhall` commands: create tasks, advance them by hand with the test-only fake adapter or the minimal [Claude adapter](docs/adapters.md#claude-adapter), whose live acceptance is pending, answer decisions and preview Steward rollouts; see [Try it today](#try-it-today).
 > The full specification is [docs/requirements.md](docs/requirements.md).
 
 ## What Guildhall does for you
 
-- **You talk to Directors, not to individual agents.** A Director coordinates one or more of your repositories on one machine, tracks its tasks and launches Artisans, but never does the work itself.
+- **You talk to Directors, in plain English, not to individual agents.** A Director coordinates one or more of your repositories on one machine, tracks its tasks and launches Artisans, but never does the work itself.
 - **You decide; agents wait.** Plan approvals, questions and merges become durable decisions that cost no model tokens while they wait for your answer.
 - **Your rules hold.** Each repository's merge policy applies whatever a workflow says, and a workflow cannot contain commands or code.
 - **Work survives.** A task's state is in the store, not in an agent transcript or a terminal tab.
 - **Optional central upkeep.** A Steward can roll your shared settings out to every enrolled machine, but a single Director never needs one.
 
-## Install
+## Talking to your Director (planned)
 
-Guildhall needs Go 1.27 or later.
+The main way to use Guildhall is a conversation with your Director.
+You say what you want in plain English; the Director turns it into `guildhall` commands through its skills, and the store records the result.
+You never need to type a command to give work, answer a decision or approve a merge; the commands are the Director's tools, described [below](#the-commands).
+The standing rule is recorded in [plain English to the Director](docs/decisions/director-conversation-first.md).
 
-```sh
-go build -o guildhall ./cmd/guildhall
-./guildhall version
-./guildhall doctor
-```
+None of this runs yet: there is no `guildhall director start`, and a Director agent with these skills is a later slice.
+The exchanges below are illustrative.
 
-`doctor` reports your platform and whether `git`, `ssh`, `claude` and `herdr` are on your machine; see [Commands](#commands).
-For example:
+**Giving work.**
 
-```console
-$ ./guildhall version
-guildhall v0.0.0-20261020184157-8090cc664d0a linux/amd64 go1.27.2
-$ ./guildhall doctor
-os: linux
-arch: amd64
-guildhall: v0.0.0-20261020184157-8090cc664d0a
-go: go1.27.2
-...
-```
+> **You:** Add a health check endpoint to the app repository.
+>
+> **Director:** Created task t-2 in `app` under the default workflow. I'll grill and plan it, then bring you the plan to accept.
 
-The release workflow publishes binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, only for pushed version tags; no release has been published yet.
-Installing, pinning and rolling back releases side by side is planned; see [release upgrades](docs/releases.md).
+The Director creates the task (`task new`) and starts its first ready stage (`task start`), launching an Artisan in an isolated copy of the repository.
 
-## Using Guildhall
+**Asking what is waiting on you.**
 
-Each step below says what works today and what is planned.
-Today's commands take the Director's store file with `--store`; no command creates a store yet, so to try them, copy the test store `internal/store/testdata/schema-v1.store` to `demo.store` (it holds task `t-1` in repository `app`) and never use the committed file.
-The `task new` and `task start` lines also need a Director config, `director.toml`, that declares a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](docs/configuration.md) name other repositories, so change one to `app` before using it.
-`task start` also needs a `baseline/` directory beside the config holding `roles/artisan.md` and `stages/<kind>.md`; see [what an advance runs over](docs/running.md#what-an-advance-runs-over).
+> **You:** What needs me?
+>
+> **Director:** One decision: the plan for t-2 is ready to accept. Nothing else is blocked on you.
 
-### 1. Set up a Director
+The Director reads the store (`decide list`, `task list`, `task timeline`) and summarises it; asking changes nothing.
 
-A Director's copy holds a `config.toml` naming its repositories, their merge policy and workflow, and its Artisan profiles; see [configuration and workflows](docs/configuration.md).
-A Director runs standalone on that config, or managed by a Steward that adds shared settings; see [standalone and managed Directors](docs/director-modes.md) (designed, not built).
+**Answering a decision.**
 
-### 2. Start a Director (planned)
+> **Director:** The plan for t-2 adds `/healthz` and a test. Accept it?
+>
+> **You:** Yes, but keep the migration behind a flag.
 
-Every role will start, stop, report and resume with one grammar, for example `guildhall director start claude`; see [the role grammar](docs/decisions/0053-cli-role-grammar.md).
-`director start` is not built yet.
-Start a role through Guildhall rather than running the agent directly, so it gets its rendered skills, settings, preflight and recorded identity.
+The Director maps your reply onto the decision's option, `approve`, keeps your words as the note and records that answer (`decide answer`), then continues the task (`task start --decision`).
+Answering never advances a task by itself, so the Director makes both calls.
 
-### 3. Give it work
+**Approving or stopping work.**
 
-A task is one unit of work in one repository; creating it records it and binds the exact workflow and configuration it was accepted under.
+> **You:** Merge t-2.
+>
+> **You:** Stop the build on t-3; I've changed my mind.
 
-```sh
-./guildhall task new --store demo.store --config director.toml --repo app --title "Add a health check" t-2
-./guildhall task start --store demo.store --config director.toml --state state --repo app t-2
-```
+Approving a merge is answering its merge decision, as above, and your repository's merge policy still applies.
+Stopping is `artisan stop` for one attempt; stopping a whole Director is `guildhall director stop`, planned with `director start`.
 
-`task start` launches the task's next ready stage as an owned Artisan attempt.
-The engine does not run Director stages yet, and the default workflow's first stage, `grill`, is run by the Director, so to try this give `app` a `[repository.workflow_overrides.grill]` with `actor = "artisan"`.
-Today a Director does not yet wait in the background, so you run `guildhall step done` once an attempt's result file exists; see [tasks](docs/tasks.md) and [running a task](docs/running.md).
-
-Each task follows a workflow.
-The shipped [default workflow](internal/workflow/default.json) is:
-
-```mermaid
-flowchart LR
-    grill --> research --> plan --> accept{{"Guildmaster<br/>approval"}}
-    accept -- "changes requested, max 3" --> plan
-    accept --> build --> review["Artisan review"]
-    review -- "changes requested, max 3" --> build
-    review --> publish --> validate
-    validate -- "failed, max 3" --> build
-    validate --> deliver
-```
-
-A repository can have you review instead of an Artisan without changing any other repository; see [configuration and workflows](docs/configuration.md).
-
-### 4. Watch it
-
-```sh
-./guildhall task list --store demo.store --json
-./guildhall task timeline --store demo.store --repo app t-1 --json
-```
-
-`task show`, `timeline` and `files` read a task's attempts, decisions and documents without changing anything; `guildhall artisan status` classifies one Artisan attempt; see [Artisan commands](docs/artisan.md#commands).
-In the planned setup, Herdr, a terminal multiplexer, shows each Director and Artisan in its own tab; a tab is presentation only, so closing it never changes a task.
-Directors and Artisans also exchange informational [messages](docs/messaging.md), which never carry a result, a decision or an approval.
-
-### 5. Answer its decisions
-
-Decisions waiting for you are listed per machine; there is no push service.
-
-```sh
-./guildhall decide list --store demo.store
-./guildhall decide show --store demo.store --repo app --task t-1 --decision <id>
-printf 'approve\n\nKeep the migration behind a flag.\n' | ./guildhall decide answer --store demo.store --repo app --task t-1 --decision <id> --answer-file -
-```
-
-Your exact words are recorded; for a decision offering `approve` and `reject`, a leading `approve` is taken as the choice and the rest as a note.
-Answering never advances a task by itself: continue it with `task start --decision <id>`.
-See [decisions](docs/decisions-cli.md).
-
-### 6. Approve or stop work
-
-Approving a plan or a merge is answering its decision, as above.
-To stop one running Artisan attempt, use `guildhall artisan stop`; see [Artisan commands](docs/artisan.md#commands).
-Stopping a whole Director with `guildhall director stop` is planned with `director start`.
-
-### A task, end to end (illustrative, not built)
-
-This is the intended flow once Directors run tasks themselves.
+This is the intended flow of one task:
 
 ```mermaid
 sequenceDiagram
@@ -151,7 +88,41 @@ sequenceDiagram
     D->>GM: Ready to merge?
 ```
 
-## Commands
+## Install
+
+Guildhall needs Go 1.27 or later.
+
+```sh
+go build -o guildhall ./cmd/guildhall
+./guildhall version
+./guildhall doctor
+```
+
+`doctor` reports your platform and whether `git`, `ssh`, `claude` and `herdr` are on your machine; see [The commands](#the-commands).
+For example:
+
+```console
+$ ./guildhall version
+guildhall v0.0.0-20261020184157-8090cc664d0a linux/amd64 go1.27.2
+$ ./guildhall doctor
+os: linux
+arch: amd64
+guildhall: v0.0.0-20261020184157-8090cc664d0a
+go: go1.27.2
+...
+```
+
+The release workflow publishes binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, only for pushed version tags; no release has been published yet.
+Installing, pinning and rolling back releases side by side is planned; see [release upgrades](docs/releases.md).
+
+## The commands
+
+Everything a Director does for you is a `guildhall` command, and the commands are the only way anything changes the store.
+The same commands serve three callers:
+
+- **The Director**, which calls them through its rendered skills (see [prompt rendering](docs/rendering.md)); every request in the conversation above maps to commands listed here.
+- **You, directly**, when no Director is running, when you want to script something, or when you want to inspect a task yourself; see [Try it today](#try-it-today).
+- **An outside monitor**, such as the planned read-only Claude status band (R1.26), which reads status by calling `guildhall` with `--json` and is never state or lifecycle authority.
 
 Every command that exists today, each described in its own page; a new command adds its page and one line here.
 
@@ -169,12 +140,87 @@ Every command that exists today, each described in its own page; a new command a
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.
 
-## More examples
+## Try it today
 
-### Send and acknowledge a message
+Until the Director is built, you run the steps it will run, yourself.
+Today's commands take the Director's store file with `--store`; no command creates a store yet, so copy the test store, which holds task `t-1` in repository `app`, and never use the committed file:
 
-No command creates a store yet, so this example uses a copy of the store file the tests use, which holds task `t-1` in repository `app`.
-Work on a copy, never on the committed file.
+```sh
+cp internal/store/testdata/schema-v1.store demo.store
+```
+
+### 1. Set up a Director
+
+A Director's copy holds a `config.toml` naming its repositories, their merge policy and workflow, and its Artisan profiles; see [configuration and workflows](docs/configuration.md).
+A Director runs standalone on that config, or managed by a Steward that adds shared settings; see [standalone and managed Directors](docs/director-modes.md) (designed, not built).
+Every role will start, stop, report and resume with one grammar, for example `guildhall director start claude`; see [the role grammar](docs/decisions/0053-cli-role-grammar.md).
+`director start` is not built yet.
+Start a role through Guildhall rather than running the agent directly, so it gets its rendered skills, settings, preflight and recorded identity.
+
+### 2. Give it work
+
+The `task new` and `task start` lines need a Director config, `director.toml`, that declares a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](docs/configuration.md) name other repositories, so change one to `app` before using it.
+`task start` also needs a `baseline/` directory beside the config holding `roles/artisan.md` and `stages/<kind>.md`; see [what an advance runs over](docs/running.md#what-an-advance-runs-over).
+
+```sh
+./guildhall task new --store demo.store --config director.toml --repo app --title "Add a health check" t-2
+./guildhall task start --store demo.store --config director.toml --state state --repo app t-2
+```
+
+A task is one unit of work in one repository; creating it records it and binds the exact workflow and configuration it was accepted under.
+`task start` launches the task's next ready stage as an owned Artisan attempt.
+The engine does not run Director stages yet, and the default workflow's first stage, `grill`, is run by the Director, so to try this give `app` a `[repository.workflow_overrides.grill]` with `actor = "artisan"`.
+Nothing waits in the background yet, so you run `guildhall step done` once an attempt's result file exists; see [tasks](docs/tasks.md) and [running a task](docs/running.md).
+
+Each task follows a workflow.
+The shipped [default workflow](internal/workflow/default.json) is:
+
+```mermaid
+flowchart LR
+    grill --> research --> plan --> accept{{"Guildmaster<br/>approval"}}
+    accept -- "changes requested, max 3" --> plan
+    accept --> build --> review["Artisan review"]
+    review -- "changes requested, max 3" --> build
+    review --> publish --> validate
+    validate -- "failed, max 3" --> build
+    validate --> deliver
+```
+
+A repository can have you review instead of an Artisan without changing any other repository; see [configuration and workflows](docs/configuration.md).
+
+### 3. Watch it
+
+```sh
+./guildhall task list --store demo.store --json
+./guildhall task timeline --store demo.store --repo app t-1 --json
+```
+
+`task show`, `timeline` and `files` read a task's attempts, decisions and documents without changing anything; `guildhall artisan status` classifies one Artisan attempt; see [Artisan commands](docs/artisan.md#commands).
+In the planned setup, Herdr, a terminal multiplexer, shows each Director and Artisan in its own tab; a tab is presentation only, so closing it never changes a task.
+Directors and Artisans also exchange informational [messages](docs/messaging.md), which never carry a result, a decision or an approval.
+
+### 4. Answer its decisions
+
+Decisions waiting for you are listed per machine; there is no push service.
+
+```sh
+./guildhall decide list --store demo.store
+./guildhall decide show --store demo.store --repo app --task t-1 --decision <id>
+printf 'approve\n\nKeep the migration behind a flag.\n' | ./guildhall decide answer --store demo.store --repo app --task t-1 --decision <id> --answer-file -
+```
+
+Your exact words are recorded; for a decision offering `approve` and `reject`, a leading `approve` is taken as the choice and the rest as a note.
+Answering never advances a task by itself: continue it with `task start --decision <id>`.
+See [decisions](docs/decisions-cli.md).
+
+### 5. Approve or stop work
+
+Approving a plan or a merge is answering its decision, as above.
+To stop one running Artisan attempt, use `guildhall artisan stop`; see [Artisan commands](docs/artisan.md#commands).
+
+### More examples
+
+#### Send and acknowledge a message
 
 ```sh
 cp internal/store/testdata/schema-v1.store demo.store
@@ -205,7 +251,7 @@ workflow approvals: 0
 repository app: tasks 1, attempts 1, documents 1, pane bindings 1, decisions 1, rulings 0, owners 0 (0 starting without containment), messages 1 (0 unread)
 ```
 
-### Preview a Steward rollout
+#### Preview a Steward rollout
 
 A rollout needs a private config directory with a roster of enrolled machines, which this repository does not ship, and SSH access to those machines.
 Use the [dry-run procedure](docs/steward.md#dry-run) to preview changes and save a local plan:
@@ -325,7 +371,7 @@ Green boxes are on `main`; grey dashed boxes are designed but not built, and dot
 Each task runs a JSON workflow made of built-in, versioned step kinds; a workflow cannot contain commands or code.
 Each step names who fulfils it: an Artisan, the Guildmaster, the Director or Guildhall itself.
 Loops are bounded, Guildmaster steps are durable pauses that spend no model tokens, and every repository's merge policy applies whatever the workflow says.
-The [workflow interpreter](docs/interpreter.md) executes a supported subset; the default workflow is shown under [Give it work](#3-give-it-work).
+The [workflow interpreter](docs/interpreter.md) executes a supported subset; the default workflow is shown under [Give it work](#2-give-it-work).
 
 ## Read more
 
