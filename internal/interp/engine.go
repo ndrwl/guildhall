@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -145,7 +146,9 @@ type Engine struct {
 	DocumentDir string
 	// StateDir is the absolute directory holding attempt directories, <repo>/<task>/<step>-<n>, and each
 	// task's working directory, <repo>/<task>/work, until worktree custody is defined.
-	StateDir string
+	StateDir      string
+	StallInterval time.Duration
+	Now           func() time.Time
 }
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
@@ -270,8 +273,11 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 		return false, next, err
 	case a.Outcome == "":
 		next := Next{Wait: WaitAttempt, Step: s.ID, Attempt: a.Number}
-		if exists(filepath.Join(r.attemptDir(s.ID, a.Number), launchedFile)) || exists(r.resultFile(s.ID, a.Number)) {
+		if exists(r.resultFile(s.ID, a.Number)) {
 			return false, next, nil
+		}
+		if exists(filepath.Join(r.attemptDir(s.ID, a.Number), launchedFile)) {
+			return false, next, r.workerStalled(s.ID, a.Number)
 		}
 		// Recorded but never marked launched: the advance stopped between the two.
 		name, _, err := r.prepare(s)
@@ -331,26 +337,33 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	if err != nil {
 		return Next{}, err
 	}
-	var revisions *workflow.Revisions
-	if isReview(s) {
-		want, err := r.want(s, inputs)
-		if err != nil {
-			return Next{}, err
-		}
-		revisions = &want
-	}
 	n := 1
 	if a := r.latestAttempt(s.ID); a != nil {
 		n = a.Number + 1
 	}
-	extras, err := r.extras(s, n)
+	if r.document(bindingName(s.ID, n)) == nil {
+		var revisions *workflow.Revisions
+		if isReview(s) {
+			want, err := r.want(s, inputs)
+			if err != nil {
+				return Next{}, err
+			}
+			revisions = &want
+		}
+		extras, err := r.extras(s, n)
+		if err != nil {
+			return Next{}, err
+		}
+		inputs = append(inputs, extras...)
+		if err := r.bind(s, n, inputs, revisions); err != nil {
+			return Next{}, err
+		}
+	}
+	b, err := r.binding(s.ID, n)
 	if err != nil {
 		return Next{}, err
 	}
-	inputs = append(inputs, extras...)
-	if err := r.bind(s, n, inputs, revisions); err != nil {
-		return Next{}, err
-	}
+	inputs = r.boundInputs(b)
 	rc, err := r.e.Records.StartAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID)
 	if err != nil {
 		return Next{}, err

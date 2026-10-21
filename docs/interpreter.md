@@ -11,7 +11,7 @@ The engine consumes four narrow interfaces, declared in `internal/interp` beside
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
+| `Records`: read a task, its attempts, documents, decisions, rulings and an attempt's latest heartbeat; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | none yet | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
@@ -23,6 +23,14 @@ The engine does not read workflow approvals; enforcing them at task creation is 
 `Engine.StandardsRevision` must name the central standards revision presented for human reviews.
 A blank revision refuses to open a human review decision.
 The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
+
+## Worker-stalled observations
+
+Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; zero disables them. `Engine.Now` supplies the clock in tests and defaults to wall time. When an advance reaches a launched, unfinished attempt with no result, a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message. Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again. Attempts, their records and waits are unchanged. Missing or stale heartbeats emit nothing; stale-heartbeat reconciliation is later work.
+
+`Records.Heartbeat` is a narrow read implemented by the store and double. `PutHeartbeat` supplies fixtures here; launcher L6 will own production heartbeats about every five seconds. `TestWorkerStalled` on both backends and the heartbeat Records contract case were written before implementation, with first execution deferred to the review round's final focused check rather than an observed red run.
+
+Review starts resume an existing immutable binding before creating extras; launch and contest processing both consume that binding. Every review outcome, including loop-exit acceptance, projects findings and dispositions. Dispute questions are bounded to the store text limit, retaining compact finding/rule/move details and references to persisted outcomes and ruling records for complete evidence; very large questions abbreviate the remaining details.
 
 ## Events
 

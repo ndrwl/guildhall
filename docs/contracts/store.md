@@ -8,6 +8,8 @@ The ownership record's `Containment` is a recovery description of every Artisan 
 
 The [attempt ownership contract](../store.md#attempt-ownership) defines the default probe's containment refusal and the explicit containment-aware recovery path.
 
+`PutHeartbeat` records fixture heartbeat evidence for a running attempt: positive increasing sequence, nonzero time and last-output time, last output no later than heartbeat time, and nonblank bounded worker state. Missing attempts return `ErrNotFound`; completed attempts and non-increasing sequence return `ErrInvalid`. Mutation replay returns its receipt unchanged. `Heartbeat` reads the latest evidence, returning `ErrNotFound` if absent. The interpreter only reads it; launcher L6 will own production writes.
+
 ## Tests
 
 Real bbolt files: `store_test.go`, `records_test.go`, `messages_test.go`, `approvals_test.go`, `history_test.go`, `ownership_test.go`, `process_test.go` (separate processes, including a take-over refused while another process owns the attempt and allowed once it is killed), `fixture_test.go` (schema v1 file), `rulings_test.go`
@@ -19,4 +21,4 @@ The containment record tests were written red first against a stubbed `Recoverab
 `TestTakeOwnershipAfterProvenExit` recorded a process group by its group id as a name; that expectation was wrong under this contract, and the test now records the group by its worker identity.
 `TestTakeOwnershipPreservesContainmentAfterLauncherExit` pins refusal and intact persisted evidence for every containment kind with a dead launcher and a surviving worker, through both nil and explicit `ProbeLauncher` probes, followed by explicit recovery after worker exit.
 `TestProbeLauncherAgainstRealProcesses` pins the scratch launcher's owner cases (a live owner refused; a reused PID with another token taken over).
-The interpreter's `interp.Records` interface does not exist yet; when slice S6a declares it, it gains the ownership methods and its double runs against these behaviours.
+The heartbeat case of `interptest.RunRecordsContract` runs against the real store and the double. It was written before the heartbeat implementation (new red-first intent); execution is deferred to the fix round's final focused verification, not claimed as an observed red run.

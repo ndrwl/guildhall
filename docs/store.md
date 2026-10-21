@@ -30,6 +30,12 @@ Containment fields follow the [containment record](#containment-record) rules.
 Document paths are relative to the Director's document directory and must be clean, local, slash-separated paths of at most 1024 bytes, without backslashes or colons.
 Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
 
+## Attempt heartbeats
+
+`PutHeartbeat` stores the latest fixture heartbeat per repository, task, step and attempt in the repository's `heartbeats` bucket, using the same key as an attempt. The record contains `sequence`, `time`, `worker_state` and `last_output_at`. Sequence must be positive and increase; times must be nonzero and last output cannot follow heartbeat time; worker state is nonblank UTF-8 bounded by `MaxTextBytes`. Only a running, existing attempt accepts writes. Mutation replay is unchanged and receipts name `heartbeat/<step>/<number>`. `Heartbeat` returns the latest record or `ErrNotFound`; reading or writing a heartbeat never changes the attempt. These are fixtures for the interpreter now; launcher L6 will write about every five seconds. Heartbeats are read separately, not through `TaskHistory`.
+
+The shared Records contract and worker-stalled integration tests were written before implementation; their first execution is the review round's final focused check (no observed red run is claimed). See [store contract](contracts/store.md).
+
 ## Mutations and receipts
 
 Every change is a mutation that names a caller-chosen mutation id of 1 to 128 characters from letters, digits, `.`, `_`, `:` and `-`, starting with a letter or digit.

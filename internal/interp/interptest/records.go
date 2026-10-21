@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -19,14 +20,15 @@ import (
 // once-only rules and its sentinel errors, and passes RunRecordsContract with the real store.
 // It does not repeat the store's field validation beyond a decision's subject.
 type Records struct {
-	mu        sync.Mutex
-	seq       uint64
-	receipts  map[string]receipt
-	tasks     map[[2]string]store.Task
-	attempts  []store.StageAttempt
-	documents []store.DocumentRef
-	decisions []store.Decision
-	rulings   []store.Ruling
+	mu         sync.Mutex
+	seq        uint64
+	receipts   map[string]receipt
+	tasks      map[[2]string]store.Task
+	attempts   []store.StageAttempt
+	documents  []store.DocumentRef
+	decisions  []store.Decision
+	rulings    []store.Ruling
+	heartbeats []store.Heartbeat
 }
 
 type receipt struct {
@@ -291,6 +293,48 @@ func (r *Records) mutate(mutationID, op string, req any, apply func(rc *store.Re
 	return rc, nil
 }
 
+func (r *Records) Heartbeat(repository, taskID, step string, number int) (store.Heartbeat, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, h := range r.heartbeats {
+		if h.Repository == repository && h.TaskID == taskID && h.Step == step && h.Attempt == number {
+			return h, nil
+		}
+	}
+	return store.Heartbeat{}, store.ErrNotFound
+}
+
+func (r *Records) PutHeartbeat(mutationID string, h store.Heartbeat) (store.Receipt, error) {
+	if h.Attempt < 1 || h.Sequence == 0 || h.Time.IsZero() || h.LastOutputAt.IsZero() || h.LastOutputAt.After(h.Time) || strings.TrimSpace(h.WorkerState) == "" || len(h.WorkerState) > store.MaxTextBytes {
+		return store.Receipt{}, store.ErrInvalid
+	}
+	return r.mutate(mutationID, "put-heartbeat", h, func(rc *store.Receipt) error {
+		i := slices.IndexFunc(r.attempts, func(a store.StageAttempt) bool {
+			return a.Repository == h.Repository && a.TaskID == h.TaskID && a.Step == h.Step && a.Number == h.Attempt
+		})
+		if i < 0 {
+			return store.ErrNotFound
+		}
+		if r.attempts[i].Outcome != "" {
+			return store.ErrInvalid
+		}
+		j := slices.IndexFunc(r.heartbeats, func(p store.Heartbeat) bool {
+			return p.Repository == h.Repository && p.TaskID == h.TaskID && p.Step == h.Step && p.Attempt == h.Attempt
+		})
+		if j >= 0 {
+			if h.Sequence <= r.heartbeats[j].Sequence {
+				return store.ErrInvalid
+			}
+			r.heartbeats[j] = h
+		} else {
+			r.heartbeats = append(r.heartbeats, h)
+		}
+		rc.Repository, rc.TaskID, rc.Attempt = h.Repository, h.TaskID, h.Attempt
+		rc.Record = fmt.Sprintf("heartbeat/%s/%d", h.Step, h.Attempt)
+		return nil
+	})
+}
+
 // RecordsHarness is one interp.Records implementation under the contract suite, with the writes
 // the engine never makes: creating a task, answering a decision and ruling on a finding.
 type RecordsHarness struct {
@@ -298,12 +342,13 @@ type RecordsHarness struct {
 	CreateTask     func(mutationID string, t store.Task) (store.Receipt, error)
 	AnswerDecision func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
 	RuleFinding    func(mutationID string, r store.Ruling) (store.Receipt, error)
+	PutHeartbeat   func(mutationID string, h store.Heartbeat) (store.Receipt, error)
 }
 
 // NewRecordsHarness returns the double under the contract suite.
 func NewRecordsHarness(*testing.T) RecordsHarness {
 	r := NewRecords()
-	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding}
+	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding, PutHeartbeat: r.PutHeartbeat}
 }
 
 // RunRecordsContract runs the interp.Records contract against fresh harnesses from newHarness.
@@ -326,6 +371,45 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 			t.Errorf("%s = %v, want %v", what, err, target)
 		}
 	}
+
+	t.Run("heartbeat", func(t *testing.T) {
+		h := setup(t)
+		hb := store.Heartbeat{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1, Sequence: 1, Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), WorkerState: "running"}
+		hb.LastOutputAt = hb.Time.Add(-time.Minute)
+		_, err := h.Records.Heartbeat("app", "t7", "build", 1)
+		want(t, "missing heartbeat", err, store.ErrNotFound)
+		_, err = h.PutHeartbeat("missing", hb)
+		want(t, "missing attempt", err, store.ErrNotFound)
+		if _, err := h.Records.StartAttempt("start", "app", "t7", "build"); err != nil {
+			t.Fatal(err)
+		}
+		rc, err := h.PutHeartbeat("heartbeat", hb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		replay, err := h.PutHeartbeat("heartbeat", hb)
+		if err != nil || replay != rc {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		got, err := h.Records.Heartbeat("app", "t7", "build", 1)
+		if err != nil || got != hb {
+			t.Fatalf("heartbeat = %+v, %v", got, err)
+		}
+		_, err = h.PutHeartbeat("old", hb)
+		want(t, "sequence", err, store.ErrInvalid)
+		hb.Sequence++
+		_, err = h.PutHeartbeat("heartbeat", hb)
+		want(t, "conflict", err, store.ErrMutationConflict)
+		if _, err = h.PutHeartbeat("new", hb); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = h.Records.FinishAttempt("finish", "app", "t7", "build", 1, store.AttemptSucceeded); err != nil {
+			t.Fatal(err)
+		}
+		hb.Sequence++
+		_, err = h.PutHeartbeat("finished", hb)
+		want(t, "finished", err, store.ErrInvalid)
+	})
 
 	t.Run("concurrent lists and writes", func(t *testing.T) {
 		h := setup(t)

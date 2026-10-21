@@ -277,7 +277,7 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject, dispute strin
 		}
 		nd := store.Decision{
 			Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionLoopExit, Subject: subject, Options: exitOptions,
-			Question: why + "\n\nAnswer with one of: continue (one more round), accept (record your approval as the step's outcome), reject.\n",
+			Question: boundedQuestion(why),
 		}
 		if _, err := r.e.Records.OpenDecision(r.mutation("decision", id), nd); err != nil {
 			return false, Next{}, err
@@ -345,7 +345,7 @@ func (r *run) acceptOutcome(s workflow.Step, d store.Decision, origin firing) er
 	if err != nil {
 		return err
 	}
-	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest.Of(data).Hex()}, data)
+	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest.Of(data).Hex(), Review: reviewOf(o)}, data)
 }
 
 // checkOutcome parses a review attempt's outcome and refuses one that is not bound to the revisions the
@@ -385,15 +385,23 @@ func reviewOf(o workflow.ReviewOutcome) *store.Review {
 // contest records, once, that attempt n of a review step contested each ruling it was given whose finding
 // its outcome keeps still-open.
 func (r *run) contest(s workflow.Step, n int) error {
-	d := r.document(documentName(place{step: s.ID, round: n, part: RulingsPort}))
-	if !isReview(s) || d == nil {
+	if !isReview(s) {
 		return nil
 	}
+	b, err := r.binding(s.ID, n)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(b.Inputs, func(in boundInput) bool { return in.Port == RulingsPort })
+	if i < 0 {
+		return nil
+	}
+	d := store.DocumentRef{Path: b.Inputs[i].Path, SHA256: b.Inputs[i].SHA256}
 	o, err := r.outcome(s.ID, n)
 	if err != nil || o == nil {
 		return err
 	}
-	data, err := r.read(*d)
+	data, err := r.read(d)
 	if err != nil {
 		return err
 	}
@@ -432,11 +440,14 @@ func (r *run) held(s workflow.Step, k int, f firing) (string, error) {
 		for _, f := range o.Findings {
 			if f.ID == c.Finding && f.Rule != "" {
 				lines = append(lines, fmt.Sprintf("- Finding %s (%s, %s:%d): %s\n  The Director ruled it %s: %s\n  Attempt %s contested the ruling and keeps the finding open.",
-					f.ID, f.Rule, f.File, f.Line, f.Summary, c.Move, c.Reason, c.ContestedBy))
+					f.ID, shortText(f.Rule, 1024), shortText(f.File, 256), f.Line, shortText(f.Summary, 512), c.Move, shortText(c.Reason, 512), c.ContestedBy)+fmt.Sprintf(" Full ruling: ruling/%s/%s.", c.Document, c.Finding))
 			}
 		}
 	}
-	return strings.Join(lines, "\n"), nil
+	if len(lines) == 0 {
+		return "", nil
+	}
+	return fmt.Sprintf("Complete evidence: outcome %s-%d-outcome and persisted ruling records contested by %s-%d.\n", s.ID, f.round, s.ID, f.round) + strings.Join(lines, "\n"), nil
 }
 
 // previous returns the previous outcome an attempt was given, or nil.
