@@ -235,6 +235,9 @@ func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) 
 // a State of OwnerStarting or OwnerRunning, never back from running to
 // starting. Only the recorded launcher identity may update; a record owned by
 // another launcher is refused with ErrOwnerLive, and a released one with ErrInvalid.
+// Recovery evidence is monotonic: a recorded containment or endpoint may be set
+// from empty but never cleared or changed, and an update that would is refused
+// with ErrInvalid and writes nothing.
 func (s *Store) UpdateOwnership(mutationID string, o Ownership) (Receipt, error) {
 	if err := validateOwnership(o, true, OwnerStarting, OwnerRunning); err != nil {
 		return Receipt{}, err
@@ -251,6 +254,10 @@ func (s *Store) UpdateOwnership(mutationID string, o Ownership) (Receipt, error)
 			return fmt.Errorf("%w: attempt %d of step %q is owned by launcher %d", ErrOwnerLive, o.Attempt, o.Step, cur.LauncherIdentity.PID)
 		case cur.State == OwnerRunning && o.State == OwnerStarting:
 			return invalid("ownership of attempt %d of step %q is running and cannot return to starting", o.Attempt, o.Step)
+		case cur.Containment != (Containment{}) && o.Containment != cur.Containment:
+			return invalid("ownership of attempt %d of step %q has recorded containment %+v, which an update must keep", o.Attempt, o.Step, cur.Containment)
+		case cur.Endpoint != "" && o.Endpoint != cur.Endpoint:
+			return invalid("ownership of attempt %d of step %q has recorded endpoint %q, which an update must keep", o.Attempt, o.Step, cur.Endpoint)
 		}
 		return putOwnership(tx, o)
 	})

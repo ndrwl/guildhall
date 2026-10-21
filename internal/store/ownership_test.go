@@ -295,6 +295,54 @@ func TestUpdateOwnership(t *testing.T) {
 	}
 }
 
+func TestUpdateOwnershipKeepsRecoveryEvidence(t *testing.T) {
+	s, _ := newStore(t)
+	ownedAttempt(t, s)
+	running := sampleOwnership(launcherA)
+	running.Attempt, running.State = 1, OwnerRunning
+	running.Containment = Containment{Kind: ContainmentGroup, Worker: artisan.Identity{PID: 4242, Token: "boot:w"}}
+	if _, err := s.UpdateOwnership("m-contained", running); err != nil {
+		t.Fatal(err)
+	}
+	running.Endpoint = "/state/a1/ctl.sock"
+	if _, err := s.UpdateOwnership("m-endpoint", running); err != nil {
+		t.Fatalf("setting the endpoint from empty: %v", err)
+	}
+	heartbeat, err := s.UpdateOwnership("m-heartbeat", running)
+	if err != nil {
+		t.Fatalf("an update carrying equal evidence: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*Ownership)
+	}{
+		{"clearing containment", func(o *Ownership) { o.Containment = Containment{} }},
+		{"changing its kind", func(o *Ownership) { o.Containment.Kind = ContainmentSubreaper }},
+		{"changing the worker", func(o *Ownership) { o.Containment.Worker = artisan.Identity{PID: 4343, Token: "boot:x"} }},
+		{"clearing the endpoint", func(o *Ownership) { o.Endpoint = "" }},
+		{"changing the endpoint", func(o *Ownership) { o.Endpoint = "/state/a1/other.sock" }},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			update := running
+			tc.mutate(&update)
+			mutation := fmt.Sprintf("m-erase-%d", i)
+			if _, err := s.UpdateOwnership(mutation, update); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("err = %v, want ErrInvalid", err)
+			}
+			if got := mustOwnership(t, s, 1); got != running {
+				t.Fatalf("refused update changed the record: %+v; want %+v", got, running)
+			}
+			if _, err := s.Receipt(mutation); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("refused update left a receipt: %v", err)
+			}
+		})
+	}
+	if again, err := s.UpdateOwnership("m-heartbeat", running); err != nil || again != heartbeat {
+		t.Fatalf("replay = %+v, %v; want the original receipt %+v", again, err, heartbeat)
+	}
+}
+
 func TestOwnershipValidates(t *testing.T) {
 	cases := []struct {
 		name   string

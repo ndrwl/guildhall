@@ -4,6 +4,7 @@
 
 `Open`, locking, mutation ids and receipts, and the records, messages, inboxes and workflow approvals (`docs/store.md`, D9, D10, D15, D22), including typed decisions bound to a subject with option-checked answers (D23), Director rulings recorded once and contested once with the review projection on document references ([director-rulings](../decisions/director-rulings.md)), and receipts naming their record with `TaskHistory`'s one-transaction task read (D24).
 Attempt ownership ([store-attempt-ownership](../decisions/store-attempt-ownership.md)): `Ownership`, `StartOwnedAttempt`, `TakeOwnership` with its `OwnerProbe` seam and `ErrOwnerLive`/`ErrOwnerUnknown` refusals, `UpdateOwnership`, `Ownership`, and release by `FinishAttempt`.
+`UpdateOwnership` keeps recovery evidence monotonic: a recorded containment or endpoint may be set from empty but an update that clears or changes either is refused with `ErrInvalid` and writes nothing.
 The ownership record's `Containment` is a recovery description of every Artisan containment kind ([containment-persistence](../decisions/containment-persistence.md)): `Containment.Recoverable` and `ErrUnrecoverable`, the kind constants, a worker identity in place of a name for process groups, the Linux detection reason, and legacy records read unchanged but never recoverable when incomplete.
 
 The [attempt ownership contract](../store.md#attempt-ownership) defines the default probe's containment refusal and the explicit containment-aware recovery path.
@@ -20,6 +21,7 @@ The containment record tests were written red first against a stubbed `Recoverab
 `TestUpdateOwnership` and `TestOwnershipValidates`'s two existing containment cases are retrofit pins that still hold for named kinds.
 `TestTakeOwnershipAfterProvenExit` recorded a process group by its group id as a name; that expectation was wrong under this contract, and the test now records the group by its worker identity.
 `TestTakeOwnershipPreservesContainmentAfterLauncherExit` pins refusal and intact persisted evidence for every containment kind with a dead launcher and a surviving worker, through both nil and explicit `ProbeLauncher` probes, followed by explicit recovery after worker exit.
+The monotonic evidence rule was written red first: `TestUpdateOwnershipKeepsRecoveryEvidence` refuses clearing containment, changing its kind or worker, and clearing or changing the endpoint, each leaving the record unchanged and no receipt; `TestProgressUpdateCannotEraseRecoveryEvidence` in `process_test.go` refuses a real launcher's progress update that drops its containment, then refuses a take-over through nil and `ProbeLauncher` probes while the recorded worker survives.
 `TestProbeLauncherAgainstRealProcesses` pins the scratch launcher's owner cases (a live owner refused; a reused PID with another token taken over).
 The heartbeat case of `interptest.RunRecordsContract` runs against the real store and the double.
 Tests were written before implementation, but no failure was observed then.

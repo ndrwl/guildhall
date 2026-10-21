@@ -201,6 +201,61 @@ func TestTakeOwnershipPreservesContainmentAfterLauncherExit(t *testing.T) {
 	}
 }
 
+// TestProgressUpdateCannotEraseRecoveryEvidence pins that a progress update
+// omitting recorded containment is refused, so the default probe still sees the
+// containment and refuses a take-over while the recorded worker survives.
+func TestProgressUpdateCannotEraseRecoveryEvidence(t *testing.T) {
+	launcher, _ := startHolder(t, filepath.Join(t.TempDir(), "launcher.store"))
+	launcherID, err := artisan.Lookup(launcher.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, _ := startHolder(t, filepath.Join(t.TempDir(), "worker.store"))
+	workerID, err := artisan.Lookup(worker.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
+	if _, err := s.StartOwnedAttempt("m-start", sampleOwnership(launcherID)); err != nil {
+		t.Fatal(err)
+	}
+	owner := mustOwnership(t, s, 1)
+	owner.State = OwnerRunning
+	owner.Containment = Containment{Kind: ContainmentGroup, Worker: workerID}
+	if _, err := s.UpdateOwnership("m-contained", owner); err != nil {
+		t.Fatal(err)
+	}
+	// A stale or partial full-record value: right owner and state, no containment.
+	progress := owner
+	progress.Endpoint = "/state/endpoints/app.t-1.build.1.sock"
+	progress.Containment = Containment{}
+	if _, err := s.UpdateOwnership("m-endpoint", progress); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("progress update clearing containment: %v; want ErrInvalid", err)
+	}
+	if got := mustOwnership(t, s, 1); got != owner {
+		t.Fatalf("refused update changed the record: %+v; want %+v", got, owner)
+	}
+	if err := launcher.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = launcher.Wait()
+	if lv, err := artisan.Probe(launcherID); err != nil || lv != artisan.Gone {
+		t.Fatalf("launcher = %v, %v; want Gone", lv, err)
+	}
+	if lv, err := artisan.Probe(workerID); err != nil || lv != artisan.Alive {
+		t.Fatalf("worker = %v, %v; want Alive", lv, err)
+	}
+	for i, probe := range []OwnerProbe{nil, ProbeLauncher} {
+		if _, err := s.TakeOwnership(fmt.Sprintf("m-take-%d", i), takeB(1), probe); !errors.Is(err, ErrOwnerUnknown) {
+			t.Errorf("take with a live recorded worker: %v; want ErrOwnerUnknown", err)
+		}
+		if got := mustOwnership(t, s, 1); got.Containment != owner.Containment {
+			t.Errorf("containment = %+v; want %+v", got.Containment, owner.Containment)
+		}
+	}
+}
+
 func TestOwnerInAnotherProcessIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "guildhall.store")
 	s := openTest(t, path)
