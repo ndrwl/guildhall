@@ -98,7 +98,7 @@ go build -o guildhall ./cmd/guildhall
 ./guildhall doctor
 ```
 
-`doctor` reports your platform and whether `git`, `ssh`, `claude` and `herdr` are on your machine; see [Commands](#commands).
+`doctor` reports your platform and whether `git`, `ssh`, `claude` and `herdr` are on your machine; see [The commands](#the-commands).
 For example:
 
 ```console
