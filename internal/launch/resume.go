@@ -58,17 +58,22 @@ type ResumeReport struct {
 //     resume: it returns the classification and no error.
 //  2. A live launcher identity is refused with store.ErrOwnerLive, and one
 //     that cannot be proven gone, or a record without containment, with
-//     store.ErrOwnerUnknown; nothing is signalled or written.
+//     store.ErrOwnerUnknown; nothing is signalled or written. A named unit
+//     (cgroup, job) is recorded when ownership is taken, so only a process
+//     group's owner gone before its worker was recorded is refused for that
+//     (docs/artisan.md#limits).
 //  3. With the launcher proven gone it sweeps the recorded unit with
 //     artisan.Sweep until artisan.Contained proves it empty, within ctx and
 //     SweepTimeout; a unit that does not empty returns artisan.ErrNotEmpty
 //     with the survivors left owned.
 //  4. Under the attempt lock it checks the record still names that launcher
 //     and is unreleased, settles the attempt from its files with
-//     artisan.Settle (an existing outcome.json is kept), and records the store
-//     outcome with FinishAttempt, which releases the ownership. A record that
-//     changed meanwhile, such as one a takeover or another Resume wrote, is
-//     left to its new writer.
+//     artisan.Settle (an existing outcome.json is kept; otherwise an owner
+//     still starting fails with "launcher exited before its worker was
+//     recorded" and any other with "launcher exited without a decision"),
+//     and records the store outcome with FinishAttempt, which releases the
+//     ownership. A record that changed meanwhile, such as one a takeover or
+//     another Resume wrote, is left to its new writer.
 //
 // Resume is idempotent: its store write has a mutation id derived from the
 // attempt and the gone launcher's identity, so a Resume interrupted after
@@ -167,7 +172,11 @@ func (a Attempt) settle(ctx context.Context, o store.Ownership, rep *ResumeRepor
 	if now, err := a.owner(); err != nil || now == nil || *now != o {
 		return err
 	}
-	out, err := artisan.Settle(a.Dir(), a.Files(), "launcher exited without a decision")
+	detail := "launcher exited without a decision"
+	if o.State == store.OwnerStarting {
+		detail = "launcher exited before its worker was recorded"
+	}
+	out, err := artisan.Settle(a.Dir(), a.Files(), detail)
 	if err != nil {
 		return err
 	}

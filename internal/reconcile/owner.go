@@ -15,6 +15,8 @@ type Owner struct {
 	Launcher artisan.Liveness
 	ProbeErr error
 	// Recorded is whether a containment is recorded; Unit and Worker are it.
+	// A named unit (cgroup, job) is recorded before its worker, with Worker
+	// empty, and artisan.Contained lists it by name all the same.
 	Recorded bool
 	Unit     artisan.Containment
 	Worker   artisan.Identity

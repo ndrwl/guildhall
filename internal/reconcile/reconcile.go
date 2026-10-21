@@ -24,6 +24,11 @@
 //     - anything else, such as a live launcher whose endpoint is silent or an
 //     identity that cannot be verified: unknown.
 //
+// An ownership record whose attempt directory does not exist, such as one
+// whose launcher was gone before it made the directory, has no files to
+// read: it is classified by step 5 alone, and Reason ends with "no attempt
+// directory". Without a record, a missing directory is unknown.
+//
 // Classify reads outcome, marker and result under the same attempt lock as
 // launcher decisions. An in-flight cancel or stop must publish its marker
 // before Classify can accept a result. Lock contention is bounded by ctx and
@@ -44,6 +49,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -121,6 +127,12 @@ func Classify(ctx context.Context, a Attempt, o Options) Classification {
 	defer cancel()
 	release, err := artisan.LockAttempt(lockCtx, a.Dir)
 	if err != nil {
+		if _, serr := os.Stat(a.Dir); a.Owner != nil && errors.Is(serr, fs.ErrNotExist) {
+			// An owner recorded before its launcher made the directory has no files to read.
+			c := classifyOwner(ctx, a, o)
+			c.Reason += "; no attempt directory"
+			return c
+		}
 		return Classification{State: Unknown, Reason: "attempt lock: " + err.Error()}
 	}
 	c := func() Classification {

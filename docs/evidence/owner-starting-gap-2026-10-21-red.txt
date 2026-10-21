@@ -1,0 +1,37 @@
+# Owner starting gap (sustainability review 8, F20): red runs, 2026-10-21
+
+## store: go test ./internal/store/ (named unit without worker, doctor count)
+--- FAIL: TestTakeOwnershipRecordsANamedUnitBeforeItsWorker (0.08s)
+    ownership_test.go:574: adding the worker to the recorded unit: store: update-ownership m-run: store: invalid store request: ownership of attempt 1 of step "build" has recorded containment {Kind:cgroup Name:/sys/fs/cgroup/app.slice/guildhall-a1 Reason:cgroup v2 delegated Worker:{PID:0 Token:}}, which an update must keep
+--- FAIL: TestDoctorCountsOwnersStartingWithoutContainment (0.14s)
+    ownership_test.go:603: repositories = [{Repository:app Tasks:2 Attempts:2 Documents:0 PaneBindings:0 Decisions:0 Rulings:0 Owners:2 UncontainedStarting:0 Messages:0 UnreadMessages:0}], want two owners, one starting without containment
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.235s
+FAIL
+
+## reconcile: TestClassifyWithoutAnAttemptDirectory
+--- FAIL: TestClassifyWithoutAnAttemptDirectory (0.17s)
+    --- FAIL: TestClassifyWithoutAnAttemptDirectory/gone_without_containment (0.00s)
+        reconcile_test.go:406: state "unknown" (attempt lock: open /tmp/fm-guildhall-owner-starting-gap/gotmp/TestClassifyWithoutAnAttemptDirectorygone_without_containment2547294114/001/never-made/attempt.lock: no such file or directory), want "exited": {State:unknown Reason:attempt lock: open /tmp/fm-guildhall-owner-starting-gap/gotmp/TestClassifyWithoutAnAttemptDirectorygone_without_containment2547294114/001/never-made/attempt.lock: no such file or directory Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+    --- FAIL: TestClassifyWithoutAnAttemptDirectory/gone_with_contained_survivors (0.00s)
+        reconcile_test.go:406: classification: {"state":"unknown","reason":"attempt lock: open /tmp/fm-guildhall-owner-starting-gap/gotmp/TestClassifyWithoutAnAttemptDirectorygone_with_contained_surviv2661192696/001/never-made/attempt.lock: no such file or directory"}
+        reconcile_test.go:408: classification {State:unknown Reason:attempt lock: open /tmp/fm-guildhall-owner-starting-gap/gotmp/TestClassifyWithoutAnAttemptDirectorygone_with_contained_surviv2661192696/001/never-made/attempt.lock: no such file or directory Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}; want the owner checks and no attempt directory in its reason
+    --- FAIL: TestClassifyWithoutAnAttemptDirectory/alive_with_no_endpoint (0.00s)
+        reconcile_test.go:406: classification: {"state":"unknown","reason":"attempt lock: open /tmp/fm-guildhall-owner-starting-gap/gotmp/TestClassifyWithoutAnAttemptDirectoryalive_with_no_endpoint522735929/001/never-made/attempt.lock: no such file or directory"}
+        reconcile_test.go:408: classification {State:unknown Reason:attempt lock: open /tmp/fm-guildhall-owner-starting-gap/gotmp/TestClassifyWithoutAnAttemptDirectoryalive_with_no_endpoint522735929/001/never-made/attempt.lock: no such file or directory Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}; want the owner checks and no attempt directory in its reason
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/reconcile	0.176s
+FAIL
+
+## launch: TestRecoveryAfterALauncherKilledBeforeItsWorkerIsRecorded (Linux, delegated cgroup v2)
+=== RUN   TestRecoveryAfterALauncherKilledBeforeItsWorkerIsRecorded
+=== RUN   TestRecoveryAfterALauncherKilledBeforeItsWorkerIsRecorded/resume
+    starting_gap_test.go:119: ownership {Repository:app TaskID:t-1 Step:build Attempt:1 LauncherIdentity:{PID:4049562 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:22145555} Containment:{Kind: Name: Reason: Worker:{PID:0 Token:}} Endpoint:/tmp/ln93493837/endpoints/app.t-1.build.1.sock State:starting}; want the named unit recorded with ownership
+=== RUN   TestRecoveryAfterALauncherKilledBeforeItsWorkerIsRecorded/run
+    starting_gap_test.go:119: ownership {Repository:app TaskID:t-1 Step:build Attempt:1 LauncherIdentity:{PID:4049603 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:22145567} Containment:{Kind: Name: Reason: Worker:{PID:0 Token:}} Endpoint:/tmp/ln3766827830/endpoints/app.t-1.build.1.sock State:starting}; want the named unit recorded with ownership
+--- FAIL: TestRecoveryAfterALauncherKilledBeforeItsWorkerIsRecorded (0.24s)
+    --- FAIL: TestRecoveryAfterALauncherKilledBeforeItsWorkerIsRecorded/resume (0.11s)
+    --- FAIL: TestRecoveryAfterALauncherKilledBeforeItsWorkerIsRecorded/run (0.12s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	0.243s
+FAIL

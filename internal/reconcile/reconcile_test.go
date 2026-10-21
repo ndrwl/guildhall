@@ -371,6 +371,49 @@ func TestClassifyOwner(t *testing.T) {
 	})
 }
 
+// TestClassifyWithoutAnAttemptDirectory: an owner recorded before its
+// launcher made the attempt directory is classified from the owner checks
+// alone, which say so, and classifying creates nothing (F20).
+func TestClassifyWithoutAnAttemptDirectory(t *testing.T) {
+	_, c, inv := started(t, artisantest.Worker{Grandchildren: 1})
+	tree := func() {
+		for end := time.Now().Add(deadline); ; time.Sleep(beat) {
+			if e, _ := artisantest.Inventory(inv); len(e) == 2 {
+				return
+			}
+			if time.Now().After(end) {
+				t.Fatal("worker tree did not start")
+			}
+		}
+	}
+	tree()
+	defer releaseAll(t, inv)
+	for _, tc := range []struct {
+		name        string
+		launcher    artisan.Identity
+		containment store.Containment
+		state       reconcile.State
+	}{
+		{"gone without containment", exitedIdentity(t), store.Containment{}, reconcile.Exited},
+		{"gone with contained survivors", exitedIdentity(t), c, reconcile.Unknown},
+		{"alive with no endpoint", self(t), store.Containment{}, reconcile.Unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "never-made")
+			o := owner(tc.launcher)
+			o.Containment = tc.containment
+			cl := classify(dir, o)
+			want(t, cl, tc.state)
+			if !strings.Contains(cl.Reason, "no attempt directory") || cl.Launcher == "" {
+				t.Errorf("classification %+v; want the owner checks and no attempt directory in its reason", cl)
+			}
+			if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("classifying made the attempt directory: %v", err)
+			}
+		})
+	}
+}
+
 // answering is an endpoint handler whose launcher is running.
 type answering struct{}
 

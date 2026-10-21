@@ -20,16 +20,20 @@ type Report struct {
 
 // RepositoryCounts counts one repository's records.
 type RepositoryCounts struct {
-	Repository     string
-	Tasks          int
-	Attempts       int
-	Documents      int
-	PaneBindings   int
-	Decisions      int
-	Rulings        int
-	Owners         int
-	Messages       int
-	UnreadMessages int
+	Repository   string
+	Tasks        int
+	Attempts     int
+	Documents    int
+	PaneBindings int
+	Decisions    int
+	Rulings      int
+	Owners       int
+	// UncontainedStarting counts the owners in starting with no containment
+	// recorded: once their launcher is gone nothing can prove them exited
+	// (docs/artisan.md#limits).
+	UncontainedStarting int
+	Messages            int
+	UnreadMessages      int
 }
 
 // maxProblems bounds the problems Doctor collects from a badly damaged file.
@@ -84,6 +88,8 @@ func (s *Store) Doctor() (Report, error) {
 					*n++
 					if err := decodeRecord(name, k, v); err != nil {
 						problem("repository %s: %v", repo, err)
+					} else if name == string(bucketOwners) && uncontainedStarting(v) {
+						counts.UncontainedStarting++
 					}
 					return nil
 				})
@@ -123,4 +129,11 @@ func decodeRecord(bucket string, k, v []byte) error {
 	default:
 		return decode(k, v, new(Decision))
 	}
+}
+
+// uncontainedStarting reports whether a decoded ownership record is in
+// starting with no containment recorded.
+func uncontainedStarting(v []byte) bool {
+	var o Ownership
+	return decode(nil, v, &o) == nil && o.State == OwnerStarting && o.Containment == (Containment{})
 }

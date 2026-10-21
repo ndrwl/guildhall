@@ -8,11 +8,14 @@
 //  1. it takes the attempt's ownership for this process's identity with
 //     store.TakeOwnership and ProbeOwner, so a live or unproven owner refuses
 //     it (store.ErrOwnerLive, store.ErrOwnerUnknown) before anything starts;
+//     a named unit (cgroup, job) is recorded with the ownership, so an owner
+//     gone before step 3 can still be proven exited;
 //  2. it binds the attempt's control endpoint (artisan.Listen) and records
 //     its path;
-//  3. an artisan.Launcher starts the worker in a fresh artisan unit, and once
-//     the unit reports the worker the containment is recorded in
-//     containment.json and in the ownership record, with state running;
+//  3. an artisan.Launcher starts the worker in the attempt's artisan unit,
+//     and once the unit reports the worker the containment is recorded in
+//     containment.json and, with the worker added, in the ownership record,
+//     with state running;
 //  4. it supervises until the launcher decides the attempt and the unit is
 //     empty; ctx ending, the endpoint's stop and a relayed stop signal each
 //     request the one stop ladder;
@@ -222,11 +225,17 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	if err := os.MkdirAll(a.Dir(), 0o700); err != nil {
 		return rep, err
 	}
-	unit, err := artisan.NewUnit(tag[:24])
+	unit, err := newUnit(tag[:24])
 	if err != nil {
 		return rep, err
 	}
 	defer func() { _ = unit.Close() }()
+	if c := unit.Containment(); c.Name != "" {
+		// A named unit is found by its name, so it is recorded with ownership
+		// and a launcher gone before its worker is recorded leaves a unit
+		// reconcile can prove empty; a process group waits for its worker.
+		own.Containment = store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}
+	}
 	recorded := &recordingUnit{Unit: unit, a: a, own: own, mutation: mutation("running")}
 	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: a.Dir(), Unit: recorded, Files: a.Files(), Ladder: c.Ladder,
 		ResultGrace: c.ResultGrace, Key: k, HeartbeatInterval: c.HeartbeatInterval})
@@ -297,6 +306,10 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	}
 	return finish(outcome, runErr)
 }
+
+// newUnit is artisan.NewUnit; tests replace it to end the launcher inside
+// its startup window.
+var newUnit = artisan.NewUnit
 
 // attemptTag names attempt k under launcher: a stable hex digest of both,
 // for mutation ids and the unit's name.

@@ -52,6 +52,35 @@ func TestProbeOwner(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a gone launcher with a named unit recorded before its worker is checked by name", func(t *testing.T) {
+		u, c, inv := started(t, artisantest.Worker{Grandchildren: 1})
+		if c.Name == "" {
+			t.Skipf("%s is found by its worker, so it is never recorded without one", c.Kind)
+		}
+		for end := time.Now().Add(deadline); ; time.Sleep(beat) {
+			if e, _ := artisantest.Inventory(inv); len(e) == 2 {
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatal("worker tree did not start")
+			}
+		}
+		o := owner(exitedIdentity(t))
+		o.State, o.Containment = store.OwnerStarting, c
+		o.Containment.Worker = store.ProcessIdentity{}
+		if w := reconcile.ProbeOwner(*o); w.Gone() || !w.Recorded || len(w.Survivors) != 2 {
+			t.Errorf("owner %+v, want the unit's two processes as survivors", w)
+		}
+		if err := u.Kill(); err != nil {
+			t.Fatal(err)
+		}
+		assertGone(t, inv)
+		for end := time.Now().Add(deadline); !reconcile.ProbeOwner(*o).Gone(); time.Sleep(beat) {
+			if time.Now().After(end) {
+				t.Fatalf("owner never gone: %+v", reconcile.ProbeOwner(*o))
+			}
+		}
+	})
 	t.Run("a gone launcher with contained survivors is not gone and names them", func(t *testing.T) {
 		_, c, inv := started(t, artisantest.Worker{Grandchildren: 1})
 		for end := time.Now().Add(deadline); ; time.Sleep(beat) {

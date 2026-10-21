@@ -5,7 +5,7 @@
 `Classify(ctx, Attempt{Dir, Files, Owner}, Options{StaleAfter, Now})` classifies an owned attempt, files first and then the owner: `finished`, `cancelled` or `failed` from `outcome.json` (`artisan.ReadOutcome`; unreadable is `unknown`, a newer schema reported apart from damage), the cancel marker or a valid result; `absent` without an ownership record; then `exited`, `unknown`, `stuck` or `running` from the recorded launcher identity, its containment (`artisan.Contained`), its heartbeat and its endpoint ([reconcile](../artisan.md#reconcile)).
 `stuck` is a live launcher identity with a heartbeat older than `StaleAfter` (`DefaultStaleAfter`); it is reported with its evidence and is never exit or relaunch authority.
 The [package API contract](../../internal/reconcile/reconcile.go) defines attempt-lock synchronization, bounded lock and endpoint waits, and the lock-file creation exception to otherwise non-mutating classification.
-The attempt directory must exist.
+An ownership record whose attempt directory does not exist is classified from the owner checks alone, with `no attempt directory` in `Reason`; without a record a missing directory is `unknown`.
 `ProbeOwner` is the one owner-gone rule: it probes the recorded launcher, translates the record's containment and lists its survivors with `artisan.Contained`; `Owner.Gone` holds only for a gone launcher whose recorded unit is proven empty.
 `Classify`, `launch.ProbeOwner` and `launch.Resume` read it.
 
@@ -22,4 +22,5 @@ The cancellation regressions added during review use an AttemptFiles double to p
 A result published in that interval cannot be accepted: classification times out as `unknown` while the lock is held and returns `cancelled` after release.
 A separate contention case exercises the default lock timeout.
 `ProbeOwner` was extracted from `Classify` and `launch.ProbeOwner` without changing either (sustainability review 7, F18); the existing L13, L14, take-over and stop-proof cases pin it.
+`TestClassifyWithoutAnAttemptDirectory` was written red first (sustainability review 8, F20; [red run](../evidence/owner-starting-gap-2026-10-21-red.txt)): a gone launcher without containment is `exited`, one with contained survivors `unknown`, and a live one without an endpoint `unknown`, each from the owner checks with `no attempt directory` in the reason and no directory created; before the change each was `unknown` with the lock's open error.
 `owner_test.go` (`TestProbeOwner`) tests the rule directly, written after the extraction rather than red first: a live launcher is alive without its unit checked; a gone launcher is not gone without recorded containment, with survivors (named) or with a unit that cannot be checked; it is gone once its translated unit is proven empty.
