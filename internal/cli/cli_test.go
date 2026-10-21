@@ -193,7 +193,7 @@ func TestHelpNamesReadmeCommands(t *testing.T) {
 		t.Fatal("README.md has no Commands section")
 	}
 	list, _, _ = strings.Cut(list, "\n## ")
-	commands := regexp.MustCompile("(?m)^- `guildhall ([^`<]+?)( <[^`]*)?`").FindAllStringSubmatch(list, -1)
+	commands := regexp.MustCompile("`guildhall ([^`<]+?)( <[^`]*)?`").FindAllStringSubmatch(list, -1)
 	if len(commands) == 0 {
 		t.Fatal("README.md lists no commands")
 	}
