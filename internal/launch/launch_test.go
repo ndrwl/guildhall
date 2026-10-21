@@ -143,13 +143,17 @@ func wait(t *testing.T, done <-chan ran) ran {
 func running(t *testing.T, a launch.Attempt) {
 	t.Helper()
 	var c reconcile.Classification
+	var owner store.Ownership
 	for end := time.Now().Add(deadline); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		var err error
 		if c, err = launch.Status(context.Background(), a); err == nil && c.State == reconcile.Running {
-			return
+			owner = ownership(t, a)
+			if owner.State == store.OwnerRunning && owner.Containment.Kind != "" {
+				return
+			}
 		}
 	}
-	t.Fatalf("waited %v for running; last %+v", deadline, c)
+	t.Fatalf("waited %v for running with recorded containment; classification %+v; ownership %+v", deadline, c, owner)
 }
 
 func TestRunFinishesAndRecordsTheAttempt(t *testing.T) {

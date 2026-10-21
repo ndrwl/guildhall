@@ -211,15 +211,21 @@ func TestArtisanRunCustody(t *testing.T) {
 	})
 
 	var c classification
-	for end := time.Now().Add(30 * time.Second); c.State != "running"; time.Sleep(100 * time.Millisecond) {
+	var owner store.Ownership
+	for end := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
 		if time.Now().After(end) {
-			t.Fatalf("waited for running; last %+v; launcher stderr %s", c, runErr.String())
+			t.Fatalf("waited for running with recorded containment; classification %+v; ownership %+v; launcher stderr %s", c, owner, runErr.String())
 		}
 		if _, out, _ := guildhall(t, "", o.args("status")...); out != "" {
 			c = decodeJSON[classification](t, out)
+			if c.State == "running" {
+				owner = o.ownership(t)
+				if owner.State == store.OwnerRunning && owner.Containment.Kind != "" {
+					break
+				}
+			}
 		}
 	}
-	owner := o.ownership(t)
 	if owner.LauncherIdentity.PID != run.Process.Pid || owner.State != store.OwnerRunning || owner.Endpoint == "" || owner.Containment.Kind == "" {
 		t.Fatalf("ownership %+v; want the launcher process %d running with its endpoint and containment", owner, run.Process.Pid)
 	}
