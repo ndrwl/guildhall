@@ -2,6 +2,9 @@ package artisan
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
+	"path/filepath"
 )
 
 // This file holds what reconciling an attempt whose launcher is gone needs:
@@ -50,9 +53,24 @@ func Sweep(c Containment, worker Identity) ([]Identity, error) { return sweep(c,
 // it records from the outcome. An OutcomeFile that cannot be read is
 // returned as ReadOutcome's error and nothing is written.
 func Settle(dir string, files AttemptFiles, detail string) (Outcome, error) {
-	return Outcome{}, errors.ErrUnsupported
+	out, err := ReadOutcome(dir)
+	if !errors.Is(err, fs.ErrNotExist) {
+		return out, err
+	}
+	l := &Launcher{c: LauncherConfig{Dir: dir, Files: files}}
+	d, err := l.decideLocked(false, detail)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("artisan: settle: %w", err)
+	}
+	d.Schema = OutcomeSchema
+	if d.State == Cancelled {
+		if d.LateResultRejected, err = files.ValidResult(); err != nil {
+			return Outcome{}, fmt.Errorf("artisan: settle: %w", err)
+		}
+	}
+	if err := writeOnce(filepath.Join(dir, OutcomeFile), d); err != nil {
+		return Outcome{}, fmt.Errorf("artisan: write outcome: %w", err)
+	}
+	l.event("settled", map[string]any{"outcome": d})
+	return d, nil
 }
-
-func kill(Identity) error { return errors.ErrUnsupported }
-
-func sweep(Containment, Identity) ([]Identity, error) { return nil, errors.ErrUnsupported }

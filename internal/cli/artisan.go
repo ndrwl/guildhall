@@ -41,17 +41,10 @@ const resultPoll = 200 * time.Millisecond
 // fakeArtisan runs the fake Artisan: `guildhall fake-artisan --task --attempt
 // --prompt --result`.
 func (a *App) fakeArtisan(args []string) int {
-	parsed, err := fake.ParseArgs(args)
-	if err != nil {
+	if _, err := fake.ParseArgs(args); err != nil {
 		return a.usageError("fake-artisan: " + err.Error())
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	if err := fake.Run(ctx, parsed, a.Stdout, fake.Sleep); err != nil {
-		a.notef("guildhall: fake-artisan: %v\n", err)
-		return 1
-	}
-	return 0
+	return fake.Main(args, a.Stdin, a.Stdout, a.Stderr)
 }
 
 // stringList is a repeatable string flag.
@@ -132,7 +125,7 @@ func (a *App) artisanOwned(cmd string, args []string) int {
 	case "resume":
 		out, err = launch.Resume(ctx, at)
 	}
-	if !errors.Is(err, launch.ErrNotStopped) && err != nil {
+	if !errors.Is(err, launch.ErrNotStopped) && err != nil && cmd != "resume" {
 		return a.fail(err)
 	}
 	if code := a.printJSON(out); code != 0 {

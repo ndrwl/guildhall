@@ -125,10 +125,19 @@ func IsNotFound(err error) bool {
 
 // call runs one Herdr subcommand and returns its stdout.
 func (c *Client) call(ctx context.Context, args ...string) ([]byte, error) {
-	argv := make([]string, 0, len(c.command)+len(args)+2)
+	return c.callTail(ctx, args, nil)
+}
+
+// callTail is call with tail passed after `--`, following the session, so no
+// word of it is read as a Herdr option.
+func (c *Client) callTail(ctx context.Context, args, tail []string) ([]byte, error) {
+	argv := make([]string, 0, len(c.command)+len(args)+len(tail)+3)
 	argv = append(argv, c.command...)
 	argv = append(argv, args...)
 	argv = append(argv, "--session", c.session)
+	if len(tail) > 0 {
+		argv = append(append(argv, "--"), tail...)
+	}
 	stdout, stderr, exit, err := c.run(ctx, argv, c.env())
 	if err != nil {
 		return nil, fmt.Errorf("herdr %s: %w", strings.Join(args[:min(2, len(args))], " "), err)
@@ -554,5 +563,26 @@ type AgentReport struct {
 // ErrResumeArgv. The resume arguments follow `--`, after the explicit
 // session, so none of them is read as a Herdr option.
 func (c *Client) ReportAgent(ctx context.Context, paneID string, r AgentReport) error {
-	return errors.ErrUnsupported
+	if err := checkID("pane", paneID); err != nil {
+		return err
+	}
+	if !labelShape.MatchString(r.Source) || !labelShape.MatchString(r.Agent) {
+		return fmt.Errorf("herdr agent source %q and agent %q: need letters, digits, '.', '_' or '-'", r.Source, r.Agent)
+	}
+	if !agentStates[r.State] {
+		return fmt.Errorf("herdr agent state %q must be idle, working, blocked or unknown", r.State)
+	}
+	if len(r.Resume) > 0 {
+		if cmd := r.Resume[0]; cmd == "" || strings.HasPrefix(cmd, "-") || strings.ContainsAny(cmd, `/\:`) {
+			return fmt.Errorf("%w: %q", ErrResumeArgv, cmd)
+		}
+	}
+	_, err := c.callTail(ctx, []string{"pane", "report-agent", "--source", r.Source, "--agent", r.Agent, "--state", r.State, paneID}, r.Resume)
+	return err
 }
+
+// labelShape is the accepted shape of an agent source or label.
+var labelShape = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// agentStates are the pane agent states Herdr accepts.
+var agentStates = map[string]bool{"idle": true, "working": true, "blocked": true, "unknown": true}

@@ -3,9 +3,13 @@ package launch
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"slices"
 	"strconv"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -71,7 +75,125 @@ type ResumeReport struct {
 // outcome.json was written finishes the same outcome when run again, and a
 // Resume after a finished one finds the record released.
 func Resume(ctx context.Context, a Attempt) (ResumeReport, error) {
-	return ResumeReport{Attempt: a.Key.String()}, errors.ErrUnsupported
+	rep := ResumeReport{Attempt: a.Key.String()}
+	classify := func(err error) (ResumeReport, error) {
+		c, cerr := Status(ctx, a)
+		rep.Classification = c
+		return rep, errors.Join(err, cerr)
+	}
+	o, err := a.owner()
+	switch {
+	case err != nil:
+		return rep, err
+	case o == nil:
+		rep.Owner = OwnerNone
+		return classify(nil)
+	case o.State == store.OwnerReleased:
+		rep.Owner = OwnerReleased
+		return classify(nil)
+	}
+	w := reconcile.ProbeOwner(*o)
+	switch {
+	case w.Launcher == artisan.Alive:
+		rep.Owner = OwnerLive
+		return classify(fmt.Errorf("launch: resume %s: %w", a.Key, store.ErrOwnerLive))
+	case w.Launcher != artisan.Gone || w.ProbeErr != nil:
+		rep.Owner = OwnerUnverified
+		return classify(fmt.Errorf("launch: resume %s: %w: %v", a.Key, store.ErrOwnerUnknown, w.ProbeErr))
+	case !w.Recorded:
+		rep.Owner = OwnerUnverified
+		return classify(fmt.Errorf("launch: resume %s: %w: no containment recorded", a.Key, store.ErrOwnerUnknown))
+	}
+	rep.Owner = OwnerExited
+	unit, worker := w.Unit, w.Worker
+	if err := sweepUnit(ctx, *o, &rep); err != nil {
+		return classify(fmt.Errorf("launch: resume %s: %w", a.Key, err))
+	}
+	err = a.settle(ctx, *o, &rep)
+	// Sweeping the emptied unit again removes what it leaves, such as a cgroup.
+	_, _ = artisan.Sweep(unit, worker)
+	if err != nil {
+		err = fmt.Errorf("launch: resume %s: %w", a.Key, err)
+	}
+	return classify(err)
+}
+
+// sweepUnit repeats artisan.Sweep until the owner-gone rule
+// (reconcile.ProbeOwner) proves the owner o's unit empty, within ctx and
+// SweepTimeout, recording what it swept.
+func sweepUnit(ctx context.Context, o store.Ownership, rep *ResumeReport) error {
+	ctx, cancel := context.WithTimeout(ctx, SweepTimeout)
+	defer cancel()
+	for {
+		w := reconcile.ProbeOwner(o)
+		switch {
+		case w.Gone():
+			return nil
+		case w.UnitErr != nil:
+			return w.UnitErr
+		case w.Launcher != artisan.Gone:
+			return fmt.Errorf("%w: launcher is %v: %v", store.ErrOwnerUnknown, w.Launcher, w.ProbeErr)
+		}
+		swept, err := artisan.Sweep(w.Unit, w.Worker)
+		for _, id := range swept {
+			if !slices.Contains(rep.Swept, id) {
+				rep.Swept = append(rep.Swept, id)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %d contained processes survive the sweep: %v", artisan.ErrNotEmpty, len(w.Survivors), w.Survivors)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// settle decides the attempt and records it in the store under the attempt
+// lock, while the record still names the gone owner o.
+func (a Attempt) settle(ctx context.Context, o store.Ownership, rep *ResumeReport) error {
+	if err := os.MkdirAll(a.Dir(), 0o700); err != nil {
+		return err
+	}
+	lockCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	release, err := artisan.LockAttempt(lockCtx, a.Dir())
+	if err != nil {
+		return err
+	}
+	defer release()
+	if now, err := a.owner(); err != nil || now == nil || *now != o {
+		return err
+	}
+	out, err := artisan.Settle(a.Dir(), a.Files(), "launcher exited without a decision")
+	if err != nil {
+		return err
+	}
+	rep.Outcome = &out
+	var r *adapter.Result
+	if out.State == artisan.Finished {
+		res, err := a.Files().Result()
+		if err != nil {
+			return err
+		}
+		r = &res
+	}
+	outcome, err := attemptOutcome(out, r)
+	if err != nil {
+		return err
+	}
+	k := a.Key
+	mutation := "resume-finish:" + attemptTag(k, artisan.Identity(o.LauncherIdentity))
+	if err := a.write(func(s *store.Store) error {
+		_, err := s.FinishAttempt(mutation, k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
+		return err
+	}); err != nil {
+		return err
+	}
+	rep.AttemptOutcome = outcome
+	return nil
 }
 
 // ResumeCommand is the program name ResumeArgv starts with: Herdr refuses a
@@ -84,6 +206,6 @@ const ResumeCommand = "guildhall"
 // a terminal multiplexer such as Herdr's pane report-agent. The store and
 // state paths are as given to the launcher, which uses absolute ones.
 func ResumeArgv(a Attempt) []string {
-	_ = strconv.Itoa
-	return nil
+	return []string{ResumeCommand, "artisan", "resume", "--store", a.Store, "--state", a.StateDir,
+		"--repository", a.Key.Repository, "--task", a.Key.TaskID, "--step", a.Key.Step, "--attempt", strconv.Itoa(a.Key.Attempt)}
 }
