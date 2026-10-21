@@ -18,7 +18,7 @@ func TestReviewOutcomeContract(t *testing.T) {
 			Schema:    ReviewOutcomeSchema,
 			Reviewer:  reviewer,
 			Verdict:   VerdictChangesRequested,
-			Findings:  []Finding{{File: "main.go", Line: 3, Summary: "missing error check"}},
+			Findings:  []Finding{{ID: "f1", File: "main.go", Line: 3, Summary: "missing error check"}},
 			Revisions: revisions,
 		}
 		if err := o.Validate(); err != nil {
@@ -46,6 +46,8 @@ func TestReviewOutcomeRefusals(t *testing.T) {
 		{"unknown reviewer", func(o *ReviewOutcome) { o.Reviewer = "robot" }, "reviewer"},
 		{"changes without findings", func(o *ReviewOutcome) { o.Verdict = VerdictChangesRequested }, "at least one finding"},
 		{"rejected without findings", func(o *ReviewOutcome) { o.Verdict = VerdictRejected }, "at least one finding"},
+		{"finding without id", func(o *ReviewOutcome) { o.Findings = []Finding{{Rule: "S2", Summary: "Missing regression"}} }, "finding id"},
+		{"suggestion without id", func(o *ReviewOutcome) { o.Findings = []Finding{{Summary: "Naming preference"}} }, "finding id"},
 		{"finding without summary", func(o *ReviewOutcome) { o.Findings = []Finding{{File: "a.go"}} }, "summary"},
 		{"short code head", func(o *ReviewOutcome) { o.Revisions.Subject.CodeHead = "abc123" }, "code_head"},
 		{"no subject", func(o *ReviewOutcome) { o.Revisions.Subject = Subject{} }, "subject needs a code_head or a document_digest"},
@@ -144,5 +146,68 @@ func TestDocumentReviewOutcome(t *testing.T) {
 	  "revisions": {"code_head": "` + revisions.Subject.CodeHead + `", "spec_digest": "` + revisions.SpecDigest + `", "standards_revision": "standards-1"}}`
 	if _, err := ParseReviewOutcome([]byte(flat)); err == nil {
 		t.Fatal("pre-subject revisions accepted")
+	}
+}
+
+func TestReviewOutcomeFindingIDsAndDispositions(t *testing.T) {
+	o := ReviewOutcome{
+		Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: VerdictChangesRequested,
+		Findings: []Finding{
+			{ID: "f3", Rule: "S4", File: "a.go", Line: 7, Summary: "claim without acceptance"},
+			{ID: "f4", Summary: "naming preference"},
+		},
+		Dispositions: []Disposition{{Finding: "f1", State: Resolved}, {Finding: "f2", State: Withdrawn}, {Finding: "f4", State: StillOpen}},
+		Revisions:    revisions,
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("outcome with ids and dispositions refused: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*ReviewOutcome)
+		want   string
+	}{
+		{"duplicate finding id", func(o *ReviewOutcome) { o.Findings[1].ID = "f3" }, `finding id "f3" is used twice`},
+		{"invalid finding id", func(o *ReviewOutcome) { o.Findings[0].ID = "F 3" }, `finding id "F 3"`},
+		{"blank rule", func(o *ReviewOutcome) { o.Findings[0].Rule = " " }, "rule"},
+		{"unknown state", func(o *ReviewOutcome) { o.Dispositions[0].State = "fixed" }, `unknown state "fixed"`},
+		{"disposition without id", func(o *ReviewOutcome) { o.Dispositions[0].Finding = "" }, "names no finding"},
+		{"disposition twice", func(o *ReviewOutcome) { o.Dispositions[1].Finding = "f1" }, `finding "f1" is dispositioned twice`},
+		{"still open but not listed", func(o *ReviewOutcome) { o.Dispositions[2].Finding = "f9" }, `still-open finding "f9" is not listed`},
+		{"resolved but listed", func(o *ReviewOutcome) { o.Dispositions[0].Finding = "f3" }, `resolved finding "f3" is still listed`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			o := o
+			o.Findings = append([]Finding(nil), o.Findings...)
+			o.Dispositions = append([]Disposition(nil), o.Dispositions...)
+			c.mutate(&o)
+			if err := o.Validate(); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %v does not mention %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestReviewOutcomeBlocking(t *testing.T) {
+	ruled := Finding{ID: "f1", Rule: "S2", Summary: "no red test shown"}
+	suggestion := Finding{ID: "f2", Summary: "naming preference"}
+	cases := []struct {
+		name     string
+		verdict  Verdict
+		findings []Finding
+		want     bool
+	}{
+		{"approved", VerdictApproved, nil, false},
+		{"approved with a ruled finding", VerdictApproved, []Finding{ruled}, false},
+		{"changes with a ruled finding", VerdictChangesRequested, []Finding{suggestion, ruled}, true},
+		{"changes with suggestions only", VerdictChangesRequested, []Finding{suggestion}, false},
+		{"rejected", VerdictRejected, []Finding{ruled}, false},
+	}
+	for _, c := range cases {
+		o := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: c.verdict, Findings: c.findings, Revisions: revisions}
+		if got := o.Blocking(); got != c.want {
+			t.Errorf("%s: Blocking() = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

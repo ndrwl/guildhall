@@ -129,7 +129,7 @@ flowchart LR
 ```
 
 A repository can have the Guildmaster review instead of an Artisan without changing any other repository; see [configuration and workflows](docs/configuration.md).
-Workflows are parsed and validated as a Go library today; nothing executes them yet.
+The [workflow interpreter](docs/interpreter.md) executes a supported subset as a Go library; no command runs a workflow yet.
 
 ## Build
 

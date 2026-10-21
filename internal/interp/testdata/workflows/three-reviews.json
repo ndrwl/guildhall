@@ -1,0 +1,27 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "three-reviews",
+  "description": "The Guildhall example without publish and validate: plan, an Artisan design review, Guildmaster acceptance, build, then three Artisan code reviews on distinct profiles, each looping back to the build, and delivery under the approval merge policy.",
+  "steps": [
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"}},
+    {"id": "design-review", "type": "document-review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-opus"},
+     "inputs": {"subject": ["plan.spec"]},
+     "on": {"changes_requested": {"goto": "plan", "max": 2}}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"], "reviews": ["design-review.outcome"]},
+     "on": {"changes_requested": {"goto": "plan", "max": 3}}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review-opus", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-opus"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "review-opus-strict", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-opus-strict"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "review-astra", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-astra"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review-opus.outcome", "review-opus-strict.outcome", "review-astra.outcome"]}}
+  ]
+}

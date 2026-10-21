@@ -95,6 +95,10 @@ func newEnvDefinition(t *testing.T, b backend, def *workflow.Definition, exps ..
 				"planner":  {Adapter: interp.MockAdapter},
 				"builder":  {Adapter: interp.MockAdapter},
 				"reviewer": {Adapter: interp.MockAdapter},
+				// The Guildhall repository's three code reviews (report.md §7.1).
+				"reviewer-opus":        {Adapter: interp.MockAdapter},
+				"reviewer-opus-strict": {Adapter: interp.MockAdapter},
+				"reviewer-astra":       {Adapter: interp.MockAdapter},
 			},
 			Repositories: []config.Repository{{ID: "app", MergePolicy: config.MergeApproval}},
 		},
@@ -244,7 +248,7 @@ func straightScript(t *testing.T) []interptest.Expectation {
 		{
 			Step: "review", Attempt: 1, Profile: "reviewer", Inputs: map[string]string{"spec": spec, "head": "sha256:" + sum(headFile)},
 			Standards: []string{"standards/go.md", "standards/review.md"},
-			Respond:   interptest.Review(interptest.ReviewFixture(t, "approved")),
+			Respond:   interptest.Review(bound(t, workflow.VerdictApproved, head, nil)),
 		},
 	}
 }
@@ -445,33 +449,6 @@ func TestZeroModelGuard(t *testing.T) {
 	if got := e.attempts(t); len(got) != 0 {
 		t.Errorf("a refused adapter recorded attempts: %+v", got)
 	}
-}
-
-func TestLoopsAreRefused(t *testing.T) {
-	t.Run("artisan review requests changes", func(t *testing.T) {
-		exps := straightScript(t)
-		exps[2].Respond = interptest.Review(interptest.ReviewFixture(t, "changes-requested"))
-		e := newEnv(t, backends[0], exps...)
-		e.advance(t, interp.Event{Kind: interp.TaskCreated})
-		e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
-		e.answer(t, "accept-1", "approved")
-		e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"})
-		e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
-		err := advanceErr(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
-		if !errors.Is(err, interp.ErrUnsupported) || !strings.Contains(err.Error(), "loops in S6b") {
-			t.Fatalf("Advance = %v, want ErrUnsupported naming loops in S6b", err)
-		}
-	})
-	t.Run("Guildmaster requests changes", func(t *testing.T) {
-		e := newEnv(t, backends[0], straightScript(t)[0])
-		e.advance(t, interp.Event{Kind: interp.TaskCreated})
-		e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
-		e.answer(t, "accept-1", "changes_requested\nTighten the scope.")
-		err := advanceErr(t, e, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"})
-		if !errors.Is(err, interp.ErrUnsupported) || !strings.Contains(err.Error(), "loops in S6b") {
-			t.Fatalf("Advance = %v, want ErrUnsupported naming loops in S6b", err)
-		}
-	})
 }
 
 func TestFailedAttemptWaitsForTheDirector(t *testing.T) {

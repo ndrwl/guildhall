@@ -65,14 +65,15 @@ type Next struct {
 	Step string
 	// Attempt is the attempt number for WaitAttempt and WaitDirector.
 	Attempt int
-	// Decision is the open decision's id for WaitDecision.
+	// Decision is the open decision's id for WaitDecision, and for WaitDirector the decision the
+	// Director must act on: a rejected loop exit or a changes_requested answer without a loop rule.
 	Decision string
 }
 
 var (
-	// ErrUnsupported reports a step, actor or outcome the straight-path engine does not run yet,
-	// such as a loop ("loops in S6b"), an engine step other than deliver or a Director stage.
-	ErrUnsupported = errors.New("not supported by the straight-path engine")
+	// ErrUnsupported reports a step, actor or outcome the engine does not run yet, such as an engine
+	// step other than deliver, a Director stage, a rejected outcome or a loop back to a non-Artisan step.
+	ErrUnsupported = errors.New("not supported by the engine")
 	// ErrSpecGate reports an accepted spec whose digest is not the one the Guildmaster approved.
 	ErrSpecGate = errors.New("spec gate")
 	// ErrEvent reports an event that does not match the task's records.
@@ -81,6 +82,12 @@ var (
 	ErrRevision = errors.New("workflow is not the task's bound revision")
 	// ErrTaskClosed reports a task that is done or cancelled.
 	ErrTaskClosed = errors.New("task is not open")
+	// ErrOutcome reports a review outcome that breaks its round's contract: it is stale (not bound to the
+	// revisions its attempt was given) or leaves a finding of the previous round without a disposition.
+	ErrOutcome = errors.New("review outcome refused")
+	// ErrReviewGate reports a deliver step reached without a current, non-blocking, non-rejected
+	// outcome for every preceding review or document-review step (docs/interpreter.md#review-gate).
+	ErrReviewGate = errors.New("review gate")
 )
 
 // Engine is the deterministic workflow interpreter: it advances a task through its bound workflow
@@ -96,6 +103,9 @@ var (
 //
 // A succeeded result copies the attempt's outputs into DocumentDir and records them as documents, the
 // first under the step's output port; a failed or stopped attempt waits for the Director.
+// Each Artisan attempt first records its binding, what it was given; it stands while that is current.
+// A blocking review outcome or changes_requested answer follows the step's loop rule up to its max,
+// then opens a loop-exit decision; deliver first checks the review gate (docs/interpreter.md#rounds-and-loops).
 // An approved Guildmaster approval records the approved document as the accepted spec; every step taking
 // an accepted spec checks it against the approval first (the spec gate).
 // Every decision opened and every failed attempt is also sent to the Director's inbox through Outbox.
@@ -107,8 +117,8 @@ var (
 // An attempt is marked launched in its directory only after Launch returns; a crash between the two
 // relaunches the same identity, and refusing a live duplicate is the launcher's ownership record (L3).
 //
-// Loops, review and checks gates, publish, validate, automatic merging and Director stages are refused
-// with ErrUnsupported. Advance is not safe for concurrent use on the same task.
+// The checks gate, publish, validate, automatic merging, Director stages and loops back to a step not run
+// by an Artisan are refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
 type Engine struct {
 	Records  Records
 	Launcher Launcher
@@ -248,47 +258,37 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 			return false, next, nil
 		}
 		// Recorded but never marked launched: the advance stopped between the two.
-		name, inputs, err := r.prepare(s)
+		name, _, err := r.prepare(s)
 		if err != nil {
 			return false, Next{}, err
 		}
-		return false, next, r.launch(s, a.Number, name, inputs)
-	case a.Outcome == store.AttemptSucceeded:
-		if s.Type == "review" || s.Type == "document-review" {
-			doc, _, err := r.output(s.ID, "outcome")
-			if err != nil {
-				return false, Next{}, err
-			}
-			data, err := r.read(doc)
-			if err != nil {
-				return false, Next{}, err
-			}
-			o, err := workflow.ParseReviewOutcome(data)
-			if err != nil {
-				return false, Next{}, err
-			}
-			if err := verdict(string(o.Verdict)); err != nil {
-				return false, Next{}, err
-			}
+		b, err := r.binding(s.ID, a.Number)
+		if err != nil {
+			return false, Next{}, err
 		}
-		return true, Next{}, nil
-	default:
+		return false, next, r.launch(s, a.Number, name, r.boundInputs(b))
+	case a.Outcome != store.AttemptSucceeded:
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), "attempt-failed",
 			fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome))
 		return false, Next{Wait: WaitDirector, Step: s.ID, Attempt: a.Number}, err
 	}
-}
-
-// verdict passes an approval and refuses every other outcome, which the straight path cannot follow.
-func verdict(v string) error {
-	switch v {
-	case string(workflow.VerdictApproved):
-		return nil
-	case string(workflow.VerdictChangesRequested):
-		return fmt.Errorf("%w: outcome %s: loops in S6b", ErrUnsupported, v)
-	default:
-		return fmt.Errorf("%w: outcome %s", ErrUnsupported, v)
+	// The latest attempt succeeded: it stands unless a loop sent the task back here or its inputs moved.
+	pending, err := r.pending(s)
+	if err != nil {
+		return false, Next{}, err
 	}
+	stale, err := r.stale(s, a.Number)
+	if err != nil {
+		return false, Next{}, err
+	}
+	if len(pending) > 0 || stale {
+		next, err := r.start(s)
+		return false, next, err
+	}
+	if isReview(s) {
+		return r.reviewed(s, a.Number)
+	}
+	return true, Next{}, nil
 }
 
 // prepare resolves the adapter and the inputs of an Artisan step; both are checked before anything is recorded.
@@ -308,14 +308,32 @@ func (r *run) prepare(s workflow.Step) (string, []render.Input, error) {
 	return name, inputs, err
 }
 
+// start records the step's binding and its next attempt, then launches it with its wired inputs plus
+// the engine's extras (previous outcome, loop feedback).
 func (r *run) start(s workflow.Step) (Next, error) {
 	name, inputs, err := r.prepare(s)
 	if err != nil {
 		return Next{}, err
 	}
+	var revisions *workflow.Revisions
+	if isReview(s) {
+		want, err := r.want(s, inputs)
+		if err != nil {
+			return Next{}, err
+		}
+		revisions = &want
+	}
+	extras, err := r.extras(s)
+	if err != nil {
+		return Next{}, err
+	}
+	inputs = append(inputs, extras...)
 	n := 1
 	if a := r.latestAttempt(s.ID); a != nil {
 		n = a.Number + 1
+	}
+	if err := r.bind(s, n, inputs, revisions); err != nil {
+		return Next{}, err
 	}
 	rc, err := r.e.Records.StartAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID)
 	if err != nil {
@@ -375,6 +393,9 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 		if err := r.recordOutputs(s, a.Number, res.Outputs); err != nil {
 			return fmt.Errorf("interp: outputs of %s attempt %d: %w", s.ID, a.Number, err)
 		}
+		if err := r.stall(s, a.Number); err != nil {
+			return fmt.Errorf("interp: %w", err)
+		}
 		outcome = store.AttemptSucceeded
 	}
 	n := strconv.Itoa(a.Number)
@@ -415,6 +436,11 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		if i == 0 {
 			if err := checkPort(port.Type, data); err != nil {
 				return err
+			}
+			if isReview(s) {
+				if err := r.checkOutcome(s, n, data); err != nil {
+					return err
+				}
 			}
 		}
 		contents[i] = data
@@ -481,8 +507,25 @@ func (r *run) guildmaster(s workflow.Step) (bool, Next, error) {
 	if !d.Answered {
 		return false, Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(*d, s.ID)
 	}
-	if err := verdict(d.Choice); err != nil {
-		return false, Next{}, fmt.Errorf("decision %s: %w", d.ID, err)
+	inputs, err := r.inputs(s)
+	if err != nil {
+		return false, Next{}, err
+	}
+	subject, err := r.subject(s, inputs)
+	if err != nil {
+		return false, Next{}, err
+	}
+	if d.Subject == nil || *d.Subject != *subject {
+		// The subject moved since this round was answered: ask about the new one.
+		next, err := r.ask(s)
+		return false, next, err
+	}
+	switch d.Choice {
+	case string(workflow.VerdictApproved):
+	case changesRequested:
+		return r.changes(s, Next{Wait: WaitDirector, Step: s.ID, Decision: d.ID}, d.Subject)
+	default:
+		return false, Next{}, fmt.Errorf("decision %s: %w: outcome %s", d.ID, ErrUnsupported, d.Choice)
 	}
 	if s.Type == "guildmaster-approval" {
 		return true, Next{}, r.accept(s, *d)
@@ -546,22 +589,28 @@ func (r *run) ask(s workflow.Step) (Next, error) {
 	return r.open(s, k, inputs, ask)
 }
 
-func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask) (Next, error) {
+// subject returns what a decision of step s binds to, from its current inputs.
+func (r *run) subject(s workflow.Step, inputs []render.Input) (*store.Subject, error) {
 	sp, ok := subjectPorts[s.Type]
 	if !ok {
-		return Next{}, fmt.Errorf("%w: %s decisions", ErrUnsupported, s.Type)
+		return nil, fmt.Errorf("%w: %s decisions", ErrUnsupported, s.Type)
 	}
 	i := slices.IndexFunc(inputs, func(in render.Input) bool { return in.Port == sp.port })
 	if i < 0 {
-		return Next{}, fmt.Errorf("input %s is not wired", sp.port)
+		return nil, fmt.Errorf("input %s is not wired", sp.port)
 	}
-	subject := &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + inputs[i].SHA256}
 	if s.Type == "review" || s.Type == "deliver" {
 		h, err := r.head(inputs[i])
-		if err != nil {
-			return Next{}, err
-		}
-		subject = &store.Subject{Kind: store.SubjectHead, Digest: h}
+		return &store.Subject{Kind: store.SubjectHead, Digest: h}, err
+	}
+	return &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + inputs[i].SHA256}, nil
+}
+
+func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask) (Next, error) {
+	sp := subjectPorts[s.Type]
+	subject, err := r.subject(s, inputs)
+	if err != nil {
+		return Next{}, err
 	}
 	d := store.Decision{
 		Repository: r.task.Repository, TaskID: r.task.ID, ID: fmt.Sprintf("%s-%d", s.ID, k),
@@ -632,21 +681,24 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	if policy := r.e.Config.Repositories[i].MergePolicy; policy != config.MergeApproval {
 		return false, Next{}, fmt.Errorf("%w: merge policy %q", ErrUnsupported, policy)
 	}
+	inputs, err := r.inputs(s)
+	if err != nil {
+		return false, Next{}, err
+	}
+	in, err := r.input(s, "head")
+	if err != nil {
+		return false, Next{}, err
+	}
+	h, err := r.head(in)
+	if err != nil {
+		return false, Next{}, err
+	}
+	if err := r.gate(s, h); err != nil {
+		return false, Next{}, err
+	}
 	d := r.latestDecision(s.ID)
 	switch {
-	case d == nil:
-		inputs, err := r.inputs(s)
-		if err != nil {
-			return false, Next{}, err
-		}
-		in, err := r.input(s, "head")
-		if err != nil {
-			return false, Next{}, err
-		}
-		h, err := r.head(in)
-		if err != nil {
-			return false, Next{}, err
-		}
+	case d == nil || d.Subject == nil || d.Subject.Digest != h:
 		k := r.nextRound(s.ID)
 		ask := render.Ask{
 			Question: fmt.Sprintf("Merge needed for %s/%s, step %s, attempt %d: head %s.\n\nAnswer with one of: %s.\n",
@@ -694,12 +746,12 @@ func (r *run) input(s workflow.Step, name string) (render.Input, error) {
 
 func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 	from, out, _ := strings.Cut(ref, ".")
-	doc, round, err := r.output(from, out)
+	doc, source, err := r.output(from, out)
 	if err != nil {
 		return render.Input{}, fmt.Errorf("input %s: %w", port.Name, err)
 	}
 	if port.Type == workflow.AcceptedSpec {
-		if err := r.specGate(from, round, doc); err != nil {
+		if err := r.specGate(source, doc); err != nil {
 			return render.Input{}, err
 		}
 	}
@@ -707,10 +759,10 @@ func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 }
 
 // specGate checks that an accepted spec is the document its approval decision approved.
-func (r *run) specGate(step string, round int, doc store.DocumentRef) error {
-	d := r.decision(fmt.Sprintf("%s-%d", step, round))
+func (r *run) specGate(source string, doc store.DocumentRef) error {
+	d := r.decision(source)
 	switch {
-	case d == nil || !d.Answered || d.Choice != string(workflow.VerdictApproved):
+	case d == nil || !d.Answered || (d.Kind != store.DecisionApproval || d.Choice != string(workflow.VerdictApproved)) && (d.Kind != store.DecisionLoopExit || d.Choice != "accept"):
 		return fmt.Errorf("%w: %s has no approved decision", ErrSpecGate, doc.Name)
 	case d.Subject == nil || d.Subject.Digest != "sha256:"+doc.SHA256:
 		return fmt.Errorf("%w: accepted spec %s is sha256:%s, decision %s approved %v", ErrSpecGate, doc.Name, doc.SHA256, d.ID, d.Subject)
@@ -718,24 +770,48 @@ func (r *run) specGate(step string, round int, doc store.DocumentRef) error {
 	return nil
 }
 
-// output returns the latest recorded document of one step's output port and its round.
-func (r *run) output(step, port string) (store.DocumentRef, int, error) {
+// output returns the latest recorded document of one step's output port and its source id.
+func (r *run) output(step, port string) (store.DocumentRef, string, error) {
 	var best *store.DocumentRef
-	round := 0
+	bestRound, bestExit := 0, false
+	source := ""
 	for i, d := range r.documents {
 		mid, ok := strings.CutPrefix(d.Name, step+"-")
 		if !ok {
 			continue
 		}
 		mid, ok = strings.CutSuffix(mid, "-"+port)
-		if n, err := strconv.Atoi(mid); ok && err == nil && n > round {
-			best, round = &r.documents[i], n
+		if !ok {
+			continue
+		}
+		number, exit := strings.CutPrefix(mid, "x")
+		if !isNumber(number) {
+			continue
+		}
+		n, _ := strconv.Atoi(number)
+		if exit {
+			j := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == step })
+			if j < 0 {
+				continue
+			}
+			fs, err := r.firings(r.def.Steps[j])
+			if err != nil {
+				return store.DocumentRef{}, "", err
+			}
+			if n > len(fs) {
+				return store.DocumentRef{}, "", fmt.Errorf("output %s has no originating firing", d.Name)
+			}
+			n = fs[n-1].round
+		}
+		if n > bestRound || n == bestRound && exit && !bestExit {
+			best, bestRound, bestExit = &r.documents[i], n, exit
+			source = step + "-" + mid
 		}
 	}
 	if best == nil {
-		return store.DocumentRef{}, 0, fmt.Errorf("%s.%s has no recorded document", step, port)
+		return store.DocumentRef{}, "", fmt.Errorf("%s.%s has no recorded document", step, port)
 	}
-	return *best, round, nil
+	return *best, source, nil
 }
 
 // head reads a code head document, checking its recorded digest.

@@ -2,7 +2,7 @@
 
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it reads the task's store records, never a prompt or the Director's say-so, and makes no model call.
-This slice runs the straight path only; loops, the review and checks gates, `publish`, `validate`, automatic merging and Director stages are refused with `ErrUnsupported`.
+It follows `changes_requested` loop rules with their `max`, asks the Guildmaster at a loop's exit and checks the review gate before `deliver`; the checks gate, `publish`, `validate`, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
 Nothing on the command line calls the engine yet: result intake, launch and the watcher are later work.
 
 ## Seams
@@ -38,18 +38,19 @@ Any other event, or one that does not match the records, is refused with `ErrEve
 
 After intake, the engine walks the steps in order, from the records, and stops at the first one that must be waited for.
 
-- **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records attempt `n`, renders its prompt into `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt.
-  A succeeded attempt completes the step; a review step's outcome must be `approved`.
+- **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records the attempt's [binding](#rounds-and-loops) and attempt `n`, renders its prompt into `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt.
+  A succeeded attempt completes the step while it is current; a review step's outcome must also not block (see [rounds and loops](#rounds-and-loops)).
   A failed or stopped attempt waits for the Director, who is told through the outbox.
 - **Guildmaster step.** The engine opens decision `<step>-<round>` with the question and options `render.Question` gives, bound to its subject, and waits.
+  An answer counts only while its subject is unchanged; when the subject moved, the next round is asked.
   An `approved` answer completes the step; a Guildmaster approval then records the approved document as the accepted spec, `<step>-<round>-spec`.
-  Both human review kinds first persist the shared `ReviewOutcome` as `<step>-<round>-outcome`, with reviewer `human` and the revisions captured when the decision opened.
+  On approval, both human review kinds persist the shared `ReviewOutcome` as `<step>-<round>-outcome`, with reviewer `human` and the revisions captured when the decision opened.
   File and record writes are replay-safe.
-- **Deliver.** Under the `approval` merge policy the engine opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits.
-  Every wired input, including review outcomes, must resolve before the decision opens; this is not yet the review verdict gate.
+- **Deliver.** The [review gate](#review-gate) is checked first.
+  Under the `approval` merge policy the engine then opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits; a head that moved since the last merge decision opens the next round.
   Merging after the answer, and the `auto` policy, are later work.
 
-A `changes_requested` outcome, from a review result or a Guildmaster answer, fails with `ErrUnsupported` and the words "loops in S6b"; any other outcome that is not `approved` fails with `ErrUnsupported`.
+A `rejected` outcome, or any Guildmaster answer other than `approved` and `changes_requested`, fails with `ErrUnsupported`.
 
 | Decision | Kind | Subject |
 |---|---|---|
@@ -57,8 +58,48 @@ A `changes_requested` outcome, from a review result or a Guildmaster answer, fai
 | `document-review` | `review` | The `subject` input document's digest |
 | `review` | `review` | The code head on the `head` input |
 | `deliver` | `merge` | The code head on the `head` input |
+| loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
+
+## Rounds and loops
+
+Before recording attempt `n` of an Artisan step, the engine records its binding as document `<step>-<n>-inputs` (`tasks/<repo>/<task>/<step>-<n>.inputs.json`): every input it is given, by port, path and digest, and for a review or document review the revisions its outcome must be bound to (subject, accepted-spec digest for code, `Engine.StandardsRevision`).
+Besides its wired inputs, an attempt may be given:
+
+- `previous`: a review step's own latest outcome, whose findings the new outcome must disposition;
+- `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`).
+
+A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.
+So when a looped build lands a new head, every review after it runs again on that head.
+
+A result is **blocking** when it is a `changes_requested` outcome with at least one finding that cites a rule, or a Guildmaster's `changes_requested` answer.
+Findings without a rule are suggestions: an outcome requesting changes with only those completes the step (`docs/review.md`).
+Each blocking result of a step is one round of its `on.changes_requested` rule; the step may loop `max` rounds, plus one for every loop exit answered `continue`.
+
+- **Within `max`.** The rule's target, which must be an Artisan step, runs again with the result as `feedback`.
+  When the target has run and the step's inputs did not change, as when a build returns the same head, the step runs again on the same subject with its previous outcome.
+- **Past `max`.** The engine opens decision `<step>-x<round>`, kind `loop-exit`, bound to the round's subject, with options `continue` (one more round), `accept` and `reject`.
+  `accept` on a review step records the Guildmaster's approval as `<step>-x<round>-outcome`, an outcome by reviewer `human` bound to the originating review's recorded revisions, and completes the step.
+  It retains that review's findings with `still-open` dispositions, so acceptance does not erase findings or claim they were fixed, and later rounds must disposition them.
+  The revisions come from the originating human decision's binding or Artisan outcome, never from the configuration at answer-processing time, so stale acceptance cannot satisfy the delivery gate.
+  On a `guildmaster-approval` step, `accept` records `<step>-x<round>-spec`, checked against the exit decision's document subject by the spec gate.
+  Output resolution orders an exit output immediately after its originating round, before later rounds, for all downstream consumers.
+  `reject` leaves the task waiting for the Director, told as `<repo>.<task>.loop-exit-rejected.<id>`.
+- **No rule.** The task waits for the Director, told as `<repo>.<task>.changes-requested.<step>-<n>` (or `.<decision>`).
+
+When an attempt's review outcome arrives, it is refused with `ErrOutcome`, recording nothing, if it is not bound to the revisions in its binding (a stale outcome) or if it gives no disposition for a finding id of the previous outcome it was given.
+
+### Stall signals
+
+When a review round within its allowed loop count (`max` plus answered `continue` exits) requests changes again, the engine compares its outcome with the previous one and sends the Director message `<repo>.<task>.stall.<step>-<n>`, type `stall`, naming every signal found: the head (or document) is unchanged, no finding was resolved or withdrawn, or a finding is still open for two rounds (report §5.3).
+A stall is information only: it never changes the loop, and only `max` asks the Guildmaster.
+
+## Review gate
+
+Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.
+So several review stages, such as the Guildhall repository's three reviews on distinct profiles, must all approve the same head.
+A Guildmaster review answered under an older standards revision does not satisfy the gate; asking it again is later work.
 
 ## Documents and inputs
 
@@ -83,12 +124,15 @@ An advance is several writes, one per record, each committed on its own; the ord
 Once `Launch` returns, the engine marks the attempt directory with `launched.json`.
 An attempt recorded but neither marked launched nor holding a result is rendered again and launched with the same identity, never recorded again.
 A crash after `Launch` returns but before the mark relaunches the same identity; refusing a live duplicate belongs to the launcher's ownership record.
+An attempt's binding is recorded before the attempt, and a relaunch uses the recorded binding, so a replayed launch is given exactly the inputs of the first.
+A blocking result's stall message is sent before its attempt is finished, and a Guildmaster's answer is recorded as a document before the attempt it feeds, so a repeat completes both.
 `Advance` is not safe for concurrent use on one task; the store's single writer serialises processes.
 
 ## Tests
 
 `internal/interp/engine_test.go` runs the straight workflow, `testdata/workflows/straight.json` (plan, Guildmaster acceptance, build, Artisan review, Guildmaster sign-off, deliver), twice: against the scripted mock with the in-memory records and `messagingtest.Fake`, and against the same mock with a real store file and its mailbox.
-It checks each event's effect on the records, the approval bound to the plan document's digest, the spec gate, a crash between recording and launching an attempt, the zero-model guard, refused loops, a failed attempt, mismatched events and a changed revision.
+It checks each event's effect on the records, the approval bound to the plan document's digest, the spec gate, a crash between recording and launching an attempt, the zero-model guard, a failed attempt, mismatched events and a changed revision.
+`loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`) against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
 Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
 Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
 `TestRecordsContract` runs `interptest.RunRecordsContract` against the store and the double, including concurrent list readers and record writers.

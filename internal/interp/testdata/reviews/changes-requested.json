@@ -4,6 +4,7 @@
   "verdict": "changes_requested",
   "findings": [
     {
+      "id": "f1",
       "file": "internal/cli/task.go",
       "line": 42,
       "summary": "The list is not sorted by id, as the specification requires."

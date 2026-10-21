@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -50,19 +51,53 @@ type Revisions struct {
 }
 
 // Finding is one review comment.
+//
+// ID is the reviewer's stable name for the finding, kept across rounds so a later review can
+// disposition it; Rule cites the rule it breaks (a requirement id such as "R1.27" or a docs/review.md
+// rule such as "S4"). A finding without a rule is a suggestion: it never blocks (Blocking).
 type Finding struct {
+	ID      string `json:"id"`
+	Rule    string `json:"rule,omitempty"`
 	File    string `json:"file,omitempty"`
 	Line    int    `json:"line,omitempty"`
 	Summary string `json:"summary"`
 }
 
+// DispositionState is what became of a previous round's finding.
+type DispositionState string
+
+const (
+	// Resolved: the finding was fixed; it is no longer listed in Findings.
+	Resolved DispositionState = "resolved"
+	// StillOpen: the finding stands; it is listed again, under the same id, in Findings.
+	StillOpen DispositionState = "still-open"
+	// Withdrawn: the reviewer no longer holds the finding; it is no longer listed in Findings.
+	Withdrawn DispositionState = "withdrawn"
+)
+
+// Disposition says what became of one finding of the previous round's outcome, by its id.
+type Disposition struct {
+	Finding string           `json:"finding"`
+	State   DispositionState `json:"state"`
+}
+
 // ReviewOutcome is the result of a review or document-review step.
 type ReviewOutcome struct {
-	Schema    string    `json:"schema"`
-	Reviewer  Reviewer  `json:"reviewer"`
-	Verdict   Verdict   `json:"verdict"`
-	Findings  []Finding `json:"findings,omitempty"`
-	Revisions Revisions `json:"revisions"`
+	Schema   string    `json:"schema"`
+	Reviewer Reviewer  `json:"reviewer"`
+	Verdict  Verdict   `json:"verdict"`
+	Findings []Finding `json:"findings,omitempty"`
+	// Dispositions say what became of each finding of the same step's previous outcome.
+	Dispositions []Disposition `json:"dispositions,omitempty"`
+	Revisions    Revisions     `json:"revisions"`
+}
+
+// Blocking reports whether the outcome holds the task back: a changes_requested verdict with at
+// least one finding that cites a rule. Findings without a rule are mechanically non-blocking
+// (docs/review.md), so a changes_requested verdict carrying only those does not block.
+// A rejected verdict is not a request for changes and is not Blocking.
+func (o ReviewOutcome) Blocking() bool {
+	return o.Verdict == VerdictChangesRequested && slices.ContainsFunc(o.Findings, func(f Finding) bool { return f.Rule != "" })
 }
 
 // ParseReviewOutcome strictly decodes and validates a review outcome.
@@ -77,7 +112,10 @@ func ParseReviewOutcome(data []byte) (*ReviewOutcome, error) {
 	return &o, o.Validate()
 }
 
-// Validate checks the outcome is complete and well formed.
+// Validate checks the outcome is complete and well formed: finding ids are required valid ids
+// used once; a rule, when given, is not blank; each disposition names one finding once with a known
+// state, a still-open finding is listed again under its id and a resolved or withdrawn one is not.
+// Whether the dispositions cover every finding of the previous round is the interpreter's check.
 func (o ReviewOutcome) Validate() error {
 	var problems []string
 	if o.Schema != ReviewOutcomeSchema {
@@ -95,10 +133,37 @@ func (o ReviewOutcome) Validate() error {
 	default:
 		problems = append(problems, fmt.Sprintf("unknown verdict %q", o.Verdict))
 	}
+	ids := map[string]bool{}
 	for i, f := range o.Findings {
 		if strings.TrimSpace(f.Summary) == "" {
 			problems = append(problems, fmt.Sprintf("finding %d has no summary", i+1))
 		}
+		if f.Rule != "" && strings.TrimSpace(f.Rule) != f.Rule {
+			problems = append(problems, fmt.Sprintf("finding %d has a blank or padded rule", i+1))
+		}
+		switch {
+		case !ValidID(f.ID):
+			problems = append(problems, fmt.Sprintf("finding id %q must be lowercase letters, digits and hyphens", f.ID))
+		case ids[f.ID]:
+			problems = append(problems, fmt.Sprintf("finding id %q is used twice", f.ID))
+		}
+		ids[f.ID] = true
+	}
+	seen := map[string]bool{}
+	for _, d := range o.Dispositions {
+		switch {
+		case d.Finding == "":
+			problems = append(problems, "a disposition names no finding")
+		case seen[d.Finding]:
+			problems = append(problems, fmt.Sprintf("finding %q is dispositioned twice", d.Finding))
+		case d.State == StillOpen && !ids[d.Finding]:
+			problems = append(problems, fmt.Sprintf("still-open finding %q is not listed in findings", d.Finding))
+		case (d.State == Resolved || d.State == Withdrawn) && ids[d.Finding]:
+			problems = append(problems, fmt.Sprintf("%s finding %q is still listed in findings", d.State, d.Finding))
+		case d.State != Resolved && d.State != StillOpen && d.State != Withdrawn:
+			problems = append(problems, fmt.Sprintf("disposition of %q has unknown state %q", d.Finding, d.State))
+		}
+		seen[d.Finding] = true
 	}
 	subject := o.Revisions.Subject
 	switch {

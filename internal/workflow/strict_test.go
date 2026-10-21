@@ -9,7 +9,7 @@ import (
 )
 
 func TestExactJSONFields(t *testing.T) {
-	outcome, err := json.Marshal(ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: HumanReviewer, Verdict: VerdictRejected, Findings: []Finding{{File: "a.go", Line: 1, Summary: "fix"}}, Revisions: revisions})
+	outcome, err := json.Marshal(ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: HumanReviewer, Verdict: VerdictRejected, Findings: []Finding{{ID: "f1", File: "a.go", Line: 1, Summary: "fix"}}, Revisions: revisions})
 	if err != nil {
 		t.Fatal(err)
 	}
