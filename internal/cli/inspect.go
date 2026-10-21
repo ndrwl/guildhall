@@ -65,6 +65,12 @@ type timedRuling struct {
 	seq         uint64
 }
 
+type timedFullReview struct {
+	store.FullReview
+	RequestedAt *time.Time `json:"requested_at,omitempty"`
+	ConsumedAt  *time.Time `json:"consumed_at,omitempty"`
+}
+
 // taskTimeline is what task timeline prints. Events are every receipt of the task in commit order:
 // the moves made on it, including those Guildhall records for the Director.
 type taskTimeline struct {
@@ -74,6 +80,7 @@ type taskTimeline struct {
 	Decisions    []timedDecision   `json:"decisions"`
 	Findings     []timedFindings   `json:"findings"`
 	Rulings      []timedRuling     `json:"rulings"`
+	FullReviews  []timedFullReview `json:"full_reviews"`
 	Events       []store.Receipt   `json:"events"`
 	OmittedKinds map[string]string `json:"omitted_kinds"`
 }
@@ -120,7 +127,7 @@ func span(rs []store.Receipt, startOp, endOp string) (start, end *time.Time, sec
 func timeline(h store.TaskHistory) taskTimeline {
 	byRecord := recordReceipts(h.Receipts)
 	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Findings: []timedFindings{},
-		Rulings: []timedRuling{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
+		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
 	for _, a := range h.Attempts {
 		t := timedAttempt{StageAttempt: a}
 		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)], "start-attempt", "finish-attempt")
@@ -143,6 +150,11 @@ func timeline(h store.TaskHistory) taskTimeline {
 		t := timedRuling{Ruling: r, Contested: r.ContestedBy != ""}
 		t.RuledAt, t.ContestedAt, _, t.seq = span(byRecord["ruling/"+r.Document+"/"+r.Finding], "rule-finding", "contest-ruling")
 		out.Rulings = append(out.Rulings, t)
+	}
+	for _, f := range h.FullReviews {
+		t := timedFullReview{FullReview: f}
+		t.RequestedAt, t.ConsumedAt, _, _ = span(byRecord["full-review/"+strconv.Itoa(f.Number)], "request-full-review", "consume-full-review")
+		out.FullReviews = append(out.FullReviews, t)
 	}
 	slices.SortStableFunc(out.Attempts, func(a, b timedAttempt) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Decisions, func(a, b timedDecision) int { return byStart(a.seq, b.seq) })

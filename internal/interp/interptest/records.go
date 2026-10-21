@@ -27,6 +27,7 @@ type Records struct {
 	documents []store.DocumentRef
 	decisions []store.Decision
 	rulings   []store.Ruling
+	full      []store.FullReview
 }
 
 type receipt struct {
@@ -166,6 +167,55 @@ func (r *Records) ContestRuling(mutationID, repository, taskID, document, findin
 	})
 }
 
+// RequestFullReview records the next full-review request, as store.RequestFullReview does.
+func (r *Records) RequestFullReview(mutationID, repository, taskID string) (store.Receipt, error) {
+	req := store.FullReview{Repository: repository, TaskID: taskID}
+	return r.mutate(mutationID, "request-full-review", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID = repository, taskID
+		if _, ok := r.tasks[[2]string{repository, taskID}]; !ok {
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		}
+		for _, f := range r.full {
+			if f.Repository == repository && f.TaskID == taskID {
+				if f.ConsumedBy == "" {
+					return fmt.Errorf("%w: full review %d is pending", store.ErrExists, f.Number)
+				}
+				req.Number = f.Number
+			}
+		}
+		req.Number++
+		rc.Record = fmt.Sprintf("full-review/%d", req.Number)
+		r.full = append(r.full, req)
+		return nil
+	})
+}
+
+// FullReviews implements interp.Records.
+func (r *Records) FullReviews(repository, taskID string) ([]store.FullReview, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return list(r, repository, taskID, r.full, func(f store.FullReview) (string, string) { return f.Repository, f.TaskID })
+}
+
+// ConsumeFullReview implements interp.Records.
+func (r *Records) ConsumeFullReview(mutationID, repository, taskID string, number int, by string) (store.Receipt, error) {
+	req := store.FullReview{Repository: repository, TaskID: taskID, Number: number, ConsumedBy: by}
+	return r.mutate(mutationID, "consume-full-review", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, fmt.Sprintf("full-review/%d", number)
+		i := slices.IndexFunc(r.full, func(f store.FullReview) bool {
+			return f.Repository == repository && f.TaskID == taskID && f.Number == number
+		})
+		switch {
+		case i < 0:
+			return fmt.Errorf("full review %d: %w", number, store.ErrNotFound)
+		case r.full[i].ConsumedBy != "":
+			return fmt.Errorf("%w: full review %d was consumed by %s", store.ErrInvalid, number, r.full[i].ConsumedBy)
+		}
+		r.full[i].ConsumedBy = by
+		return nil
+	})
+}
+
 func list[T any](r *Records, repository, taskID string, all []T, key func(T) (string, string)) ([]T, error) {
 	if _, ok := r.tasks[[2]string{repository, taskID}]; !ok {
 		return nil, nil
@@ -292,18 +342,20 @@ func (r *Records) mutate(mutationID, op string, req any, apply func(rc *store.Re
 }
 
 // RecordsHarness is one interp.Records implementation under the contract suite, with the writes
-// the engine never makes: creating a task, answering a decision and ruling on a finding.
+// the engine never makes: creating a task, answering a decision, ruling on a finding and requesting a full review.
 type RecordsHarness struct {
-	Records        interp.Records
-	CreateTask     func(mutationID string, t store.Task) (store.Receipt, error)
-	AnswerDecision func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
-	RuleFinding    func(mutationID string, r store.Ruling) (store.Receipt, error)
+	Records           interp.Records
+	CreateTask        func(mutationID string, t store.Task) (store.Receipt, error)
+	AnswerDecision    func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
+	RuleFinding       func(mutationID string, r store.Ruling) (store.Receipt, error)
+	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
 }
 
 // NewRecordsHarness returns the double under the contract suite.
 func NewRecordsHarness(*testing.T) RecordsHarness {
 	r := NewRecords()
-	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding}
+	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
+		RequestFullReview: r.RequestFullReview}
 }
 
 // RunRecordsContract runs the interp.Records contract against fresh harnesses from newHarness.
@@ -501,6 +553,36 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		ru.ContestedBy = "review-2"
 		if got, err := h.Records.Rulings("app", "t7"); err != nil || !slices.Equal(got, []store.Ruling{ru}) {
 			t.Errorf("Rulings = %+v, %v", got, err)
+		}
+	})
+	t.Run("requests a full review and consumes it once", func(t *testing.T) {
+		h := setup(t)
+		_, err := h.RequestFullReview("full-x", "app", "t8")
+		want(t, "RequestFullReview of an unknown task", err, store.ErrNotFound)
+		rc, err := h.RequestFullReview("full-1", "app", "t7")
+		if err != nil || rc.Record != "full-review/1" {
+			t.Fatalf("RequestFullReview = %+v, %v", rc, err)
+		}
+		if replay, err := h.RequestFullReview("full-1", "app", "t7"); err != nil || replay != rc {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		_, err = h.RequestFullReview("full-2", "app", "t7")
+		want(t, "RequestFullReview while one is pending", err, store.ErrExists)
+		_, err = h.Records.ConsumeFullReview("consume-0", "app", "t7", 2, "review-1")
+		want(t, "ConsumeFullReview of an unknown request", err, store.ErrNotFound)
+		for range 2 {
+			if rc, err := h.Records.ConsumeFullReview("consume-1", "app", "t7", 1, "review-1"); err != nil || rc.Record != "full-review/1" {
+				t.Fatalf("ConsumeFullReview = %+v, %v", rc, err)
+			}
+		}
+		_, err = h.Records.ConsumeFullReview("consume-2", "app", "t7", 1, "review-2")
+		want(t, "ConsumeFullReview of a consumed request", err, store.ErrInvalid)
+		if rc, err := h.RequestFullReview("full-2", "app", "t7"); err != nil || rc.Record != "full-review/2" {
+			t.Fatalf("second RequestFullReview = %+v, %v", rc, err)
+		}
+		wantList := []store.FullReview{{Repository: "app", TaskID: "t7", Number: 1, ConsumedBy: "review-1"}, {Repository: "app", TaskID: "t7", Number: 2}}
+		if got, err := h.Records.FullReviews("app", "t7"); err != nil || !slices.Equal(got, wantList) {
+			t.Errorf("FullReviews = %+v, %v", got, err)
 		}
 	})
 }

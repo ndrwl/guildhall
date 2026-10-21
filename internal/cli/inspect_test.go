@@ -315,3 +315,60 @@ func TestTaskFindingRuleRecords(t *testing.T) {
 		t.Fatalf("retry: exit %d, %s, want the original receipt %s", code, again, first)
 	}
 }
+
+// TestTaskReviewFull records a full-review request through the command line: a retry while it is pending prints
+// the original receipt, the request after the engine consumed it is the next one, and the timeline shows both.
+func TestTaskReviewFull(t *testing.T) {
+	path := inspectStore(t)
+	review := func(args ...string) (int, string, string) {
+		return runTask(t, append([]string{"review", "--store", path}, args...)...)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+		code int
+		err  string
+	}{
+		{"no full", []string{"--repo", "app", "t-2"}, 2, "task review requires --full"},
+		{"no repo", []string{"--full", "t-2"}, 2, "task review requires --repo"},
+		{"json", []string{"--repo", "app", "--full", "--json", "t-2"}, 2, "--json does not apply"},
+		{"no task", []string{"--repo", "app", "--full"}, 2, "takes 1 arguments"},
+		{"unknown task", []string{"--repo", "app", "--full", "t-9"}, 1, store.ErrNotFound.Error()},
+	} {
+		code, out, stderr := review(tc.args...)
+		if code != tc.code || out != "" || !strings.Contains(stderr, tc.err) {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q; want exit %d with %q", tc.name, code, out, stderr, tc.code, tc.err)
+		}
+	}
+	var rc store.Receipt
+	code, first, stderr := review("--repo", "app", "--full", "t-2")
+	if err := json.Unmarshal([]byte(first), &rc); code != 0 || err != nil || rc.MutationID != "full-review:app:t-2:1" || rc.Record != "full-review/1" {
+		t.Fatalf("exit %d, stdout %s, stderr %s", code, first, stderr)
+	}
+	if code, again, _ := review("t-2", "--full", "--repo", "app"); code != 0 || again != first {
+		t.Fatalf("retry: exit %d, %s, want the original receipt %s", code, again, first)
+	}
+	s, err := store.Open(path, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ConsumeFullReview("consume", "app", "t-2", 1, "review-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, stderr := review("--repo", "app", "--full", "t-2"); code != 0 || !strings.Contains(out, `"record":"full-review/2"`) {
+		t.Fatalf("second request: exit %d, stdout %s, stderr %s", code, out, stderr)
+	}
+
+	code, out, _ := runTask(t, "timeline", "--store", path, "--repo", "app", "--json", "t-2")
+	var got taskTimeline
+	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil {
+		t.Fatalf("timeline: exit %d, %v", code, err)
+	}
+	if len(got.FullReviews) != 2 || got.FullReviews[0].ConsumedBy != "review-2" || got.FullReviews[0].RequestedAt == nil ||
+		got.FullReviews[0].ConsumedAt == nil || got.FullReviews[1].Number != 2 || got.FullReviews[1].ConsumedAt != nil {
+		t.Fatalf("full reviews = %+v", got.FullReviews)
+	}
+}

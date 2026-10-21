@@ -155,7 +155,7 @@ Each command is described in its own page; a new command adds its page and one l
 - `guildhall workflow approve|approvals` records and lists workflow approvals; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall render <request.json>` renders a prompt with embedded release skills first; see [prompt rendering](docs/rendering.md).
 - `guildhall artisan run` and `guildhall fake-artisan` launch one Artisan attempt with the test-only fake adapter; see [adapters](docs/adapters.md).
-- `guildhall task new|show|list|timeline|files|finding rule` creates and inspects tasks and records the Director's rulings on review findings, without launching anything; see [tasks](docs/tasks.md).
+- `guildhall task new|show|list|timeline|files|finding rule|review` creates and inspects tasks and records the Director's rulings on review findings and full-review requests, without launching anything; see [tasks](docs/tasks.md).
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.
 

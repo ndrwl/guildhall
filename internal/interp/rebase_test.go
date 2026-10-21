@@ -18,7 +18,8 @@ import (
 // TestRebaseAwareReview: review 1 of head 1 on base 1 requests changes, the build lands head 2 on base 2 and
 // review 2 is classified against the range review 1 reviewed. A rebase gives review 2 the resolution diff
 // beside its previous outcome and marks the round scope rebase; anything else is a full review. In every case
-// review 2's outcome binds to head 2.
+// review 2's outcome binds to head 2. A full-review request made before review 2 makes it full without
+// classifying, and review 2 consumes the request.
 func TestRebaseAwareReview(t *testing.T) {
 	base1, base2 := strings.Repeat("b", 40), strings.Repeat("c", 40)
 	resolution := []byte("diff --git a/n.txt b/n.txt\n")
@@ -34,6 +35,7 @@ func TestRebaseAwareReview(t *testing.T) {
 	}{
 		{"rebase", bases(base1, base2), git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeRebase, 1},
 		{"changed standards", bases(base1, base2), git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
+		{"requested full", bases(base1, base2), git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
 		{"full", bases(base1, base2), git.Classification{Scope: git.ScopeFull, Reason: "range-diff shows a changed commit"}, git.ScopeFull, 1},
 		{"no base", nil, git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
 		{"base error", func(*int) func(string) (string, error) {
@@ -68,6 +70,11 @@ func TestRebaseAwareReview(t *testing.T) {
 				if tc.name == "changed standards" {
 					e.eng.StandardsRevision = "standards-2"
 				}
+				if tc.name == "requested full" {
+					if _, err := e.h.RequestFullReview("full:app:t7:1", "app", "t7"); err != nil {
+						t.Fatal(err)
+					}
+				}
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
 				want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}),
 					interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
@@ -85,6 +92,12 @@ func TestRebaseAwareReview(t *testing.T) {
 				}
 				if tc.base != nil && tc.name != "base error" && (b2.Range == nil || *b2.Range != (git.Range{Base: base2, Head: head2})) {
 					t.Errorf("review 2 range = %+v, want base 2 and head 2", b2.Range)
+				}
+				if tc.name == "requested full" {
+					fr, err := e.h.Records.FullReviews("app", "t7")
+					if err != nil || len(fr) != 1 || fr[0].ConsumedBy != "review-2" {
+						t.Errorf("FullReviews = %+v, %v; want request 1 consumed by review-2", fr, err)
+					}
 				}
 				var got workflow.ReviewOutcome
 				read(t, e, "review-2-outcome", &got)

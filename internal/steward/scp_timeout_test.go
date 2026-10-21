@@ -38,8 +38,12 @@ func TestTransportTimeoutWithChild(t *testing.T) {
 			tick := time.NewTicker(10 * time.Millisecond)
 			defer tick.Stop()
 			for {
-				data, err := os.ReadFile(filepath.Join(s.root, "child-ready"))
+				_, err := os.Stat(filepath.Join(s.root, "child-ready"))
 				if err == nil {
+					data, err := os.ReadFile(filepath.Join(s.root, "child-ready.pid"))
+					if err != nil {
+						t.Fatal(err)
+					}
 					pid, err := strconv.Atoi(string(data))
 					if err != nil {
 						t.Fatal(err)

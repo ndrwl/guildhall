@@ -1,9 +1,12 @@
 package artisan_test
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -56,6 +59,61 @@ func (u *exitedLauncherUnit) Terminate() error {
 	}
 	u.alive = false
 	return nil
+}
+
+// cooperativeLauncherUnit keeps worker exit notification pending so the stop
+// signal deterministically wins; membership reflects immediate cooperation.
+type cooperativeLauncherUnit struct{ exitedLauncherUnit }
+
+func (u *cooperativeLauncherUnit) Exited() <-chan struct{} { return nil }
+
+func TestLauncherImmediateCooperativeStop(t *testing.T) {
+	dir := t.TempDir()
+	files := artisantest.NewFiles(dir)
+	u := &cooperativeLauncherUnit{exitedLauncherUnit{exited: make(chan struct{}), alive: true}}
+	u.members = func() {
+		marked, err := files.Marked()
+		if err != nil {
+			t.Fatal(err)
+		}
+		u.alive = !marked
+	}
+	signals := make(chan os.Signal, 1)
+	signals <- syscall.SIGTERM
+	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files, Key: artisantest.StopKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := l.Run(&exec.Cmd{}, signals)
+	if err != nil || out.State != artisan.Cancelled || out.Rung != 1 {
+		t.Fatalf("Run = %+v, %v", out, err)
+	}
+	// EventsFile is the public JSONL lifecycle log, not implementation source.
+	f, err := os.Open(filepath.Join(dir, artisan.EventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close events file: %v", err)
+		}
+	}()
+	decoder := json.NewDecoder(f)
+	count := 0
+	for {
+		var event artisantest.Event
+		if err := decoder.Decode(&event); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if event.Event == "rung-emptied" && event.Rung == 1 {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("got %d rung-emptied events for rung 1, want 1", count)
+	}
 }
 
 func TestLauncherCancelDuringCleanup(t *testing.T) {

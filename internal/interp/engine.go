@@ -220,8 +220,12 @@ func (r *run) load() error {
 	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
+	full, err := r.e.Records.FullReviews(repo, id)
+	if err != nil {
+		return fmt.Errorf("interp: %w", err)
+	}
 	r.history = newHistory(repo, id, r.def, r.read, attempts, documents, decisions)
-	r.rulings = rulings
+	r.rulings, r.fullReviews = rulings, full
 	return nil
 }
 

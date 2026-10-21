@@ -32,6 +32,8 @@ type Records interface {
 	PutDocument(mutationID string, d store.DocumentRef) (store.Receipt, error)
 	OpenDecision(mutationID string, d store.Decision) (store.Receipt, error)
 	ContestRuling(mutationID, repository, taskID, document, finding, by string) (store.Receipt, error)
+	FullReviews(repository, taskID string) ([]store.FullReview, error)
+	ConsumeFullReview(mutationID, repository, taskID string, number int, by string) (store.Receipt, error)
 }
 
 var _ Records = (*store.Store)(nil)

@@ -4,7 +4,7 @@
 
 `Script`, the scripted mock agent: a `Launcher` double that matches each launch against the next expectation, fails the test on any mismatch and writes scripted responses atomically ([scripted mock agent](../mock-agent.md)).
 `RunLauncherContract` and its `Harness`, the shared `Launcher` suite; `Attempt` and the fixture helpers over `internal/interp/testdata`.
-`Records`, the in-memory `interp.Records` double, and `RunRecordsContract` with its `RecordsHarness`, the shared suite it passes with the store ([interpreter](../interpreter.md#seams)).
+`Records`, the in-memory `interp.Records` double (with `RequestFullReview`, the Director's write the engine never makes), and `RunRecordsContract` with its `RecordsHarness`, the shared suite it passes with the store ([interpreter](../interpreter.md#seams)).
 
 ## Tests
 

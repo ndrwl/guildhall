@@ -25,10 +25,12 @@ const (
 
 func TestMain(m *testing.M) {
 	if ready := os.Getenv("GUILDHALL_STUB_SSH_CHILD"); ready != "" {
-		if err := os.WriteFile(ready+".tmp", []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
+		if err := os.WriteFile(ready+".pid", []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
 			os.Exit(1)
 		}
-		if err := os.Rename(ready+".tmp", ready); err != nil {
+		// Publish readiness only after closing the PID file. Renaming the file
+		// can race with readers on Windows while the rename handle is open.
+		if err := os.Mkdir(ready, 0o700); err != nil {
 			os.Exit(1)
 		}
 		time.Sleep(time.Minute)

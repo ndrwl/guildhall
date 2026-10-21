@@ -36,7 +36,8 @@ func storeRecords(t *testing.T) interptest.RecordsHarness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	return interptest.RecordsHarness{Records: s, CreateTask: s.CreateTask, AnswerDecision: s.AnswerDecision, RuleFinding: s.RuleFinding}
+	return interptest.RecordsHarness{Records: s, CreateTask: s.CreateTask, AnswerDecision: s.AnswerDecision, RuleFinding: s.RuleFinding,
+		RequestFullReview: s.RequestFullReview}
 }
 
 // backend is one set of records and mailbox the engine runs over.

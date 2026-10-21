@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -28,18 +29,23 @@ var _ Rebases = git.Program{}
 
 // rebase sets the range and scope of attempt n of code review s, on head, in b and returns its resolution input.
 // The range is the repository's current base and head; without a base the round is full and records no range.
+// A pending full-review request makes the round full and is consumed by it, before anything is classified.
 // The round is a rebase only when Rebases classifies the range against the one the step's latest outcome
 // reviewed as one; the resolution diff is then recorded first, as document <step>-<n>-resolution.
 func (r *run) rebase(s workflow.Step, n int, head string, b *binding) ([]render.Input, error) {
 	b.Scope = git.ScopeFull
-	if r.e.Base == nil {
-		return nil, nil
+	requested, err := r.requestedFull(s.ID, n)
+	if err != nil || r.e.Base == nil {
+		return nil, err
 	}
 	base, err := r.e.Base(r.task.Repository)
 	if err != nil || !digest.ValidHead(base) {
 		return nil, nil
 	}
 	b.Range = &git.Range{Base: base, Head: head}
+	if requested {
+		return nil, nil
+	}
 	last, err := r.reviewedRange(s.ID, b.Revisions)
 	i := slices.IndexFunc(r.e.Config.Repositories, func(c config.Repository) bool { return c.ID == r.task.Repository })
 	if err != nil || last == nil || last.Head == head || r.e.Rebases == nil || i < 0 {
@@ -64,4 +70,21 @@ func (r *run) rebase(s workflow.Step, n int, head string, b *binding) ([]render.
 	}
 	b.Scope = git.ScopeRebase
 	return []render.Input{{Port: ResolutionPort, Name: d.Path, SHA256: d.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(d.Path))}}, nil
+}
+
+// requestedFull reports whether a full-review request makes attempt n of step full: it consumes the pending
+// request, or found it consumed by this attempt when the advance is a replay.
+func (r *run) requestedFull(step string, n int) (bool, error) {
+	by := r.identity(step, n).AttemptID
+	f := r.fullReview(by)
+	if f == nil {
+		return false, nil
+	}
+	if f.ConsumedBy == "" {
+		if _, err := r.e.Records.ConsumeFullReview(r.mutation("full-review", strconv.Itoa(f.Number)), r.task.Repository, r.task.ID, f.Number, by); err != nil {
+			return false, err
+		}
+		f.ConsumedBy = by
+	}
+	return true, nil
 }
