@@ -116,7 +116,14 @@ func want(t *testing.T, got, want interp.Next) {
 // resolves them and finds f3 (S4) and f4, a suggestion with no rule; build 3 fixes f3; review 3 approves
 // with f4 still open; the strict review asks for changes with a suggestion only, which does not block;
 // the Astra review approves and the merge decision opens for head 3.
+// The trace runs again with step ids that end in -<digits> and -x<digits> beside a step of the same prefix.
 func TestRoundTraceThreeReviews(t *testing.T) {
+	for _, ids := range [][3]string{{"review-opus", "review-opus-strict", "review-astra"}, {"review", "review-2", "review-x2"}} {
+		t.Run(ids[0], func(t *testing.T) { roundTraceThreeReviews(t, ids) })
+	}
+}
+
+func roundTraceThreeReviews(t *testing.T, ids [3]string) {
 	f1 := workflow.Finding{ID: "f1", Rule: "S2", File: "internal/cli/task.go", Line: 40, Summary: "No red test shown."}
 	f2 := workflow.Finding{ID: "f2", Rule: "S10", File: "docs/tasks.md", Line: 12, Summary: "Two sentences on one line."}
 	f3 := workflow.Finding{ID: "f3", Rule: "S4", File: "docs/tasks.md", Line: 30, Summary: "Claim without acceptance."}
@@ -130,38 +137,38 @@ func TestRoundTraceThreeReviews(t *testing.T) {
 		Revisions: workflow.Revisions{Subject: workflow.Subject{DocumentDigest: specDigest(t)}, StandardsRevision: "standards-1"}}
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
-			e := newEnvDefinition(t, b, loadWorkflow(t, "three-reviews"),
+			e := newEnvDefinition(t, b, renameSteps(loadWorkflow(t, "three-reviews"), map[string]string{"review-opus": ids[0], "review-opus-strict": ids[1], "review-astra": ids[2]}),
 				planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
 				interptest.Expectation{Step: "design-review", Attempt: 1, Profile: "reviewer-opus", Inputs: map[string]string{"subject": specDigest(t)},
 					Standards: []string{"standards/go.md"}, Respond: interptest.Review(design)},
 				buildExp(t, 1, head, ""),
-				reviewExp(t, "review-opus", "reviewer-opus", 1, head, nil, o1),
+				reviewExp(t, ids[0], "reviewer-opus", 1, head, nil, o1),
 				buildExp(t, 2, head2, outcomeDigest(o1)),
-				reviewExp(t, "review-opus", "reviewer-opus", 2, head2, &o1, o2),
+				reviewExp(t, ids[0], "reviewer-opus", 2, head2, &o1, o2),
 				buildExp(t, 3, head3, outcomeDigest(o2)),
-				reviewExp(t, "review-opus", "reviewer-opus", 3, head3, &o2, o3),
-				reviewExp(t, "review-opus-strict", "reviewer-opus-strict", 1, head3, nil,
+				reviewExp(t, ids[0], "reviewer-opus", 3, head3, &o2, o3),
+				reviewExp(t, ids[1], "reviewer-opus-strict", 1, head3, nil,
 					bound(t, workflow.VerdictChangesRequested, head3, []workflow.Finding{{ID: "s1", Summary: "Consider a table."}})),
-				reviewExp(t, "review-astra", "reviewer-astra", 1, head3, nil, bound(t, workflow.VerdictApproved, head3, nil)),
+				reviewExp(t, ids[2], "reviewer-astra", 1, head3, nil, bound(t, workflow.VerdictApproved, head3, nil)),
 			)
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "design-review", Attempt: 1})
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "design-review", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})
 			e.answer(t, "accept-1", "approved")
 			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 1})
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "review-opus", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: ids[0], Attempt: 1})
 
 			// Round 1 requests changes citing rules: the build runs again with the outcome as feedback.
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review-opus", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "review-opus", Attempt: 2})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[0], Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: ids[0], Attempt: 2})
 			// Round 2 resolves f1 and f2 and finds f3, which cites a rule, and f4, which does not.
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review-opus", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 3})
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 3}), interp.Next{Wait: interp.WaitAttempt, Step: "review-opus", Attempt: 3})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[0], Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 3})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 3}), interp.Next{Wait: interp.WaitAttempt, Step: ids[0], Attempt: 3})
 			// Round 3 approves; the second and third reviews run on the same head.
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review-opus", Attempt: 3}), interp.Next{Wait: interp.WaitAttempt, Step: "review-opus-strict", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[0], Attempt: 3}), interp.Next{Wait: interp.WaitAttempt, Step: ids[1], Attempt: 1})
 			// A changes_requested verdict with suggestions only does not block.
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review-opus-strict", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "review-astra", Attempt: 1})
-			next := e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review-astra", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[1], Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: ids[2], Attempt: 1})
+			next := e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[2], Attempt: 1})
 			want(t, next, interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
 			if d := e.decision(t, "deliver-1"); d.Subject == nil || d.Subject.Digest != head3 {
 				t.Errorf("merge decision bound to %+v, want head %s", d.Subject, head3)
@@ -172,7 +179,7 @@ func TestRoundTraceThreeReviews(t *testing.T) {
 
 			// Replaying any earlier event records nothing new and launches nothing.
 			attempts := len(e.attempts(t))
-			for _, ev := range []interp.Event{{Kind: interp.TaskCreated}, {Kind: interp.AttemptResult, Step: "review-opus", Attempt: 1}, {Kind: interp.DecisionAnswered, Decision: "accept-1"}} {
+			for _, ev := range []interp.Event{{Kind: interp.TaskCreated}, {Kind: interp.AttemptResult, Step: ids[0], Attempt: 1}, {Kind: interp.DecisionAnswered, Decision: "accept-1"}} {
 				want(t, e.advance(t, ev), next)
 			}
 			if len(e.attempts(t)) != attempts || len(e.script.Launched()) != 10 {
@@ -180,6 +187,35 @@ func TestRoundTraceThreeReviews(t *testing.T) {
 			}
 		})
 	}
+}
+
+// renameSteps returns def with each step id in ids renamed, with the inputs and loop rules that name it.
+func renameSteps(def *workflow.Definition, ids map[string]string) *workflow.Definition {
+	name := func(id string) string {
+		if to, ok := ids[id]; ok {
+			return to
+		}
+		return id
+	}
+	for i, s := range def.Steps {
+		s.ID = name(s.ID)
+		inputs := map[string]workflow.Refs{}
+		for port, refs := range s.Inputs {
+			for _, ref := range refs {
+				from, out, _ := strings.Cut(ref, ".")
+				inputs[port] = append(inputs[port], name(from)+"."+out)
+			}
+		}
+		s.Inputs = inputs
+		on := map[string]workflow.Rule{}
+		for k, rule := range s.On {
+			rule.Goto = name(rule.Goto)
+			on[k] = rule
+		}
+		s.On = on
+		def.Steps[i] = s
+	}
+	return def
 }
 
 func TestStaleOutcomeIsRefused(t *testing.T) {
