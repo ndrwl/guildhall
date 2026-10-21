@@ -56,6 +56,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // Errors returned by a Unit.
@@ -172,11 +174,7 @@ func replaceJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicfile.Write(path, append(b, '\n'))
 }
 
 // Identity names one process: its PID plus an OS creation token (Linux: boot

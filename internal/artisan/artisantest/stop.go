@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // ResultBody is the result a Worker publishes; Files counts only it as valid.
@@ -29,7 +30,7 @@ func NewFiles(dir string) Files {
 }
 
 func (f Files) ValidResult() (bool, error) {
-	b, err := os.ReadFile(f.Result)
+	b, err := atomicfile.Read(f.Result)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}

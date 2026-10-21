@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -899,19 +900,5 @@ func writeFile(name string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(name), "."+filepath.Base(name)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	_, werr := tmp.Write(data)
-	cerr := tmp.Close()
-	if err := errors.Join(werr, cerr); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	if err := os.Rename(tmp.Name(), name); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	return nil
+	return atomicfile.Write(name, data)
 }
