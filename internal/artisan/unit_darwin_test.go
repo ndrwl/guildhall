@@ -22,7 +22,7 @@ func TestSignalsAfterWorkerExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stdin.Close()
+	defer func() { _ = stdin.Close() }()
 	if _, err := u.Start(cmd); err != nil {
 		t.Fatal(err)
 	}
