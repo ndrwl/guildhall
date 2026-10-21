@@ -119,6 +119,8 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 		return run("", append(append([]string{"task", "start"}, flags...), "--decision", decision, "t-1")...)
 	}
 
+	// fake-straight has no validate step, so it is below the review floor and task new needs its approval.
+	run("Approved for the acceptance run.\n", "workflow", "approve", "--store", storePath, "--config", cfg, "--repo", "app", "--words-file", "-")
 	run("", "task", "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Sort the task list", "t-1")
 	want(run("", append(append([]string{"task", "start"}, flags...), "t-1")...), `{"wait":"attempt","step":"plan","attempt":1}`)
 	want(done("plan", 1), `{"wait":"decision","step":"accept","decision":"accept-1"}`)

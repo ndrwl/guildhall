@@ -191,15 +191,46 @@ Approvals are recorded per Director, against a definition's exact digest:
 
 ```sh
 guildhall workflow approve --store director.store --file workflows/human-review.json --words-file -
+guildhall workflow approve --store director.store --config director.toml --repo lib --words-file -
 guildhall workflow approvals --store director.store --json
 ```
 
 `approve` parses and validates the file, computes its digest and records the Guildmaster's words from the file or standard input, exactly as given; it prints the [store receipt](store.md#mutations-and-receipts).
+With `--config` and `--repo` instead of `--file`, it approves that repository's effective workflow, its definition with the repository's `workflow_overrides` applied, resolved exactly as [`task new`](tasks.md#the-bound-workflow) resolves it; the approval carries the workflow's name and the effective digest.
 A refused definition, empty words or a missing store write nothing.
 Repeating an approval prints the original receipt; different words for an approved digest are refused.
 An edited definition has a new digest and needs its own approval.
 The definitions shipped with this release, such as the default workflow, count as approved by the release: `approvals` lists them with source `release` before the recorded approvals (source `guildmaster`).
 Explicitly approving shipped content records the Guildmaster's words like any other approval; that revision then appears with both sources.
 Commands exit 0 on success, 1 when the definition, words or store refuse or fail, and 2 on a usage error; they never create a store.
-Enforcing this policy when a task is created belongs to a later execution layer, not this foundation package.
 Parsing and validation accept or refuse a definition only; they never activate it.
+
+#### Enforcement at task creation
+
+`task new` admits the repository's effective workflow only when one of these holds, and otherwise refuses the task and writes nothing:
+
+1. its digest is a definition shipped with this release;
+2. its digest has a Guildmaster approval in the Director's store;
+3. it meets the review floor and weakens nothing in an authorized baseline: a shipped definition, or the repository's workflow file before its overrides when that file's own digest is approved.
+
+The refusal names the effective digest, each review-floor problem or each baseline with what the revision weakens in it, and the `workflow approve --config --repo` command that approves it.
+Approving the exact effective digest is the Guildmaster's way to admit a weakening edit, including one below the floor.
+
+The classifier, `workflow.Weakenings`, is conservative: anything it cannot prove harmless is weakening.
+It matches steps by id and guards the steps that review, approve, validate, publish or deliver (`review`, `document-review`, `guildmaster-approval`, `validate`, `publish`, `deliver`).
+For a guarded step of the baseline, these are weakening:
+
+- removing it, or changing its kind or kind version;
+- a weaker actor: the Guildmaster is stronger than an Artisan, so only Artisan to Guildmaster is not weakening;
+- any change to its other settings, such as a reviewer's `instructions`, `profile` or `skills`, which are reviewer-facing;
+- dropping an input reference it had;
+- removing a loop rule, sending it to another step, or lowering its `max`.
+
+Changing the relative order of any steps the baseline and the revision share is weakening too.
+Adding steps, adding input references or loop rules, raising `max`, and changing steps that are not guarded, the name or the description are not.
+The classifier compares definitions only: the contents of files that a profile or skill name points to are not part of the workflow digest, so it cannot see them.
+
+The review floor, `workflow.FloorProblems`, is one non-author review and one validation before delivery: every `deliver` step must take a `review` step's outcome as one of its `review` inputs and a `validate` step's result as its `validation` input.
+A `review` step is non-author by construction, because its actor is a fresh Artisan session or the Guildmaster, never the session that built the change.
+A workflow with no `deliver` step delivers nothing and meets the floor.
+The floor is fixed by this release; a managed policy key that sets it per repository is not built.

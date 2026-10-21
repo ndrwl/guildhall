@@ -114,6 +114,6 @@ A requirement describes intended behaviour, not shipped behaviour: see the READM
 
 ## Open questions
 
-- Whether repositories have minimum review requirements is not yet decided.
-  It does not block scaffolding, CI or the pilots.
+- Every new task's workflow must meet a minimum [review floor](configuration.md#enforcement-at-task-creation), one non-author review and one validation before delivery, unless the Guildmaster approves its exact revision.
+  Whether the floor is set per repository through a managed policy key is not yet decided.
   Workflow-edit approval follows the [workflow-edit authority policy](configuration.md#workflow-edit-authority).

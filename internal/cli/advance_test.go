@@ -43,6 +43,8 @@ func newRunDirectorWith(t *testing.T, config string) runDirector {
 		d.stopAll(t)
 		_ = os.RemoveAll(state)
 	})
+	// The Director-local workflow has no validate step, so it is below the review floor and needs its approval.
+	approveRepo(t, d.store, cfg, "app")
 	newTask(t, d.store, cfg, "app", "Sort the task list", "t-1")
 	return d
 }

@@ -268,12 +268,64 @@ func TestWorkflowUsageErrors(t *testing.T) {
 		{"approvals with file", []string{"approvals", "--store", "s", "--file", "w.json"}, "--file and --words-file apply only to workflow approve"},
 		{"approve with json", []string{"approve", "--store", "s", "--file", "w.json", "--words-file", "-", "--json"}, "--json applies only to workflow approvals"},
 		{"unknown flag", []string{"approvals", "--store", "s", "--yaml"}, "flag provided but not defined"},
+		{"approve file and config", []string{"approve", "--store", "s", "--file", "w.json", "--config", "c.toml", "--repo", "app", "--words-file", "-"}, "--file and --config cannot be used together"},
+		{"approve config without repo", []string{"approve", "--store", "s", "--config", "c.toml", "--words-file", "-"}, "--config and --repo go together"},
+		{"approve repo without config", []string{"approve", "--store", "s", "--repo", "app", "--words-file", "-"}, "--config and --repo go together"},
+		{"approvals with config", []string{"approvals", "--store", "s", "--config", "c.toml", "--repo", "app"}, "--config and --repo apply only to workflow approve"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			code, stdout, stderr := runWorkflow(t, "", tc.args...)
 			if code != 2 || stdout != "" || !strings.Contains(stderr, tc.wantErr) || !strings.Contains(stderr, "guildhall workflow approve") {
 				t.Fatalf("exit %d, stdout %q, stderr %q; want exit 2 mentioning %q and usage", code, stdout, stderr, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestWorkflowApproveRepositoryEffectiveRevision(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	path := writeStore(t)
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(cfg), "workflows", "human-review.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := workflow.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := workflow.ApplyOverrides(file, map[string]workflow.Override{"review": {Actor: workflow.ArtisanActor}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := "Artisan review is enough for lib.\n"
+	args := []string{"approve", "--store", path, "--config", cfg, "--repo", "lib", "--words-file", "-"}
+	code, receipt, stderr := runWorkflow(t, words, args...)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if got := decodeJSON[store.Receipt](t, receipt); got.MutationID != "workflow-approval:"+effective.Digest() {
+		t.Fatalf("receipt = %+v, want the effective digest %s (file %s)", got, effective.Digest(), file.Digest())
+	}
+	if got := storeApprovals(t, path); len(got) != 1 || got[0].Name != "human-review" || got[0].Digest != effective.Digest() || got[0].Words != words {
+		t.Fatalf("approvals = %+v", got)
+	}
+	if code, again, stderr := runWorkflow(t, words, args...); code != 0 || again != receipt {
+		t.Fatalf("replay: exit %d, stdout %q, stderr %q", code, again, stderr)
+	}
+
+	for name, repoArgs := range map[string][]string{
+		"unknown repository": {"--config", cfg, "--repo", "web"},
+		"missing config":     {"--config", filepath.Join(t.TempDir(), "missing.toml"), "--repo", "lib"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeStore(t)
+			code, out, stderr := runWorkflow(t, words, append(append([]string{"approve", "--store", path}, repoArgs...), "--words-file", "-")...)
+			if code != 1 || out != "" {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, stderr)
+			}
+			if got := storeApprovals(t, path); len(got) != 0 {
+				t.Fatalf("approvals = %+v", got)
 			}
 		})
 	}

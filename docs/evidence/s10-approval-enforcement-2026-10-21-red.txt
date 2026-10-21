@@ -1,0 +1,153 @@
+--- FAIL: TestGuardedKinds (0.00s)
+    authority_test.go:76: Guarded("document-review") = false, want true
+    authority_test.go:76: Guarded("guildmaster-approval") = false, want true
+    authority_test.go:76: Guarded("review") = false, want true
+    authority_test.go:76: Guarded("publish") = false, want true
+    authority_test.go:76: Guarded("validate") = false, want true
+    authority_test.go:76: Guarded("deliver") = false, want true
+--- FAIL: TestWeakeningsOfTheDefault (0.01s)
+    --- FAIL: TestWeakeningsOfTheDefault/removing_the_review (0.00s)
+        authority_test.go:171: weakenings = [], want 3 like [step review: removed step publish: input review step deliver: input review]
+    --- FAIL: TestWeakeningsOfTheDefault/removing_validation (0.00s)
+        authority_test.go:171: weakenings = [], want 2 like [step validate: removed step deliver: input validation]
+    --- FAIL: TestWeakeningsOfTheDefault/removing_publish (0.00s)
+        authority_test.go:171: weakenings = [], want 3 like [step publish: removed step validate: input head step deliver: input head]
+    --- FAIL: TestWeakeningsOfTheDefault/removing_the_Guildmaster's_acceptance_is_caught_by_its_consumers (0.00s)
+        authority_test.go:171: weakenings = [], want 2 like [step accept: removed step review: input spec]
+    --- FAIL: TestWeakeningsOfTheDefault/reordering_validate_before_publish (0.00s)
+        authority_test.go:171: weakenings = [], want 2 like [order step validate: input head]
+    --- FAIL: TestWeakeningsOfTheDefault/lowering_a_review_loop's_max (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step review: max]
+    --- FAIL: TestWeakeningsOfTheDefault/removing_a_review_loop (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step review: changes_requested]
+    --- FAIL: TestWeakeningsOfTheDefault/retargeting_a_validation_loop (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step validate: failed]
+    --- FAIL: TestWeakeningsOfTheDefault/a_weaker_review_actor (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step review: actor]
+    --- FAIL: TestWeakeningsOfTheDefault/reviewer_instructions (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step review: instructions]
+    --- FAIL: TestWeakeningsOfTheDefault/reviewer_profile (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step review: profile]
+    --- FAIL: TestWeakeningsOfTheDefault/reviewer_skills (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step review: skills]
+    --- FAIL: TestWeakeningsOfTheDefault/a_kind_version_change (0.00s)
+        authority_test.go:171: weakenings = [], want 1 like [step review: type]
+--- FAIL: TestFloor (0.00s)
+    --- FAIL: TestFloor/no_validation (0.00s)
+        authority_test.go:227: floor problems = [], want ["deliver step \"deliver\" takes no validate result"]
+    --- FAIL: TestFloor/no_code_review (0.00s)
+        authority_test.go:227: floor problems = [], want ["deliver step \"deliver\" takes no review outcome"]
+    --- FAIL: TestFloor/only_a_document_review (0.00s)
+        authority_test.go:227: floor problems = [], want ["deliver step \"deliver\" takes no review outcome"]
+    --- FAIL: TestFloor/a_second_deliver_without_either (0.00s)
+        authority_test.go:227: floor problems = [], want ["deliver step \"deliver-again\" takes no review outcome" "deliver step \"deliver-again\" takes no validate result"]
+--- FAIL: TestAdmit (0.00s)
+    --- FAIL: TestAdmit/shipped (0.00s)
+        authority_test.go:270: Admit = {Basis: From:{Name: Digest:}}, <nil>; want {Basis:release From:{Name: Digest:}}
+    --- FAIL: TestAdmit/shipped_and_approved (0.00s)
+        authority_test.go:270: Admit = {Basis: From:{Name: Digest:}}, <nil>; want {Basis:release From:{Name: Digest:}}
+    --- FAIL: TestAdmit/approved (0.00s)
+        authority_test.go:270: Admit = {Basis: From:{Name: Digest:}}, <nil>; want {Basis:guildmaster From:{Name: Digest:}}
+    --- FAIL: TestAdmit/approved_below_the_floor (0.00s)
+        authority_test.go:270: Admit = {Basis: From:{Name: Digest:}}, <nil>; want {Basis:guildmaster From:{Name: Digest:}}
+    --- FAIL: TestAdmit/non-weakening_from_the_shipped_default (0.00s)
+        authority_test.go:270: Admit = {Basis: From:{Name: Digest:}}, <nil>; want {Basis:non-weakening From:{Name:default Digest:sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7}}
+    --- FAIL: TestAdmit/non-weakening_from_an_approved_candidate (0.00s)
+        authority_test.go:270: Admit = {Basis: From:{Name: Digest:}}, <nil>; want {Basis:non-weakening From:{Name:human-review Digest:sha256:c629c41dcff4250d1b37c9ab842c69392484813e46120079b9211b642e4025eb}}
+    --- FAIL: TestAdmit/weakening_the_shipped_default (0.00s)
+        authority_test.go:298: Admit = {Basis: From:{Name: Digest:}}, <nil>; want a refusal
+    --- FAIL: TestAdmit/nothing_authorized (0.00s)
+        authority_test.go:298: Admit = {Basis: From:{Name: Digest:}}, <nil>; want a refusal
+    --- FAIL: TestAdmit/below_the_floor,_though_non-weakening (0.00s)
+        authority_test.go:298: Admit = {Basis: From:{Name: Digest:}}, <nil>; want a refusal
+    --- FAIL: TestAdmit/an_unapproved_candidate_is_no_baseline (0.00s)
+        authority_test.go:298: Admit = {Basis: From:{Name: Digest:}}, <nil>; want a refusal
+    --- FAIL: TestAdmit/an_approved_candidate_whose_override_weakens_it (0.00s)
+        authority_test.go:298: Admit = {Basis: From:{Name: Digest:}}, <nil>; want a refusal
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/workflow	0.047s
+--- FAIL: TestTaskStartAndStepDone (0.02s)
+    advance_test.go:123: workflow approve app: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskStartLaunchesClaude (0.02s)
+    advance_test.go:157: workflow approve app: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestStepDoneRefusesAResultItDoesNotTake (0.02s)
+    advance_test.go:170: workflow approve app: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskNewBindsEffectiveWorkflowAndConfig (0.04s)
+    task_test.go:155: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskNewConfigPaths (0.02s)
+    task_test.go:207: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskNewRefusesUnknownProfilesAndWritesNothing (0.11s)
+    --- FAIL: TestTaskNewRefusesUnknownProfilesAndWritesNothing/plan (0.02s)
+        task_test.go:321: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+            usage:
+              guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+              guildhall workflow approvals --store <path> [--json]
+    --- FAIL: TestTaskNewRefusesUnknownProfilesAndWritesNothing/build (0.02s)
+        task_test.go:321: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+            usage:
+              guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+              guildhall workflow approvals --store <path> [--json]
+    --- FAIL: TestTaskNewRefusesUnknownProfilesAndWritesNothing/review (0.03s)
+        task_test.go:321: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+            usage:
+              guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+              guildhall workflow approvals --store <path> [--json]
+    --- FAIL: TestTaskNewRefusesUnknownProfilesAndWritesNothing/document-review (0.03s)
+        task_test.go:321: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+            usage:
+              guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+              guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskArgumentOrders (0.02s)
+    task_test.go:347: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskNewDependencies (0.02s)
+    task_test.go:419: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskShowGolden (0.02s)
+    task_test.go:563: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskListGolden (0.02s)
+    task_test.go:581: workflow approve lib: exit 2, stderr guildhall: flag provided but not defined: -config
+        usage:
+          guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
+          guildhall workflow approvals --store <path> [--json]
+--- FAIL: TestTaskNewEnforcesWorkflowAuthority (0.13s)
+    --- FAIL: TestTaskNewEnforcesWorkflowAuthority/a_weakening_override_needs_the_effective_revision_approved (0.04s)
+        task_test.go:655: exit 0, stdout "{\"mutation_id\":\"task:lib:t-1\",\"operation\":\"create-task\",\"request_digest\":\"sha256:9d4179b1613add59407a6978ecb2595020fe6b6c1870bbaf576fe138e96dca6f\",\"repository\":\"lib\",\"task_id\":\"t-1\",\"record\":\"task\",\"sequence\":1,\"committed_at\":\"2026-10-21T22:49:34.332212864Z\"}\n", stderr ""
+    --- FAIL: TestTaskNewEnforcesWorkflowAuthority/below_the_floor_needs_the_exact_revision_approved (0.04s)
+        task_test.go:679: exit 0, stdout "{\"mutation_id\":\"task:lib:t-1\",\"operation\":\"create-task\",\"request_digest\":\"sha256:f9c28095379e092ab09e8355d384ca063eeeb9ded2e8d177097cc4e60eef6007\",\"repository\":\"lib\",\"task_id\":\"t-1\",\"record\":\"task\",\"sequence\":1,\"committed_at\":\"2026-10-21T22:49:34.369973987Z\"}\n", stderr ""
+--- FAIL: TestWorkflowUsageErrors (0.00s)
+    --- FAIL: TestWorkflowUsageErrors/approve_file_and_config (0.00s)
+        workflow_test.go:280: exit 2, stdout "", stderr "guildhall: flag provided but not defined: -config\nusage:\n  guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->\n  guildhall workflow approvals --store <path> [--json]\n"; want exit 2 mentioning "--file and --config cannot be used together" and usage
+    --- FAIL: TestWorkflowUsageErrors/approve_config_without_repo (0.00s)
+        workflow_test.go:280: exit 2, stdout "", stderr "guildhall: flag provided but not defined: -config\nusage:\n  guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->\n  guildhall workflow approvals --store <path> [--json]\n"; want exit 2 mentioning "--config and --repo go together" and usage
+    --- FAIL: TestWorkflowUsageErrors/approve_repo_without_config (0.00s)
+        workflow_test.go:280: exit 2, stdout "", stderr "guildhall: flag provided but not defined: -repo\nusage:\n  guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->\n  guildhall workflow approvals --store <path> [--json]\n"; want exit 2 mentioning "--config and --repo go together" and usage
+    --- FAIL: TestWorkflowUsageErrors/approvals_with_config (0.00s)
+        workflow_test.go:280: exit 2, stdout "", stderr "guildhall: flag provided but not defined: -config\nusage:\n  guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->\n  guildhall workflow approvals --store <path> [--json]\n"; want exit 2 mentioning "--config and --repo apply only to workflow approve" and usage
+--- FAIL: TestWorkflowApproveRepositoryEffectiveRevision (0.05s)
+    workflow_test.go:305: exit 2, stderr "guildhall: flag provided but not defined: -config\nusage:\n  guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->\n  guildhall workflow approvals --store <path> [--json]\n"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	9.883s
+FAIL
