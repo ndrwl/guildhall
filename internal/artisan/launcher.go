@@ -274,7 +274,7 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	}
 	select {
 	case <-l.stopReq:
-		l.event("stop-before-start", nil)
+		l.event(eventStopBeforeStart, nil)
 		return l.stop(nil)
 	default:
 	}
@@ -298,7 +298,7 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 		l.phase = "running"
 	}
 	l.mu.Unlock()
-	l.event("running", map[string]any{"worker": worker})
+	l.event(eventRunning, map[string]any{"worker": worker})
 	tick := time.NewTicker(pollInterval)
 	defer tick.Stop()
 	beat := time.NewTicker(l.c.HeartbeatInterval)
@@ -316,27 +316,27 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 			if d, err := l.decide(false, ""); err == nil && d.State != "" {
 				decided = &d
 				if d.State == Finished {
-					l.event("result-accepted", nil)
+					l.event(eventResultAccepted, nil)
 					grace = time.After(l.c.ResultGrace)
 				}
 			}
 		case <-beat.C:
 			l.heartbeat()
 		case <-grace:
-			l.event("worker-outlived-result", nil)
+			l.event(eventWorkerOutlivedResult, nil)
 			return l.ladder(*decided, 2, nil, false, signals)
 		case <-l.c.Unit.Exited():
-			l.event("worker-exited", nil)
+			l.event(eventWorkerExited, nil)
 			d, err := l.decide(false, "worker exited without a result")
 			return l.ladder(d, 2, err, false, signals)
 		case <-l.stopReq:
 			return l.stop(decided)
 		case s := <-signals:
 			if s == os.Interrupt {
-				l.event("signal-forwarded", map[string]any{"signal": s.String(), "error": errString(l.c.Unit.Interrupt())})
+				l.event(eventSignalForwarded, map[string]any{"signal": s.String(), "error": errString(l.c.Unit.Interrupt())})
 				continue
 			}
-			l.event("signal", map[string]any{"signal": s.String()})
+			l.event(eventSignal, map[string]any{"signal": s.String()})
 			l.requestStop()
 			return l.stop(decided)
 		}
@@ -359,7 +359,7 @@ func (l *Launcher) decide(mark bool, fail string) (Outcome, error) {
 	})
 	if err != nil {
 		d = Outcome{State: Failed, Detail: "attempt files: " + err.Error()}
-		l.event("decide-failed", map[string]any{"error": err.Error()})
+		l.event(eventDecideFailed, map[string]any{"error": err.Error()})
 	}
 	return d, err
 }
@@ -372,7 +372,7 @@ func (l *Launcher) decideLocked(mark bool, fail string) (Outcome, error) {
 		return Outcome{State: Finished, Detail: "result accepted"}, err
 	}
 	if mark {
-		l.event("cancel-marker", nil)
+		l.event(eventCancelMarker, nil)
 		return Outcome{State: Cancelled, Detail: "stopped"}, l.c.Files.Mark()
 	}
 	if fail != "" {
@@ -414,7 +414,7 @@ func (l *Launcher) stop(decided *Outcome) (Outcome, error) {
 	if decided.State == Cancelled {
 		return l.ladder(*decided, 1, nil, true, nil)
 	}
-	l.event("stop-after-decision", map[string]any{"state": decided.State})
+	l.event(eventStopAfterDecision, map[string]any{"state": decided.State})
 	if l.started {
 		select {
 		case <-l.c.Unit.Exited():
@@ -434,7 +434,7 @@ func (l *Launcher) ladder(d Outcome, first int, err error, explicit bool, signal
 	if l.empty() {
 		if first == 1 {
 			// The marker emptied the tree before the first check.
-			l.event("rung-emptied", map[string]any{"rung": 1})
+			l.event(eventRungEmptied, map[string]any{"rung": 1})
 			return l.finish(d, 1, nil, err)
 		}
 		return l.finish(d, 0, nil, err)
@@ -478,31 +478,31 @@ func (l *Launcher) ladder(d Outcome, first int, err error, explicit bool, signal
 			}
 		}
 		if i == 0 {
-			l.event("ladder", map[string]any{"first": first})
+			l.event(eventLadder, map[string]any{"first": first})
 		}
 		if errors.Is(rerr, ErrUnsupportedRung) {
-			l.event("rung-skipped", map[string]any{"rung": n, "name": r.name, "error": rerr.Error()})
+			l.event(eventRungSkipped, map[string]any{"rung": n, "name": r.name, "error": rerr.Error()})
 			continue
 		}
 		fields := map[string]any{"rung": n, "name": r.name, "members": members, "deadline": r.wait.String(), "error": errString(rerr)}
 		if r.name == "interrupt" {
 			fields["graceful"] = interruptGraceful
 		}
-		l.event("rung", fields)
+		l.event(eventRung, fields)
 		if l.waitEmpty(r.wait) {
-			l.event("rung-emptied", map[string]any{"rung": n})
+			l.event(eventRungEmptied, map[string]any{"rung": n})
 			return l.finish(d, n, nil, err)
 		}
 		alive, aerr := l.c.Unit.Members()
-		l.event("rung-timeout", map[string]any{"rung": n, "alive": alive, "error": errString(aerr)})
+		l.event(eventRungTimeout, map[string]any{"rung": n, "alive": alive, "error": errString(aerr)})
 	}
 	alive, _ := l.c.Unit.Members()
 	return l.finish(d, 4, alive, errors.Join(err, ErrNotEmpty))
 }
 
 func (l *Launcher) cooperate(d Outcome, signals <-chan os.Signal, err error) (Outcome, error) {
-	l.event("ladder", map[string]any{"first": 1})
-	l.event("rung", map[string]any{"rung": 1, "name": "cancel-marker", "deadline": l.c.Ladder.Cooperative.String()})
+	l.event(eventLadder, map[string]any{"first": 1})
+	l.event(eventRung, map[string]any{"rung": 1, "name": "cancel-marker", "deadline": l.c.Ladder.Cooperative.String()})
 	timer := time.NewTimer(l.c.Ladder.Cooperative)
 	defer timer.Stop()
 	tick := time.NewTicker(pollInterval)
@@ -515,21 +515,21 @@ func (l *Launcher) cooperate(d Outcome, signals <-chan os.Signal, err error) (Ou
 			l.heartbeat()
 		case <-tick.C:
 			if l.empty() {
-				l.event("rung-emptied", map[string]any{"rung": 1})
+				l.event(eventRungEmptied, map[string]any{"rung": 1})
 				return l.finish(d, 1, nil, err)
 			}
 		case <-timer.C:
 			alive, aerr := l.c.Unit.Members()
-			l.event("rung-timeout", map[string]any{"rung": 1, "alive": alive, "error": errString(aerr)})
+			l.event(eventRungTimeout, map[string]any{"rung": 1, "alive": alive, "error": errString(aerr)})
 		case <-l.stopReq:
 			out, stopErr := l.stop(&d)
 			return out, errors.Join(err, stopErr)
 		case s := <-signals:
 			if s == os.Interrupt {
-				l.event("signal-forwarded", map[string]any{"signal": s.String(), "error": errString(l.c.Unit.Interrupt())})
+				l.event(eventSignalForwarded, map[string]any{"signal": s.String(), "error": errString(l.c.Unit.Interrupt())})
 				continue
 			}
-			l.event("signal", map[string]any{"signal": s.String()})
+			l.event(eventSignal, map[string]any{"signal": s.String()})
 			l.requestStop()
 			out, stopErr := l.stop(&d)
 			return out, errors.Join(err, stopErr)
@@ -574,7 +574,7 @@ func (l *Launcher) finish(d Outcome, rung int, survivors []Identity, err error) 
 	}); werr != nil {
 		err = errors.Join(err, fmt.Errorf("artisan: write outcome: %w", werr))
 	}
-	l.event("ended", map[string]any{"outcome": d})
+	l.event(eventEnded, map[string]any{"outcome": d})
 	return d, err
 }
 
@@ -599,7 +599,7 @@ func (l *Launcher) heartbeat() {
 	h := Heartbeat{Repository: k.Repository, TaskID: k.TaskID, Step: k.Step, Attempt: k.Attempt,
 		Sequence: l.seq, Time: now.UTC(), WorkerState: phase, LastOutputAt: out.UTC()}
 	if err := WriteHeartbeat(l.c.Dir, h); err != nil {
-		l.event("heartbeat-failed", map[string]any{"sequence": l.seq, "error": err.Error()})
+		l.event(eventHeartbeatFailed, map[string]any{"sequence": l.seq, "error": err.Error()})
 	}
 }
 
@@ -618,11 +618,11 @@ func writeOnce(path string, v any) error {
 }
 
 // event appends one line to EventsFile; the first failure is kept for Run.
-func (l *Launcher) event(kind string, fields map[string]any) {
+func (l *Launcher) event(kind eventName, fields map[string]any) {
 	if fields == nil {
 		fields = map[string]any{}
 	}
-	fields["event"], fields["at"] = kind, time.Now().UTC().Format(time.RFC3339Nano)
+	fields["event"], fields["at"] = kind.String(), time.Now().UTC().Format(time.RFC3339Nano)
 	b, err := json.Marshal(fields)
 	l.mu.Lock()
 	defer l.mu.Unlock()

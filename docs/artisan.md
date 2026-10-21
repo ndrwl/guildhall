@@ -228,8 +228,37 @@ During escalation, a rung succeeds only when the unit is empty within its bound;
 Marker-only cancellation instead continues cooperative supervision as described under [stop requests](#stop-requests).
 An explicit stop of a cancelled attempt climbs from rung 1; a finished or failed attempt whose tree is still running, or a worker outliving its accepted result by the result grace (3 s), climbs from rung 2.
 For a started worker, a stop that writes or finds the cancel marker records rung 1 even if the tree empties before the ladder's first check: the marker itself is the rung. Attempts stopped before starting, and empty trees needing no ladder rung, retain rung 0.
-Each rung is logged to `events.jsonl` with its bound; signal rungs also record the members they acted on and any error.
-A timed-out rung names the processes still alive, and a skipped rung says why.
+The [event table](#events) describes the rung observations recorded in `events.jsonl`.
+
+### Events
+
+The launcher appends one JSON object per line to `events.jsonl`; every line carries `event`, its name, and `at`, an RFC 3339 UTC time, plus the fields below.
+An event is observation only; a reader must tolerate unknown events.
+The file carries no schema field.
+Contract tests already read it, but no command reads it yet; it gains a schema when a command reads it.
+
+| Event | When | Fields |
+|---|---|---|
+| `stop-before-start` | A stop is requested before the worker starts | |
+| `running` | The worker has started in its unit | `worker` |
+| `result-accepted` | Polling observes a valid result and decides the attempt finished; startup, stop and worker-exit acceptance do not emit this event | |
+| `worker-outlived-result` | The worker is still alive a result grace after its result | |
+| `worker-exited` | The worker exits while the launcher supervises it | |
+| `signal-forwarded` | Forwarding an interrupt to the worker has been attempted; `error` records any failure | `signal`, `error` |
+| `signal` | A stop signal to the launcher requests the ladder | `signal` |
+| `decide-failed` | Reading or writing the attempt files fails while deciding | `error` |
+| `cancel-marker` | Stop or Cancel is about to attempt writing the cancel marker; this does not confirm success | |
+| `stop-after-decision` | A stop arrives after the attempt is decided other than cancelled | `state` |
+| `ladder` | The ladder starts, or cooperative supervision begins | `first` |
+| `rung` | A rung runs | `rung`, `name`, `deadline`; explicit ladder rungs (including rung 1) and automatic signal rungs add `members`, `error`; rung 2 also adds `graceful` |
+| `rung-skipped` | A rung is unsupported on this platform | `rung`, `name`, `error` |
+| `rung-emptied` | A rung is found empty, at the first check or after its wait; once per stop | `rung` |
+| `rung-timeout` | A rung's bound expires without proving the unit empty; `error` records any failure to list survivors | `rung`, `alive`, `error` |
+| `heartbeat-failed` | A heartbeat write fails | `sequence`, `error` |
+| `ended` | Outcome publication has been attempted, even if it failed; check the Run error and `outcome.json` separately for success | `outcome` |
+
+`rung-emptied` is written once for the rung that ends the stop: rung 1 can be found empty before the ladder's first check, during its wait or during cooperative supervision, and each of those paths returns after writing it.
+`TestEventsDocumented` pins the launcher's typed event vocabulary to this table in both directions.
 
 ### Stop requests
 
