@@ -101,7 +101,7 @@ flowchart TB
     INSP --> STORE
     MSG --- STORE
     INTERP -. "not yet wired" .-> WRAP
-    WRAP -. "not yet wired" .-> ADAPT
+    WRAP --> ADAPT
     ADAPT --> RT
     WRAP -.-> EXEC
     WRAP -.-> MSG
@@ -110,7 +110,8 @@ flowchart TB
 
 Green boxes are on `main`; grey dashed boxes are designed but not built, and dotted arrows are connections not yet wired.
 
-- The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; starting the agent through a runtime adapter and delivering stored messages to it are not wired yet, and no command runs it (see [the launcher](docs/artisan.md)).
+- The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; see [Artisan commands](docs/artisan.md#commands) for the implemented fake-adapter integration.
+  Starting a real agent through a runtime adapter and delivering stored messages to it are not wired yet.
 - A **runtime adapter** launches an agent's normal interactive session with a prompt file and working directory; an attempt completes only when the Artisan writes a valid result file, not when a process exits or a terminal closes.
   See [adapters](docs/adapters.md) for the implemented fake adapter and current runtime support.
 - The **execution environment** is the local machine first; a Docker environment is a planned separate boundary and is not built.
