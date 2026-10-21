@@ -4,6 +4,6 @@ package artisantest
 
 import "testing"
 
-// runPlatformStopCases runs the stop-contract cases of this platform: none
-// outside Windows, where a rename never races an open.
+// runPlatformStopCases adds no cases outside Windows: the sharing violations
+// exercised by the Windows cases are specific to that platform.
 func runPlatformStopCases(*testing.T, Harness) {}

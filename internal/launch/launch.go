@@ -202,9 +202,10 @@ type Report struct {
 }
 
 // Run owns, runs and records attempt c.Attempt as the package comment
-// describes, returning how it ended. A refused ownership, endpoint or start
-// is an error with nothing left running; artisan.ErrNotEmpty reports
-// survivors left owned for reconcile.
+// describes, returning how it ended. Refused ownership starts no new worker
+// and leaves the previous owner's processes untouched. Endpoint or startup
+// failures return errors; artisan.ErrNotEmpty reports survivors left owned
+// for reconcile.
 func Run(ctx context.Context, c Config) (Report, error) {
 	a, rep := c.Attempt, Report{Attempt: c.Key.String()}
 	self, err := artisan.Self()
