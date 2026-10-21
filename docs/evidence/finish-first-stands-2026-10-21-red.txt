@@ -1,0 +1,19 @@
+$ go test ./internal/store/ -run TestFinishAttemptFirstFinishStands
+--- FAIL: TestFinishAttemptFirstFinishStands 
+    --- FAIL: TestFinishAttemptFirstFinishStands/an_equal_outcome_returns_the_first_receipt 
+        records_test.go:508: second finish: err = store: finish-attempt attempt-finish:x: store: invalid store request: attempt 1 of step "build" already finished: failed, want <nil>
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store
+FAIL
+
+$ go test ./internal/interp/ -run TestRecordsContract
+--- FAIL: TestRecordsContract (2.83s)
+    --- FAIL: TestRecordsContract/store (2.82s)
+        --- FAIL: TestRecordsContract/store/numbers_attempts,_refuses_a_second_running_attempt_and_finishes_once 
+            records.go:443: FinishAttempt twice with the same outcome = {MutationID: Operation: RequestDigest: Repository: TaskID: Attempt:0 Record: Sequence:0 CommittedAt:0001-01-01 00:00:00 +0000 UTC}, store: finish-attempt finish-1c: store: invalid store request: attempt 1 of step "plan" already finished: failed; want finish-1's receipt
+    --- FAIL: TestRecordsContract/double 
+        --- FAIL: TestRecordsContract/double/numbers_attempts,_refuses_a_second_running_attempt_and_finishes_once 
+            records.go:443: FinishAttempt twice with the same outcome = {MutationID: Operation: RequestDigest: Repository: TaskID: Attempt:0 Record: Sequence:0 CommittedAt:0001-01-01 00:00:00 +0000 UTC}, records: finish-attempt finish-1c: invalid store request: attempt 1 of step "plan" already finished; want finish-1's receipt
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp
+FAIL

@@ -481,3 +481,47 @@ func TestRecordsRequireTask(t *testing.T) {
 		}
 	}
 }
+
+func TestFinishAttemptFirstFinishStands(t *testing.T) {
+	cases := []struct {
+		name    string
+		second  AttemptOutcome
+		wantErr error
+	}{
+		{"an equal outcome returns the first receipt", AttemptFailed, nil},
+		{"another outcome is refused", AttemptSucceeded, ErrInvalid},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newStore(t)
+			mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+			if _, err := s.StartAttempt("m-2", "app", "t-1", "build"); err != nil {
+				t.Fatal(err)
+			}
+			first, err := s.FinishAttempt("launch-finish:x", "app", "t-1", "build", 1, AttemptFailed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				got, err := s.FinishAttempt("attempt-finish:x", "app", "t-1", "build", 1, tc.second)
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("second finish: err = %v, want %v", err, tc.wantErr)
+				}
+				if tc.wantErr == nil && got != first {
+					t.Fatalf("second finish = %+v, want the first receipt %+v", got, first)
+				}
+			}
+			if _, err := s.Receipt("attempt-finish:x"); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("second finish's receipt: err = %v, want ErrNotFound", err)
+			}
+			got, err := s.Attempts("app", "t-1")
+			if err != nil || len(got) != 1 || got[0].Outcome != AttemptFailed {
+				t.Fatalf("attempts = %+v, %v; want one failed", got, err)
+			}
+			r, err := s.StartAttempt("m-3", "app", "t-1", "build")
+			if err != nil || r.Sequence != first.Sequence+1 {
+				t.Fatalf("next mutation = %+v, %v; want sequence %d", r, err, first.Sequence+1)
+			}
+		})
+	}
+}

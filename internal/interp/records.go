@@ -15,8 +15,9 @@ import (
 // Every write names a mutation id: repeating it with the same request returns the original receipt and
 // changes nothing, and reusing it for a different request fails with store.ErrMutationConflict.
 // StartAttempt numbers attempts of a step from 1 and refuses, with store.ErrInvalid, while one is running;
-// FinishAttempt finishes a running attempt once; a document or decision is recorded once per name or id
-// and an existing one is refused with store.ErrExists. ContestRuling contests a recorded ruling once: an unknown
+// FinishAttempt finishes a running attempt once and the first finish stands: finishing it again with the same
+// outcome under another mutation id returns the first finish's receipt, and another outcome is store.ErrInvalid.
+// A document or decision is recorded once per name or id and an existing one is refused with store.ErrExists. ContestRuling contests a recorded ruling once: an unknown
 // one is store.ErrNotFound and a contested one store.ErrInvalid. Implementations are safe for concurrent use.
 // Rulings are recorded by the Director (guildhall task finding rule), never by the engine.
 //
