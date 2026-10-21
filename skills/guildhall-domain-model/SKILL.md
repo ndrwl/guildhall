@@ -32,7 +32,9 @@ When relationships between concepts come up, stress-test them with specific scen
 
 ### Cross-reference with the code
 
-When the Guildmaster says how something works, check whether the code agrees, and surface any contradiction as a question in the next round.
+When the Guildmaster says how something works, check whether the code agrees with a quick read-only lookup, and surface any contradiction as a question in the next round.
+Reading is not doing the work: you never write to the repository or build anything.
+Anything beyond a quick check, such as an investigation or a cross-cutting analysis, belongs to the research stage, where an Artisan does it.
 
 ## Recording terms
 
@@ -51,7 +53,7 @@ The Language section holds no implementation details: it is a glossary, not a sp
 
 ## Recording decisions
 
-Mark a decision as a record for the repository only when all three are true:
+Mark a decision as a record for the repository, by starting its entry under Decisions with `(record)`, only when all three are true:
 
 1. It is hard to reverse: changing your mind later has a meaningful cost.
 2. It is surprising without context: a future reader will wonder why it was done this way.

@@ -12,5 +12,9 @@ Guildhall has no home for a managed product's glossary or decision records: the 
 `guildhall-domain-model` therefore records agreed terms and hard-to-reverse decisions in the grill notes, and the Director, which only orchestrates (R1.5), never writes them into the repository; a repository's existing glossary is read and challenged against, and additions to it are left to the plan.
 No glossary subsystem is added.
 
+The Director makes quick read-only lookups in the repository so it never asks the Guildmaster anything it could look up, which is the point of grilling.
+That is not doing the work: R1.5 forbids the Director writing and building, not reading.
+Anything beyond a quick check, such as an investigation or a cross-cutting analysis, goes to the research stage, where an Artisan does it.
+
 The engine does not run Director stages yet, and the default workflow's grill step lists no skills.
 Handing the grill stage to the Director, with these two skills, comes with the Director slice; until then an `artisan` override is the only grill the engine runs, and a workflow that wants the unattended skill lists it in the grill step's `skills`, because `workflow_overrides` changes only the actor.

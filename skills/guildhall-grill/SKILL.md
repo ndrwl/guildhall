@@ -24,7 +24,9 @@ A question whose answer depends on another question still open in this round bel
 Each round of answers reshapes the tree: settled decisions push the frontier outward and unblock the questions that depended on them, so recompute the frontier before the next round.
 
 Finding facts is your job, never the Guildmaster's.
-When a frontier question needs a fact from the repository, its documents or its tools, find it yourself, or have an Artisan find it, rather than asking the Guildmaster for anything you could look up.
+When a frontier question needs a fact from the repository, its documents or its tools, make a quick read-only lookup rather than asking the Guildmaster for anything you could look up.
+Reading is not doing the work: you never write to the repository or build anything.
+Anything beyond a quick check, such as an investigation or a cross-cutting analysis, belongs to the research stage, where an Artisan does it.
 Do not block on it: only the questions downstream of a fact still being found wait for it, so ask the rest of the frontier now.
 
 ## A round
@@ -51,6 +53,7 @@ The notes hold every settled decision with the Guildmaster's answer in their own
 ## Decisions
 
 - <decision>: <answer>, as the Guildmaster answered <their words, or "yes" to the recommendation>.
+- (record) <decision>: <answer>, as the Guildmaster answered <their words>. <context and why, for the repository's decision records>.
 
 ## Facts
 
