@@ -62,6 +62,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/adapter/claude/claudetest`](contracts/adapter-claude-claudetest.md)
 - [`internal/adapter/claude`](contracts/adapter-claude.md)
 - [`internal/adapter/fake`](contracts/adapter-fake.md)
+- [`internal/adapter/runtimes`](contracts/adapter-runtimes.md)
 - [`internal/adapter`](contracts/adapter.md)
 - [`internal/artisan/artisantest`](contracts/artisan-artisantest.md)
 - [`internal/artisan`](contracts/artisan.md)

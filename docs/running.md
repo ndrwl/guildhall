@@ -15,8 +15,9 @@ guildhall step done --store <file> --config <director.toml> --state <dir> --repo
 |---|---|
 | Records, outbox | The store at `--store`, opened for each record operation and closed before the next, so an attempt's launcher can take its ownership while the advance runs |
 | Workflow | The repository's effective workflow, resolved from `--config` exactly as [`task new`](tasks.md) resolves it; a definition that is no longer the task's bound revision is refused |
-| Profiles, merge policy | The Director config; a step without a profile runs the `fake` adapter, and a profile may name `fake` or `claude`, the adapters `artisan start` runs owned |
+| Profiles, merge policy | The Director config; a step without a profile runs the `fake` adapter, and a profile may name `fake` or `claude`, the [runtimes](adapters.md#running-an-attempt) `artisan start` runs owned |
 | Standards revision | The config setting `standards_revision` |
+| Stall interval | The config setting [`stall_interval`](configuration.md#settings), default 15 minutes, `0s` off: an advance that finds a launched attempt waiting sends the Director one [`worker-stalled`](interpreter.md#worker-stalled-observations) message when its heartbeat is fresh and its worker silent for longer |
 | Baseline | `baseline/` beside the config file: the role `roles/artisan.md`, the guide `stages/<kind>.md`, and every `standards/*.md` in name order; a step profile's `role` overrides the default role and is resolved relative to the config directory |
 | Skills | The embedded release skills, installed into a temporary root for the advance |
 | Attempts | `<state>/<repository>/<task>/<step>-<n>`, laid out by `artisan.AttemptKey`; the task's working directory is `<state>/<repository>/<task>/work` |

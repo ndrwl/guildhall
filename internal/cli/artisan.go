@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/launch"
@@ -55,17 +57,6 @@ func (a *App) claudeArtisan(args []string) int {
 		return a.usageError("claude-artisan: " + err.Error())
 	}
 	return claude.Main(args, a.Stdout, a.Stderr)
-}
-
-// runtimeAdapter builds an attempt's command.
-type runtimeAdapter interface {
-	Command(spec adapter.Spec) (adapter.Command, error)
-}
-
-// ownedAdapters are the runtime adapters an owned attempt runs, by name.
-var ownedAdapters = map[string]func(exe string) runtimeAdapter{
-	"fake":   func(exe string) runtimeAdapter { return fake.Adapter{Executable: exe} },
-	"claude": func(exe string) runtimeAdapter { return claude.Adapter{Executable: exe} },
 }
 
 // stringList is a repeatable string flag.
@@ -207,9 +198,9 @@ func (a *App) artisanStart(args []string) int {
 	switch {
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("artisan start: unexpected argument %q", fl.Arg(0)))
-	case ownedAdapters[adapterName] == nil:
-		return a.usageError(fmt.Sprintf("artisan start: --adapter %q: the adapters are fake and claude", adapterName))
-	case adapterName != "fake" && session != "":
+	case !slices.Contains(runtimes.Names(), adapterName):
+		return a.usageError(fmt.Sprintf("artisan start: --adapter %q: the adapters are %s", adapterName, strings.Join(runtimes.Names(), ", ")))
+	case adapterName != runtimes.Fake && session != "":
 		return a.usageError(fmt.Sprintf("artisan start: --adapter %s runs only as an owned attempt, not in a Herdr tab", adapterName))
 	case timeout < 0:
 		return a.usageError("artisan start: --timeout must not be negative")
@@ -252,11 +243,7 @@ func (a *App) artisanStart(args []string) int {
 	if _, err := os.Lstat(spec.ResultFile); !errors.Is(err, fs.ErrNotExist) {
 		return a.fail(fmt.Errorf("result file %s already exists; a result is never replaced, so use a new attempt", spec.ResultFile))
 	}
-	exe, err := a.Executable()
-	if err != nil {
-		return a.fail(err)
-	}
-	cmd, err := fake.Adapter{Executable: exe}.Command(spec)
+	cmd, err := a.runtimeCommand(adapterName, spec)
 	if err != nil {
 		return a.fail(err)
 	}
@@ -291,11 +278,7 @@ func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, t
 		}
 		*p.dst = abs
 	}
-	exe, err := a.Executable()
-	if err != nil {
-		return a.fail(err)
-	}
-	cmd, err := ownedAdapters[adapterName](exe).Command(spec)
+	cmd, err := a.runtimeCommand(adapterName, spec)
 	if err != nil {
 		return a.fail(err)
 	}
@@ -324,6 +307,19 @@ func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, t
 		return exitStopped
 	}
 	return exitResultFailed
+}
+
+// runtimeCommand is the command of the runtime called name (runtimes.Lookup) over this guildhall executable.
+func (a *App) runtimeCommand(name string, spec adapter.Spec) (adapter.Command, error) {
+	exe, err := a.Executable()
+	if err != nil {
+		return adapter.Command{}, err
+	}
+	rt, err := runtimes.Lookup(name, exe)
+	if err != nil {
+		return adapter.Command{}, err
+	}
+	return rt.Command(spec)
 }
 
 // runInTab runs the Artisan in a new tab of the named Herdr session. The tab is

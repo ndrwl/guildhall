@@ -148,6 +148,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
+	stall, err := cfg.StallInterval()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
 	r, ok := cfg.Repository(f.repo)
 	if !ok {
 		return interp.Next{}, fmt.Errorf("config %s has no repository %q", f.config, f.repo)
@@ -198,7 +202,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Outbox:   storeRecords(f.store),
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
-		DocumentDir: filepath.Join(state, "documents"), StateDir: state,
+		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall,
 	}
 	return e.Advance(context.Background(), ev)
 }

@@ -148,9 +148,14 @@ type Engine struct {
 	DocumentDir string
 	// StateDir is the absolute directory holding attempt directories, <repo>/<task>/<step>-<n>, and each
 	// task's working directory, <repo>/<task>/work, until worktree custody is defined.
-	StateDir      string
+	StateDir string
+	// StallInterval enables worker-stalled observations when positive: an advance that reaches a launched,
+	// unfinished attempt sends the Director a worker-stalled message once its heartbeat is within the
+	// interval and its worker's last output older than it (docs/interpreter.md#worker-stalled-observations).
+	// Zero or negative disables them; `task start` and `step done` set it from the config's stall_interval.
 	StallInterval time.Duration
-	Now           func() time.Time
+	// Now is the clock the observations read; nil is wall time.
+	Now func() time.Time
 	// Base returns the commit a repository's tasks are based on now; nil or an error means every code review
 	// is full. Rebases classifies a new head against the last reviewed range (docs/interpreter.md#rebase-aware-review).
 	Base    func(repository string) (string, error)

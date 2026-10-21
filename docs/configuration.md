@@ -36,6 +36,14 @@ A local value replaces a managed value only when that managed key is marked `ove
 A local value for a managed key that is not overridable is refused, so a managed rule is never silently overridden.
 A local key with no managed counterpart is the copy's own setting.
 
+### Settings
+
+These are the settings Guildhall itself reads, by their effective value under the precedence above; `config.Parse` refuses a value it cannot use.
+
+| Key | Meaning |
+|---|---|
+| `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before an advance sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off. `config.StallInterval` reads it. |
+
 ### Repositories
 
 | Key | Meaning |

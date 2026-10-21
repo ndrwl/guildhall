@@ -28,6 +28,7 @@ The engine persists that revision, the subject, and (for code review) the accept
 ## Worker-stalled observations
 
 Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; nonpositive values disable them.
+`task start` and `step done` set it from the config's [`stall_interval`](configuration.md#settings), 15 minutes unless the config says otherwise, so the observation is on in production.
 `Engine.Now` supplies the clock in tests and defaults to wall time.
 When an advance reaches a launched, unfinished attempt with no result, the engine reads the launcher's [`heartbeat.json`](artisan.md#heartbeat) from the attempt directory beside `launched.json` with `artisan.ReadHeartbeat`; a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
 Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
