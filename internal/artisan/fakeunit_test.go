@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
@@ -87,6 +88,7 @@ func newFakeHarness() artisantest.Harness {
 		SetsidEscapes:    true,
 		BreakawayRefused: true,
 		Kind:             artisan.KindGroup,
+		Ladder:           artisan.Ladder{Cooperative: 100 * time.Millisecond, Interrupt: 100 * time.Millisecond, Terminate: 100 * time.Millisecond, Kill: 100 * time.Millisecond},
 	}
 }
 

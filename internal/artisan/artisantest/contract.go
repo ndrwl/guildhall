@@ -47,6 +47,9 @@ type Harness struct {
 	Kind string
 	// BreakawayRefused is whether a breakaway request is refused (Windows job).
 	BreakawayRefused bool
+	// Ladder bounds the stop contract's rungs; zero keeps stopLadder. A unit
+	// whose interrupt is modelled rather than delivered needs no real waits.
+	Ladder artisan.Ladder
 }
 
 // Native is the harness for a backend containing real processes.
