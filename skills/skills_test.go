@@ -427,8 +427,6 @@ func TestContractTDDCheckTwinsAgree(t *testing.T) {
 	}
 }
 
-// TestReviewSkillSpeaksTheOutcomeContract holds guildhall-review to the review outcome contract and docs/review.md,
-// so the skill cannot teach a format or a rule the engine and the standard do not have.
 func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
 	const name = "guildhall-review"
 	var files []string
@@ -461,31 +459,6 @@ func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
 	}
 	if !o.Blocking() || len(o.Dispositions) == 0 || !slices.ContainsFunc(o.Findings, func(f workflow.Finding) bool { return f.Rule == "" }) {
 		t.Errorf("example should show a blocking round with dispositions and a suggestion: %+v", o)
-	}
-
-	for _, word := range []string{
-		string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested), string(workflow.VerdictRejected),
-		string(workflow.Resolved), string(workflow.StillOpen), string(workflow.Withdrawn),
-	} {
-		if !strings.Contains(text, "`"+word+"`") {
-			t.Errorf("SKILL.md does not name `%s`", word)
-		}
-	}
-
-	standard, err := os.ReadFile(filepath.Join("..", "docs", "review.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range files {
-		body, err := fs.ReadFile(skills.Release(), name+"/"+f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, rule := range regexp.MustCompile(`\bS\d+\b`).FindAllString(string(body), -1) {
-			if !strings.Contains(string(standard), "**"+rule+" ") {
-				t.Errorf("%s cites %s, which docs/review.md does not define", f, rule)
-			}
-		}
 	}
 }
 

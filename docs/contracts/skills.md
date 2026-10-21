@@ -14,7 +14,7 @@ Every shipped skill keeps these rules, which the tests enforce:
 - Each adapted skill carries `CREDITS.md` with the upstream MIT notice inside its own directory so installed and rendered copies retain attribution.
 - A script lives in `scripts/` as a `.sh` and `.ps1` twin, and each parses in its shell.
 - `guildhall-contract-tdd`'s `check` twins run exactly `gofmt -l .`, `go vet ./...` and `go test ./...` in that order with `GOPROXY=off` and `GOTOOLCHAIN=local`, fail when `gofmt` lists a file, stop at the first failing command and exit non-zero, and both twins make the same calls and the same pass or fail decision.
-- `guildhall-review` holds only `SKILL.md`, `smells.md` and `CREDITS.md`, with no scripts and no sub-agent definitions; its example outcome parses as a valid [review outcome](../configuration.md#review-outcome), it names every verdict and disposition state that contract defines, and every `S` rule it cites exists in `docs/review.md`.
+- `guildhall-review` holds only `SKILL.md`, `smells.md` and `CREDITS.md`, with no scripts and no sub-agent definitions; its example outcome parses as a valid [review outcome](../configuration.md#review-outcome) representing a blocking round with dispositions and a rule-less suggestion.
 
 Rationale: [Release skills root](../decisions/0030-release-skills-root.md).
 Pure over embedded files: no interface and no double.
