@@ -269,6 +269,7 @@ type launch struct {
 	attempt string
 	files   Files
 	ladder  artisan.Ladder
+	built   artisan.Ladder
 	l       *artisan.Launcher
 
 	done chan struct{}
@@ -284,9 +285,13 @@ func (h Harness) launch(t *testing.T, worker func(Files) Worker) *launch {
 	if w.Lifetime == 0 {
 		w.Lifetime = 30 * time.Second
 	}
-	c := &launch{run: h.begin(t, w), attempt: attempt, files: files, ladder: stopLadder, done: make(chan struct{})}
+	ladder := h.Ladder
+	if ladder == (artisan.Ladder{}) {
+		ladder = stopLadder
+	}
+	c := &launch{run: h.begin(t, w), attempt: attempt, files: files, ladder: ladder, built: ladder, done: make(chan struct{})}
 	c.u = &countingUnit{Unit: c.run.u, n: map[string]int{}}
-	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: attempt, Unit: c.u, Files: files, Ladder: stopLadder, Key: StopKey})
+	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: attempt, Unit: c.u, Files: files, Ladder: ladder, Key: StopKey})
 	if err != nil {
 		t.Fatalf("NewLauncher() = %v", err)
 	}
@@ -303,7 +308,7 @@ func (h Harness) launch(t *testing.T, worker func(Files) Worker) *launch {
 
 // start starts Run in the background.
 func (c *launch) start(signals <-chan os.Signal) {
-	if c.ladder != stopLadder {
+	if c.ladder != c.built {
 		l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: c.attempt, Unit: c.u, Files: c.files, Ladder: c.ladder, Key: StopKey})
 		if err != nil {
 			c.t.Fatalf("NewLauncher() = %v", err)
