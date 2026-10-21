@@ -11,7 +11,7 @@ The engine consumes five narrow interfaces, declared in `internal/interp` beside
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents, decisions, rulings and an attempt's latest heartbeat; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
+| `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | none yet | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
@@ -29,16 +29,12 @@ The engine persists that revision, the subject, and (for code review) the accept
 
 Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; nonpositive values disable them.
 `Engine.Now` supplies the clock in tests and defaults to wall time.
-When an advance reaches a launched, unfinished attempt with no result, a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
+When an advance reaches a launched, unfinished attempt with no result, the engine reads the launcher's [`heartbeat.json`](artisan.md#heartbeat) from the attempt directory beside `launched.json` with `artisan.ReadHeartbeat`; a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
 Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
 Attempts, their records and waits are unchanged.
-Missing or stale heartbeats emit nothing; a stale heartbeat of a live launcher is reconcile's [`stuck`](artisan.md#reconcile).
-
-`Records.Heartbeat` is a narrow read implemented by the store and double; see [attempt heartbeats](store.md#attempt-heartbeats) for fixture writes and launcher ownership.
-The tests were written before implementation but were not observed failing then.
-On 2026-10-21, after implementation was written, both heartbeat reads were temporarily stubbed to return `ErrNotFound`.
-`TestWorkerStalled/{double,store}` failed with `stalls = 0, want 1`; `TestRecordsContract/{store,double}/heartbeat` failed when reading persisted evidence (`record not found`).
-The implementations were restored for focused verification; [captured runs](evidence/heartbeat-2026-10-21.md) record this post-implementation check, not historical red-first evidence.
+Missing or stale heartbeats, and one naming another attempt, emit nothing; a stale heartbeat of a live launcher is reconcile's [`stuck`](artisan.md#reconcile).
+A heartbeat file the engine cannot accept, such as a newer schema, fails the advance with that error rather than being guessed at.
+There is no seam: like `launched.json` and `result.json`, the file is read from the attempt directory, and tests write it with `artisan.WriteHeartbeat`.
 
 ## Events
 

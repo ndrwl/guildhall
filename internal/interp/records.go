@@ -23,7 +23,6 @@ import (
 // Workflow approvals are not read here: enforcing them at task creation is separate work (S10).
 type Records interface {
 	Task(repository, taskID string) (store.Task, error)
-	Heartbeat(repository, taskID, step string, number int) (store.Heartbeat, error)
 	Attempts(repository, taskID string) ([]store.StageAttempt, error)
 	Documents(repository, taskID string) ([]store.DocumentRef, error)
 	Decisions(repository, taskID string) ([]store.Decision, error)

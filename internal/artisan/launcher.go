@@ -554,7 +554,7 @@ func (l *Launcher) heartbeat() {
 	k := l.c.Key
 	h := Heartbeat{Repository: k.Repository, TaskID: k.TaskID, Step: k.Step, Attempt: k.Attempt,
 		Sequence: l.seq, Time: now.UTC(), WorkerState: phase, LastOutputAt: out.UTC()}
-	if err := replaceJSON(filepath.Join(l.c.Dir, HeartbeatFile), h); err != nil {
+	if err := WriteHeartbeat(l.c.Dir, h); err != nil {
 		l.event("heartbeat-failed", map[string]any{"sequence": l.seq, "error": err.Error()})
 	}
 }

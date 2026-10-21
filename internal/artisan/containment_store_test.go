@@ -2,10 +2,8 @@ package artisan_test
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
@@ -37,20 +35,6 @@ func TestStoreLivenessIsProbeVerdict(t *testing.T) {
 		if got := store.Liveness(lv.String()); got != want {
 			t.Errorf("artisan %d maps to store %q, want %q", lv, got, want)
 		}
-	}
-}
-
-// TestStoreHeartbeatIsLauncherBeat pins that a launcher's beat converts to the
-// store's heartbeat record with the same JSON.
-func TestStoreHeartbeatIsLauncherBeat(t *testing.T) {
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	h := artisan.Heartbeat{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, Sequence: 2, Time: now, WorkerState: "running", LastOutputAt: now.Add(-time.Second)}
-	want, err := json.Marshal(h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := json.Marshal(store.Heartbeat(h)); err != nil || string(got) != string(want) {
-		t.Errorf("store heartbeat JSON = %s, %v; want %s", got, err, want)
 	}
 }
 

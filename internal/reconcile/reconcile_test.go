@@ -98,8 +98,9 @@ func write(t *testing.T, path, body string) {
 
 func writeHeartbeat(t *testing.T, dir string, h artisan.Heartbeat) {
 	t.Helper()
-	b, _ := json.Marshal(h)
-	write(t, filepath.Join(dir, artisan.HeartbeatFile), string(b))
+	if err := artisan.WriteHeartbeat(dir, h); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // shortDir is a state directory short enough for an AF_UNIX path.
@@ -328,7 +329,8 @@ func TestClassifyOwner(t *testing.T) {
 		dir := t.TempDir()
 		o := owner(self(t))
 		o.Endpoint = filepath.Join(shortDir(t), "closed.sock")
-		writeHeartbeat(t, dir, artisan.Heartbeat{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: 1, Sequence: 1, Time: time.Now(), LastOutputAt: time.Now(), WorkerState: "running"})
+		now := time.Now()
+		writeHeartbeat(t, dir, artisan.Heartbeat{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: 1, Sequence: 1, Time: now, LastOutputAt: now, WorkerState: "running"})
 		c := classify(dir, o)
 		want(t, c, reconcile.Unknown)
 		if c.Launcher != "alive" || c.Endpoint == "answers" || c.Endpoint == "" || c.Heartbeat == nil {
@@ -448,10 +450,10 @@ func TestHeartbeat(t *testing.T) {
 		hold.Store(false)
 		await(t, c.dir, c.owner, reconcile.Running)
 	})
-	t.Run("a stalled worker's fresh heartbeat reaches the store and is not stuck", func(t *testing.T) {
+	t.Run("a stalled worker's fresh heartbeat is not stuck", func(t *testing.T) {
 		quiet := time.Now().Add(-time.Hour).UTC().Round(time.Millisecond)
 		c := launch(t, func() time.Time { return quiet }, func(dir string) {
-			writeHeartbeat(t, dir, artisan.Heartbeat{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: 1, Sequence: 41, Time: quiet, LastOutputAt: quiet})
+			writeHeartbeat(t, dir, artisan.Heartbeat{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: 1, Sequence: 41, Time: quiet, LastOutputAt: quiet, WorkerState: "running"})
 		})
 		await(t, c.dir, c.owner, reconcile.Running)
 		time.Sleep(stale)
@@ -460,19 +462,6 @@ func TestHeartbeat(t *testing.T) {
 		h := *cl.Heartbeat
 		if !h.LastOutputAt.Equal(quiet) || time.Since(h.Time) > stale || h.Sequence <= 41 || h.Key() != key || h.WorkerState != "running" {
 			t.Fatalf("heartbeat %+v, want a fresh beat after sequence 41 with last output %v", h, quiet)
-		}
-		s := ownedStore(t, c)
-		if _, err := s.PutHeartbeat("beat", store.Heartbeat(h)); err != nil {
-			t.Fatalf("store refused the launcher's heartbeat: %v", err)
-		}
-		if got, err := s.Heartbeat(key.Repository, key.TaskID, key.Step, 1); err != nil || !got.Time.Equal(h.Time) || !got.LastOutputAt.Equal(quiet) || got.Sequence != h.Sequence {
-			t.Errorf("stored heartbeat %+v, %v; want %+v", got, err, h)
-		} else {
-			b, err := json.Marshal(got)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Logf("persisted heartbeat: %s", b)
 		}
 	})
 	t.Run("a stale heartbeat while alive is stuck, refuses a relaunch and recovers", func(t *testing.T) {

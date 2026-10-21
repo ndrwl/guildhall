@@ -10,7 +10,7 @@ Its consumer seams: `Records` (the store methods it calls), `Prompter` with `Pro
 `BlockedQuestion` is the provisional file a blocked attempt writes.
 The private history view ([history](../interpreter.md#history)) is a contract inside the package, not a seam: one parser edge for record names and the reads every step makes of rounds, exits, firings, feedback and outputs.
 
-The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat read seam, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
+The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat file read, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
 
 ## Tests
 
@@ -27,11 +27,9 @@ Its integration case launches the test binary as a child that reads its copied i
 Store durability remains covered by the [store contract tests](store.md#tests).
 Repeating the advance must end with the records, launch count and wait of a run without a failure.
 `TestRecordsContract` runs the shared `Records` suite against `*store.Store` and `interptest.Records`; its rulings case (listing, contesting once, an unknown ruling) was written with the double and passed on its first run against the store, which already implemented it.
-`worker_stalled_test.go` and the heartbeat case in `RunRecordsContract` were written before implementation but were not observed failing then.
-On 2026-10-21, after implementation was written, both heartbeat reads were temporarily stubbed to return `ErrNotFound`: `TestWorkerStalled/{double,store}` failed with `stalls = 0, want 1`, and `TestRecordsContract/{store,double}/heartbeat` failed because the persisted heartbeat read returned `record not found`.
-The stubs were then removed for the focused verification.
-[Captured runs](../evidence/heartbeat-2026-10-21.md) document this post-implementation failure check, not historical red-first evidence.
-The tests cover both backends, missing/stale heartbeats, crossings, replay and unchanged attempts.
+`worker_stalled_test.go` was first written against the store heartbeat; its earlier post-implementation failure check is in [captured runs](../evidence/heartbeat-2026-10-21.md).
+When the heartbeat moved to the attempt directory it was rewritten red first to write `heartbeat.json` with `artisan.WriteHeartbeat`, and failed with `stalls = 0, want 1` until the engine read the file.
+It covers both records backends, missing and stale heartbeats, crossings, replay, unchanged attempts, a heartbeat naming another attempt and a newer schema failing the advance.
 Review-fix regression tests cover immutable binding replay, acceptance projection and oversized dispute questions.
 `rebase_test.go`, on both backends with `gittest.Script`: a rebase gives review 2 the resolution diff and `scope: rebase`; a full classification, no `Base` and a failing `Base` are full, the last two without classifying; a changed standards revision also retains full scope without classification despite an otherwise eligible rebase; review 2's outcome binds to its current head, accepted-spec digest and standards revision in every case.
 The revision-change regression was added during review after implementation.
