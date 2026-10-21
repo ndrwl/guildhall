@@ -1,7 +1,7 @@
-// Package gittest holds the shared contract suite for git classification and Script, its scripted double.
-package gittest
+package git_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -25,7 +25,9 @@ const (
 	// SameBase: a new head on the reviewed base.
 	SameBase Case = "same-base"
 	// UnknownCommit: the new head is not in the repository.
-	UnknownCommit Case = "unknown-commit"
+	UnknownCommit        Case = "unknown-commit"
+	SubmoduleRebase      Case = "submodule-rebase"
+	BaseTouchesSubmodule Case = "base-touches-submodule"
 )
 
 // Harness is one classifier under the contract suite.
@@ -37,7 +39,7 @@ type Harness struct {
 
 // RunClassifierContract runs the classification contract (git.Program.Classify) against harnesses from newHarness.
 func RunClassifierContract(t *testing.T, newHarness func(t *testing.T) Harness) {
-	for _, c := range []Case{RebaseOnly, RebaseAndEdit, BaseTouchesTaskFile, SameBase, UnknownCommit} {
+	for _, c := range []Case{RebaseOnly, RebaseAndEdit, BaseTouchesTaskFile, SameBase, UnknownCommit, SubmoduleRebase, BaseTouchesSubmodule} {
 		t.Run(string(c), func(t *testing.T) {
 			h := newHarness(t)
 			repo, last, next := h.Arrange(t, c)
@@ -47,7 +49,7 @@ func RunClassifierContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 			}
 			t.Logf("%s: %s", got.Scope, got.Reason)
 			want := git.ScopeFull
-			if c == RebaseOnly {
+			if c == RebaseOnly || c == SubmoduleRebase {
 				want = git.ScopeRebase
 			}
 			switch {
@@ -57,6 +59,9 @@ func RunClassifierContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 				t.Errorf("rebase = %+v, want a resolution diff and no reason", got)
 			case want == git.ScopeFull && (got.Diff != nil || got.Reason == ""):
 				t.Errorf("full = %+v, want a reason and no diff", got)
+			}
+			if c == SubmoduleRebase && !bytes.Contains(got.Diff, []byte("Subproject commit")) {
+				t.Errorf("resolution diff omits the submodule pointer: %s", got.Diff)
 			}
 			again, err := h.Classify(context.Background(), repo, last, next)
 			if err != nil || again.Scope != got.Scope || string(again.Diff) != string(got.Diff) {

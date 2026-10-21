@@ -13,6 +13,7 @@ Its one question so far is `Program.Classify(ctx, repo, last, next)`: whether a 
 - `next` changes exactly the task's files, each byte-identical to `last.Head`, and every file the base changed is byte-identical at `next.Head` to `next.Base`.
 
 The classification then carries the resolution diff, `git diff next.Base next.Head`, for the reviewer.
+Every diff and range-diff uses `--ignore-submodules=none`, overriding both `diff.ignoreSubmodules` and per-submodule ignore settings so gitlink changes remain visible.
 Anything else, including an unknown commit, a missing git or any git failure, is `ScopeFull` with a reason and no diff: uncertainty never narrows a review.
 `Classify` fails only when its context ends.
 It reads objects and writes nothing, so repeating it over the same objects gives the same answer; concurrent calls are safe.
@@ -23,6 +24,7 @@ Platform differences: none in the contract; git is found on `PATH` unless `Progr
 
 ## Tests
 
-`git_test.go` runs `gittest.RunClassifierContract` against `Program` over histories built with real git in temporary repositories, with global and system configuration excluded, on every CI platform, and against `gittest.Script`.
+`contract_test.go` defines `RunClassifierContract` and the scripted double `Script` within the package's tests. `git_test.go` runs the suite against `Program` over histories built with real git in temporary repositories, with global and system configuration excluded, on every CI platform, and against `Script`.
 The cases are an identical-patch rebase (rebase, with a diff), a rebase that also edits a task file, a base change to a file the task touches that leaves the task's patches identical, a new head on the same base and an unknown commit (all full), a repeated call giving the same answer, and an ended context (an error).
+Submodule histories with both diff-wide and per-submodule ignore settings enabled cover a valid rebase whose reviewer diff includes the pointer and a base/task gitlink overlap requiring full review.
 The suite was written red first against a stub `Classify` returning zero values: every `program` case failed (`scope = "", want ...` and the ended context succeeding) while the `script` cases passed.

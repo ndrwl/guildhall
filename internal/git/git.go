@@ -92,7 +92,7 @@ func (p Program) classify(ctx context.Context, repo string, last, next Range) (s
 			return "", nil, err
 		}
 	}
-	out, err := p.run(ctx, repo, "range-diff", "--no-color", "--no-patch", last.Base+".."+last.Head, next.Base+".."+next.Head)
+	out, err := p.run(ctx, repo, "range-diff", "--ignore-submodules=none", "--no-color", "--no-patch", last.Base+".."+last.Head, next.Base+".."+next.Head)
 	if err != nil {
 		return "", nil, err
 	}
@@ -135,7 +135,7 @@ func (p Program) classify(ctx context.Context, repo string, last, next Range) (s
 	if ok, err := same(next.Base, next.Head, moved); err != nil || !ok {
 		return "a file the base changed differs from the new base", nil, err
 	}
-	diff, err := p.run(ctx, repo, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", next.Base, next.Head)
+	diff, err := p.run(ctx, repo, "diff", "--ignore-submodules=none", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", next.Base, next.Head)
 	if err != nil {
 		return "", nil, err
 	}
@@ -147,7 +147,7 @@ func (p Program) classify(ctx context.Context, repo string, last, next Range) (s
 
 // files lists the paths that differ between commits a and b, limited to paths when any are given, sorted.
 func (p Program) files(ctx context.Context, repo, a, b string, paths ...string) ([]string, error) {
-	args := []string{"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", a, b, "--"}
+	args := []string{"diff", "--ignore-submodules=none", "--name-only", "-z", "--no-renames", "--no-ext-diff", a, b, "--"}
 	out, err := p.run(ctx, repo, append(args, paths...)...)
 	if err != nil {
 		return nil, err
