@@ -26,9 +26,6 @@ func TestLookupConstructsEachRuntime(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Lookup(%q): %v", name, err)
 		}
-		if r.Capabilities().Any() {
-			t.Errorf("%s declares capabilities %+v", name, r.Capabilities())
-		}
 		cmd, err := r.Command(spec)
 		if err != nil || len(cmd.Argv) < 2 || cmd.Argv[0] != exe || cmd.Argv[1] != subcommand || cmd.Dir != dir {
 			t.Errorf("%s command = %+v, %v; want %s %s in %s", name, cmd, err, exe, subcommand, dir)

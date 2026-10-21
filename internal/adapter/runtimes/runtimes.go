@@ -29,8 +29,6 @@ var ErrUnknown = errors.New("unknown runtime adapter")
 
 // Runtime builds the command that runs one attempt's Artisan.
 type Runtime interface {
-	// Capabilities are the optional runtime features the runtime declares.
-	Capabilities() adapter.Capabilities
 	// Command returns the attempt's command for a valid spec and refuses an invalid one with no command.
 	Command(spec adapter.Spec) (adapter.Command, error)
 }
