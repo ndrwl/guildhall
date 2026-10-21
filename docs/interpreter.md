@@ -80,7 +80,10 @@ Each blocking result of a step is one round of its `on.changes_requested` rule; 
 - **Within `max`.** The rule's target, which must be an Artisan step, runs again with the result as `feedback`.
   When the target has run and the step's inputs did not change, as when a build returns the same head, the step runs again on the same subject with its previous outcome.
 - **Past `max`.** The engine opens decision `<step>-x<round>`, kind `loop-exit`, bound to the round's subject, with options `continue` (one more round), `accept` and `reject`.
-  `accept` on a review step records the Guildmaster's approval as `<step>-x<round>-outcome`, an outcome by reviewer `human` bound to the step's current revisions, and completes the step; on a `guildmaster-approval` step it records `<step>-x<round>-spec`, checked against the exit decision's document subject by the spec gate.
+  `accept` on a review step records the Guildmaster's approval as `<step>-x<round>-outcome`, an outcome by reviewer `human` bound to the originating review's recorded revisions, and completes the step;
+  it retains that review's findings with `still-open` dispositions, so acceptance does not erase findings or claim they were fixed, and later rounds must disposition them.
+  The revisions come from the originating human decision's binding or Artisan outcome, never from the configuration at answer-processing time, so stale acceptance cannot satisfy the delivery gate;
+   on a `guildmaster-approval` step it records `<step>-x<round>-spec`, checked against the exit decision's document subject by the spec gate.
   Output resolution orders an exit output immediately after its originating round, before later rounds, for all downstream consumers.
   `reject` leaves the task waiting for the Director, told as `<repo>.<task>.loop-exit-rejected.<id>`.
 - **No rule.** The task waits for the Director, told as `<repo>.<task>.changes-requested.<step>-<n>` (or `.<decision>`).

@@ -295,7 +295,7 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 	}
 	k := len(fs)
 	if k > r.allowed(s) {
-		return r.exit(s, k, subject)
+		return r.exit(s, k, subject, fs[k-1])
 	}
 	i := slices.IndexFunc(r.def.Steps, func(t workflow.Step) bool { return t.ID == rule.Goto })
 	if actor := r.def.Steps[i].Actor(); actor != workflow.ArtisanActor {
@@ -315,7 +315,7 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 }
 
 // exit asks the Guildmaster how to leave a loop whose max is exhausted by firing k, decision <step>-x<k>.
-func (r *run) exit(s workflow.Step, k int, subject *store.Subject) (bool, Next, error) {
+func (r *run) exit(s workflow.Step, k int, subject *store.Subject, origin firing) (bool, Next, error) {
 	id := fmt.Sprintf("%s-x%d", s.ID, k)
 	d := r.decision(id)
 	if d == nil {
@@ -345,25 +345,42 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject) (bool, Next, 
 	case !isReview(s):
 		return false, Next{}, fmt.Errorf("%w: accepting at the loop exit of a %s step", ErrUnsupported, s.Type)
 	}
-	return true, Next{}, r.acceptOutcome(s, *d)
+	return true, Next{}, r.acceptOutcome(s, *d, origin)
 }
 
 // acceptOutcome records the Guildmaster's accept at a loop exit as the review step's outcome, <id>-outcome:
-// an approval by a human bound to the step's current revisions, so the review gate reads the same contract.
-func (r *run) acceptOutcome(s workflow.Step, d store.Decision) error {
+// an approval bound to the originating review's recorded revisions, retaining its findings as still-open.
+func (r *run) acceptOutcome(s workflow.Step, d store.Decision, origin firing) error {
 	name := d.ID + "-outcome"
 	if r.document(name) != nil {
 		return nil
 	}
-	inputs, err := r.inputs(s)
-	if err != nil {
-		return err
+	o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.VerdictApproved}
+	if origin.answer != nil {
+		binding := r.document(origin.answer.ID + "-revisions")
+		if binding == nil {
+			return fmt.Errorf("decision %s has no review revisions", origin.answer.ID)
+		}
+		data, err := r.read(*binding)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(data, &o.Revisions); err != nil {
+			return err
+		}
+	} else {
+		previous, err := r.outcome(s.ID, origin.round)
+		if err != nil {
+			return err
+		}
+		if previous == nil {
+			return fmt.Errorf("attempt %d of %s has no review outcome", origin.round, s.ID)
+		}
+		o.Revisions, o.Findings = previous.Revisions, previous.Findings
+		for _, f := range o.Findings {
+			o.Dispositions = append(o.Dispositions, workflow.Disposition{Finding: f.ID, State: workflow.StillOpen})
+		}
 	}
-	want, err := r.want(s, inputs)
-	if err != nil {
-		return err
-	}
-	o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.VerdictApproved, Revisions: want}
 	if err := o.Validate(); err != nil {
 		return err
 	}

@@ -37,31 +37,46 @@ func TestApprovalLoopExitAcceptedSpec(t *testing.T) {
 }
 
 func TestHumanReviewLoopExitResolvesOutcome(t *testing.T) {
-	for _, kind := range []string{"review", "document-review"} {
-		for _, b := range backends {
-			t.Run(b.name+"/"+kind, func(t *testing.T) {
-				def := loadWorkflow(t, "loop")
-				if kind == "document-review" {
-					def.Steps[3].Type = kind
-					def.Steps[3].Inputs = map[string]workflow.Refs{"subject": {"plan.spec"}}
-				}
-				def.Steps[3].Settings = map[string]json.RawMessage{"actor": json.RawMessage(`"guildmaster"`)}
-				e := newEnvDefinition(t, b, def,
-					planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
-					buildExp(t, 1, head, ""), buildExp(t, 2, head2, "sha256:"+sum([]byte("changes_requested"))))
-				e.accepted(t)
-				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
-				e.answer(t, "review-1", "changes_requested")
-				e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-1"})
-				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
-				e.answer(t, "review-2", "changes_requested")
-				e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-2"})
-				e.answer(t, "review-x2", "accept")
-				for range 2 {
-					want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
-				}
-			})
+	for _, stale := range []bool{false, true} {
+		for _, kind := range []string{"review", "document-review"} {
+			for _, b := range backends {
+				t.Run(b.name+"/"+kind+map[bool]string{false: "/current", true: "/stale"}[stale], func(t *testing.T) {
+					def := loadWorkflow(t, "loop")
+					if kind == "document-review" {
+						def.Steps[3].Type = kind
+						def.Steps[3].Inputs = map[string]workflow.Refs{"subject": {"plan.spec"}}
+					}
+					def.Steps[3].Settings = map[string]json.RawMessage{"actor": json.RawMessage(`"guildmaster"`)}
+					e := newEnvDefinition(t, b, def,
+						planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
+						buildExp(t, 1, head, ""), buildExp(t, 2, head2, "sha256:"+sum([]byte("changes_requested"))))
+					e.accepted(t)
+					e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
+					e.answer(t, "review-1", "changes_requested")
+					e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-1"})
+					e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
+					e.answer(t, "review-2", "changes_requested")
+					e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-2"})
+					e.answer(t, "review-x2", "accept")
+					if stale {
+						e.eng.StandardsRevision = "standards-2"
+					}
+					for range 2 {
+						if stale {
+							if err := advanceErr(t, e, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}); !errors.Is(err, interp.ErrReviewGate) {
+								t.Fatalf("Advance = %v, want ErrReviewGate", err)
+							}
+						} else {
+							want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+						}
+						if o := recordedExitOutcome(t, e); o.Revisions.StandardsRevision != "standards-1" {
+							t.Fatalf("exit revisions = %+v", o.Revisions)
+						}
+					}
+				})
+			}
 		}
+
 	}
 
 }
