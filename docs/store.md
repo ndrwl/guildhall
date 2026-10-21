@@ -99,7 +99,7 @@ The ownership record holds the current launcher identity; the receipt holds the 
   Recovery of recorded containment requires an explicit containment-aware probe proving both launcher exit and absence of survivors; it reports surviving members as live or unknown, never as exited.
 - Both record the owner as `starting`.
   `UpdateOwnership` then lets the same launcher identity record its containment unit, its endpoint and `running`; another launcher's update is refused with `ErrOwnerLive`, and `running` never returns to `starting`.
-  Recovery evidence is monotonic: once the record holds a containment or an endpoint, every later update must carry an equal value; an update that clears or changes either is refused with `ErrInvalid` and writes nothing, so a stale or partial progress write cannot turn a contained attempt into one the default probe lets be taken over.
+  Recovery evidence is monotonic: once the record holds a containment or an endpoint, every later update must carry an equal value; an update that clears or changes either is refused with `ErrInvalid` and writes nothing, so a stale or partial progress write cannot turn a contained attempt into one `ProbeLauncher` lets be taken over.
 - `FinishAttempt` releases the attempt's ownership record in the same mutation and keeps it, still naming its launcher; a released record is never updated or taken again, because a finished attempt cannot be owned.
 - A replayed mutation id returns its original receipt without probing, as every mutation does.
 

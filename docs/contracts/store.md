@@ -6,7 +6,7 @@
 Attempt ownership ([store-attempt-ownership](../decisions/store-attempt-ownership.md)): `Ownership`, `StartOwnedAttempt`, `TakeOwnership` with its required `OwnerProbe` seam, `ProbeLauncher` over a caller-supplied `IdentityProbe`, the store-neutral `ProcessIdentity` and `Liveness` values and `ErrOwnerLive`/`ErrOwnerUnknown` refusals, `UpdateOwnership`, `Ownership`, and release by `FinishAttempt`.
 The ownership record's `Containment` is a recovery description of every Artisan containment kind ([containment-persistence](../decisions/containment-persistence.md)): `Containment.Recoverable` and `ErrUnrecoverable`, the kind constants, a worker identity in place of a name for process groups, the Linux detection reason, and legacy records read unchanged but never recoverable when incomplete.
 
-The [attempt ownership contract](../store.md#attempt-ownership) defines monotonic recovery evidence, the default probe's containment refusal and the explicit containment-aware recovery path.
+The [attempt ownership contract](../store.md#attempt-ownership) defines monotonic recovery evidence, `ProbeLauncher`'s containment refusal and the explicit containment-aware recovery path.
 
 `PutHeartbeat` and `Heartbeat` follow the [attempt heartbeat contract](../store.md#attempt-heartbeats), including validation, replay and launcher ownership.
 
