@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // ReviewOutcomeSchema identifies the review outcome contract shared by every review and document-review step, whoever its actor.
@@ -103,11 +104,8 @@ func (o ReviewOutcome) Blocking() bool {
 
 // ParseReviewOutcome strictly decodes and validates a review outcome.
 func ParseReviewOutcome(data []byte) (*ReviewOutcome, error) {
-	if err := checkSchema(data, reviewOutcomePrefix, reviewOutcomeVersion); err != nil {
-		return nil, err
-	}
 	var o ReviewOutcome
-	if err := decodeStrict(data, &o); err != nil {
+	if err := strictjson.Decode(data, &o, strictjson.Options{Schema: reviewOutcomePrefix, Version: reviewOutcomeVersion}); err != nil {
 		return nil, fmt.Errorf("review outcome: %w", err)
 	}
 	return &o, o.Validate()

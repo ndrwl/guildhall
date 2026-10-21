@@ -3,10 +3,10 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -21,11 +21,10 @@ func (a *App) renderPrompt(args []string) int {
 	if len(args) != 1 {
 		return a.usageError("render requires <request.json>; use render --help")
 	}
-	f, err := os.Open(args[0])
+	data, err := os.ReadFile(args[0])
 	if err != nil {
 		return a.fail(err)
 	}
-	defer func() { _ = f.Close() }()
 	var request struct {
 		Stage    render.Stage
 		Inputs   []render.Input
@@ -33,14 +32,8 @@ func (a *App) renderPrompt(args []string) int {
 		Managed  string
 		Director string
 	}
-	dec := json.NewDecoder(f)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&request); err != nil {
+	if err := strictjson.Decode(data, &request, strictjson.Options{}); err != nil {
 		return a.usageError("render: " + err.Error())
-	}
-	var extra any
-	if err := dec.Decode(&extra); err != io.EOF {
-		return a.usageError("render: expected one JSON request")
 	}
 	if err := workflow.ValidateStepSettings(request.Stage.Step); err != nil {
 		return a.usageError("render: " + err.Error())

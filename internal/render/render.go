@@ -22,8 +22,13 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// ManifestSchema versions the manifest that records what a prompt was rendered from.
-const ManifestSchema = "guildhall.prompt-manifest/1"
+// ManifestSchema versions the manifest that records what a prompt was rendered from: it is
+// ManifestSchemaPrefix followed by ManifestSchemaVersion.
+const (
+	ManifestSchema        = ManifestSchemaPrefix + "1"
+	ManifestSchemaPrefix  = "guildhall.prompt-manifest/"
+	ManifestSchemaVersion = 1
+)
 
 // PromptFile, SkillsDir and InputsDir are the names Prompt writes inside the attempt directory.
 const (

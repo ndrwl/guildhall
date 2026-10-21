@@ -66,3 +66,27 @@ func TestRenderRejectsInvalidSettingsBeforeInstallation(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderRefusesMalformedRequestBeforeInstallation(t *testing.T) {
+	const valid = `{"Stage":{"Repository":"repo","Task":"task","Attempt":1,"Step":{"id":"step","type":"plan","version":1}}}`
+	for name, request := range map[string]string{
+		"duplicate key": strings.Replace(valid, `"Task":"task",`, `"Task":"task","Task":"other",`, 1),
+		"unknown field": strings.Replace(valid, `{"Stage"`, `{"Extra":1,"Stage"`, 1),
+		"field case":    strings.Replace(valid, `"Stage"`, `"stage"`, 1),
+		"trailing data": valid + `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "request.json")
+			if err := os.WriteFile(path, []byte(request), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			app := New()
+			app.Stdout, app.Stderr = &stdout, &stderr
+			app.InstallSkills = func(string) error { return errors.New("unexpected install") }
+			if code := app.Run([]string{"render", path}); code != 2 || stdout.Len() != 0 {
+				t.Fatalf("exit %d, stdout %q: %s", code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}

@@ -105,7 +105,8 @@ A rollout never changes a local value: a new managed key that conflicts with one
 guildhall steward rollout --config <steward.toml> --machine <label> --plan <dir> --apply [--approve <plan digest>]
 ```
 
-Apply first refuses a requested machine set that differs from the saved plan, before any transport operation.
+Apply reads `plan.json` as a `guildhall.rollout-plan/1` document using the [strict JSON decoding rules](contracts/strictjson.md), refusing malformed or newer plans before any transport operation.
+It then refuses a requested machine set that differs from the saved plan, before any transport operation.
 It plans again and refuses unless the result has the same digest as the dry run and the staged previews are unchanged, so a change observed during revalidation stops it.
 Validated managed inputs are copied into private temporary input files for transport; receipts record those actual command paths rather than the preview source paths.
 Local changes after revalidation remain untouched; readers validate overrides against the currently published managed settings.

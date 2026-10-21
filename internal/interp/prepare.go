@@ -1,11 +1,9 @@
 package interp
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -75,13 +74,11 @@ func (r *run) checkPrepared(s workflow.Step, n int, dir string, inputs []render.
 		return refuse("%v", err)
 	}
 	var m render.Manifest
-	if err := decodeStrict(data, &m); err != nil {
-		return refuse("%s: %v", manifestFile, err)
+	if err := strictjson.Decode(data, &m, strictjson.Options{Schema: render.ManifestSchemaPrefix, Version: render.ManifestSchemaVersion}); err != nil {
+		// Wrapped, so a newer manifest's strictjson.ErrNewerSchema still tells a too-old reader from a damaged preparation.
+		return prepared{}, fmt.Errorf("%w: attempt %d of %s: %s: %w", ErrPreparation, n, s.ID, manifestFile, err)
 	}
 	id := m.Identity
-	if m.Schema != render.ManifestSchema {
-		return refuse("manifest schema %q, want %q", m.Schema, render.ManifestSchema)
-	}
 	if id.Repository != r.task.Repository || id.Task != r.task.ID || id.Step != s.ID || id.Attempt != n || id.Kind != s.Type || id.KindVersion != s.Version {
 		return refuse("manifest names %s/%s step %s (%s version %d) attempt %d", id.Repository, id.Task, id.Step, id.Kind, id.KindVersion, id.Attempt)
 	}
@@ -166,17 +163,4 @@ func (r *run) checkPrepared(s workflow.Step, n int, dir string, inputs []render.
 		}
 	}
 	return prepared{promptFile: filepath.Join(dir, render.PromptFile), manifest: m}, nil
-}
-
-// decodeStrict decodes exactly one JSON value with no unknown fields and nothing after it.
-func decodeStrict(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return errors.New("data after the manifest")
-	}
-	return nil
 }

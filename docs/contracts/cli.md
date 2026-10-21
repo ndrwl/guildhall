@@ -5,7 +5,8 @@
 Commands, output and exit codes (README); doctor's process boundary, `App.LookPath` and `App.Output`: a missing tool is `exec.ErrNotFound`, output is stdout and stderr combined, a failing command is an error with its output, and context cancellation stops a hung command; see D6 for doctor's timeout policy.
 The `store`, `messages`, `task`, `decide`, `workflow approve` / `workflow approvals` and `steward rollout` commands, including the read-only task inspection reads `task timeline` (with findings and rulings) and `task files`, and `task finding rule` (`docs/store.md`, `docs/messaging.md`, `docs/tasks.md`, `docs/decisions-cli.md`, `docs/configuration.md`, `docs/steward.md`); task acceptance refuses undeclared profiles in the effective workflow before opening or writing the store; see `docs/tasks.md` for task acceptance and retry contracts.
 
-`render <request.json>` reads one JSON rendering request, rejects unknown fields and trailing values, and invokes `App.InstallSkills` to install a temporary first root named `release` before optional managed and Director roots.
+`render <request.json>` reads one JSON rendering request with [`strictjson`](strictjson.md); decoding refusals are usage errors (exit code 2) before installation or rendering.
+It invokes `App.InstallSkills` to install a temporary first root named `release` before optional managed and Director roots.
 Before installing or rendering, it validates the step settings through `workflow.ValidateStepSettings`, rejecting malformed values, invalid or duplicate names, disallowed actors and unknown setting keys with exit code 2.
 It returns the prompt manifest as JSON, retains the rendered attempt, removes the temporary root, and refuses to replace an existing attempt.
 `cmd/guildhall` supplies the embedded release installer; an unconfigured installer is an error.

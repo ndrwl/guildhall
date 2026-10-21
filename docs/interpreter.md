@@ -173,11 +173,12 @@ Replay validates any published directory rather than relying on rename atomicity
 No launch is given a path inside `prompt.partial`, so a leftover one from a crash is removed and rendered again.
 A replay that finds `prompt/` launches from it unchanged, with the manifest it holds, after checking that:
 
-- `manifest.json` is a prompt manifest with no unknown fields or trailing JSON values, naming this attempt's repository, task, step, kind, kind version and attempt number;
+- `manifest.json` is a `guildhall.prompt-manifest/1` document read with [`strictjson`](contracts/strictjson.md), so with no unknown or duplicate fields at any depth and no trailing JSON values, naming this attempt's repository, task, step, kind, kind version and attempt number;
 - its inputs are exactly the attempt's recorded binding, by port, path and digest;
 - `prompt.md`, every input copy and every skill file match their manifest digests, each skill's tree digest matches its files, and `prompt/` holds no other files.
 
 Preparation that fails a check is refused with `ErrPreparation`: nothing is launched, removed or rewritten.
+A newer manifest also matches `strictjson.ErrNewerSchema`, which tells a Guildhall too old to read it from a damaged preparation.
 Changes to the role, guide, standards, skills or inputs after preparation reach only a later attempt, which has its own identity.
 
 ## Tests

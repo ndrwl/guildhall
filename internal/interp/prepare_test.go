@@ -19,6 +19,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // childEnv makes the test binary act as a worker that reads one copied input once released.
@@ -297,6 +298,16 @@ func TestInvalidPreparationIsRefused(t *testing.T) {
 		}
 	}
 	skill := filepath.Join("skills", "go-tdd")
+	rewriteManifest := func(rewrite func(data string) string) func(t *testing.T, dir string) {
+		return func(t *testing.T, dir string) {
+			p := filepath.Join(dir, "manifest.json")
+			data, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			write(t, p, rewrite(string(data)))
+		}
+	}
 	cases := []struct {
 		name    string
 		corrupt func(t *testing.T, dir string)
@@ -319,7 +330,20 @@ func TestInvalidPreparationIsRefused(t *testing.T) {
 			}
 			write(t, p, string(data)+"{}")
 		}},
-		{"manifest schema", editManifest(func(m *render.Manifest) { m.Schema = "guildhall.prompt-manifest/2" })},
+		{"manifest schema", editManifest(func(m *render.Manifest) { m.Schema = "guildhall.prompt-manifest/x" })},
+		{"manifest schema newer", editManifest(func(m *render.Manifest) { m.Schema = "guildhall.prompt-manifest/2" })},
+		{"manifest duplicate inputs", rewriteManifest(func(data string) string {
+			return strings.Replace(data, "{", `{"inputs":[],`, 1)
+		})},
+		{"manifest nested unknown field", rewriteManifest(func(data string) string {
+			return strings.Replace(data, `"identity":{`, `"identity":{"extra":1,`, 1)
+		})},
+		{"manifest utf-16", rewriteManifest(func(data string) string {
+			return "\xff\xfe" + strings.Join(strings.Split(data, ""), "\x00") + "\x00"
+		})},
+		{"manifest unpaired surrogate", rewriteManifest(func(data string) string {
+			return strings.Replace(data, `"repository":"`, `"repository":"\ud800`, 1)
+		})},
 		{"another attempt", editManifest(func(m *render.Manifest) { m.Identity.Attempt = 2 })},
 		{"another step", editManifest(func(m *render.Manifest) { m.Identity.Step = "review" })},
 		{"inputs not the binding", editManifest(func(m *render.Manifest) { m.Inputs[0].Port = "notes" })},
@@ -366,6 +390,9 @@ func TestInvalidPreparationIsRefused(t *testing.T) {
 			err := advanceErr(t, e, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"})
 			if !errors.Is(err, interp.ErrPreparation) {
 				t.Errorf("replay over invalid preparation: %v, want ErrPreparation", err)
+			}
+			if newer := c.name == "manifest schema newer"; newer != errors.Is(err, strictjson.ErrNewerSchema) {
+				t.Errorf("replay over invalid preparation: %v, wraps ErrNewerSchema %v, want %v", err, !newer, newer)
 			}
 			if len(l.specs) != 1 {
 				t.Errorf("invalid preparation was launched: %d launches", len(l.specs))

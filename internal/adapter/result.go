@@ -1,7 +1,6 @@
 package adapter
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // ResultSchema and ResultVersion identify the result file format in
@@ -102,20 +103,10 @@ func malformed(format string, args ...any) error {
 // ParseResult decodes and validates a result file's bytes for the expected
 // identity.
 func ParseResult(data []byte, want Identity) (Result, error) {
-	if len(data) > MaxResultBytes {
-		return Result{}, malformed("larger than %d bytes", MaxResultBytes)
-	}
-	if err := checkResultKeys(data); err != nil {
-		return Result{}, malformed("%v", err)
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
+	// The format versions with separate "schema" and "version" fields, so strictjson checks only shape.
 	var f resultFile
-	if err := dec.Decode(&f); err != nil {
+	if err := strictjson.Decode(data, &f, strictjson.Options{MaxBytes: MaxResultBytes}); err != nil {
 		return Result{}, malformed("%v", err)
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return Result{}, malformed("data after the result object")
 	}
 	switch {
 	case f.Schema == nil || *f.Schema != ResultSchema:
@@ -165,52 +156,6 @@ func (r Result) validate() error {
 		return malformed("landed_ref %q contains whitespace or control characters", r.LandedRef)
 	}
 	return nil
-}
-
-func checkResultKeys(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	var walk func() error
-	walk = func() error {
-		tok, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		switch tok {
-		case json.Delim('{'):
-			seen := map[string]bool{}
-			for dec.More() {
-				key, err := dec.Token()
-				if err != nil {
-					return err
-				}
-				k, _ := key.(string)
-				switch k {
-				case "schema", "version", "task_id", "attempt_id", "status", "summary", "outputs", "landed_ref", "path", "description":
-				default:
-					return fmt.Errorf("unknown key %q", k)
-				}
-				if seen[k] {
-					return fmt.Errorf("duplicate key %q", k)
-				}
-				seen[k] = true
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = dec.Token()
-			return err
-		case json.Delim('['):
-			for dec.More() {
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = dec.Token()
-			return err
-		}
-		return nil
-	}
-	return walk()
 }
 
 // ReadResult reads and validates the result file at path. A file that does
