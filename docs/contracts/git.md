@@ -19,12 +19,12 @@ Anything else, including an unknown commit, a missing git or any git failure, is
 It reads objects and writes nothing, so repeating it over the same objects gives the same answer; concurrent calls are safe.
 Firstmate's interim `pr-validate` helper is the reference behaviour; unlike it, a base change to any file the task touches is a full review rather than a conflict resolution to review.
 
-Consumers declare their own narrow interface over `Classify`; the interpreter's is follow-up work.
+Consumers declare their own narrow interface over `Classify`; the interpreter's is `interp.Rebases`.
 Platform differences: none in the contract; git is found on `PATH` unless `Program.Path` names it.
 
 ## Tests
 
-`contract_test.go` defines `RunClassifierContract` and the scripted double `Script` within the package's tests.
+[`internal/git/gittest`](git-gittest.md) defines `RunClassifierContract` and the scripted double `Script`, shared with the interpreter's tests.
 `git_test.go` runs the suite against `Program` over histories built with real git in temporary repositories, with global and system configuration excluded during history setup, on every CI platform, and against `Script`.
 The cases are an identical-patch rebase (rebase, with a diff), a rebase that also edits a task file, a base change to a file the task touches that leaves the task's patches identical, a new head on the same base and an unknown commit (all full), a repeated call giving the same answer, and an ended context (an error).
 Submodule histories with both diff-wide and per-submodule ignore settings enabled cover a valid rebase whose reviewer diff includes the pointer and a base/task gitlink overlap requiring full review.

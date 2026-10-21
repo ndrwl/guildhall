@@ -1,4 +1,6 @@
-package git_test
+// Package gittest holds the shared contract suite for git.Program.Classify and Script, its scripted double, for
+// tests in other packages (docs/contracts/git-gittest.md).
+package gittest
 
 import (
 	"bytes"

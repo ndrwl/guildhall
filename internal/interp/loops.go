@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -37,6 +38,9 @@ type binding struct {
 	Inputs []boundInput `json:"inputs"`
 	// Revisions is what a review attempt's outcome must be bound to.
 	Revisions *workflow.Revisions `json:"revisions,omitempty"`
+	// Range is the commit range a code review attempt reviews, when its base was known; Scope is how much of it.
+	Range *git.Range `json:"range,omitempty"`
+	Scope git.Scope  `json:"scope,omitempty"`
 }
 
 type boundInput struct {
@@ -47,13 +51,13 @@ type boundInput struct {
 
 func isReview(s workflow.Step) bool { return s.Type == "review" || s.Type == "document-review" }
 
-// bind records attempt n's binding unless it is already recorded.
-func (r *run) bind(s workflow.Step, n int, inputs []render.Input, revisions *workflow.Revisions) error {
+// bind records attempt n's binding b, with inputs, unless it is already recorded.
+func (r *run) bind(s workflow.Step, n int, inputs []render.Input, b binding) error {
 	name := bindingName(s.ID, n)
 	if r.document(name) != nil {
 		return nil
 	}
-	b := binding{Inputs: []boundInput{}, Revisions: revisions}
+	b.Inputs = []boundInput{}
 	for _, in := range inputs {
 		b.Inputs = append(b.Inputs, boundInput{Port: in.Port, Path: in.Name, SHA256: in.SHA256})
 	}
@@ -141,7 +145,7 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	}
 	var given []render.Input
 	for _, in := range r.boundInputs(b) {
-		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort {
+		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ResolutionPort {
 			given = append(given, in)
 		}
 	}

@@ -7,7 +7,7 @@ Nothing on the command line calls the engine yet: result intake, launch and the 
 
 ## Seams
 
-The engine consumes four narrow interfaces, declared in `internal/interp` beside the code that calls them.
+The engine consumes five narrow interfaces, declared in `internal/interp` beside the code that calls them.
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
@@ -15,6 +15,7 @@ The engine consumes four narrow interfaces, declared in `internal/interp` beside
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | none yet | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
+| `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; enforcing them at task creation is separate work.
@@ -82,6 +83,7 @@ Every decision the engine opens is also sent to the Director's inbox as message 
 Before recording attempt `n` of an Artisan step, the engine records its binding as document `<step>-<n>-inputs` (`tasks/<repo>/<task>/<step>-<n>.inputs.json`): every input it is given, by port, path and digest, and for a review or document review the revisions its outcome must be bound to (subject, accepted-spec digest for code, `Engine.StandardsRevision`).
 Besides its wired inputs, an attempt may be given:
 
+- `resolution`: see [rebase-aware review](#rebase-aware-review);
 - `previous`: a review step's own latest outcome, whose findings the new outcome must disposition;
 - `rulings`: the Director's [rulings](#director-rulings) on findings of a review step's previous outcome, recorded first as document `<step>-<n>-rulings` (`tasks/<repo>/<task>/<step>-<n>.rulings.json`), a JSON array of rulings;
 - `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`).
@@ -128,6 +130,19 @@ Before `deliver`, every `review` and `document-review` step earlier in the workf
 So several review stages, such as the Guildhall repository's three reviews on distinct profiles, must all approve the same head.
 A Guildmaster review answered under an older standards revision does not satisfy the gate; asking it again is later work.
 
+## Rebase-aware review
+
+A code review (`review`) attempt's binding records the commit range it reviews, `Engine.Base`'s answer for the task's repository and the attempt's code head, and its scope.
+`Engine.Base` is supplied by the caller; when it is nil, fails or returns something other than a full commit id, the attempt records no range and its scope is `full`.
+The range last reviewed is read only from records, through the history view: the binding of the attempt that recorded the step's latest outcome; a loop exit's outcome, or an attempt that recorded no range, gives none.
+Only when the previous outcome's binding has revisions matching the new attempt's accepted-spec digest and standards revision is its range eligible for reuse; missing revisions or a change to either field retains full scope without classification.
+When there is an eligible last range with a different head, `Engine.Rebases` classifies the new range against it ([`internal/git`](contracts/git.md)); only `scope: rebase` narrows the round.
+The resolution diff is then recorded first as document `<step>-<n>-resolution` and given on port `resolution`, beside the `previous` outcome, and the binding records `scope: rebase`.
+A full classification or a nil `Engine.Rebases` keeps full scope; a classifier error instead aborts the advance before recording the binding or launching the attempt.
+When replaying preparation before a binding was recorded, a recorded resolution diff whose digest no longer matches the classification keeps full scope.
+Once the binding is recorded, replay reuses it without reclassifying.
+The outcome still binds to the attempt's head, spec digest and standards revision, so the review gate is unchanged.
+
 ## Documents and inputs
 
 A succeeded result's outputs are copied from the task's working directory into the Director document directory at `tasks/<repo>/<task>/<step>-<n>/<output path>` and recorded with their sha256.
@@ -142,7 +157,7 @@ The working directory is `<state>/<repo>/<task>/work` until worktree custody is 
 ## History
 
 Every read of where a record sits in a task's history goes through one private view in `internal/interp` (`history.go`), built from the task's records at the start of an advance and updated by each write the advance makes, so a read after a write sees it.
-It answers a step's latest attempt, its round decisions and next round, its loop exits and how many were answered `continue`, its blocking results in round order, the originating round of each exit, which feedback an attempt was given, and the latest document of a step's output port.
+It answers a step's latest attempt, its round decisions and next round, its loop exits and how many were answered `continue`, its blocking results in round order, the originating round of each exit, which feedback an attempt was given, the latest document of a step's output port and the range a code review's latest outcome reviewed.
 Record names stay the keys and keep their forms (`<step>-<n>`, `<step>-x<k>`, `<step>-<n>-<port>`, `<step>-<n>-<port>-<index>`, `<step>-<n>-inputs`, `<decision>-revisions`, `<decision>-answer`); they are parsed in one place, from the right, so a step id ending in `-<digits>` or `-x<digits>` is never mistaken for a round of a step it extends.
 Exit `k` of a step originates in its `k`th blocking result; an exit's output orders immediately after that round and before later rounds.
 A missing or unreadable record the view needs, such as the outcome an exit originated in, is an error, never a guess that the step approved.
