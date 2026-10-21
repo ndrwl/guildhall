@@ -159,13 +159,13 @@ func assertGone(t *testing.T, inv string) {
 	}
 }
 
-func killAll(t *testing.T, inv string) {
+// releaseAll uses the worker protocol rather than identity-bound signaling,
+// which is unavailable on macOS. For crash cleanup, stop and wait for the
+// launcher first so it cannot start more workers after the release.
+func releaseAll(t *testing.T, inv string) {
 	t.Helper()
-	entries, _ := artisantest.Inventory(inv)
-	for _, e := range entries {
-		if err := artisantest.KillVerified(e.Identity); err != nil {
-			t.Errorf("kill %v: %v", e.Identity, err)
-		}
+	if err := os.WriteFile(filepath.Join(inv, "release"), nil, 0o600); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("release workers: %v", err)
 	}
 	assertGone(t, inv)
 }
@@ -315,7 +315,7 @@ func TestClassifyOwner(t *testing.T) {
 		if len(cl.Survivors) != 2 {
 			t.Errorf("survivors %v, want the worker and grandchild", cl.Survivors)
 		}
-		killAll(t, inv)
+		releaseAll(t, inv)
 	})
 	t.Run("L19 a live launcher whose endpoint is broken is unknown, not exited", func(t *testing.T) {
 		dir := t.TempDir()
@@ -505,7 +505,7 @@ func TestHeartbeat(t *testing.T) {
 			if cmd.ProcessState == nil {
 				_ = cmd.Wait()
 			}
-			killAll(t, inv)
+			releaseAll(t, inv)
 		})
 		for end := time.Now().Add(deadline); ; time.Sleep(beat) {
 			b, err := os.ReadFile(filepath.Join(dir, "launcher.json"))
@@ -538,7 +538,7 @@ func TestHeartbeat(t *testing.T) {
 		if len(cl.Survivors) > 0 && cl.State != reconcile.Unknown {
 			t.Errorf("survivors %v classified %q, want unknown", cl.Survivors, cl.State)
 		}
-		killAll(t, inv)
+		releaseAll(t, inv)
 		cl = await(t, dir, o, reconcile.Exited)
 		if cl.Launcher != "gone" || cl.Heartbeat == nil || cl.Heartbeat.Sequence != frozen.Sequence {
 			t.Errorf("exited without the frozen heartbeat %+v as evidence: %+v", frozen, cl)
