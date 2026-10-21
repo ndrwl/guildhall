@@ -1,0 +1,87 @@
+=== RUN   TestProcessRecordRoundTrip
+=== RUN   TestProcessRecordRoundTrip/none
+    inventory_test.go:70: ReadProcessRecords = [], not implemented; want []
+    inventory_test.go:74: ReadProcessRecordsAs = [], not implemented; want []
+=== RUN   TestProcessRecordRoundTrip/one
+    inventory_test.go:57: RecordProcess({Identity:{PID:41 Token:t41} Role:worker}) = not implemented
+=== RUN   TestProcessRecordRoundTrip/file-name_order
+    inventory_test.go:57: RecordProcess({Identity:{PID:41 Token:t41} Role:worker}) = not implemented
+=== RUN   TestProcessRecordRoundTrip/a_wider_type_keeps_its_fields
+    inventory_test.go:57: RecordProcess({ProcessRecord:{Identity:{PID:42 Token:t42} Role:grandchild} Note:setsid}) = not implemented
+=== RUN   TestProcessRecordRoundTrip/a_rewrite_replaces
+    inventory_test.go:57: RecordProcess({ProcessRecord:{Identity:{PID:41 Token:t41} Role:worker} Note:first}) = not implemented
+--- FAIL: TestProcessRecordRoundTrip (0.01s)
+    --- FAIL: TestProcessRecordRoundTrip/none (0.00s)
+    --- FAIL: TestProcessRecordRoundTrip/one (0.00s)
+    --- FAIL: TestProcessRecordRoundTrip/file-name_order (0.00s)
+    --- FAIL: TestProcessRecordRoundTrip/a_wider_type_keeps_its_fields (0.00s)
+    --- FAIL: TestProcessRecordRoundTrip/a_rewrite_replaces (0.00s)
+=== RUN   TestRecordProcessRefuses
+=== RUN   TestRecordProcessRefuses/zero_PID
+    inventory_test.go:101: RecordProcess({Identity:{PID:0 Token:t} Role:worker}) = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestRecordProcessRefuses/negative_PID
+    inventory_test.go:101: RecordProcess({Identity:{PID:-1 Token:t} Role:worker}) = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestRecordProcessRefuses/no_token
+    inventory_test.go:101: RecordProcess({Identity:{PID:7 Token:} Role:worker}) = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestRecordProcessRefuses/no_role
+    inventory_test.go:101: RecordProcess({Identity:{PID:7 Token:t7} Role:}) = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestRecordProcessRefuses/role_with_a_slash
+    inventory_test.go:101: RecordProcess({Identity:{PID:7 Token:t7} Role:a/b}) = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestRecordProcessRefuses/role_with_a_backslash
+    inventory_test.go:101: RecordProcess({Identity:{PID:7 Token:t7} Role:a\b}) = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestRecordProcessRefuses/role_dot-dot
+    inventory_test.go:101: RecordProcess({Identity:{PID:7 Token:t7} Role:..}) = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestRecordProcessRefuses/a_wider_type_without_a_role
+    inventory_test.go:101: RecordProcess({ProcessRecord:{Identity:{PID:7 Token:t7} Role:} Note:x}) = not implemented, want ErrInvalidProcessRecord
+--- FAIL: TestRecordProcessRefuses (0.01s)
+    --- FAIL: TestRecordProcessRefuses/zero_PID (0.00s)
+    --- FAIL: TestRecordProcessRefuses/negative_PID (0.00s)
+    --- FAIL: TestRecordProcessRefuses/no_token (0.00s)
+    --- FAIL: TestRecordProcessRefuses/no_role (0.00s)
+    --- FAIL: TestRecordProcessRefuses/role_with_a_slash (0.00s)
+    --- FAIL: TestRecordProcessRefuses/role_with_a_backslash (0.00s)
+    --- FAIL: TestRecordProcessRefuses/role_dot-dot (0.00s)
+    --- FAIL: TestRecordProcessRefuses/a_wider_type_without_a_role (0.00s)
+=== RUN   TestReadProcessRecordsRefuses
+=== RUN   TestReadProcessRecordsRefuses/not_JSON
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming worker-7.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/no_PID
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming worker-0.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/zero_PID
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming worker-0.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/negative_PID
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming worker--1.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/no_token
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming worker-7.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/no_role
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming -7.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/another_role's_name
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming grandchild-7.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/another_PID's_name
+    inventory_test.go:133: ReadProcessRecords = not implemented, want ErrInvalidProcessRecord naming worker-8.json
+    inventory_test.go:136: ReadProcessRecordsAs = not implemented, want ErrInvalidProcessRecord
+=== RUN   TestReadProcessRecordsRefuses/other_files_are_ignored
+    inventory_test.go:148: ReadProcessRecords = [], not implemented; want none
+=== RUN   TestReadProcessRecordsRefuses/a_missing_directory
+    inventory_test.go:153: ReadProcessRecords = not implemented, want fs.ErrNotExist
+--- FAIL: TestReadProcessRecordsRefuses (0.02s)
+    --- FAIL: TestReadProcessRecordsRefuses/not_JSON (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/no_PID (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/zero_PID (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/negative_PID (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/no_token (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/no_role (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/another_role's_name (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/another_PID's_name (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/other_files_are_ignored (0.00s)
+    --- FAIL: TestReadProcessRecordsRefuses/a_missing_directory (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/artisan	0.045s
+FAIL
