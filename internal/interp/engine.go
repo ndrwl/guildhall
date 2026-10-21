@@ -187,29 +187,30 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 	return Next{}, fmt.Errorf("interp: %w: workflow %s ends without a step to wait for", ErrUnsupported, def.Name)
 }
 
-// run is one advance of one task over a snapshot of its records, kept current as it writes.
+// run is one advance of one task over the history view of its records, kept current as it writes.
 type run struct {
-	e         *Engine
-	ctx       context.Context
-	task      store.Task
-	def       *workflow.Definition
-	attempts  []store.StageAttempt
-	documents []store.DocumentRef
-	decisions []store.Decision
+	e    *Engine
+	ctx  context.Context
+	task store.Task
+	def  *workflow.Definition
+	*history
 }
 
 func (r *run) load() error {
-	var err error
 	repo, id := r.task.Repository, r.task.ID
-	if r.attempts, err = r.e.Records.Attempts(repo, id); err != nil {
+	attempts, err := r.e.Records.Attempts(repo, id)
+	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
-	if r.documents, err = r.e.Records.Documents(repo, id); err != nil {
+	documents, err := r.e.Records.Documents(repo, id)
+	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
-	if r.decisions, err = r.e.Records.Decisions(repo, id); err != nil {
+	decisions, err := r.e.Records.Decisions(repo, id)
+	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
+	r.history = newHistory(repo, id, r.def, r.read, attempts, documents, decisions)
 	return nil
 }
 
@@ -353,7 +354,7 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	if rc.Attempt != n {
 		return Next{}, fmt.Errorf("recorded attempt %d, expected %d: another writer advanced the task", rc.Attempt, n)
 	}
-	r.attempts = append(r.attempts, store.StageAttempt{Repository: r.task.Repository, TaskID: r.task.ID, Step: s.ID, Number: n})
+	r.addAttempt(store.StageAttempt{Repository: r.task.Repository, TaskID: r.task.ID, Step: s.ID, Number: n})
 	return Next{Wait: WaitAttempt, Step: s.ID, Attempt: n}, r.launch(s, n, name, inputs)
 }
 
@@ -453,10 +454,11 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	}
 	for i, o := range outputs {
 		data := contents[i]
-		name := fmt.Sprintf("%s-%d-%s", s.ID, n, port.Name)
+		p := place{step: s.ID, round: n, part: port.Name}
 		if i > 0 {
-			name += "-" + strconv.Itoa(i+1)
+			p.index = i + 1
 		}
+		name := documentName(p)
 		if r.document(name) != nil {
 			continue
 		}
@@ -500,7 +502,7 @@ func (r *run) put(d store.DocumentRef, data []byte) error {
 	if _, err := r.e.Records.PutDocument(r.mutation("document", d.Name), d); err != nil {
 		return err
 	}
-	r.documents = append(r.documents, d)
+	r.addDocument(d)
 	return nil
 }
 
@@ -619,7 +621,7 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 		return Next{}, err
 	}
 	d := store.Decision{
-		Repository: r.task.Repository, TaskID: r.task.ID, ID: fmt.Sprintf("%s-%d", s.ID, k),
+		Repository: r.task.Repository, TaskID: r.task.ID, ID: decisionID(s.ID, k, false),
 		Kind: sp.kind, Subject: subject, Options: ask.Options, Question: ask.Question,
 	}
 	if s.Type == "review" || s.Type == "document-review" {
@@ -652,7 +654,7 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 	if _, err := r.e.Records.OpenDecision(r.mutation("decision", d.ID), d); err != nil {
 		return Next{}, err
 	}
-	r.decisions = append(r.decisions, d)
+	r.addDecision(d)
 	return Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(d, s.ID)
 }
 
@@ -674,7 +676,7 @@ func (r *run) accept(s workflow.Step, d store.Decision) error {
 	if _, err := r.e.Records.PutDocument(r.mutation("document", name), doc); err != nil {
 		return err
 	}
-	r.documents = append(r.documents, doc)
+	r.addDocument(doc)
 	return nil
 }
 
@@ -776,50 +778,6 @@ func (r *run) specGate(source string, doc store.DocumentRef) error {
 	return nil
 }
 
-// output returns the latest recorded document of one step's output port and its source id.
-func (r *run) output(step, port string) (store.DocumentRef, string, error) {
-	var best *store.DocumentRef
-	bestRound, bestExit := 0, false
-	source := ""
-	for i, d := range r.documents {
-		mid, ok := strings.CutPrefix(d.Name, step+"-")
-		if !ok {
-			continue
-		}
-		mid, ok = strings.CutSuffix(mid, "-"+port)
-		if !ok {
-			continue
-		}
-		number, exit := strings.CutPrefix(mid, "x")
-		if !isNumber(number) {
-			continue
-		}
-		n, _ := strconv.Atoi(number)
-		if exit {
-			j := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == step })
-			if j < 0 {
-				continue
-			}
-			fs, err := r.firings(r.def.Steps[j])
-			if err != nil {
-				return store.DocumentRef{}, "", err
-			}
-			if n > len(fs) {
-				return store.DocumentRef{}, "", fmt.Errorf("output %s has no originating firing", d.Name)
-			}
-			n = fs[n-1].round
-		}
-		if n > bestRound || n == bestRound && exit && !bestExit {
-			best, bestRound, bestExit = &r.documents[i], n, exit
-			source = step + "-" + mid
-		}
-	}
-	if best == nil {
-		return store.DocumentRef{}, "", fmt.Errorf("%s.%s has no recorded document", step, port)
-	}
-	return *best, source, nil
-}
-
 // head reads a code head document, checking its recorded digest.
 func (r *run) head(in render.Input) (string, error) {
 	data, err := r.read(store.DocumentRef{Name: in.Name, Path: in.Name, SHA256: in.SHA256})
@@ -882,65 +840,6 @@ func (r *run) attemptDir(step string, n int) string {
 
 func (r *run) resultFile(step string, n int) string {
 	return filepath.Join(r.attemptDir(step, n), "result.json")
-}
-
-func (r *run) attempt(step string, n int) *store.StageAttempt {
-	for i, a := range r.attempts {
-		if a.Step == step && a.Number == n {
-			return &r.attempts[i]
-		}
-	}
-	return nil
-}
-
-func (r *run) latestAttempt(step string) *store.StageAttempt {
-	var last *store.StageAttempt
-	for i, a := range r.attempts {
-		if a.Step == step && (last == nil || a.Number > last.Number) {
-			last = &r.attempts[i]
-		}
-	}
-	return last
-}
-
-func (r *run) document(name string) *store.DocumentRef {
-	for i, d := range r.documents {
-		if d.Name == name {
-			return &r.documents[i]
-		}
-	}
-	return nil
-}
-
-func (r *run) decision(id string) *store.Decision {
-	for i, d := range r.decisions {
-		if d.ID == id {
-			return &r.decisions[i]
-		}
-	}
-	return nil
-}
-
-// latestDecision returns the step's decision of the highest round, <step>-<round>.
-func (r *run) latestDecision(step string) *store.Decision {
-	var last *store.Decision
-	round := 0
-	for i, d := range r.decisions {
-		if rest, ok := strings.CutPrefix(d.ID, step+"-"); ok {
-			if n, err := strconv.Atoi(rest); err == nil && n > round {
-				last, round = &r.decisions[i], n
-			}
-		}
-	}
-	return last
-}
-
-func (r *run) nextRound(step string) int {
-	if d := r.latestDecision(step); d != nil {
-		n, _ := strconv.Atoi(strings.TrimPrefix(d.ID, step+"-"))
-		return n + 1
-	}
-	return 1
 }
 
 func isHead(s string) bool {

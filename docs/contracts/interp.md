@@ -7,6 +7,7 @@ Attempt preparation ([interpreter](../interpreter.md#attempt-preparation), [deci
 Rounds and loops ([decision](../decisions/loops-and-review-gate.md)): attempt bindings, the `previous` and `feedback` ports, blocking results, `max` with the `loop-exit` decision, stall messages, `ErrOutcome` for a stale or undispositioned outcome and `ErrReviewGate` before `deliver`.
 Its consumer seams: `Records` (the store methods it calls), `Prompter` with `PromptFunc`, `Outbox` (the send half of `messaging.Mailbox`) and the launch seam ([scripted mock agent](../mock-agent.md#the-launch-seam)): `Launcher`, `Spec` and its validation, `Handle`, and the `CheckAdapter` guard that refuses every adapter but `mock` and `fake` inside a test binary.
 `BlockedQuestion` is the provisional file a blocked attempt writes.
+The private history view ([history](../interpreter.md#history)) is a contract inside the package, not a seam: one parser edge for record names and the reads every step makes of rounds, exits, firings, feedback and outputs.
 
 ## Tests
 
@@ -15,5 +16,9 @@ Its consumer seams: `Records` (the store methods it calls), `Prompter` with `Pro
 `prepare_test.go` (new, red first against the render-again replay): a lost launch acknowledgement with a changed baseline, a successful launch whose mark was lost, a changed skill tree, a refused live duplicate leaving every byte and path intact, partial and corrupt preparation refused with `ErrPreparation`, and a leftover `prompt.partial` rendered again.
 Its integration case launches the test binary as a child that reads its copied input after the replay and asserts the bytes it read are the original ones.
 `TestCrashBetweenRecordAndLaunchReplays`, the straight-path and loop tests and the renderer's digest goldens pin the existing replay and rendering behaviour unchanged.
+`history_test.go` (new, red first against the engine before the view existed): the name parser, exit ordering with interleaved rounds and exits, numeric step suffixes, missing and corrupt originating history and reads after each write; the existing exit-ordering assertions are preserved, adapted to the history view.
+`TestRoundTraceThreeReviews` also runs with step ids `review`, `review-2` and `review-x2`; that variant pins behaviour the old parser already had.
+`history_replay_test.go`: `TestReplayAfterEachWrite` (pin, written with the view; the engine passed it before) fails each record write of a loop that continues once and is accepted at its second exit, before and after the write commits, on both backends.
+Repeating the advance must end with the records, launch count and wait of a run without a failure.
 `TestRecordsContract` runs the shared `Records` suite against `*store.Store` and `interptest.Records`.
 `launcher_test.go` (the guard inside and outside a test binary); `Spec.Validate` through the shared suite in `interptest`.

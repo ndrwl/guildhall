@@ -111,6 +111,15 @@ A code-head output must hold a 40 or 64 lowercase hex object id, and a review ou
 An input `step.port` resolves to that port's document of the latest round, and its file is checked against the recorded digest before it is used.
 The working directory is `<state>/<repo>/<task>/work` until worktree custody is defined.
 
+## History
+
+Every read of where a record sits in a task's history goes through one private view in `internal/interp` (`history.go`), built from the task's records at the start of an advance and updated by each write the advance makes, so a read after a write sees it.
+It answers a step's latest attempt, its round decisions and next round, its loop exits and how many were answered `continue`, its blocking results in round order, the originating round of each exit, which feedback an attempt was given, and the latest document of a step's output port.
+Record names stay the keys and keep their forms (`<step>-<n>`, `<step>-x<k>`, `<step>-<n>-<port>`, `<step>-<n>-<port>-<index>`, `<step>-<n>-inputs`, `<decision>-revisions`, `<decision>-answer`); they are parsed in one place, from the right, so a step id ending in `-<digits>` or `-x<digits>` is never mistaken for a round of a step it extends.
+Exit `k` of a step originates in its `k`th blocking result; an exit's output orders immediately after that round and before later rounds.
+A missing or unreadable record the view needs, such as the outcome an exit originated in, is an error, never a guess that the step approved.
+The view is private: it is not a storage interface and has no double; it runs over both the store and `interptest.Records` through the engine tests.
+
 ## Spec gate
 
 Every input of type accepted spec, such as `build`'s and `review`'s `spec`, must come from an approval decision answered `approved` whose subject digest equals the accepted spec's digest; otherwise the step is refused with `ErrSpecGate` before anything is recorded.
@@ -151,4 +160,5 @@ It checks each event's effect on the records, the approval bound to the plan doc
 `loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`) against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
 Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
 Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
+See the [interpreter contract tests](contracts/interp.md#tests) for history-view and per-write replay coverage.
 `TestRecordsContract` runs `interptest.RunRecordsContract` against the store and the double, including concurrent list readers and record writers.
