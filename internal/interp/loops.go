@@ -6,7 +6,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/render"
@@ -44,8 +43,6 @@ type boundInput struct {
 
 func isReview(s workflow.Step) bool { return s.Type == "review" || s.Type == "document-review" }
 
-func bindingName(step string, n int) string { return fmt.Sprintf("%s-%d-inputs", step, n) }
-
 // bind records attempt n's binding unless it is already recorded.
 func (r *run) bind(s workflow.Step, n int, inputs []render.Input, revisions *workflow.Revisions) error {
 	name := bindingName(s.ID, n)
@@ -62,19 +59,6 @@ func (r *run) bind(s workflow.Step, n int, inputs []render.Input, revisions *wor
 	}
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
 		Path: path.Join("tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d.inputs.json", s.ID, n)), SHA256: digest(data)}, data)
-}
-
-func (r *run) binding(step string, n int) (binding, error) {
-	var b binding
-	d := r.document(bindingName(step, n))
-	if d == nil {
-		return b, fmt.Errorf("attempt %d of %s has no recorded inputs", n, step)
-	}
-	data, err := r.read(*d)
-	if err != nil {
-		return b, err
-	}
-	return b, json.Unmarshal(data, &b)
 }
 
 // boundInputs returns the inputs an attempt was given, as render inputs.
@@ -146,83 +130,9 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	return err == nil && (b.Revisions == nil || *b.Revisions != want), err
 }
 
-// outcome returns the recorded outcome of attempt n of a review step, or nil when it has none.
-func (r *run) outcome(step string, n int) (*workflow.ReviewOutcome, error) {
-	d := r.document(fmt.Sprintf("%s-%d-outcome", step, n))
-	if d == nil {
-		return nil, nil
-	}
-	data, err := r.read(*d)
-	if err != nil {
-		return nil, err
-	}
-	return workflow.ParseReviewOutcome(data)
-}
-
-// firing is one blocking result of a looping step: an Artisan outcome or a Guildmaster's answer.
-type firing struct {
-	path, sha256 string
-	answer       *store.Decision
-	round        int
-}
-
-// firings returns the blocking results of step s in round order: its recorded outcomes that are
-// Blocking, or its decisions answered changes_requested.
-func (r *run) firings(s workflow.Step) ([]firing, error) {
-	var out []firing
-	if s.Actor() == workflow.GuildmasterActor {
-		for _, d := range r.rounds(s.ID) {
-			if d.Answered && d.Choice == changesRequested {
-				p := path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "answer.md")
-				out = append(out, firing{path: p, sha256: digest([]byte(d.Answer)), answer: d, round: round(d.ID)})
-			}
-		}
-		return out, nil
-	}
-	attempts := slices.Clone(r.attempts)
-	slices.SortFunc(attempts, func(a, b store.StageAttempt) int { return a.Number - b.Number })
-	for _, a := range attempts {
-		if a.Step != s.ID {
-			continue
-		}
-		o, err := r.outcome(s.ID, a.Number)
-		if err != nil {
-			return nil, err
-		}
-		if o != nil && o.Blocking() {
-			d := r.document(fmt.Sprintf("%s-%d-outcome", s.ID, a.Number))
-			out = append(out, firing{path: d.Path, sha256: d.SHA256, round: a.Number})
-		}
-	}
-	return out, nil
-}
-
 // allowed is how many times step s may loop: its rule's max plus one for every loop-exit answered continue.
 func (r *run) allowed(s workflow.Step) int {
-	n := s.On[changesRequested].Max
-	for _, d := range r.decisions {
-		if rest, ok := strings.CutPrefix(d.ID, s.ID+"-x"); ok && isNumber(rest) && d.Answered && d.Choice == "continue" {
-			n++
-		}
-	}
-	return n
-}
-
-// served reports whether an attempt of step t was given the firing as feedback.
-func (r *run) served(t string, f firing) (bool, error) {
-	for _, a := range r.attempts {
-		if a.Step != t {
-			continue
-		}
-		b, err := r.binding(t, a.Number)
-		if err != nil {
-			return false, err
-		}
-		if slices.ContainsFunc(b.Inputs, func(in boundInput) bool { return in.Port == FeedbackPort && in.Path == f.path }) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return s.On[changesRequested].Max + r.continued(s.ID)
 }
 
 // pending returns, as feedback inputs, every allowed firing of a loop back to step t that no attempt of t
@@ -295,7 +205,7 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 	}
 	k := len(fs)
 	if k > r.allowed(s) {
-		return r.exit(s, k, subject, fs[k-1])
+		return r.exit(s, k, subject)
 	}
 	i := slices.IndexFunc(r.def.Steps, func(t workflow.Step) bool { return t.ID == rule.Goto })
 	if actor := r.def.Steps[i].Actor(); actor != workflow.ArtisanActor {
@@ -315,8 +225,8 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 }
 
 // exit asks the Guildmaster how to leave a loop whose max is exhausted by firing k, decision <step>-x<k>.
-func (r *run) exit(s workflow.Step, k int, subject *store.Subject, origin firing) (bool, Next, error) {
-	id := fmt.Sprintf("%s-x%d", s.ID, k)
+func (r *run) exit(s workflow.Step, k int, subject *store.Subject) (bool, Next, error) {
+	id := decisionID(s.ID, k, true)
 	d := r.decision(id)
 	if d == nil {
 		nd := store.Decision{
@@ -328,8 +238,7 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject, origin firing
 		if _, err := r.e.Records.OpenDecision(r.mutation("decision", id), nd); err != nil {
 			return false, Next{}, err
 		}
-		r.decisions = append(r.decisions, nd)
-		d = &r.decisions[len(r.decisions)-1]
+		d = r.addDecision(nd)
 	}
 	next := Next{Wait: WaitDecision, Step: s.ID, Decision: id}
 	switch {
@@ -344,6 +253,10 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject, origin firing
 		return true, Next{}, r.accept(s, *d)
 	case !isReview(s):
 		return false, Next{}, fmt.Errorf("%w: accepting at the loop exit of a %s step", ErrUnsupported, s.Type)
+	}
+	origin, err := r.origin(s, k)
+	if err != nil {
+		return false, Next{}, err
 	}
 	return true, Next{}, r.acceptOutcome(s, *d, origin)
 }
@@ -521,26 +434,4 @@ func (r *run) approved(step string, want workflow.Revisions) (bool, error) {
 		return false, err
 	}
 	return o.BoundTo(want) == nil && !o.Blocking() && o.Verdict != workflow.VerdictRejected, nil
-}
-
-// rounds returns the step's round decisions, <step>-<n>, in round order.
-func (r *run) rounds(step string) []*store.Decision {
-	var out []*store.Decision
-	for i, d := range r.decisions {
-		if rest, ok := strings.CutPrefix(d.ID, step+"-"); ok && isNumber(rest) {
-			out = append(out, &r.decisions[i])
-		}
-	}
-	slices.SortFunc(out, func(a, b *store.Decision) int { return round(a.ID) - round(b.ID) })
-	return out
-}
-
-func round(id string) int {
-	n, _ := strconv.Atoi(id[strings.LastIndex(id, "-")+1:])
-	return n
-}
-
-func isNumber(s string) bool {
-	n, err := strconv.Atoi(s)
-	return err == nil && n > 0 && strconv.Itoa(n) == s
 }

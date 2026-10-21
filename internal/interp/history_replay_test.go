@@ -1,0 +1,144 @@
+package interp_test
+
+import (
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"testing"
+
+	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/interp/interptest"
+	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/workflow"
+)
+
+var errInjected = errors.New("injected write failure")
+
+// flakyRecords fails one write, counted across every write the engine makes: before it reaches the records,
+// or after they committed it, as a crash on either side of the write would.
+type flakyRecords struct {
+	interp.Records
+	writes, fail int
+	after        bool
+}
+
+func (r *flakyRecords) write(do func() (store.Receipt, error)) (store.Receipt, error) {
+	r.writes++
+	if r.writes != r.fail {
+		return do()
+	}
+	if r.after {
+		if _, err := do(); err != nil {
+			return store.Receipt{}, err
+		}
+	}
+	return store.Receipt{}, errInjected
+}
+
+func (r *flakyRecords) StartAttempt(id, repo, task, step string) (store.Receipt, error) {
+	return r.write(func() (store.Receipt, error) { return r.Records.StartAttempt(id, repo, task, step) })
+}
+
+func (r *flakyRecords) FinishAttempt(id, repo, task, step string, n int, o store.AttemptOutcome) (store.Receipt, error) {
+	return r.write(func() (store.Receipt, error) { return r.Records.FinishAttempt(id, repo, task, step, n, o) })
+}
+
+func (r *flakyRecords) PutDocument(id string, d store.DocumentRef) (store.Receipt, error) {
+	return r.write(func() (store.Receipt, error) { return r.Records.PutDocument(id, d) })
+}
+
+func (r *flakyRecords) OpenDecision(id string, d store.Decision) (store.Receipt, error) {
+	return r.write(func() (store.Receipt, error) { return r.Records.OpenDecision(id, d) })
+}
+
+// historyOf is what a task's records say, compared across runs.
+func historyOf(t *testing.T, e *env) string {
+	t.Helper()
+	docs := e.documents(t)
+	out := ""
+	for _, name := range slices.Sorted(maps.Keys(docs)) {
+		out += fmt.Sprintf("document %s %s %s\n", name, docs[name].Path, docs[name].SHA256)
+	}
+	for _, a := range e.attempts(t) {
+		out += fmt.Sprintf("attempt %s %d %s\n", a.Step, a.Number, a.Outcome)
+	}
+	ds, err := e.h.Records.Decisions("app", "t7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range ds {
+		out += fmt.Sprintf("decision %s %s %+v %v %q\n", d.ID, d.Kind, d.Subject, d.Answered, d.Answer)
+	}
+	return out
+}
+
+// TestReplayAfterEachWrite runs a loop that exhausts its max, continues once and is accepted at the second exit,
+// failing each of the engine's writes in turn, before and after it commits. Repeating the failed advance
+// must end with the same records, the same launches and the same wait as a run without a failure: the history
+// view never hides a write, and every partial advance is one a repeat completes.
+func TestReplayAfterEachWrite(t *testing.T) {
+	f1 := workflow.Finding{ID: "f1", Rule: "S2", Summary: "No red test shown."}
+	still := workflow.Disposition{Finding: "f1", State: workflow.StillOpen}
+	o1 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1})
+	o2 := bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f1}, still)
+	o3 := bound(t, workflow.VerdictChangesRequested, head3, []workflow.Finding{f1}, still)
+	type action struct {
+		ev     interp.Event
+		answer string
+	}
+	flow := []action{
+		{ev: interp.Event{Kind: interp.TaskCreated}},
+		{ev: interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}},
+		{answer: "approved", ev: interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"}},
+		{ev: interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1}},
+		{ev: interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1}},
+		{ev: interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}},
+		{ev: interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}},
+		{answer: "continue", ev: interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}},
+		{ev: interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 3}},
+		{ev: interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 3}},
+		{answer: "accept", ev: interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x3"}},
+	}
+	drive := func(t *testing.T, b backend, fail int, after bool) (string, int, int, interp.Next) {
+		e := newEnvDefinition(t, b, loadWorkflow(t, "loop"),
+			planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
+			buildExp(t, 1, head, ""), reviewExp(t, "review", "reviewer", 1, head, nil, o1),
+			buildExp(t, 2, head2, outcomeDigest(o1)), reviewExp(t, "review", "reviewer", 2, head2, &o1, o2),
+			buildExp(t, 3, head3, outcomeDigest(o2)), reviewExp(t, "review", "reviewer", 3, head3, &o2, o3))
+		flaky := &flakyRecords{Records: e.eng.Records, fail: fail, after: after}
+		e.eng.Records = flaky
+		var next interp.Next
+		for _, a := range flow {
+			if a.answer != "" {
+				e.answer(t, a.ev.Decision, a.answer)
+			}
+			if err := advanceErr(t, e, a.ev); err != nil {
+				if !errors.Is(err, errInjected) {
+					t.Fatalf("Advance(%+v) = %v", a.ev, err)
+				}
+				t.Logf("write %d failed in Advance(%+v); repeating it", fail, a.ev)
+			}
+			next = e.advance(t, a.ev)
+		}
+		return historyOf(t, e), len(e.script.Launched()), flaky.writes, next
+	}
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			wantHistory, wantLaunches, writes, wantNext := drive(t, b, 0, false)
+			want(t, wantNext, interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			for fail := 1; fail <= writes; fail++ {
+				for _, after := range []bool{false, true} {
+					t.Run(fmt.Sprintf("write %d/after %v", fail, after), func(t *testing.T) {
+						t.Parallel()
+						got, launches, _, next := drive(t, b, fail, after)
+						want(t, next, wantNext)
+						if got != wantHistory || launches != wantLaunches {
+							t.Fatalf("records after a failed write %d differ (%d launches, want %d):\n%s\nwant:\n%s", fail, launches, wantLaunches, got, wantHistory)
+						}
+					})
+				}
+			}
+		})
+	}
+}
