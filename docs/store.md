@@ -54,9 +54,10 @@ A mutation runs in one bbolt transaction that writes its records and a receipt t
 After a crash, either the records and the receipt are both present or neither is.
 
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, the record it wrote, a store-wide sequence number starting at 1 and the commit time in UTC.
-The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, and `message/<id>` for sending and acknowledging a message.
+The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, `ruling/<document>/<finding>` for recording and contesting a ruling, and `message/<id>` for sending and acknowledging a message.
+Heartbeat receipts follow the [attempt heartbeat contract](#attempt-heartbeats).
 It is not part of the request digest, so receipts written before it existed have no record and still replay; mutations outside a task, such as workflow approvals, have none.
-`TaskHistory` reads a task, its attempts, documents and decisions, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership`.
+`TaskHistory` reads a task, its attempts, documents, decisions and rulings, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership` and heartbeats with `Heartbeat`.
 It scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.

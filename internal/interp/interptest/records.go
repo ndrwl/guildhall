@@ -336,7 +336,7 @@ func (r *Records) PutHeartbeat(mutationID string, h store.Heartbeat) (store.Rece
 }
 
 // RecordsHarness is one interp.Records implementation under the contract suite, with the writes
-// the engine never makes: creating a task, answering a decision and ruling on a finding.
+// the engine never makes: creating a task, answering a decision, ruling on a finding and writing a heartbeat.
 type RecordsHarness struct {
 	Records        interp.Records
 	CreateTask     func(mutationID string, t store.Task) (store.Receipt, error)
