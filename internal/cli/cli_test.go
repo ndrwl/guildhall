@@ -188,9 +188,9 @@ func TestHelpNamesReadmeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, list, ok := strings.Cut(string(readme), "\n## Commands\n")
+	_, list, ok := strings.Cut(string(readme), "\n## The commands\n")
 	if !ok {
-		t.Fatal("README.md has no Commands section")
+		t.Fatal("README.md has no The commands section")
 	}
 	list, _, _ = strings.Cut(list, "\n## ")
 	commands := regexp.MustCompile("`guildhall ([^`<]+?)( <[^`]*)?`").FindAllStringSubmatch(list, -1)
