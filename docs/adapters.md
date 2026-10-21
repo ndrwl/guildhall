@@ -16,14 +16,10 @@ Guildhall gives an Artisan one task attempt as a spec:
 | Environment | Extra `NAME=VALUE` entries |
 
 An adapter turns the spec into a program invocation: an argument list, never shell text.
-Guildhall starts it either as a direct child process, which tests and CI use, or in a new tab of a named Herdr session.
+Guildhall starts it through the [owned attempt launcher](artisan.md#commands) or in a [Herdr tab](#running-an-attempt).
 The attempt is complete only when the result file holds a valid result for the attempt's exact identity.
 Process exit, a closed or vanished tab, a Herdr restart and Herdr's agent-state signals never complete an attempt (R1.23, R1.52).
-A direct child process that exits with no result file is reported as exited without a result, which is not a completion.
-When the wait times out or is interrupted without a result, Guildhall kills and waits for a direct child process.
-A rejected result does not trigger that stop path.
-For native Windows tabs, `--stop-on-timeout` uses an attempt-owned worker handshake and verified native process handle, independently of Herdr presentation.
-Other platforms request Ctrl+C in the owned pane; delivering Ctrl+C alone never proves termination.
+Process supervision and stop semantics depend on the launch mode; see the linked command documentation above.
 
 Each adapter declares optional capabilities: a pre-assigned session id, native background sessions, hooks, structured output and remote control.
 They all default to absent, and the core uses none of them until a capability is proven (R1.24).
@@ -61,7 +57,7 @@ A rejected result is reported as rejected; it is never treated as success or fai
 
 Guildhall writes a result once: it writes a temporary file beside the result path and hard-links it into place, so a reader sees either no file or the whole result, and an existing result is never replaced.
 The result directory must be on a file system that supports hard links.
-`guildhall artisan run` refuses to launch when the result file already exists; a new attempt needs a new result path.
+The [Herdr tab mode](#running-an-attempt) refuses to launch when the result file already exists; the [owned mode](artisan.md#commands) uses the launcher's decision precedence.
 An identity-bound stop first persists `<result>.cancelled`, containing the attempt's `task_id` and `attempt_id`.
 Result reads and writes reject that cancelled attempt, including after a client restart; a mismatched or invalid cancellation sidecar is also rejected.
 The marker remains even if termination fails, but that failure is explicitly reported rather than claiming the worker stopped.

@@ -316,16 +316,23 @@ They are the composition package `internal/launch`, whose [doc comments](../inte
 
 `artisan run --adapter fake --prompt <file> --workdir <dir>` runs the attempt as its launcher:
 
-Before taking ownership, it validates the command and endpoint path, creates the attempt directory and containment unit, and constructs the launcher. It then acquires the attempt lock, waiting at most five seconds or until the caller's context ends, and holds it across the `outcome.json` check and ownership acquisition. An existing outcome is refused with `artisan.ErrDecided`; publication uses the same lock, so it cannot race between that check and takeover. The lock is released before endpoint binding and worker startup. These setup failures leave ownership unchanged and start no worker, so correcting the setup permits a retry. Refusing an already-decided attempt preserves its ownership record and containment evidence; finishing that attempt from `outcome.json` belongs to L7 part 2's `artisan resume`, not `run`.
+Before taking ownership, it validates the command and endpoint path, creates the attempt directory and containment unit, and constructs the launcher.
+It then acquires the attempt lock, waiting at most five seconds or until the caller's context ends, and holds it across the `outcome.json` check and ownership acquisition.
+An existing outcome is refused with `artisan.ErrDecided`; publication uses the same lock, so it cannot race between that check and takeover.
+The lock is released before endpoint binding and worker startup.
+These setup failures leave ownership unchanged and start no worker, so correcting the setup permits a retry.
+Refusing an already-decided attempt preserves its ownership record and containment evidence; finishing that attempt from `outcome.json` belongs to L7 part 2's `artisan resume`, not `run`.
 
 1. it takes the attempt's ownership, which the store records as running already; a live owner refuses it with `ErrOwnerLive`, and an owner that cannot be proven exited, or whose recorded unit still has members, with `ErrOwnerUnknown`, before anything starts;
-2. it binds the control endpoint and records its path; failure at either step records the attempt as failed with `FinishAttempt`, releasing ownership without starting the worker, and returns the setup error joined with any finalization error. A finalized failed attempt requires a new attempt for subsequent work;
+2. it binds the control endpoint and records its path; failure at either step records the attempt as failed with `FinishAttempt`, releasing ownership without starting the worker, and returns the setup error joined with any finalization error.
+   A finalized failed attempt requires a new attempt for subsequent work;
 3. it starts the worker in a fresh containment unit and records the containment in `containment.json` and the ownership record, with state `running`;
-4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; `--timeout`, when given, requests the stop ladder, as do the endpoint's `stop` and SIGTERM or SIGHUP;
+4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; a positive `--timeout` requests the stop ladder when it expires (zero, the default, imposes no limit), as do the endpoint's `stop` and SIGTERM or SIGHUP;
 5. it records the store outcome with `FinishAttempt`, which releases the ownership.
 
 The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.
-Survivors after the last rung leave the attempt running and owned, and the endpoint reports a stop error. `outcome.json` records the survivors; `status` may still report a terminal decision from a marker or result, which does not prove termination.
+Survivors after the last rung leave the attempt running and owned, and the endpoint reports a stop error.
+`outcome.json` records the survivors; `status` may still report a terminal decision from a marker or result, which does not prove termination.
 
 | Launcher outcome | Result | Store outcome | Exit status |
 |---|---|---|---|
@@ -334,11 +341,15 @@ Survivors after the last rung leave the attempt running and owned, and the endpo
 | `failed` | none | `failed` | 4 |
 | `cancelled` | any, rejected as late | `stopped` | 5 |
 
-Any error, including a refused ownership, worker startup failure, containment-recording failure and survivors, exits 1; a usage error exits 2. Startup failures remain returned errors even when the failed outcome is successfully written and recorded in the store.
+Any error, including a refused ownership, worker startup failure, containment-recording failure and survivors, exits 1; a usage error exits 2.
+Startup failures remain returned errors even when the failed outcome is successfully written and recorded in the store.
 
 `artisan stop` asks the owner to stop through the endpoint its unreleased ownership record names and waits for the ladder's end within `--timeout` (one minute).
-It never signals a process itself. Without a successful endpoint answer, success requires no ownership record, or a launcher proven gone and its recorded unit proven empty; missing containment is unverified, including during startup. A released record alone does not prove termination while its launcher still lives.
-It prints what the endpoint did and the classification afterwards. Endpoint stop errors, including surviving processes, are preserved and exit 1; unproven termination also exits 1 regardless of a `finished`, `cancelled` or `failed` classification.
+It never signals a process itself.
+Without a successful endpoint answer, success requires no ownership record, or a launcher proven gone and its recorded unit proven empty; missing containment is unverified, including during startup.
+A released record alone does not prove termination while its launcher still lives.
+It prints what the endpoint did and the classification afterwards.
+Endpoint stop errors, including surviving processes, are preserved and exit 1; unproven termination also exits 1 regardless of a `finished`, `cancelled` or `failed` classification.
 `artisan status` prints the [classification](#reconcile) and exits 0; an attempt with no directory and no ownership record is `absent`.
 
 ### Custody
