@@ -110,6 +110,11 @@ func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			if r.Identity != spec.Identity || r.Status != tc.want {
 				t.Errorf("result = %+v, want status %s for %+v", r, tc.want, spec.Identity)
 			}
+			// A readable result does not mean the launcher has finished writing
+			// its outcome and heartbeat files. Stop joins it before checking cleanup.
+			if err := h.Launcher.Stop(hd); err != nil {
+				t.Fatalf("Stop after finishing = %v, want nil", err)
+			}
 			entries, err := os.ReadDir(filepath.Dir(spec.ResultFile))
 			if err != nil {
 				t.Fatal(err)
@@ -118,9 +123,6 @@ func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 				if strings.HasSuffix(e.Name(), ".tmp") {
 					t.Errorf("temporary file %s left beside the result", e.Name())
 				}
-			}
-			if err := h.Launcher.Stop(hd); err != nil {
-				t.Errorf("Stop after finishing = %v, want nil", err)
 			}
 		})
 	}
