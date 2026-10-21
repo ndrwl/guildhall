@@ -133,7 +133,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		c.marked(false)
 	})
 	t.Run("L16 a result after the marker is rejected as late", func(t *testing.T) {
-		c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result, ResultAfter: 300 * time.Millisecond} })
+		c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result, ResultMarker: f.Marker} })
 		c.start(nil)
 		c.role("worker", 1)
 		c.stop(nil)
@@ -159,7 +159,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		}
 	})
 	t.Run("L17 a result after cancel is rejected and the worker exits", func(t *testing.T) {
-		c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result, ResultAfter: 300 * time.Millisecond} })
+		c := h.launch(t, func(f Files) Worker { return Worker{Result: f.Result, ResultMarker: f.Marker} })
 		c.start(nil)
 		c.role("worker", 1)
 		if _, err := c.l.Cancel(); err != nil {

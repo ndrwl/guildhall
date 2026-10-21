@@ -39,8 +39,9 @@ type Worker struct {
 	CancelMarker string `json:"cancel_marker,omitempty"`
 	// Result makes the worker publish ResultBody at that path ResultAfter
 	// after it starts waiting, whatever the cancel marker says, then exit.
-	Result      string        `json:"result,omitempty"`
-	ResultAfter time.Duration `json:"result_after,omitempty"`
+	Result       string        `json:"result,omitempty"`
+	ResultAfter  time.Duration `json:"result_after,omitempty"`
+	ResultMarker string        `json:"result_marker,omitempty"`
 
 	Role      string `json:"role,omitempty"`
 	Inventory string `json:"inventory,omitempty"`
@@ -190,6 +191,11 @@ func (w Worker) Wait() {
 			return
 		}
 		if w.Result != "" && time.Since(start) >= w.ResultAfter {
+			if w.ResultMarker != "" {
+				if _, err := os.Stat(w.ResultMarker); err != nil {
+					continue
+				}
+			}
 			_ = publish(w.Result, ResultBody)
 			return
 		}

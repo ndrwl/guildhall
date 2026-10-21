@@ -233,9 +233,15 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	defer tick.Stop()
 	var decided *Outcome
 	var grace <-chan time.Time
+	var cooperative <-chan time.Time
+	exited := l.c.Unit.Exited()
 	for {
 		select {
 		case <-tick.C:
+			if exited == nil && l.empty() {
+				l.event("rung-emptied", map[string]any{"rung": 1})
+				return l.finish(*decided, 1, nil, nil)
+			}
 			if decided != nil {
 				continue
 			}
@@ -251,9 +257,23 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 		case <-grace:
 			l.event("worker-outlived-result", nil)
 			return l.ladder(*decided, 2, nil)
-		case <-l.c.Unit.Exited():
+		case <-cooperative:
+			cooperative = nil
+			alive, aerr := l.c.Unit.Members()
+			l.event("rung-timeout", map[string]any{"rung": 1, "alive": alive, "error": errString(aerr)})
+		case <-exited:
 			l.event("worker-exited", nil)
 			d, err := l.decide(false, "worker exited without a result")
+			if err == nil && d.State == Cancelled {
+				if l.empty() {
+					return l.finish(d, 0, nil, nil)
+				}
+				exited, decided, grace = nil, &d, nil
+				l.event("ladder", map[string]any{"first": 1})
+				l.event("rung", map[string]any{"rung": 1, "name": "cancel-marker", "deadline": l.c.Ladder.Cooperative.String()})
+				cooperative = time.After(l.c.Ladder.Cooperative)
+				continue
+			}
 			return l.ladder(d, 2, err)
 		case <-l.stopReq:
 			return l.stop(decided)
@@ -277,31 +297,34 @@ func (l *Launcher) decide(mark bool, fail string) (Outcome, error) {
 	var d Outcome
 	err := l.locked(func() error {
 		if fileExists(filepath.Join(l.c.Dir, OutcomeFile)) {
-			mark = false
+			return nil
 		}
-		if m, err := l.c.Files.Marked(); err != nil || m {
-			d = Outcome{State: Cancelled, Detail: "cancel marker present"}
-			return err
-		}
-		if v, err := l.c.Files.ValidResult(); err != nil || v {
-			d = Outcome{State: Finished, Detail: "result accepted"}
-			return err
-		}
-		switch {
-		case mark:
-			d = Outcome{State: Cancelled, Detail: "stopped"}
-			l.event("cancel-marker", nil)
-			return l.c.Files.Mark()
-		case fail != "":
-			d = Outcome{State: Failed, Detail: fail}
-		}
-		return nil
+		var err error
+		d, err = l.decideLocked(mark, fail)
+		return err
 	})
 	if err != nil {
 		d = Outcome{State: Failed, Detail: "attempt files: " + err.Error()}
 		l.event("decide-failed", map[string]any{"error": err.Error()})
 	}
 	return d, err
+}
+
+func (l *Launcher) decideLocked(mark bool, fail string) (Outcome, error) {
+	if m, err := l.c.Files.Marked(); err != nil || m {
+		return Outcome{State: Cancelled, Detail: "cancel marker present"}, err
+	}
+	if v, err := l.c.Files.ValidResult(); err != nil || v {
+		return Outcome{State: Finished, Detail: "result accepted"}, err
+	}
+	if mark {
+		l.event("cancel-marker", nil)
+		return Outcome{State: Cancelled, Detail: "stopped"}, l.c.Files.Mark()
+	}
+	if fail != "" {
+		return Outcome{State: Failed, Detail: fail}, nil
+	}
+	return Outcome{}, nil
 }
 
 // fileExists reports whether anything, readable or not, is at path.
@@ -406,11 +429,22 @@ func (l *Launcher) waitEmpty(d time.Duration) bool {
 
 // finish records how the attempt ended in OutcomeFile, written once.
 func (l *Launcher) finish(d Outcome, rung int, survivors []Identity, err error) (Outcome, error) {
-	d.Schema, d.Rung, d.Survivors = OutcomeSchema, rung, survivors
-	if d.State == Cancelled {
-		d.LateResultRejected, _ = l.c.Files.ValidResult()
-	}
-	if werr := l.locked(func() error { return writeOnce(filepath.Join(l.c.Dir, OutcomeFile), d) }); werr != nil {
+	if werr := l.locked(func() error {
+		final, derr := l.decideLocked(false, d.Detail)
+		if derr != nil {
+			err = errors.Join(err, derr)
+			d = Outcome{State: Failed, Detail: "attempt files: " + derr.Error()}
+		} else if final.State != "" {
+			d = final
+		}
+		d.Schema, d.Rung, d.Survivors = OutcomeSchema, rung, survivors
+		if d.State == Cancelled {
+			var rerr error
+			d.LateResultRejected, rerr = l.c.Files.ValidResult()
+			err = errors.Join(err, rerr)
+		}
+		return writeOnce(filepath.Join(l.c.Dir, OutcomeFile), d)
+	}); werr != nil {
 		err = errors.Join(err, fmt.Errorf("artisan: write outcome: %w", werr))
 	}
 	l.event("ended", map[string]any{"outcome": d})

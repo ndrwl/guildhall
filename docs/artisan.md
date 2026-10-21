@@ -217,13 +217,13 @@ A marker or result already present, or a stop requested, before the worker start
 | 4 | `Unit.Kill`, or terminating the job on Windows | 5 s |
 
 A rung succeeds only when the unit is empty within its bound; otherwise the next rung runs, and after rung 4 the members still alive are the outcome's survivors and `Run` and `Stop` return `ErrNotEmpty`.
-A cancelled attempt climbs from rung 1; a finished or failed attempt whose tree is still running, or a worker outliving its accepted result by the result grace (3 s), climbs from rung 2.
+An explicit stop of a cancelled attempt climbs from rung 1; a finished or failed attempt whose tree is still running, or a worker outliving its accepted result by the result grace (3 s), climbs from rung 2.
 Each rung is logged to `events.jsonl` with the members it acted on, its bound and any error; a timed-out rung names the processes still alive, and a skipped rung says why.
 
 ### Stop requests
 
 `Stop`, the endpoint's `stop`, and SIGTERM or SIGHUP delivered to the launcher all request the one ladder; every request waits for it and answers with its end, and a stop after the end returns at once.
-`Cancel`, the endpoint's `cancel`, is rung 1 alone: it writes the marker unless a valid result is present and does not escalate.
+`Cancel`, the endpoint's `cancel`, is rung 1 alone: it writes the marker unless a valid result is present and does not escalate. If the worker exits with the marker present while descendants remain, the launcher starts the bounded cooperative wait at rung 1. After that bound expires it continues supervising without signalling descendants; only an explicit Stop request (including a stop signal) escalates past rung 1.
 An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwarded to the worker with `Unit.Interrupt` and does not stop the attempt.
 `StopSignals` lists the signals the caller relays to `Run`.
 
