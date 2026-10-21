@@ -2,10 +2,13 @@ package launch_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -94,11 +97,55 @@ func fixtureSpec(t *testing.T, instructions string) interp.Spec {
 	return a.Render(t)
 }
 
+// argvEnv makes the test binary record its arguments as JSON in the file it names and exit 2,
+// as `guildhall artisan start` exits on refused arguments.
+const argvEnv = "GUILDHALL_LAUNCH_TEST_ARGV"
+
+func recordArgv(path string) {
+	b, err := json.Marshal(os.Args[1:])
+	if err == nil {
+		err = os.WriteFile(path, b, 0o600)
+	}
+	if err != nil {
+		os.Exit(1)
+	}
+	os.Exit(2)
+}
+
+// TestProcessStartsArtisanStartOnTheAdapterSpec: the launcher's argv carries the engine's adapter name
+// unchanged and the prompt file and working directory of spec.AdapterSpec, the mapping the adapter
+// conformance suite runs runtimes on; a launcher refusing its arguments is Launch's error, naming its log.
+func TestProcessStartsArtisanStartOnTheAdapterSpec(t *testing.T) {
+	p := newProcess(t)
+	argv := filepath.Join(t.TempDir(), "argv.json")
+	p.Env = []string{argvEnv + "=" + argv}
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	_, err := p.Launch(context.Background(), spec)
+	if err == nil || !strings.Contains(err.Error(), launch.LogFile) {
+		t.Fatalf("Launch of a refusing launcher = %v, want an error naming %s", err, launch.LogFile)
+	}
+	b, err := os.ReadFile(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	as := spec.AdapterSpec()
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
+	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
+		"--repository", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", "1",
+		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir}
+	if !slices.Equal(got, want) {
+		t.Errorf("argv = %q\nwant %q", got, want)
+	}
+}
+
 func TestProcessRefusesASpecOutsideItsAttemptLayout(t *testing.T) {
 	p := newProcess(t)
 	good := prepared(t, p, fixtureSpec(t, ""))
 	for name, breakSpec := range map[string]func(s *interp.Spec){
-		"mock adapter":         func(s *interp.Spec) { s.Adapter = interp.MockAdapter },
 		"another attempt id":   func(s *interp.Spec) { s.Identity.AttemptID = "build-2" },
 		"another task":         func(s *interp.Spec) { s.Identity.TaskID = "t8" },
 		"result outside":       func(s *interp.Spec) { s.ResultFile = filepath.Join(t.TempDir(), artisan.ResultFile) },
