@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
-	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/render"
 )
 
@@ -98,11 +97,11 @@ const (
 	// MockAdapter is the scripted in-process double, interptest.Script.
 	MockAdapter = "mock"
 	// FakeAdapter is the fake Artisan subcommand, package adapter/fake.
-	FakeAdapter = runtimes.Fake
+	FakeAdapter = adapter.FakeName
 )
 
 // ClaudeAdapter is the Claude Code adapter, package adapter/claude, which runs the `claude` program.
-const ClaudeAdapter = runtimes.Claude
+const ClaudeAdapter = adapter.ClaudeName
 
 // ClaudeStubEnv names, inside a test binary, the absolute path of the stub Claude Code a test
 // installed (claudetest.Install); CheckAdapter allows ClaudeAdapter only while `claude` on PATH is it.

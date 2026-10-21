@@ -14,14 +14,14 @@ import (
 )
 
 func TestLookupConstructsEachRuntime(t *testing.T) {
-	if got, want := runtimes.Names(), []string{runtimes.Claude, runtimes.Fake}; !slices.Equal(got, want) {
+	if got, want := runtimes.Names(), []string{adapter.ClaudeName, adapter.FakeName}; !slices.Equal(got, want) {
 		t.Fatalf("Names() = %q, want %q", got, want)
 	}
 	exe := filepath.Join(t.TempDir(), "guildhall")
 	dir := t.TempDir()
 	spec := adapter.Spec{Identity: adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}, WorkDir: dir,
 		PromptFile: filepath.Join(dir, "prompt.md"), ResultFile: filepath.Join(dir, "result.json")}
-	for name, subcommand := range map[string]string{runtimes.Fake: fake.Subcommand, runtimes.Claude: claude.Subcommand} {
+	for name, subcommand := range map[string]string{adapter.FakeName: fake.Subcommand, adapter.ClaudeName: claude.Subcommand} {
 		r, err := runtimes.Lookup(name, exe)
 		if err != nil {
 			t.Fatalf("Lookup(%q): %v", name, err)

@@ -3,6 +3,7 @@
 ## Contract
 
 The spec, identity, capabilities and versioned result file, completion only from that file (`docs/adapters.md`).
+`FakeName` and `ClaudeName` are the one spelling of the runtime adapter names, which [`runtimes`](adapter-runtimes.md) is keyed by and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to.
 The cancel marker is the `.cancelled` sidecar beside the result file, naming the attempt: `Cancelled` reports it, refusing one that names another attempt with `ErrIdentityMismatch`, and `MarkCancelled` writes it durably and idempotently; while it is present `ReadResult` and `WriteResult` refuse with `ErrAttemptCancelled`.
 The terminal boundary `tabHost` operates only on tabs the host created and honours its context; `HerdrTabs` implements it over the Herdr client.
 The native worker boundary `nativeWorker` stops one verified process and proves its exit, is idempotent and concurrency-safe, refuses an ended context without terminating, and never uses a released handle; it exists only on Windows, and other hosts refuse with `ErrStopUnsupported`.

@@ -200,7 +200,7 @@ func (a *App) artisanStart(args []string) int {
 		return a.usageError(fmt.Sprintf("artisan start: unexpected argument %q", fl.Arg(0)))
 	case !slices.Contains(runtimes.Names(), adapterName):
 		return a.usageError(fmt.Sprintf("artisan start: --adapter %q: the adapters are %s", adapterName, strings.Join(runtimes.Names(), ", ")))
-	case adapterName != runtimes.Fake && session != "":
+	case adapterName != adapter.FakeName && session != "":
 		return a.usageError(fmt.Sprintf("artisan start: --adapter %s runs only as an owned attempt, not in a Herdr tab", adapterName))
 	case timeout < 0:
 		return a.usageError("artisan start: --timeout must not be negative")

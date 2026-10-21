@@ -16,14 +16,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 )
 
-// The names of the runtimes Guildhall can launch.
-const (
-	// Fake is the fake Artisan, package adapter/fake.
-	Fake = "fake"
-	// Claude is the Claude Code adapter, package adapter/claude.
-	Claude = "claude"
-)
-
 // ErrUnknown reports a name that is not one of Names.
 var ErrUnknown = errors.New("unknown runtime adapter")
 
@@ -35,8 +27,8 @@ type Runtime interface {
 
 // all builds each runtime over the guildhall executable.
 var all = map[string]func(executable string) Runtime{
-	Fake:   func(exe string) Runtime { return fake.Adapter{Executable: exe} },
-	Claude: func(exe string) Runtime { return claude.Adapter{Executable: exe} },
+	adapter.FakeName:   func(exe string) Runtime { return fake.Adapter{Executable: exe} },
+	adapter.ClaudeName: func(exe string) Runtime { return claude.Adapter{Executable: exe} },
 }
 
 // Names returns the names of the runtimes Guildhall can launch, in sorted order.

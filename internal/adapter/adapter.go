@@ -16,6 +16,15 @@ import (
 	"time"
 )
 
+// The names of the runtime adapters Guildhall can launch: the one spelling that package
+// adapter/runtimes keys its lookup by and the interpreter's adapter guard refers to.
+const (
+	// FakeName is the fake Artisan, package adapter/fake.
+	FakeName = "fake"
+	// ClaudeName is the Claude Code adapter, package adapter/claude.
+	ClaudeName = "claude"
+)
+
 // Spec is what Guildhall gives an Artisan for one task attempt.
 type Spec struct {
 	Identity
