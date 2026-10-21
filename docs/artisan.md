@@ -256,6 +256,7 @@ Contract tests already read it, but no command reads it yet; it gains a schema w
 | `rung-timeout` | A rung's bound expires without proving the unit empty; `error` records any failure to list survivors | `rung`, `alive`, `error` |
 | `heartbeat-failed` | A heartbeat write fails | `sequence`, `error` |
 | `ended` | Outcome publication has been attempted, even if it failed; check the Run error and `outcome.json` separately for success | `outcome` |
+| `settled` | Resume settlement publishes a new outcome after the launcher is gone and the unit is proven empty; returning an existing outcome does not emit it | `outcome` |
 
 `rung-emptied` is written once for the rung that ends the stop: rung 1 can be found empty before the ladder's first check, during its wait or during cooperative supervision, and each of those paths returns after writing it.
 `TestEventsDocumented` pins the launcher's typed event vocabulary to this table in both directions.

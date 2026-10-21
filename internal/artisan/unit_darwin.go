@@ -28,7 +28,24 @@ func (u *platformUnit) removeContainment() error { return nil }
 
 // newUnit contains the worker in a process group: macOS has no cgroup and no
 // subreaper.
-func newUnit(string) (Unit, error) { return newGroupUnit(Containment{Kind: KindGroup}), nil }
+func newUnit(string) (Unit, error) {
+	u := newGroupUnit(Containment{Kind: KindGroup})
+	u.signal = signalDarwinGroup
+	return u, nil
+}
+
+func signalDarwinGroup(pid int, sig unix.Signal) error {
+	err := unix.Kill(pid, sig)
+	// Darwin reports EPERM for a group containing only zombies. They are
+	// deliberately unreaped until Close, but there is nothing left to signal.
+	// Preserve permission errors unless enumeration proves no live members.
+	if errors.Is(err, unix.EPERM) {
+		if members, lookupErr := groupMembers(-pid); lookupErr == nil && len(members) == 0 {
+			return nil
+		}
+	}
+	return err
+}
 
 func contained(c Containment, worker Identity) ([]Identity, error) {
 	if c.Kind != KindGroup {
