@@ -32,7 +32,7 @@ go build -o guildhall ./cmd/guildhall
 ./guildhall doctor
 ```
 
-`doctor` reports your platform and whether `git`, `ssh`, `claude` and `herdr` are on your machine; a missing tool is reported, not treated as an error.
+`doctor` reports your platform and whether `git`, `ssh`, `claude` and `herdr` are on your machine; see [Commands](#commands).
 For example:
 
 ```console
@@ -150,7 +150,6 @@ sequenceDiagram
     A-->>D: Review outcome for the exact head
     D->>GM: Ready to merge?
 ```
-
 
 ## Commands
 
@@ -327,7 +326,6 @@ Each task runs a JSON workflow made of built-in, versioned step kinds; a workflo
 Each step names who fulfils it: an Artisan, the Guildmaster, the Director or Guildhall itself.
 Loops are bounded, Guildmaster steps are durable pauses that spend no model tokens, and every repository's merge policy applies whatever the workflow says.
 The [workflow interpreter](docs/interpreter.md) executes a supported subset; the default workflow is shown under [Give it work](#3-give-it-work).
-
 
 ## Read more
 
