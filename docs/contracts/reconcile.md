@@ -22,3 +22,4 @@ The cancellation regressions added during review use an AttemptFiles double to p
 A result published in that interval cannot be accepted: classification times out as `unknown` while the lock is held and returns `cancelled` after release.
 A separate contention case exercises the default lock timeout.
 `ProbeOwner` was extracted from `Classify` and `launch.ProbeOwner` without changing either (sustainability review 7, F18); the existing L13, L14, take-over and stop-proof cases pin it.
+`owner_test.go` (`TestProbeOwner`) tests the rule directly, written after the extraction rather than red first: a live launcher is alive without its unit checked; a gone launcher is not gone without recorded containment, with survivors (named) or with a unit that cannot be checked; it is gone once its translated unit is proven empty.
