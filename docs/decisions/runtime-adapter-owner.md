@@ -4,7 +4,8 @@ The choice of runtime was spelled in three places across two processes: `launch.
 Every new runtime would have had to edit each site, and a drift between the suite's spec and the launcher's arguments was caught only end to end.
 
 Package `internal/adapter/runtimes` is now the one owner: `Lookup` maps a name to its runtime over the guildhall executable, and `Names` lists them.
-The names themselves are spelled once, as `adapter.FakeName` and `adapter.ClaudeName`: the lookup is keyed by them and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to them. They live in package `adapter` rather than `runtimes` because `runtimes` imports the fake and Claude adapters, whose tests import the interpreter, so an interpreter import of `runtimes` would be a cycle.
+The names themselves are spelled once, as `adapter.FakeName` and `adapter.ClaudeName`: the lookup is keyed by them and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to them.
+They live in package `adapter` rather than `runtimes` because `runtimes` imports the fake and Claude adapters, whose tests import the interpreter, so an interpreter import of `runtimes` would be a cycle.
 It is a subpackage beside the adapter contract rather than package `adapter` itself, because the runtimes import `adapter` and package `adapter` cannot import them back; the [layout rules](../contracts.md#layout) already allow runtime implementations in subpackages.
 `artisan start` consults it for `--adapter` in both modes and refuses an unknown name with the list.
 `launch.Process` no longer refuses names: it passes the engine's name through and reports the child's refusal as it reports every other startup failure, with the child's log, so the launcher's list cannot fall behind.
