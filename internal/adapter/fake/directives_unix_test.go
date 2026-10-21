@@ -10,14 +10,14 @@ import (
 
 func TestIgnoreInterrupt(t *testing.T) {
 	for _, ignore := range []bool{false, true} {
-		prompt := "guildhall-fake: result=never\nguildhall-fake: lifetime=20s\n"
+		inv := t.TempDir()
+		prompt := "guildhall-fake: result=never\nguildhall-fake: lifetime=20s\nguildhall-fake: inventory=" + inv + "\n"
 		if ignore {
 			prompt += "guildhall-fake: ignore-interrupt=true\n"
 		}
 		args := setup(t, prompt)
 		p := startFake(t, args)
-		// Interrupt only once the fake has started work, past its signal setup.
-		time.Sleep(300 * time.Millisecond)
+		recorded(t, inv, RoleWorker, 1)
 		if err := p.cmd.Process.Signal(syscall.SIGINT); err != nil {
 			t.Fatal(err)
 		}

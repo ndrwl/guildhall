@@ -148,11 +148,15 @@ func ownedProcesses(own *store.Ownership, dir string) ([]ownedProcess, error) {
 	if dir == "" {
 		return out, nil
 	}
-	names, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	for _, n := range names {
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		n := filepath.Join(dir, entry.Name())
 		b, err := os.ReadFile(n)
 		if err != nil {
 			return nil, err

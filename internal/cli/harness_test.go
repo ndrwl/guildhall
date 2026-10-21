@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -33,6 +34,35 @@ func TestArtisanHarnessNeedsLab(t *testing.T) {
 		if code := app.Run(bad); code != 2 {
 			t.Errorf("%q: exit %d, want 2; stderr %q", bad, code, stderr)
 		}
+	}
+}
+
+func TestArtisanHarnessInventoryDirectory(t *testing.T) {
+	for _, cmd := range []string{"inventory", "kill-owned"} {
+		t.Run(cmd, func(t *testing.T) {
+			empty := t.TempDir()
+			for _, tc := range []struct {
+				name string
+				dir  string
+				code int
+			}{
+				{"missing", filepath.Join(empty, "missing"), 1},
+				{"empty", empty, 0},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					app, stdout, stderr := newArtisanApp(t)
+					code := app.Run([]string{"artisan", "harness", cmd, "--lab", "--inventory", tc.dir})
+					if code != tc.code {
+						t.Fatalf("exit %d, want %d; stderr %q", code, tc.code, stderr)
+					}
+					if code == 0 {
+						if got := decodeJSON[[]harnessProcess](t, stdout.String()); len(got) != 0 {
+							t.Errorf("empty inventory returned %+v", got)
+						}
+					}
+				})
+			}
+		})
 	}
 }
 

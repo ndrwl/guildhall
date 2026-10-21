@@ -410,7 +410,8 @@ Sweep does not check ownership, and only `Contained` returning nothing afterward
 Escapes from a process group, such as a `setsid` grandchild, are not members and are not swept.
 
 `launch.ResumeArgv` is the command a pane registers to run after a restart: `guildhall artisan resume` with the attempt's flags, starting with the plain command name Herdr requires.
-`herdr.Client.ReportAgent` registers it with `herdr pane report-agent --source guildhall`, refusing a resume command that starts with a path or an option (`herdr.ErrResumeArgv`); the Herdr tab mode that calls it from the launcher's pane is not wired yet.
+`herdr.Client.ReportAgent` registers it with `herdr pane report-agent --source guildhall`, refusing a resume command that starts with a path or an option (`herdr.ErrResumeArgv`).
+Production registration is deferred to L7 part 3, which wires the `herdr.Client.ReportAgent` call with `launch.ResumeArgv` when running the launcher in the Herdr tab.
 
 ### Harness
 
