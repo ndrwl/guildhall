@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -19,13 +20,15 @@ import (
 // once-only rules and its sentinel errors, and passes RunRecordsContract with the real store.
 // It does not repeat the store's field validation beyond a decision's subject.
 type Records struct {
-	mu        sync.Mutex
-	seq       uint64
-	receipts  map[string]receipt
-	tasks     map[[2]string]store.Task
-	attempts  []store.StageAttempt
-	documents []store.DocumentRef
-	decisions []store.Decision
+	mu         sync.Mutex
+	seq        uint64
+	receipts   map[string]receipt
+	tasks      map[[2]string]store.Task
+	attempts   []store.StageAttempt
+	documents  []store.DocumentRef
+	decisions  []store.Decision
+	rulings    []store.Ruling
+	heartbeats []store.Heartbeat
 }
 
 type receipt struct {
@@ -81,6 +84,34 @@ func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer stri
 	})
 }
 
+// RuleFinding records a ruling once per document and finding, as store.RuleFinding does, without its
+// checks of the document's findings.
+func (r *Records) RuleFinding(mutationID string, ru store.Ruling) (store.Receipt, error) {
+	return r.mutate(mutationID, "rule-finding", ru, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = ru.Repository, ru.TaskID, "ruling/"+ru.Document+"/"+ru.Finding
+		if _, ok := r.tasks[[2]string{ru.Repository, ru.TaskID}]; !ok {
+			return fmt.Errorf("task %s/%s: %w", ru.Repository, ru.TaskID, store.ErrNotFound)
+		}
+		if r.ruling(ru.Repository, ru.TaskID, ru.Document, ru.Finding) != nil {
+			return fmt.Errorf("%w: ruling on %q of %q", store.ErrExists, ru.Finding, ru.Document)
+		}
+		r.rulings = append(r.rulings, ru)
+		slices.SortFunc(r.rulings, func(x, y store.Ruling) int {
+			return cmp.Or(cmp.Compare(x.Document, y.Document), cmp.Compare(x.Finding, y.Finding))
+		})
+		return nil
+	})
+}
+
+func (r *Records) ruling(repository, taskID, document, finding string) *store.Ruling {
+	for i, ru := range r.rulings {
+		if ru.Repository == repository && ru.TaskID == taskID && ru.Document == document && ru.Finding == finding {
+			return &r.rulings[i]
+		}
+	}
+	return nil
+}
+
 // Task implements interp.Records.
 func (r *Records) Task(repository, taskID string) (store.Task, error) {
 	r.mu.Lock()
@@ -111,6 +142,30 @@ func (r *Records) Decisions(repository, taskID string) ([]store.Decision, error)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return list(r, repository, taskID, r.decisions, func(d store.Decision) (string, string) { return d.Repository, d.TaskID })
+}
+
+// Rulings implements interp.Records.
+func (r *Records) Rulings(repository, taskID string) ([]store.Ruling, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return list(r, repository, taskID, r.rulings, func(ru store.Ruling) (string, string) { return ru.Repository, ru.TaskID })
+}
+
+// ContestRuling implements interp.Records.
+func (r *Records) ContestRuling(mutationID, repository, taskID, document, finding, by string) (store.Receipt, error) {
+	req := store.Ruling{Repository: repository, TaskID: taskID, Document: document, Finding: finding, ContestedBy: by}
+	return r.mutate(mutationID, "contest-ruling", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, "ruling/"+document+"/"+finding
+		ru := r.ruling(repository, taskID, document, finding)
+		switch {
+		case ru == nil:
+			return fmt.Errorf("ruling on %q of %q: %w", finding, document, store.ErrNotFound)
+		case ru.ContestedBy != "":
+			return fmt.Errorf("%w: ruling on %q of %q was contested by %s", store.ErrInvalid, finding, document, ru.ContestedBy)
+		}
+		ru.ContestedBy = by
+		return nil
+	})
 }
 
 func list[T any](r *Records, repository, taskID string, all []T, key func(T) (string, string)) ([]T, error) {
@@ -238,18 +293,62 @@ func (r *Records) mutate(mutationID, op string, req any, apply func(rc *store.Re
 	return rc, nil
 }
 
-// RecordsHarness is one interp.Records implementation under the contract suite, with the two writes
-// the engine never makes: creating a task and answering a decision.
+func (r *Records) Heartbeat(repository, taskID, step string, number int) (store.Heartbeat, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, h := range r.heartbeats {
+		if h.Repository == repository && h.TaskID == taskID && h.Step == step && h.Attempt == number {
+			return h, nil
+		}
+	}
+	return store.Heartbeat{}, store.ErrNotFound
+}
+
+func (r *Records) PutHeartbeat(mutationID string, h store.Heartbeat) (store.Receipt, error) {
+	if h.Attempt < 1 || h.Sequence == 0 || h.Time.IsZero() || h.LastOutputAt.IsZero() || h.LastOutputAt.After(h.Time) || strings.TrimSpace(h.WorkerState) == "" || len(h.WorkerState) > store.MaxTextBytes {
+		return store.Receipt{}, store.ErrInvalid
+	}
+	return r.mutate(mutationID, "put-heartbeat", h, func(rc *store.Receipt) error {
+		i := slices.IndexFunc(r.attempts, func(a store.StageAttempt) bool {
+			return a.Repository == h.Repository && a.TaskID == h.TaskID && a.Step == h.Step && a.Number == h.Attempt
+		})
+		if i < 0 {
+			return store.ErrNotFound
+		}
+		if r.attempts[i].Outcome != "" {
+			return store.ErrInvalid
+		}
+		j := slices.IndexFunc(r.heartbeats, func(p store.Heartbeat) bool {
+			return p.Repository == h.Repository && p.TaskID == h.TaskID && p.Step == h.Step && p.Attempt == h.Attempt
+		})
+		if j >= 0 {
+			if h.Sequence <= r.heartbeats[j].Sequence {
+				return store.ErrInvalid
+			}
+			r.heartbeats[j] = h
+		} else {
+			r.heartbeats = append(r.heartbeats, h)
+		}
+		rc.Repository, rc.TaskID, rc.Attempt = h.Repository, h.TaskID, h.Attempt
+		rc.Record = fmt.Sprintf("heartbeat/%s/%d", h.Step, h.Attempt)
+		return nil
+	})
+}
+
+// RecordsHarness is one interp.Records implementation under the contract suite, with the writes
+// the engine never makes: creating a task, answering a decision, ruling on a finding and writing a heartbeat.
 type RecordsHarness struct {
 	Records        interp.Records
 	CreateTask     func(mutationID string, t store.Task) (store.Receipt, error)
 	AnswerDecision func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
+	RuleFinding    func(mutationID string, r store.Ruling) (store.Receipt, error)
+	PutHeartbeat   func(mutationID string, h store.Heartbeat) (store.Receipt, error)
 }
 
 // NewRecordsHarness returns the double under the contract suite.
 func NewRecordsHarness(*testing.T) RecordsHarness {
 	r := NewRecords()
-	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision}
+	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding, PutHeartbeat: r.PutHeartbeat}
 }
 
 // RunRecordsContract runs the interp.Records contract against fresh harnesses from newHarness.
@@ -272,6 +371,45 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 			t.Errorf("%s = %v, want %v", what, err, target)
 		}
 	}
+
+	t.Run("heartbeat", func(t *testing.T) {
+		h := setup(t)
+		hb := store.Heartbeat{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1, Sequence: 1, Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), WorkerState: "running"}
+		hb.LastOutputAt = hb.Time.Add(-time.Minute)
+		_, err := h.Records.Heartbeat("app", "t7", "build", 1)
+		want(t, "missing heartbeat", err, store.ErrNotFound)
+		_, err = h.PutHeartbeat("missing", hb)
+		want(t, "missing attempt", err, store.ErrNotFound)
+		if _, err := h.Records.StartAttempt("start", "app", "t7", "build"); err != nil {
+			t.Fatal(err)
+		}
+		rc, err := h.PutHeartbeat("heartbeat", hb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		replay, err := h.PutHeartbeat("heartbeat", hb)
+		if err != nil || replay != rc {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		got, err := h.Records.Heartbeat("app", "t7", "build", 1)
+		if err != nil || got != hb {
+			t.Fatalf("heartbeat = %+v, %v", got, err)
+		}
+		_, err = h.PutHeartbeat("old", hb)
+		want(t, "sequence", err, store.ErrInvalid)
+		hb.Sequence++
+		_, err = h.PutHeartbeat("heartbeat", hb)
+		want(t, "conflict", err, store.ErrMutationConflict)
+		if _, err = h.PutHeartbeat("new", hb); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = h.Records.FinishAttempt("finish", "app", "t7", "build", 1, store.AttemptSucceeded); err != nil {
+			t.Fatal(err)
+		}
+		hb.Sequence++
+		_, err = h.PutHeartbeat("finished", hb)
+		want(t, "finished", err, store.ErrInvalid)
+	})
 
 	t.Run("concurrent lists and writes", func(t *testing.T) {
 		h := setup(t)
@@ -422,6 +560,31 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		got, err := h.Records.Decisions("app", "t7")
 		if err != nil || len(got) != 1 || !got[0].Answered || got[0].Choice != "approved" || got[0].Note != "ship it" || *got[0].Subject != *d.Subject {
 			t.Errorf("Decisions = %+v, %v", got, err)
+		}
+	})
+	t.Run("lists rulings and contests one once", func(t *testing.T) {
+		h := setup(t)
+		d := store.DocumentRef{Repository: "app", TaskID: "t7", Name: "review-1-outcome", Path: "tasks/app/t7/review-1/outcome.json", SHA256: strings.Repeat("b", 64),
+			Review: &store.Review{Findings: []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "No red test shown."}}}}
+		if _, err := h.Records.PutDocument("doc-1", d); err != nil {
+			t.Fatal(err)
+		}
+		ru := store.Ruling{Repository: "app", TaskID: "t7", Document: d.Name, Finding: "f1", Move: store.RulingOutOfScope, Reason: "Spec §2 excludes it."}
+		if _, err := h.RuleFinding("rule-1", ru); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.Records.ContestRuling("contest-0", "app", "t7", d.Name, "f2", "review-2")
+		want(t, "ContestRuling of an unknown ruling", err, store.ErrNotFound)
+		for range 2 {
+			if _, err := h.Records.ContestRuling("contest-1", "app", "t7", d.Name, "f1", "review-2"); err != nil {
+				t.Fatalf("ContestRuling = %v", err)
+			}
+		}
+		_, err = h.Records.ContestRuling("contest-2", "app", "t7", d.Name, "f1", "review-3")
+		want(t, "ContestRuling of a contested ruling", err, store.ErrInvalid)
+		ru.ContestedBy = "review-2"
+		if got, err := h.Records.Rulings("app", "t7"); err != nil || !slices.Equal(got, []store.Ruling{ru}) {
+			t.Errorf("Rulings = %+v, %v", got, err)
 		}
 	})
 }

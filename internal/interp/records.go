@@ -11,23 +11,28 @@ import (
 // in-memory double; both pass interptest.RunRecordsContract.
 //
 // Reads return a task's records in key order: attempts by step then number, documents by name and
-// decisions by id. Task returns store.ErrNotFound for an unknown task; list reads return empty slices.
+// decisions by id, rulings by document then finding. Task returns store.ErrNotFound for an unknown task; list reads return empty slices.
 // Every write names a mutation id: repeating it with the same request returns the original receipt and
 // changes nothing, and reusing it for a different request fails with store.ErrMutationConflict.
 // StartAttempt numbers attempts of a step from 1 and refuses, with store.ErrInvalid, while one is running;
 // FinishAttempt finishes a running attempt once; a document or decision is recorded once per name or id
-// and an existing one is refused with store.ErrExists. Implementations are safe for concurrent use.
+// and an existing one is refused with store.ErrExists. ContestRuling contests a recorded ruling once: an unknown
+// one is store.ErrNotFound and a contested one store.ErrInvalid. Implementations are safe for concurrent use.
+// Rulings are recorded by the Director (guildhall task finding rule), never by the engine.
 //
 // Workflow approvals are not read here: enforcing them at task creation is separate work (S10).
 type Records interface {
 	Task(repository, taskID string) (store.Task, error)
+	Heartbeat(repository, taskID, step string, number int) (store.Heartbeat, error)
 	Attempts(repository, taskID string) ([]store.StageAttempt, error)
 	Documents(repository, taskID string) ([]store.DocumentRef, error)
 	Decisions(repository, taskID string) ([]store.Decision, error)
+	Rulings(repository, taskID string) ([]store.Ruling, error)
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
 	FinishAttempt(mutationID, repository, taskID, step string, number int, outcome store.AttemptOutcome) (store.Receipt, error)
 	PutDocument(mutationID string, d store.DocumentRef) (store.Receipt, error)
 	OpenDecision(mutationID string, d store.Decision) (store.Receipt, error)
+	ContestRuling(mutationID, repository, taskID, document, finding, by string) (store.Receipt, error)
 }
 
 var _ Records = (*store.Store)(nil)

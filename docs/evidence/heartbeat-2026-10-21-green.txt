@@ -1,0 +1,34 @@
+=== RUN   TestRecordsContract
+=== RUN   TestRecordsContract/store
+=== RUN   TestRecordsContract/store/heartbeat
+=== RUN   TestRecordsContract/double
+=== RUN   TestRecordsContract/double/heartbeat
+--- PASS: TestRecordsContract (0.07s)
+    --- PASS: TestRecordsContract/store (0.07s)
+        --- PASS: TestRecordsContract/store/heartbeat (0.07s)
+    --- PASS: TestRecordsContract/double (0.00s)
+        --- PASS: TestRecordsContract/double/heartbeat (0.00s)
+=== RUN   TestWorkerStalled
+=== RUN   TestWorkerStalled/double
+    worker_stalled_test.go:22: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:44: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:54: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:60: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:60: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:66: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:73: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:73: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+=== RUN   TestWorkerStalled/store
+    worker_stalled_test.go:22: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:44: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:54: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:60: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:60: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:66: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:73: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    worker_stalled_test.go:73: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+--- PASS: TestWorkerStalled (0.12s)
+    --- PASS: TestWorkerStalled/double (0.01s)
+    --- PASS: TestWorkerStalled/store (0.11s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/interp	0.201s

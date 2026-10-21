@@ -11,7 +11,7 @@ The engine consumes four narrow interfaces, declared in `internal/interp` beside
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents and decisions; start and finish attempts, record documents and open decisions | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
+| `Records`: read a task, its attempts, documents, decisions, rulings and an attempt's latest heartbeat; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | none yet | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |
@@ -23,6 +23,21 @@ The engine does not read workflow approvals; enforcing them at task creation is 
 `Engine.StandardsRevision` must name the central standards revision presented for human reviews.
 A blank revision refuses to open a human review decision.
 The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
+
+## Worker-stalled observations
+
+Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; nonpositive values disable them.
+`Engine.Now` supplies the clock in tests and defaults to wall time.
+When an advance reaches a launched, unfinished attempt with no result, a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
+Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
+Attempts, their records and waits are unchanged.
+Missing or stale heartbeats emit nothing; stale-heartbeat reconciliation is later work.
+
+`Records.Heartbeat` is a narrow read implemented by the store and double; see [attempt heartbeats](store.md#attempt-heartbeats) for fixture writes and launcher ownership.
+The tests were written before implementation but were not observed failing then.
+On 2026-10-21, after implementation was written, both heartbeat reads were temporarily stubbed to return `ErrNotFound`.
+`TestWorkerStalled/{double,store}` failed with `stalls = 0, want 1`; `TestRecordsContract/{store,double}/heartbeat` failed when reading persisted evidence (`record not found`).
+The implementations were restored for focused verification; [captured runs](evidence/heartbeat-2026-10-21.md) record this post-implementation check, not historical red-first evidence.
 
 ## Events
 
@@ -58,7 +73,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | `document-review` | `review` | The `subject` input document's digest |
 | `review` | `review` | The code head on the `head` input |
 | `deliver` | `merge` | The code head on the `head` input |
-| loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` |
+| loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
 
@@ -68,6 +83,7 @@ Before recording attempt `n` of an Artisan step, the engine records its binding 
 Besides its wired inputs, an attempt may be given:
 
 - `previous`: a review step's own latest outcome, whose findings the new outcome must disposition;
+- `rulings`: the Director's [rulings](#director-rulings) on findings of a review step's previous outcome, recorded first as document `<step>-<n>-rulings` (`tasks/<repo>/<task>/<step>-<n>.rulings.json`), a JSON array of rulings;
 - `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`).
 
 A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.
@@ -90,10 +106,21 @@ Each blocking result of a step is one round of its `on.changes_requested` rule; 
 
 When an attempt's review outcome arrives, it is refused with `ErrOutcome`, recording nothing, if it is not bound to the revisions in its binding (a stale outcome) or if it gives no disposition for a finding id of the previous outcome it was given.
 
+### Director rulings
+
+A review step's attempt is given the [rulings](tasks.md#director-rulings) captured in its recorded `rulings` input on its previous outcome.
+Review starts resume an existing immutable binding before creating extras; launch and contest processing both consume that binding, so later rulings cannot enter a replayed attempt.
+When its outcome keeps a ruled finding `still-open`, the attempt contests that ruling: the engine records it once, before the attempt is finished, naming the attempt.
+A contested ruling on a rule-cited finding of a blocking outcome is a dispute: the engine opens that round's loop exit `<step>-x<round>`, even within `max`, and neither the loop's target nor the step runs until it is answered.
+The question identifies the head or document and includes compact finding/rule/move details and references to persisted outcomes and ruling records for complete evidence.
+Questions are bounded to the store text limit; long fields and, for very large questions, remaining details are abbreviated.
+`continue` upholds the finding and the loop goes on, with one more round allowed; `accept` and `reject` are as at any loop exit.
+A finding the attempt withdraws or resolves leaves its ruling uncontested.
+
 ### Stall signals
 
 When a review round within its allowed loop count (`max` plus answered `continue` exits) requests changes again, the engine compares its outcome with the previous one and sends the Director message `<repo>.<task>.stall.<step>-<n>`, type `stall`, naming every signal found: the head (or document) is unchanged, no finding was resolved or withdrawn, or a finding is still open for two rounds (report §5.3).
-A stall is information only: it never changes the loop, and only `max` asks the Guildmaster.
+A stall is information only: it never changes the loop or itself asks the Guildmaster; loop exits follow `max` or a [dispute](#director-rulings).
 
 ## Review gate
 
@@ -108,6 +135,7 @@ Output reads are rooted in the working directory: file and parent-directory syml
 All outputs, including supplemental ones, are read and checked before any are copied or recorded.
 The first output is the step's output port, named `<step>-<n>-<port>`; later outputs add `-<index>`, from 2.
 A code-head output must hold a 40 or 64 lowercase hex object id, and a review outcome must parse, or nothing is recorded.
+Every review outcome, including human review and loop-exit acceptance, projects findings and dispositions in its document reference for inspection.
 An input `step.port` resolves to that port's document of the latest round, and its file is checked against the recorded digest before it is used.
 The working directory is `<state>/<repo>/<task>/work` until worktree custody is defined.
 
@@ -160,5 +188,6 @@ It checks each event's effect on the records, the approval bound to the plan doc
 `loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`) against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
 Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
 Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
+`rulings_test.go` checks [Director rulings](#director-rulings) on both backends: a ruling given to the next review, withdrawn or contested once, and a contested blocker opening the loop exit within `max`.
 See the [interpreter contract tests](contracts/interp.md#tests) for history-view and per-write replay coverage.
 `TestRecordsContract` runs `interptest.RunRecordsContract` against the store and the double, including concurrent list readers and record writers.

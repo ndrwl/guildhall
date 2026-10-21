@@ -13,10 +13,11 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 |---|---|---|
 | Task | repository, task id | Title, the workflow revision (name and `sha256:` digest), the `sha256:` digest of the configuration it was accepted under, and the tasks it depends on. The revisions never change after creation (R1.62). State starts `open` and moves once to `done` or `cancelled`. Dependencies must already exist, in any repository of the same Director. |
 | Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`, once. A step cannot start a new attempt while one is running, and a task that is not open cannot start one. |
-| Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. |
+| Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. A review outcome's reference also projects its findings and dispositions (`review`), so inspection never opens the file; finding ids must be valid ids with non-blank summaries and disposition states `resolved`, `still-open` or `withdrawn`. |
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Workflow approval | workflow digest | The Guildmaster's approval of one exact workflow revision for this Director: the workflow name, its `sha256:` digest, the approval words exactly as given and the UTC time it was recorded. Recorded once per digest; see [workflow-edit authority](configuration.md#workflow-edit-authority). Not per repository and never changes a task. |
 | Decision | repository, task, decision id | A question for the Guildmaster and, once, the exact answer (R1.61). A decision is typed: its kind is `approval`, `review`, `loop-exit`, `merge` or `question`; every kind but `question` names the subject the answer binds to, a document (`sha256:<64 lowercase hex>` digest) or a head (40 or 64 lowercase hex object id); and it may offer up to 16 one-line options. When it offers options, the answer's first line (the text before the first LF, with only a single trailing CR removed) must equal one exactly or the answer is refused and nothing is written; the answer is still recorded verbatim, with the matched option as `choice` and the trimmed text after the first line as `note`. Decisions recorded before typed decisions have no kind, subject or options and take any answer. Answering records the answer only and never advances the task. |
+| Ruling | repository, task, outcome document, finding id | The Director's `out-of-scope`, `duplicate` or `defer` ruling on one finding of a recorded review outcome, with a non-blank reason; recorded once, `defer` only for a finding that cites no rule. Contested at most once, recording the attempt that contested it. See [Director rulings](tasks.md#director-rulings). |
 | Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its [containment recovery description](#containment-record), its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
@@ -29,6 +30,23 @@ Containment fields follow the [containment record](#containment-record) rules.
 Document paths are relative to the Director's document directory and must be clean, local, slash-separated paths of at most 1024 bytes, without backslashes or colons.
 Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
 
+## Attempt heartbeats
+
+`PutHeartbeat` stores the latest fixture heartbeat per repository, task, step and attempt in the repository's `heartbeats` bucket, using the same key as an attempt.
+The record contains `sequence`, `time`, `worker_state` and `last_output_at`.
+Sequence must be positive and increase; times must be nonzero and last output cannot follow heartbeat time; worker state is nonblank UTF-8 bounded by `MaxTextBytes`.
+Only a running, existing attempt accepts writes; missing attempts return `ErrNotFound`, while completed attempts and non-increasing sequence return `ErrInvalid`.
+Mutation replay is unchanged and receipts name `heartbeat/<step>/<number>`.
+`Heartbeat` returns the latest record or `ErrNotFound`; reading or writing a heartbeat never changes the attempt.
+These are fixtures for the interpreter now; launcher L6 will write about every five seconds.
+Heartbeats are read separately, not through `TaskHistory`.
+
+The shared Records contract and worker-stalled integration tests were written before implementation, but no failure was observed then.
+On 2026-10-21, after implementation was written, temporarily stubbing both heartbeat reads to return `ErrNotFound` made `TestRecordsContract/{store,double}/heartbeat` fail on the persisted heartbeat read (`record not found`) and `TestWorkerStalled/{double,store}` fail with `stalls = 0, want 1`.
+Both implementations were restored for focused verification.
+These [captured runs](evidence/heartbeat-2026-10-21.md) are post-implementation failure evidence, not historical red-first evidence.
+See [store contract](contracts/store.md).
+
 ## Mutations and receipts
 
 Every change is a mutation that names a caller-chosen mutation id of 1 to 128 characters from letters, digits, `.`, `_`, `:` and `-`, starting with a letter or digit.
@@ -36,9 +54,10 @@ A mutation runs in one bbolt transaction that writes its records and a receipt t
 After a crash, either the records and the receipt are both present or neither is.
 
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, the record it wrote, a store-wide sequence number starting at 1 and the commit time in UTC.
-The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, and `message/<id>` for sending and acknowledging a message.
+The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, `ruling/<document>/<finding>` for recording and contesting a ruling, and `message/<id>` for sending and acknowledging a message.
+Heartbeat receipts follow the [attempt heartbeat contract](#attempt-heartbeats).
 It is not part of the request digest, so receipts written before it existed have no record and still replay; mutations outside a task, such as workflow approvals, have none.
-`TaskHistory` reads a task, its attempts, documents and decisions, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership`.
+`TaskHistory` reads a task, its attempts, documents, decisions and rulings, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership` and heartbeats with `Heartbeat`.
 It scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.

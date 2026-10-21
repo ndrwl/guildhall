@@ -88,6 +88,15 @@ type DocumentRef struct {
 	Path string `json:"path"`
 	// SHA256 is the lowercase hex sha256 of the file's content.
 	SHA256 string `json:"sha256"`
+	// Review projects a review outcome document's findings and dispositions, so inspection reads them
+	// from the store without opening the file; nil for every other document.
+	Review *Review `json:"review,omitempty"`
+}
+
+// Review is the part of a review outcome a document reference projects.
+type Review struct {
+	Findings     []workflow.Finding     `json:"findings,omitempty"`
+	Dispositions []workflow.Disposition `json:"dispositions,omitempty"`
 }
 
 // PaneBinding records where a task's Artisan is presented in Herdr.
@@ -291,6 +300,9 @@ func (s *Store) PutDocument(mutationID string, d DocumentRef) (Receipt, error) {
 	}
 	if _, err := digest.ParseHex(d.SHA256); err != nil {
 		return Receipt{}, invalid("document sha256 %q must be 64 lowercase hex characters", d.SHA256)
+	}
+	if err := validateReview(d.Review); err != nil {
+		return Receipt{}, err
 	}
 	return s.mutate(mutationID, "put-document", d, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = d.Repository, d.TaskID, "document/"+d.Name
@@ -649,6 +661,28 @@ func validateDecision(d Decision) error {
 	}
 	if d.Answered || d.Answer != "" || d.Choice != "" || d.Note != "" {
 		return invalid("a new decision has no answer")
+	}
+	return nil
+}
+
+// validateReview checks a projection's finding ids, summaries and disposition states; the outcome's
+// own rules (ids used once, still-open findings listed) are checked by workflow.ParseReviewOutcome.
+func validateReview(r *Review) error {
+	if r == nil {
+		return nil
+	}
+	for _, f := range r.Findings {
+		if err := validateIDs(f.ID); err != nil {
+			return err
+		}
+		if err := validateText("finding summary", f.Summary, MaxTextBytes); err != nil {
+			return err
+		}
+	}
+	for _, d := range r.Dispositions {
+		if d.State != workflow.Resolved && d.State != workflow.StillOpen && d.State != workflow.Withdrawn {
+			return invalid("disposition of %q has unknown state %q", d.Finding, d.State)
+		}
 	}
 	return nil
 }

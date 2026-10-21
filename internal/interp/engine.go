@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -145,7 +146,9 @@ type Engine struct {
 	DocumentDir string
 	// StateDir is the absolute directory holding attempt directories, <repo>/<task>/<step>-<n>, and each
 	// task's working directory, <repo>/<task>/work, until worktree custody is defined.
-	StateDir string
+	StateDir      string
+	StallInterval time.Duration
+	Now           func() time.Time
 }
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
@@ -209,7 +212,12 @@ func (r *run) load() error {
 	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
+	rulings, err := r.e.Records.Rulings(repo, id)
+	if err != nil {
+		return fmt.Errorf("interp: %w", err)
+	}
 	r.history = newHistory(repo, id, r.def, r.read, attempts, documents, decisions)
+	r.rulings = rulings
 	return nil
 }
 
@@ -265,8 +273,11 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 		return false, next, err
 	case a.Outcome == "":
 		next := Next{Wait: WaitAttempt, Step: s.ID, Attempt: a.Number}
-		if exists(filepath.Join(r.attemptDir(s.ID, a.Number), launchedFile)) || exists(r.resultFile(s.ID, a.Number)) {
+		if exists(r.resultFile(s.ID, a.Number)) {
 			return false, next, nil
+		}
+		if exists(filepath.Join(r.attemptDir(s.ID, a.Number), launchedFile)) {
+			return false, next, r.workerStalled(s.ID, a.Number)
 		}
 		// Recorded but never marked launched: the advance stopped between the two.
 		name, _, err := r.prepare(s)
@@ -326,26 +337,33 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	if err != nil {
 		return Next{}, err
 	}
-	var revisions *workflow.Revisions
-	if isReview(s) {
-		want, err := r.want(s, inputs)
-		if err != nil {
-			return Next{}, err
-		}
-		revisions = &want
-	}
-	extras, err := r.extras(s)
-	if err != nil {
-		return Next{}, err
-	}
-	inputs = append(inputs, extras...)
 	n := 1
 	if a := r.latestAttempt(s.ID); a != nil {
 		n = a.Number + 1
 	}
-	if err := r.bind(s, n, inputs, revisions); err != nil {
+	if r.document(bindingName(s.ID, n)) == nil {
+		var revisions *workflow.Revisions
+		if isReview(s) {
+			want, err := r.want(s, inputs)
+			if err != nil {
+				return Next{}, err
+			}
+			revisions = &want
+		}
+		extras, err := r.extras(s, n)
+		if err != nil {
+			return Next{}, err
+		}
+		inputs = append(inputs, extras...)
+		if err := r.bind(s, n, inputs, revisions); err != nil {
+			return Next{}, err
+		}
+	}
+	b, err := r.binding(s.ID, n)
+	if err != nil {
 		return Next{}, err
 	}
+	inputs = r.boundInputs(b)
 	rc, err := r.e.Records.StartAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID)
 	if err != nil {
 		return Next{}, err
@@ -399,6 +417,9 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 		if err := r.recordOutputs(s, a.Number, res.Outputs); err != nil {
 			return fmt.Errorf("interp: outputs of %s attempt %d: %w", s.ID, a.Number, err)
 		}
+		if err := r.contest(s, a.Number); err != nil {
+			return fmt.Errorf("interp: %w", err)
+		}
 		if err := r.stall(s, a.Number); err != nil {
 			return fmt.Errorf("interp: %w", err)
 		}
@@ -431,6 +452,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	}
 	defer func() { _ = root.Close() }()
 	contents := make([][]byte, len(outputs))
+	var review *store.Review
 	for i, o := range outputs {
 		if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
 			return fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path)
@@ -444,9 +466,11 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 				return err
 			}
 			if isReview(s) {
-				if err := r.checkOutcome(s, n, data); err != nil {
+				o, err := r.checkOutcome(s, n, data)
+				if err != nil {
 					return err
 				}
+				review = reviewOf(*o)
 			}
 		}
 		contents[i] = data
@@ -465,6 +489,9 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 			Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
 			Path:   path.Join("tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d", s.ID, n), o.Path),
 			SHA256: digest.Of(data).Hex(),
+		}
+		if i == 0 {
+			d.Review = review
 		}
 		if err := r.put(d, data); err != nil {
 			return err
@@ -568,7 +595,7 @@ func (r *run) humanOutcome(d store.Decision) error {
 	if err != nil {
 		return err
 	}
-	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest.Of(data).Hex()}, data)
+	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest.Of(data).Hex(), Review: reviewOf(o)}, data)
 }
 
 // subjectPorts names the input whose artefact each Guildmaster or engine decision binds to.
