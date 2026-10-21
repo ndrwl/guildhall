@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -241,6 +242,31 @@ func TestArtisanRoleGrammar(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("artisan run stdout = %q, want empty", stdout)
+	}
+}
+
+// TestRepositoryFlagSpelling pins one spelling of the flag naming a repository (D53): the attempt
+// commands take --repo, as task start, step done and decide do, and the pre-release --repository is
+// refused with a pointer to --repo rather than kept as an alias.
+func TestRepositoryFlagSpelling(t *testing.T) {
+	o := newOwnedAttempt(t, "x")
+	for _, cmd := range []string{"start", "stop", "status", "resume"} {
+		args := o.args(cmd)
+		if i := slices.Index(args, "--repo"); i < 0 {
+			t.Fatalf("artisan %s arguments %q do not spell --repo", cmd, args)
+		} else {
+			args[i] = "--repository"
+		}
+		app, stdout, stderr := newTestApp(nil, nil)
+		if code := app.Run(args); code != 2 {
+			t.Errorf("artisan %s --repository exit code = %d, want 2", cmd, code)
+		}
+		if want := "--repository is now --repo"; !strings.Contains(stderr.String(), want) {
+			t.Errorf("artisan %s --repository stderr = %q, want it to contain %q", cmd, stderr, want)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("artisan %s --repository stdout = %q, want empty", cmd, stdout)
+		}
 	}
 }
 

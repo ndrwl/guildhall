@@ -38,7 +38,7 @@ func newOwnedAttempt(t *testing.T, prompt string) ownedAttempt {
 
 // args are the flags naming the attempt, for start, stop and status.
 func (o ownedAttempt) args(cmd string, extra ...string) []string {
-	a := []string{"artisan", cmd, "--store", o.store, "--state", o.state, "--repository", "app", "--task", "t-1", "--step", "build", "--attempt", "1"}
+	a := []string{"artisan", cmd, "--store", o.store, "--state", o.state, "--repo", "app", "--task", "t-1", "--step", "build", "--attempt", "1"}
 	if cmd == "start" {
 		a = append(a, "--adapter", "fake", "--prompt", o.prompt, "--workdir", o.workdir)
 	}
