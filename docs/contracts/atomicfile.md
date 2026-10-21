@@ -8,8 +8,9 @@ An open or rename that fails for a transient platform reason is retried every 10
 A missing file (`fs.ErrNotExist`) and every other error are returned at once, and a transient error that outlasts the bound is returned as it is.
 One implementation and no interface, like `digest` and `strictjson`.
 
-Consumers: `artisan`'s containment and heartbeat files and the heartbeat reader, so the launcher's `AttemptFiles` reads inherit the rule; `adapter.ReadResult`, so `WaitResult` does too; `interp`'s attempt files; and the test workers of `artisantest` and `interptest`.
-`outcome.json` and the result file are still published once with a hard link (`os.Link`), which never replaces a file.
+Consumers: `artisan`'s containment and heartbeat writers and heartbeat reader; `adapter.ReadResult`, so `WaitResult` does too; `interp`'s attempt-file writer; and the test helpers of `artisantest` and `interptest`, including `artisantest.Files.ValidResult`.
+The retry policy does not cover cancel-marker checks.
+`outcome.json` and adapter result files are still published once with a hard link (`os.Link`), which never replaces a file.
 `interp`'s prepared attempt directory is published by renaming a directory, which this package does not cover.
 
 ## Tests
