@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -360,6 +361,31 @@ func (h *history) served(t string, f firing) (bool, error) {
 // exit that recorded it. Rounds order by number; an exit orders immediately after the round it originates
 // in, before later rounds.
 func (h *history) output(step, port string) (store.DocumentRef, string, error) {
+	best, err := h.latest(step, port)
+	if err != nil {
+		return store.DocumentRef{}, "", err
+	}
+	p := h.docPlaces[best]
+	return h.documents[best], decisionID(p.step, p.round, p.exit), nil
+}
+
+// reviewedRange returns the range the code review step's latest outcome reviewed, from the binding of the attempt that
+// recorded it; nil when the step has no outcome, its latest outcome is a loop exit's or the attempt recorded no range.
+func (h *history) reviewedRange(step string) (*git.Range, error) {
+	i, err := h.latest(step, "outcome")
+	if err != nil || h.docPlaces[i].exit {
+		return nil, nil
+	}
+	if h.document(bindingName(step, h.docPlaces[i].round)) == nil {
+		return nil, nil
+	}
+	b, err := h.binding(step, h.docPlaces[i].round)
+	return b.Range, err
+}
+
+// latest returns the index of the latest first document of one step's output port. Rounds order by number; an exit
+// orders immediately after the round it originates in, before later rounds.
+func (h *history) latest(step, port string) (int, error) {
 	best, bestRound, bestExit := -1, 0, false
 	for i, p := range h.docPlaces {
 		if !p.ok || p.step != step || p.part != port || p.index != 0 {
@@ -369,11 +395,11 @@ func (h *history) output(step, port string) (store.DocumentRef, string, error) {
 		if p.exit {
 			j := slices.IndexFunc(h.def.Steps, func(s workflow.Step) bool { return s.ID == step })
 			if j < 0 {
-				return store.DocumentRef{}, "", fmt.Errorf("output %s: step %s is not in the workflow", h.documents[i].Name, step)
+				return -1, fmt.Errorf("output %s: step %s is not in the workflow", h.documents[i].Name, step)
 			}
 			o, err := h.origin(h.def.Steps[j], n)
 			if err != nil {
-				return store.DocumentRef{}, "", fmt.Errorf("output %s: %w", h.documents[i].Name, err)
+				return -1, fmt.Errorf("output %s: %w", h.documents[i].Name, err)
 			}
 			n = o.round
 		}
@@ -382,8 +408,7 @@ func (h *history) output(step, port string) (store.DocumentRef, string, error) {
 		}
 	}
 	if best < 0 {
-		return store.DocumentRef{}, "", fmt.Errorf("%s.%s has no recorded document", step, port)
+		return -1, fmt.Errorf("%s.%s has no recorded document", step, port)
 	}
-	p := h.docPlaces[best]
-	return h.documents[best], decisionID(p.step, p.round, p.exit), nil
+	return best, nil
 }

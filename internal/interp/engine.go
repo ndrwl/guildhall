@@ -149,6 +149,10 @@ type Engine struct {
 	StateDir      string
 	StallInterval time.Duration
 	Now           func() time.Time
+	// Base returns the commit a repository's tasks are based on now; nil or an error means every code review
+	// is full. Rebases classifies a new head against the last reviewed range (docs/interpreter.md#rebase-aware-review).
+	Base    func(repository string) (string, error)
+	Rebases Rebases
 }
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
@@ -342,20 +346,27 @@ func (r *run) start(s workflow.Step) (Next, error) {
 		n = a.Number + 1
 	}
 	if r.document(bindingName(s.ID, n)) == nil {
-		var revisions *workflow.Revisions
+		var b binding
 		if isReview(s) {
 			want, err := r.want(s, inputs)
 			if err != nil {
 				return Next{}, err
 			}
-			revisions = &want
+			b.Revisions = &want
 		}
 		extras, err := r.extras(s, n)
 		if err != nil {
 			return Next{}, err
 		}
 		inputs = append(inputs, extras...)
-		if err := r.bind(s, n, inputs, revisions); err != nil {
+		if s.Type == "review" {
+			resolution, err := r.rebase(s, n, b.Revisions.Subject.CodeHead, &b)
+			if err != nil {
+				return Next{}, err
+			}
+			inputs = append(inputs, resolution...)
+		}
+		if err := r.bind(s, n, inputs, b); err != nil {
 			return Next{}, err
 		}
 	}

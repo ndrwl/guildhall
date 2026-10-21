@@ -128,6 +128,16 @@ Before `deliver`, every `review` and `document-review` step earlier in the workf
 So several review stages, such as the Guildhall repository's three reviews on distinct profiles, must all approve the same head.
 A Guildmaster review answered under an older standards revision does not satisfy the gate; asking it again is later work.
 
+## Rebase-aware review
+
+A code review (`review`) attempt's binding records the commit range it reviews, `Engine.Base`'s answer for the task's repository and the attempt's code head, and its scope.
+`Engine.Base` is supplied by the caller; when it is nil, fails or returns something other than a full commit id, the attempt records no range and its scope is `full`.
+The range last reviewed is read only from records, through the history view: the binding of the attempt that recorded the step's latest outcome; a loop exit's outcome, or an attempt that recorded no range, gives none.
+When there is a last range with a different head, `Engine.Rebases` classifies the new range against it ([`internal/git`](contracts/git.md)); only `scope: rebase` narrows the round.
+The resolution diff is then recorded first as document `<step>-<n>-resolution` and given on port `resolution`, beside the `previous` outcome, and the binding records `scope: rebase`.
+Anything else, including a classifier error or a nil `Engine.Rebases`, is a full review; a replay whose recorded resolution diff no longer matches is full too.
+The outcome still binds to the attempt's head, spec digest and standards revision, so the review gate is unchanged.
+
 ## Documents and inputs
 
 A succeeded result's outputs are copied from the task's working directory into the Director document directory at `tasks/<repo>/<task>/<step>-<n>/<output path>` and recorded with their sha256.
@@ -142,7 +152,7 @@ The working directory is `<state>/<repo>/<task>/work` until worktree custody is 
 ## History
 
 Every read of where a record sits in a task's history goes through one private view in `internal/interp` (`history.go`), built from the task's records at the start of an advance and updated by each write the advance makes, so a read after a write sees it.
-It answers a step's latest attempt, its round decisions and next round, its loop exits and how many were answered `continue`, its blocking results in round order, the originating round of each exit, which feedback an attempt was given, and the latest document of a step's output port.
+It answers a step's latest attempt, its round decisions and next round, its loop exits and how many were answered `continue`, its blocking results in round order, the originating round of each exit, which feedback an attempt was given, the latest document of a step's output port and the range a code review's latest outcome reviewed.
 Record names stay the keys and keep their forms (`<step>-<n>`, `<step>-x<k>`, `<step>-<n>-<port>`, `<step>-<n>-<port>-<index>`, `<step>-<n>-inputs`, `<decision>-revisions`, `<decision>-answer`); they are parsed in one place, from the right, so a step id ending in `-<digits>` or `-x<digits>` is never mistaken for a round of a step it extends.
 Exit `k` of a step originates in its `k`th blocking result; an exit's output orders immediately after that round and before later rounds.
 A missing or unreadable record the view needs, such as the outcome an exit originated in, is an error, never a guess that the step approved.
