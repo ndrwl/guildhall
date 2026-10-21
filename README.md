@@ -94,8 +94,6 @@ flowchart TB
     DIR["Director orchestration<br/>command"]:::planned
     INTERP["Workflow interpreter<br/>Go library"]:::built
     RENDER["Prompt rendering<br/>and skills"]:::built
-    GIT["Git boundary"]:::built
-    LAUNCH["Launch package<br/>guildhall artisan run, stop, status"]:::built
     WRAP["Artisan launcher<br/>containment, endpoint, stop ladder"]:::built
     ADAPT["Adapter contract<br/>and fake adapter"]:::built
     RT["Runtime adapter<br/>Claude Code first"]:::planned
@@ -108,10 +106,7 @@ flowchart TB
     INTERP --> RENDER
     INSP --> STORE
     MSG --- STORE
-    INTERP --> GIT
-    INTERP -. "not yet wired" .-> LAUNCH
-    LAUNCH --> WRAP
-    LAUNCH --> STORE
+    INTERP -. "not yet wired" .-> WRAP
     WRAP --> ADAPT
     ADAPT --> RT
     WRAP -.-> EXEC
