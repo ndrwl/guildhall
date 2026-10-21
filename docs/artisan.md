@@ -231,6 +231,35 @@ For a started worker, a stop that writes or finds the cancel marker records rung
 Each rung is logged to `events.jsonl` with its bound; signal rungs also record the members they acted on and any error.
 A timed-out rung names the processes still alive, and a skipped rung says why.
 
+### Events
+
+The launcher appends one JSON object per line to `events.jsonl`; every line carries `event`, its name, and `at`, an RFC 3339 UTC time, plus the fields below.
+An event is observation only; a reader must tolerate unknown events.
+The file carries no schema field and no reader depends on it yet; it gains a schema when a command reads it.
+
+| Event | When | Fields |
+|---|---|---|
+| `stop-before-start` | A stop is requested before the worker starts | |
+| `running` | The worker has started in its unit | `worker` |
+| `result-accepted` | A valid result decides the attempt finished | |
+| `worker-outlived-result` | The worker is still alive a result grace after its result | |
+| `worker-exited` | The worker exits while the launcher supervises it | |
+| `signal-forwarded` | An interrupt to the launcher is forwarded to the worker | `signal`, `error` |
+| `signal` | A stop signal to the launcher requests the ladder | `signal` |
+| `decide-failed` | Reading or writing the attempt files fails while deciding | `error` |
+| `cancel-marker` | A stop writes the cancel marker | |
+| `stop-after-decision` | A stop arrives after the attempt is decided other than cancelled | `state` |
+| `ladder` | The ladder starts, or cooperative supervision begins | `first` |
+| `rung` | A rung runs | `rung`, `name`, `deadline`; signal rungs add `members`, `error` and, for rung 2, `graceful` |
+| `rung-skipped` | A rung is unsupported on this platform | `rung`, `name`, `error` |
+| `rung-emptied` | A rung is found empty, at the first check or after its wait; once per stop | `rung` |
+| `rung-timeout` | A rung's bound expires with members alive | `rung`, `alive`, `error` |
+| `heartbeat-failed` | A heartbeat write fails | `sequence`, `error` |
+| `ended` | `outcome.json` is written | `outcome` |
+
+`rung-emptied` is written once for the rung that ends the stop: rung 1 can be found empty before the ladder's first check, during its wait or during cooperative supervision, and each of those paths returns after writing it.
+`TestEventsDocumented` pins every event name `launcher.go` writes to this table.
+
 ### Stop requests
 
 `Stop`, the endpoint's `stop`, and SIGTERM or SIGHUP delivered to the launcher all request the one ladder; every request waits for it and answers with its end, and a stop after the end returns at once.
