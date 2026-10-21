@@ -14,6 +14,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/cli"
 	"github.com/ndrwl/guildhall/internal/launch"
 )
 
@@ -21,6 +22,9 @@ func TestMain(m *testing.M) {
 	artisantest.MainIfWorker()
 	if len(os.Args) > 1 && os.Args[1] == fake.Subcommand {
 		os.Exit(fake.Main(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if os.Getenv(guildhallEnv) != "" {
+		os.Exit(cli.New().Run(os.Args[1:]))
 	}
 	os.Exit(m.Run())
 }

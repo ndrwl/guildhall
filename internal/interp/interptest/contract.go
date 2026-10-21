@@ -140,8 +140,12 @@ func RunLauncherContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 				t.Fatalf("Stop %d = %v", i+1, err)
 			}
 		}
-		if _, err := wait(spec, 300*time.Millisecond); !errors.Is(err, adapter.ErrNoResultYet) {
-			t.Errorf("WaitResult after Stop = %v, want ErrNoResultYet", err)
+		// A launcher that marks the attempt cancelled (docs/adapters.md) makes the wait refuse it instead.
+		if _, err := wait(spec, 300*time.Millisecond); !errors.Is(err, adapter.ErrNoResultYet) && !errors.Is(err, adapter.ErrAttemptCancelled) {
+			t.Errorf("WaitResult after Stop = %v, want ErrNoResultYet or ErrAttemptCancelled", err)
+		}
+		if _, err := os.Stat(spec.ResultFile); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("a stopped attempt left a result: %v", err)
 		}
 	})
 
