@@ -439,6 +439,9 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		}
 		_, err = h.Records.FinishAttempt("finish-1b", "app", "t7", "plan", 1, store.AttemptSucceeded)
 		want(t, "FinishAttempt twice", err, store.ErrInvalid)
+		if r, err := h.Records.FinishAttempt("finish-1c", "app", "t7", "plan", 1, store.AttemptFailed); err != nil || r.MutationID != "finish-1" {
+			t.Errorf("FinishAttempt twice with the same outcome = %+v, %v; want finish-1's receipt", r, err)
+		}
 		_, err = h.Records.FinishAttempt("finish-9", "app", "t7", "plan", 9, store.AttemptSucceeded)
 		want(t, "FinishAttempt of an unknown attempt", err, store.ErrNotFound)
 		r2, err := h.Records.StartAttempt("start-2", "app", "t7", "plan")

@@ -12,7 +12,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Record | Key | Contract |
 |---|---|---|
 | Task | repository, task id | Title, the workflow revision (name and `sha256:` digest), the `sha256:` digest of the configuration it was accepted under, and the tasks it depends on. The revisions never change after creation (R1.62). State starts `open` and moves once to `done` or `cancelled`. Dependencies must already exist, in any repository of the same Director. |
-| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`, once. A step cannot start a new attempt while one is running, and a task that is not open cannot start one. |
+| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`, once; the [first finish stands](#attempts). A step cannot start a new attempt while one is running, and a task that is not open cannot start one. |
 | Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. A review outcome's reference also projects its findings and dispositions (`review`), so inspection never opens the file; finding ids must be valid ids with non-blank summaries and disposition states `resolved`, `still-open` or `withdrawn`. |
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Workflow approval | workflow digest | The Guildmaster's approval of one exact workflow revision for this Director: the workflow name, its `sha256:` digest, the approval words exactly as given and the UTC time it was recorded. Recorded once per digest; see [workflow-edit authority](configuration.md#workflow-edit-authority). Not per repository and never changes a task. |
@@ -52,6 +52,16 @@ The [decision command reference](decisions-cli.md#answers) defines answer mutati
 - A mutation that fails writes nothing, consumes no sequence number and leaves its id free for a later request.
 
 A caller that loses the result of a mutation, for example because the process stopped, retries with the same mutation id and gets the original receipt.
+
+## Attempts
+
+An attempt has one outcome, and the first finish stands.
+Several writers finish attempts, each under its own mutation id: the launcher when its worker ends (`launch-finish:<tag>`), the interpreter's result intake (`attempt-finish:…`) and `artisan resume` settling an exited launcher's attempt (`resume-finish:<tag>`); any of them may write first, so the rule is the store's and no writer repeats it.
+
+- `FinishAttempt` on an attempt already finished with the same outcome, under a different mutation id, returns the receipt of the mutation that finished it and writes nothing: the new id gets no receipt and no sequence number, so it stays free.
+- A different outcome is refused with `ErrInvalid` (`already finished`) and writes nothing.
+- An attempt whose finishing receipt names no record, because it was committed before receipts named their record, has no receipt to return, so an equal outcome is refused as a different one is.
+- Finding the finishing receipt scans every receipt, like `TaskHistory`; it happens only when a second writer arrives.
 
 ## One writer
 
