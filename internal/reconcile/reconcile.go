@@ -6,7 +6,9 @@
 //
 // Classify decides in this order, the first that applies winning:
 //
-//  1. the launcher's outcome.json: its state, finished, cancelled or failed;
+//  1. the launcher's outcome.json, read with artisan.ReadOutcome: its state,
+//     finished, cancelled or failed; an outcome that cannot be read is
+//     unknown, a newer schema reported apart from damage;
 //  2. the cancel marker: cancelled;
 //  3. a valid result: finished;
 //  4. no ownership record: absent;
@@ -35,16 +37,14 @@ package reconcile
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // State is an attempt's classification.
@@ -136,13 +136,13 @@ func classifyFiles(a Attempt) Classification {
 	unknown := func(format string, args ...any) Classification {
 		return Classification{State: Unknown, Reason: fmt.Sprintf(format, args...)}
 	}
-	var out artisan.Outcome
-	switch b, err := os.ReadFile(filepath.Join(a.Dir, artisan.OutcomeFile)); {
+	switch out, err := artisan.ReadOutcome(a.Dir); {
 	case err == nil:
-		if err := json.Unmarshal(b, &out); err != nil || out.Schema != artisan.OutcomeSchema {
-			return unknown("unreadable outcome: %v", err)
-		}
 		return Classification{State: State(out.State), Reason: "launcher outcome: " + out.Detail, Outcome: &out}
+	case errors.Is(err, strictjson.ErrNewerSchema):
+		return unknown("newer outcome: %v", err)
+	case errors.Is(err, artisan.ErrInvalidOutcome):
+		return unknown("unreadable outcome: %v", err)
 	case !errors.Is(err, fs.ErrNotExist):
 		return unknown("outcome: %v", err)
 	}

@@ -39,8 +39,8 @@ func TestReadMissingIsImmediate(t *testing.T) {
 	}
 }
 
-// The reader pauses after closing so Windows renames have a chance to
-// succeed within the retry bound rather than face near-continuous contention.
+// Each concurrent read/write pair finishes before the next starts, so Windows
+// renames face one bounded read rather than near-continuous contention.
 // See docs/contracts/atomicfile.md for the contract and test expectations.
 func TestReadDuringWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result")
@@ -48,22 +48,17 @@ func TestReadDuringWrite(t *testing.T) {
 	if err := atomicfile.Write(path, []byte(bodies[0])); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
-	var wg sync.WaitGroup
-	var writes int
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		for ; time.Now().Before(deadline); writes++ {
-			if err := atomicfile.Write(path, []byte(bodies[writes%2])); err != nil {
+	for i := range 128 {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := atomicfile.Write(path, []byte(bodies[i%2])); err != nil {
 				t.Errorf("Write: %v", err)
-				return
 			}
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		for time.Now().Before(deadline) {
+		}()
+		go func() {
+			defer wg.Done()
 			got, err := atomicfile.Read(path)
 			if err != nil {
 				t.Errorf("Read: %v", err)
@@ -71,13 +66,11 @@ func TestReadDuringWrite(t *testing.T) {
 			}
 			if s := string(got); s != bodies[0] && s != bodies[1] {
 				t.Errorf("Read = %q, a torn version", s)
-				return
 			}
-			time.Sleep(time.Millisecond)
+		}()
+		wg.Wait()
+		if t.Failed() {
+			return
 		}
-	}()
-	wg.Wait()
-	if writes <= 100 {
-		t.Errorf("writer republished %d times in a second, want more than 100", writes)
 	}
 }

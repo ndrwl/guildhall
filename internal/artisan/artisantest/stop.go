@@ -380,13 +380,9 @@ func (c *launch) outcome(wantErr error, want artisan.Outcome) artisan.Outcome {
 	if (want.State != "any" && (got.State != want.State || got.LateResultRejected != want.LateResultRejected)) || (want.Rung >= 0 && got.Rung != want.Rung) {
 		c.t.Errorf("outcome %+v, want state %s rung %d late result rejected %v", got, want.State, want.Rung, want.LateResultRejected)
 	}
-	b, err := os.ReadFile(filepath.Join(c.attempt, artisan.OutcomeFile))
-	var file artisan.Outcome
-	if err == nil {
-		err = json.Unmarshal(b, &file)
-	}
+	file, err := artisan.ReadOutcome(c.attempt)
 	if err != nil || file.State != got.State || file.Rung != got.Rung || file.LateResultRejected != got.LateResultRejected {
-		c.t.Errorf("outcome file %s (%v) does not record %+v", b, err, got)
+		c.t.Errorf("outcome file %+v (%v) does not record %+v", file, err, got)
 	}
 	return got
 }
