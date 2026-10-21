@@ -4,10 +4,9 @@
 
 `Open`, locking, mutation ids and receipts, and the records, messages, inboxes and workflow approvals (`docs/store.md`, D9, D10, D15, D22), including typed decisions bound to a subject with option-checked answers (D23), Director rulings recorded once and contested once with the review projection on document references ([director-rulings](../decisions/director-rulings.md)), and receipts naming their record with `TaskHistory`'s one-transaction task read (D24).
 Attempt ownership ([store-attempt-ownership](../decisions/store-attempt-ownership.md)): `Ownership`, `StartOwnedAttempt`, `TakeOwnership` with its `OwnerProbe` seam and `ErrOwnerLive`/`ErrOwnerUnknown` refusals, `UpdateOwnership`, `Ownership`, and release by `FinishAttempt`.
-`UpdateOwnership` keeps recovery evidence monotonic: a recorded containment or endpoint may be set from empty but an update that clears or changes either is refused with `ErrInvalid` and writes nothing.
 The ownership record's `Containment` is a recovery description of every Artisan containment kind ([containment-persistence](../decisions/containment-persistence.md)): `Containment.Recoverable` and `ErrUnrecoverable`, the kind constants, a worker identity in place of a name for process groups, the Linux detection reason, and legacy records read unchanged but never recoverable when incomplete.
 
-The [attempt ownership contract](../store.md#attempt-ownership) defines the default probe's containment refusal and the explicit containment-aware recovery path.
+The [attempt ownership contract](../store.md#attempt-ownership) defines monotonic recovery evidence, the default probe's containment refusal and the explicit containment-aware recovery path.
 
 `PutHeartbeat` and `Heartbeat` follow the [attempt heartbeat contract](../store.md#attempt-heartbeats), including validation, replay and launcher ownership.
 
