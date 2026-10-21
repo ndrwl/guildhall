@@ -2,7 +2,7 @@
 
 Everything on this page is designed, not built.
 No command, config key, file or store record it names exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
-The decision is recorded in [release upgrades](decisions/release-upgrades.md).
+The decision is recorded in [release upgrades](decisions/0051-release-upgrades.md).
 It implements R1.31: a release pin, side-by-side installs, new tasks only, and rollback.
 
 The same rules as [standalone and managed Directors](director-modes.md) apply:

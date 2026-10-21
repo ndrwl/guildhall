@@ -128,7 +128,7 @@ Each command holds the store only for its own operation and waits up to two seco
 
 Everything in this section is designed, not built.
 No command, flag, config key or store record below exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
-The decision is recorded in [Director messaging](decisions/director-messaging.md).
+The decision is recorded in [Director messaging](decisions/0049-director-messaging.md).
 It extends the local inbox above so a Director can hear from the Guildmaster and from other Directors, without giving any message more authority than the local inbox has today.
 
 ### Who may send
@@ -262,7 +262,7 @@ Two options were considered.
    Two Directors on the same machine and account run `guildhall messages receive` locally against the receiver's copy, with no SSH.
 
 Option 2 needs SSH from one Director machine to another, which R1.8 does not set up today; setting it up is a manual enrolment step shown as exact commands (R1.47), never done by Guildhall.
-A Director finds its peers in `[[peer]]` config entries: in a standalone copy written by hand, in a managed copy published by the Steward like any other managed setting.
+A Director finds its peers in `[[peer]]` config entries written by hand in its own local config, in both modes: managed settings are flat string keys and cannot carry a table ([Director modes](director-modes.md#what-is-missing)), so peers stay local until managed tables exist.
 
 ### Identity
 

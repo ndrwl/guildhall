@@ -275,7 +275,7 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 
 - `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
-- The Tier 2 lab runs, the Herdr tab mode running the launcher in its pane and the retirement of the Windows-only worker stop path remain; see the [resume decision](decisions/artisan-resume.md).
+- The Tier 2 lab runs, the Herdr tab mode running the launcher in its pane and the retirement of the Windows-only worker stop path remain; see the [resume decision](decisions/0048-artisan-resume.md).
 
 ## Heartbeat
 

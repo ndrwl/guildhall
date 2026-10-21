@@ -1,4 +1,4 @@
-# One command grammar for the Director, Artisan and Steward roles
+# D53. One command grammar for the Director, Artisan and Steward roles
 
 The staged plan is for each role to be started, stopped, inspected and resumed with the same shape:
 

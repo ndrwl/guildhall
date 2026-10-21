@@ -2,7 +2,7 @@
 
 ## Contract
 
-`SkipUnlessRequired(t, name, format, args...)` skips `t` with the formatted reason, unless `GUILDHALL_CI_REQUIRE` lists `name`; then it fails `t` with that reason and the requirement ([decision](../decisions/ci-required-skips.md)).
+`SkipUnlessRequired(t, name, format, args...)` skips `t` with the formatted reason, unless `GUILDHALL_CI_REQUIRE` lists `name`; then it fails `t` with that reason and the requirement ([decision](../decisions/0046-ci-required-skips.md)).
 It calls exactly one of `Skipf` and `Fatalf` on `t`, through `T`, the part of `testing.TB` it uses.
 `Required` returns the listed names: comma-separated, with space around a name and empty entries ignored, compared exactly.
 A name outside `Requirable` (`ksh`, `powershell`, `pwsh`, `windows`) is an error naming it, which `SkipUnlessRequired` reports as a failure, so a misspelt requirement cannot pass as an unmet one.

@@ -9,6 +9,7 @@ Do not add co-author trailers to commit messages.
 Pull requests are reviewed against `docs/review.md` and the requirements in `docs/requirements.md`.
 Record each engineering decision in its own new file, `docs/decisions/<branch-or-topic-slug>.md`, in the pull request that makes it.
 Do not number it or edit the `docs/decisions.md` index: decisions are numbered and indexed by a refresh after merge, so parallel pull requests cannot collide on a number.
+The refresh runs after each sustainability review's follow-up batch has merged, in the pull request of the lane that carries that review's docs-truth finding.
 Record a package's contract and tests in its own `docs/contracts/<package>.md`.
 Describe a new command in its own `docs/` page and add at most one line for it to the README command list.
 
