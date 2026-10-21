@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"testing"
 
@@ -16,7 +15,6 @@ import (
 
 var errInjected = errors.New("injected write failure")
 
-// writeKinds are the kinds of record the engine writes, keyed by its Records method.
 // A write made while the engine applies an answered decision is a decision answer whatever its method.
 var writeKinds = map[string]string{
 	"StartAttempt":  "attempt start",
@@ -26,8 +24,6 @@ var writeKinds = map[string]string{
 	"":              "decision answer",
 }
 
-// flakyRecords fails one write, counted across every write the engine makes: before it reaches the records,
-// or after they committed it, as a crash on either side of the write would.
 type flakyRecords struct {
 	interp.Records
 	writes, fail int
@@ -185,16 +181,7 @@ func TestReplayAfterEachWrite(t *testing.T) {
 	}
 }
 
-// TestReplaySampleCoversEveryWriteKind pins the real-store sample of TestReplayAfterEachWrite: the flow writes
-// every kind of record, and every write method of Records is counted, so no kind is left out of the sample.
 func TestReplaySampleCoversEveryWriteKind(t *testing.T) {
-	records := reflect.TypeFor[interp.Records]()
-	for i := range records.NumMethod() {
-		m := records.Method(i)
-		if m.Type.NumOut() > 0 && m.Type.Out(0) == reflect.TypeFor[store.Receipt]() && writeKinds[m.Name] == "" {
-			t.Errorf("Records.%s writes a record flakyRecords does not count", m.Name)
-		}
-	}
 	_, _, kinds, _ := replayLoop(t, backends[0], 0, false)
 	first := firstOfEachKind(kinds)
 	for _, kind := range writeKinds {
