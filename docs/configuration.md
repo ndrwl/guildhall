@@ -42,7 +42,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 
 | Key | Meaning |
 |---|---|
-| `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before an advance sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off. `config.StallInterval` reads it. |
+| `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before an advance sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off, and `config.StallInterval` reads it. |
 
 ### Repositories
 
