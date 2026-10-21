@@ -48,6 +48,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -123,7 +124,7 @@ func (e *parseError) Unwrap() error { return e.err }
 // Result reads the published result; a missing one matches fs.ErrNotExist and
 // an invalid one is adapter's error.
 func (f Files) Result() (adapter.Result, error) {
-	fh, err := os.Open(f.ResultFile)
+	fh, err := atomicfile.Open(f.ResultFile)
 	if err != nil {
 		return adapter.Result{}, err
 	}
