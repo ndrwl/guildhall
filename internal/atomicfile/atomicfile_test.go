@@ -39,12 +39,9 @@ func TestReadMissingIsImmediate(t *testing.T) {
 	}
 }
 
-// TestReadDuringWrite republishes one file for a second while another
-// goroutine reads it: every read and every write succeeds and sees a whole
-// version. On Windows a plain open and rename fail here with sharing
-// violations and access denied. The reader closes and pauses 1 ms between
-// reads, holding the file about 1% of the time, so a republish gets its
-// 250 ms bound; a reader that never pauses would test the platform instead.
+// The reader pauses after closing so Windows renames have a chance to
+// succeed within the retry bound rather than face near-continuous contention.
+// See docs/contracts/atomicfile.md for the contract and test expectations.
 func TestReadDuringWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result")
 	bodies := []string{"first version\n", "second version, longer\n"}
