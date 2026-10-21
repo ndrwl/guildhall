@@ -427,6 +427,41 @@ func TestContractTDDCheckTwinsAgree(t *testing.T) {
 	}
 }
 
+func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
+	const name = "guildhall-review"
+	var files []string
+	err := fs.WalkDir(skills.Release(), name, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files = append(files, strings.TrimPrefix(p, name+"/"))
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"CREDITS.md", "SKILL.md", "smells.md"}; !slices.Equal(files, want) {
+		t.Errorf("files = %q, want %q: no scripts and no sub-agent definitions", files, want)
+	}
+	data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+
+	_, example, ok := strings.Cut(text, "```json\n")
+	example, _, closed := strings.Cut(example, "```")
+	if !ok || !closed {
+		t.Fatal("SKILL.md has no fenced json example outcome")
+	}
+	o, err := workflow.ParseReviewOutcome([]byte(example))
+	if err != nil {
+		t.Fatalf("example outcome: %v", err)
+	}
+	if !o.Blocking() || len(o.Dispositions) == 0 || !slices.ContainsFunc(o.Findings, func(f workflow.Finding) bool { return f.Rule == "" }) {
+		t.Errorf("example should show a blocking round with dispositions and a suggestion: %+v", o)
+	}
+}
+
 func copyFile(t *testing.T, from, to string) {
 	t.Helper()
 	data, err := os.ReadFile(from)
