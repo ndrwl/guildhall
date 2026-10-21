@@ -420,8 +420,8 @@ func rawExchange(t *testing.T, path, request string) map[string]any {
 	}
 	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
-	// An oversized request can be rejected before the whole write completes.
-	// The error reply, not consumption of the rejected bytes, is the contract.
+	// Requests stay within the server's read budget so closing the socket
+	// with unread bytes cannot reset the connection and discard its reply.
 	_, writeErr := c.Write([]byte(request))
 	line, err := bufio.NewReader(c).ReadBytes('\n')
 	if err != nil {
@@ -455,7 +455,9 @@ func TestEndpointLineProtocol(t *testing.T) {
 	}
 	for name, req := range map[string]string{
 		"malformed": "not json\n",
-		"oversized": `{"op":"` + strings.Repeat("x", 1<<16) + `"}` + "\n",
+		// Exhaust the 4 KiB request budget without a newline: no complete
+		// request fits, but no unread tail can reset the socket on Windows.
+		"oversized": strings.Repeat("x", 4<<10),
 	} {
 		rep := rawExchange(t, path, req)
 		if rep["error"] == nil || rep["attempt"] != testKey.String() {
