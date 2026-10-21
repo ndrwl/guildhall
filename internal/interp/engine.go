@@ -299,6 +299,11 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 			return false, Next{}, err
 		}
 		return false, next, r.launch(s, a.Number, name, r.boundInputs(b))
+	case a.Outcome == store.AttemptSucceeded && !r.taken(s, a.Number):
+		// The launcher recorded the outcome before the result's intake: take its outputs now.
+		if err := r.takeResult(s, a); err != nil {
+			return false, Next{}, err
+		}
 	case a.Outcome != store.AttemptSucceeded:
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), "attempt-failed",
 			fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome))
@@ -423,7 +428,14 @@ func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render
 	return writeFile(filepath.Join(r.attemptDir(s.ID, n), launchedFile), data)
 }
 
+// taken reports whether succeeded attempt n of s has its output port's document recorded.
+func (r *run) taken(s workflow.Step, n int) bool {
+	kind, _ := workflow.LookupKind(s.Type, s.Version)
+	return len(kind.Outputs) == 0 || r.document(documentName(place{step: s.ID, round: n, part: kind.Outputs[0].Name})) != nil
+}
+
 // takeResult records a finished attempt: its outputs as documents when it succeeded, then its outcome.
+// An outcome the launcher already recorded stands: a succeeded one has only its outputs recorded here.
 func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	res, err := adapter.ReadResult(r.resultFile(s.ID, a.Number), r.identity(s.ID, a.Number))
 	if err != nil {
@@ -441,6 +453,9 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 			return fmt.Errorf("interp: %w", err)
 		}
 		outcome = store.AttemptSucceeded
+	}
+	if a.Outcome != "" {
+		return nil
 	}
 	n := strconv.Itoa(a.Number)
 	if _, err := r.e.Records.FinishAttempt(r.mutation("attempt-finish", s.ID, n), r.task.Repository, r.task.ID, s.ID, a.Number, outcome); err != nil {

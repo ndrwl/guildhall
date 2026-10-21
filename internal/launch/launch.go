@@ -17,7 +17,9 @@
 //     empty; ctx ending, the endpoint's stop and a relayed stop signal each
 //     request the one stop ladder;
 //  5. it records the store outcome with FinishAttempt, translated by one
-//     rule (attemptOutcome), which also releases the ownership.
+//     rule (attemptOutcome), which also releases the ownership; an attempt
+//     the interpreter's result intake already finished with the same outcome
+//     is not an error, and one finished with another keeps the store's.
 //
 // When survivors outlive the last rung (artisan.ErrNotEmpty) the attempt is
 // left running and owned, so reconcile sees the survivors once this process
@@ -251,6 +253,10 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	finish := func(outcome store.AttemptOutcome, runErr error) (Report, error) {
 		err := a.write(func(s *store.Store) error {
 			_, err := s.FinishAttempt(mutation("finish"), k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
+			if err != nil && storedOutcome(s, k) == outcome {
+				// The interpreter's result intake recorded the same outcome first.
+				return nil
+			}
 			return err
 		})
 		if err == nil {
@@ -297,6 +303,17 @@ func Run(ctx context.Context, c Config) (Report, error) {
 func attemptTag(k artisan.AttemptKey, launcher artisan.Identity) string {
 	sum := sha256.Sum256([]byte(k.String() + "\n" + strconv.Itoa(launcher.PID) + "\n" + launcher.Token))
 	return hex.EncodeToString(sum[:16])
+}
+
+// storedOutcome is attempt k's store outcome, empty when it has none or cannot be read.
+func storedOutcome(s *store.Store, k artisan.AttemptKey) store.AttemptOutcome {
+	attempts, _ := s.Attempts(k.Repository, k.TaskID)
+	for _, at := range attempts {
+		if at.Step == k.Step && at.Number == k.Attempt {
+			return at.Outcome
+		}
+	}
+	return ""
 }
 
 // ProbeOwner is the containment-aware take-over probe: alive while the
