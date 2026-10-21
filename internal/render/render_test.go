@@ -282,6 +282,25 @@ func TestSkillWithScriptCopiedByteIdenticalAndDigested(t *testing.T) {
 	}
 }
 
+func TestTreeDigestIgnoresInputOrder(t *testing.T) {
+	// The fixture go-tdd skill's files and tree digest, as recorded in testdata/golden/build.manifest.json.
+	files := []File{
+		{Path: "scripts/check.sh", Digest: "sha256:ca4b5179596dc897c978e4d062b631dd0848f5159e5fe879d45ec477ae60b04a"},
+		{Path: "SKILL.md", Digest: "sha256:c1d1160a457c78f3b61c3fa11040ee710f0bb38ef40a60f24e233cc2abf73060"},
+	}
+	const want = "sha256:5771b0a0a8393288c7caeea797aea949d98ec66b2193390a826a6e9f6be1b33b"
+	if got := TreeDigest(files); got != want {
+		t.Errorf("TreeDigest(unsorted) = %s, want %s", got, want)
+	}
+	if files[0].Path != "scripts/check.sh" {
+		t.Errorf("TreeDigest reordered its input: %+v", files)
+	}
+	slices.Reverse(files)
+	if got := TreeDigest(files); got != want {
+		t.Errorf("TreeDigest(sorted) = %s, want %s", got, want)
+	}
+}
+
 func TestSymlinkInSkillRefused(t *testing.T) {
 	root := t.TempDir()
 	skill := filepath.Join(root, "linked")

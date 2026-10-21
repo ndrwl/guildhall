@@ -11,7 +11,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/render"
@@ -117,7 +116,7 @@ func (r *run) checkPrepared(s workflow.Step, n int, dir string, inputs []render.
 		if sk.Path != path.Join(render.SkillsDir, sk.Name) {
 			return refuse("skill %q at %q", sk.Name, sk.Path)
 		}
-		if got := treeDigest(sk.Files); got != sk.Digest {
+		if got := string(render.TreeDigest(sk.Files)); got != sk.Digest {
 			return refuse("skill %q tree digest %s, its files digest to %s", sk.Name, sk.Digest, got)
 		}
 		for _, f := range sk.Files {
@@ -167,16 +166,6 @@ func (r *run) checkPrepared(s workflow.Step, n int, dir string, inputs []render.
 		}
 	}
 	return prepared{promptFile: filepath.Join(dir, render.PromptFile), manifest: m}, nil
-}
-
-// treeDigest is render's skill tree digest over a skill's files.
-func treeDigest(files []render.File) string {
-	sorted := slices.SortedFunc(slices.Values(files), func(a, b render.File) int { return strings.Compare(a.Path, b.Path) })
-	var lines strings.Builder
-	for _, f := range sorted {
-		fmt.Fprintf(&lines, "%s  %s\n", digest.Digest(f.Digest).Hex(), f.Path)
-	}
-	return string(digest.Of([]byte(lines.String())))
 }
 
 // decodeStrict decodes exactly one JSON value with no unknown fields and nothing after it.

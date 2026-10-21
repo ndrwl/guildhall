@@ -169,10 +169,17 @@ func copySkill(sk foundSkill, dst string) (Skill, error) {
 		return Skill{}, fmt.Errorf("render: skill %q: %w", sk.name, err)
 	}
 	slices.SortFunc(skill.Files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
+	skill.Digest = string(TreeDigest(skill.Files))
+	return skill, nil
+}
+
+// TreeDigest is a skill's tree digest over its files, as Skill.Digest defines it.
+// The files may be in any order; files is not modified.
+func TreeDigest(files []File) digest.Digest {
+	sorted := slices.SortedFunc(slices.Values(files), func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	var lines strings.Builder
-	for _, f := range skill.Files {
+	for _, f := range sorted {
 		fmt.Fprintf(&lines, "%s  %s\n", digest.Digest(f.Digest).Hex(), f.Path)
 	}
-	skill.Digest = string(digest.Of([]byte(lines.String())))
-	return skill, nil
+	return digest.Of([]byte(lines.String()))
 }
