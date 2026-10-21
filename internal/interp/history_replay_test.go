@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -17,11 +18,12 @@ var errInjected = errors.New("injected write failure")
 
 // A write made while the engine applies an answered decision is a decision answer whatever its method.
 var writeKinds = map[string]string{
-	"StartAttempt":  "attempt start",
-	"PutDocument":   "document put",
-	"OpenDecision":  "decision open",
-	"FinishAttempt": "attempt finish",
-	"":              "decision answer",
+	"StartAttempt":      "attempt start",
+	"PutDocument":       "document put",
+	"OpenDecision":      "decision open",
+	"FinishAttempt":     "attempt finish",
+	"ConsumeFullReview": "full-review consume",
+	"":                  "decision answer",
 }
 
 type flakyRecords struct {
@@ -65,6 +67,10 @@ func (r *flakyRecords) OpenDecision(id string, d store.Decision) (store.Receipt,
 	return r.write("OpenDecision", func() (store.Receipt, error) { return r.Records.OpenDecision(id, d) })
 }
 
+func (r *flakyRecords) ConsumeFullReview(id, repo, task string, n int, by string) (store.Receipt, error) {
+	return r.write("ConsumeFullReview", func() (store.Receipt, error) { return r.Records.ConsumeFullReview(id, repo, task, n, by) })
+}
+
 // historyOf is what a task's records say, compared across runs.
 func historyOf(t *testing.T, e *env) string {
 	t.Helper()
@@ -97,7 +103,8 @@ func firstOfEachKind(kinds []string) map[string]int {
 	return first
 }
 
-// replayLoop runs a loop that exhausts its max, continues once and is accepted at the second exit, failing write
+// replayLoop runs a loop that exhausts its max, continues once and is accepted at the second exit, with a full
+// review requested before the second review round, failing write
 // fail (none when 0) and repeating the advance it failed. It returns the history, the launch count, the kind of
 // every write and the final wait.
 func replayLoop(t *testing.T, b backend, fail int, after bool) (string, int, []string, interp.Next) {
@@ -109,6 +116,7 @@ func replayLoop(t *testing.T, b backend, fail int, after bool) (string, int, []s
 	type action struct {
 		ev     interp.Event
 		answer string
+		full   bool // the Director requests a full review first
 	}
 	flow := []action{
 		{ev: interp.Event{Kind: interp.TaskCreated}},
@@ -116,7 +124,7 @@ func replayLoop(t *testing.T, b backend, fail int, after bool) (string, int, []s
 		{answer: "approved", ev: interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"}},
 		{ev: interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1}},
 		{ev: interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1}},
-		{ev: interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}},
+		{full: true, ev: interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}},
 		{ev: interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}},
 		{answer: "continue", ev: interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}},
 		{ev: interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 3}},
@@ -135,6 +143,11 @@ func replayLoop(t *testing.T, b backend, fail int, after bool) (string, int, []s
 		if a.answer != "" {
 			e.answer(t, a.ev.Decision, a.answer)
 		}
+		if a.full {
+			if _, err := e.h.RequestFullReview("full:app:t7:1", "app", "t7"); err != nil {
+				t.Fatal(err)
+			}
+		}
 		flaky.answering = a.ev.Kind == interp.DecisionAnswered
 		if err := advanceErr(t, e, a.ev); err != nil {
 			if !errors.Is(err, errInjected) {
@@ -143,6 +156,15 @@ func replayLoop(t *testing.T, b backend, fail int, after bool) (string, int, []s
 			t.Logf("write %d failed in Advance(%+v); repeating it", fail, a.ev)
 		}
 		next = e.advance(t, a.ev)
+	}
+	if fr, err := e.h.Records.FullReviews("app", "t7"); err != nil || len(fr) != 1 || fr[0].Number != 1 || fr[0].ConsumedBy != "review-2" {
+		t.Errorf("FullReviews = %+v, %v; want request 1 consumed by review-2", fr, err)
+	}
+	var b2 struct {
+		Scope git.Scope `json:"scope"`
+	}
+	if read(t, e, "review-2-inputs", &b2); b2.Scope != git.ScopeFull {
+		t.Errorf("review 2 scope = %q, want %q", b2.Scope, git.ScopeFull)
 	}
 	return historyOf(t, e), len(e.script.Launched()), flaky.kinds, next
 }
