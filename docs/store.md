@@ -60,8 +60,7 @@ Several writers finish attempts, each under its own mutation id: the launcher wh
 
 - `FinishAttempt` on an attempt already finished with the same outcome, under a different mutation id, returns the receipt of the mutation that finished it and writes nothing: the new id gets no receipt and no sequence number, so it stays free.
 - A different outcome is refused with `ErrInvalid` (`already finished`) and writes nothing.
-- An attempt whose finishing receipt names no record, because it was committed before receipts named their record, has no receipt to return, so an equal outcome is refused as a different one is.
-- Finding the finishing receipt scans every receipt, like `TaskHistory`; it happens only when a second writer arrives.
+- Finding the finishing receipt scans every receipt by operation and request digest, including legacy receipts without a record label; it happens only when a second writer arrives.
 
 ## One writer
 

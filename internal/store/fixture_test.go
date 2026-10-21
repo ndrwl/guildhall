@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -40,6 +42,54 @@ func writeFixture(t *testing.T, path string) {
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFinishAttemptLegacyReceipt(t *testing.T) {
+	data, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "copy.store")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := openTest(t, path)
+	first, err := s.Receipt("fixture-3")
+	if err != nil || first.Record != "" {
+		t.Fatalf("legacy receipt = %+v, %v; want no record label", first, err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, outcome := range []AttemptOutcome{AttemptSucceeded, AttemptFailed, AttemptStopped, AttemptSucceeded} {
+		got, err := s.FinishAttempt("legacy-second", "app", "t-1", "build", 1, outcome)
+		if outcome == AttemptSucceeded {
+			if err != nil || got != first {
+				t.Fatalf("equal finish = %+v, %v; want %+v", got, err, first)
+			}
+		} else if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("unequal finish: %v; want ErrInvalid", err)
+		}
+	}
+	if _, err := s.Receipt("legacy-second"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second receipt: %v; want ErrNotFound", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("second finishes changed the persisted store")
+	}
+	s = openTest(t, path)
+	r, err := s.StartAttempt("legacy-second", "app", "t-1", "build")
+	if err != nil || r.Sequence != 8 || r.Attempt != 2 {
+		t.Fatalf("next mutation = %+v, %v; want sequence 8, attempt 2", r, err)
 	}
 }
 

@@ -283,7 +283,7 @@ func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, numbe
 		}
 		if a.Outcome != "" {
 			if a.Outcome == outcome {
-				if first, ok := finishReceipt(tx, r.Repository, r.TaskID, r.Record); ok {
+				if first, ok := finishReceipt(tx, r.RequestDigest); ok {
 					return standing{first}
 				}
 			}
@@ -297,13 +297,11 @@ func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, numbe
 	})
 }
 
-// finishReceipt is the receipt of the mutation that finished the attempt named record, false
-// when none names it because it was committed before receipts named their record.
-func finishReceipt(tx *bolt.Tx, repository, taskID, record string) (Receipt, bool) {
+func finishReceipt(tx *bolt.Tx, requestDigest string) (Receipt, bool) {
 	c := tx.Bucket(bucketReceipts).Cursor()
 	for k, v := c.First(); k != nil; k, v = c.Next() {
 		var r Receipt
-		if json.Unmarshal(v, &r) == nil && r.Operation == "finish-attempt" && r.Repository == repository && r.TaskID == taskID && r.Record == record {
+		if json.Unmarshal(v, &r) == nil && r.Operation == "finish-attempt" && r.RequestDigest == requestDigest {
 			return r, true
 		}
 	}

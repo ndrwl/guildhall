@@ -7,5 +7,5 @@ The rule that the first record stands, and that an equal second record is not an
 The tolerance is deleted from `launch.Run` and the intake, `Resume` needed no edit, and a later writer, such as the watcher or a Director command, inherits the rule; changing it, for example to prefer the launcher's outcome, changes one place.
 
 Returning the earlier receipt rather than a new one keeps a receipt meaning a committed write and leaves the second id free.
-The earlier receipt is found by scanning receipts for the attempt's record, as `TaskHistory` scans, only when a second writer arrives; a finish committed before receipts named their record has no receipt to return, so an equal outcome over it is refused, as before this change.
+The earlier receipt is found by scanning receipts for the operation and request digest only when a second writer arrives; this also identifies finishes committed before receipts named their record.
 Recording the finishing mutation id on the attempt would avoid the scan but change the attempt record's format for a path taken at most twice per attempt.
