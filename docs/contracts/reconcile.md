@@ -6,6 +6,8 @@
 `stuck` is a live launcher identity with a heartbeat older than `StaleAfter` (`DefaultStaleAfter`); it is reported with its evidence and is never exit or relaunch authority.
 The [package API contract](../../internal/reconcile/reconcile.go) defines attempt-lock synchronization, bounded lock and endpoint waits, and the lock-file creation exception to otherwise non-mutating classification.
 The attempt directory must exist.
+`ProbeOwner` is the one owner-gone rule: it probes the recorded launcher, translates the record's containment and lists its survivors with `artisan.Contained`; `Owner.Gone` holds only for a gone launcher whose recorded unit is proven empty.
+`Classify`, `launch.ProbeOwner` and `launch.Resume` read it.
 
 ## Tests
 
@@ -19,3 +21,4 @@ The cases use live processes and real units, endpoints and stores; no model call
 The cancellation regressions added during review use an AttemptFiles double to pause real Launcher.Cancel and Launcher.Stop after their negative result check and before marker publication.
 A result published in that interval cannot be accepted: classification times out as `unknown` while the lock is held and returns `cancelled` after release.
 A separate contention case exercises the default lock timeout.
+`ProbeOwner` was extracted from `Classify` and `launch.ProbeOwner` without changing either (sustainability review 7, F18); the existing L13, L14, take-over and stop-proof cases pin it.

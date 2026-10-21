@@ -387,3 +387,60 @@ func TestPaneRunAndInterruptUseOwnedPane(t *testing.T) {
 		t.Error("RunInOwnedTab accepted a multi-line command")
 	}
 }
+
+func TestReportAgentRegistersTheResumeCommand(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{"pane report-agent": {stdout: `{"id":"cli:request","result":{"type":"ok"}}`}})
+	resume := []string{"guildhall", "artisan", "resume", "--store", "/s/g.store", "--state", "/s/st", "--attempt", "1"}
+	if err := c.ReportAgent(context.Background(), "w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: resume}); err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{"herdr", "pane", "report-agent", "--source", "guildhall", "--agent", "artisan", "--state", "working", "w1:p2", "--session", "guildhall-lab", "--"}, resume...)
+	if len(f.calls) != 1 || !slices.Equal(f.calls[0].args, want) {
+		t.Fatalf("argv = %q, want %q", f.calls, want)
+	}
+	if err := c.ReportAgent(context.Background(), "w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "idle"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"herdr", "pane", "report-agent", "--source", "guildhall", "--agent", "artisan", "--state", "idle", "w1:p2", "--session", "guildhall-lab"}; !slices.Equal(f.calls[1].args, want) {
+		t.Errorf("argv without resume = %q, want %q", f.calls[1].args, want)
+	}
+}
+
+func TestReportAgentRefusesWhatHerdrWouldReject(t *testing.T) {
+	good := AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{"guildhall"}}
+	for name, tc := range map[string]struct {
+		pane string
+		r    AgentReport
+		want error
+	}{
+		"absolute resume command": {"w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{"/usr/local/bin/guildhall", "artisan"}}, ErrResumeArgv},
+		"relative resume command": {"w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{"./guildhall"}}, ErrResumeArgv},
+		"windows resume command":  {"w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{`C:\bin\guildhall.exe`}}, ErrResumeArgv},
+		"option resume command":   {"w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{"--session"}}, ErrResumeArgv},
+		"empty resume command":    {"w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{""}}, ErrResumeArgv},
+		"bad state":               {"w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "done"}, nil},
+		"bad source":              {"w1:p2", AgentReport{Source: "--x", Agent: "artisan", State: "idle"}, nil},
+		"empty agent":             {"w1:p2", AgentReport{Source: "guildhall", State: "idle"}, nil},
+		"bad pane":                {"--session", good, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, f := newTestClient(t, nil)
+			err := c.ReportAgent(context.Background(), tc.pane, tc.r)
+			if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) {
+				t.Errorf("ReportAgent = %v, want a refusal %v", err, tc.want)
+			}
+			if len(f.calls) != 0 {
+				t.Errorf("a refused report called herdr: %q", f.calls)
+			}
+		})
+	}
+}
+
+func TestReportAgentReturnsHerdrsRefusal(t *testing.T) {
+	c, _ := newTestClient(t, map[string]response{"pane report-agent": {exit: 1, stderr: `{"error":{"code":"invalid_resume_argv","message":"resume_argv must start with a plain command name, not a path"},"id":"cli:request"}`}})
+	err := c.ReportAgent(context.Background(), "w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{"guildhall"}})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "invalid_resume_argv" {
+		t.Errorf("ReportAgent = %v, want Herdr's invalid_resume_argv", err)
+	}
+}

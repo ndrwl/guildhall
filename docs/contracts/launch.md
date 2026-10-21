@@ -2,14 +2,15 @@
 
 ## Contract
 
-The composition package behind `artisan run`, `stop` and `status` ([commands](../artisan.md#commands)); its [doc comments](../../internal/launch/launch.go) own the API contract.
+The composition package behind `artisan run`, `stop`, `status` and `resume` ([commands](../artisan.md#commands)); its [doc comments](../../internal/launch/launch.go) own the API contract.
 `Attempt` names an owned attempt by store, state directory and key, with its directory, adapter identity and `Files`.
 `Files` is the real `artisan.AttemptFiles`: the adapter's identity-bound, version-checked result and its `.cancelled` sidecar; a missing or invalid result is not valid, an unreadable one is an error, and a late result is still seen while the marker is present.
 Result reads use `atomicfile.Open` and its [bounded publication-race retry](atomicfile.md); missing and invalid results retain the classifications above.
 `attemptOutcome` is the one translation of a launcher outcome and result into the store's outcome ([glossary](../glossary.md#outcome)).
 The [owned command lifecycle](../artisan.md#commands) describes `Run`'s setup, locked takeover, supervision and finalization, including refusal of already-decided attempts.
 Worker startup errors, including containment persistence errors, remain in `Run`'s returned error while the launcher decides and writes the outcome and the store records it.
-`ProbeOwner` is alive while the recorded launcher lives and gone only when it is gone and its recorded unit is proven empty.
+`ProbeOwner` is alive while the recorded launcher lives and gone only when it is gone and its recorded unit is proven empty, by `reconcile.ProbeOwner`, the one owner-gone rule.
+`Resume` follows the [resume rules](../artisan.md#resume): nothing to do without an unreleased record, refusal of a live or unproven owner, a sweep until the unit is proven empty, then `artisan.Settle` and `FinishAttempt` under the attempt lock with an idempotent mutation id; `ResumeArgv` is the command a pane registers for it.
 `Stop` follows the [command's termination-evidence rules](../artisan.md#commands), returning `ErrNotStopped` when termination is unproven.
 `Status` is `reconcile.Classify` over the attempt's files and ownership record.
 
@@ -27,5 +28,7 @@ Review regressions were added later.
 `decided_test.go` checks that finished, cancelled and failed outcomes refuse a recovery run without changing ownership, containment evidence, the persisted outcome or the store attempt, both with a usable endpoint path and one blocked by a directory.
 `setup_failure_test.go` checks that an overlong endpoint path leaves no ownership or worker and permits a corrected retry, and that a blocked endpoint bind records a failed attempt and releases ownership without starting a worker.
 `start_failure_test.go` is a review regression: a nonexistent working directory preserves the startup error, writes the failed outcome, records the failed store attempt and releases ownership without starting a worker.
+`resume_test.go` was written red first against a stub `Resume` ([red run](../evidence/launcher-resume-2026-10-21-red.txt)): no owner does nothing; a live launcher and a gone launcher without containment are refused with the tree alive, no outcome and the record unchanged; a gone launcher with a surviving tree, an emptied unit with a result, a surviving tree with the marker, and an outcome already decided are swept, settled, recorded and released, and a second resume finds the record released.
+`TestStopContractFakeArtisan` runs `artisantest.RunStopContract` with the fake Artisan as the worker through the fake adapter's command (F2); it was red against the fake without the P0 directives, while the cases that start no worker or need no directive (the three L15 cases, an invalid result and a decided attempt) passed.
 `TestArtisanRunCustody` in `internal/cli` is the launcher and store custody acceptance: a launcher process owns a fake worker while separate processes read its status, send a message, answer a decision and are refused a competing run, each within ten seconds and leaving the ownership record unchanged; a stop through the endpoint then ends it with exit status 5.
 After the red commit the launcher gained one event: `rung-emptied` for rung 1 when the marker empties the tree before the ladder's first check, which the stop contract already required and the real files' slower marker write exposed.

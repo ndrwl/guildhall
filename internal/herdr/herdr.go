@@ -4,7 +4,8 @@
 // Every call names its session explicitly; the ambient HERDR_SESSION,
 // HERDR_SOCKET_PATH and pane context variables never choose the target.
 // The client creates workspaces and tabs, reads them, runs a command in a tab it
-// created, interrupts that command, and closes only tabs it created.
+// created, interrupts that command, closes only tabs it created, and reports
+// a pane's agent with its resume command.
 // It never starts, stops or deletes Herdr servers or sessions.
 package herdr
 
@@ -125,10 +126,19 @@ func IsNotFound(err error) bool {
 
 // call runs one Herdr subcommand and returns its stdout.
 func (c *Client) call(ctx context.Context, args ...string) ([]byte, error) {
-	argv := make([]string, 0, len(c.command)+len(args)+2)
+	return c.callTail(ctx, args, nil)
+}
+
+// callTail is call with tail passed after `--`, following the session, so no
+// word of it is read as a Herdr option.
+func (c *Client) callTail(ctx context.Context, args, tail []string) ([]byte, error) {
+	argv := make([]string, 0, len(c.command)+len(args)+len(tail)+3)
 	argv = append(argv, c.command...)
 	argv = append(argv, args...)
 	argv = append(argv, "--session", c.session)
+	if len(tail) > 0 {
+		argv = append(append(argv, "--"), tail...)
+	}
 	stdout, stderr, exit, err := c.run(ctx, argv, c.env())
 	if err != nil {
 		return nil, fmt.Errorf("herdr %s: %w", strings.Join(args[:min(2, len(args))], " "), err)
@@ -528,3 +538,52 @@ func (c *Client) InterruptOwnedTab(ctx context.Context, t OwnedTab) error {
 	_, err := c.call(ctx, "pane", "send-keys", t.paneID, "ctrl+c")
 	return err
 }
+
+// ErrResumeArgv refuses a resume command Herdr would reject: an empty one is
+// allowed (no resume), but a non-empty one must start with a plain command
+// name, never a path or an option.
+var ErrResumeArgv = errors.New("herdr resume_argv must start with a plain command name, not a path")
+
+// AgentReport is what a pane reports about the agent running in it.
+type AgentReport struct {
+	// Source names the reporter, such as "guildhall"; Agent labels the agent,
+	// such as "artisan". Both are letters, digits, '.', '_' or '-'.
+	Source, Agent string
+	// State is idle, working, blocked or unknown.
+	State string
+	// Resume is the command Herdr runs in the pane after a restart; it must
+	// start with a plain command name (ErrResumeArgv).
+	Resume []string
+}
+
+// ReportAgent reports the agent running in pane paneID with `herdr pane
+// report-agent`, registering r.Resume as the pane's resume_argv. A pane
+// reports itself, so the pane need not be one this client created. The
+// report is checked before anything is sent: a malformed pane id, source,
+// agent or state is refused, and a resume command Herdr would reject is
+// ErrResumeArgv. The resume arguments follow `--`, after the explicit
+// session, so none of them is read as a Herdr option.
+func (c *Client) ReportAgent(ctx context.Context, paneID string, r AgentReport) error {
+	if err := checkID("pane", paneID); err != nil {
+		return err
+	}
+	if !labelShape.MatchString(r.Source) || !labelShape.MatchString(r.Agent) {
+		return fmt.Errorf("herdr agent source %q and agent %q: need letters, digits, '.', '_' or '-'", r.Source, r.Agent)
+	}
+	if !agentStates[r.State] {
+		return fmt.Errorf("herdr agent state %q must be idle, working, blocked or unknown", r.State)
+	}
+	if len(r.Resume) > 0 {
+		if cmd := r.Resume[0]; cmd == "" || strings.HasPrefix(cmd, "-") || strings.ContainsAny(cmd, `/\:`) {
+			return fmt.Errorf("%w: %q", ErrResumeArgv, cmd)
+		}
+	}
+	_, err := c.callTail(ctx, []string{"pane", "report-agent", "--source", r.Source, "--agent", r.Agent, "--state", r.State, paneID}, r.Resume)
+	return err
+}
+
+// labelShape is the accepted shape of an agent source or label.
+var labelShape = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// agentStates are the pane agent states Herdr accepts.
+var agentStates = map[string]bool{"idle": true, "working": true, "blocked": true, "unknown": true}
