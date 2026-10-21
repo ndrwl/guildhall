@@ -1,0 +1,83 @@
+--- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts (0.09s)
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/command_runs_in_the_working_directory_with_the_spec_environment (0.01s)
+        adaptertest.go:103: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_succeed (0.01s)
+        adaptertest.go:117: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_fail (0.01s)
+        adaptertest.go:117: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_exit-error (0.01s)
+        adaptertest.go:117: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/never_completes_on_no-result (0.01s)
+        adaptertest.go:133: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/never_completes_on_malformed (0.01s)
+        adaptertest.go:133: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/never_completes_on_wrong-identity (0.01s)
+        adaptertest.go:133: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/a_stopped_attempt_leaves_no_result (0.01s)
+        adaptertest.go:141: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestScriptedRuntimeConformanceOnInterpreterAttempts/an_existing_result_is_never_replaced (0.01s)
+        adaptertest.go:162: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+--- FAIL: TestShellPanesContract (0.00s)
+    --- FAIL: TestShellPanesContract/create_returns_a_tab_in_the_requested_workspace_and_session (0.00s)
+        tabhost_test.go:42: unsupported operation
+    --- FAIL: TestShellPanesContract/a_new_tab's_shell_is_idle (0.00s)
+        tabhost_test.go:60: unsupported operation
+    --- FAIL: TestShellPanesContract/tabs_the_host_did_not_create_are_refused_and_receive_nothing (0.00s)
+        tabhost_test.go:68: unsupported operation
+    --- FAIL: TestShellPanesContract/run_makes_the_pane_busy_and_interrupt_returns_it_to_the_shell (0.00s)
+        tabhost_test.go:89: unsupported operation
+    --- FAIL: TestShellPanesContract/run_refuses_anything_but_one_non-empty_line (0.00s)
+        tabhost_test.go:108: unsupported operation
+    --- FAIL: TestShellPanesContract/an_ended_context_fails_every_operation (0.00s)
+        tabhost_test.go:120: unsupported operation
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter	0.094s
+?   	github.com/ndrwl/guildhall/internal/adapter/adaptertest	[no test files]
+--- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts (0.09s)
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/command_runs_in_the_working_directory_with_the_spec_environment (0.01s)
+        adaptertest.go:103: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_succeed (0.01s)
+        adaptertest.go:117: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_fail (0.01s)
+        adaptertest.go:117: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_exit-error (0.01s)
+        adaptertest.go:117: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/never_completes_on_no-result (0.01s)
+        adaptertest.go:133: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/never_completes_on_malformed (0.01s)
+        adaptertest.go:133: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/never_completes_on_wrong-identity (0.01s)
+        adaptertest.go:133: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/a_stopped_attempt_leaves_no_result (0.01s)
+        adaptertest.go:141: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestFakeRuntimeConformanceOnInterpreterAttempts/an_existing_result_is_never_replaced (0.01s)
+        adaptertest.go:162: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+--- FAIL: TestFakeRuntimeConformanceInAPane (0.02s)
+    --- FAIL: TestFakeRuntimeConformanceInAPane/completes_from_the_result_file:_succeed (0.00s)
+        adaptertest.go:117: unsupported operation
+    --- FAIL: TestFakeRuntimeConformanceInAPane/completes_from_the_result_file:_fail (0.00s)
+        adaptertest.go:117: unsupported operation
+    --- FAIL: TestFakeRuntimeConformanceInAPane/completes_from_the_result_file:_exit-error (0.00s)
+        adaptertest.go:117: unsupported operation
+    --- FAIL: TestFakeRuntimeConformanceInAPane/never_completes_on_no-result (0.00s)
+        adaptertest.go:133: unsupported operation
+    --- FAIL: TestFakeRuntimeConformanceInAPane/never_completes_on_malformed (0.00s)
+        adaptertest.go:133: unsupported operation
+    --- FAIL: TestFakeRuntimeConformanceInAPane/never_completes_on_wrong-identity (0.00s)
+        adaptertest.go:133: unsupported operation
+    --- FAIL: TestFakeRuntimeConformanceInAPane/a_stopped_attempt_leaves_no_result (0.00s)
+        adaptertest.go:141: unsupported operation
+    --- FAIL: TestFakeRuntimeConformanceInAPane/an_existing_result_is_never_replaced (0.00s)
+        adaptertest.go:162: unsupported operation
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	0.116s
+--- FAIL: TestSpecMapsOntoAdapterSpec (0.02s)
+    --- FAIL: TestSpecMapsOntoAdapterSpec/build (0.01s)
+        adapter_spec_test.go:25: AdapterSpec() = {Identity:{TaskID: AttemptID:} WorkDir: PromptFile: ResultFile: Env:[]}, want {Identity:{TaskID:t7 AttemptID:build-1} WorkDir:<tmp> PromptFile:<tmp> ResultFile:<tmp> Env:[]}
+        adapter_spec_test.go:28: mapped spec refused: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+    --- FAIL: TestSpecMapsOntoAdapterSpec/automated_review (0.01s)
+        adapter_spec_test.go:25: AdapterSpec() = {Identity:{TaskID: AttemptID:} WorkDir: PromptFile: ResultFile: Env:[]}, want {Identity:{TaskID:t7 AttemptID:review-1} WorkDir:<tmp> PromptFile:<tmp> ResultFile:<tmp> Env:[]}
+        adapter_spec_test.go:28: mapped spec refused: task id "": need 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.035s
+FAIL

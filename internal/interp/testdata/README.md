@@ -1,6 +1,6 @@
 # Interpreter fixtures
 
-Shared by the scripted mock agent's tests, the interpreter's advance suite and, later, the adapter conformance slice.
+Shared by the scripted mock agent's tests, the interpreter's advance suite and the [adapter conformance suite](../../../docs/adapters.md#conformance).
 
 - `baseline/`, `docs/` and `skills/` are the sources `interptest.Attempt.Render` renders prompts from.
 - `docs/spec-v1.md` and `docs/spec-v2.md` are two revisions of one artefact.

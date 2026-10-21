@@ -33,7 +33,7 @@ type Launcher interface {
 }
 
 // Spec is what the interpreter gives a Launcher for one attempt: the rendered prompt and where its result goes.
-// S9 maps it onto adapter.Spec for the real adapters.
+// AdapterSpec is the reference mapping onto adapter.Spec that the adapter conformance suite uses; production launch builds its own spec today.
 type Spec struct {
 	// Identity is the attempt identity the result file must name.
 	Identity adapter.Identity
@@ -71,6 +71,15 @@ func (s Spec) Validate() error {
 		return fmt.Errorf("manifest schema %q, want %q", s.Manifest.Schema, render.ManifestSchema)
 	}
 	return nil
+}
+
+// AdapterSpec returns the reference adapter.Spec for s that the adapter conformance suite runs runtimes
+// on: the same identity, working directory, prompt file and result file, and no extra environment.
+// Production launch does not call it today; launch.Process and the artisan command build their own spec. The adapter name and manifest stay
+// with the launcher, which chooses the runtime and has already checked the prompt against its manifest.
+// A spec Validate accepts maps to one adapter.Spec.Validate accepts.
+func (s Spec) AdapterSpec() adapter.Spec {
+	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile}
 }
 
 // Handle names one launched attempt. It carries no authority: only the launcher that returned it accepts it.

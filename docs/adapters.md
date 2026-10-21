@@ -91,6 +91,15 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 
 Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.
 
+## Conformance
+
+Every runtime adapter passes one shared suite, `adaptertest.RunConformance`, before Guildhall launches it: it declares exactly its capabilities, refuses an invalid spec without a command, runs in the spec's working directory and environment, completes only from a valid result file for its identity, never completes without a result, on a malformed result or on a result for another attempt, leaves no result when stopped, and never replaces an existing result.
+The suite makes no model calls; a runtime proves each behaviour through prompts it understands.
+
+The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the reference mapping the suite uses; production launch builds its own spec today.
+The Claude adapter will run the same suite.
+CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keeps the Herdr tab contract over a real POSIX shell; it runs on Linux and macOS, and Windows panes are covered by the live checks below.
+
 ## Running an attempt
 
 Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher; see [Artisan commands](artisan.md#commands).
@@ -147,6 +156,8 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 | Check | Where | Status |
 |---|---|---|
 | Contract, result validation, fake adapter, Herdr argument lists and response parsing | CI unit tests on Linux, Windows and macOS, against Herdr responses recorded from Herdr 0.9.5 | Run on every change |
+| [Conformance](#conformance) of the fake as a direct child, inside the Artisan launcher and on interpreter-rendered attempts | CI on Linux, Windows and macOS | Run on every change |
+| Conformance of the fake typed into a tab by the Herdr tab launcher and stopped by Ctrl+C, over `adaptertest.ShellPanes` | CI on Linux and macOS | Run on every change |
 | Fake Artisan in a Herdr tab: result recorded, failed and malformed results, closed tab not counted as completion, existing result refused | Linux (WSL, zsh panes) in an isolated named Herdr 0.9.5 session | Passed |
 | The same in native Windows panes running Git Bash and Windows PowerShell 5.1 | Native Windows in an isolated named Herdr 0.9.5 session | Passed |
 | Stop by Ctrl+C ends the fake Artisan | Linux zsh and Windows Git Bash panes | Passed |

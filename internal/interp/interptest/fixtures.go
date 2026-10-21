@@ -140,3 +140,24 @@ func AutomatedReview(t testing.TB, doc string) Attempt {
 		Role:      "roles/reviewer.md",
 	}
 }
+
+// AdapterSpec renders the build attempt at spec-v1.md for adapterName with instructions as its step
+// instructions, and returns its reference adapter.Spec (interp.Spec.AdapterSpec).
+// It is the adapter conformance suite's attempt laid out as the interpreter lays it out.
+func AdapterSpec(t testing.TB, adapterName, instructions string) adapter.Spec {
+	t.Helper()
+	a := Build(t, "spec-v1.md")
+	a.Adapter = adapterName
+	if instructions != "" {
+		raw, err := json.Marshal(instructions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.Step.Settings["instructions"] = raw
+	}
+	spec := a.Render(t)
+	if err := spec.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return spec.AdapterSpec()
+}

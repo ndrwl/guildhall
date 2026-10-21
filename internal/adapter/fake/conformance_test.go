@@ -12,6 +12,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
 )
 
@@ -45,6 +47,26 @@ func TestFakeRuntimeConformance(t *testing.T) {
 			Runtime:      Adapter{Executable: exe},
 			Capabilities: adapter.Capabilities{},
 			Prompt:       func(b adaptertest.Behaviour) string { return prompts[b] },
+		}
+	})
+}
+
+// TestFakeRuntimeConformanceOnInterpreterAttempts runs the suite on attempts
+// rendered from internal/interp/testdata and mapped through
+// interp.Spec.AdapterSpec, the reference mapping onto a runtime's spec.
+func TestFakeRuntimeConformanceOnInterpreterAttempts(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.RunConformance(t, func(t *testing.T) adaptertest.Subject {
+		return adaptertest.Subject{
+			Runtime:      Adapter{Executable: exe},
+			Capabilities: adapter.Capabilities{},
+			Prompt:       func(b adaptertest.Behaviour) string { return prompts[b] },
+			Attempt: func(t *testing.T, prompt string) adapter.Spec {
+				return interptest.AdapterSpec(t, interp.FakeAdapter, prompt)
+			},
 		}
 	})
 }
