@@ -167,7 +167,7 @@ The endpoint decodes the request strictly with [`strictjson`](contracts/strictjs
 | A duplicate key, such as two `op` keys, at any depth | Malformed request |
 | A field version 1 does not declare, at the top level or inside `launcher`, compared exactly, case included | Malformed request |
 | A `launcher` with an incompatible JSON type, such as a string or list, or a string `pid` | Malformed request |
-| Invalid JSON or UTF-8, or more than 4 KiB without a newline | Malformed request |
+| Invalid JSON or UTF-8, or no newline within the 4 KiB request budget | Malformed request |
 
 Unversioned requests are refused rather than supported during a transition: the endpoint is not yet wired into a command, so no client of an earlier protocol exists.
 A newer version is refused rather than guessed at, because stop and cancel are destructive; serving a later version means naming it in the endpoint.
