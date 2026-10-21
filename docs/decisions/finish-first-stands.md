@@ -1,6 +1,6 @@
 # The store owns "the first finish stands"
 
-Three writers finish an attempt, each under its own mutation id: the launcher when it decides the attempt, the interpreter's result intake when it takes the result, and `artisan resume` settling an exited launcher's attempt; any may write first ([task start and step done](task-start-and-step-done.md)).
+Three writers finish an attempt, each under its own mutation id: the launcher when it decides the attempt, the interpreter's result intake when it takes the result, and `artisan resume` settling an exited launcher's attempt; any may write first ([task start and step done](0052-task-start-and-step-done.md)).
 The rule that the first record stands, and that an equal second record is not an error, was written in the launcher and the intake and absent from resume, so the copies already differed and a resume losing the race exited 1 on a finished attempt (sustainability review 8, F22).
 
 `store.FinishAttempt` now owns it ([attempts](../store.md#attempts)): an equal outcome under another mutation id returns the receipt of the finish that stands and writes nothing, and another outcome is refused with `ErrInvalid` as before.
