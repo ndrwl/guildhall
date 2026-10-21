@@ -1,8 +1,8 @@
 // Package reconcile classifies an owned stage attempt from what outlives its
 // launcher: the attempt directory, the store's ownership record and the live
 // state of the launcher, endpoint and containment that record names
-// (docs/artisan.md#reconcile). It never signals, writes, takes over or
-// relaunches anything.
+// (docs/artisan.md#reconcile). It never signals, writes attempt state, takes
+// over or relaunches anything; acquiring the lock may create attempt.lock.
 //
 // Classify decides in this order, the first that applies winning:
 //
@@ -21,12 +21,11 @@
 //     - anything else, such as a live launcher whose endpoint is silent or an
 //     identity that cannot be verified: unknown.
 //
-// After observing a valid result, Classify reads the cancel marker again before
-// returning finished, without taking attempt.lock or creating any files. The
-// marker is never removed; cancel and stop write it under the attempt lock only
-// after checking that no valid result exists. Thus a marker absent after a valid
-// result was observed cannot subsequently appear, and a present marker makes
-// that result late.
+// Classify reads outcome, marker and result under the same attempt lock as
+// launcher decisions. An in-flight cancel or stop must publish its marker
+// before Classify can accept a result. Lock contention is bounded by ctx and
+// LockTimeout; failure to acquire yields unknown. The lock is released before
+// checking the owner or calling its endpoint.
 //
 // The heartbeat is evidence, never proof: stuck is not exit and grants no
 // relaunch, take-over or sweep, and a gone launcher's frozen heartbeat is
@@ -68,6 +67,9 @@ const (
 // gives none: six missed default heartbeats.
 const DefaultStaleAfter = 6 * artisan.DefaultHeartbeatInterval
 
+// LockTimeout bounds Classify's wait for the attempt lock.
+const LockTimeout = 2 * time.Second
+
 // EndpointTimeout bounds Classify's status call to the owner's endpoint.
 const EndpointTimeout = 2 * time.Second
 
@@ -108,9 +110,29 @@ type Classification struct {
 	Survivors []artisan.Identity `json:"survivors,omitempty"`
 }
 
-// Classify classifies attempt a; ctx bounds the endpoint call, which also
-// gives up after EndpointTimeout.
+// Classify classifies attempt a; ctx bounds lock acquisition and the endpoint
+// call, also limited by LockTimeout and EndpointTimeout respectively.
 func Classify(ctx context.Context, a Attempt, o Options) Classification {
+	lockCtx, cancel := context.WithTimeout(ctx, LockTimeout)
+	defer cancel()
+	release, err := artisan.LockAttempt(lockCtx, a.Dir)
+	if err != nil {
+		return Classification{State: Unknown, Reason: "attempt lock: " + err.Error()}
+	}
+	c := func() Classification {
+		defer release()
+		return classifyFiles(a)
+	}()
+	if c.State != "" || c.Outcome != nil {
+		return c
+	}
+	if a.Owner == nil {
+		return Classification{State: Absent, Reason: "no ownership record"}
+	}
+	return classifyOwner(ctx, a, o)
+}
+
+func classifyFiles(a Attempt) Classification {
 	unknown := func(format string, args ...any) Classification {
 		return Classification{State: Unknown, Reason: fmt.Sprintf(format, args...)}
 	}
@@ -134,18 +156,9 @@ func Classify(ctx context.Context, a Attempt, o Options) Classification {
 		if err != nil {
 			return unknown("result: %v", err)
 		}
-		if m, err := a.Files.Marked(); err != nil || m {
-			if err != nil {
-				return unknown("cancel marker: %v", err)
-			}
-			return Classification{State: Cancelled, Reason: "cancel marker present; any result is late"}
-		}
 		return Classification{State: Finished, Reason: "valid result"}
 	}
-	if a.Owner == nil {
-		return Classification{State: Absent, Reason: "no ownership record"}
-	}
-	return classifyOwner(ctx, a, o)
+	return Classification{}
 }
 
 func classifyOwner(ctx context.Context, a Attempt, o Options) Classification {

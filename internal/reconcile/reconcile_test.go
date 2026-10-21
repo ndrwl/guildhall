@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -192,39 +193,87 @@ func TestClassifyFiles(t *testing.T) {
 	})
 }
 
-type resultRaceFiles struct {
+type blockedMarkerFiles struct {
 	artisantest.Files
-	onResult func() (bool, error)
+	entered chan struct{}
+	release chan struct{}
 }
 
-func (f resultRaceFiles) ValidResult() (bool, error) { return f.onResult() }
+func (f *blockedMarkerFiles) Mark() error {
+	close(f.entered)
+	<-f.release
+	return f.Files.Mark()
+}
 
 func TestClassifyResultMarkerRace(t *testing.T) {
-	for _, unreadable := range []bool{false, true} {
-		t.Run(fmt.Sprintf("unreadable=%v", unreadable), func(t *testing.T) {
-			dir := t.TempDir()
-			f := artisantest.NewFiles(dir)
-			files := resultRaceFiles{Files: f, onResult: func() (bool, error) {
-				if unreadable {
-					if err := os.RemoveAll(dir); err != nil {
-						t.Fatal(err)
-					}
-					write(t, dir, "not a directory")
-					return true, nil
-				}
-				if err := f.Mark(); err != nil {
-					return false, err
-				}
-				write(t, f.Result, artisantest.ResultBody)
-				return f.ValidResult()
-			}}
-			c := reconcile.Classify(context.Background(), reconcile.Attempt{Dir: dir, Files: files}, reconcile.Options{})
-			if unreadable {
-				want(t, c, reconcile.Unknown)
-			} else {
-				want(t, c, reconcile.Cancelled)
+	for _, op := range []string{"cancel", "stop"} {
+		t.Run(op, func(t *testing.T) {
+			dir, inv := t.TempDir(), t.TempDir()
+			files := &blockedMarkerFiles{Files: artisantest.NewFiles(dir), entered: make(chan struct{}), release: make(chan struct{})}
+			var once sync.Once
+			release := func() { once.Do(func() { close(files.release) }) }
+			u, err := artisan.NewUnit("reconcile-" + rand.Text()[:8])
+			if err != nil {
+				t.Fatal(err)
 			}
+			t.Cleanup(func() { _ = u.Close() })
+			l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: dir, Unit: u, Files: files, Key: key})
+			if err != nil {
+				t.Fatal(err)
+			}
+			runDone := make(chan struct{})
+			go func() {
+				defer close(runDone)
+				_, _ = l.Run(artisantest.Command(inv, artisantest.Worker{CancelMarker: files.Marker, Lifetime: deadline}), nil)
+			}()
+			actionDone := make(chan error, 1)
+			t.Cleanup(func() {
+				release()
+				_, _ = l.Stop()
+				<-runDone
+				if err := <-actionDone; err != nil {
+					t.Errorf("%s: %v", op, err)
+				}
+			})
+			go func() {
+				var err error
+				if op == "cancel" {
+					_, err = l.Cancel()
+				} else {
+					_, err = l.Stop()
+				}
+				actionDone <- err
+			}()
+			select {
+			case <-files.entered:
+			case <-time.After(deadline):
+				t.Fatal("launcher did not reach marker publication")
+			}
+			write(t, files.Result, artisantest.ResultBody)
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			c := reconcile.Classify(ctx, reconcile.Attempt{Dir: dir, Files: files.Files}, reconcile.Options{})
+			want(t, c, reconcile.Unknown)
+			if !strings.Contains(c.Reason, "attempt lock: context deadline exceeded") {
+				t.Fatalf("lock contention reason: %s", c.Reason)
+			}
+			release()
+			want(t, classify(dir, nil), reconcile.Cancelled)
 		})
+	}
+}
+
+func TestClassifyLockBound(t *testing.T) {
+	dir := t.TempDir()
+	release, err := artisan.LockAttempt(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	c := classify(dir, nil)
+	want(t, c, reconcile.Unknown)
+	if !strings.Contains(c.Reason, "attempt lock: context deadline exceeded") {
+		t.Fatalf("lock contention reason: %s", c.Reason)
 	}
 }
 
@@ -289,31 +338,17 @@ func TestClassifyOwner(t *testing.T) {
 	})
 }
 
-// gatedFiles are attempt files whose result check blocks while the gate is
-// shut, wedging the launcher's supervision loop.
-type gatedFiles struct {
-	artisantest.Files
-	shut atomic.Bool
-}
-
-func (f *gatedFiles) ValidResult() (bool, error) {
-	for f.shut.Load() {
-		time.Sleep(10 * time.Millisecond)
-	}
-	return f.Files.ValidResult()
-}
-
 // live is a launcher run in this process with its endpoint bound.
 type live struct {
 	dir, inv string
 	owner    *store.Ownership
-	files    *gatedFiles
+	files    artisantest.Files
 }
 
 func launch(t *testing.T, lastOutput func() time.Time, prepare func(dir string)) *live {
 	t.Helper()
 	c := &live{dir: t.TempDir(), inv: t.TempDir()}
-	c.files = &gatedFiles{Files: artisantest.NewFiles(c.dir)}
+	c.files = artisantest.NewFiles(c.dir)
 	if prepare != nil {
 		prepare(c.dir)
 	}
@@ -342,7 +377,6 @@ func launch(t *testing.T, lastOutput func() time.Time, prepare func(dir string))
 		_, _ = l.Run(artisantest.Command(c.inv, artisantest.Worker{CancelMarker: c.files.Marker, Lifetime: deadline}), nil)
 	}()
 	t.Cleanup(func() {
-		c.files.shut.Store(false)
 		_, _ = l.Stop()
 		<-done
 		_ = ep.Close()
@@ -384,14 +418,21 @@ func ownedStore(t *testing.T, c *live) *store.Store {
 // TestHeartbeat is the four accepted heartbeat cases.
 func TestHeartbeat(t *testing.T) {
 	t.Run("a wedged launcher is stuck while its identity and endpoint live", func(t *testing.T) {
-		c := launch(t, nil, nil)
+		var hold atomic.Bool
+		c := launch(t, func() time.Time {
+			for hold.Load() {
+				time.Sleep(10 * time.Millisecond)
+			}
+			return time.Time{}
+		}, nil)
+		t.Cleanup(func() { hold.Store(false) })
 		c.beating(t)
-		c.files.shut.Store(true)
+		hold.Store(true)
 		cl := await(t, c.dir, c.owner, reconcile.Stuck)
 		if cl.Launcher != "alive" || cl.Heartbeat == nil || cl.HeartbeatAge <= stale {
 			t.Errorf("stuck without its evidence: %+v", cl)
 		}
-		c.files.shut.Store(false)
+		hold.Store(false)
 		await(t, c.dir, c.owner, reconcile.Running)
 	})
 	t.Run("a stalled worker's fresh heartbeat reaches the store and is not stuck", func(t *testing.T) {

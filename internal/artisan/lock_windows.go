@@ -11,6 +11,12 @@ import (
 // abruptly, so it is not.
 const interruptGraceful = false
 
-func lockFile(f *os.File) error {
-	return windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, new(windows.Overlapped))
+func lockFile(f *os.File, nonblocking bool) error {
+	flags := uint32(windows.LOCKFILE_EXCLUSIVE_LOCK)
+	if nonblocking {
+		flags |= windows.LOCKFILE_FAIL_IMMEDIATELY
+	}
+	return windows.LockFileEx(windows.Handle(f.Fd()), flags, 0, 1, 0, new(windows.Overlapped))
 }
+
+func lockBusy(err error) bool { return err == windows.ERROR_LOCK_VIOLATION }

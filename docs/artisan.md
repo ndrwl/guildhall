@@ -271,7 +271,7 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 ## Reconcile
 
 `reconcile.Classify` classifies an owned attempt from what outlives its launcher: the attempt directory, the store's ownership record, and the live state of the identity, endpoint and containment the record names.
-Its [doc comments](../internal/reconcile/reconcile.go) own the API contract. It never signals, writes, takes over or relaunches anything.
+Its [doc comments](../internal/reconcile/reconcile.go) own the API contract. It never signals, writes attempt state, takes over or relaunches anything; acquiring the lock may create `attempt.lock`.
 
 The first rule that applies decides:
 
@@ -287,7 +287,7 @@ The first rule that applies decides:
 | 8 | Launcher identity live, endpoint answers `status` for this attempt and launcher | `running` |
 | 9 | Anything else, such as a live launcher with a silent endpoint or an unverified identity | `unknown` |
 
-After observing a valid result, `Classify` rereads the cancel marker before returning `finished`, remaining read-only and never taking `attempt.lock` or creating files. A marker found on that second read makes the result late (`cancelled`); a read error yields `unknown`. The marker is never removed, and cancel/stop write it under the attempt lock only after checking that no valid result exists. A marker absent after a valid result was observed therefore cannot subsequently appear.
+`Classify` reads outcome, marker and result while holding the same exclusive `attempt.lock` as launcher decisions, using `artisan.LockAttempt`. An in-flight cancel or stop must finish publishing its marker before classification can accept a result, even when the worker publishes between the launcher's result check and marker write. Lock acquisition is bounded by the caller's context and `LockTimeout` (2 s); failure yields `unknown` with the lock error. Acquiring the lock may create its file but writes no attempt state. The lock is released before owner and endpoint checks.
 
 The classification carries its evidence: the launcher's liveness, what the endpoint answered, the last heartbeat and its age, and any survivors.
 A heartbeat is evidence only: `stuck` is never exit and grants no relaunch, take-over or sweep, and a crashed launcher's frozen heartbeat is reported while the identity rule classifies it `exited`.
