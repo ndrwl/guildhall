@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
@@ -164,7 +165,7 @@ func ReadResult(path string, want Identity) (Result, error) {
 	if err := checkCancellation(path, want); err != nil {
 		return Result{}, err
 	}
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		return Result{}, err
 	}

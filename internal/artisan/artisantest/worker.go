@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // workerEnv carries a Worker to the test binary playing it.
@@ -95,12 +96,7 @@ func Record(dir string, e Entry) error {
 	if err != nil {
 		return err
 	}
-	name := filepath.Join(dir, fmt.Sprintf("%s-%d.json", e.Role, e.PID))
-	tmp := name + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, name)
+	return atomicfile.Write(filepath.Join(dir, fmt.Sprintf("%s-%d.json", e.Role, e.PID)), b)
 }
 
 // Inventory reads every entry recorded in dir.
@@ -111,7 +107,7 @@ func Inventory(dir string) ([]Entry, error) {
 	}
 	var out []Entry
 	for _, n := range names {
-		b, err := os.ReadFile(n)
+		b, err := atomicfile.Read(n)
 		if err != nil {
 			return nil, err
 		}
@@ -197,19 +193,10 @@ func (w Worker) Wait() {
 					continue
 				}
 			}
-			_ = publish(w.Result, ResultBody)
+			_ = atomicfile.Write(w.Result, []byte(ResultBody))
 			return
 		}
 	}
-}
-
-// publish writes body to path atomically.
-func publish(path, body string) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 func (w Worker) spawnGrandchild() error {

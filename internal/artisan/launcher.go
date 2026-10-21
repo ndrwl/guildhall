@@ -98,6 +98,9 @@ var StopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 // AttemptFiles is the attempt's result and cancel marker as the launcher
 // consumes them. The launcher calls them only while holding the attempt lock.
+// An error decides the attempt failed, so ValidResult and Marked fail only for
+// a permanent reason: a read racing a publication is retried, as
+// internal/atomicfile does, never returned.
 type AttemptFiles interface {
 	// ValidResult reports whether a valid result for this attempt is
 	// published. A missing or invalid result is false with no error.

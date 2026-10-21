@@ -62,6 +62,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/adapter`](contracts/adapter.md)
 - [`internal/artisan/artisantest`](contracts/artisan-artisantest.md)
 - [`internal/artisan`](contracts/artisan.md)
+- [`internal/atomicfile`](contracts/atomicfile.md)
 - [`internal/cli`](contracts/cli.md)
 - [`internal/config`](contracts/config.md)
 - [`internal/digest`](contracts/digest.md)

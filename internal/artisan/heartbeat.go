@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
@@ -106,7 +106,7 @@ func WriteHeartbeat(dir string, h Heartbeat) error {
 // ReadHeartbeat reads HeartbeatFile in the attempt directory dir.
 // See docs/artisan.md#heartbeat for validation and error semantics.
 func ReadHeartbeat(dir string) (Heartbeat, error) {
-	b, err := os.ReadFile(filepath.Join(dir, HeartbeatFile))
+	b, err := atomicfile.Read(filepath.Join(dir, HeartbeatFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return Heartbeat{}, fmt.Errorf("%w: %w", ErrNoHeartbeat, err)
 	}
