@@ -38,7 +38,7 @@ Sequence must be positive and increase; times must be nonzero and last output ca
 Only a running, existing attempt accepts writes; missing attempts return `ErrNotFound`, while completed attempts and non-increasing sequence return `ErrInvalid`.
 Mutation replay is unchanged and receipts name `heartbeat/<step>/<number>`.
 `Heartbeat` returns the latest record or `ErrNotFound`; reading or writing a heartbeat never changes the attempt.
-`Heartbeat` is an alias of `artisan.Heartbeat`, the record the launcher writes to its attempt directory about every five seconds ([launcher heartbeat](artisan.md#heartbeat)).
+`Heartbeat` is a store value with the fields and JSON of `artisan.Heartbeat`, the record the launcher writes to its attempt directory about every five seconds ([launcher heartbeat](artisan.md#heartbeat)).
 Heartbeats are read separately, not through `TaskHistory`.
 
 The shared Records contract and worker-stalled integration tests were written before implementation, but no failure was observed then.

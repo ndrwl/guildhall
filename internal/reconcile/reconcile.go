@@ -172,7 +172,7 @@ func classifyOwner(ctx context.Context, a Attempt, o Options) Classification {
 		}
 		c.Heartbeat, c.HeartbeatAge = &h, now().Sub(h.Time)
 	}
-	lv, perr := artisan.Probe(own.LauncherIdentity)
+	lv, perr := artisan.Probe(artisan.Identity(own.LauncherIdentity))
 	c.Launcher = lv.String()
 	switch lv {
 	case artisan.Gone:
@@ -181,7 +181,7 @@ func classifyOwner(ctx context.Context, a Attempt, o Options) Classification {
 			return c
 		}
 		cn := own.Containment
-		left, err := artisan.Contained(artisan.Containment{Kind: cn.Kind, Name: cn.Name, Reason: cn.Reason}, cn.Worker)
+		left, err := artisan.Contained(artisan.Containment{Kind: cn.Kind, Name: cn.Name, Reason: cn.Reason}, artisan.Identity(cn.Worker))
 		switch {
 		case err != nil:
 			c.Reason = "launcher identity gone; contained processes cannot be checked: " + err.Error()
@@ -205,7 +205,7 @@ func classifyOwner(ctx context.Context, a Attempt, o Options) Classification {
 	defer cancel()
 	if own.Endpoint == "" {
 		c.Endpoint = "not recorded"
-	} else if _, err := artisan.Call(ctx, own.Endpoint, k, own.LauncherIdentity, artisan.OpStatus); err != nil {
+	} else if _, err := artisan.Call(ctx, own.Endpoint, k, artisan.Identity(own.LauncherIdentity), artisan.OpStatus); err != nil {
 		c.Endpoint = err.Error()
 	}
 	switch {

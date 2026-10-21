@@ -26,8 +26,9 @@ const HeartbeatFile = "heartbeat.json"
 // its config gives no interval.
 const DefaultHeartbeatInterval = 5 * time.Second
 
-// Heartbeat is the content of HeartbeatFile. It is also the store's heartbeat
-// record (store.Heartbeat), which the interpreter reads for worker-stalled.
+// Heartbeat is the content of HeartbeatFile. The store's heartbeat record
+// (store.Heartbeat), which the interpreter reads for worker-stalled, has the
+// same fields and JSON, so a beat converts to it directly.
 type Heartbeat struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`

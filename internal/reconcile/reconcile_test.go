@@ -38,8 +38,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// launcherProbe is the owner probe a launcher passes to TakeOwnership: the
+// store's conservative policy over Artisan's native probe.
+var launcherProbe = store.ProbeLauncher(func(id store.ProcessIdentity) (store.Liveness, error) {
+	lv, err := artisan.Probe(artisan.Identity(id))
+	return store.Liveness(lv.String()), err
+})
+
 func owner(launcher artisan.Identity) *store.Ownership {
-	return &store.Ownership{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: key.Attempt, LauncherIdentity: launcher, State: store.OwnerRunning}
+	return &store.Ownership{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: key.Attempt, LauncherIdentity: store.ProcessIdentity(launcher), State: store.OwnerRunning}
 }
 
 func classify(dir string, o *store.Ownership) reconcile.Classification {
@@ -121,7 +128,7 @@ func started(t *testing.T, w artisantest.Worker) (artisan.Unit, store.Containmen
 		t.Fatal(err)
 	}
 	c := u.Containment()
-	return u, store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason, Worker: worker}, inv
+	return u, store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason, Worker: store.ProcessIdentity(worker)}, inv
 }
 
 // exitedIdentity is the identity of a process that has exited.
@@ -455,7 +462,7 @@ func TestHeartbeat(t *testing.T) {
 			t.Fatalf("heartbeat %+v, want a fresh beat after sequence 41 with last output %v", h, quiet)
 		}
 		s := ownedStore(t, c)
-		if _, err := s.PutHeartbeat("beat", h); err != nil {
+		if _, err := s.PutHeartbeat("beat", store.Heartbeat(h)); err != nil {
 			t.Fatalf("store refused the launcher's heartbeat: %v", err)
 		}
 		if got, err := s.Heartbeat(key.Repository, key.TaskID, key.Step, 1); err != nil || !got.Time.Equal(h.Time) || !got.LastOutputAt.Equal(quiet) || got.Sequence != h.Sequence {
@@ -483,7 +490,7 @@ func TestHeartbeat(t *testing.T) {
 		await(t, c.dir, c.owner, reconcile.Stuck)
 		next := *owner(artisan.Identity{PID: 1, Token: "relauncher"})
 		next.State = ""
-		if _, err := s.TakeOwnership("relaunch", next, store.ProbeLauncher); !errors.Is(err, store.ErrOwnerLive) {
+		if _, err := s.TakeOwnership("relaunch", next, launcherProbe); !errors.Is(err, store.ErrOwnerLive) {
 			t.Errorf("take-over of a stuck attempt = %v, want ErrOwnerLive", err)
 		} else {
 			t.Logf("take-over of stuck attempt refused: %v", err)
@@ -522,7 +529,7 @@ func TestHeartbeat(t *testing.T) {
 		o.Containment = store.Containment{Kind: rec.Containment.Kind, Name: rec.Containment.Name, Reason: rec.Containment.Reason}
 		for _, e := range must(artisantest.Inventory(inv)) {
 			if e.Role == "worker" {
-				o.Containment.Worker = e.Identity
+				o.Containment.Worker = store.ProcessIdentity(e.Identity)
 			}
 		}
 		if cl := classify(dir, o); cl.Launcher != "alive" || cl.State == reconcile.Exited {
