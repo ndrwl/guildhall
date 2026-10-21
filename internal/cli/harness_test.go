@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 )
@@ -87,8 +88,8 @@ func TestArtisanHarnessProbe(t *testing.T) {
 func TestArtisanHarnessInventoryAndKillOwned(t *testing.T) {
 	inv := t.TempDir()
 	o := newOwnedAttempt(t, "guildhall-fake: result=never\nguildhall-fake: lifetime=60s\nguildhall-fake: grandchildren=1\nguildhall-fake: inventory="+inv+"\n")
-	run, exited, _ := launcherProcess(t, o)
-	tree := inventoryOf(t, inv, 2)
+	_, exited, _ := launcherProcess(t, o)
+	inventoryOf(t, inv, 2)
 	list := func() []harnessProcess {
 		t.Helper()
 		code, stdout, stderr := guildhall(t, "", append([]string{"artisan", "harness", "inventory", "--lab", "--inventory", inv}, o.args("status")[2:]...)...)
@@ -98,7 +99,8 @@ func TestArtisanHarnessInventoryAndKillOwned(t *testing.T) {
 		return decodeJSON[[]harnessProcess](t, stdout)
 	}
 	roles := map[string]int{}
-	for _, p := range list() {
+	recorded := list()
+	for _, p := range recorded {
 		if p.Liveness != "alive" {
 			t.Errorf("%+v is not alive while the launcher runs", p)
 		}
@@ -111,14 +113,22 @@ func TestArtisanHarnessInventoryAndKillOwned(t *testing.T) {
 	if killed := decodeJSON[[]harnessProcess](t, stdout); code != 0 || len(killed) < 3 {
 		t.Errorf("kill-owned: exit %d, %+v; stderr %q", code, killed, stderr)
 	}
-	<-exited
-	for _, id := range append(tree, artisan.Identity{PID: run.Process.Pid}) {
-		if id.Token == "" {
-			continue
+	end := time.Now().Add(10 * time.Second)
+	for _, p := range recorded {
+		id := artisan.Identity{PID: p.PID, Token: p.Token}
+		lv, err := artisan.Probe(id)
+		for lv != artisan.Gone && time.Now().Before(end) {
+			time.Sleep(20 * time.Millisecond)
+			lv, err = artisan.Probe(id)
 		}
-		if lv, _ := artisan.Probe(id); lv != artisan.Gone {
-			t.Errorf("%v is %v after kill-owned", id, lv)
+		if lv != artisan.Gone {
+			t.Fatalf("%s %v is %v (%v) after waiting for kill-owned termination", p.Role, id, lv, err)
 		}
+	}
+	select {
+	case <-exited:
+	case <-time.After(10 * time.Second):
+		t.Fatal("launcher was not reaped after kill-owned")
 	}
 	for _, p := range list() {
 		if p.Liveness != "gone" {
