@@ -77,6 +77,7 @@ A task is one unit of work in one repository; creating it records it and binds t
 ```
 
 `task start` launches the task's next ready stage as an owned Artisan attempt.
+The engine does not run Director stages yet, and the default workflow's first stage, `grill`, is run by the Director, so to try this give `app` a `[repository.workflow_overrides.grill]` with `actor = "artisan"`.
 Today a Director does not yet wait in the background, so you run `guildhall step done` once an attempt's result file exists; see [tasks](docs/tasks.md) and [running a task](docs/running.md).
 
 Each task follows a workflow.
