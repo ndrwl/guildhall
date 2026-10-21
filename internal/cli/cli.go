@@ -39,6 +39,10 @@ Commands:
   fake-artisan   run the test-only fake Artisan
   task new|show|list|timeline|files --store <path> ...
                  create Director tasks bound to their workflow revision, list, show and inspect them
+  task start --store <path> --config <file> --state <dir> ...
+                 advance a task, launching its next ready stage
+  step done --store <path> --config <file> --state <dir> ...
+                 take one attempt's result file and advance its task
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
   help           print this help
@@ -141,7 +145,12 @@ func (a *App) Run(args []string) int {
 	case "fake-artisan":
 		return a.fakeArtisan(rest)
 	case "task":
+		if len(rest) > 0 && rest[0] == "start" {
+			return a.taskStart(rest[1:])
+		}
 		return a.task(rest)
+	case "step":
+		return a.stepDone(rest)
 	case "decide":
 		return a.decide(rest)
 	default:

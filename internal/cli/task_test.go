@@ -430,7 +430,7 @@ func TestTaskUsageErrors(t *testing.T) {
 		"trailing disallowed":    {"show", "t-1", "--store", path, "--repo", "app", "--json", "--title", "T"},
 		"flags after terminator": {"show", "--store", path, "--repo", "app", "--", "t-1", "--json"},
 		"no subcommand":          {},
-		"unknown subcommand":     {"start"},
+		"unknown subcommand":     {"frobnicate"},
 		"new without store":      {"new", "--config", cfg, "--repo", "app", "--title", "T", "t-1"},
 		"new without config":     {"new", "--store", path, "--repo", "app", "--title", "T", "t-1"},
 		"new without repo":       {"new", "--store", path, "--config", cfg, "--title", "T", "t-1"},
