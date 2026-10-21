@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -187,7 +188,8 @@ func (c *cgroup) pids() ([]int, error) {
 // containedCgroup lists the live processes in the cgroup directory dir from
 // outside its unit; a directory that no longer exists holds nothing.
 func containedCgroup(dir string) ([]Identity, error) {
-	pids, err := (&cgroup{dir: dir}).pids()
+	c := &cgroup{dir: dir}
+	pids, err := c.pids()
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -199,9 +201,26 @@ func containedCgroup(dir string) ([]Identity, error) {
 		id, err := Lookup(pid)
 		switch {
 		case errors.Is(err, errNoProcess):
+			continue
 		case err != nil:
 			return nil, err
-		default:
+		}
+		currentPIDs, err := c.pids()
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(currentPIDs, pid) {
+			continue
+		}
+		current, err := Lookup(pid)
+		switch {
+		case errors.Is(err, errNoProcess):
+		case err != nil:
+			return nil, err
+		case current == id:
 			out = append(out, id)
 		}
 	}

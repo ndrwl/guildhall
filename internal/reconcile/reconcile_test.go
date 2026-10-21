@@ -192,6 +192,42 @@ func TestClassifyFiles(t *testing.T) {
 	})
 }
 
+type resultRaceFiles struct {
+	artisantest.Files
+	onResult func() (bool, error)
+}
+
+func (f resultRaceFiles) ValidResult() (bool, error) { return f.onResult() }
+
+func TestClassifyResultMarkerRace(t *testing.T) {
+	for _, unreadable := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unreadable=%v", unreadable), func(t *testing.T) {
+			dir := t.TempDir()
+			f := artisantest.NewFiles(dir)
+			files := resultRaceFiles{Files: f, onResult: func() (bool, error) {
+				if unreadable {
+					if err := os.RemoveAll(dir); err != nil {
+						t.Fatal(err)
+					}
+					write(t, dir, "not a directory")
+					return true, nil
+				}
+				if err := f.Mark(); err != nil {
+					return false, err
+				}
+				write(t, f.Result, artisantest.ResultBody)
+				return f.ValidResult()
+			}}
+			c := reconcile.Classify(context.Background(), reconcile.Attempt{Dir: dir, Files: files}, reconcile.Options{})
+			if unreadable {
+				want(t, c, reconcile.Unknown)
+			} else {
+				want(t, c, reconcile.Cancelled)
+			}
+		})
+	}
+}
+
 // TestClassifyOwner pins the scratch owner rules against live processes.
 func TestClassifyOwner(t *testing.T) {
 	t.Run("L13 L14 a launcher proven exited with an emptied unit is exited", func(t *testing.T) {
@@ -389,6 +425,7 @@ func TestHeartbeat(t *testing.T) {
 		}, nil)
 		c.beating(t)
 		s := ownedStore(t, c)
+		t.Cleanup(func() { hold.Store(false) })
 		hold.Store(true)
 		await(t, c.dir, c.owner, reconcile.Stuck)
 		next := *owner(artisan.Identity{PID: 1, Token: "relauncher"})
@@ -408,6 +445,13 @@ func TestHeartbeat(t *testing.T) {
 		}
 		inv := filepath.Join(dir, "inventory")
 		var rec launcherRecord
+		t.Cleanup(func() {
+			_ = cmd.Process.Kill()
+			if cmd.ProcessState == nil {
+				_ = cmd.Wait()
+			}
+			killAll(t, inv)
+		})
 		for end := time.Now().Add(deadline); ; time.Sleep(beat) {
 			b, err := os.ReadFile(filepath.Join(dir, "launcher.json"))
 			e, _ := artisantest.Inventory(inv)
@@ -416,7 +460,6 @@ func TestHeartbeat(t *testing.T) {
 				break
 			}
 			if time.Now().After(end) {
-				_ = cmd.Process.Kill()
 				t.Fatal("launcher process did not start its worker tree")
 			}
 		}

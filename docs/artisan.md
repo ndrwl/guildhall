@@ -287,6 +287,8 @@ The first rule that applies decides:
 | 8 | Launcher identity live, endpoint answers `status` for this attempt and launcher | `running` |
 | 9 | Anything else, such as a live launcher with a silent endpoint or an unverified identity | `unknown` |
 
+After observing a valid result, `Classify` rereads the cancel marker before returning `finished`, remaining read-only and never taking `attempt.lock` or creating files. A marker found on that second read makes the result late (`cancelled`); a read error yields `unknown`. The marker is never removed, and cancel/stop write it under the attempt lock only after checking that no valid result exists. A marker absent after a valid result was observed therefore cannot subsequently appear.
+
 The classification carries its evidence: the launcher's liveness, what the endpoint answered, the last heartbeat and its age, and any survivors.
 A heartbeat is evidence only: `stuck` is never exit and grants no relaunch, take-over or sweep, and a crashed launcher's frozen heartbeat is reported while the identity rule classifies it `exited`.
 A heartbeat that names another attempt is ignored.

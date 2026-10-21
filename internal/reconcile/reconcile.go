@@ -21,6 +21,13 @@
 //     - anything else, such as a live launcher whose endpoint is silent or an
 //     identity that cannot be verified: unknown.
 //
+// After observing a valid result, Classify reads the cancel marker again before
+// returning finished, without taking attempt.lock or creating any files. The
+// marker is never removed; cancel and stop write it under the attempt lock only
+// after checking that no valid result exists. Thus a marker absent after a valid
+// result was observed cannot subsequently appear, and a present marker makes
+// that result late.
+//
 // The heartbeat is evidence, never proof: stuck is not exit and grants no
 // relaunch, take-over or sweep, and a gone launcher's frozen heartbeat is
 // reported while the identity decides. A heartbeat naming another attempt is
@@ -126,6 +133,12 @@ func Classify(ctx context.Context, a Attempt, o Options) Classification {
 	if v, err := a.Files.ValidResult(); err != nil || v {
 		if err != nil {
 			return unknown("result: %v", err)
+		}
+		if m, err := a.Files.Marked(); err != nil || m {
+			if err != nil {
+				return unknown("cancel marker: %v", err)
+			}
+			return Classification{State: Cancelled, Reason: "cancel marker present; any result is late"}
 		}
 		return Classification{State: Finished, Reason: "valid result"}
 	}
