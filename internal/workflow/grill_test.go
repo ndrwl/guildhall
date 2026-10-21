@@ -12,10 +12,10 @@ func TestGrillSkillsValidation(t *testing.T) {
 			name, settings string
 			valid          bool
 		}{
-			{"skills", `{"skills":["guildhall-grill-notes"]}`, true},
+			{"skills", `{"skills":["guildhall-grill-unattended"]}`, true},
 			{"empty", `{"skills":[]}`, true},
 			{"omitted", `{}`, true},
-			{"string", `{"skills":"guildhall-grill-notes"}`, false},
+			{"string", `{"skills":"guildhall-grill-unattended"}`, false},
 			{"null", `{"skills":null}`, false},
 			{"invalid-name", `{"skills":["../skill"]}`, false},
 			{"duplicate", `{"skills":["skill","skill"]}`, false},
@@ -42,7 +42,7 @@ func TestGrillSkillsValidation(t *testing.T) {
 						t.Errorf("%s validation = %v, want valid %v", name, err, tc.valid)
 					}
 				}
-				if tc.name == "skills" && !slices.Equal(step.Skills(), []string{"guildhall-grill-notes"}) {
+				if tc.name == "skills" && !slices.Equal(step.Skills(), []string{"guildhall-grill-unattended"}) {
 					t.Errorf("skills = %q", step.Skills())
 				}
 			})

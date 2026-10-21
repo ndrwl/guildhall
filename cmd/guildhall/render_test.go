@@ -29,14 +29,14 @@ func testReleaseRenderingKind(t *testing.T, bin, kind string) {
 		t.Fatal(err)
 	}
 	managed := filepath.Join(tmp, "managed")
-	name := "guildhall-grill-notes"
+	name := "guildhall-grill-unattended"
 	if err := os.MkdirAll(filepath.Join(managed, name), 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(managed, name, "SKILL.md"), []byte("decoy"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	settings := map[string]json.RawMessage{"actor": json.RawMessage(`"artisan"`), "skills": json.RawMessage(`["guildhall-grill-notes"]`)}
+	settings := map[string]json.RawMessage{"actor": json.RawMessage(`"artisan"`), "skills": json.RawMessage(`["guildhall-grill-unattended"]`)}
 	if kind == "review" {
 		settings["profile"] = json.RawMessage(`"reviewer"`)
 		settings["instructions"] = json.RawMessage(`"Check the release defaults."`)

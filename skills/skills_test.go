@@ -552,3 +552,24 @@ func TestInstallRefusesANonEmptyDirectory(t *testing.T) {
 		t.Errorf("refused install removed the first: %v", err)
 	}
 }
+
+// TestGrillSkillsFollowTheActor pins the grill pair: the Director's live interview names its domain-model companion,
+// and only the unattended variant proceeds on its own recommendations.
+func TestGrillSkillsFollowTheActor(t *testing.T) {
+	read := func(name string) string {
+		data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	if grill := read("guildhall-grill"); !strings.Contains(grill, "`guildhall-domain-model`") || !strings.Contains(grill, "wait for the Guildmaster's answers") {
+		t.Error("guildhall-grill must interview the Guildmaster live alongside guildhall-domain-model")
+	}
+	if !strings.Contains(read("guildhall-domain-model"), "`guildhall-grill`") {
+		t.Error("guildhall-domain-model must name the skill it is used with")
+	}
+	if unattended := read("guildhall-grill-unattended"); !strings.Contains(unattended, "`artisan`") || !strings.Contains(unattended, "Nobody answers you") {
+		t.Error("guildhall-grill-unattended must be the artisan-only self-answering variant")
+	}
+}
