@@ -1,8 +1,8 @@
 # Artisan launcher
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
-This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit and the control endpoint.
-The [ownership record](store.md#attempt-ownership) is in the store; the stop ladder, heartbeat and integration into launcher commands are later work, and nothing here is wired into a command yet.
+This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit, the control endpoint and the stop ladder.
+The [ownership record](store.md#attempt-ownership) is in the store; the heartbeat and integration into launcher commands are later work, and nothing here is wired into a command yet.
 The existing fake-adapter `artisan run` command is described in [adapters](adapters.md#running-an-attempt).
 The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
@@ -126,7 +126,7 @@ These are reported, not guaranteed:
 ## Control endpoint
 
 Each owned attempt has one control endpoint: an AF_UNIX stream socket under the Guildhall state directory, on Windows 10 and later as on Unix ([decision](decisions/attempt-endpoint-af-unix.md)).
-The launcher binds it, records its path in the ownership record with `UpdateOwnership`, and answers `status`, `stop` and `cancel` on it; what `stop` and `cancel` do is the launcher's handler, which the stop ladder supplies later.
+The launcher binds it, records its path in the ownership record with `UpdateOwnership`, and answers `status`, `stop` and `cancel` on it; what `stop` and `cancel` do is the launcher's handler, the [stop ladder](#stop-ladder).
 
 ### Path
 
@@ -180,6 +180,65 @@ Once a complete line is read, it is decoded with the same strict rules: a reply 
 It refuses a reply naming another attempt or launcher with `ErrEndpointMismatch`; an error reply is `ErrEndpointRequest`.
 A failed call never proves the owner exited: a silent endpoint is unknown until the owner's identity is proven gone.
 
+## Stop ladder
+
+A `Launcher` runs one attempt's worker in its unit, decides the attempt once and stops the worker tree ([decision](decisions/stop-ladder-precedence.md)).
+It is the endpoint's handler, and its [doc comments](../internal/artisan/launcher.go) own the API contract.
+It reads the attempt's result and writes its cancel marker through `AttemptFiles`, and writes `outcome.json`, `events.jsonl` and `attempt.lock` in the attempt directory.
+
+### Precedence
+
+Every decision is taken under the attempt lock, in this order:
+
+1. A cancel marker present: cancelled, and a result valid when the outcome is written, published with or after the marker, is rejected as late (`late_result_rejected`).
+2. A valid result: finished, and a stop that arrives after it does not write the marker.
+3. Otherwise a stop writes the marker and the attempt is cancelled, and a worker that exits without either has failed.
+
+A marker or result already present, or a stop requested, before the worker starts decides the attempt without starting it, and an attempt that already has `outcome.json` is refused with `ErrDecided`.
+`outcome.json` is written once, `"schema": "guildhall.attempt-outcome/1"`, with the state, a detail, the rung that emptied the unit (0 when none was needed) and any survivors:
+
+```json
+{
+  "schema": "guildhall.attempt-outcome/1",
+  "state": "cancelled",
+  "detail": "stopped",
+  "late_result_rejected": true,
+  "rung": 1
+}
+```
+
+### Rungs
+
+| Rung | Action | Bound (`DefaultLadder`) |
+|---|---|---|
+| 1 | The cancel marker, which a cooperating worker honours by exiting | 3 s |
+| 2 | `Unit.Interrupt`: SIGINT to the group, `CTRL_BREAK` on Windows | 3 s |
+| 3 | `Unit.Terminate`: SIGTERM to the group; skipped on Windows, where it is refused | 3 s |
+| 4 | `Unit.Kill`, or terminating the job on Windows | 5 s |
+
+During escalation, a rung succeeds only when the unit is empty within its bound; otherwise the next rung runs, and after rung 4 the members still alive are the outcome's survivors and `Run` and `Stop` return `ErrNotEmpty`.
+Marker-only cancellation instead continues cooperative supervision as described under [stop requests](#stop-requests).
+An explicit stop of a cancelled attempt climbs from rung 1; a finished or failed attempt whose tree is still running, or a worker outliving its accepted result by the result grace (3 s), climbs from rung 2.
+For a started worker, a stop that writes or finds the cancel marker records rung 1 even if the tree empties before the ladder's first check: the marker itself is the rung. Attempts stopped before starting, and empty trees needing no ladder rung, retain rung 0.
+Each rung is logged to `events.jsonl` with its bound; signal rungs also record the members they acted on and any error.
+A timed-out rung names the processes still alive, and a skipped rung says why.
+
+### Stop requests
+
+`Stop`, the endpoint's `stop`, and SIGTERM or SIGHUP delivered to the launcher all request the one ladder; every request waits for it and answers with its end, and a stop after the end returns at once.
+`Cancel`, the endpoint's `cancel`, is rung 1 alone: it writes the marker unless a valid result is present and does not escalate.
+If the worker exits with the marker present while descendants remain, the launcher starts the bounded cooperative wait at rung 1.
+After that bound expires it continues supervising without signalling descendants; only an explicit `Stop` request (including a stop signal) escalates past rung 1.
+Automatic cleanup checks the marker and dispatches each signal under the attempt lock: a `Cancel` accepted before dispatch switches cleanup to cooperative supervision, while a signal dispatched before `Cancel` cannot be undone.
+An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwarded to the worker with `Unit.Interrupt` and does not stop the attempt.
+`StopSignals` lists the signals the caller relays to `Run`.
+
+### Limits
+
+- `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
+- Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
+- The ladder is driven through the Go API only; the `artisan run`, `stop` and `status` commands, the adapter's result and marker files and Tier 2 pane runs come with the command-line slice.
+
 ## Tests
 
 `artisantest.RunUnitContract` is the containment contract.
@@ -209,3 +268,8 @@ Every case follows the harness rules: it records every identity it caused and ch
 `TestDetectCgroup` is the detection table over recorded host files: cgroup v2 delegated by a systemd user manager, on WSL and inside a cgroup namespace; cgroup v2 not delegated as a system service, on WSL without systemd and with `cgroup.procs` locked; no `cgroup.kill`; a cgroup outside the mounted subtree; cgroup v1; hybrid; no cgroup filesystem; unreadable mountinfo.
 `TestCgroupKillEmpties` shows `cgroup.kill` ending a grandchild that left the process group and `Close` removing the cgroup; `TestSubreaperRecordsReparent` shows an orphaned `setsid` grandchild reparented to the launcher and reported by `Escapes`, not `Members`.
 The endpoint tests bind real sockets in a short temporary state directory on every runner; their inventory is in the [package contract](contracts/artisan.md#tests).
+
+`artisantest.RunStopContract` is the stop ladder and precedence contract.
+It runs against this platform's backend in `launcher_test.go` on the Linux, Windows and macOS runners, and against `fakeUnit`, with the test binary playing a worker that can honour the marker, publish its result after a delay or ignore interrupts, and a file double for the result and marker.
+Its cases are the P0 lifecycle scenarios: a cooperative worker stopping at rung 1 (L6); an ignored interrupt escalating, with every timed-out rung naming the processes alive (L7); a stop or cancel before the worker starts, and a stop during startup leaving no owned process (L15); a result before the stop finishing with no marker, a result after the marker rejected as late, and a result racing the stop decided exactly once (L16); a result after cancel rejected while the worker exits (L17); concurrent and repeated stops sharing one ladder, with one interrupt and at most one kill (L18).
+It also covers SIGTERM and SIGHUP stopping the attempt, a forwarded interrupt leaving it running, an invalid result failing it, a decided attempt not run again, and survivors reported after the last rung.
