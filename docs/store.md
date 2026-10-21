@@ -113,8 +113,8 @@ Writes refuse a containment that is not recoverable with `ErrInvalid`.
 Records written before this rule, whose containment held only `kind` and `name`, still read unchanged; a recoverable one keeps working, and one that is not never authorises a sweep or a take-over: `TakeOwnership` refuses it with `ErrOwnerUnknown` without probing, even when its launcher has exited.
 
 Taking ownership records the mutation id the caller chooses.
-The planned launcher convention is `own:<repository>:<task>:<step>:<number>:<launcher pid>`, because mutation ids cannot contain `/`; launcher command integration is not implemented yet.
-Under that convention a different PID gives a different id; reusing an id with a different creation token returns `ErrMutationConflict`, never a new take-over.
+The [launcher composition](../internal/launch/launch.go) owns its mutation-id convention.
+Reusing an id with a different creation token returns `ErrMutationConflict`, never a new take-over.
 
 ## File format and versions
 

@@ -9,7 +9,7 @@ Agent-agnostic local engineering workflows, shared tooling and fleet setup.
 Guildhall is at its foundation stage: it builds and runs, but no platform or agent runtime is supported for real work yet.
 The specification is in `docs/requirements.md`.
 
-The current foundation provides configuration and workflow parsing and validation, the durable record store and a local message inbox on it, and the Steward's managed-settings rollouts, not a runnable Director or workflow executor.
+The current foundation provides configuration and workflow parsing and validation, the durable record store and a local message inbox on it, the Steward's managed-settings rollouts, and manual task advances with the fake adapter, but not a runnable Director.
 See [configuration and workflows](docs/configuration.md) for the format, examples and library usage, and [Steward rollouts](docs/steward.md) for rollouts.
 
 ## What the badges mean
@@ -106,7 +106,7 @@ flowchart TB
     INTERP --> RENDER
     INSP --> STORE
     MSG --- STORE
-    INTERP -. "not yet wired" .-> WRAP
+    INTERP --> WRAP
     WRAP --> ADAPT
     ADAPT --> RT
     WRAP -.-> EXEC
@@ -144,7 +144,7 @@ flowchart LR
 ```
 
 A repository can have the Guildmaster review instead of an Artisan without changing any other repository; see [configuration and workflows](docs/configuration.md).
-The [workflow interpreter](docs/interpreter.md) executes a supported subset as a Go library; no command runs a workflow yet.
+The [workflow interpreter](docs/interpreter.md) executes a supported subset; see [running a task](docs/running.md) for command-line advances and their current limits.
 
 ## Build
 
