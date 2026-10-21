@@ -53,6 +53,10 @@ type Worker struct {
 	Inventory string `json:"inventory,omitempty"`
 }
 
+// Entry is one inventory record: a process the worker tree started. Its role
+// is "worker", "grandchild", "grandchild-setsid" (started in its own session),
+// "sentinel", or "breakaway-refused" or "breakaway-succeeded" (the worker's
+// record of a breakaway request).
 type Entry = artisan.ProcessRecord
 
 // Command returns the command that runs w as the worker, recording into dir.
