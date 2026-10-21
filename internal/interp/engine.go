@@ -439,7 +439,8 @@ func (r *run) taken(s workflow.Step, n int) bool {
 }
 
 // takeResult records a finished attempt: its outputs as documents when it succeeded, then its outcome.
-// An outcome the launcher already recorded stands: a succeeded one has only its outputs recorded here.
+// An outcome the launcher already recorded stands; unfinished intake still replays
+// documents, ruling contests and stall notifications before marking completion.
 func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	res, err := adapter.ReadResult(r.resultFile(s.ID, a.Number), r.identity(s.ID, a.Number))
 	if err != nil {

@@ -17,7 +17,7 @@ guildhall step done --store <file> --config <director.toml> --state <dir> --repo
 | Workflow | The repository's effective workflow, resolved from `--config` exactly as [`task new`](tasks.md) resolves it; a definition that is no longer the task's bound revision is refused |
 | Profiles, merge policy | The Director config; a step without a profile runs the `fake` adapter, the only one `artisan run` runs today |
 | Standards revision | The config setting `standards_revision` |
-| Baseline | `baseline/` beside the config file: the role `roles/artisan.md`, or the step profile's `role`, the guide `stages/<kind>.md`, and every `standards/*.md` in name order |
+| Baseline | `baseline/` beside the config file: the role `roles/artisan.md`, the guide `stages/<kind>.md`, and every `standards/*.md` in name order; a step profile's `role` overrides the default role and is resolved relative to the config directory |
 | Skills | The embedded release skills, installed into a temporary root for the advance |
 | Attempts | `<state>/<repository>/<task>/<step>-<n>`, laid out by `artisan.AttemptKey`; the task's working directory is `<state>/<repository>/<task>/work` |
 | Documents | `<state>/documents` |
@@ -26,7 +26,8 @@ An advance holds the task's lock, `attempt.lock` in `<state>/<repository>/<task>
 
 ## `task start`
 
-`task start` advances the task from its records with the `task-created` event: an unstarted task launches its first ready stage, and a task already waiting replays and changes nothing.
+`task start` advances the task from its records with the `task-created` event: an unstarted task launches its first ready stage, and a task still waiting on a running attempt or unanswered decision changes nothing.
+It can also recover intake for a launcher-completed successful attempt and continue the workflow; see [recovery](interpreter.md#replay-and-recovery).
 With `--decision <id>` it feeds `decision-answered` for that answered decision instead, which is how a task continues after [`decide answer`](decisions-cli.md) (answering never advances a task by itself).
 
 ## `step done`
@@ -37,7 +38,7 @@ The file is validated with `adapter.ReadResult` for identity `<task>`, `<step>-<
 It then feeds `attempt-result`: a succeeded result's outputs are recorded as documents and the task moves on.
 
 The attempt's launcher records its store outcome when it decides the attempt, which may be before or after `step done`.
-Either order records the outputs once: an outcome the launcher recorded first stands, and a succeeded one has only its outputs recorded by the intake; the launcher accepts an identical outcome the intake recorded first.
+The [interpreter's recovery contract](interpreter.md#replay-and-recovery) defines intake replay and outcome reconciliation when these operations overlap.
 
 ## Output and exit status
 

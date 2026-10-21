@@ -9,7 +9,7 @@ Two advances of one task are serialised by the task's own lock, `attempt.lock` i
 
 The launcher and the result intake both record an attempt's store outcome, because either may happen first: the launcher when it decides the attempt, the intake when the result file is taken.
 The first record stands.
-A succeeded outcome the launcher recorded first still has its outputs recorded, by the next advance whatever its event, and the launcher accepts an identical outcome the intake recorded first; a conflicting one, such as a stop racing a result, keeps the store's and the launcher reports it.
+The [interpreter's replay and recovery contract](../interpreter.md#replay-and-recovery) defines completion and reconciliation when the two overlap.
 
 `task start --decision <id>` feeds `decision-answered`, because answering a decision never advances a task and nothing else would feed that event until the Director runs.
 The Director's inputs that have no home yet come from beside its config: workflows from `workflows/` as `task new` reads them, and the prompt baseline from `baseline/`; documents and attempts live under `--state`.

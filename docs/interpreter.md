@@ -174,8 +174,11 @@ Once `Launch` returns, the engine marks the attempt directory with `launched.jso
 An attempt recorded but neither marked launched nor holding a result is launched again with the same identity from its published preparation, never recorded again and never rendered again once prepared.
 A lost acknowledgement, or a crash after `Launch` returns but before the mark, relaunches the same identity with the same files; refusing a live duplicate belongs to the launcher's ownership record.
 An attempt's binding is recorded before the attempt, and a relaunch uses the recorded binding, so a replayed launch is given exactly the inputs of the first.
-Result intake publishes `intake.json` atomically in the attempt directory only after every output document, ruling contest and stall notification succeeds and the attempt outcome is recorded or reconciled. A launcher-recorded success without this marker replays the intake operations idempotently; the first output document alone is not completion evidence. If the launcher concurrently records the same outcome, intake treats it as replay; a different persisted outcome stands and the advance reports an error. A Guildmaster's answer is recorded as a document before the attempt it feeds, so a repeat completes it.
-`Advance` is not safe for concurrent use on one task; the store's single writer serialises processes.
+Result intake publishes `intake.json` atomically in the attempt directory only after every output document, ruling contest and stall notification succeeds and the attempt outcome is recorded or reconciled.
+A launcher-recorded success without this marker replays the intake operations idempotently; the first output document alone is not completion evidence.
+If the launcher concurrently records the same outcome, intake treats it as replay; a different persisted outcome stands and the advance reports an error.
+A Guildmaster's answer is recorded as a document before the attempt it feeds, so a repeat completes it.
+`Advance` is not safe for concurrent use on one task; callers must serialise whole advances, as the [CLI's task lock](running.md#what-an-advance-runs-over) does.
 
 ### Attempt preparation
 
