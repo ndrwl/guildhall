@@ -58,6 +58,7 @@ This selection applies to release commands, configuration reload, task creation 
 - **Standalone**: `guildhall release use <version>` sets it.
 - **Managed**: `managed.toml` carries `release` and `release_sha256`; the Steward changes them by [rollout](steward.md), whose preview shows the old and new version and whose plan digest the Guildmaster approves.
   `guildhall config reload` authorizes the revision as [director modes](director-modes.md#how-the-steward-acts) describes and only then writes that named copy's `release.pin`; other copies' pins and stores are untouched.
+  If the pin is absent or its executable is missing or damaged, explicit `config reload --copy <dir>` uses the recovery dispatch below; this changes how reload starts, not how it authorizes the revision.
   A managed release pin is a managed key, so `release use` refuses in managed mode and names the rollout.
 
 Each pin change, by either route, is a `release-pin` event in that copy's store with the new and previous version, the source (`use`, `reload`, `rollback` or `guildmaster-approved`) and the time.
@@ -72,8 +73,10 @@ It is a small fixed program installed with the first release and replaced only b
 1. It resolves the selected copy before choosing an executable. For new work and Director commands it reads that copy's `release.pin`; for an existing task it reads the immutable version and sha256 from the task's owning store instead, using the store, repository and task arguments. It loads no effective configuration. Missing or conflicting task identity is refused, never treated as new work.
 2. If `releases/<version>/guildhall` exists and matches its `SHA256` (and, for a task, the recorded sha256), it runs it with the same arguments and standard streams and returns its exit code (on Unix by `exec`).
 3. If the pinned release is missing or damaged, it never falls back to another release: it exits non-zero and prints the version, the path it checked and the fix (`guildhall release install <version>` or, managed, a rollout).
-   The one exception is `guildhall release ...`, which it runs on the newest installed, verified release and says which, so a machine can always be repaired or rolled back.
-4. If the selected copy's `release.pin` is absent, non-task commands behave as for a missing release, naming `guildhall release use`. Existing tasks do not depend on the current pin.
+   Recovery dispatch is limited to `guildhall release ...` and explicit `guildhall config reload --copy <dir>`: it runs the command on the newest installed, verified release and says which. If none exists, it refuses; it never runs an unverified `.incoming/` binary.
+4. If the selected copy's `release.pin` is absent, the same recovery dispatch applies. Other non-task commands refuse, naming `guildhall release use` for standalone setup or `guildhall config reload --copy <dir>` for managed setup. Existing tasks do not depend on the current pin.
+
+Recovery `config reload` must verify that the selected copy is managed and perform the same combined-config validation, migration and mode checks, and receiving-store revision authorization as ordinary reload. An absent pin or unusable executable does not bypass those checks or require admitting current effective settings before reload can repair them. Unsupported config or store schemas and failed authorization refuse the operation without changing the pin. Only after authorization and verification of the revision's target binary may reload record `release-pin` and write its cache. Dispatch itself neither authorizes a revision nor changes a pin, and grants no fallback to task or Director execution.
 
 The launcher replaces any inherited `GUILDHALL_RELEASE` with `GUILDHALL_RELEASE=<selected version>` for the child, including when a newer Director launches an older task; the inherited variable is never a selection input. Each release refuses to run if that variable names a different version from its own, so the launcher cannot be confused with a mislabelled directory.
 Each dispatched executable validates the selected copy's settings or task binding before acting. Copy selection is preserved in child invocations and Director restarts.
@@ -90,7 +93,7 @@ A task whose recorded release is missing or damaged refuses to advance and raise
 The Steward never tells the Director by message; it acts by command, in order:
 
 1. `scp` the new binary into `.incoming/<version>/` and the new `managed.toml` (D12);
-2. `guildhall config reload --copy <dir>` over SSH, which authorizes the revision, runs `release install` from `.incoming/` against `release_sha256`, records `release-pin` in that copy's store and then writes that copy's pin;
+2. `guildhall config reload --copy <dir>` over SSH, using recovery dispatch if the pin is absent or its executable is missing or damaged, which authorizes the revision, verifies an already installed target or runs `release install` from `.incoming/` against `release_sha256`, records `release-pin` in that copy's store and then writes that copy's pin;
 3. `guildhall director reload --copy <dir>` over SSH.
 
 A standalone Guildmaster runs the same three steps by hand: `guildhall release install <version> --from <file> --sha256 <hex>`, `guildhall release use <version>`, `guildhall director reload`.
@@ -115,7 +118,7 @@ It records a `director-reload` request event and returns at once; it never inter
 Rollback moves the pin back; it never touches an installed release or an active task.
 
 - Standalone: `guildhall release rollback` sets the pin to the previous version from the `release-pin` events, with source `rollback`.
-- Managed: the Steward rolls back by rollout of the previous `managed.toml` revision, which carries the previous `release`, followed by `config reload` and `director reload`.
+- Managed: the Steward rolls back by rollout of the previous `managed.toml` revision, which carries the previous `release`, followed by `config reload --copy <dir>` and `director reload --copy <dir>`. If the current pin is absent or its executable is missing or damaged, reload uses recovery dispatch, still authorizes the rolled-back revision and verifies its installed target before changing the pin; Director reload runs only after that succeeds.
 
 The previous release is protected from pruning, so rollback never needs a download.
 
@@ -157,3 +160,4 @@ Prune removes only `releases/<version>/` directories and stale `.incoming/` copi
 Contract tests use temporary homes and test-built binaries with stamped versions; CI makes no model calls and uses no SSH.
 They cover: the launcher on a present, missing, damaged and absent copy pin and the `release` exception; refusal of missing or conflicting copy/task selection; a rollout to copy A leaving copy B unchanged; a pin change leaving an active task on its release; plain-command Herdr resumes and initial Artisan launches from a newer Director with its inherited release environment replaced; reload applied only at a step boundary; per-copy rollback; and fixed three-release retention with every cross-copy prune protection, unreadable copies and concurrent reference creation.
 Each runs on a standalone and a managed copy through the shared helper in [director modes](director-modes.md#testing-both-ways).
+Managed recovery cases cover initial pin creation, rollback from a missing or damaged executable to a verified installed release, and refusal without pin changes for failed authorization, unsupported schemas or no verified recovery executable; task and Director commands must still refuse rather than fall back.
