@@ -28,49 +28,55 @@ This section describes the accepted design; [Inside a Director](#inside-a-direct
 
 ### Roles
 
-- The **Guildmaster** is the human who owns the guild.
-  They talk directly to the Steward and to each Director; there is no central dispatcher.
-- The **Steward** is the shared maintenance agent.
-  It keeps the private central preferences and the roster of enrolled machines, and on request rolls managed settings out to enrolled Director copies over SSH.
-- A **Director** coordinates one or more repositories on its one owner machine.
-  It only orchestrates: it tracks tasks, launches Artisans and brings decisions to the Guildmaster, but never does the work itself.
-- An **Artisan** is a task worker launched by a Director to do one task attempt in an isolated copy of its repository.
-- The Go **core** owns durable state: each Director copy has one store holding its tasks, attempts, decisions, document references, pane bindings and messages.
+Each role owns a fixed set of things; the next figure shows how they talk.
+
+| Role | What it is | What it owns |
+| --- | --- | --- |
+| **Guildmaster** | The human who owns the guild | Answers to decisions and approvals |
+| **Steward** | The shared maintenance agent | The private central preferences and the roster of enrolled machines |
+| **Director** | The coordinator of one or more repositories on its one owner machine | Its tasks: it tracks them, launches Artisans and brings decisions to the Guildmaster, but never does the work itself |
+| **Artisan** | A task worker launched by a Director | One task attempt in an isolated copy of its repository |
+| Go **core** | The single Guildhall binary | All durable state and lifecycle: each Director copy has one store holding its tasks, attempts, decisions, document references, pane bindings and messages, so a restart never depends on an agent's transcript |
+
+### Who talks to whom
+
+The Guildmaster talks directly to the Steward and to each Director; there is no central dispatcher.
+Each arrow shows one direction and what flows along it.
 
 ```mermaid
 flowchart LR
     GM(["Guildmaster"])
     ST["Steward"]
-    PRIV[("Private config:<br/>roster, preferences")]
 
     subgraph M1["Machine A"]
         DA["Director: tools"]
-        SA[("Store")]
         AA1["Artisan"]
         AA2["Artisan"]
-        DA --- SA
-        DA --> AA1
-        DA --> AA2
     end
 
     subgraph M2["Machine B"]
         DB["Director: web"]
-        SB[("Store")]
         AB1["Artisan"]
-        DB --- SB
-        DB --> AB1
     end
 
-    GM <--> ST
-    GM <--> DA
-    GM <--> DB
-    ST --- PRIV
-    ST -. "managed settings over SSH" .-> DA
-    ST -. "managed settings over SSH" .-> DB
+    GM -- "requests" --> ST
+    ST -- "managed settings over SSH" --> DA
+    ST -- "managed settings over SSH" --> DB
+    GM -- "tasks, answers, approvals" --> DA
+    DA -- "decisions to answer" --> GM
+    GM -- "tasks, answers, approvals" --> DB
+    DB -- "decisions to answer" --> GM
+    DA -- "launch: prompt" --> AA1
+    AA1 -- "result file" --> DA
+    DA -- "launch: prompt" --> AA2
+    AA2 -- "result file" --> DA
+    DB -- "launch: prompt" --> AB1
+    AB1 -- "result file" --> DB
 ```
 
-Work moves between Directors only by manual handoff, never by automatic cross-Director scheduling.
+Messages between a Director and its Artisans inform only; they never carry a result, a decision or an approval.
 A machine may host several Directors, and each Director works only on its own machine.
+Work moves between Directors only by manual handoff, never by automatic cross-Director scheduling.
 
 ### Inside a Director
 
@@ -88,6 +94,8 @@ flowchart TB
     DIR["Director orchestration<br/>command"]:::planned
     INTERP["Workflow interpreter<br/>Go library"]:::built
     RENDER["Prompt rendering<br/>and skills"]:::built
+    GIT["Git boundary"]:::built
+    LAUNCH["Launch package<br/>guildhall artisan run, stop, status"]:::built
     WRAP["Artisan launcher<br/>containment, endpoint, stop ladder"]:::built
     ADAPT["Adapter contract<br/>and fake adapter"]:::built
     RT["Runtime adapter<br/>Claude Code first"]:::planned
@@ -100,7 +108,10 @@ flowchart TB
     INTERP --> RENDER
     INSP --> STORE
     MSG --- STORE
-    INTERP -. "not yet wired" .-> WRAP
+    INTERP --> GIT
+    INTERP -. "not yet wired" .-> LAUNCH
+    LAUNCH --> WRAP
+    LAUNCH --> STORE
     WRAP --> ADAPT
     ADAPT --> RT
     WRAP -.-> EXEC
