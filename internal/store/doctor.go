@@ -86,9 +86,10 @@ func (s *Store) Doctor() (Report, error) {
 				}
 				_ = b.ForEach(func(k, v []byte) error {
 					*n++
-					if err := decodeRecord(name, k, v); err != nil {
+					rec, err := decodeRecord(name, k, v)
+					if err != nil {
 						problem("repository %s: %v", repo, err)
-					} else if name == string(bucketOwners) && uncontainedStarting(v) {
+					} else if o, ok := rec.(*Ownership); ok && o.State == OwnerStarting && o.Containment == (Containment{}) {
 						counts.UncontainedStarting++
 					}
 					return nil
@@ -104,36 +105,31 @@ func (s *Store) Doctor() (Report, error) {
 	return rep, nil
 }
 
-func decodeRecord(bucket string, k, v []byte) error {
+func decodeRecord(bucket string, k, v []byte) (any, error) {
+	var rec any
 	switch bucket {
 	case string(bucketTasks):
-		return decode(k, v, new(Task))
+		rec = new(Task)
 	case string(bucketAttempts):
-		return decode(k, v, new(StageAttempt))
+		rec = new(StageAttempt)
 	case string(bucketDocuments):
-		return decode(k, v, new(DocumentRef))
+		rec = new(DocumentRef)
 	case string(bucketPanes):
-		return decode(k, v, new(PaneBinding))
+		rec = new(PaneBinding)
 	case string(bucketRulings):
-		return decode(k, v, new(Ruling))
+		rec = new(Ruling)
 	case string(bucketOwners):
-		return decode(k, v, new(Ownership))
+		rec = new(Ownership)
 	case string(bucketMessages):
-		return decode(k, v, new(Message))
+		rec = new(Message)
 	case string(bucketInbox):
 		// Inbox entries index messages by id rather than holding JSON.
 		if v == nil || !messageIDPattern.Match(v) {
-			return fmt.Errorf("%w: inbox entry %q", ErrNotStore, k)
+			return nil, fmt.Errorf("%w: inbox entry %q", ErrNotStore, k)
 		}
-		return nil
+		return nil, nil
 	default:
-		return decode(k, v, new(Decision))
+		rec = new(Decision)
 	}
-}
-
-// uncontainedStarting reports whether a decoded ownership record is in
-// starting with no containment recorded.
-func uncontainedStarting(v []byte) bool {
-	var o Ownership
-	return decode(nil, v, &o) == nil && o.State == OwnerStarting && o.Containment == (Containment{})
+	return rec, decode(k, v, rec)
 }

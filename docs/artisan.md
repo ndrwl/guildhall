@@ -125,7 +125,8 @@ These are reported, not guaranteed:
 - A Unix descendant that leaves the group with `setsid` or `setpgid` is not a member of a process-group unit and survives `Kill`; the contract suite records it as an escape, and the Linux fallback reports it through `Escapes` once it is orphaned.
 - When the launcher dies, the Linux parent-death signal kills the worker only; descendants in a cgroup unit remain in its named cgroup.
 - macOS has no parent-death signal.
-- A process-group unit (macOS, the Linux fallback) is found by its worker, which is the group id, so it is recorded only once the worker runs: a launcher gone between taking ownership and recording its worker leaves an owner in `starting` with no containment, which `status` calls `exited` but `resume` and `start` refuse as unverified, and `store doctor` counts as starting without containment. A job or cgroup is recorded with the ownership and has no such window.
+- A process-group unit (macOS, the Linux fallback) is found by its worker, which is the group id, so it is recorded only once the worker runs: a launcher gone between taking ownership and recording its worker leaves an owner in `starting` with no containment, which `status` calls `exited` but `resume` and `start` refuse as unverified, and `store doctor` counts as starting without containment.
+  A job or cgroup is recorded with the ownership and has no such window.
 - macOS is covered by the contract suite on its CI runner only; no interactive macOS run has been made.
 - Interactive terminal foreground hand-over is not covered by CI; the Linux failed-exec restoration case uses a pseudo-terminal (see the [package test inventory](contracts/artisan.md#tests)).
 
