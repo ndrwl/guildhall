@@ -138,5 +138,5 @@ bbolt records the page size in the file, and every release target is little-endi
 
 ## `guildhall store doctor`
 
-`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count and each repository's record counts, including ownership records, messages and how many are unread.
+`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count and each repository's record counts, including rulings, ownership records, messages and how many are unread.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.

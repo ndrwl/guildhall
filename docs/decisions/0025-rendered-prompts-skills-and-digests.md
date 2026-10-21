@@ -1,4 +1,4 @@
-# Rendered prompts, skills and their digests
+# D25. Rendered prompts, skills and their digests
 
 The [rendering contract](../rendering.md) defines the self-contained attempt files and returned manifest so an attempt can be reproduced and checked.
 Text sources are normalised to LF before they are rendered and digested, so Windows checkouts with CRLF endings pin the same digests; input documents and skill files keep their exact bytes because they are used as is.

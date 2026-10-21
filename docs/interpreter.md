@@ -179,7 +179,7 @@ A blocking result's stall message is sent before its attempt is finished, and a 
 
 ### Attempt preparation
 
-A missing `launched.json` does not prove that no worker holds the attempt's files, so an attempt's preparation is published once and never replaced ([decision](decisions/immutable-attempt-preparation.md)).
+A missing `launched.json` does not prove that no worker holds the attempt's files, so an attempt's preparation is published once and never replaced ([decision](decisions/0036-immutable-attempt-preparation.md)).
 A fresh attempt is rendered into `<step>-<n>/prompt.partial`, its manifest is written there as `manifest.json`, and the directory is renamed to `<step>-<n>/prompt` before launch.
 Replay validates any published directory rather than relying on rename atomicity or crash durability across platforms.
 No launch is given a path inside `prompt.partial`, so a leftover one from a crash is removed and rendered again.

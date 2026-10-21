@@ -1,4 +1,4 @@
-# Stop ladder decided from the attempt's files
+# D41. Stop ladder decided from the attempt's files
 
 The launcher decides each attempt once, from its files before its processes ([stop ladder](../artisan.md#stop-ladder)): a cancel marker means cancelled and makes any result late, otherwise a valid result means finished, otherwise a stop writes the marker.
 The marker is written under an attempt lock (`attempt.lock`, `flock` on Unix and `LockFileEx` on Windows) after checking again for a result, so the launcher, and later a reconcile of a dead launcher's attempt, never decide the same attempt two ways; the worker takes no lock, because a result it publishes after the marker is late whatever order the files land in.

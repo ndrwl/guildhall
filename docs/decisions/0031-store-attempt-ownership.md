@@ -1,4 +1,4 @@
-# Attempt ownership lives in the store
+# D31. Attempt ownership lives in the store
 
 The record of which launcher owns a stage attempt is a store record written under the store's single-writer lock, replacing the scratch launcher's `owner.json` file and its separate kernel file lock ([attempt ownership](../store.md#attempt-ownership)).
 The store already serializes writers across processes and makes every write durable with a receipt (D10), so a check-and-set inside one mutation gives the same exclusion as the scratch lock, plus replay by mutation id and an audit trail, without a second lock.

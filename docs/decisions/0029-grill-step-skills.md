@@ -1,4 +1,4 @@
-# Skills on grill steps
+# D29. Skills on grill steps
 
 Version 1 of the `grill` step accepts the optional `skills` setting so `guildhall-grill-notes` can be used in its intended stage.
 The setting uses the existing shared list-of-distinct-valid-names rule used by other skill-bearing stages.
@@ -10,4 +10,4 @@ This change does not add `profile` or `instructions` to grill steps, and undecla
 
 The built-binary rendering test exercises an Artisan grill step with the release skill, including first-root precedence and preservation of its attribution.
 The skills installation test validates its grill step before rendering.
-See the [workflow contract](../contracts/workflow.md) and [release skills decision](release-skills-root.md).
+See the [workflow contract](../contracts/workflow.md) and [release skills decision](0030-release-skills-root.md).

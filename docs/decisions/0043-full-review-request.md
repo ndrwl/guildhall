@@ -1,4 +1,4 @@
-# Full-review requests are store records consumed by a round
+# D43. Full-review requests are store records consumed by a round
 
 `guildhall task review --full` records a numbered per-task store record, not a document or a message, because it is a Director move that must survive restarts, carry a receipt like rulings, and be read by the engine through the same history view as every other record.
 The engine consumes a request with a second mutation naming the attempt, the same shape as contesting a ruling, so the timeline shows when it was requested and which round it forced.

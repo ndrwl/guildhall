@@ -680,7 +680,7 @@ func validateReview(r *Review) error {
 		}
 	}
 	for _, d := range r.Dispositions {
-		if d.State != workflow.Resolved && d.State != workflow.StillOpen && d.State != workflow.Withdrawn {
+		if !d.State.Valid() {
 			return invalid("disposition of %q has unknown state %q", d.Finding, d.State)
 		}
 	}

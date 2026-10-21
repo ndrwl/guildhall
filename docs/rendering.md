@@ -44,7 +44,7 @@ Each adapted skill includes its own `CREDITS.md`, preserving the upstream MIT no
 Release embedding is delivered here; Steward distribution of skill bundles follows in a later slice.
 Every file is copied, scripts included, byte for byte and with the permission bits the platform supports, so a POSIX script stays executable.
 A symbolic link or other non-regular file inside a skill is refused rather than followed.
-Executable content is controlled where skills are distributed, by the Steward's rollout review, not by the renderer ([Rendered prompts, skills and their digests](decisions/rendered-prompts-skills-and-digests.md)).
+Executable content is controlled where skills are distributed, by the Steward's rollout review, not by the renderer ([Rendered prompts, skills and their digests](decisions/0025-rendered-prompts-skills-and-digests.md)).
 
 A skill's tree digest is the sha256 of one `<hex>  <path>` line per file, sorted by path, where `<hex>` is the file's sha256 and `<path>` is relative to the skill directory: the output of `sha256sum` run inside the skill over its sorted files.
 File modes are not part of it, so a skill digests the same on every platform.

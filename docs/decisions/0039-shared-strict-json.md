@@ -1,4 +1,4 @@
-# One strict JSON decoder shared by Guildhall's formats
+# D39. One strict JSON decoder shared by Guildhall's formats
 
 Guildhall's JSON formats each refused unknown fields, duplicate keys, trailing data, UTF-16 and newer schemas with their own copy of a key walker and schema check, and a new boundary, the attempt control endpoint, needed the same refusals.
 `internal/strictjson` is now the one implementation of those refusals ([contract](../contracts/strictjson.md)), as a plain function with options rather than an interface, because it is pure parsing with a single implementation.

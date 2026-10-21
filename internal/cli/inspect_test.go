@@ -290,6 +290,12 @@ func TestTaskFindingRule(t *testing.T) {
 		!got.Rulings[0].RuledAt.After(*got.Findings[0].RecordedAt) || len(got.OmittedKinds) != 0 {
 		t.Fatalf("rulings = %+v, omitted %v", got.Rulings, got.OmittedKinds)
 	}
+	// store doctor counts the ruling in its repository.
+	app, stdout, stderr := newTestApp(nil, nil)
+	if code := app.Run([]string{"store", "doctor", path}); code != 0 || !strings.Contains(stdout.String(), "repository app: ") ||
+		!strings.Contains(stdout.String(), ", rulings 1, ") {
+		t.Fatalf("store doctor: exit %d, stdout %q, stderr %s", code, stdout, stderr)
+	}
 }
 
 func TestTaskFindingRuleRecords(t *testing.T) {

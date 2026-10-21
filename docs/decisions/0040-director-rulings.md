@@ -1,4 +1,4 @@
-# Director rulings as store records, disputes as loop exits
+# D40. Director rulings as store records, disputes as loop exits
 
 The Director's `out-of-scope`, `duplicate` and `defer` rulings (report §5.4) are a new store record keyed by the review outcome document and finding id, written by `guildhall task finding rule`, rather than messages or documents: a ruling is a move that is made once and contested once, and both need the store's once-only and replay rules.
 Keying by document rather than step means neither the store nor the command parses record names; the engine maps the document to its step through its history view.

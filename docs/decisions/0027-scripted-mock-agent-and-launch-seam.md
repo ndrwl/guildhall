@@ -1,4 +1,4 @@
-# Scripted mock agent and the launch seam
+# D27. Scripted mock agent and the launch seam
 
 The interpreter declares its own narrow launch interface, `interp.Launcher`, rather than consuming the adapter package directly, because it is the seam the interpreter's tests replace and it carries the rendered manifest the adapters never see ([scripted mock agent](../mock-agent.md)).
 `interp.Spec` names the adapter explicitly, so a launcher can refuse an adapter it does not run and the mock can refuse anything but itself.
