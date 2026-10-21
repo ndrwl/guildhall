@@ -39,6 +39,12 @@ func kill(id Identity) error {
 		return nil
 	}
 	if err := windows.TerminateProcess(h, 1); err != nil {
+		// This handle already grants PROCESS_TERMINATE. Access denied here
+		// means termination is already underway, not a permission failure;
+		// the handle need not be signalled yet because termination is async.
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			return nil
+		}
 		if _, checkErr := identityFromHandle(id.PID, h); errors.Is(checkErr, errNoProcess) {
 			return nil
 		}
