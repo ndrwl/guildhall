@@ -54,7 +54,7 @@ The Director reads the store (`decide list`, `task list`, `task timeline`) and s
 >
 > **You:** Yes, but keep the migration behind a flag.
 
-The Director records your exact words as the answer (`decide answer`), then continues the task (`task start --decision`).
+The Director maps your reply onto the decision's option, `approve`, keeps your words as the note and records that answer (`decide answer`), then continues the task (`task start --decision`).
 Answering never advances a task by itself, so the Director makes both calls.
 
 **Approving or stopping work.**

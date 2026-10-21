@@ -11,5 +11,5 @@ The store remains the only record: a conversation is never state, so a request t
 ## Consequence
 
 The Director's skills must cover everything a Guildmaster would otherwise type.
-That includes giving work, asking what is waiting on them, inspecting tasks, approving or stopping work, and answering decisions in conversation: the Director records the Guildmaster's exact words with `decide answer` and continues the task, since answering never advances a task by itself.
+That includes giving work, asking what is waiting on them, inspecting tasks, approving or stopping work, and answering decisions in conversation: the Director maps the Guildmaster's reply onto the decision's option, such as `approve`, keeps their words as the note, records that answer with `decide answer` and continues the task, since answering never advances a task by itself.
 A new Guildmaster-facing command is not complete until a Director skill can call it, and a capability the Director cannot reach through a command is a gap to close, not a reason to send the Guildmaster to the terminal.
