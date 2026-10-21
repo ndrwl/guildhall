@@ -18,9 +18,16 @@ func TestRunPreservesStartFailureAndRecordsOutcome(t *testing.T) {
 	cmd, inv := worker(t, a, artisantest.Worker{})
 	cmd.Dir = filepath.Join(t.TempDir(), "missing-workdir")
 	probe := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
-	probe.Dir, probe.Env = cmd.Dir, cmd.Env
+	probe.Dir, probe.Env = cmd.Dir, append(os.Environ(), cmd.Env...)
+	// Use the same containment backend: Windows starts suspended in a new
+	// process group, which can report a different error from plain exec.
+	unit, err := artisan.NewUnit("start-failure-probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unit.Close() }()
 	var want *os.PathError
-	if err := probe.Run(); !errors.As(err, &want) {
+	if _, err := unit.Start(probe); !errors.As(err, &want) {
 		t.Fatalf("direct start error = %v; want native path error", err)
 	}
 	done, cancel := start(a, cmd)

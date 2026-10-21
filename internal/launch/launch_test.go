@@ -250,28 +250,16 @@ func TestStopThroughTheEndpoint(t *testing.T) {
 
 func TestRunStopsWhenTheContextEnds(t *testing.T) {
 	a := newAttempt(t)
-	cmd, inv := worker(t, a, artisantest.Worker{IgnoreInterrupt: true})
+	cmd, _ := worker(t, a, artisantest.Worker{IgnoreInterrupt: true})
 	done, cancel := start(a, cmd)
 	defer cancel()
 	running(t, a)
-	// Running can describe ownership before the worker starts. Require its
-	// readiness record so cancellation exercises escalation, not startup.
-	for end := time.Now().Add(deadline); ; time.Sleep(20 * time.Millisecond) {
-		entries, err := artisantest.Inventory(inv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(entries) == 1 && entries[0].Role == "worker" {
-			break
-		}
-		if time.Now().After(end) {
-			t.Fatal("worker did not become ready")
-		}
-	}
+	// Cancellation must stop the attempt whether the worker has started or not;
+	// the shared artisan stop contract tests escalation through specific rungs.
 	cancel()
 	r := wait(t, done)
-	if r.err != nil || r.r.Outcome.State != artisan.Cancelled || r.r.Outcome.Rung < 2 || storedOutcome(t, a) != store.AttemptStopped {
-		t.Errorf("Run() = %+v, %v; want cancelled past rung 1", r.r, r.err)
+	if r.err != nil || r.r.Outcome.State != artisan.Cancelled || r.r.AttemptOutcome != store.AttemptStopped || storedOutcome(t, a) != store.AttemptStopped {
+		t.Errorf("Run() = %+v, %v; want cancelled and stopped", r.r, r.err)
 	}
 }
 
