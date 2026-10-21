@@ -157,12 +157,13 @@ func TestCommand(t *testing.T) {
 	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.WorkDir || !slices.Equal(cmd.Env, spec.Env) {
 		t.Errorf("Command = %+v, want argv %q in %s with %q", cmd, want, spec.WorkDir, spec.Env)
 	}
-	cmd, err = claude.Adapter{Executable: "/bin/guildhall", Claude: "/opt/claude"}.Command(spec)
-	if err != nil || !slices.Equal(cmd.Argv[len(cmd.Argv)-2:], []string{"--claude", "/opt/claude"}) {
-		t.Errorf("Command with Claude = %+v, %v; want it to end --claude /opt/claude", cmd, err)
+	program := filepath.Join(t.TempDir(), "claude")
+	cmd, err = claude.Adapter{Executable: "/bin/guildhall", Claude: program}.Command(spec)
+	if err != nil || !slices.Equal(cmd.Argv[len(cmd.Argv)-2:], []string{"--claude", program}) {
+		t.Errorf("Command with Claude = %+v, %v; want it to end --claude %s", cmd, err, program)
 	}
 	parsed, err := claude.ParseArgs(cmd.Argv[2:])
-	if err != nil || parsed.Identity != spec.Identity || parsed.PromptFile != spec.PromptFile || parsed.ResultFile != spec.ResultFile || parsed.Claude != "/opt/claude" {
+	if err != nil || parsed.Identity != spec.Identity || parsed.PromptFile != spec.PromptFile || parsed.ResultFile != spec.ResultFile || parsed.Claude != program {
 		t.Errorf("ParseArgs(Command) = %+v, %v", parsed, err)
 	}
 	if cmd, err := (claude.Adapter{}).Command(spec); err == nil || len(cmd.Argv) != 0 {
