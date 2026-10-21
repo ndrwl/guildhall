@@ -106,6 +106,17 @@ func RunStopContract(t *testing.T, h Harness) {
 			t.Errorf("a worker started after the stop: %v", inv)
 		}
 	})
+	t.Run("L15 a cancel before the worker starts cancels without starting it", func(t *testing.T) {
+		c := h.launch(t, func(Files) Worker { return Worker{} })
+		if _, err := c.l.Cancel(); err != nil {
+			t.Fatalf("Cancel() = %v", err)
+		}
+		c.start(nil)
+		c.outcome(nil, artisan.Outcome{State: artisan.Cancelled})
+		if inv, _ := Inventory(c.dir); len(inv) != 0 {
+			t.Errorf("a worker started after the cancel: %v", inv)
+		}
+	})
 	t.Run("L15 a stop during startup leaves no owned process", func(t *testing.T) {
 		c := h.launch(t, func(Files) Worker { return Worker{Grandchildren: 1, IgnoreInterrupt: true} })
 		c.start(nil)
@@ -229,6 +240,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		if _, err := c.l.Run(Command(c.dir, c.w), nil); !errors.Is(err, artisan.ErrLauncherRan) {
 			t.Errorf("second Run() = %v, want ErrLauncherRan", err)
 		}
+		close(c.done)
 		if inv, _ := Inventory(c.dir); len(inv) != 0 {
 			t.Errorf("a decided attempt started a worker: %v", inv)
 		}

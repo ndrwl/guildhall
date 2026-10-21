@@ -1,9 +1,15 @@
 package artisan
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -34,9 +40,10 @@ import (
 // as fatal rather than graceful: it is not a dependable graceful rung, and
 // its event says so.
 //
-// Every stop request, from the endpoint, from Stop or Cancel, or from SIGTERM
+// Every stop request, from the endpoint's stop, from Stop, or from SIGTERM
 // or SIGHUP delivered to the launcher, joins the one ladder; concurrent
-// stops wait for it and all answer with its end. An interrupt delivered to
+// stops wait for it and all answer with its end. Cancel writes the marker
+// and does not escalate. An interrupt delivered to
 // the launcher (Ctrl+C) is forwarded to the worker with Unit.Interrupt and
 // does not stop the attempt by itself.
 
@@ -140,41 +147,362 @@ type LauncherConfig struct {
 
 // Launcher supervises one attempt's worker. It is the EndpointHandler of
 // the attempt's control endpoint; its methods are safe for concurrent use.
-type Launcher struct{}
+type Launcher struct {
+	c        LauncherConfig
+	ran      atomic.Bool
+	stopOnce sync.Once
+	stopReq  chan struct{}
+	done     chan struct{}
+
+	mu      sync.Mutex
+	phase   string
+	started bool
+	err     error // Run's error, set before done closes
+	logErr  error
+}
 
 var _ EndpointHandler = (*Launcher)(nil)
 
+// pollInterval is how often Run looks for the result and the marker.
+const pollInterval = 50 * time.Millisecond
+
 // NewLauncher returns the launcher for c, in phase "starting".
 func NewLauncher(c LauncherConfig) (*Launcher, error) {
-	return nil, errors.ErrUnsupported
+	if c.Unit == nil || c.Files == nil {
+		return nil, errors.New("artisan: launcher needs a unit and attempt files")
+	}
+	if fi, err := os.Stat(c.Dir); err != nil || !fi.IsDir() || !filepath.IsAbs(c.Dir) {
+		return nil, fmt.Errorf("artisan: attempt directory %q must be an existing absolute directory: %v", c.Dir, err)
+	}
+	if c.Ladder == (Ladder{}) {
+		c.Ladder = DefaultLadder
+	}
+	if c.ResultGrace == 0 {
+		c.ResultGrace = DefaultResultGrace
+	}
+	return &Launcher{c: c, stopReq: make(chan struct{}), done: make(chan struct{}), phase: "starting"}, nil
 }
 
 // Run starts cmd in the unit and supervises it until the attempt is decided
 // and the unit is empty or the ladder is exhausted, relaying signals as
-// StopSignals describes. A stop requested before the worker starts cancels
-// the attempt without starting it. Run returns the outcome it wrote; the
+// StopSignals describes. A stop requested, a cancel marker written or a
+// valid result published before the worker starts decides the attempt
+// without starting it. Run returns the outcome it wrote; the
 // error is ErrNotEmpty when survivors remain, ErrDecided when an outcome was
 // already present, and joins any failure to write the outcome or an event.
 func (l *Launcher) Run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error) {
-	return Outcome{}, errors.ErrUnsupported
+	if !l.ran.CompareAndSwap(false, true) {
+		return Outcome{}, ErrLauncherRan
+	}
+	out, err := l.run(cmd, signals)
+	l.mu.Lock()
+	l.phase, l.err = "ended", errors.Join(err, l.logErr)
+	err = l.err
+	l.mu.Unlock()
+	close(l.done)
+	return out, err
+}
+
+func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error) {
+	if p := filepath.Join(l.c.Dir, OutcomeFile); fileExists(p) {
+		return Outcome{}, fmt.Errorf("artisan: %w: %s", ErrDecided, p)
+	}
+	select {
+	case <-l.stopReq:
+		l.event("stop-before-start", nil)
+		return l.stop(nil)
+	default:
+	}
+	// A marker or result already present decides without starting a worker.
+	if d, err := l.decide(false, ""); err != nil || d.State != "" {
+		return l.finish(d, 0, nil, err)
+	}
+	worker, err := l.c.Unit.Start(cmd)
+	if err != nil {
+		d, derr := l.decide(false, "start worker: "+err.Error())
+		return l.finish(d, 0, nil, derr)
+	}
+	l.mu.Lock()
+	l.started = true
+	if l.phase == "starting" {
+		l.phase = "running"
+	}
+	l.mu.Unlock()
+	l.event("running", map[string]any{"worker": worker})
+	tick := time.NewTicker(pollInterval)
+	defer tick.Stop()
+	var decided *Outcome
+	var grace <-chan time.Time
+	for {
+		select {
+		case <-tick.C:
+			if decided != nil {
+				continue
+			}
+			// A failed read is logged and polled again; only a stop or the
+			// worker's exit turns it into an outcome.
+			if d, err := l.decide(false, ""); err == nil && d.State != "" {
+				decided = &d
+				if d.State == Finished {
+					l.event("result-accepted", nil)
+					grace = time.After(l.c.ResultGrace)
+				}
+			}
+		case <-grace:
+			l.event("worker-outlived-result", nil)
+			return l.ladder(*decided, 2, nil)
+		case <-l.c.Unit.Exited():
+			l.event("worker-exited", nil)
+			d, err := l.decide(false, "worker exited without a result")
+			return l.ladder(d, 2, err)
+		case <-l.stopReq:
+			return l.stop(decided)
+		case s := <-signals:
+			if s == os.Interrupt {
+				l.event("signal-forwarded", map[string]any{"signal": s.String(), "error": errString(l.c.Unit.Interrupt())})
+				continue
+			}
+			l.event("signal", map[string]any{"signal": s.String()})
+			l.requestStop()
+			return l.stop(decided)
+		}
+	}
+}
+
+// decide applies the precedence rule under the attempt lock: a marker is
+// cancelled, then a valid result is finished; otherwise mark cancels, and
+// a non-empty fail fails. With neither the zero Outcome means undecided.
+// Once OutcomeFile exists nothing is marked.
+func (l *Launcher) decide(mark bool, fail string) (Outcome, error) {
+	var d Outcome
+	err := l.locked(func() error {
+		if fileExists(filepath.Join(l.c.Dir, OutcomeFile)) {
+			mark = false
+		}
+		if m, err := l.c.Files.Marked(); err != nil || m {
+			d = Outcome{State: Cancelled, Detail: "cancel marker present"}
+			return err
+		}
+		if v, err := l.c.Files.ValidResult(); err != nil || v {
+			d = Outcome{State: Finished, Detail: "result accepted"}
+			return err
+		}
+		switch {
+		case mark:
+			d = Outcome{State: Cancelled, Detail: "stopped"}
+			l.event("cancel-marker", nil)
+			return l.c.Files.Mark()
+		case fail != "":
+			d = Outcome{State: Failed, Detail: fail}
+		}
+		return nil
+	})
+	if err != nil {
+		d = Outcome{State: Failed, Detail: "attempt files: " + err.Error()}
+		l.event("decide-failed", map[string]any{"error": err.Error()})
+	}
+	return d, err
+}
+
+// fileExists reports whether anything, readable or not, is at path.
+func fileExists(path string) bool {
+	_, err := os.Lstat(path)
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
+func (l *Launcher) locked(fn func() error) error {
+	f, err := os.OpenFile(filepath.Join(l.c.Dir, LockFile), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	// Closing the file releases the lock.
+	defer func() { _ = f.Close() }()
+	if err := lockFile(f); err != nil {
+		return err
+	}
+	return fn()
+}
+
+// stop decides a stop: a cancelled attempt climbs from rung 1; a finished
+// one is left to end within the result grace, then climbs from rung 2.
+func (l *Launcher) stop(decided *Outcome) (Outcome, error) {
+	l.setStopping()
+	if decided == nil || decided.State == "" {
+		d, err := l.decide(true, "")
+		if err != nil {
+			return l.ladder(d, 2, err)
+		}
+		decided = &d
+	}
+	if decided.State == Cancelled {
+		return l.ladder(*decided, 1, nil)
+	}
+	l.event("stop-after-decision", map[string]any{"state": decided.State})
+	if l.started {
+		select {
+		case <-l.c.Unit.Exited():
+		case <-time.After(l.c.ResultGrace):
+		}
+	}
+	return l.ladder(*decided, 2, nil)
+}
+
+// ladder climbs from rung first until the unit is empty, then finishes.
+func (l *Launcher) ladder(d Outcome, first int, err error) (Outcome, error) {
+	if !l.started || l.empty() {
+		return l.finish(d, 0, nil, err)
+	}
+	l.event("ladder", map[string]any{"first": first})
+	rungs := []struct {
+		name string
+		do   func() error
+		wait time.Duration
+	}{
+		{"cancel-marker", func() error { return nil }, l.c.Ladder.Cooperative},
+		{"interrupt", l.c.Unit.Interrupt, l.c.Ladder.Interrupt},
+		{"terminate", l.c.Unit.Terminate, l.c.Ladder.Terminate},
+		{"kill", l.c.Unit.Kill, l.c.Ladder.Kill},
+	}
+	for i, r := range rungs[first-1:] {
+		n := first + i
+		members, _ := l.c.Unit.Members()
+		rerr := r.do()
+		if errors.Is(rerr, ErrUnsupportedRung) {
+			l.event("rung-skipped", map[string]any{"rung": n, "name": r.name, "error": rerr.Error()})
+			continue
+		}
+		fields := map[string]any{"rung": n, "name": r.name, "members": members, "deadline": r.wait.String(), "error": errString(rerr)}
+		if r.name == "interrupt" {
+			fields["graceful"] = interruptGraceful
+		}
+		l.event("rung", fields)
+		if l.waitEmpty(r.wait) {
+			l.event("rung-emptied", map[string]any{"rung": n})
+			return l.finish(d, n, nil, err)
+		}
+		alive, aerr := l.c.Unit.Members()
+		l.event("rung-timeout", map[string]any{"rung": n, "alive": alive, "error": errString(aerr)})
+	}
+	alive, _ := l.c.Unit.Members()
+	return l.finish(d, 4, alive, errors.Join(err, ErrNotEmpty))
+}
+
+// empty reports whether the unit is proven empty; a failed listing is not.
+func (l *Launcher) empty() bool {
+	m, err := l.c.Unit.Members()
+	return err == nil && len(m) == 0
+}
+
+func (l *Launcher) waitEmpty(d time.Duration) bool {
+	for end := time.Now().Add(d); ; time.Sleep(25 * time.Millisecond) {
+		if l.empty() {
+			return true
+		}
+		if time.Now().After(end) {
+			return false
+		}
+	}
+}
+
+// finish records how the attempt ended in OutcomeFile, written once.
+func (l *Launcher) finish(d Outcome, rung int, survivors []Identity, err error) (Outcome, error) {
+	d.Schema, d.Rung, d.Survivors = OutcomeSchema, rung, survivors
+	if d.State == Cancelled {
+		d.LateResultRejected, _ = l.c.Files.ValidResult()
+	}
+	if werr := l.locked(func() error { return writeOnce(filepath.Join(l.c.Dir, OutcomeFile), d) }); werr != nil {
+		err = errors.Join(err, fmt.Errorf("artisan: write outcome: %w", werr))
+	}
+	l.event("ended", map[string]any{"outcome": d})
+	return d, err
+}
+
+// writeOnce publishes v as JSON at path, refusing to replace a file there.
+func writeOnce(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp) }()
+	return os.Link(tmp, path)
+}
+
+// event appends one line to EventsFile; the first failure is kept for Run.
+func (l *Launcher) event(kind string, fields map[string]any) {
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	fields["event"], fields["at"] = kind, time.Now().UTC().Format(time.RFC3339Nano)
+	b, err := json.Marshal(fields)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err == nil {
+		var f *os.File
+		if f, err = os.OpenFile(filepath.Join(l.c.Dir, EventsFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			_, err = f.Write(append(b, '\n'))
+			err = errors.Join(err, f.Close())
+		}
+	}
+	if err != nil && l.logErr == nil {
+		l.logErr = fmt.Errorf("artisan: write event %s: %w", kind, err)
+	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func (l *Launcher) requestStop() { l.stopOnce.Do(func() { close(l.stopReq) }) }
+
+func (l *Launcher) setStopping() {
+	l.mu.Lock()
+	if l.phase != "ended" {
+		l.phase = "stopping"
+	}
+	l.mu.Unlock()
 }
 
 // Status returns the phase, "starting", "running", "stopping" or "ended",
 // and the unit's members once the worker has started.
 func (l *Launcher) Status() (EndpointState, error) {
-	return EndpointState{}, errors.ErrUnsupported
+	l.mu.Lock()
+	st, started := EndpointState{Phase: l.phase}, l.started && l.phase != "ended"
+	l.mu.Unlock()
+	if started {
+		m, err := l.c.Unit.Members()
+		if err != nil {
+			return st, err
+		}
+		st.Members = m
+	}
+	return st, nil
 }
 
 // Stop requests the stop ladder and waits until Run has returned, answering
 // with phase "ended" and Run's error. Every call, concurrent or later, shares
 // the one ladder; the phase is "stopping" as soon as the request is made.
 func (l *Launcher) Stop() (EndpointState, error) {
-	return EndpointState{}, errors.ErrUnsupported
+	l.setStopping()
+	l.requestStop()
+	<-l.done
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return EndpointState{Phase: l.phase}, l.err
 }
 
 // Cancel takes rung 1 alone: it writes the cancel marker unless a valid
 // result is present and returns without escalating; the attempt is
 // cancelled once the worker honours the marker and exits.
 func (l *Launcher) Cancel() (EndpointState, error) {
-	return EndpointState{}, errors.ErrUnsupported
+	_, err := l.decide(true, "")
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return EndpointState{Phase: l.phase}, err
 }

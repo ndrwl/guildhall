@@ -7,6 +7,8 @@ The containment seam the launcher consumes, `Unit`: start with verified membersh
 Each unit reports its `Containment` (kind, name, Linux detection reason), and `RecordContainment` writes it to the attempt directory as `containment.json`.
 See [Artisan containment](../artisan.md#containment-unit) for the backends and Linux detection rules.
 The control endpoint ([attempt-endpoint-af-unix](../decisions/attempt-endpoint-af-unix.md)): `EndpointPath` with the hashed fallback and `ErrEndpointPath`; `Listen` with its `OwnerLookup` seam, `ErrNotOwner`, and the stale-file rule (`ErrEndpointAnswers`, `ErrEndpointUnknown`); the `EndpointHandler` the launcher supplies for `status`, `stop` and `cancel`; `Close`; and `Call` with `ErrEndpointMismatch`, `ErrEndpointRequest` and `ErrEndpointProtocol`.
+The stop ladder ([decision](../decisions/stop-ladder-precedence.md)): `Launcher` with `NewLauncher`, `Run`, and `Status`, `Stop` and `Cancel` as the endpoint's handler; the `AttemptFiles` seam for the result and cancel marker; precedence under the attempt lock and one `Outcome` in `outcome.json` (`OutcomeSchema`); `Ladder` and `DefaultLadder`, each rung logged to `events.jsonl` and successful only when the unit is empty; `StopSignals`; `ErrDecided`, `ErrNotEmpty` and `ErrLauncherRan`.
+See [stop ladder](../artisan.md#stop-ladder).
 Requests and replies are protocol `guildhall.attempt-control/1`, decoded with [`strictjson`](strictjson.md); a request that is unversioned, newer, or carries a duplicate or undeclared field at any depth is refused before identities are matched or any handler runs ([decision](../decisions/endpoint-protocol-v1.md)).
 
 ## Tests
@@ -26,3 +28,8 @@ Written red first against stubs: the path and its limit boundary with the hashed
 The identity-mismatch, stale-socket, long-path fallback, bounded-line and blocked-stop tests above pin the rest of the endpoint across the change and passed unchanged.
 `TestEndpointRejectsMismatchedTargetsBeforeDispatch` checks that a replacement owner receives no handler calls from stale-owner requests, and that wrong or missing target identities are refused for every operation.
 The stale-socket and answering-socket cases pin scratch L21.
+
+`launcher_test.go` runs `artisantest.RunStopContract` against the platform backend and `fakeUnit`; written red first against stub bodies, with every case failing.
+After the red commit one harness detail changed, not an expectation: the decided-attempt case calls `Run` directly and now marks the case's run as returned.
+The cancel-before-start case was added with its fix during implementation and was checked by removing the fix, which makes it fail.
+It pins scratch ladder behaviour: rung order and bounds, emptiness as the only success, the stop-after-result no-op and the late-result rejection.
