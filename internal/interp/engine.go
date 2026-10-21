@@ -80,6 +80,9 @@ var (
 	ErrEvent = errors.New("event does not match the task's records")
 	// ErrRevision reports a workflow definition that is not the revision the task bound.
 	ErrRevision = errors.New("workflow is not the task's bound revision")
+	// ErrPreparation reports a published attempt preparation that is incomplete, corrupt or not the
+	// attempt's own (docs/interpreter.md#attempt-preparation); nothing is launched or removed.
+	ErrPreparation = errors.New("attempt preparation is not valid")
 	// ErrTaskClosed reports a task that is done or cancelled.
 	ErrTaskClosed = errors.New("task is not open")
 	// ErrOutcome reports a review outcome that breaks its round's contract: it is stale (not bound to the
@@ -112,10 +115,18 @@ var (
 //
 // Every write uses a mutation id derived from the task, step, round and record, and Advance derives its
 // position from the records rather than the event, so repeating an advance after a crash at any point
-// replays its writes and records nothing twice: an attempt recorded but never launched is rendered
-// again and launched with the same identity, never recorded again.
-// An attempt is marked launched in its directory only after Launch returns; a crash between the two
-// relaunches the same identity, and refusing a live duplicate is the launcher's ownership record (L3).
+// replays its writes and records nothing twice: an attempt recorded but never launched is launched
+// again with the same identity, never recorded again.
+// An attempt is marked launched in its directory only after Launch returns; a lost acknowledgement or a
+// crash between the two relaunches the same identity, and refusing a live duplicate is the launcher's
+// ownership record (L3).
+//
+// Because a missing mark does not prove that no worker holds the attempt's files, an attempt's
+// preparation is published once and never replaced: the prompt is rendered into <step>-<n>/prompt.partial
+// with its manifest as manifest.json, then the directory is renamed to <step>-<n>/prompt. A replay launches
+// from a published prompt directory unchanged after checking it against its manifest and the attempt's
+// recorded binding, and refuses one that fails with ErrPreparation, launching and removing nothing.
+// Only an unpublished prompt.partial, which no launch was given, is removed and rendered again.
 //
 // The checks gate, publish, validate, automatic merging, Director stages and loops back to a step not run
 // by an Artisan are refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
@@ -349,18 +360,13 @@ func (r *run) start(s workflow.Step) (Next, error) {
 // launchedFile marks an attempt directory whose attempt Launch accepted.
 const launchedFile = "launched.json"
 
-// launch renders attempt n afresh into its prompt directory and launches it.
+// launch launches attempt n from its published preparation, rendering and publishing it first when none was.
 func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render.Input) error {
-	dir := r.attemptDir(s.ID, n)
-	prompt := filepath.Join(dir, "prompt")
-	if err := os.RemoveAll(prompt); err != nil {
-		return err
-	}
 	work := filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return err
 	}
-	rendered, err := r.e.Prompter.Prompt(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Step: s, Attempt: n, Dir: prompt}, inputs)
+	p, err := r.preparation(s, n, inputs)
 	if err != nil {
 		return err
 	}
@@ -368,9 +374,9 @@ func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render
 		Identity:   r.identity(s.ID, n),
 		Adapter:    adapterName,
 		WorkDir:    work,
-		PromptFile: rendered.PromptPath,
+		PromptFile: p.promptFile,
 		ResultFile: r.resultFile(s.ID, n),
-		Manifest:   rendered.Manifest,
+		Manifest:   p.manifest,
 	})
 	if err != nil {
 		return fmt.Errorf("launch attempt %d: %w", n, err)
@@ -379,7 +385,7 @@ func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render
 	if err != nil {
 		return err
 	}
-	return writeFile(filepath.Join(dir, launchedFile), data)
+	return writeFile(filepath.Join(r.attemptDir(s.ID, n), launchedFile), data)
 }
 
 // takeResult records a finished attempt: its outputs as documents when it succeeded, then its outcome.

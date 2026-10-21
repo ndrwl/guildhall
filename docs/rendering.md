@@ -20,7 +20,7 @@ Input documents are listed rather than inlined: the Artisan reads verified copie
 The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.
 Standards are inlined, because a reviewer measures against those exact words.
 An input whose file does not match the sha256 its record names is refused (`ErrDigestMismatch`), so a prompt never cites a document that changed after it was recorded.
-On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave files, which the caller removes before rendering that attempt again, since the attempt was not yet recorded.
+On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave files, which the caller removes before rendering again only while no launch has been given them (the interpreter renders into a staging directory and [publishes it once](interpreter.md#attempt-preparation)).
 
 ### Line endings and paths
 
