@@ -102,8 +102,10 @@ func TestOutputContainment(t *testing.T) {
 				t.Fatal("accepted escaping output")
 			}
 			t.Logf("escaping %s output refused: %v; documents: %+v", mode, err, e.documents(t))
-			if len(e.documents(t)) != 0 {
-				t.Fatal("recorded outputs before validating containment")
+			for name := range e.documents(t) {
+				if name != "plan-1-inputs" { // the attempt's binding is recorded before it launches
+					t.Fatalf("recorded output %s before validating containment", name)
+				}
 			}
 		})
 	}

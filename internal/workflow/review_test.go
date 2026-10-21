@@ -146,3 +146,66 @@ func TestDocumentReviewOutcome(t *testing.T) {
 		t.Fatal("pre-subject revisions accepted")
 	}
 }
+
+func TestReviewOutcomeFindingIDsAndDispositions(t *testing.T) {
+	o := ReviewOutcome{
+		Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: VerdictChangesRequested,
+		Findings: []Finding{
+			{ID: "f3", Rule: "S4", File: "a.go", Line: 7, Summary: "claim without acceptance"},
+			{ID: "f4", Summary: "naming preference"},
+		},
+		Dispositions: []Disposition{{Finding: "f1", State: Resolved}, {Finding: "f2", State: Withdrawn}, {Finding: "f4", State: StillOpen}},
+		Revisions:    revisions,
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("outcome with ids and dispositions refused: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*ReviewOutcome)
+		want   string
+	}{
+		{"duplicate finding id", func(o *ReviewOutcome) { o.Findings[1].ID = "f3" }, `finding id "f3" is used twice`},
+		{"invalid finding id", func(o *ReviewOutcome) { o.Findings[0].ID = "F 3" }, `finding id "F 3"`},
+		{"blank rule", func(o *ReviewOutcome) { o.Findings[0].Rule = " " }, "rule"},
+		{"unknown state", func(o *ReviewOutcome) { o.Dispositions[0].State = "fixed" }, `unknown state "fixed"`},
+		{"disposition without id", func(o *ReviewOutcome) { o.Dispositions[0].Finding = "" }, "names no finding"},
+		{"disposition twice", func(o *ReviewOutcome) { o.Dispositions[1].Finding = "f1" }, `finding "f1" is dispositioned twice`},
+		{"still open but not listed", func(o *ReviewOutcome) { o.Dispositions[2].Finding = "f9" }, `still-open finding "f9" is not listed`},
+		{"resolved but listed", func(o *ReviewOutcome) { o.Dispositions[0].Finding = "f3" }, `resolved finding "f3" is still listed`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			o := o
+			o.Findings = append([]Finding(nil), o.Findings...)
+			o.Dispositions = append([]Disposition(nil), o.Dispositions...)
+			c.mutate(&o)
+			if err := o.Validate(); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %v does not mention %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestReviewOutcomeBlocking(t *testing.T) {
+	ruled := Finding{ID: "f1", Rule: "S2", Summary: "no red test shown"}
+	suggestion := Finding{ID: "f2", Summary: "naming preference"}
+	cases := []struct {
+		name     string
+		verdict  Verdict
+		findings []Finding
+		want     bool
+	}{
+		{"approved", VerdictApproved, nil, false},
+		{"approved with a ruled finding", VerdictApproved, []Finding{ruled}, false},
+		{"changes with a ruled finding", VerdictChangesRequested, []Finding{suggestion, ruled}, true},
+		{"changes with suggestions only", VerdictChangesRequested, []Finding{suggestion}, false},
+		{"rejected", VerdictRejected, []Finding{ruled}, false},
+	}
+	for _, c := range cases {
+		o := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: c.verdict, Findings: c.findings, Revisions: revisions}
+		if got := o.Blocking(); got != c.want {
+			t.Errorf("%s: Blocking() = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

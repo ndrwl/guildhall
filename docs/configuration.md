@@ -171,11 +171,13 @@ Every `review` and `document-review` step produces the same outcome, schema `gui
 |---|---|
 | `reviewer` | `human` or `automated`. |
 | `verdict` | `approved`, `changes_requested` or `rejected`; the latter two need at least one finding. |
-| `findings[]` | `summary` (required), optional `file` and `line`. |
+| `findings[]` | `summary` (required), optional `id`, `rule`, `file` and `line`. An `id` is the reviewer's stable name for the finding across rounds, used once per outcome; `rule` cites the rule it breaks, and a finding without one is a suggestion that never blocks. |
+| `dispositions[]` | What became of each finding of the step's previous outcome: `finding` (its id) and `state`, one of `resolved`, `still-open` (listed again in `findings` under the same id) or `withdrawn` (not listed). |
 | `revisions.subject` | What was reviewed: exactly one of `code_head`, the full commit id, or `document_digest`, the document's `sha256:<hex>` digest. |
 | `revisions.spec_digest` | `sha256:<hex>` digest of the accepted specification; required for a code head, optional for a document. |
 | `revisions.standards_revision` | Central standards revision reviewed against. |
 
+An outcome blocks the task only when its verdict is `changes_requested` and at least one finding cites a rule.
 An outcome counts only for the exact subject, specification digest and standards revision it names, so a document review never counts for a code head or the reverse.
 
 ### Workflow-edit authority
