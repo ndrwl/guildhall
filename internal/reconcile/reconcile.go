@@ -16,6 +16,7 @@
 //     - gone: exited when no containment is recorded or artisan.Contained
 //     proves the recorded unit empty (see artisan.Contained);
 //     unknown when contained processes survive or cannot be checked;
+//     - alive with a heartbeat that cannot be read: unknown;
 //     - alive with a heartbeat older than the stale threshold: stuck,
 //     whatever the endpoint answers;
 //     - alive and the recorded endpoint answers status for this attempt and
@@ -32,7 +33,10 @@
 // The heartbeat is evidence, never proof: stuck is not exit and grants no
 // relaunch, take-over or sweep, and a gone launcher's frozen heartbeat is
 // reported while the identity decides. A heartbeat naming another attempt is
-// ignored.
+// ignored. A heartbeat artisan.ReadHeartbeat refuses, such as a newer schema
+// or a malformed file, is never read as no heartbeat: the reader's error is
+// appended to Reason, and a live launcher with one is unknown, whatever its
+// endpoint answers.
 package reconcile
 
 import (
@@ -161,16 +165,22 @@ func classifyFiles(a Attempt) Classification {
 	return Classification{}
 }
 
-func classifyOwner(ctx context.Context, a Attempt, o Options) Classification {
+func classifyOwner(ctx context.Context, a Attempt, o Options) (c Classification) {
 	own := *a.Owner
 	k := artisan.AttemptKey{Repository: own.Repository, TaskID: own.TaskID, Step: own.Step, Attempt: own.Attempt}
-	c := Classification{State: Unknown}
-	if h, err := artisan.ReadHeartbeat(a.Dir); err == nil && h.Key() == k {
+	c = Classification{State: Unknown}
+	h, refused := artisan.ReadHeartbeat(a.Dir)
+	switch {
+	case refused == nil && h.Key() == k:
 		now := time.Now
 		if o.Now != nil {
 			now = o.Now
 		}
 		c.Heartbeat, c.HeartbeatAge = &h, now().Sub(h.Time)
+	case errors.Is(refused, artisan.ErrNoHeartbeat):
+		refused = nil
+	case refused != nil:
+		defer func() { c.Reason += "; heartbeat refused: " + refused.Error() }()
 	}
 	lv, perr := artisan.Probe(artisan.Identity(own.LauncherIdentity))
 	c.Launcher = lv.String()
@@ -209,6 +219,8 @@ func classifyOwner(ctx context.Context, a Attempt, o Options) Classification {
 		c.Endpoint = err.Error()
 	}
 	switch {
+	case refused != nil:
+		c.Reason = "launcher identity live; endpoint " + c.Endpoint
 	case c.Heartbeat != nil && c.HeartbeatAge > stale:
 		c.State, c.Reason = Stuck, fmt.Sprintf("launcher identity live; heartbeat %d is %v old, over %v", c.Heartbeat.Sequence, c.HeartbeatAge, stale)
 	case c.Endpoint == "answers":

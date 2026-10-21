@@ -296,9 +296,10 @@ The first rule that applies decides:
 | 4 | No ownership record | `absent` |
 | 5 | Launcher identity gone, and no containment recorded or `Contained` proves the unit empty | `exited` |
 | 6 | Launcher identity gone, and contained processes survive or cannot be checked | `unknown`, with the survivors |
-| 7 | Launcher identity live, heartbeat older than the stale threshold (`DefaultStaleAfter`, 30 s) | `stuck`, whatever the endpoint answers |
-| 8 | Launcher identity live, endpoint answers `status` for this attempt and launcher | `running` |
-| 9 | Anything else, such as a live launcher with a silent endpoint or an unverified identity | `unknown` |
+| 7 | Launcher identity live, heartbeat that `ReadHeartbeat` refuses | `unknown`, whatever the endpoint answers |
+| 8 | Launcher identity live, heartbeat older than the stale threshold (`DefaultStaleAfter`, 30 s) | `stuck`, whatever the endpoint answers |
+| 9 | Launcher identity live, endpoint answers `status` for this attempt and launcher | `running` |
+| 10 | Anything else, such as a live launcher with a silent endpoint or an unverified identity | `unknown` |
 
 `Classify` reads outcome, marker and result while holding the same exclusive `attempt.lock` as launcher decisions, using `artisan.LockAttempt`.
 An in-flight cancel or stop must finish publishing its marker before classification can accept a result, even when the worker publishes between the launcher's result check and marker write.
@@ -309,6 +310,7 @@ The lock is released before owner and endpoint checks.
 The classification carries its evidence: the launcher's liveness, what the endpoint answered, the last heartbeat and its age, and any survivors.
 A heartbeat is evidence only: `stuck` is never exit and grants no relaunch, take-over or sweep, and a crashed launcher's frozen heartbeat is reported while the identity rule classifies it `exited`.
 A heartbeat that names another attempt is ignored.
+A heartbeat file that `ReadHeartbeat` refuses, a newer schema or a malformed or rule-breaking file, is reported, never read as no heartbeat: the reader's error is appended to `Reason` whatever decides, so a newer launcher's schema can neither hide a stuck launcher nor be mistaken for a missing file; a missing file is no heartbeat.
 The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s).
 
 ## Commands
@@ -400,6 +402,7 @@ On Windows it also holds a published result without sharing while the launcher d
 `internal/reconcile/reconcile_test.go` runs `Classify` against recorded attempt directories and live processes: the test binary plays the worker tree, an in-process launcher with a bound endpoint, and a separate launcher process for the crash.
 The four heartbeat cases are a wedged launcher whose supervision loop is really blocked (stuck while its identity and endpoint live, then running again); a stalled worker whose fresh heartbeat with an old `last_output_at` is running, not stuck; a stale heartbeat while the launcher lives (stuck, take-over refused with `ErrOwnerLive`, running once beats resume); and a killed launcher process whose frozen heartbeat is reported while the identity decides, `unknown` while contained processes survive and `exited` once they are gone.
 The pinned scratch cases are the files deciding first (L22), a gone launcher with an emptied or surviving unit (L13, L14), a broken endpoint of a live launcher (L19), a reused PID (L20) and a leftover endpoint file (L21).
+A newer-schema and a malformed heartbeat beside a live launcher whose endpoint answers are `unknown`, with the reason naming the schema or the defect.
 Every case checks that the processes it caused are gone.
 
 The command tests are listed in the [launch contract](contracts/launch.md#tests): `RunStopContract` with `launch.Files`, the outcome translation table, owned runs against a real store, and the custody acceptance with each command in its own process.

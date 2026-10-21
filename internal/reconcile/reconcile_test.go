@@ -371,6 +371,47 @@ func TestClassifyOwner(t *testing.T) {
 	})
 }
 
+// answering is an endpoint handler whose launcher is running.
+type answering struct{}
+
+func (answering) Status() (artisan.EndpointState, error) {
+	return artisan.EndpointState{Phase: "running"}, nil
+}
+func (answering) Stop() (artisan.EndpointState, error)   { return answering{}.Status() }
+func (answering) Cancel() (artisan.EndpointState, error) { return answering{}.Status() }
+
+// TestClassifyRefusedHeartbeat pins that a heartbeat ReadHeartbeat refuses is
+// reported, never read as no heartbeat: beside a live launcher whose endpoint
+// answers it is unknown, not running, with the reader's error as the reason.
+func TestClassifyRefusedHeartbeat(t *testing.T) {
+	for _, tc := range []struct{ name, body, reason string }{
+		{"a newer schema", `{"schema":"guildhall.attempt-heartbeat/2"}`, "guildhall.attempt-heartbeat/2"},
+		{"a malformed file", `{"schema":"guildhall.attempt-heartbeat/1",`, "invalid heartbeat"},
+	} {
+		t.Run(tc.name+" beside a live launcher is unknown", func(t *testing.T) {
+			dir := t.TempDir()
+			write(t, filepath.Join(dir, artisan.HeartbeatFile), tc.body)
+			me := self(t)
+			path, err := artisan.EndpointPath(shortDir(t), key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ep, err := artisan.Listen(path, key, me, func() (artisan.Identity, error) { return me, nil }, answering{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ep.Close() })
+			o := owner(me)
+			o.Endpoint = path
+			c := classify(dir, o)
+			want(t, c, reconcile.Unknown)
+			if c.Launcher != "alive" || c.Endpoint != "answers" || c.Heartbeat != nil || !strings.Contains(c.Reason, tc.reason) {
+				t.Errorf("classification %+v, want the refusal naming %q", c, tc.reason)
+			}
+		})
+	}
+}
+
 // live is a launcher run in this process with its endpoint bound.
 type live struct {
 	dir, inv string
