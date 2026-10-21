@@ -8,7 +8,7 @@ The `store`, `messages`, `task`, `decide`, `workflow approve` / `workflow approv
 `artisan start` without `--herdr-session`, `artisan stop`, `artisan status` and `artisan resume` are [owned attempt commands](../artisan.md#commands) over [`internal/launch`](launch.md); `artisan start` with `--herdr-session` is the [tab mode](../adapters.md#running-an-attempt).
 The `artisan` verbs follow the [role grammar](../decisions/0053-cli-role-grammar.md): help lists every one, and `artisan run`, the pre-release name of `start`, is a usage error that names `artisan start`.
 `artisan harness inventory|kill-owned|probe --lab` is the lab's [test tooling](../artisan.md#harness), refused without `--lab`.
-`fake-artisan` is `fake.Main`.
+`fake-artisan` is `fake.Main` and `claude-artisan` is `claude.Main`; owned `artisan start` takes `--adapter fake` or `claude`, and tab mode only `fake`.
 
 `task start` and `step done` ([running a task](../running.md)) run one `interp.Engine` advance over a store opened per record operation, the Director config and the state directory, under the task's lock, launching through `launch.Process`; `step done` refuses a result path other than the attempt's own and a result `adapter.ReadResult` refuses before calling the engine.
 
@@ -23,10 +23,11 @@ It returns the prompt manifest as JSON, retains the rendered attempt, removes th
 `render_test.go` checks malformed settings are refused before installation or attempt creation.
 
 `advance_test.go` runs task app/t-1 over `testdata/run` (the fake-straight workflow, whose stage guides carry the fake adapter's directives) with the test binary playing every launcher: `TestTaskStartAndStepDone` and `TestStepDoneRefusesAResultItDoesNotTake` were written red first against a stub advance and failed with it; `TestTaskStartAndStepDoneUsage` passed against the stub, whose flag checks were already written.
+`TestTaskStartLaunchesClaude` runs `testdata/run/claude.toml`, whose claude-straight workflow runs its plan by a profile naming `claude`, through `launch.Process` over the stub Claude Code.
 Each test's cleanup proves every attempt's launcher stopped with `artisan stop`.
 `TestTaskUsageErrors` used `task start` as its unknown subcommand; it now uses `task frobnicate`, because `task start` is an accepted command.
 
-`artisan_owned_test.go` was written red first against stub bodies: owned `start` exit codes and JSON for each fake outcome, `status` afterwards, usage errors and `stop` without an owner; `TestArtisanStartCustody` is the [custody acceptance](launch.md#tests).
+`artisan_owned_test.go` was written red first against stub bodies: owned `start` exit codes and JSON for each fake outcome, `status` afterwards, usage errors and `stop` without an owner; `TestArtisanStartRunsClaudeOwned` was red against the CLI that refused `--adapter claude` ([red run](../evidence/claude-adapter-2026-10-21-red.txt)), and its usage case for an unknown adapter now names `codex`, since `claude` is accepted; `TestArtisanStartCustody` is the [custody acceptance](launch.md#tests).
 After the red commit one expectation was corrected because it contradicted the reconcile contract: a finished attempt whose result reports failure classifies `finished`, not `failed`.
 `artisan_resume_test.go` and `harness_test.go` were written red first against stubs ([red run](../evidence/launcher-resume-2026-10-21-red.txt)): the registered resume command's shape and that it runs through this CLI; resume refusing a live launcher; L13, a launcher killed outright whose worker tree resume sweeps, settling the attempt failed; the harness refused without `--lab`, `probe`, and `inventory` and `kill-owned` against a running launcher with a fake worker tree.
 `TestArtisanRoleGrammar` in `cli_test.go` was written red first ([red run](../evidence/cli-role-grammar-2026-10-21-red.txt)): help lists `artisan start|stop|status|resume` and the harness, the `artisan` usage error names all five verbs, and `artisan run` is refused with a message naming `artisan start`.

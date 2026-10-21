@@ -26,7 +26,7 @@ func TestAttemptKeyLayout(t *testing.T) {
 			t.Errorf("%v.Dir() = %q, want %q", tc.key, got, tc.dir)
 		}
 	}
-	if artisan.ResultFile != "result.json" {
-		t.Errorf("ResultFile = %q, want result.json", artisan.ResultFile)
+	if artisan.ResultFile != "result.json" || artisan.ModelDir != "model" {
+		t.Errorf("ResultFile = %q, ModelDir = %q; want result.json and model", artisan.ResultFile, artisan.ModelDir)
 	}
 }

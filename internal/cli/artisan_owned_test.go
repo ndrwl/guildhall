@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
+	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -145,6 +147,38 @@ func TestArtisanStartOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
 	}
 }
 
+// TestArtisanStartRunsClaudeOwned runs owned attempts with --adapter claude
+// over the stub Claude Code on PATH: the outcome comes from the result the
+// wrapper publishes, and a stop ends at the cancel marker.
+func TestArtisanStartRunsClaudeOwned(t *testing.T) {
+	claudetest.Install(t)
+	cases := []struct {
+		b       adaptertest.Behaviour
+		extra   []string
+		code    int
+		outcome string
+		rung    int
+	}{
+		{adaptertest.Succeed, nil, 0, "succeeded", 0},
+		{adaptertest.Fail, nil, 4, "failed", 0},
+		{adaptertest.NoResult, nil, 4, "failed", 0},
+		{adaptertest.Hang, []string{"--timeout", "500ms"}, 5, "stopped", 1},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.b), func(t *testing.T) {
+			o := newOwnedAttempt(t, claudetest.Prompt(tc.b))
+			code, stdout, stderr := guildhall(t, "", o.args("start", append([]string{"--adapter", "claude"}, tc.extra...)...)...)
+			if code != tc.code {
+				t.Fatalf("exit %d, want %d; stdout %q; stderr %q", code, tc.code, stdout, stderr)
+			}
+			r := decodeJSON[runReport](t, lastLine(stdout))
+			if r.AttemptOutcome != tc.outcome || r.Outcome.Rung != tc.rung {
+				t.Errorf("report %+v; want attempt outcome %s at rung %d", r, tc.outcome, tc.rung)
+			}
+		})
+	}
+}
+
 func lastLine(s string) string {
 	s = strings.TrimSpace(s)
 	return s[strings.LastIndex(s, "\n")+1:]
@@ -155,7 +189,7 @@ func TestArtisanOwnedCommandUsage(t *testing.T) {
 	for _, bad := range [][]string{
 		{"artisan", "start", "--adapter", "fake"},
 		o.args("start", "--result", filepath.Join(o.workdir, "r.json")),
-		o.args("start", "--adapter", "claude"),
+		o.args("start", "--adapter", "codex"),
 		o.args("start", "--timeout", "-1s"),
 		append(o.args("status")[:12], "0"),
 		append(o.args("stop")[:12], "one"),

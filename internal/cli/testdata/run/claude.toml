@@ -1,0 +1,18 @@
+# The Director the claude task start test runs: the fake-straight Director
+# with its plan stage run by a profile naming the claude adapter.
+schema_version = 1
+mode = "director"
+name = "alpha"
+
+[local]
+standards_revision = "standards-1"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+workflow = "claude-straight"
+
+[profile.planner]
+adapter = "claude"

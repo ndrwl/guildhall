@@ -1,0 +1,105 @@
+--- FAIL: TestClaudeRuntimeConformance (0.02s)
+    --- FAIL: TestClaudeRuntimeConformance/command_runs_in_the_working_directory_with_the_spec_environment (0.00s)
+        adaptertest.go:103: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/completes_from_the_result_file:_succeed (0.00s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/completes_from_the_result_file:_fail (0.00s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/completes_from_the_result_file:_exit-error (0.00s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/never_completes_on_no-result (0.00s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/never_completes_on_malformed (0.00s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/never_completes_on_wrong-identity (0.00s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/a_stopped_attempt_leaves_no_result (0.00s)
+        adaptertest.go:141: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformance/an_existing_result_is_never_replaced (0.00s)
+        adaptertest.go:162: claude adapter: not implemented
+--- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts (0.08s)
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/command_runs_in_the_working_directory_with_the_spec_environment (0.01s)
+        adaptertest.go:103: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_succeed (0.01s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_fail (0.01s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/completes_from_the_result_file:_exit-error (0.01s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/never_completes_on_no-result (0.01s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/never_completes_on_malformed (0.01s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/never_completes_on_wrong-identity (0.01s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/a_stopped_attempt_leaves_no_result (0.01s)
+        adaptertest.go:141: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceOnInterpreterAttempts/an_existing_result_is_never_replaced (0.01s)
+        adaptertest.go:162: claude adapter: not implemented
+--- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher (0.03s)
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/command_runs_in_the_working_directory_with_the_spec_environment (0.00s)
+        adaptertest.go:103: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/completes_from_the_result_file:_succeed (0.00s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/completes_from_the_result_file:_fail (0.00s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/completes_from_the_result_file:_exit-error (0.00s)
+        adaptertest.go:117: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/never_completes_on_no-result (0.00s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/never_completes_on_malformed (0.00s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/never_completes_on_wrong-identity (0.00s)
+        adaptertest.go:133: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/a_stopped_attempt_leaves_no_result (0.00s)
+        adaptertest.go:141: claude adapter: not implemented
+    --- FAIL: TestClaudeRuntimeConformanceThroughTheLauncher/an_existing_result_is_never_replaced (0.00s)
+        adaptertest.go:162: claude adapter: not implemented
+--- FAIL: TestCommand (0.00s)
+    claude_test.go:154: claude adapter: not implemented
+--- FAIL: TestParseArgsRefuses (0.00s)
+    claude_test.go:190: same files: Main exit 1, want 2; stderr ""
+    claude_test.go:190: bad identity: Main exit 1, want 2; stderr ""
+    claude_test.go:190: extra argument: Main exit 1, want 2; stderr ""
+    claude_test.go:190: unknown flag: Main exit 1, want 2; stderr ""
+    claude_test.go:190: relative program: Main exit 1, want 2; stderr ""
+    claude_test.go:190: missing result: Main exit 1, want 2; stderr ""
+    claude_test.go:190: relative prompt: Main exit 1, want 2; stderr ""
+--- FAIL: TestClaudeArgs (0.00s)
+    claude_test.go:201: ClaudeArgs = [], want ["--print" "" "--permission-mode" "acceptEdits" "--add-dir" "$TMP/TestClaudeArgs3920948930/002"]
+    claude_test.go:211: Instruction lacks "Prompt file: $TMP/TestClaudeArgs3920948930/002/prompt.md\n":
+    claude_test.go:211: Instruction lacks "Result file: $TMP/TestClaudeArgs3920948930/002/result.json.draft\n":
+    claude_test.go:211: Instruction lacks "\"schema\":\"guildhall.artisan-result\"":
+    claude_test.go:211: Instruction lacks "\"version\":1":
+    claude_test.go:211: Instruction lacks "\"task_id\":\"task-1\"":
+    claude_test.go:211: Instruction lacks "\"attempt_id\":\"attempt-1\"":
+    claude_test.go:211: Instruction lacks "\"succeeded\"":
+    claude_test.go:211: Instruction lacks "\"failed\"":
+    claude_test.go:211: Instruction lacks "outputs":
+    claude_test.go:220: ClaudeArgs with separate result directory = []; want both directories added
+--- FAIL: TestRunRefusesWithoutStartingClaude (0.02s)
+    --- FAIL: TestRunRefusesWithoutStartingClaude/cancelled (0.01s)
+        claude_test.go:234: Run = claude adapter: not implemented, want ErrAttemptCancelled
+    --- FAIL: TestRunRefusesWithoutStartingClaude/existing_result (0.00s)
+        claude_test.go:243: Run = claude adapter: not implemented, want ErrResultExists
+    --- FAIL: TestRunRefusesWithoutStartingClaude/missing_claude (0.00s)
+        claude_test.go:253: Run = claude adapter: not implemented, want exec.ErrNotFound naming claude
+--- FAIL: TestRunDraftHandling (0.01s)
+    --- FAIL: TestRunDraftHandling/stale_draft_removed (0.00s)
+        claude_test.go:274: Run = claude adapter: not implemented, want ErrNoDraft
+    --- FAIL: TestRunDraftHandling/published_once (0.00s)
+        claude_test.go:283: claude adapter: not implemented
+--- FAIL: TestRunStopsOnContext (0.00s)
+    claude_test.go:304: Run = claude adapter: not implemented, want the context's end
+    claude_test.go:307: Run returned after 58.719µs; want Claude running until the context ended, then stopped
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	0.173s
+FAIL
+
+# internal/cli, before --adapter claude was wired
+--- FAIL: TestArtisanStartRunsClaudeOwned (0.24s)
+    --- FAIL: TestArtisanStartRunsClaudeOwned/succeed (0.06s)
+    --- FAIL: TestArtisanStartRunsClaudeOwned/fail (0.06s)
+    --- FAIL: TestArtisanStartRunsClaudeOwned/no-result (0.06s)
+    --- FAIL: TestArtisanStartRunsClaudeOwned/hang (0.06s)
+        artisan_owned_test.go:172: exit 2, want 0; stderr "guildhall: artisan start: --adapter \"claude\": the only adapter is fake ..."

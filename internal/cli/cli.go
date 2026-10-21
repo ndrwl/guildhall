@@ -40,6 +40,7 @@ Commands:
   artisan harness inventory|kill-owned|probe --lab
                  list, kill and probe an attempt's processes: lab test tooling
   fake-artisan   run the test-only fake Artisan
+  claude-artisan run one attempt in Claude Code; artisan start --adapter claude runs it
   task new|show|list|timeline|files|finding rule|review --store <path> ...
                  create, list, show and inspect Director tasks and record rulings and full-review requests
   task start --store <path> --config <file> --state <dir> ...
@@ -147,6 +148,8 @@ func (a *App) Run(args []string) int {
 		return a.artisan(rest)
 	case "fake-artisan":
 		return a.fakeArtisan(rest)
+	case "claude-artisan":
+		return a.claudeArtisan(rest)
 	case "task":
 		if len(rest) > 0 && rest[0] == "start" {
 			return a.taskStart(rest[1:])

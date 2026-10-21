@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -19,14 +20,17 @@ import (
 // LogFile is the launcher process's output, appended in the attempt directory.
 const LogFile = "launcher.log"
 
+// Adapters are the runtime adapters `artisan start` runs as an owned
+// attempt, so the ones Process launches.
+var Adapters = []string{interp.FakeAdapter, interp.ClaudeAdapter}
+
 // Process is the real interp.Launcher: it runs each attempt as its own
 // `guildhall artisan start` process, the attempt's owned launcher (Run),
 // detached from the caller so the attempt outlives it.
 //
 // Launch refuses, starting nothing, a spec that interp.Spec.Validate refuses,
-// an adapter interp.CheckAdapter refuses or other than "fake" (the only one
-// `artisan start` runs), an ended context, and a spec not laid out as its
-// manifest's attempt under StateDir: an identity other than the task and
+// an adapter interp.CheckAdapter refuses or not in Adapters, an ended
+// context, and a spec not laid out as its manifest's attempt under StateDir: an identity other than the task and
 // artisan.AttemptKey.AttemptID, or a result file other than
 // artisan.ResultFile in artisan.AttemptKey.Dir. The attempt must already be
 // recorded running in Store, as the interpreter records it before launch.
@@ -71,8 +75,8 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	if err := interp.CheckAdapter(spec.Adapter); err != nil {
 		return interp.Handle{}, fmt.Errorf("launch: %w", err)
 	}
-	if spec.Adapter != interp.FakeAdapter {
-		return interp.Handle{}, fmt.Errorf("launch: adapter %q: the only adapter is %s", spec.Adapter, interp.FakeAdapter)
+	if !slices.Contains(Adapters, spec.Adapter) {
+		return interp.Handle{}, fmt.Errorf("launch: adapter %q: the adapters are %q", spec.Adapter, Adapters)
 	}
 	m := spec.Manifest.Identity
 	at := Attempt{Store: p.Store, StateDir: p.StateDir, Key: artisan.AttemptKey{Repository: m.Repository, TaskID: m.Task, Step: m.Step, Attempt: m.Attempt}}

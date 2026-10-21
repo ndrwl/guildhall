@@ -10,7 +10,7 @@ Everything it knows lives in one durable store per Director, so closing a termin
 
 > **Status: foundation stage.**
 > Guildhall builds and runs, but no platform or agent runtime is supported for real work yet.
-> Today you can create tasks, advance them by hand with the test-only fake adapter, answer decisions and preview Steward rollouts.
+> Today you can create tasks, advance them by hand with the test-only fake adapter or the minimal [Claude adapter](docs/adapters.md#claude-adapter), whose live acceptance is pending, answer decisions and preview Steward rollouts.
 > A runnable Director is planned, not built; this page marks every planned step and links its design.
 > The full specification is [docs/requirements.md](docs/requirements.md).
 
@@ -163,7 +163,7 @@ Every command that exists today, each described in its own page; a new command a
 - `guildhall messages send|list|read|ack` handles local Director and Artisan messages kept in a store; see [messaging](docs/messaging.md).
 - `guildhall workflow approve|approvals` records and lists workflow approvals; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall render <request.json>` renders a prompt with embedded release skills first; see [prompt rendering](docs/rendering.md).
-- `guildhall artisan start|stop|status|resume` starts, stops, classifies and resumes one owned Artisan attempt with the test-only fake adapter, and `guildhall fake-artisan` is that adapter; see [Artisan commands](docs/artisan.md#commands).
+- `guildhall artisan start|stop|status|resume` starts, stops, classifies and resumes one owned Artisan attempt with the test-only fake adapter or the minimal Claude adapter; `guildhall fake-artisan` is the fake and `guildhall claude-artisan` the Claude wrapper ([Claude adapter](docs/adapters.md#claude-adapter)); see [Artisan commands](docs/artisan.md#commands).
 - `guildhall task new|show|list|timeline|files|finding rule|review` creates and inspects tasks and records the Director's rulings on review findings and full-review requests, without launching anything; see [tasks](docs/tasks.md).
 - `guildhall task start` and `guildhall step done` advance a task through its workflow, launching each Artisan stage as an owned attempt; see [running a task](docs/running.md).
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
