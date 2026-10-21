@@ -37,8 +37,9 @@ type Worker struct {
 	// CancelMarker makes every process honour the cancel marker: it exits
 	// once that file exists.
 	CancelMarker string `json:"cancel_marker,omitempty"`
-	// Result makes the worker publish ResultBody at that path ResultAfter
-	// after it starts waiting, whatever the cancel marker says, then exit.
+	// Result makes the worker publish ResultBody at that path once ResultAfter
+	// has elapsed and ResultMarker, if set, exists, then exit. Release and
+	// CancelMarker take precedence over publication.
 	Result       string        `json:"result,omitempty"`
 	ResultAfter  time.Duration `json:"result_after,omitempty"`
 	ResultMarker string        `json:"result_marker,omitempty"`

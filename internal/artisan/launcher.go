@@ -43,7 +43,11 @@ import (
 // Every stop request, from the endpoint's stop, from Stop, or from SIGTERM
 // or SIGHUP delivered to the launcher, joins the one ladder; concurrent
 // stops wait for it and all answer with its end. Cancel writes the marker
-// and does not escalate. An interrupt delivered to
+// and does not escalate: surviving descendants remain cooperatively supervised
+// after rung 1 times out, until they exit or an explicit stop requests escalation.
+// Automatic signal dispatch checks the marker under the same attempt lock as
+// Cancel, so an accepted cancellation prevents subsequent automatic signals.
+// An interrupt delivered to
 // the launcher (Ctrl+C) is forwarded to the worker with Unit.Interrupt and
 // does not stop the attempt by itself.
 
@@ -351,6 +355,8 @@ func (l *Launcher) stop(decided *Outcome) (Outcome, error) {
 }
 
 // ladder climbs from rung first until the unit is empty, then finishes.
+// Automatic cleanup switches to cooperative supervision if cancellation wins
+// the attempt lock before signal dispatch.
 func (l *Launcher) ladder(d Outcome, first int, err error, explicit bool, signals <-chan os.Signal) (Outcome, error) {
 	if !l.started || l.empty() {
 		return l.finish(d, 0, nil, err)
