@@ -6,6 +6,7 @@
 `Open(path)` and `Read(path)` open and read a file that may be republished at the same instant, so a reader sees no file or one whole version.
 An open or rename that fails for a transient platform reason is retried every 10 ms for up to 250 ms and never decides anything: on Windows the transient errors are `ERROR_SHARING_VIOLATION` and `ERROR_ACCESS_DENIED`, which another process's rename or open of the same name returns; elsewhere none is, because a rename there never races an open.
 A missing file (`fs.ErrNotExist`) and every other error are returned at once, and a transient error that outlasts the bound is returned as it is.
+A reader that closes between reads leaves a republish its bound; a test that never closes is testing the platform, not this package.
 One implementation and no interface, like `digest` and `strictjson`.
 
 Consumers: `artisan`'s containment and heartbeat writers and heartbeat reader; `adapter.ReadResult`, so `WaitResult` does too; `interp`'s attempt-file writer; and the test helpers of `artisantest` and `interptest`, including `artisantest.Files.ValidResult`.
@@ -16,6 +17,6 @@ The retry policy does not cover cancel-marker checks.
 ## Tests
 
 `retry_test.go` was written red first against a stub that did not retry: a race is retried until success, a permanent error or a race followed by one returns at once, and a lasting race is returned after the bound.
-`TestReadDuringWrite` republishes one file for a second while another goroutine reads it on every runner; every read and write succeeds and sees a whole version.
+`TestReadDuringWrite` republishes one file for a second while another goroutine reads it on every runner, pausing 1 ms after each read; every read and write succeeds and sees a whole version, and the writer republishes more than 100 times.
 On Windows, `TestReadWaitsForExclusiveHolder` holds the file without sharing for 50 ms and `TestWriteWaitsForReader` holds it open for reading, and `TestTransientWindows` pins the two errors.
 `internal/artisan`'s `TestResultHeldAtDecisionIsFinished` (Windows) holds a published result without sharing while the launcher decides and requires `finished` with no error, the failure `TestStopContract`'s L16 hit on `main`; `TestStopContract`, `TestFakeStopContract` and `TestWaitResult*` pass unchanged.

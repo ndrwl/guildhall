@@ -42,7 +42,9 @@ func TestReadMissingIsImmediate(t *testing.T) {
 // TestReadDuringWrite republishes one file for a second while another
 // goroutine reads it: every read and every write succeeds and sees a whole
 // version. On Windows a plain open and rename fail here with sharing
-// violations and access denied.
+// violations and access denied. The reader closes and pauses 1 ms between
+// reads, holding the file about 1% of the time, so a republish gets its
+// 250 ms bound; a reader that never pauses would test the platform instead.
 func TestReadDuringWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result")
 	bodies := []string{"first version\n", "second version, longer\n"}
@@ -51,11 +53,12 @@ func TestReadDuringWrite(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	var wg sync.WaitGroup
+	var writes int
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; time.Now().Before(deadline); i++ {
-			if err := atomicfile.Write(path, []byte(bodies[i%2])); err != nil {
+		for ; time.Now().Before(deadline); writes++ {
+			if err := atomicfile.Write(path, []byte(bodies[writes%2])); err != nil {
 				t.Errorf("Write: %v", err)
 				return
 			}
@@ -73,7 +76,11 @@ func TestReadDuringWrite(t *testing.T) {
 				t.Errorf("Read = %q, a torn version", s)
 				return
 			}
+			time.Sleep(time.Millisecond)
 		}
 	}()
 	wg.Wait()
+	if writes <= 100 {
+		t.Errorf("writer republished %d times in a second, want more than 100", writes)
+	}
 }
