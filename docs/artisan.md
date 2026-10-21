@@ -332,7 +332,7 @@ Survivors after the last rung leave the attempt running and owned, and the endpo
 | `failed` | none | `failed` | 4 |
 | `cancelled` | any, rejected as late | `stopped` | 5 |
 
-Any error, including a refused ownership and survivors, exits 1; a usage error exits 2.
+Any error, including a refused ownership, worker startup failure, containment-recording failure and survivors, exits 1; a usage error exits 2. Startup failures remain returned errors even when the failed outcome is successfully written and recorded in the store.
 
 `artisan stop` asks the owner to stop through the endpoint its unreleased ownership record names and waits for the ladder's end within `--timeout` (one minute).
 It never signals a process itself. Without a successful endpoint answer, success requires no ownership record, or a launcher proven gone and its recorded unit proven empty; missing containment is unverified, including during startup. A released record alone does not prove termination while its launcher still lives.

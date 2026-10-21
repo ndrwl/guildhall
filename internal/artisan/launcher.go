@@ -251,7 +251,7 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	worker, err := l.c.Unit.Start(cmd)
 	if err != nil {
 		d, derr := l.decide(false, "start worker: "+err.Error())
-		return l.finish(d, 0, nil, derr)
+		return l.finish(d, 0, nil, errors.Join(err, derr))
 	}
 	l.mu.Lock()
 	l.started = true
