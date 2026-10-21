@@ -93,7 +93,11 @@ func TestLauncherImmediateCooperativeStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close events file: %v", err)
+		}
+	}()
 	decoder := json.NewDecoder(f)
 	count := 0
 	for {
