@@ -1,4 +1,4 @@
-# Per-platform containment for Artisan workers
+# D28. Per-platform containment for Artisan workers
 
 The launcher owns each worker through one containment interface with a backend per platform: a Windows Job Object that kills on close and refuses breakaway, Linux cgroup v2 when delegated otherwise subreaper plus process group, and a macOS process group ([Artisan launcher](../artisan.md#containment-unit)).
 The Linux design arrives in slice L2; the process group alone is the accepted interim Linux backend in this L1 PR.

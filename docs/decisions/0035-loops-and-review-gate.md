@@ -1,4 +1,4 @@
-# Loops and the review gate from recorded bindings
+# D35. Loops and the review gate from recorded bindings
 
 Every Artisan attempt records what it was given, its inputs and digests and for a review the revisions its outcome must be bound to, as a document `<step>-<n>-inputs` before the attempt itself.
 The engine still derives its position from records alone: an attempt stands while its wired inputs and revisions are unchanged, a loop is taken when its target has not yet been given the blocking result as feedback, and a loop's rounds are the step's blocking results, so no loop counter or goto marker is stored.
@@ -9,4 +9,4 @@ Stall signals are Director messages and never change a loop (report §5.3); the 
 The [review gate](../interpreter.md#review-gate) re-checks outcomes from records at `deliver`, independently of the walk's stale-attempt handling, so a later change to the walk cannot bypass it.
 Loops back to Guildmaster, Director or engine steps are later slices.
 See [rebase-aware review](../interpreter.md#rebase-aware-review) for subsequent re-review support.
-See [Director rulings](director-rulings.md) for the subsequent ruling and heartbeat slice.
+See [Director rulings](0040-director-rulings.md) for the subsequent ruling and heartbeat slice.

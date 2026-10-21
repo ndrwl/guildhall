@@ -82,27 +82,35 @@ flowchart TB
     classDef planned fill:#f1f3f5,stroke:#868e96,color:#343a40,stroke-dasharray:5 4
 
     CFG["Config and workflow<br/>parsing and validation"]:::built
-    STORE[("Store: tasks, attempts,<br/>decisions, receipts")]:::built
+    STORE[("Store: tasks, attempts, decisions,<br/>rulings, ownership, receipts")]:::built
     MSG["Local message inbox"]:::built
-    DIR["Director orchestration<br/>and task graph"]:::planned
-    WRAP["Artisan wrapper"]:::planned
+    INSP["Inspection<br/>task timeline and files"]:::built
+    DIR["Director orchestration<br/>command"]:::planned
+    INTERP["Workflow interpreter<br/>Go library"]:::built
+    RENDER["Prompt rendering<br/>and skills"]:::built
+    WRAP["Artisan launcher<br/>containment, endpoint, stop ladder"]:::built
+    ADAPT["Adapter contract<br/>and fake adapter"]:::built
     RT["Runtime adapter<br/>Claude Code first"]:::planned
-    EXEC["Execution environment<br/>local first, Docker later"]:::planned
-    HERDR["Herdr tab<br/>presentation only"]:::planned
+    EXEC["Docker execution<br/>environment"]:::planned
+    HERDR["Herdr tab<br/>presentation only"]:::built
 
     CFG --> DIR
-    DIR --> STORE
+    DIR --> INTERP
+    INTERP --> STORE
+    INTERP --> RENDER
+    INSP --> STORE
     MSG --- STORE
-    DIR --> WRAP
-    WRAP --> RT
-    WRAP --> EXEC
-    WRAP --> MSG
-    WRAP -. "shown in" .-> HERDR
+    INTERP -. "not yet wired" .-> WRAP
+    WRAP -. "not yet wired" .-> ADAPT
+    ADAPT --> RT
+    WRAP -.-> EXEC
+    WRAP -.-> MSG
+    ADAPT -. "shown in" .-> HERDR
 ```
 
-Green boxes are on `main`; grey dashed boxes are designed but not built.
+Green boxes are on `main`; grey dashed boxes are designed but not built, and dotted arrows are connections not yet wired.
 
-- The intended **Artisan wrapper** runs each attempt: it starts the agent through a runtime adapter, inside an execution environment, and delivers stored messages to it.
+- The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; starting the agent through a runtime adapter and delivering stored messages to it are not wired yet, and no command runs it (see [the launcher](docs/artisan.md)).
 - A **runtime adapter** launches an agent's normal interactive session with a prompt file and working directory; an attempt completes only when the Artisan writes a valid result file, not when a process exits or a terminal closes.
   See [adapters](docs/adapters.md) for the implemented fake adapter and current runtime support.
 - The **execution environment** is the local machine first; a Docker environment is a planned separate boundary and is not built.

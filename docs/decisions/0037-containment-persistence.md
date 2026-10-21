@@ -1,4 +1,4 @@
-# Containment persists as a recovery description, not a name
+# D37. Containment persists as a recovery description, not a name
 
 The store's ownership record describes the owner's containment unit with the same fields as Artisan's `Containment` (kind, name, Linux detection reason) plus the worker identity, so every backend's description is stored as it is reported ([containment record](../store.md#containment-record)).
 Before this, the store required every containment to have a name, which a process group does not have: the Linux fallback and macOS backends could only be recorded with an invented name, such as the group id, which is reused once its leader is gone.

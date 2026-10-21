@@ -1,4 +1,4 @@
-# Immutable attempt preparation
+# D36. Immutable attempt preparation
 
 An attempt's prepared prompt, input copies, skill copies and manifest are published once and never replaced, because a missing `launched.json` does not prove that no worker is reading them.
 `Launch` can be accepted while its acknowledgement is lost, or the engine can stop after `Launch` returns and before it writes the mark; in both cases a live worker may already hold the prepared files when the advance is repeated.

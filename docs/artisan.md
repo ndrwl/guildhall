@@ -129,7 +129,7 @@ These are reported, not guaranteed:
 
 ## Control endpoint
 
-Each owned attempt has one control endpoint: an AF_UNIX stream socket under the Guildhall state directory, on Windows 10 and later as on Unix ([decision](decisions/attempt-endpoint-af-unix.md)).
+Each owned attempt has one control endpoint: an AF_UNIX stream socket under the Guildhall state directory, on Windows 10 and later as on Unix ([decision](decisions/0034-attempt-endpoint-af-unix.md)).
 The launcher binds it, records its path in the ownership record with `UpdateOwnership`, and answers `status`, `stop` and `cancel` on it; what `stop` and `cancel` do is the launcher's handler, the [stop ladder](#stop-ladder).
 
 ### Path
@@ -155,7 +155,7 @@ The endpoint directory is created `0700`, and on Unix the socket is made `0600`;
 
 ### Protocol
 
-The protocol is version 1 of `guildhall.attempt-control` ([decision](decisions/endpoint-protocol-v1.md)).
+The protocol is version 1 of `guildhall.attempt-control` ([decision](decisions/0038-endpoint-protocol-v1.md)).
 A request is one JSON line of at most 4 KiB containing `"schema": "guildhall.attempt-control/1"`, `op`, the expected `attempt` string, and the expected `launcher` identity (PID and token):
 
 ```json
@@ -186,7 +186,7 @@ A failed call never proves the owner exited: a silent endpoint is unknown until 
 
 ## Stop ladder
 
-A `Launcher` runs one attempt's worker in its unit, decides the attempt once and stops the worker tree ([decision](decisions/stop-ladder-precedence.md)).
+A `Launcher` runs one attempt's worker in its unit, decides the attempt once and stops the worker tree ([decision](decisions/0041-stop-ladder-precedence.md)).
 It is the endpoint's handler, and its [doc comments](../internal/artisan/launcher.go) own the API contract.
 It reads the attempt's result and writes its cancel marker through `AttemptFiles`, and writes `outcome.json`, `events.jsonl` and `attempt.lock` in the attempt directory.
 

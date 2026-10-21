@@ -1,4 +1,4 @@
-# One AF_UNIX socket per attempt as the control endpoint
+# D34. One AF_UNIX socket per attempt as the control endpoint
 
 Each owned stage attempt's launcher answers `status`, `stop` and `cancel` on one AF_UNIX stream socket under the Guildhall state directory, on Windows as on Unix ([control endpoint](../artisan.md#control-endpoint)).
 Go's standard library binds and dials AF_UNIX sockets on Windows 10 and later, so one transport, one path rule and one test suite cover all three runners; the Windows named pipe the ownership design first proposed is dropped.

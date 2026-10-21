@@ -437,7 +437,7 @@ func rawExchange(t *testing.T, path, request string) map[string]any {
 // TestEndpointLineProtocol pins the scratch protocol: one JSON request line,
 // one JSON reply line naming the attempt and launcher, and an error reply to
 // a malformed or oversized request. Requests carry the version 1 schema
-// (docs/decisions/endpoint-protocol-v1.md).
+// (docs/decisions/0038-endpoint-protocol-v1.md).
 func TestEndpointLineProtocol(t *testing.T) {
 	path := endpointPath(t)
 	h := &testHandler{}

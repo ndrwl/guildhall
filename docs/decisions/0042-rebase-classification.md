@@ -1,4 +1,4 @@
-# Rebase classification through a git boundary
+# D42. Rebase classification through a git boundary
 
 Rebase-aware re-review (director slice S6b part 3, steering 029) needs `git range-diff`, so Guildhall gains its first git boundary, `internal/git`, which runs the git program with argument lists rather than reading repositories through a Go library: range-diff has no library equivalent, and git is already a doctor prerequisite.
 The classifier answers one question, whether a new commit range is a rebase of the reviewed one, and is conservative: every check must pass for a narrowed review, and any failure or doubt, including a git error, is a full review with a reason rather than an error, so a broken repository can only widen review.

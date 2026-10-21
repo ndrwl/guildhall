@@ -77,6 +77,12 @@ const (
 	Withdrawn DispositionState = "withdrawn"
 )
 
+// Valid reports whether s is one of the disposition states above.
+// It is the one rule every reader of a disposition checks, so a new state is added here.
+func (s DispositionState) Valid() bool {
+	return s == Resolved || s == StillOpen || s == Withdrawn
+}
+
 // Disposition says what became of one finding of the previous round's outcome, by its id.
 type Disposition struct {
 	Finding string           `json:"finding"`
@@ -159,7 +165,7 @@ func (o ReviewOutcome) Validate() error {
 			problems = append(problems, fmt.Sprintf("still-open finding %q is not listed in findings", d.Finding))
 		case (d.State == Resolved || d.State == Withdrawn) && ids[d.Finding]:
 			problems = append(problems, fmt.Sprintf("%s finding %q is still listed in findings", d.State, d.Finding))
-		case d.State != Resolved && d.State != StillOpen && d.State != Withdrawn:
+		case !d.State.Valid():
 			problems = append(problems, fmt.Sprintf("disposition of %q has unknown state %q", d.Finding, d.State))
 		}
 		seen[d.Finding] = true

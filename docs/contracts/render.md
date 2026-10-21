@@ -2,7 +2,7 @@
 
 ## Contract
 
-`Prompt` and `Question`: the [rendering contract](../rendering.md) (rationale: [Rendered prompts, skills and their digests](../decisions/rendered-prompts-skills-and-digests.md)).
+`Prompt` and `Question`: the [rendering contract](../rendering.md) (rationale: [Rendered prompts, skills and their digests](../decisions/0025-rendered-prompts-skills-and-digests.md)).
 Pure over files: no interface and no double.
 `TreeDigest(files []File) digest.Digest` is shared by skill copying and interpreter preparation verification for the [skill tree digest](../rendering.md#skills).
 It accepts files in any order without modifying the input slice.

@@ -1,4 +1,4 @@
-# Deterministic advance over records, one write per record
+# D32. Deterministic advance over records, one write per record
 
 The interpreter derives where a task stands from its store records on every advance, not from the event it was given, so the same advance repeated after a crash finds the same position and repeats only what is missing.
 Each write uses a mutation id derived from the task and the record it writes, so a repeated write replays its original receipt instead of recording twice.

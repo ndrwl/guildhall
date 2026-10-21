@@ -1,4 +1,4 @@
-# Release skills root
+# D30. Release skills root
 
 The skills a release ships live in the repository's top-level `skills/` directory, one `guildhall-<name>/` directory per skill, and the Go package there embeds them with `go:embed`.
 A release stays a single binary (D1, D5): `cmd/guildhall` wires `skills.Install` into `guildhall render`, which installs a temporary root and passes it to the renderer first as `release`, ahead of the optional Steward-managed and Director roots.

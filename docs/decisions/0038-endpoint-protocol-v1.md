@@ -1,4 +1,4 @@
-# Attempt control protocol version 1
+# D38. Attempt control protocol version 1
 
 The attempt control endpoint's request and reply lines carry `"schema": "guildhall.attempt-control/1"` and are decoded strictly ([protocol](../artisan.md#protocol)).
 `stop` and `cancel` are destructive, and a launcher and the process calling it can come from different Guildhall binaries once one outlives an update, so a request whose meaning this endpoint might not share is refused rather than guessed at.

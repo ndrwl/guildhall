@@ -14,7 +14,7 @@ Every shipped skill keeps these rules, which the tests enforce:
 - Each adapted skill carries `CREDITS.md` with the upstream MIT notice inside its own directory so installed and rendered copies retain attribution.
 - A script lives in `scripts/` as a `.sh` and `.ps1` twin, and each parses in its shell.
 
-Rationale: [Release skills root](../decisions/release-skills-root.md).
+Rationale: [Release skills root](../decisions/0030-release-skills-root.md).
 Pure over embedded files: no interface and no double.
 
 ## Tests
