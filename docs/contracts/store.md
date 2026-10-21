@@ -6,7 +6,7 @@
 Attempt ownership ([store-attempt-ownership](../decisions/store-attempt-ownership.md)): `Ownership`, `StartOwnedAttempt`, `TakeOwnership` with its `OwnerProbe` seam and `ErrOwnerLive`/`ErrOwnerUnknown` refusals, `UpdateOwnership`, `Ownership`, and release by `FinishAttempt`.
 The ownership record's `Containment` is a recovery description of every Artisan containment kind ([containment-persistence](../decisions/containment-persistence.md)): `Containment.Recoverable` and `ErrUnrecoverable`, the kind constants, a worker identity in place of a name for process groups, the Linux detection reason, and legacy records read unchanged but never recoverable when incomplete.
 
-The default ownership probe (`ProbeLauncher`, including a nil `TakeOwnership` probe) returns unknown whenever containment is recorded, regardless of launcher exit. Only an explicit containment-aware probe may establish launcher exit and absence of contained survivors; structural recoverability alone never establishes either.
+The [attempt ownership contract](../store.md#attempt-ownership) defines the default probe's containment refusal and the explicit containment-aware recovery path.
 
 ## Tests
 

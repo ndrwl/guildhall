@@ -52,7 +52,7 @@ const (
 // so it never authorises a sweep or a take-over.
 var ErrUnrecoverable = errors.New("containment record cannot identify its unit")
 
-// MaxContainmentBytes bounds a containment record's name and reason.
+// MaxContainmentBytes bounds a containment record's name, reason and worker token.
 const MaxContainmentBytes = 1024
 
 // Containment is the recovery description of the unit an owner's worker runs
