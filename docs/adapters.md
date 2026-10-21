@@ -1,6 +1,6 @@
 # Artisan adapters
 
-This page describes the baseline contract between Guildhall and an Artisan runtime (R1.23), the result file that completes an attempt, the test-only fake adapter (R1.22), and how Guildhall reaches Herdr to show an Artisan in a tab (R1.38).
+This page describes the baseline contract between Guildhall and an Artisan runtime (R1.23), the result file that completes an attempt, the test-only fake adapter and the minimal Claude adapter (R1.22), and how Guildhall reaches Herdr to show an Artisan in a tab (R1.38).
 It describes what is built today; no runtime or platform is claimed as supported until its acceptance passes (R1.27).
 
 ## Baseline contract
@@ -91,18 +91,47 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 
 Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.
 
+## Claude adapter
+
+The Claude adapter runs one attempt as a non-interactive Claude Code session, with no optional capabilities.
+Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--claude <program>]`, a wrapper in the attempt's working directory that runs:
+
+```text
+claude --print <instruction> --permission-mode acceptEdits --add-dir <prompt directory> [<result directory>]
+```
+
+- `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
+- The instruction names the prompt file and a draft result file, `<result>.draft`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
+- `acceptEdits` lets Claude edit files in the working directory and the added directories; every other tool that needs permission, such as shell commands, is denied, because a print-mode session has no one to ask.
+- Claude gets no standard input; its output goes to the wrapper's.
+
+The wrapper keeps the result protocol, not the model:
+
+- it refuses to start, starting nothing, when the result file exists or the attempt is cancelled, and removes a stale draft first;
+- once Claude exits it publishes the draft's bytes at the result file by a hard link, never replacing a result; it does not validate them, so a malformed or misidentified draft is rejected by the reader like any other result, and no draft means no result;
+- the cancel marker, an interrupt or the end of its context asks Claude to stop (an interrupt on Unix, termination on Windows), kills it after 10 seconds, and publishes nothing; so the owned launcher's stop ends at rung 1;
+- Claude's exit status does not decide completion: a failing exit after a published draft is still reported.
+
+This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort.
+Transcripts, cost, session resume and the Herdr tab mode are later work.
+
 ## Conformance
 
 Every runtime adapter passes one shared suite, `adaptertest.RunConformance`, before Guildhall launches it: it declares exactly its capabilities, refuses an invalid spec without a command, runs in the spec's working directory and environment, completes only from a valid result file for its identity, never completes without a result, on a malformed result or on a result for another attempt, leaves no result when stopped, and never replaces an existing result.
 The suite makes no model calls; a runtime proves each behaviour through prompts it understands.
 
 The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the reference mapping the suite uses; production launch builds its own spec today.
-The Claude adapter will run the same suite.
+The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names and plays the behaviour a `claude-stub:` prompt line asks for, with no model call.
+`TestLiveClaude` runs one real session instead when `GUILDHALL_CLAUDE_LIVE=1` is set; CI never sets it:
+
+```sh
+GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaude -v -timeout 15m
+```
 CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keeps the Herdr tab contract over a real POSIX shell; it runs on Linux and macOS, and Windows panes are covered by the live checks below.
 
 ## Running an attempt
 
-Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher; see [Artisan commands](artisan.md#commands).
+Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher with the fake or the [Claude adapter](#claude-adapter); see [Artisan commands](artisan.md#commands).
 
 `guildhall artisan start --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
 
@@ -167,5 +196,7 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 | Rendered command lines pass every argument unchanged when executed | `sh`, `bash`, `dash` and `zsh` on Linux; `sh`, `bash`, `dash` and Windows PowerShell 5.1 on native Windows; missing shells follow the [test environment contract](contracts/testenv.md) | Passed |
 | Native handle stop contract: verified termination, repeated and concurrent stops, natural exit, ended context, idempotent close, no use of a released handle | Native Windows test executable against a live helper process | Passed |
 | macOS in Herdr | Not run | macOS has CI only, not live acceptance (R1.30) |
+| [Conformance](#conformance) of the Claude adapter over the stub `claude`: direct child, inside the Artisan launcher (stop at rung 1) and on interpreter-rendered attempts; `artisan start --adapter claude` outcomes | CI on Linux, Windows and macOS | Run on every change |
+| Claude adapter with Claude Code 2.1.306: `TestLiveClaude` (a file written and a succeeded result listing it), and an interrupt ending a working session in under a second with no result | Linux (WSL) | Passed |
 
 Reconciling an attempt after a restart is [`artisan resume`](artisan.md#resume); recording pane bindings and the per-task watcher are not built yet.

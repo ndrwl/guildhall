@@ -59,6 +59,8 @@ A pull request that adds or changes a package's contract edits only that package
 
 - [`cmd/guildhall`](contracts/cmd-guildhall.md)
 - [`internal/adapter/adaptertest`](contracts/adapter-adaptertest.md)
+- [`internal/adapter/claude/claudetest`](contracts/adapter-claude-claudetest.md)
+- [`internal/adapter/claude`](contracts/adapter-claude.md)
 - [`internal/adapter/fake`](contracts/adapter-fake.md)
 - [`internal/adapter`](contracts/adapter.md)
 - [`internal/artisan/artisantest`](contracts/artisan-artisantest.md)

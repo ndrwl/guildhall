@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
@@ -45,6 +46,26 @@ func (a *App) fakeArtisan(args []string) int {
 		return a.usageError("fake-artisan: " + err.Error())
 	}
 	return fake.Main(args, a.Stdin, a.Stdout, a.Stderr)
+}
+
+// claudeArtisan runs the Claude adapter's wrapper: `guildhall claude-artisan
+// --task --attempt --prompt --result [--claude]`.
+func (a *App) claudeArtisan(args []string) int {
+	if _, err := claude.ParseArgs(args); err != nil {
+		return a.usageError("claude-artisan: " + err.Error())
+	}
+	return claude.Main(args, a.Stdout, a.Stderr)
+}
+
+// runtimeAdapter builds an attempt's command.
+type runtimeAdapter interface {
+	Command(spec adapter.Spec) (adapter.Command, error)
+}
+
+// ownedAdapters are the runtime adapters an owned attempt runs, by name.
+var ownedAdapters = map[string]func(exe string) runtimeAdapter{
+	"fake":   func(exe string) runtimeAdapter { return fake.Adapter{Executable: exe} },
+	"claude": func(exe string) runtimeAdapter { return claude.Adapter{Executable: exe} },
 }
 
 // stringList is a repeatable string flag.
@@ -169,7 +190,7 @@ func (a *App) artisanStart(args []string) int {
 		owned                                attemptFlags
 	)
 	owned.register(fl)
-	fl.StringVar(&adapterName, "adapter", "", "runtime adapter (only fake)")
+	fl.StringVar(&adapterName, "adapter", "", "runtime adapter: fake, or claude for an owned attempt")
 	fl.StringVar(&prompt, "prompt", "", "prompt file")
 	fl.StringVar(&result, "result", "", "result file")
 	fl.StringVar(&workdir, "workdir", "", "working directory")
@@ -186,8 +207,10 @@ func (a *App) artisanStart(args []string) int {
 	switch {
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("artisan start: unexpected argument %q", fl.Arg(0)))
-	case adapterName != "fake":
-		return a.usageError(fmt.Sprintf("artisan start: --adapter %q: the only adapter is fake", adapterName))
+	case ownedAdapters[adapterName] == nil:
+		return a.usageError(fmt.Sprintf("artisan start: --adapter %q: the adapters are fake and claude", adapterName))
+	case adapterName != "fake" && session != "":
+		return a.usageError(fmt.Sprintf("artisan start: --adapter %s runs only as an owned attempt, not in a Herdr tab", adapterName))
 	case timeout < 0:
 		return a.usageError("artisan start: --timeout must not be negative")
 	case session == "":
@@ -198,7 +221,7 @@ func (a *App) artisanStart(args []string) int {
 		if err != nil || prompt == "" || workdir == "" {
 			return a.usageError(fmt.Sprintf("artisan start: --prompt and --workdir are required: %v", err))
 		}
-		return a.runOwned(at, prompt, workdir, timeout)
+		return a.runOwned(at, adapterName, prompt, workdir, timeout)
 	case owned.store != "" || owned.state != "" || owned.repository != "" || owned.step != "":
 		return a.usageError("artisan start: --store, --state, --repository and --step do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
@@ -252,11 +275,11 @@ func (a *App) artisanStart(args []string) int {
 	return a.runInTab(ctx, spec, cmd, herdr.Options{Session: session, Command: herdrExec}, workspace, label, stopOnTimeout)
 }
 
-// runOwned runs attempt at as its launcher (launch.Run): the fake Artisan
-// runs in a containment unit with this process's terminal, its output on
+// runOwned runs attempt at as its launcher (launch.Run): the named adapter's
+// Artisan runs in a containment unit with this process's terminal, its output on
 // stderr so stdout carries only the report, and the exit code is the store
 // outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error.
-func (a *App) runOwned(at launch.Attempt, prompt, workdir string, timeout time.Duration) int {
+func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, timeout time.Duration) int {
 	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile}
 	for _, p := range []struct {
 		dst *string
@@ -272,7 +295,7 @@ func (a *App) runOwned(at launch.Attempt, prompt, workdir string, timeout time.D
 	if err != nil {
 		return a.fail(err)
 	}
-	cmd, err := fake.Adapter{Executable: exe}.Command(spec)
+	cmd, err := ownedAdapters[adapterName](exe).Command(spec)
 	if err != nil {
 		return a.fail(err)
 	}

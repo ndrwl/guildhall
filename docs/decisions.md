@@ -67,3 +67,4 @@ Until then a new decision is cited by its file path rather than a number.
 - [D51. Release upgrades](decisions/0051-release-upgrades.md)
 - [D52. Task start and step done join the interpreter to the owned launcher](decisions/0052-task-start-and-step-done.md)
 - [D53. One command grammar for the Director, Artisan and Steward roles](decisions/0053-cli-role-grammar.md)
+- [D54. The Claude adapter runs print mode under a wrapper that owns the result](decisions/0054-claude-adapter-wrapper.md)
