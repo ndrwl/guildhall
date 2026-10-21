@@ -170,7 +170,7 @@ func TestStopPreservesEndpointFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ep.Close()
+	defer func() { _ = ep.Close() }()
 	if err := a.Files().Mark(); err != nil {
 		t.Fatal(err)
 	}
