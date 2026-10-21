@@ -142,7 +142,7 @@ func AutomatedReview(t testing.TB, doc string) Attempt {
 }
 
 // AdapterSpec renders the build attempt at spec-v1.md for adapterName with instructions as its step
-// instructions, and returns the adapter.Spec a runtime adapter receives for it (interp.Spec.AdapterSpec).
+// instructions, and returns its reference adapter.Spec (interp.Spec.AdapterSpec).
 // It is the adapter conformance suite's attempt laid out as the interpreter lays it out.
 func AdapterSpec(t testing.TB, adapterName, instructions string) adapter.Spec {
 	t.Helper()

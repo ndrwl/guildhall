@@ -11,7 +11,10 @@ import (
 // StartInPane returns a Subject.Start that runs the runtime the way
 // `artisan start --herdr` does: l types the command into a new tab, quoted for
 // the tab's shell, and a stop is Ctrl+C in that tab. The runtime has exited
-// once the tab's shell is again its only foreground process.
+// once the tab's shell is again its only foreground process, so l's host must
+// return from RunInTab only once the line is the pane's foreground process, as
+// ShellPanes does; a live Herdr host types the line and may still show an idle
+// shell on the first poll, which this would take for an exit.
 func StartInPane(l adapter.TabLauncher) func(t *testing.T, spec adapter.Spec, cmd adapter.Command) (Process, error) {
 	return func(t *testing.T, spec adapter.Spec, cmd adapter.Command) (Process, error) {
 		run, err := l.Start(context.Background(), "artisan "+spec.TaskID+"/"+spec.AttemptID, cmd)

@@ -19,7 +19,8 @@ Both operations are safe for concurrent use.
 
 `interp.Spec` carries the attempt identity, the adapter name from the stage's profile, the absolute working directory, prompt file and result file, and the manifest `render.Prompt` returned for that prompt ([prompt rendering](rendering.md#manifest)).
 The prompt's `inputs` and `skills` directories are beside the prompt file.
-It is the interpreter's own type; `Spec.AdapterSpec` maps it onto the `adapter.Spec` a runtime adapter receives: the same identity, working directory, prompt file and result file, and no extra environment.
+It is the interpreter's own type; `Spec.AdapterSpec` is the reference mapping onto an `adapter.Spec` that the adapter conformance suite runs runtimes on: the same identity, working directory, prompt file and result file, and no extra environment.
+Production launch does not use it today: `launch.Process` passes the prompt and working directory as flags and `artisan start` builds its own spec.
 
 ## Adapter guard
 

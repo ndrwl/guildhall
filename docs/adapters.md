@@ -96,7 +96,7 @@ Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled`
 Every runtime adapter passes one shared suite, `adaptertest.RunConformance`, before Guildhall launches it: it declares exactly its capabilities, refuses an invalid spec without a command, runs in the spec's working directory and environment, completes only from a valid result file for its identity, never completes without a result, on a malformed result or on a result for another attempt, leaves no result when stopped, and never replaces an existing result.
 The suite makes no model calls; a runtime proves each behaviour through prompts it understands.
 
-The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`.
+The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the reference mapping the suite uses; production launch builds its own spec today.
 The Claude adapter will run the same suite.
 CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keeps the Herdr tab contract over a real POSIX shell; it runs on Linux and macOS, and Windows panes are covered by the live checks below.
 

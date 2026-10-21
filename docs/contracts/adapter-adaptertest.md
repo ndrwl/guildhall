@@ -6,6 +6,7 @@
 `Subject.Start` runs the command the way a launch path does, such as inside the Artisan launcher, as a `Process` the suite can wait for and stop; nil starts a direct child process.
 `Subject.Attempt` lays out each attempt the way the launch path feeding the runtime does, such as an interpreter-rendered prompt mapped through `interp.Spec.AdapterSpec`; nil writes the behaviour's prompt as the whole prompt file.
 `StartInPane` is a `Subject.Start` through `adapter.TabLauncher`: the command typed into a new tab quoted for its shell, a stop by Ctrl+C, and exit when the tab's shell is again its only foreground process.
+It needs a host whose `RunInTab` returns only once the line is the pane's foreground process, as `ShellPanes` does; it is not a harness for a live Herdr server, which types the line and may still show an idle shell on the first poll.
 `ShellPanes` (Unix only) is the terminal host for that where no Herdr server exists, as in CI: tabs only in its one workspace and only its own operated on, one non-empty line run as `sh -c` in the tab's directory and environment, Ctrl+C as SIGINT to the line's process group, repeated until it exits or a bounded wait ends, and every call honouring its context.
 Every runtime adapter runs the suite, the Claude adapter included once it exists ([adapters](../adapters.md#conformance)).
 

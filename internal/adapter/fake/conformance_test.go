@@ -53,7 +53,7 @@ func TestFakeRuntimeConformance(t *testing.T) {
 
 // TestFakeRuntimeConformanceOnInterpreterAttempts runs the suite on attempts
 // rendered from internal/interp/testdata and mapped through
-// interp.Spec.AdapterSpec, the spec the interpreter's launches give a runtime.
+// interp.Spec.AdapterSpec, the reference mapping onto a runtime's spec.
 func TestFakeRuntimeConformanceOnInterpreterAttempts(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {

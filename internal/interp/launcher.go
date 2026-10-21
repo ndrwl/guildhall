@@ -73,8 +73,9 @@ func (s Spec) Validate() error {
 	return nil
 }
 
-// AdapterSpec returns the adapter.Spec a runtime adapter receives for s: the same identity, working
-// directory, prompt file and result file, and no extra environment. The adapter name and manifest stay
+// AdapterSpec returns the reference adapter.Spec for s that the adapter conformance suite runs runtimes
+// on: the same identity, working directory, prompt file and result file, and no extra environment.
+// Production launch does not call it today; launch.Process and the artisan command build their own spec. The adapter name and manifest stay
 // with the launcher, which chooses the runtime and has already checked the prompt against its manifest.
 // A spec Validate accepts maps to one adapter.Spec.Validate accepts.
 func (s Spec) AdapterSpec() adapter.Spec {

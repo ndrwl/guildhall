@@ -55,8 +55,8 @@ type Subject struct {
 	Prompt func(b Behaviour) string
 	// Attempt, when set, lays out one attempt whose prompt carries prompt and
 	// returns its spec, the way the launch path feeding this runtime does, such
-	// as a prompt rendered by the interpreter and mapped through
-	// interp.Spec.AdapterSpec; nil writes prompt as the whole prompt file in a
+	// as a prompt rendered by the interpreter and mapped through the reference
+	// mapping interp.Spec.AdapterSpec; nil writes prompt as the whole prompt file in a
 	// new temporary directory.
 	Attempt func(t *testing.T, prompt string) adapter.Spec
 	// Start, when set, starts the runtime's command for spec the way a
@@ -166,7 +166,7 @@ func RunConformance(t *testing.T, newSubject func(t *testing.T) Subject) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		writePrompt(t, spec, s.Prompt(Fail))
+		rewritePrompt(t, s, spec, Fail)
 		p := start(t, s, spec)
 		select {
 		case <-p.Exited():
@@ -194,6 +194,21 @@ func newSpec(t *testing.T, s Subject, b Behaviour) adapter.Spec {
 	}
 	writePrompt(t, spec, s.Prompt(b))
 	return spec
+}
+
+// rewritePrompt replaces spec's prompt with the one that makes the runtime
+// produce b, laid out the way s lays out every attempt.
+func rewritePrompt(t *testing.T, s Subject, spec adapter.Spec, b Behaviour) {
+	t.Helper()
+	prompt := s.Prompt(b)
+	if s.Attempt != nil {
+		rendered, err := os.ReadFile(s.Attempt(t, prompt).PromptFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompt = string(rendered)
+	}
+	writePrompt(t, spec, prompt)
 }
 
 func writePrompt(t *testing.T, spec adapter.Spec, prompt string) {
