@@ -46,10 +46,12 @@ The mode is a store fact, not a config key: the newest enrolment event in the Di
 | Left | absent | standalone |
 | Left | present | refused: a stale or unexpected managed file |
 
-Every Director command uses one shared configuration-admission boundary: reject legacy inline settings, load and validate the files, check the mode, then check revision trust before applying settings. Pure parsing APIs stay unchanged.
+Every Director command uses one shared configuration-admission boundary: reject legacy inline settings, load and validate the files, check the mode, then check revision trust before applying settings.
+Pure parsing APIs stay unchanged.
 A refusal names the state and the command that fixes it.
 
-Guildhall is pre-release: an inline `[managed]` section in `config.toml` is refused in every mode, whether or not a sibling managed file exists, with guidance to move it to `managed.toml` using the checksum-bearing format. Migration then requires explicit enrolment and revision authorization; there is no unrecorded compatibility mode.
+Guildhall is pre-release: an inline `[managed]` section in `config.toml` is refused in every mode, whether or not a sibling managed file exists, with guidance to move it to `managed.toml` using the checksum-bearing format.
+Migration then requires explicit enrolment and revision authorization; there is no unrecorded compatibility mode.
 
 ## Guard rails
 
@@ -63,7 +65,13 @@ The binary enforces the same guard rails in both modes; only where their values 
 Spend limits belong to slice 4's guard-rail design and are not designed here.
 
 In managed mode the Director binary never writes `managed.toml`, and no Director command sets a managed key.
-Each managed revision the binary applies is recorded with its digest. At the shared configuration-admission boundary, a digest without a rollout, reload or explicit Guildmaster approval authorization recorded in the receiving store is recorded as `observed-untrusted` and raises a system alert for the Guildmaster. A checksum or a receipt held only on the Steward is not authorization. An observed-untrusted revision is not applied until the recorded reload command authorizes that exact digest or the Guildmaster explicitly approves that digest through the alert decision. Observation and enrolment alone never authorize it. Commands needing effective settings, including new-task creation and leave, refuse while the on-disk revision is untrusted; reload, approval and enrolment can validate it without applying it. Active tasks retain their bound configuration.
+Each managed revision the binary applies is recorded with its digest.
+At the shared configuration-admission boundary, a digest without a rollout, reload or explicit Guildmaster approval authorization recorded in the receiving store is recorded as `observed-untrusted` and raises a system alert for the Guildmaster.
+A checksum or a receipt held only on the Steward is not authorization.
+An observed-untrusted revision is not applied until the recorded reload command authorizes that exact digest or the Guildmaster explicitly approves that digest through the alert decision.
+Observation and enrolment alone never authorize it.
+Commands needing effective settings, including new-task creation and leave, refuse while the on-disk revision is untrusted; reload, approval and enrolment can validate it without applying it.
+Active tasks retain their bound configuration.
 
 ## Enrol and leave
 
@@ -85,7 +93,8 @@ The Steward never messages a Director ([Director messaging](messaging.md#who-may
 
 `config reload` loads and validates the combined config, runs the migration and mode checks, and records a `managed-revision` event authorizing the rollout digest in the receiving store, with the new and previous digests and the source `reload`.
 A running Director applies the new revision at its next step boundary, for new tasks only (R1.31, R1.62); an active task keeps its bound configuration.
-If no reload runs and the receiving store has no authorization for the digest, the binary records it on first load as `observed-untrusted`, raises the alert and refuses to apply it. Explicit Guildmaster approval records a revision authorization with source `guildmaster-approved`; only that approval or a recorded reload permits the observed revision to be applied.
+If no reload runs and the receiving store has no authorization for the digest, the binary records it on first load as `observed-untrusted`, raises the alert and refuses to apply it.
+Explicit Guildmaster approval records a revision authorization with source `guildmaster-approved`; only that approval or a recorded reload permits the observed revision to be applied.
 A restart command is not designed here; it belongs with the Steward's other features.
 
 ## Lessons
@@ -132,4 +141,5 @@ These are flagged rather than chosen silently:
 - **R1.46** and **R1.43** make enrolment and installation the Steward's; standalone Directors need a Steward-free install path, such as running the setup wizard locally (R1.51) without enrolment.
 - **R1.39** and **R1.40** let the Herdr setup helper touch only machines enrolled by the Steward; a standalone Director's machine would need its own entry.
 - **R1.32** has the Steward draft every lesson; a standalone lesson is adopted without one.
-- **D12** says rollouts copy files with `scp` and run no remote command; `config reload` over SSH is a remote command and needs a decision superseding that part of D12.
+
+The [optional Steward decision](decisions/optional-steward.md) supersedes D12's no-remote-command restriction for `config reload`.

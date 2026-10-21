@@ -245,7 +245,8 @@ Only the Guildmaster reopens the inbox: `guildhall messages inbox open` is refus
 While closed, a new `director` message is refused at `receive` and the sender's outbox records the refusal; a `guildmaster` message is never refused by closing.
 
 `mailbox_max` caps unacknowledged `director` messages.
-At the cap, `receive` refuses a new message with `mailbox full`, stores nothing and tells the sender; a new delivery attempt after the receiver acknowledges messages can be accepted. Identical committed retries return their original receipt before either admission check, even when the inbox is now closed or full; conflicting envelopes are still refused.
+At the cap, `receive` refuses a new message with `mailbox full`, stores nothing and tells the sender; a new delivery attempt after the receiver acknowledges messages can be accepted.
+Identical committed retries return their original receipt before either admission check, even when the inbox is now closed or full; conflicting envelopes are still refused.
 The Guildmaster's messages are never refused for a full mailbox.
 
 ### Transport between machines
@@ -276,7 +277,9 @@ A Director finds its peers in `[[peer]]` config entries: in a standalone copy wr
 Delivery between Directors is at least once, made exactly once in the receiver's store by message ids and idempotent receipts, as the local inbox already does.
 
 - The sender first records the message in its own store's outbox as `pending`, with mutation `outbox:<id>`, then calls `receive`.
-- At the shared local/SSH receive boundary, after envelope and transport-identity validation, the receiver resolves mutation `dmessage:<from>:<id>` before checking closure or capacity. An identical committed retry returns the original receipt, stores nothing new and never wakes again, including after acknowledgement, closure or reaching capacity. Reusing that identity for a different envelope is refused with the store's mutation conflict.
+- At the shared local/SSH receive boundary, after envelope and transport-identity validation, the receiver resolves mutation `dmessage:<from>:<id>` before checking closure or capacity.
+  An identical committed retry returns the original receipt, stores nothing new and never wakes again, including after acknowledgement, closure or reaching capacity.
+  Reusing that identity for a different envelope is refused with the store's mutation conflict.
   Only a new identity proceeds through admission, storage and the wake decision, serialized in the receiving store so concurrent retries cannot duplicate admission or waking.
 - The receiver's receipt, printed on standard output, is recorded in the sender's outbox as `delivered`; a refusal (`closed`, `mailbox full`, invalid) is recorded as `refused` with its reason and is not retried.
 - A lost result or a failed connection leaves the outbox entry `pending`.
@@ -286,7 +289,11 @@ Delivery between Directors is at least once, made exactly once in the receiver's
 ### Commands
 
 The existing `guildhall messages send|list|read|ack` keep their meaning for the local inbox.
-External messages use the full `(sender, message id)` identity in every lookup and reference. The `--sender <sender>` flag selects the exact external sender (including `guildmaster`), not the sender-type filter `--from`; omitting it on read or ack selects only the existing local inbox and never guesses an external sender. External list, read and summary output include both identity fields. External acknowledgements use mutation `dmessage-ack:<sender>:<id>` and return the original receipt on retry. The external API likewise takes both fields for read and ack; the existing local `Mailbox` API remains unchanged.
+External messages use the full `(sender, message id)` identity in every lookup and reference.
+The `--sender <sender>` flag selects the exact external sender (including `guildmaster`), not the sender-type filter `--from`; omitting it on read or ack selects only the existing local inbox and never guesses an external sender.
+External list, read and summary output include both identity fields.
+External acknowledgements use mutation `dmessage-ack:<sender>:<id>` and return the original receipt on retry.
+The external API likewise takes both fields for read and ack; the existing local `Mailbox` API remains unchanged.
 
 The designed additions are:
 
