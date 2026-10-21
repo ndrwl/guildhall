@@ -8,6 +8,7 @@ When that sibling exists, `config.Load` uses `config.ParseCombined`, which refus
 Only a sibling that does not exist falls back: a sibling that exists but cannot be read, such as a directory, or that `config.ParseCombined` refuses, such as one with a checksum mismatch, is an error rather than a silent return to the inline layout.
 A config file that cannot be read is an error.
 No credentials belong in either; sign-in stays in each runtime's own store.
+Explicit standalone/managed admission, migration, enrolment and revision authorization are designed, not built (see [standalone and managed Directors](director-modes.md)); they do not change the current parser behavior described above.
 
 ## Config file
 

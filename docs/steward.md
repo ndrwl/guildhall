@@ -165,4 +165,5 @@ Release binding and execution enforcement of R1.31 remain future work.
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50), audits and learnings (R1.32).
 - Enrolment through the setup wizard (R1.43-R1.51).
+- The Steward is optional: [standalone and managed Directors](director-modes.md), including `guildhall config reload` and recorded enrolment, are designed, not built.
 - Platform support: tests replace `scp` with a stub on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
