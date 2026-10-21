@@ -93,9 +93,9 @@ Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled`
 
 ## Running an attempt
 
-Without Herdr flags, `guildhall artisan run` owns a stored attempt as its launcher; see [Artisan commands](artisan.md#commands).
+Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher; see [Artisan commands](artisan.md#commands).
 
-`guildhall artisan run --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
+`guildhall artisan start --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
 
 - The tab is labelled `artisan <task>/<attempt>` unless `--tab-label` is given.
   `--herdr-exec` names the Herdr program, repeated once per word when the program needs leading arguments; the default is `herdr` on `PATH`.
@@ -140,7 +140,7 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
   POSIX shells (`sh`, `bash`, `dash`, `ksh`, `zsh`) and PowerShell are supported; any other shell is refused.
   For a POSIX shell, a program named by a Windows drive path is written with `/` separators, because `dash` under Git for Windows cannot start it with `\`.
   Arguments PowerShell would alter are refused for PowerShell: empty arguments, arguments containing `"` or typographic single quotes, and arguments containing whitespace that end in `\`, which Windows PowerShell 5.1 merges with the next argument.
-- A tab Guildhall creates is the only kind it can type into, interrupt or close, and the close rule of R1.54 applies; `artisan run` never closes a tab.
+- A tab Guildhall creates is the only kind it can type into, interrupt or close, and the close rule of R1.54 applies; `artisan start` never closes a tab.
 
 ## Verification status
 

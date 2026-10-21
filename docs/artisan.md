@@ -2,8 +2,8 @@
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
 This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit, the control endpoint, the stop ladder, the heartbeat and reconcile's classification.
-The [ownership record](store.md#attempt-ownership) is in the store, and the `artisan run`, `stop`, `status` and `resume` [commands](#commands) wire the pieces together.
-The Herdr tab mode of `artisan run` is described in [adapters](adapters.md#running-an-attempt).
+The [ownership record](store.md#attempt-ownership) is in the store, and the `artisan start`, `stop`, `status` and `resume` [commands](#commands) wire the pieces together.
+The Herdr tab mode of `artisan start` is described in [adapters](adapters.md#running-an-attempt).
 The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
 ## Process identity
@@ -300,7 +300,7 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 - `sequence` is positive and increases with every write, continuing from a heartbeat an earlier launcher of the attempt left.
 - `worker_state` is the launcher's phase: `starting`, `running` or `stopping`; it is nonblank UTF-8 of at most 256 bytes.
 - `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began.
-  `artisan run` sets none: the worker writes straight to the launcher's terminal, which the launcher does not read.
+  `artisan start` sets none: the worker writes straight to the launcher's terminal, which the launcher does not read.
   A later time than the beat is reported as the beat's time.
 - The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live.
   Beats continue during result grace and cooperative supervision, but pause while the stop ladder waits on a signal rung.
@@ -346,12 +346,12 @@ The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s)
 
 ## Commands
 
-`guildhall artisan run`, `stop`, `status` and `resume` name an owned attempt with `--store <file> --state <dir> --repository <id> --task <id> --step <id> --attempt <n>`.
+`guildhall artisan start`, `stop`, `status` and `resume` name an owned attempt with `--store <file> --state <dir> --repository <id> --task <id> --step <id> --attempt <n>`.
 The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
 `artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`) for both.
 They are the composition package `internal/launch`, whose [doc comments](../internal/launch/launch.go) own the API contract.
 
-With those identity flags, `artisan run --adapter fake --prompt <file> --workdir <dir>` runs an attempt the store already records as running; it does not create or begin a store attempt.
+With those identity flags, `artisan start --adapter fake --prompt <file> --workdir <dir>` runs an attempt the store already records as running; it does not create or begin a store attempt.
 
 Before taking ownership, it validates the command and endpoint path, creates the attempt directory and containment unit, and constructs the launcher.
 It then acquires the attempt lock, waiting at most five seconds or until the caller's context ends, and holds it across the `outcome.json` check and ownership acquisition.

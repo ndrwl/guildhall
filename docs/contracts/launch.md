@@ -2,7 +2,7 @@
 
 ## Contract
 
-The composition package behind `artisan run`, `stop`, `status` and `resume` ([commands](../artisan.md#commands)); its [doc comments](../../internal/launch/launch.go) own the API contract.
+The composition package behind `artisan start`, `stop`, `status` and `resume` ([commands](../artisan.md#commands)); its [doc comments](../../internal/launch/launch.go) own the API contract.
 `Attempt` names an owned attempt by store, state directory and key, with its directory, adapter identity and `Files`.
 `Files` is the real `artisan.AttemptFiles`: the adapter's identity-bound, version-checked result and its `.cancelled` sidecar; a missing or invalid result is not valid, an unreadable one is an error, and a late result is still seen while the marker is present.
 Result reads use `atomicfile.Open` and its [bounded publication-race retry](atomicfile.md); missing and invalid results retain the classifications above.
@@ -14,7 +14,7 @@ Worker startup errors, including containment persistence errors, remain in `Run`
 `Stop` follows the [command's termination-evidence rules](../artisan.md#commands), returning `ErrNotStopped` when termination is unproven.
 `Status` is `reconcile.Classify` over the attempt's files and ownership record.
 `Run` treats an attempt the interpreter's result intake already finished with the same outcome as a replay; another outcome keeps the store's and is returned as an error.
-`Process` is the real `interp.Launcher` ([mock agent](../mock-agent.md#the-launch-seam)): `Launch` refuses a spec outside its manifest's attempt layout or naming another adapter than `fake`, runs `guildhall artisan run` for the attempt as a detached process (its own session on Unix, its own process group on Windows) logging to `LogFile`, and returns once that process owns the attempt with its endpoint recorded; `Stop` addresses only the spawned child's captured PID and process token through its recorded endpoint, waits for that process to exit, and refuses a handle it did not return.
+`Process` is the real `interp.Launcher` ([mock agent](../mock-agent.md#the-launch-seam)): `Launch` refuses a spec outside its manifest's attempt layout or naming another adapter than `fake`, runs `guildhall artisan start` for the attempt as a detached process (its own session on Unix, its own process group on Windows) logging to `LogFile`, and returns once that process owns the attempt with its endpoint recorded; `Stop` addresses only the spawned child's captured PID and process token through its recorded endpoint, waits for that process to exit, and refuses a handle it did not return.
 Failed-start cleanup follows the same identity boundary: a refused duplicate never stops the existing owner, and a stale handle never targets a replacement owner.
 
 ## Tests
@@ -38,5 +38,5 @@ See the [authorized retrospective comparison](../evidence/s7-review-retrospectiv
 `TestStopContractFakeArtisan` runs `artisantest.RunStopContract` with the fake Artisan as the worker through the fake adapter's command (F2); it was red against the fake without the P0 directives, while the cases that start no worker or need no directive (the three L15 cases, an invalid result and a decided attempt) passed.
 `process_test.go` was written red first against stub bodies: `TestProcessPassesLauncherContract` runs `interptest.RunLauncherContract` against `Process`, the test binary playing `guildhall`, and failed four of six cases (the invalid-spec and foreign-handle refusals passed against the stubs); `TestProcessLaunchFailsWhenTheLauncherExitsFirst` failed on the missing launcher log; `TestProcessRefusesASpecOutsideItsAttemptLayout` passed against the stubs, which refused everything, and pins the layout and adapter refusals.
 `intake_race_test.go` was written red first: a launcher finishing an attempt the interpreter already finished with the same outcome reported the store's refusal; with another outcome it still reports an error and keeps the store's.
-`TestArtisanRunCustody` in `internal/cli` is the launcher and store custody acceptance: a launcher process owns a fake worker while separate processes read its status, send a message, answer a decision and are refused a competing run, each within ten seconds and leaving the ownership record unchanged; a stop through the endpoint then ends it with exit status 5.
+`TestArtisanStartCustody` in `internal/cli` is the launcher and store custody acceptance: a launcher process owns a fake worker while separate processes read its status, send a message, answer a decision and are refused a competing run, each within ten seconds and leaving the ownership record unchanged; a stop through the endpoint then ends it with exit status 5.
 After the red commit the launcher gained one event: `rung-emptied` for rung 1 when the marker empties the tree before the ladder's first check, which the stop contract already required and the real files' slower marker write exposed.

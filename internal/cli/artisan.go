@@ -24,7 +24,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// Exit codes of `artisan run` beyond 0 (succeeded), 1 (error or rejected
+// Exit codes of `artisan start` beyond 0 (succeeded), 1 (error or rejected
 // result) and 2 (usage).
 const (
 	exitNoResultYet  = 3
@@ -35,7 +35,7 @@ const (
 // defaultStopTimeout bounds `artisan stop`'s wait for the stop ladder.
 const defaultStopTimeout = time.Minute
 
-// resultPoll is how often `artisan run` checks the result file.
+// resultPoll is how often `artisan start` checks the result file.
 const resultPoll = 200 * time.Millisecond
 
 // fakeArtisan runs the fake Artisan: `guildhall fake-artisan --task --attempt
@@ -57,15 +57,18 @@ func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 func (a *App) artisan(args []string) int {
 	if len(args) > 0 {
 		switch args[0] {
+		case "start":
+			return a.artisanStart(args[1:])
 		case "run":
-			return a.artisanRun(args[1:])
+			// Guildhall is pre-release, so the old name gets no alias.
+			return a.usageError("artisan run is now artisan start")
 		case "stop", "status", "resume":
 			return a.artisanOwned(args[0], args[1:])
 		case "harness":
 			return a.artisanHarness(args[1:])
 		}
 	}
-	return a.usageError("artisan: the commands are run, stop, status and resume")
+	return a.usageError("artisan: the commands are start, stop, status, resume and harness")
 }
 
 // attemptFlags name an owned attempt (docs/artisan.md#commands).
@@ -150,11 +153,11 @@ func (a *App) printJSON(v any) int {
 	return 0
 }
 
-// artisanRun launches one Artisan attempt: owned by this process as its
+// artisanStart launches one Artisan attempt: owned by this process as its
 // launcher, or with --herdr-session in a new tab of a named Herdr session,
 // waiting for its result file.
-func (a *App) artisanRun(args []string) int {
-	fl := flag.NewFlagSet("artisan run", flag.ContinueOnError)
+func (a *App) artisanStart(args []string) int {
+	fl := flag.NewFlagSet("artisan start", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var (
 		adapterName, prompt, result, workdir string
@@ -177,31 +180,31 @@ func (a *App) artisanRun(args []string) int {
 	fl.StringVar(&label, "tab-label", "", "tab label")
 	fl.BoolVar(&stopOnTimeout, "stop-on-timeout", false, "stop the owned Windows worker, or request Ctrl+C on other platforms, when the wait times out")
 	if err := fl.Parse(args); err != nil {
-		return a.usageError("artisan run: " + err.Error())
+		return a.usageError("artisan start: " + err.Error())
 	}
 	id.TaskID, id.AttemptID = owned.task, owned.attempt
 	switch {
 	case fl.NArg() > 0:
-		return a.usageError(fmt.Sprintf("artisan run: unexpected argument %q", fl.Arg(0)))
+		return a.usageError(fmt.Sprintf("artisan start: unexpected argument %q", fl.Arg(0)))
 	case adapterName != "fake":
-		return a.usageError(fmt.Sprintf("artisan run: --adapter %q: the only adapter is fake", adapterName))
+		return a.usageError(fmt.Sprintf("artisan start: --adapter %q: the only adapter is fake", adapterName))
 	case timeout < 0:
-		return a.usageError("artisan run: --timeout must not be negative")
+		return a.usageError("artisan start: --timeout must not be negative")
 	case session == "":
 		if result != "" || workspace != "" || len(herdrExec) > 0 || label != "" || stopOnTimeout {
-			return a.usageError("artisan run: --result, --herdr-workspace, --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
+			return a.usageError("artisan start: --result, --herdr-workspace, --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
 		}
 		at, err := owned.parse()
 		if err != nil || prompt == "" || workdir == "" {
-			return a.usageError(fmt.Sprintf("artisan run: --prompt and --workdir are required: %v", err))
+			return a.usageError(fmt.Sprintf("artisan start: --prompt and --workdir are required: %v", err))
 		}
 		return a.runOwned(at, prompt, workdir, timeout)
 	case owned.store != "" || owned.state != "" || owned.repository != "" || owned.step != "":
-		return a.usageError("artisan run: --store, --state, --repository and --step do not apply in a Herdr tab")
+		return a.usageError("artisan start: --store, --state, --repository and --step do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
-		return a.usageError("artisan run: --task, --attempt, --prompt, --result and --workdir are required")
+		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):
-		return a.usageError("artisan run: --herdr-session and --herdr-workspace go together")
+		return a.usageError("artisan start: --herdr-session and --herdr-workspace go together")
 	case timeout == 0:
 		timeout = 30 * time.Minute
 	}

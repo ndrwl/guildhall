@@ -106,7 +106,7 @@ func TestInterpreterFinishRace(t *testing.T) {
 	}
 }
 
-// TestLauncherRecordedOutcome: the owned launcher (`artisan run`) records an attempt's store outcome when it
+// TestLauncherRecordedOutcome: the owned launcher (`artisan start`) records an attempt's store outcome when it
 // decides it, which may be before or after the result's intake. Either order records the outputs once and
 // advances the same way; a stopped or failed outcome the launcher recorded stands over a succeeded result.
 func TestLauncherRecordedOutcome(t *testing.T) {

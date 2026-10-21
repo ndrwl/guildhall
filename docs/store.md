@@ -81,7 +81,7 @@ The ownership record holds the current launcher identity; the receipt holds the 
   `ProbeLauncher` over the native identity probe is the conservative policy: it refuses with `ErrOwnerUnknown` whenever containment is recorded, without consulting the identity probe, because launcher exit alone cannot establish absence of contained survivors.
   Without containment it checks the recorded launcher identity, so a reused PID with a different creation token counts as exited.
   Recovery of recorded containment requires an explicit containment-aware probe proving both launcher exit and absence of survivors; it reports surviving members as live or unknown, never as exited.
-  `artisan run` passes `launch.ProbeOwner`, that containment-aware probe: alive while the launcher lives, gone once it is gone and `artisan.Contained` proves its unit empty.
+  `artisan start` passes `launch.ProbeOwner`, that containment-aware probe: alive while the launcher lives, gone once it is gone and `artisan.Contained` proves its unit empty.
 - Both record the owner as `starting`.
   `UpdateOwnership` then lets the same launcher identity record its containment unit, its endpoint and `running`; another launcher's update is refused with `ErrOwnerLive`, and `running` never returns to `starting`.
   Recovery evidence is monotonic: once the record holds a containment or an endpoint, every later update must carry an equal value; an update that clears or changes either is refused with `ErrInvalid` and writes nothing, so a stale or partial progress write cannot turn a contained attempt into one `ProbeLauncher` lets be taken over.

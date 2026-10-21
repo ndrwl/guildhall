@@ -17,7 +17,7 @@ import (
 )
 
 // guildhallEnv makes the test binary run the guildhall command line, so
-// Process starts a real `guildhall artisan run` process.
+// Process starts a real `guildhall artisan start` process.
 const guildhallEnv = "GUILDHALL_LAUNCH_TEST_GUILDHALL"
 
 // instructions are the fake Artisan directives that produce each outcome.
@@ -153,7 +153,7 @@ func TestProcessDuplicateLeavesOwnerRunning(t *testing.T) {
 func TestProcessLaunchFailsWhenTheLauncherExitsFirst(t *testing.T) {
 	p := newProcess(t)
 	spec := prepared(t, p, fixtureSpec(t, ""))
-	// The store records no such attempt, so `artisan run` refuses ownership and exits.
+	// The store records no such attempt, so `artisan start` refuses ownership and exits.
 	p.Store = filepath.Join(t.TempDir(), "other.store")
 	s, err := store.Open(p.Store, store.Options{})
 	if err != nil {
