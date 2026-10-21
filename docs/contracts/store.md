@@ -8,7 +8,7 @@ The ownership record's `Containment` is a recovery description of every Artisan 
 
 The [attempt ownership contract](../store.md#attempt-ownership) defines the default probe's containment refusal and the explicit containment-aware recovery path.
 
-`PutHeartbeat` records fixture heartbeat evidence for a running attempt: positive increasing sequence, nonzero time and last-output time, last output no later than heartbeat time, and nonblank bounded worker state. Missing attempts return `ErrNotFound`; completed attempts and non-increasing sequence return `ErrInvalid`. Mutation replay returns its receipt unchanged. `Heartbeat` reads the latest evidence, returning `ErrNotFound` if absent. The interpreter only reads it; launcher L6 will own production writes.
+`PutHeartbeat` and `Heartbeat` follow the [attempt heartbeat contract](../store.md#attempt-heartbeats), including validation, replay and launcher ownership.
 
 ## Tests
 
@@ -21,4 +21,8 @@ The containment record tests were written red first against a stubbed `Recoverab
 `TestTakeOwnershipAfterProvenExit` recorded a process group by its group id as a name; that expectation was wrong under this contract, and the test now records the group by its worker identity.
 `TestTakeOwnershipPreservesContainmentAfterLauncherExit` pins refusal and intact persisted evidence for every containment kind with a dead launcher and a surviving worker, through both nil and explicit `ProbeLauncher` probes, followed by explicit recovery after worker exit.
 `TestProbeLauncherAgainstRealProcesses` pins the scratch launcher's owner cases (a live owner refused; a reused PID with another token taken over).
-The heartbeat case of `interptest.RunRecordsContract` runs against the real store and the double. Tests were written before implementation, but no failure was observed then. On 2026-10-21, after implementation was written, temporarily stubbing both heartbeat reads to return `ErrNotFound` made `TestRecordsContract/{store,double}/heartbeat` fail when reading persisted evidence (`record not found`) and `TestWorkerStalled/{double,store}` fail with `stalls = 0, want 1`. Both implementations were restored for focused verification. [Captured runs](../evidence/heartbeat-2026-10-21.md) are post-implementation failure evidence, not historical red-first evidence.
+The heartbeat case of `interptest.RunRecordsContract` runs against the real store and the double.
+Tests were written before implementation, but no failure was observed then.
+On 2026-10-21, after implementation was written, temporarily stubbing both heartbeat reads to return `ErrNotFound` made `TestRecordsContract/{store,double}/heartbeat` fail when reading persisted evidence (`record not found`) and `TestWorkerStalled/{double,store}` fail with `stalls = 0, want 1`.
+Both implementations were restored for focused verification.
+[Captured runs](../evidence/heartbeat-2026-10-21.md) are post-implementation failure evidence, not historical red-first evidence.

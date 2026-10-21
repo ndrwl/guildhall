@@ -26,11 +26,18 @@ The engine persists that revision, the subject, and (for code review) the accept
 
 ## Worker-stalled observations
 
-Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; zero disables them. `Engine.Now` supplies the clock in tests and defaults to wall time. When an advance reaches a launched, unfinished attempt with no result, a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message. Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again. Attempts, their records and waits are unchanged. Missing or stale heartbeats emit nothing; stale-heartbeat reconciliation is later work.
+Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; nonpositive values disable them.
+`Engine.Now` supplies the clock in tests and defaults to wall time.
+When an advance reaches a launched, unfinished attempt with no result, a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
+Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
+Attempts, their records and waits are unchanged.
+Missing or stale heartbeats emit nothing; stale-heartbeat reconciliation is later work.
 
-`Records.Heartbeat` is a narrow read implemented by the store and double. `PutHeartbeat` supplies fixtures here; launcher L6 will own production heartbeats about every five seconds. The tests were written before implementation but were not observed failing then. On 2026-10-21, after implementation was written, both heartbeat reads were temporarily stubbed to return `ErrNotFound`. `TestWorkerStalled/{double,store}` failed with `stalls = 0, want 1`; `TestRecordsContract/{store,double}/heartbeat` failed when reading persisted evidence (`record not found`). The implementations were restored for focused verification; [captured runs](evidence/heartbeat-2026-10-21.md) record this post-implementation check, not historical red-first evidence.
-
-Review starts resume an existing immutable binding before creating extras; launch and contest processing both consume that binding. Every review outcome, including loop-exit acceptance, projects findings and dispositions. Dispute questions are bounded to the store text limit, retaining compact finding/rule/move details and references to persisted outcomes and ruling records for complete evidence; very large questions abbreviate the remaining details.
+`Records.Heartbeat` is a narrow read implemented by the store and double; see [attempt heartbeats](store.md#attempt-heartbeats) for fixture writes and launcher ownership.
+The tests were written before implementation but were not observed failing then.
+On 2026-10-21, after implementation was written, both heartbeat reads were temporarily stubbed to return `ErrNotFound`.
+`TestWorkerStalled/{double,store}` failed with `stalls = 0, want 1`; `TestRecordsContract/{store,double}/heartbeat` failed when reading persisted evidence (`record not found`).
+The implementations were restored for focused verification; [captured runs](evidence/heartbeat-2026-10-21.md) record this post-implementation check, not historical red-first evidence.
 
 ## Events
 
@@ -66,7 +73,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | `document-review` | `review` | The `subject` input document's digest |
 | `review` | `review` | The code head on the `head` input |
 | `deliver` | `merge` | The code head on the `head` input |
-| loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` |
+| loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
 
@@ -101,16 +108,19 @@ When an attempt's review outcome arrives, it is refused with `ErrOutcome`, recor
 
 ### Director rulings
 
-A review step's attempt is given the [rulings](tasks.md#director-rulings) recorded on its previous outcome before it started.
+A review step's attempt is given the [rulings](tasks.md#director-rulings) captured in its recorded `rulings` input on its previous outcome.
+Review starts resume an existing immutable binding before creating extras; launch and contest processing both consume that binding, so later rulings cannot enter a replayed attempt.
 When its outcome keeps a ruled finding `still-open`, the attempt contests that ruling: the engine records it once, before the attempt is finished, naming the attempt.
-A contested ruling on a rule-cited finding of a blocking outcome is a dispute: the engine opens that round's loop exit `<step>-x<round>`, even within `max`, with a question quoting each disputed finding, the Director's ruling and the head or document, and neither the loop's target nor the step runs until it is answered.
+A contested ruling on a rule-cited finding of a blocking outcome is a dispute: the engine opens that round's loop exit `<step>-x<round>`, even within `max`, and neither the loop's target nor the step runs until it is answered.
+The question identifies the head or document and includes compact finding/rule/move details and references to persisted outcomes and ruling records for complete evidence.
+Questions are bounded to the store text limit; long fields and, for very large questions, remaining details are abbreviated.
 `continue` upholds the finding and the loop goes on, with one more round allowed; `accept` and `reject` are as at any loop exit.
 A finding the attempt withdraws or resolves leaves its ruling uncontested.
 
 ### Stall signals
 
 When a review round within its allowed loop count (`max` plus answered `continue` exits) requests changes again, the engine compares its outcome with the previous one and sends the Director message `<repo>.<task>.stall.<step>-<n>`, type `stall`, naming every signal found: the head (or document) is unchanged, no finding was resolved or withdrawn, or a finding is still open for two rounds (report §5.3).
-A stall is information only: it never changes the loop, and only `max` asks the Guildmaster.
+A stall is information only: it never changes the loop or itself asks the Guildmaster; loop exits follow `max` or a [dispute](#director-rulings).
 
 ## Review gate
 
@@ -125,6 +135,7 @@ Output reads are rooted in the working directory: file and parent-directory syml
 All outputs, including supplemental ones, are read and checked before any are copied or recorded.
 The first output is the step's output port, named `<step>-<n>-<port>`; later outputs add `-<index>`, from 2.
 A code-head output must hold a 40 or 64 lowercase hex object id, and a review outcome must parse, or nothing is recorded.
+Every review outcome, including human review and loop-exit acceptance, projects findings and dispositions in its document reference for inspection.
 An input `step.port` resolves to that port's document of the latest round, and its file is checked against the recorded digest before it is used.
 The working directory is `<state>/<repo>/<task>/work` until worktree custody is defined.
 

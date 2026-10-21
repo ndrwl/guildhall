@@ -106,6 +106,7 @@ The Director may rule on one finding of a review outcome document instead of wai
 - `duplicate`: the finding repeats another one;
 - `defer`: the finding moves to a follow-up task; only a finding that cites no rule may be deferred.
 
-A finding is ruled on once per document; a second ruling, an unknown document or finding, a blank reason, an unknown move, deferring a rule-cited finding or a task that is not open is refused with exit 1 and writes nothing.
+A finding is ruled on once per document; a conflicting retry, an unknown document or finding, a whitespace-only reason, an unknown move, deferring a rule-cited finding or a task that is not open is refused with exit 1 and writes nothing.
+An omitted or empty required flag, including `--reason`, is a usage error (exit 2).
 A ruling never resolves or withdraws a finding and never changes a verdict.
-The step's next review attempt is given the rulings on its previous outcome, and may contest each once by keeping the finding open; a contested rule-cited blocker goes to the Guildmaster ([interpreter](interpreter.md#director-rulings)).
+The [interpreter's Director-ruling contract](interpreter.md#director-rulings) defines when rulings enter an attempt's immutable inputs, how they are contested, and when disputes reach the Guildmaster.
