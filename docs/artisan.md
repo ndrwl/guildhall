@@ -270,8 +270,10 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 - The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live.
   Beats continue during result grace and cooperative supervision, but pause while the stop ladder waits on a signal rung.
 - A failed write is logged as `heartbeat-failed` in `events.jsonl` and retried on the next beat; it never ends the attempt.
-- `WriteHeartbeat` refuses a heartbeat that breaks these rules with `ErrInvalidHeartbeat` and writes nothing.
+- `WriteHeartbeat` validates nonempty repository, task and step names, a positive attempt and sequence, nonzero times with `last_output_at` not after `time`, and the worker-state bound above; invalid values return `ErrInvalidHeartbeat` without writing.
+  It sets the schema and replaces the file without reading the previous beat; the launcher is responsible for increasing the sequence.
 - `ReadHeartbeat` decodes the file with [`strictjson`](contracts/strictjson.md) and never guesses: no file is `ErrNoHeartbeat`, a newer schema matches `strictjson.ErrNewerSchema`, and an unversioned, malformed or rule-breaking file is `ErrInvalidHeartbeat`.
+  Other filesystem read failures are returned unchanged.
 
 ## Reconcile
 

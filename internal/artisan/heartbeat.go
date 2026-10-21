@@ -103,9 +103,8 @@ func WriteHeartbeat(dir string, h Heartbeat) error {
 	return replaceJSON(filepath.Join(dir, HeartbeatFile), h)
 }
 
-// ReadHeartbeat reads HeartbeatFile in the attempt directory dir. A missing
-// file is ErrNoHeartbeat, a newer schema matches strictjson.ErrNewerSchema,
-// and anything else it cannot accept is ErrInvalidHeartbeat.
+// ReadHeartbeat reads HeartbeatFile in the attempt directory dir.
+// See docs/artisan.md#heartbeat for validation and error semantics.
 func ReadHeartbeat(dir string) (Heartbeat, error) {
 	b, err := os.ReadFile(filepath.Join(dir, HeartbeatFile))
 	if errors.Is(err, fs.ErrNotExist) {
