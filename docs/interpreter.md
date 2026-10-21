@@ -1,7 +1,7 @@
 # Interpreter
 
 `internal/interp` advances a task through the workflow revision it bound when it was created.
-`interp.Engine.Advance(ctx, event)` is deterministic: it reads the task's store records, never a prompt or the Director's say-so, and makes no model call.
+`interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
 It follows `changes_requested` loop rules with their `max`, asks the Guildmaster at a loop's exit and checks the review gate before `deliver`; the checks gate, `publish`, `validate`, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
 Nothing on the command line calls the engine yet: result intake, launch and the watcher are later work.
 
@@ -131,11 +131,12 @@ A blocking result's stall message is sent before its attempt is finished, and a 
 ### Attempt preparation
 
 A missing `launched.json` does not prove that no worker holds the attempt's files, so an attempt's preparation is published once and never replaced ([decision](decisions/immutable-attempt-preparation.md)).
-A fresh attempt is rendered into `<step>-<n>/prompt.partial`, its manifest is written there as `manifest.json`, and the directory is renamed to `<step>-<n>/prompt` in one step; `prompt/` therefore either does not exist or holds a complete preparation.
+A fresh attempt is rendered into `<step>-<n>/prompt.partial`, its manifest is written there as `manifest.json`, and the directory is renamed to `<step>-<n>/prompt` before launch.
+Replay validates any published directory rather than relying on rename atomicity or crash durability across platforms.
 No launch is given a path inside `prompt.partial`, so a leftover one from a crash is removed and rendered again.
 A replay that finds `prompt/` launches from it unchanged, with the manifest it holds, after checking that:
 
-- `manifest.json` is a prompt manifest, decoded strictly, naming this attempt's repository, task, step and attempt number;
+- `manifest.json` is a prompt manifest with no unknown fields or trailing JSON values, naming this attempt's repository, task, step, kind, kind version and attempt number;
 - its inputs are exactly the attempt's recorded binding, by port, path and digest;
 - `prompt.md`, every input copy and every skill file match their manifest digests, each skill's tree digest matches its files, and `prompt/` holds no other files.
 
