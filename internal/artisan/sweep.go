@@ -71,6 +71,6 @@ func Settle(dir string, files AttemptFiles, detail string) (Outcome, error) {
 	if err := writeOnce(filepath.Join(dir, OutcomeFile), d); err != nil {
 		return Outcome{}, fmt.Errorf("artisan: write outcome: %w", err)
 	}
-	l.event("settled", map[string]any{"outcome": d})
+	l.event(eventSettled, map[string]any{"outcome": d})
 	return d, nil
 }

@@ -14,6 +14,7 @@ const (
 	eventRungSkipped
 	eventRungTimeout
 	eventRunning
+	eventSettled
 	eventSignal
 	eventSignalForwarded
 	eventStopAfterDecision
@@ -34,6 +35,7 @@ var eventNames = []eventName{
 	eventRungSkipped,
 	eventRungTimeout,
 	eventRunning,
+	eventSettled,
 	eventSignal,
 	eventSignalForwarded,
 	eventStopAfterDecision,
@@ -66,6 +68,8 @@ func (n eventName) String() string {
 		return "rung-timeout"
 	case eventRunning:
 		return "running"
+	case eventSettled:
+		return "settled"
 	case eventSignal:
 		return "signal"
 	case eventSignalForwarded:
