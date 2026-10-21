@@ -1,7 +1,7 @@
 // Package launch composes one owned Artisan attempt from the adapter's files,
 // the containment unit and stop ladder of artisan, the Director store's
 // ownership record and reconcile's classification (docs/artisan.md#commands).
-// It is what `guildhall artisan run`, `stop` and `status` call.
+// It is what `guildhall artisan run`, `stop`, `status` and `resume` call.
 //
 // Run owns and runs one attempt the store already records as running:
 //
@@ -217,8 +217,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	}
 	k := a.Key
 	own := store.Ownership{Repository: k.Repository, TaskID: k.TaskID, Step: k.Step, Attempt: k.Attempt, LauncherIdentity: store.ProcessIdentity(self), State: store.OwnerStarting}
-	sum := sha256.Sum256([]byte(k.String() + "\n" + strconv.Itoa(self.PID) + "\n" + self.Token))
-	tag := hex.EncodeToString(sum[:16])
+	tag := attemptTag(k, self)
 	mutation := func(op string) string { return "launch-" + op + ":" + tag }
 	path, err := artisan.EndpointPath(a.StateDir, k)
 	if err != nil {
@@ -299,29 +298,32 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	return finish(outcome, runErr)
 }
 
+// attemptTag names attempt k under launcher: a stable hex digest of both,
+// for mutation ids and the unit's name.
+func attemptTag(k artisan.AttemptKey, launcher artisan.Identity) string {
+	sum := sha256.Sum256([]byte(k.String() + "\n" + strconv.Itoa(launcher.PID) + "\n" + launcher.Token))
+	return hex.EncodeToString(sum[:16])
+}
+
 // ProbeOwner is the containment-aware take-over probe: alive while the
 // recorded launcher identity lives, and gone only when it is gone and its
 // recorded unit is proven empty by artisan.Contained; missing containment,
 // survivors, or a unit that cannot be checked, are unverified.
 func ProbeOwner(o store.Ownership) (store.Liveness, error) {
-	lv, err := artisan.Probe(artisan.Identity(o.LauncherIdentity))
+	w := reconcile.ProbeOwner(o)
 	switch {
-	case lv == artisan.Alive:
-		return store.ProbeAlive, err
-	case lv != artisan.Gone || err != nil:
-		return store.ProbeUnverified, err
-	case o.Containment == (store.Containment{}):
-		return store.ProbeUnverified, nil
+	case w.Launcher == artisan.Alive:
+		return store.ProbeAlive, w.ProbeErr
+	case w.Gone():
+		return store.ProbeGone, nil
+	case w.ProbeErr != nil:
+		return store.ProbeUnverified, w.ProbeErr
+	case w.UnitErr != nil:
+		return store.ProbeUnverified, w.UnitErr
+	case len(w.Survivors) > 0:
+		return store.ProbeUnverified, fmt.Errorf("%d contained processes survive", len(w.Survivors))
 	}
-	c := o.Containment
-	left, err := artisan.Contained(artisan.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}, artisan.Identity(c.Worker))
-	switch {
-	case err != nil:
-		return store.ProbeUnverified, err
-	case len(left) > 0:
-		return store.ProbeUnverified, fmt.Errorf("%d contained processes survive", len(left))
-	}
-	return store.ProbeGone, nil
+	return store.ProbeUnverified, nil
 }
 
 // recordingUnit records the containment once the unit reports the worker,

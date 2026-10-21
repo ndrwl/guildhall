@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +66,30 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	}, nil
 }
 
+// Roles a fake Artisan process plays.
+const (
+	RoleWorker     = "worker"
+	RoleGrandchild = "grandchild"
+)
+
+// Main runs `guildhall fake-artisan` with args, the arguments after the
+// subcommand, and returns its exit status: 0 when Run succeeds, 1 when it
+// fails and 2 for arguments ParseArgs refuses. stdin is the interactive
+// directive's input; Run handles interrupts itself.
+func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	a, err := ParseArgs(args)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guildhall: fake-artisan: %v\n", err)
+		return 2
+	}
+	a.Stdin = stdin
+	if err := Run(context.Background(), a, stdout, Sleep); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guildhall: fake-artisan: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 // Args are the fake Artisan's command-line arguments.
 type Args struct {
 	adapter.Identity
@@ -71,6 +97,11 @@ type Args struct {
 	ResultFile     string
 	ControlAddress string
 	ControlToken   string
+	// Role is "worker", the Artisan the adapter starts, or "grandchild", a
+	// process the worker starts for the grandchildren directive.
+	Role string
+	// Stdin is what the interactive directive echoes; nil reads nothing.
+	Stdin io.Reader
 }
 
 // ParseArgs parses `--task --attempt --prompt --result`, all required.
@@ -84,6 +115,7 @@ func ParseArgs(argv []string) (Args, error) {
 	fs.StringVar(&a.ResultFile, "result", "", "result file")
 	fs.StringVar(&a.ControlAddress, "worker-control", "", "attempt owner loopback address")
 	fs.StringVar(&a.ControlToken, "worker-token", "", "attempt ownership token")
+	fs.StringVar(&a.Role, "role", RoleWorker, "worker or grandchild")
 	if err := fs.Parse(argv); err != nil {
 		return Args{}, err
 	}
@@ -92,6 +124,9 @@ func ParseArgs(argv []string) (Args, error) {
 	}
 	if (a.ControlAddress == "") != (a.ControlToken == "") {
 		return Args{}, errors.New("--worker-control and --worker-token go together")
+	}
+	if a.Role != RoleWorker && a.Role != RoleGrandchild {
+		return Args{}, fmt.Errorf("--role %q must be %s or %s", a.Role, RoleWorker, RoleGrandchild)
 	}
 	if a.PromptFile == "" || a.ResultFile == "" {
 		return Args{}, errors.New("--task, --attempt, --prompt and --result are required")
@@ -102,17 +137,44 @@ func ParseArgs(argv []string) (Args, error) {
 	return a, nil
 }
 
+// MaxGrandchildren bounds the grandchildren directive.
+const MaxGrandchildren = 8
+
+// MaxLifetime bounds the lifetime directive; DefaultLifetime is the lifetime
+// of a prompt that sets none.
+const (
+	MaxLifetime     = time.Hour
+	DefaultLifetime = 15 * time.Minute
+)
+
+// When the result is written: after the delay, only once the cancel marker
+// is present (a late result), or never.
+const (
+	resultDelay       = "delay"
+	resultAfterCancel = "after-cancel"
+	resultNever       = "never"
+)
+
 // directives is the fake behaviour a prompt selects.
 type directives struct {
 	outcome adapter.Status
 	fault   string
 	delay   time.Duration
+
+	grandchildren   int
+	native          bool
+	ignoreCancel    bool
+	ignoreInterrupt bool
+	interactive     bool
+	result          string
+	lifetime        time.Duration
+	inventory       string
 }
 
 var faults = map[string]bool{"none": true, "no-result": true, "malformed": true, "wrong-identity": true, "exit-error": true}
 
 func parseDirectives(prompt []byte) (directives, error) {
-	d := directives{outcome: adapter.StatusSucceeded, fault: "none"}
+	d := directives{outcome: adapter.StatusSucceeded, fault: "none", result: resultDelay, lifetime: DefaultLifetime}
 	seen := map[string]bool{}
 	sc := bufio.NewScanner(bytes.NewReader(prompt))
 	sc.Buffer(make([]byte, 0, 64*1024), MaxPromptBytes)
@@ -146,6 +208,46 @@ func parseDirectives(prompt []byte) (directives, error) {
 				return d, fmt.Errorf("delay %q must be a duration from 0s to %s", value, MaxDelay)
 			}
 			d.delay = delay
+		case "grandchildren":
+			n, err := strconv.Atoi(value)
+			if err != nil || n < 0 || n > MaxGrandchildren {
+				return d, fmt.Errorf("grandchildren %q must be a number from 0 to %d", value, MaxGrandchildren)
+			}
+			d.grandchildren = n
+		case "grandchild-cmd":
+			if value != "fake" && value != "native" {
+				return d, fmt.Errorf("grandchild-cmd %q must be fake or native", value)
+			}
+			d.native = value == "native"
+		case "ignore-cancel", "ignore-interrupt", "interactive":
+			if value != "true" && value != "false" {
+				return d, fmt.Errorf("%s %q must be true or false", key, value)
+			}
+			on := value == "true"
+			switch key {
+			case "ignore-cancel":
+				d.ignoreCancel = on
+			case "ignore-interrupt":
+				d.ignoreInterrupt = on
+			default:
+				d.interactive = on
+			}
+		case "result":
+			if value != resultDelay && value != resultAfterCancel && value != resultNever {
+				return d, fmt.Errorf("result %q must be delay, after-cancel or never", value)
+			}
+			d.result = value
+		case "lifetime":
+			l, err := time.ParseDuration(value)
+			if err != nil || l <= 0 || l > MaxLifetime {
+				return d, fmt.Errorf("lifetime %q must be a positive duration up to %s", value, MaxLifetime)
+			}
+			d.lifetime = l
+		case "inventory":
+			if !filepath.IsAbs(value) {
+				return d, fmt.Errorf("inventory %q must be an absolute directory", value)
+			}
+			d.inventory = value
 		default:
 			return d, fmt.Errorf("unknown directive %q", key)
 		}
@@ -167,6 +269,14 @@ func Sleep(ctx context.Context, d time.Duration) error {
 
 // Run is the fake Artisan: it reads the prompt, applies its directives, and
 // writes the result file. Progress lines go to out so a Herdr tab shows them.
+//
+// Run handles interrupts itself: one ends the work without a result unless
+// the prompt says ignore-interrupt. Unless it says ignore-cancel, the
+// attempt's cancel marker (adapter.Cancelled) ends the work without a result;
+// with result=after-cancel the marker instead makes it publish a late result.
+// With grandchildren it starts that many processes, each the fake in role
+// grandchild or a native command, and with inventory every fake process
+// records its identity there. The lifetime bounds every process of the tree.
 func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context, time.Duration) error) error {
 	if a.ControlAddress != "" {
 		if err := adapter.JoinOwnedWorker(ctx, a.ControlAddress, a.ControlToken, a.Identity, a.ResultFile); err != nil {
@@ -190,24 +300,47 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 	if err != nil {
 		return fmt.Errorf("prompt %s: %w", a.PromptFile, err)
 	}
-	sum := sha256.Sum256(prompt)
+	if a.Role == RoleGrandchild {
+		return grandchild(ctx, a, d, sleep)
+	}
 	// Progress lines are for a watching human; failing to show them does not
 	// change the result.
 	say := func(format string, args ...any) { _, _ = fmt.Fprintf(out, "fake artisan: "+format+"\n", args...) }
 	say("task %s attempt %s", a.TaskID, a.AttemptID)
 	say("read prompt %s (%d bytes)", a.PromptFile, len(prompt))
-	if d.delay > 0 {
-		say("working for %s", d.delay)
-		if err := sleep(ctx, d.delay); err != nil {
-			return err
+	ctx, stop := handleInterrupt(ctx, d)
+	defer stop()
+	if err := startTree(a, d); err != nil {
+		return err
+	}
+	if d.interactive && a.Stdin != nil {
+		go echo(a.Stdin, out)
+	}
+	ctx, cancel := watchMarker(ctx, a, !d.ignoreCancel || d.result == resultAfterCancel)
+	defer cancel()
+	work := d.lifetime
+	if d.result == resultDelay {
+		work = min(d.delay, d.lifetime)
+	}
+	if work > 0 {
+		say("working for %s", work)
+		if err := sleep(ctx, work); err != nil {
+			if !errors.Is(context.Cause(ctx), errMarked) {
+				return err
+			}
+			if d.result == resultAfterCancel {
+				say("cancel marker present; publishing a late result")
+				return publishLate(a, newResult(a, d, prompt))
+			}
+			say("cancel marker present; stopping without a result")
+			return nil
 		}
 	}
-	result := adapter.Result{
-		Identity: a.Identity,
-		Status:   d.outcome,
-		Summary:  fmt.Sprintf("fake artisan read %d bytes of prompt, sha256 %x", len(prompt), sum),
-		Outputs:  []adapter.Output{},
+	if d.result != resultDelay || d.delay > d.lifetime {
+		say("lifetime %s over without a result", d.lifetime)
+		return nil
 	}
+	result := newResult(a, d, prompt)
 	switch d.fault {
 	case "no-result":
 		say("exiting without a result (simulated fault)")
@@ -229,6 +362,16 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 		return ErrSimulatedExit
 	}
 	return nil
+}
+
+// newResult is the result the prompt asks for.
+func newResult(a Args, d directives, prompt []byte) adapter.Result {
+	return adapter.Result{
+		Identity: a.Identity,
+		Status:   d.outcome,
+		Summary:  fmt.Sprintf("fake artisan read %d bytes of prompt, sha256 %x", len(prompt), sha256.Sum256(prompt)),
+		Outputs:  []adapter.Output{},
+	}
 }
 
 // writeNew creates path with data, refusing to replace an existing file.

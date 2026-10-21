@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -254,10 +255,10 @@ func RunStopContract(t *testing.T, h Harness) {
 		if err := os.WriteFile(filepath.Join(c.attempt, artisan.OutcomeFile), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.l.Run(Command(c.dir, c.w), nil); !errors.Is(err, artisan.ErrDecided) {
+		if _, err := c.l.Run(c.command(), nil); !errors.Is(err, artisan.ErrDecided) {
 			t.Errorf("Run() = %v, want ErrDecided", err)
 		}
-		if _, err := c.l.Run(Command(c.dir, c.w), nil); !errors.Is(err, artisan.ErrLauncherRan) {
+		if _, err := c.l.Run(c.command(), nil); !errors.Is(err, artisan.ErrLauncherRan) {
 			t.Errorf("second Run() = %v, want ErrLauncherRan", err)
 		}
 		close(c.done)
@@ -345,8 +346,16 @@ func (c *launch) start(signals <-chan os.Signal) {
 	}
 	go func() {
 		defer close(c.done)
-		c.out, c.err = c.l.Run(Command(c.dir, c.w), signals)
+		c.out, c.err = c.l.Run(c.command(), signals)
 	}()
+}
+
+// command is the case's worker: the harness's Worker, or the test binary.
+func (c *launch) command() *exec.Cmd {
+	if c.h.Worker != nil {
+		return c.h.Worker(c.t, c.dir, c.w, c.files)
+	}
+	return Command(c.dir, c.w)
 }
 
 // stop calls Stop and checks it answers phase "ended" with Run's error.

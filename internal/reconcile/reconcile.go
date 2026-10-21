@@ -182,28 +182,24 @@ func classifyOwner(ctx context.Context, a Attempt, o Options) (c Classification)
 	case refused != nil:
 		defer func() { c.Reason += "; heartbeat refused: " + refused.Error() }()
 	}
-	lv, perr := artisan.Probe(artisan.Identity(own.LauncherIdentity))
-	c.Launcher = lv.String()
-	switch lv {
+	w := ProbeOwner(own)
+	c.Launcher = w.Launcher.String()
+	switch w.Launcher {
 	case artisan.Gone:
-		if own.Containment == (store.Containment{}) {
-			c.State, c.Reason = Exited, "launcher identity gone; no containment recorded"
-			return c
-		}
-		cn := own.Containment
-		left, err := artisan.Contained(artisan.Containment{Kind: cn.Kind, Name: cn.Name, Reason: cn.Reason}, artisan.Identity(cn.Worker))
 		switch {
-		case err != nil:
-			c.Reason = "launcher identity gone; contained processes cannot be checked: " + err.Error()
-		case len(left) > 0:
-			c.Reason, c.Survivors = fmt.Sprintf("launcher identity gone; %d contained processes survive", len(left)), left
+		case !w.Recorded:
+			c.State, c.Reason = Exited, "launcher identity gone; no containment recorded"
+		case w.UnitErr != nil:
+			c.Reason = "launcher identity gone; contained processes cannot be checked: " + w.UnitErr.Error()
+		case len(w.Survivors) > 0:
+			c.Reason, c.Survivors = fmt.Sprintf("launcher identity gone; %d contained processes survive", len(w.Survivors)), w.Survivors
 		default:
 			c.State, c.Reason = Exited, "launcher identity gone; its unit is empty"
 		}
 		return c
 	case artisan.Alive:
 	default:
-		c.Reason = fmt.Sprintf("launcher identity unverified: %v", perr)
+		c.Reason = fmt.Sprintf("launcher identity unverified: %v", w.ProbeErr)
 		return c
 	}
 	stale := o.StaleAfter

@@ -7,6 +7,6 @@ Survivors after the last rung leave the store attempt running and owned, because
 `stop` only asks the owner through its endpoint and otherwise requires verified termination; classification alone is not proof.
 Missing containment prevents takeover even after the launcher exits.
 This PR is L7 part 1: `internal/launch`, F2 real AttemptFiles, F3 attemptOutcome, `artisan run/stop/status`, and the P6 custody test.
-L7 part 2 holds `artisan resume` with `artisan.Sweep` (signalling only after the owner is proven exited), `resume_argv` registration through `pane report-agent --source guildhall`, the fake Artisan's P0 directives, the `artisan harness` subcommand, the Tier 2 lab runs, and retirement of the Windows-only worker stop path after the native Windows acceptance case passes.
-The direct-child mode of `artisan run` is replaced by the owned mode; the Herdr tab mode stays until L7 part 2 runs the launcher in the pane.
+The [resume decision](artisan-resume.md) owns the subsequent L7 scope and deferred production registration.
+The direct-child mode of `artisan run` is replaced by the owned mode; the Herdr tab mode remains as described in [running an attempt](../adapters.md#running-an-attempt).
 `run` exits 0 for a succeeded attempt, 4 for a failed one and 5 for a stopped one, from the store outcome.

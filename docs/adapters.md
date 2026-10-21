@@ -79,6 +79,16 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 | `fault=malformed` | Write a truncated result file |
 | `fault=wrong-identity` | Write a result for another attempt id |
 | `fault=exit-error` | Write a valid result, then exit with status 1 |
+| `result=delay`, `result=after-cancel` or `result=never` | When the result is written: after the delay (default), only once the cancel marker is present, as a late result published beside it, or never |
+| `lifetime=<duration>` | Every process of the fake's tree exits by then, without a result if none was written; above `0s` and up to `1h`, default `15m` |
+| `grandchildren=<n>` | The worker starts `n` processes, from 0 (default) to 8 |
+| `grandchild-cmd=fake` or `grandchild-cmd=native` | Each grandchild is the fake in role `grandchild` (default), which honours the marker and interrupts as the worker does, or a native command that knows nothing of the marker: `sleep` on Unix, `ping` on Windows, for the lifetime |
+| `ignore-cancel=true` | No fake process exits on the cancel marker; the adapter still refuses a result written after it |
+| `ignore-interrupt=true` | Every fake process handles and discards an interrupt (SIGINT, CTRL_C, CTRL_BREAK) |
+| `interactive=true` | The worker echoes each line of its standard input |
+| `inventory=<absolute dir>` | Every fake process records its identity there as `<role>-<pid>.json`, and the worker records each native grandchild |
+
+Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.
 
 ## Running an attempt
 
@@ -124,6 +134,7 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 - Before launching, `herdr status --json` must report a running server for that session, and both the client and the server must be Herdr 0.9.5 or newer.
   Guildhall never starts, stops, restarts or deletes a Herdr server or session.
 - Guildhall uses `status`, `workspace list|create`, `tab create|list|get|close` and `pane process-info|run|send-keys`, always with `--no-focus` when creating.
+- The client also supports `pane report-agent`; see [resume](artisan.md#resume) for its registration contract and production wiring status.
 - Herdr's tab creation takes no command, so Guildhall waits until the new tab's shell is the only foreground process, then types the command quoted for that shell with `pane run`.
   POSIX shells (`sh`, `bash`, `dash`, `ksh`, `zsh`) and PowerShell are supported; any other shell is refused.
   For a POSIX shell, a program named by a Windows drive path is written with `/` separators, because `dash` under Git for Windows cannot start it with `\`.

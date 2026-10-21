@@ -34,7 +34,8 @@ Commands:
                  record and list Guildmaster approvals of workflow revisions
   render <request.json>
                  render a prompt with embedded release skills first
-  artisan run    launch one Artisan attempt and wait for its result file
+  artisan run|stop|status|resume
+                 run, stop, classify and resume one owned Artisan attempt
   fake-artisan   run the test-only fake Artisan
   task new|show|list|timeline|files --store <path> ...
                  create Director tasks bound to their workflow revision, list, show and inspect them
