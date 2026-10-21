@@ -90,7 +90,7 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	}
 	k := at.Key
 	cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
-		"--repository", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
+		"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
 		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
 	cmd.Env = append(os.Environ(), p.Env...)
 	cmd.Stdout, cmd.Stderr = log, log

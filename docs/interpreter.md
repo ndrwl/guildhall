@@ -11,7 +11,7 @@ The engine consumes five narrow interfaces, declared in `internal/interp` beside
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `*store.Store` | `interptest.Records` | `interptest.RunRecordsContract` |
+| `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `messaging.StoreMailbox` | `messagingtest.Fake` | `messagingtest.RunMailboxContract` |

@@ -84,12 +84,14 @@ func (a *App) artisan(args []string) int {
 }
 
 // attemptFlags name an owned attempt (docs/artisan.md#commands).
-type attemptFlags struct{ store, state, repository, task, step, attempt string }
+type attemptFlags struct{ store, state, repo, task, step, attempt string }
 
 func (f *attemptFlags) register(fl *flag.FlagSet) {
 	fl.StringVar(&f.store, "store", "", "Director store file")
 	fl.StringVar(&f.state, "state", "", "state directory")
-	fl.StringVar(&f.repository, "repository", "", "repository id")
+	fl.StringVar(&f.repo, "repo", "", "repository id")
+	// Guildhall is pre-release, so the old spelling gets no alias.
+	fl.Func("repository", "renamed --repo", func(string) error { return errors.New("--repository is now --repo") })
 	fl.StringVar(&f.task, "task", "", "task id")
 	fl.StringVar(&f.step, "step", "", "step id")
 	fl.StringVar(&f.attempt, "attempt", "", "attempt number")
@@ -98,13 +100,13 @@ func (f *attemptFlags) register(fl *flag.FlagSet) {
 func (f attemptFlags) parse() (launch.Attempt, error) {
 	n, err := strconv.Atoi(f.attempt)
 	switch {
-	case f.store == "" || f.state == "" || f.repository == "" || f.task == "" || f.step == "":
-		return launch.Attempt{}, errors.New("--store, --state, --repository, --task, --step and --attempt are required")
+	case f.store == "" || f.state == "" || f.repo == "" || f.task == "" || f.step == "":
+		return launch.Attempt{}, errors.New("--store, --state, --repo, --task, --step and --attempt are required")
 	case err != nil || n < 1:
 		return launch.Attempt{}, fmt.Errorf("--attempt %q must be a positive attempt number", f.attempt)
 	}
 	state, err := filepath.Abs(f.state)
-	return launch.Attempt{Store: f.store, StateDir: state, Key: artisan.AttemptKey{Repository: f.repository, TaskID: f.task, Step: f.step, Attempt: n}}, err
+	return launch.Attempt{Store: f.store, StateDir: state, Key: artisan.AttemptKey{Repository: f.repo, TaskID: f.task, Step: f.step, Attempt: n}}, err
 }
 
 // artisanOwned runs `artisan stop`, `status` or `resume` and prints the
@@ -213,8 +215,8 @@ func (a *App) artisanStart(args []string) int {
 			return a.usageError(fmt.Sprintf("artisan start: --prompt and --workdir are required: %v", err))
 		}
 		return a.runOwned(at, adapterName, prompt, workdir, timeout)
-	case owned.store != "" || owned.state != "" || owned.repository != "" || owned.step != "":
-		return a.usageError("artisan start: --store, --state, --repository and --step do not apply in a Herdr tab")
+	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "":
+		return a.usageError("artisan start: --store, --state, --repo and --step do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):

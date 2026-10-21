@@ -10,6 +10,7 @@ where `<role>` is `director`, `artisan` or `steward`.
 The four lifecycle verbs are reserved at the top of each role noun, and no role uses them for anything else.
 `[runtime]` names the agent runtime, such as `claude`; it defaults to the runtime the copy's config names for that role, and a positional runtime overrides the config for that one command.
 Role-specific flags, such as the attempt identity of `artisan start`, come after these arguments.
+Flags naming the same thing spell it the same on every command: a repository is `--repo`.
 
 `start` is what makes a role session a Guildhall one: it renders the role's prompt, skills and settings, runs the preflight, records the session's identity, and opens its Herdr tab.
 A role is therefore started with `guildhall director start claude` rather than by running `claude` directly; a bare `claude` gets none of the rendered skills, settings, preflight or recorded identity, so Guildhall cannot rely on or later recover such a session.
@@ -21,7 +22,8 @@ Role-specific work stays under sub-nouns of the role or under its own top-level 
 `artisan run` is renamed `artisan start` in the command line, help, README, docs and tests.
 Guildhall is pre-release, so there is no alias: `artisan run` is a usage error, exit code 2, whose message is `artisan run is now artisan start`.
 Help lists every artisan verb, `artisan start|stop|status|resume` and the lab-only `artisan harness inventory|kill-owned|probe --lab`, and the `artisan` usage error names all five.
-Earlier decisions and evidence files that mention `artisan run` are records of their time; current command usage is documented in [Artisan commands](../artisan.md#commands).
+The attempt commands' `--repository` is renamed `--repo`, the spelling of `task new|start`, `step done` and `decide`, also with no alias: `--repository` is a usage error, exit code 2, whose message names `--repo`.
+Earlier decisions and evidence files that mention `artisan run` or the attempt commands' `--repository` are records of their time; current command usage is documented in [Artisan commands](../artisan.md#commands).
 
 This slice renames `artisan run` and pins the grammar; `director start` and `steward start` are deferred to their own later slices.
 `artisan start` still names its runtime with `--adapter fake`; the positional runtime and its config default arrive with those later slices, which follow this grammar.
