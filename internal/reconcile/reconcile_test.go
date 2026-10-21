@@ -51,6 +51,11 @@ func want(t *testing.T, c reconcile.Classification, s reconcile.State) {
 	if c.State != s {
 		t.Fatalf("state %q (%s), want %q: %+v", c.State, c.Reason, s, c)
 	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("classification: %s", b)
 }
 
 // await classifies until the state is s.
@@ -59,6 +64,7 @@ func await(t *testing.T, dir string, o *store.Ownership, s reconcile.State) reco
 	for end := time.Now().Add(deadline); ; time.Sleep(beat) {
 		c := classify(dir, o)
 		if c.State == s {
+			want(t, c, s)
 			return c
 		}
 		if time.Now().After(end) {
@@ -454,6 +460,12 @@ func TestHeartbeat(t *testing.T) {
 		}
 		if got, err := s.Heartbeat(key.Repository, key.TaskID, key.Step, 1); err != nil || !got.Time.Equal(h.Time) || !got.LastOutputAt.Equal(quiet) || got.Sequence != h.Sequence {
 			t.Errorf("stored heartbeat %+v, %v; want %+v", got, err, h)
+		} else {
+			b, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("persisted heartbeat: %s", b)
 		}
 	})
 	t.Run("a stale heartbeat while alive is stuck, refuses a relaunch and recovers", func(t *testing.T) {
@@ -473,6 +485,8 @@ func TestHeartbeat(t *testing.T) {
 		next.State = ""
 		if _, err := s.TakeOwnership("relaunch", next, store.ProbeLauncher); !errors.Is(err, store.ErrOwnerLive) {
 			t.Errorf("take-over of a stuck attempt = %v, want ErrOwnerLive", err)
+		} else {
+			t.Logf("take-over of stuck attempt refused: %v", err)
 		}
 		hold.Store(false)
 		await(t, c.dir, c.owner, reconcile.Running)

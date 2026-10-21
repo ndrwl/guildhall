@@ -12,7 +12,7 @@
 //  4. no ownership record: absent;
 //  5. the owner, by its recorded launcher identity:
 //     - gone: exited when no containment is recorded or artisan.Contained
-//     proves the recorded unit empty (a job that no longer opens is empty);
+//     proves the recorded unit empty (see artisan.Contained);
 //     unknown when contained processes survive or cannot be checked;
 //     - alive with a heartbeat older than the stale threshold: stuck,
 //     whatever the endpoint answers;

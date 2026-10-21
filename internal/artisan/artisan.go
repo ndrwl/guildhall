@@ -146,8 +146,8 @@ type Containment struct {
 // Contained lists the live processes still in the unit recorded as c, whose
 // worker Start returned as worker, looked up from outside the launcher that
 // created it, as reconcile does once that launcher is gone. A job is opened
-// by its name and a cgroup read from its directory; a job that no longer
-// opens, or a cgroup directory that no longer exists, holds nothing. A
+// by its name and a cgroup read from its directory; a job reported missing
+// by the OS, or a cgroup directory that no longer exists, holds nothing. A
 // process group is found by its leader, the worker: a live process at the
 // group id that is not worker means the group is gone and holds nothing. A
 // kind this platform does not have is an error matching errors.ErrUnsupported.

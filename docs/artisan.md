@@ -40,7 +40,7 @@ A unit holds one worker and every descendant that stays inside it.
 | `Containment()` | Which backend contains the unit, fixed at creation: its kind, the name a later sweep finds it by, and on Linux the detection reason. |
 
 `NewUnit(name)` returns an unstarted unit of this platform's backend.
-`Contained(containment, worker)` lists the live processes of a recorded unit from outside the launcher that created it, for reconciling an attempt whose launcher is gone: a job is opened by name and a cgroup read from its directory, and a job that no longer opens or a removed cgroup holds nothing; a process group is found by its leader, and a live process at the group id that is not the recorded worker means the group is gone.
+`Contained(containment, worker)` lists the live processes of a recorded unit from outside the launcher that created it, for reconciling an attempt whose launcher is gone; its [API contract](../internal/artisan/artisan.go) defines missing-unit and process-group identity handling.
 An empty list proves the unit empty; an error, including a kind the platform does not have (`errors.ErrUnsupported`), proves nothing.
 
 `Members` and the stop operations before `Start` are `ErrNotStarted`.
@@ -263,15 +263,18 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 - It is `artisan.Heartbeat`, which is also the store's heartbeat record (`store.Heartbeat` is an alias), so the record the interpreter reads for [`worker-stalled`](interpreter.md#worker-stalled-observations) has the shape the launcher writes; feeding the file to `PutHeartbeat` is the command-line slice's.
 - `sequence` increases with every write, continuing from a heartbeat an earlier launcher of the attempt left, as the store requires.
 - `worker_state` is the launcher's phase: `starting`, `running` or `stopping`.
-- `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began. A later time than the beat is reported as the beat's time.
-- The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live. Beats pause while the stop ladder waits on a signal rung or the result grace.
+- `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began.
+  A later time than the beat is reported as the beat's time.
+- The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live.
+  Beats continue during result grace and cooperative supervision, but pause while the stop ladder waits on a signal rung.
 - A failed write is logged as `heartbeat-failed` in `events.jsonl` and retried on the next beat; it never ends the attempt.
 - `ReadHeartbeat` reads the file.
 
 ## Reconcile
 
 `reconcile.Classify` classifies an owned attempt from what outlives its launcher: the attempt directory, the store's ownership record, and the live state of the identity, endpoint and containment the record names.
-Its [doc comments](../internal/reconcile/reconcile.go) own the API contract. It never signals, writes attempt state, takes over or relaunches anything; acquiring the lock may create `attempt.lock`.
+Its [doc comments](../internal/reconcile/reconcile.go) own the API contract.
+It never signals, writes attempt state, takes over or relaunches anything; acquiring the lock may create `attempt.lock`.
 
 The first rule that applies decides:
 
@@ -287,7 +290,11 @@ The first rule that applies decides:
 | 8 | Launcher identity live, endpoint answers `status` for this attempt and launcher | `running` |
 | 9 | Anything else, such as a live launcher with a silent endpoint or an unverified identity | `unknown` |
 
-`Classify` reads outcome, marker and result while holding the same exclusive `attempt.lock` as launcher decisions, using `artisan.LockAttempt`. An in-flight cancel or stop must finish publishing its marker before classification can accept a result, even when the worker publishes between the launcher's result check and marker write. Lock acquisition is bounded by the caller's context and `LockTimeout` (2 s); failure yields `unknown` with the lock error. Acquiring the lock may create its file but writes no attempt state. The lock is released before owner and endpoint checks.
+`Classify` reads outcome, marker and result while holding the same exclusive `attempt.lock` as launcher decisions, using `artisan.LockAttempt`.
+An in-flight cancel or stop must finish publishing its marker before classification can accept a result, even when the worker publishes between the launcher's result check and marker write.
+Lock acquisition is bounded by the caller's context and `LockTimeout` (2 s); failure yields `unknown` with the lock error.
+Acquiring the lock may create its file but writes no attempt state.
+The lock is released before owner and endpoint checks.
 
 The classification carries its evidence: the launcher's liveness, what the endpoint answered, the last heartbeat and its age, and any survivors.
 A heartbeat is evidence only: `stuck` is never exit and grants no relaunch, take-over or sweep, and a crashed launcher's frozen heartbeat is reported while the identity rule classifies it `exited`.
