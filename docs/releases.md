@@ -70,21 +70,34 @@ If that copy's file and newest event disagree, the shared configuration-admissio
 `bin/guildhall` is the only `guildhall` on `PATH`.
 It is a small fixed program installed with the first release and replaced only by an explicit `guildhall release install --launcher`.
 
-1. It resolves the selected copy before choosing an executable. For new work and Director commands it reads that copy's `release.pin`; for an existing task it reads the immutable version and sha256 from the task's owning store instead, using the store, repository and task arguments. It loads no effective configuration. Missing or conflicting task identity is refused, never treated as new work.
+1. It resolves the selected copy before choosing an executable.
+   For new work and Director commands it reads that copy's `release.pin`; for an existing task it reads the immutable version and sha256 from the task's owning store instead, using the store, repository and task arguments.
+   It loads no effective configuration.
+   Missing or conflicting task identity is refused, never treated as new work.
 2. If `releases/<version>/guildhall` exists and matches its `SHA256` (and, for a task, the recorded sha256), it runs it with the same arguments and standard streams and returns its exit code (on Unix by `exec`).
 3. If the pinned release is missing or damaged, it never falls back to another release: it exits non-zero and prints the version, the path it checked and the fix (`guildhall release install <version>` or, managed, a rollout).
-   Recovery dispatch is limited to `guildhall release ...` and explicit `guildhall config reload --copy <dir>`: it runs the command on the newest installed, verified release and says which. If none exists, it refuses; it never runs an unverified `.incoming/` binary.
-4. If the selected copy's `release.pin` is absent, the same recovery dispatch applies. Other non-task commands refuse, naming `guildhall release use` for standalone setup or `guildhall config reload --copy <dir>` for managed setup. Existing tasks do not depend on the current pin.
+   Recovery dispatch is limited to `guildhall release ...` and explicit `guildhall config reload --copy <dir>`: it runs the command on the newest installed, verified release and says which.
+   If none exists, it refuses; it never runs an unverified `.incoming/` binary.
+4. If the selected copy's `release.pin` is absent, the same recovery dispatch applies.
+   Other non-task commands refuse, naming `guildhall release use` for standalone setup or `guildhall config reload --copy <dir>` for managed setup.
+   Existing tasks do not depend on the current pin.
 
-Recovery `config reload` must verify that the selected copy is managed and perform the same combined-config validation, migration and mode checks, and receiving-store revision authorization as ordinary reload. An absent pin or unusable executable does not bypass those checks or require admitting current effective settings before reload can repair them. Unsupported config or store schemas and failed authorization refuse the operation without changing the pin. Only after authorization and verification of the revision's target binary may reload record `release-pin` and write its cache. Dispatch itself neither authorizes a revision nor changes a pin, and grants no fallback to task or Director execution.
+Recovery `config reload` must verify that the selected copy is managed and perform the same combined-config validation, migration and mode checks, and receiving-store revision authorization as ordinary reload.
+An absent pin or unusable executable does not bypass those checks or require admitting current effective settings before reload can repair them.
+Unsupported config or store schemas and failed authorization refuse the operation without changing the pin.
+Only after authorization and verification of the revision's target binary may reload record `release-pin` and write its cache.
+Dispatch itself neither authorizes a revision nor changes a pin, and grants no fallback to task or Director execution.
 
-The launcher replaces any inherited `GUILDHALL_RELEASE` with `GUILDHALL_RELEASE=<selected version>` for the child, including when a newer Director launches an older task; the inherited variable is never a selection input. Each release refuses to run if that variable names a different version from its own, so the launcher cannot be confused with a mislabelled directory.
-Each dispatched executable validates the selected copy's settings or task binding before acting. Copy selection is preserved in child invocations and Director restarts.
+The launcher replaces any inherited `GUILDHALL_RELEASE` with `GUILDHALL_RELEASE=<selected version>` for the child, including when a newer Director launches an older task; the inherited variable is never a selection input.
+Each release refuses to run if that variable names a different version from its own, so the launcher cannot be confused with a mislabelled directory.
+Each dispatched executable validates the selected copy's settings or task binding before acting.
+Copy selection is preserved in child invocations and Director restarts.
 
 ## Tasks keep their release
 
 `guildhall task new` records the selected copy's pinned version and its sha256 on the task, beside the configuration digest.
-Every later step of that task, including initial Artisan launches, subsequent steps and resume commands (`launch.ResumeArgv`), enters the task-aware launcher with the owning store, repository and task identity. The launcher executes `releases/<recorded version>/guildhall`, not the current pin, and replaces the child release environment as above.
+Every later step of that task, including initial Artisan launches, subsequent steps and resume commands (`launch.ResumeArgv`), enters the task-aware launcher with the owning store, repository and task identity.
+The launcher executes `releases/<recorded version>/guildhall`, not the current pin, and replaces the child release environment as above.
 Herdr's registered resume argv continues to start with the plain command `guildhall`, followed by `artisan resume` and the existing store, state, repository, task, step and attempt arguments; no executable path is registered and Herdr needs no change.
 A task whose recorded release is missing or damaged refuses to advance and raises an alert naming the version; it is never moved to another release.
 
@@ -118,7 +131,8 @@ It records a `director-reload` request event and returns at once; it never inter
 Rollback moves the pin back; it never touches an installed release or an active task.
 
 - Standalone: `guildhall release rollback` sets the pin to the previous version from the `release-pin` events, with source `rollback`.
-- Managed: the Steward rolls back by rollout of the previous `managed.toml` revision, which carries the previous `release`, followed by `config reload --copy <dir>` and `director reload --copy <dir>`. If the current pin is absent or its executable is missing or damaged, reload uses recovery dispatch, still authorizes the rolled-back revision and verifies its installed target before changing the pin; Director reload runs only after that succeeds.
+- Managed: the Steward rolls back by rollout of the previous `managed.toml` revision, which carries the previous `release`, followed by `config reload --copy <dir>` and `director reload --copy <dir>`.
+  If the current pin is absent or its executable is missing or damaged, reload uses recovery dispatch, still authorizes the rolled-back revision and verifies its installed target before changing the pin; Director reload runs only after that succeeds.
 
 The previous release is protected from pruning, so rollback never needs a download.
 
@@ -131,7 +145,8 @@ It keeps the newest three installed releases by install time and removes others 
 - it is any copy's rollback target, the previous version in that copy's `release-pin` events;
 - a running or resumable task in any copy records it, which includes every task not yet `done` or `cancelled`.
 
-Pruning refuses deletion if any inventoried copy's pin or store cannot be read or disagrees. Reference checks and deletion must be serialized with pin changes, task creation and copy registration so a new reference cannot race deletion.
+Pruning refuses deletion if any inventoried copy's pin or store cannot be read or disagrees.
+Reference checks and deletion must be serialized with pin changes, task creation and copy registration so a new reference cannot race deletion.
 So more than three releases may stay when copies or tasks still need them; retention is fixed, not configurable.
 Each removal is a `release-pruned` store event with the version, its sha256 and the reason it was eligible; a release that was kept past the limit is listed with the reason in `guildhall release status`.
 Prune removes only `releases/<version>/` directories and stale `.incoming/` copies, never the launcher, the store or `managed.toml` revisions.
