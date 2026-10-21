@@ -10,7 +10,7 @@ Everything it knows lives in one durable store per Director, so closing a termin
 
 > **Status: foundation stage.**
 > Guildhall builds and runs, but no platform or agent runtime is supported for real work yet.
-> Today you can create tasks, advance them by hand with the test-only fake adapter, answer decisions and preview Steward rollouts.
+> Today you can create tasks, advance them by hand with the test-only fake adapter or the minimal [Claude adapter](docs/adapters.md#claude-adapter), whose live acceptance is pending, answer decisions and preview Steward rollouts.
 > A runnable Director is planned, not built; this page marks every planned step and links its design.
 > The full specification is [docs/requirements.md](docs/requirements.md).
 
