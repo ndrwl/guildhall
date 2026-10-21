@@ -88,7 +88,7 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 | `interactive=true` | The worker echoes each line of its standard input |
 | `inventory=<absolute dir>` | Every fake process records its identity there as `<role>-<pid>.json`, and the worker records each native grandchild |
 
-Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, so the launcher's rung 1 stops it.
+Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.
 
 ## Running an attempt
 
@@ -133,8 +133,8 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
   Select a dedicated session provisioned outside Guildhall; a non-default name alone does not establish ownership of the session.
 - Before launching, `herdr status --json` must report a running server for that session, and both the client and the server must be Herdr 0.9.5 or newer.
   Guildhall never starts, stops, restarts or deletes a Herdr server or session.
-- Guildhall uses `status`, `workspace list|create`, `tab create|list|get|close` and `pane process-info|run|send-keys|report-agent`, always with `--no-focus` when creating.
-- `pane report-agent` reports the agent in a pane and registers its resume command after `--`, which follows the explicit session; Herdr requires the command to start with a plain command name, so a path or an option is refused before anything is sent.
+- Guildhall uses `status`, `workspace list|create`, `tab create|list|get|close` and `pane process-info|run|send-keys`, always with `--no-focus` when creating.
+- The client also supports `pane report-agent`; see [resume](artisan.md#resume) for its registration contract and production wiring status.
 - Herdr's tab creation takes no command, so Guildhall waits until the new tab's shell is the only foreground process, then types the command quoted for that shell with `pane run`.
   POSIX shells (`sh`, `bash`, `dash`, `ksh`, `zsh`) and PowerShell are supported; any other shell is refused.
   For a POSIX shell, a program named by a Windows drive path is written with `/` separators, because `dash` under Git for Windows cannot start it with `\`.
