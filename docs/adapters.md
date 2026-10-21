@@ -199,6 +199,6 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 | Native handle stop contract: verified termination, repeated and concurrent stops, natural exit, ended context, idempotent close, no use of a released handle | Native Windows test executable against a live helper process | Passed |
 | macOS in Herdr | Not run | macOS has CI only, not live acceptance (R1.30) |
 | [Conformance](#conformance) of the Claude adapter over the stub `claude`: direct child, inside the Artisan launcher (stop at rung 1) and on interpreter-rendered attempts; `artisan start --adapter claude` outcomes | CI on Linux, Windows and macOS | Run on every change |
-| Claude adapter with Claude Code 2.1.306: `TestLiveClaude` (a file written and a succeeded result listing it), and an interrupt ending a working session in under a second with no result | Linux (WSL) | Passed |
+| Claude adapter with Claude Code 2.1.306: `TestLiveClaude` (a file written and a succeeded result listing it), and an interrupt ending a working session in under a second with no result | Linux (WSL) | Passed on the earlier wrapper, before the model directory (Claude read the original prompt and wrote `<result>.draft`); pending a re-run on the current wrapper |
 
 Reconciling an attempt after a restart is [`artisan resume`](artisan.md#resume); recording pane bindings and the per-task watcher are not built yet.

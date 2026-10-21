@@ -11,3 +11,4 @@ It publishes without validating, so completion still comes only from the reader'
 Print mode, rather than the interactive session in a Herdr pane that R1.23 describes, is the smallest real session the Director goal needs; the tab mode, transcripts, cost and resume are later work.
 The permission mode is `acceptEdits`, the narrowest that lets an Artisan edit its worktree and write its draft; widening it, for example to shell commands for tests and commits, is a guard-rail decision for the Director's managed settings, not the adapter's.
 CI runs the conformance suite over a stub `claude` on `PATH`; a real session runs only by hand with `GUILDHALL_CLAUDE_LIVE=1`.
+The live acceptance passed on the earlier wrapper, before the model directory, and is pending a re-run on the current wrapper.
