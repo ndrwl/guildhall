@@ -528,3 +528,31 @@ func (c *Client) InterruptOwnedTab(ctx context.Context, t OwnedTab) error {
 	_, err := c.call(ctx, "pane", "send-keys", t.paneID, "ctrl+c")
 	return err
 }
+
+// ErrResumeArgv refuses a resume command Herdr would reject: an empty one is
+// allowed (no resume), but a non-empty one must start with a plain command
+// name, never a path or an option.
+var ErrResumeArgv = errors.New("herdr resume_argv must start with a plain command name, not a path")
+
+// AgentReport is what a pane reports about the agent running in it.
+type AgentReport struct {
+	// Source names the reporter, such as "guildhall"; Agent labels the agent,
+	// such as "artisan". Both are letters, digits, '.', '_' or '-'.
+	Source, Agent string
+	// State is idle, working, blocked or unknown.
+	State string
+	// Resume is the command Herdr runs in the pane after a restart; it must
+	// start with a plain command name (ErrResumeArgv).
+	Resume []string
+}
+
+// ReportAgent reports the agent running in pane paneID with `herdr pane
+// report-agent`, registering r.Resume as the pane's resume_argv. A pane
+// reports itself, so the pane need not be one this client created. The
+// report is checked before anything is sent: a malformed pane id, source,
+// agent or state is refused, and a resume command Herdr would reject is
+// ErrResumeArgv. The resume arguments follow `--`, after the explicit
+// session, so none of them is read as a Herdr option.
+func (c *Client) ReportAgent(ctx context.Context, paneID string, r AgentReport) error {
+	return errors.ErrUnsupported
+}

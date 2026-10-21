@@ -53,6 +53,12 @@ type Harness struct {
 	// Files returns the attempt files of a stop-contract case's attempt
 	// directory; nil means FilesOf(NewFiles(dir)), the byte-comparing double.
 	Files func(dir string) StopFiles
+	// Worker returns the command that plays w as a stop-contract case's
+	// worker, recording every process it starts in the inventory directory
+	// dir as Command's worker does, with f the case's attempt files: a real
+	// Artisan, such as the fake adapter's command. Nil runs the test binary
+	// with Command. Only the stop contract uses it.
+	Worker func(t *testing.T, dir string, w Worker, f StopFiles) *exec.Cmd
 }
 
 // Native is the harness for a backend containing real processes.

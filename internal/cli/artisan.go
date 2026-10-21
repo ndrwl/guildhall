@@ -66,11 +66,13 @@ func (a *App) artisan(args []string) int {
 		switch args[0] {
 		case "run":
 			return a.artisanRun(args[1:])
-		case "stop", "status":
+		case "stop", "status", "resume":
 			return a.artisanOwned(args[0], args[1:])
+		case "harness":
+			return a.artisanHarness(args[1:])
 		}
 	}
-	return a.usageError("artisan: the commands are run, stop and status")
+	return a.usageError("artisan: the commands are run, stop, status and resume")
 }
 
 // attemptFlags name an owned attempt (docs/artisan.md#commands).
@@ -97,9 +99,10 @@ func (f attemptFlags) parse() (launch.Attempt, error) {
 	return launch.Attempt{Store: f.store, StateDir: state, Key: artisan.AttemptKey{Repository: f.repository, TaskID: f.task, Step: f.step, Attempt: n}}, err
 }
 
-// artisanOwned runs `artisan stop` or `artisan status` and prints the result
-// as one JSON line: 0 when stop proves the attempt not running and whenever
-// status classifies it, 1 on an error or an attempt that may still run.
+// artisanOwned runs `artisan stop`, `status` or `resume` and prints the
+// result as one JSON line: 0 when stop proves the attempt not running, when
+// resume finds nothing to resume or settles the attempt, and whenever status
+// classifies it; 1 on an error or an attempt that may still run.
 func (a *App) artisanOwned(cmd string, args []string) int {
 	fl := flag.NewFlagSet("artisan "+cmd, flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
@@ -121,10 +124,13 @@ func (a *App) artisanOwned(cmd string, args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	var out any
-	if cmd == "stop" {
+	switch cmd {
+	case "stop":
 		out, err = launch.Stop(ctx, at)
-	} else {
+	case "status":
 		out, err = launch.Status(ctx, at)
+	case "resume":
+		out, err = launch.Resume(ctx, at)
 	}
 	if !errors.Is(err, launch.ErrNotStopped) && err != nil {
 		return a.fail(err)

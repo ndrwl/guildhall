@@ -64,6 +64,30 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	}, nil
 }
 
+// Roles a fake Artisan process plays.
+const (
+	RoleWorker     = "worker"
+	RoleGrandchild = "grandchild"
+)
+
+// Main runs `guildhall fake-artisan` with args, the arguments after the
+// subcommand, and returns its exit status: 0 when Run succeeds, 1 when it
+// fails and 2 for arguments ParseArgs refuses. stdin is the interactive
+// directive's input; Run handles interrupts itself.
+func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	a, err := ParseArgs(args)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guildhall: fake-artisan: %v\n", err)
+		return 2
+	}
+	a.Stdin = stdin
+	if err := Run(context.Background(), a, stdout, Sleep); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guildhall: fake-artisan: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 // Args are the fake Artisan's command-line arguments.
 type Args struct {
 	adapter.Identity
@@ -71,6 +95,11 @@ type Args struct {
 	ResultFile     string
 	ControlAddress string
 	ControlToken   string
+	// Role is "worker", the Artisan the adapter starts, or "grandchild", a
+	// process the worker starts for the grandchildren directive.
+	Role string
+	// Stdin is what the interactive directive echoes; nil reads nothing.
+	Stdin io.Reader
 }
 
 // ParseArgs parses `--task --attempt --prompt --result`, all required.
@@ -84,6 +113,7 @@ func ParseArgs(argv []string) (Args, error) {
 	fs.StringVar(&a.ResultFile, "result", "", "result file")
 	fs.StringVar(&a.ControlAddress, "worker-control", "", "attempt owner loopback address")
 	fs.StringVar(&a.ControlToken, "worker-token", "", "attempt ownership token")
+	fs.StringVar(&a.Role, "role", RoleWorker, "worker or grandchild")
 	if err := fs.Parse(argv); err != nil {
 		return Args{}, err
 	}
@@ -92,6 +122,9 @@ func ParseArgs(argv []string) (Args, error) {
 	}
 	if (a.ControlAddress == "") != (a.ControlToken == "") {
 		return Args{}, errors.New("--worker-control and --worker-token go together")
+	}
+	if a.Role != RoleWorker && a.Role != RoleGrandchild {
+		return Args{}, fmt.Errorf("--role %q must be %s or %s", a.Role, RoleWorker, RoleGrandchild)
 	}
 	if a.PromptFile == "" || a.ResultFile == "" {
 		return Args{}, errors.New("--task, --attempt, --prompt and --result are required")

@@ -53,6 +53,20 @@ type Subject struct {
 	Capabilities adapter.Capabilities
 	// Prompt is the prompt text that makes the runtime produce b.
 	Prompt func(b Behaviour) string
+	// Start, when set, starts the runtime's command for spec the way a
+	// launch path runs it, such as inside the Artisan launcher with its stop
+	// ladder; nil starts it as a direct child process (adapter.StartProcess).
+	Start func(t *testing.T, spec adapter.Spec, cmd adapter.Command) (Process, error)
+}
+
+// Process is a started runtime as the suite drives it.
+type Process interface {
+	// Exited is closed once the runtime, and whatever supervises it, has
+	// ended.
+	Exited() <-chan struct{}
+	// Stop asks the launch path to stop the runtime; stopping an ended one is
+	// not an error.
+	Stop() error
 }
 
 // RunConformance runs the suite against the runtimes newSubject returns.
@@ -183,13 +197,18 @@ func writePrompt(t *testing.T, spec adapter.Spec, prompt string) {
 func withID(s adapter.Spec, id adapter.Identity) adapter.Spec { s.Identity = id; return s }
 func withResult(s adapter.Spec, p string) adapter.Spec        { s.ResultFile = p; return s }
 
-func start(t *testing.T, s Subject, spec adapter.Spec) *adapter.Process {
+func start(t *testing.T, s Subject, spec adapter.Spec) Process {
 	t.Helper()
 	cmd, err := s.Runtime.Command(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := adapter.StartProcess(cmd, nil, nil)
+	var p Process
+	if s.Start != nil {
+		p, err = s.Start(t, spec, cmd)
+	} else {
+		p, err = adapter.StartProcess(cmd, nil, nil)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
