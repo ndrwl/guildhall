@@ -2,7 +2,7 @@
 
 The Artisan launcher is the per-attempt process that owns one Artisan worker and every process it starts.
 This page describes what is built today: the operating-system seams the launcher stands on, process identity, the containment unit, the control endpoint, the stop ladder, the heartbeat and reconcile's classification.
-The [ownership record](store.md#attempt-ownership) is in the store, and the `artisan run`, `stop` and `status` [commands](#commands) wire the pieces together.
+The [ownership record](store.md#attempt-ownership) is in the store, and the `artisan run`, `stop`, `status` and `resume` [commands](#commands) wire the pieces together.
 The Herdr tab mode of `artisan run` is described in [adapters](adapters.md#running-an-attempt).
 The package is `internal/artisan`; its [doc comments](../internal/artisan/artisan.go) own the API contract.
 
@@ -274,7 +274,7 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 
 - `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
-- The remaining command-line and Tier 2 work is scoped in the [launch composition decision](decisions/launch-composition.md).
+- The Tier 2 lab runs, the Herdr tab mode running the launcher in its pane and the retirement of the Windows-only worker stop path remain; see the [resume decision](decisions/artisan-resume.md).
 
 ## Heartbeat
 
@@ -356,7 +356,7 @@ It then acquires the attempt lock, waiting at most five seconds or until the cal
 An existing outcome is refused with `artisan.ErrDecided`; publication uses the same lock, so it cannot race between that check and takeover.
 The lock is released before endpoint binding and worker startup.
 These setup failures leave ownership unchanged and start no worker, so correcting the setup permits a retry.
-Refusing an already-decided attempt preserves its ownership record and containment evidence; finishing that attempt from `outcome.json` belongs to L7 part 2's `artisan resume`, not `run`.
+Refusing an already-decided attempt preserves its ownership record and containment evidence; [`artisan resume`](#resume) finishes that attempt from `outcome.json` once its launcher is gone, not `run`.
 
 1. it takes the attempt's ownership; a live owner refuses it with `ErrOwnerLive`, and an owner that cannot be proven exited, or whose recorded unit still has members, with `ErrOwnerUnknown`, before anything starts;
 2. it binds the control endpoint and records its path; failure at either step records the attempt as failed with `FinishAttempt`, releasing ownership without starting the worker, and returns the setup error joined with any finalization error.
@@ -387,6 +387,42 @@ It prints what the endpoint did and the classification afterwards.
 Endpoint request errors, including reported surviving processes, are preserved and exit 1; a transport failure can still succeed if the fallback proves termination.
 Unproven termination exits 1 regardless of a `finished`, `cancelled` or `failed` classification.
 `artisan status` prints the [classification](#reconcile) and exits 0; an attempt with no directory and no ownership record is `absent`.
+
+### Resume
+
+`artisan resume`, with the same attempt flags, reconciles an attempt whose launcher has exited, such as after its terminal or the Herdr server restarted; it never starts a worker.
+It is `launch.Resume`, whose [doc comments](../internal/launch/resume.go) own the API contract.
+
+1. With no ownership record, or a released one, there is nothing to resume.
+2. A live launcher identity is refused (`owner: live`), and one that cannot be proven gone, or a record without containment, is refused as unverified; nothing is signalled or written.
+3. With the launcher proven gone, it sweeps the recorded unit with `artisan.Sweep` until the owner-gone rule proves it empty, within ten seconds (`SweepTimeout`); a unit that does not empty is an error and the attempt stays owned.
+4. Under the attempt lock, while the record still names that launcher, `artisan.Settle` decides the attempt with the launcher's precedence and keeps an existing `outcome.json`, and `FinishAttempt` records the store outcome and releases the ownership.
+
+A second resume finds the record released; a resume interrupted after `outcome.json` was written records the same outcome when run again, because its store write's mutation id comes from the attempt and the gone launcher's identity.
+It prints one JSON line, the owner it found (`none`, `released`, `live`, `unverified` or `exited`), the processes it swept, the outcome, the store outcome and the classification afterwards, and exits 0 when nothing was left to resume or the attempt was settled, otherwise 1.
+
+The owner-gone rule is `reconcile.ProbeOwner`: the recorded launcher identity is probed, the record's containment translated and `artisan.Contained` asked for survivors; an owner is gone only when its launcher is gone and its recorded unit is proven empty.
+Take-over (`launch.ProbeOwner`), classification and the sweep all read it.
+
+`artisan.Sweep(containment, worker)` kills what is still in a recorded unit from outside the launcher that created it: a job is opened by name and terminated, a cgroup killed through `cgroup.kill` and removed once empty, and each member of a process group, found by its leader as `Contained` finds it, killed with `artisan.Kill`.
+Sweep does not check ownership, and only `Contained` returning nothing afterwards proves the unit empty.
+`artisan.Kill(identity)` ends a process only while a live process still has its PID and token, through a pidfd on Linux and a process handle on Windows; macOS checks and then signals, so a PID reused between the two is a limit there.
+Escapes from a process group, such as a `setsid` grandchild, are not members and are not swept.
+
+`launch.ResumeArgv` is the command a pane registers to run after a restart: `guildhall artisan resume` with the attempt's flags, starting with the plain command name Herdr requires.
+`herdr.Client.ReportAgent` registers it with `herdr pane report-agent --source guildhall`, refusing a resume command that starts with a path or an option (`herdr.ErrResumeArgv`); the Herdr tab mode that calls it from the launcher's pane is not wired yet.
+
+### Harness
+
+`guildhall artisan harness inventory|kill-owned|probe --lab` is the lab's test tooling and refuses to run without `--lab`.
+
+| Command | Does |
+|---|---|
+| `inventory` | With the attempt flags, `--inventory <dir>` or both, lists the launcher and worker the ownership record names and every process recorded in the inventory directory, each with its role, identity and liveness |
+| `kill-owned` | Kills each process `inventory` lists that is still alive, with `artisan.Kill`, by identity and never by name, and lists those it killed |
+| `probe` | Reads a JSON array of identities from standard input and prints each with its liveness |
+
+The fake Artisan's `inventory` directive writes the inventory directory ([fake directives](adapters.md#fake-adapter)).
 
 ### Custody
 
@@ -435,4 +471,4 @@ The pinned scratch cases are the files deciding first (L22), a gone launcher wit
 A newer-schema and a malformed heartbeat beside a live launcher whose endpoint answers are `unknown`, with the reason naming the schema or the defect.
 Every case checks that the processes it caused are gone.
 
-The command tests are listed in the [launch contract](contracts/launch.md#tests): `RunStopContract` with `launch.Files`, the outcome translation table, owned runs against a real store, and the custody acceptance with each command in its own process.
+The command tests are listed in the [launch contract](contracts/launch.md#tests): `RunStopContract` with `launch.Files` and with the fake Artisan as the worker, the outcome translation table, owned runs against a real store, resume against real units, and the custody acceptance with each command in its own process.

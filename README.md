@@ -169,7 +169,7 @@ Each command is described in its own page; a new command adds its page and one l
 - `guildhall messages send|list|read|ack` handles local Director and Artisan messages kept in a store; see [messaging](docs/messaging.md).
 - `guildhall workflow approve|approvals` records and lists workflow approvals; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall render <request.json>` renders a prompt with embedded release skills first; see [prompt rendering](docs/rendering.md).
-- `guildhall artisan run|stop|status` runs, stops and classifies one owned Artisan attempt with the test-only fake adapter, and `guildhall fake-artisan` is that adapter; see [Artisan commands](docs/artisan.md#commands).
+- `guildhall artisan run|stop|status|resume` runs, stops, classifies and resumes one owned Artisan attempt with the test-only fake adapter, and `guildhall fake-artisan` is that adapter; see [Artisan commands](docs/artisan.md#commands).
 - `guildhall task new|show|list|timeline|files|finding rule|review` creates and inspects tasks and records the Director's rulings on review findings and full-review requests, without launching anything; see [tasks](docs/tasks.md).
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.

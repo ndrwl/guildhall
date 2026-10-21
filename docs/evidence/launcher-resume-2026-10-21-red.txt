@@ -1,0 +1,134 @@
+--- FAIL: TestKill (0.03s)
+    sweep_test.go:58: Kill of a reused PID = unsupported operation
+--- FAIL: TestSweepKillsARecordedUnitFromOutside (0.09s)
+    sweep_test.go:99: Sweep = unsupported operation
+--- FAIL: TestSettle (0.01s)
+    --- FAIL: TestSettle/nothing (0.00s)
+        sweep_test.go:161: Settle = unsupported operation
+    --- FAIL: TestSettle/result (0.00s)
+        sweep_test.go:161: Settle = unsupported operation
+    --- FAIL: TestSettle/marker (0.00s)
+        sweep_test.go:161: Settle = unsupported operation
+    --- FAIL: TestSettle/marker_and_late_result (0.00s)
+        sweep_test.go:161: Settle = unsupported operation
+    --- FAIL: TestSettle/an_unreadable_outcome_is_not_replaced (0.00s)
+        sweep_test.go:192: Settle over a damaged outcome = unsupported operation, want ErrInvalidOutcome
+--- FAIL: TestSweepRefusesAReusedGroupLeader (0.03s)
+    sweep_unix_test.go:22: Sweep of a reused group id = [], unsupported operation; want nothing
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/artisan	0.164s
+FAIL
+--- FAIL: TestStopContractFakeArtisan (110.88s)
+    --- FAIL: TestStopContractFakeArtisan/L6_a_cooperative_worker_stops_at_rung_1 (10.06s)
+        stop.go:89: waited 10s for 1 grandchild inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/L7_an_ignored_interrupt_escalates_with_attribution (10.06s)
+        stop.go:99: waited 10s for 1 grandchild inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/L16_a_result_before_the_stop_finishes_and_the_stop_is_a_no-op (10.05s)
+        stop.go:151: waited 10s for /tmp/fm-guildhall-launcher-l7b/gotmp/TestStopContractFakeArtisanL16_a_result_before_the_stop_finishe3228781382/001/result.json
+    --- FAIL: TestStopContractFakeArtisan/L16_a_result_after_the_marker_is_rejected_as_late (10.05s)
+        stop.go:159: waited 10s for 1 worker inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/L16_a_result_racing_the_stop_is_decided_exactly_once (10.05s)
+        stop.go:168: waited 10s for 1 worker inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/L17_a_result_after_cancel_is_rejected_and_the_worker_exits (10.05s)
+        stop.go:185: waited 10s for 1 worker inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/L18_concurrent_and_repeated_stops_share_one_ladder (10.06s)
+        stop.go:198: waited 10s for 1 grandchild inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/a_terminated_to_the_launcher_stops_the_attempt (10.07s)
+        stop.go:224: waited 10s for 1 worker inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/a_hangup_to_the_launcher_stops_the_attempt (10.05s)
+        stop.go:224: waited 10s for 1 worker inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/an_interrupt_to_the_launcher_is_forwarded_to_the_worker (10.05s)
+        stop.go:233: waited 10s for 1 worker inventory entries, have []
+    --- FAIL: TestStopContractFakeArtisan/survivors_after_the_last_rung_are_reported (10.06s)
+        stop.go:274: waited 10s for 1 worker inventory entries, have []
+--- FAIL: TestResumeWithoutAnOwnerDoesNothing (0.05s)
+    resume_test.go:84: Resume = {Attempt:app/t-1/build/1 Owner: Swept:[] Outcome:<nil> AttemptOutcome: Classification:{State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}}, unsupported operation; want owner none and nothing done
+--- FAIL: TestResumeRefusesALiveOrUnprovenOwner (0.33s)
+    --- FAIL: TestResumeRefusesALiveOrUnprovenOwner/live_launcher (0.12s)
+        resume_test.go:118: Resume = {Attempt:app/t-1/build/1 Owner: Swept:[] Outcome:<nil> AttemptOutcome: Classification:{State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}}, unsupported operation; want owner live and attempt is owned by a live launcher
+    --- FAIL: TestResumeRefusesALiveOrUnprovenOwner/gone_launcher_without_containment (0.21s)
+        resume_test.go:118: Resume = {Attempt:app/t-1/build/1 Owner: Swept:[] Outcome:<nil> AttemptOutcome: Classification:{State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}}, unsupported operation; want owner unverified and attempt owner cannot be proven exited
+--- FAIL: TestResumeSweepsAndSettlesAnExitedOwner (1.48s)
+    --- FAIL: TestResumeSweepsAndSettlesAnExitedOwner/surviving_tree_without_a_result (0.40s)
+        resume_test.go:178: Resume = {Attempt:app/t-1/build/1 Owner: Swept:[] Outcome:<nil> AttemptOutcome: Classification:{State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}}, unsupported operation; want owner exited and no error
+    --- FAIL: TestResumeSweepsAndSettlesAnExitedOwner/emptied_unit_with_a_result (0.44s)
+        resume_test.go:178: Resume = {Attempt:app/t-1/build/1 Owner: Swept:[] Outcome:<nil> AttemptOutcome: Classification:{State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}}, unsupported operation; want owner exited and no error
+    --- FAIL: TestResumeSweepsAndSettlesAnExitedOwner/surviving_tree_with_the_marker (0.32s)
+        resume_test.go:178: Resume = {Attempt:app/t-1/build/1 Owner: Swept:[] Outcome:<nil> AttemptOutcome: Classification:{State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}}, unsupported operation; want owner exited and no error
+    --- FAIL: TestResumeSweepsAndSettlesAnExitedOwner/an_outcome_already_decided (0.32s)
+        resume_test.go:178: Resume = {Attempt:app/t-1/build/1 Owner: Swept:[] Outcome:<nil> AttemptOutcome: Classification:{State: Reason: Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}}, unsupported operation; want owner exited and no error
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	112.751s
+FAIL
+--- FAIL: TestReportAgentRegistersTheResumeCommand (0.00s)
+    herdr_test.go:395: unsupported operation
+--- FAIL: TestReportAgentRefusesWhatHerdrWouldReject (0.00s)
+    --- FAIL: TestReportAgentRefusesWhatHerdrWouldReject/absolute_resume_command (0.00s)
+        herdr_test.go:430: ReportAgent = unsupported operation, want a refusal herdr resume_argv must start with a plain command name, not a path
+    --- FAIL: TestReportAgentRefusesWhatHerdrWouldReject/relative_resume_command (0.00s)
+        herdr_test.go:430: ReportAgent = unsupported operation, want a refusal herdr resume_argv must start with a plain command name, not a path
+    --- FAIL: TestReportAgentRefusesWhatHerdrWouldReject/windows_resume_command (0.00s)
+        herdr_test.go:430: ReportAgent = unsupported operation, want a refusal herdr resume_argv must start with a plain command name, not a path
+    --- FAIL: TestReportAgentRefusesWhatHerdrWouldReject/option_resume_command (0.00s)
+        herdr_test.go:430: ReportAgent = unsupported operation, want a refusal herdr resume_argv must start with a plain command name, not a path
+    --- FAIL: TestReportAgentRefusesWhatHerdrWouldReject/empty_resume_command (0.00s)
+        herdr_test.go:430: ReportAgent = unsupported operation, want a refusal herdr resume_argv must start with a plain command name, not a path
+--- FAIL: TestReportAgentReturnsHerdrsRefusal (0.00s)
+    herdr_test.go:444: ReportAgent = unsupported operation, want Herdr's invalid_resume_argv
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/herdr	0.010s
+FAIL
+--- FAIL: TestFakeRuntimeConformanceThroughTheLauncher (3.54s)
+    --- FAIL: TestFakeRuntimeConformanceThroughTheLauncher/a_stopped_attempt_leaves_no_result (3.34s)
+        adaptertest.go:142: the runtime did not honour the cancel marker: it stopped at rung 2
+--- FAIL: TestP0DirectivesAreValidated (0.02s)
+    directives_test.go:38: prompt "guildhall-fake: grandchildren=2\nguildhall-fake: grandchild-cmd=native\n" refused: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestP0DirectivesAreValidated1707107454/002/prompt.md: unknown directive "grandchildren"
+    directives_test.go:38: prompt "guildhall-fake: grandchild-cmd=fake\n" refused: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestP0DirectivesAreValidated1707107454/003/prompt.md: unknown directive "grandchild-cmd"
+    directives_test.go:38: prompt "guildhall-fake: ignore-cancel=true\nguildhall-fake: ignore-interrupt=false\n" refused: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestP0DirectivesAreValidated1707107454/004/prompt.md: unknown directive "ignore-cancel"
+    directives_test.go:38: prompt "guildhall-fake: interactive=true\nguildhall-fake: result=never\nguildhall-fake: lifetime=1ms\n" refused: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestP0DirectivesAreValidated1707107454/005/prompt.md: unknown directive "interactive"
+    directives_test.go:38: prompt "guildhall-fake: result=after-cancel\nguildhall-fake: lifetime=1h\n" refused: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestP0DirectivesAreValidated1707107454/006/prompt.md: unknown directive "result"
+    directives_test.go:38: prompt "guildhall-fake: result=delay\nguildhall-fake: inventory=/tmp/fm-guildhall-launcher-l7b/gotmp/TestP0DirectivesAreValidated1707107454/001\n" refused: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestP0DirectivesAreValidated1707107454/007/prompt.md: unknown directive "result"
+--- FAIL: TestRunHonoursTheCancelSidecar (20.13s)
+    directives_test.go:105: fake did not return within 10s
+    directives_test.go:81: fake did not return after the case
+--- FAIL: TestRunIgnoreCancelKeepsWorking (0.01s)
+    directives_test.go:121: an ignoring fake returned after 379.873µs, before its delay
+    directives_test.go:125: Run = prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestRunIgnoreCancelKeepsWorking2495173366/001/prompt.md: unknown directive "ignore-cancel", want the adapter's refusal ErrAttemptCancelled
+--- FAIL: TestRunResultAfterCancelPublishesALateResult (0.16s)
+    directives_test.go:140: Run = prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestRunResultAfterCancelPublishesALateResult2706095242/001/prompt.md: unknown directive "result"
+--- FAIL: TestRunResultNeverEndsAtTheLifetime (0.01s)
+    directives_test.go:155: Run = prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestRunResultNeverEndsAtTheLifetime3521116135/001/prompt.md: unknown directive "result"
+--- FAIL: TestRunRecordsItsIdentity (0.00s)
+    directives_test.go:169: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestRunRecordsItsIdentity2838393015/002/prompt.md: unknown directive "inventory"
+--- FAIL: TestGrandchildrenRecordAndHonourTheMarker (10.03s)
+    directives_test.go:272: waited 10s for 1 worker entries, have []
+--- FAIL: TestNativeGrandchildrenOutliveTheMarker (10.03s)
+    directives_test.go:288: waited 10s for 1 grandchild entries, have []
+--- FAIL: TestInteractiveEchoesInput (10.02s)
+    directives_test.go:338: output "" does not echo the input
+--- FAIL: TestIgnoreInterrupt (0.31s)
+    directives_unix_test.go:22: os: process already finished
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	54.851s
+FAIL
+--- FAIL: TestResumeArgvShape (0.00s)
+    artisan_resume_test.go:26: ResumeArgv = [], want guildhall artisan resume ...
+--- FAIL: TestArtisanResumeRefusesALiveLauncher (30.16s)
+    artisan_resume_test.go:120: the launcher did not record a running attempt; stderr guildhall: fake-artisan: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestArtisanResumeRefusesALiveLauncher709349466/001/prompt.md: unknown directive "result"
+--- FAIL: TestArtisanResumeSweepsAfterTheLauncherIsKilled (30.14s)
+    artisan_resume_test.go:137: the launcher did not record a running attempt; stderr guildhall: fake-artisan: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestArtisanResumeSweepsAfterTheLauncherIsKilled3844697278/002/prompt.md: unknown directive "result"
+--- FAIL: TestArtisanHarnessNeedsLab (0.06s)
+    harness_test.go:23: harness inventory without --lab: exit 1, want 2; stderr ""
+    harness_test.go:23: harness kill-owned without --lab: exit 1, want 2; stderr ""
+    harness_test.go:23: harness probe without --lab: exit 1, want 2; stderr ""
+    harness_test.go:34: ["artisan" "harness" "--lab"]: exit 1, want 2; stderr ""
+    harness_test.go:34: ["artisan" "harness" "sweep" "--lab"]: exit 1, want 2; stderr ""
+    harness_test.go:34: ["artisan" "harness" "inventory" "--lab"]: exit 1, want 2; stderr ""
+    harness_test.go:34: ["artisan" "harness" "probe" "--lab" "extra"]: exit 1, want 2; stderr ""
+--- FAIL: TestArtisanHarnessProbe (0.00s)
+    harness_test.go:46: output "" is not JSON: unexpected end of JSON input
+--- FAIL: TestArtisanHarnessInventoryAndKillOwned (30.15s)
+    harness_test.go:60: the launcher did not record a running attempt; stderr guildhall: fake-artisan: prompt /tmp/fm-guildhall-launcher-l7b/gotmp/TestArtisanHarnessInventoryAndKillOwned3548587847/002/prompt.md: unknown directive "result"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	90.515s
+FAIL

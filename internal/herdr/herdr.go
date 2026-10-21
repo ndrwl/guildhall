@@ -4,7 +4,8 @@
 // Every call names its session explicitly; the ambient HERDR_SESSION,
 // HERDR_SOCKET_PATH and pane context variables never choose the target.
 // The client creates workspaces and tabs, reads them, runs a command in a tab it
-// created, interrupts that command, and closes only tabs it created.
+// created, interrupts that command, closes only tabs it created, and reports
+// a pane's agent with its resume command.
 // It never starts, stops or deletes Herdr servers or sessions.
 package herdr
 
