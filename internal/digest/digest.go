@@ -1,8 +1,6 @@
 // Package digest is Guildhall's sha256 content digest and commit id spelling.
 //
-// A Digest is always "sha256:<64 lowercase hex>". Wire formats that carry the
-// bare hex keep it and convert through ParseHex and Hex, so neither spelling is
-// assembled or cut by hand. See docs/contracts/digest.md.
+// See docs/contracts/digest.md for wire-format compatibility.
 package digest
 
 import (
@@ -15,7 +13,8 @@ import (
 const prefix = "sha256:"
 
 // Digest is the sha256 of some bytes, "sha256:<64 lowercase hex>". One made by
-// Of, Parse or ParseHex always has that spelling.
+// Of, Parse or ParseHex always has that spelling; the zero value and direct
+// conversions from string are not validated.
 type Digest string
 
 // Of returns the digest of data.
@@ -40,7 +39,7 @@ func ParseHex(h string) (Digest, error) {
 	return "", fmt.Errorf("sha256 %q is not 64 lowercase hex characters", h)
 }
 
-// Hex returns the bare spelling: d without its "sha256:" prefix.
+// Hex returns d without its "sha256:" prefix; it does not validate d.
 func (d Digest) Hex() string { return strings.TrimPrefix(string(d), prefix) }
 
 // ValidHead reports whether s is a commit object id: 40 (SHA-1) or 64

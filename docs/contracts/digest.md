@@ -18,4 +18,5 @@ Callers: `store`, `workflow`, `render`, `interp`, `steward`, `config` and `cli`.
 ## Tests
 
 `digest_test.go` was written red first against a stub that returned zero values: known vectors for `Of`, one table each for `Parse`, `ParseHex` and `ValidHead` covering every refusal above, and the round trip between the two spellings.
-The callers' existing validation, digest and golden tests pin their behaviour across the migration and passed unchanged: the store's record validation, the workflow review outcome checks, the renderer's manifest goldens, the interpreter's replay and gate tests and the steward plan tests.
+The callers' existing validation, digest and golden tests pin their behaviour across the migration: the store's record validation, the workflow review outcome checks, the renderer's manifest goldens, the interpreter's replay and gate tests and the steward plan tests.
+Store test helpers were renamed and interpreter test helpers migrated to the shared digest functions; their expectations were not changed.
