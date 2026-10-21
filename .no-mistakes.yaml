@@ -4,9 +4,9 @@
 # Gate agents must not load project-level agent instructions or settings.
 disable_project_settings: true
 
-# Every pipeline step for this repository runs on Pi, using Pi's own default model and thinking level.
-# Repository config cannot set the model; a per-run pin also requires a Pi-only global agent list.
-agent: pi
+# Every pipeline step for this repository runs on Claude until the ChatGPT weekly quota resets
+# (27 Oct 2026), after which it returns to Pi.
+agent: claude
 
 document:
   instructions: |
