@@ -14,7 +14,7 @@ The skips that use it:
 - `skills` `TestScriptsAreTwinnedAndParse` and `TestContractTDDCheckTwinsAgree`, `pwsh` (and `sh`, which is not requirable) not on `PATH`;
 - `internal/adapter` `TestOwnedWorkerStopContract` and `TestOwnedWorkerRejectsUnverifiedIdentity`, which need Windows.
 
-CI requires `pwsh` on `ubuntu-latest`, `pwsh`, `powershell` and `windows` on `windows-latest`, and `ksh` and `pwsh` on `macos-latest`.
+The [CI workflow's matrix](../../.github/workflows/ci.yml) owns the required capabilities for each runner.
 
 ## Tests
 

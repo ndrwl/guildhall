@@ -49,8 +49,8 @@ A platform difference is part of the contract: say what differs, and test each s
 Put platform-specific code or test cases in `_windows.go` files or files with a `//go:build` line, rather than branching on `runtime.GOOS` throughout.
 Where a platform or shell cannot do something, refuse it with an error that names the limit rather than emulating it.
 Run programs with `os/exec` argument lists; where text must cross an interactive shell, quote it per shell and refuse what that shell cannot pass unchanged.
-Shell round-trip tests execute installed shells against an argument-echoing child and skip missing shells by name rather than replacing the shell with a fake.
-A skip for a missing tool or platform goes through `testenv.SkipUnlessRequired`, so a CI runner that names it in `GUILDHALL_CI_REQUIRE` fails instead of skipping silently.
+Shell round-trip tests execute installed shells against an argument-echoing child rather than replacing the shell with a fake.
+The [test environment contract](contracts/testenv.md) defines which missing-tool and platform skips become failures on runners that require them.
 
 ## Current contracts
 
