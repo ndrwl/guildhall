@@ -7,7 +7,7 @@ It refuses a document over `MaxBytes` (zero means no bound), UTF-16 with a hint 
 Keys are compared exactly with the json name, case included, in structs, map values, slices, arrays and through pointers; an interface value or a type that decodes itself, such as `json.RawMessage`, is checked for duplicates only, and an untagged embedded struct's fields are refused rather than promoted.
 A leading UTF-8 byte order mark is dropped.
 With `Schema` set, the top-level `schema` must be `<Schema><n>` with `n` a positive number in canonical form; `n` above `Version` is `ErrNewerSchema`, the one sentinel, reported even when the newer document also has unknown keys or shapes.
-`Schema` empty means the document has no schema field.
+See [`Options.Schema`](../../internal/strictjson/strictjson.go) for decoding without schema-version validation.
 Every other error means the document is malformed; each caller adds its own sentinel, context, limit and schema name.
 
 Callers today: `messaging.Decode` (whose `ErrNewerSchema` is this sentinel) and the [attempt control endpoint](../artisan.md#protocol) for requests and replies.

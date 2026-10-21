@@ -164,16 +164,17 @@ The endpoint decodes the request strictly with [`strictjson`](contracts/strictjs
 | No `schema`, as a client before version 1 sent, or one that is not `guildhall.attempt-control/<n>` | Malformed request |
 | A duplicate key, such as two `op` keys, at any depth | Malformed request |
 | A field version 1 does not declare, at the top level or inside `launcher`, compared exactly, case included | Malformed request |
-| A `launcher` that is not an object of a numeric `pid` and a string `token` | Malformed request |
+| A `launcher` with an incompatible JSON type, such as a string or list, or a string `pid` | Malformed request |
 | Invalid JSON or UTF-8, or more than 4 KiB without a newline | Malformed request |
 
 Unversioned requests are refused rather than supported during a transition: the endpoint is not yet wired into a command, so no client of an earlier protocol exists.
 A newer version is refused rather than guessed at, because stop and cancel are destructive; serving a later version means naming it in the endpoint.
 Before dispatching status, stop or cancel, the endpoint checks that both identities match its bound attempt and launcher; missing or mismatched identities receive an error without invoking any handler.
-The reply is one JSON line carrying the same `schema` and naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
+The reply is one JSON line carrying `"schema": "guildhall.attempt-control/1"`, including when refusing a request, and naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
 An unknown operation gets an error reply without reaching the handler.
 Requests are answered concurrently, so a `stop` that waits for the attempt to end does not delay a `status`.
-`Call` dials the endpoint within the caller's context and decodes the reply with the same strict rules, at most 1 MiB: a reply that is malformed, unversioned, carries an unknown or duplicate field or is a newer version is `ErrEndpointProtocol` (a newer one also matches `strictjson.ErrNewerSchema`).
+`Call` dials the endpoint within the caller's context and reads a newline-terminated reply of at most 1 MiB; read or framing failures return an exchange error.
+Once a complete line is read, it is decoded with the same strict rules: a reply that is malformed, unversioned, carries an unknown or duplicate field or is a newer version is `ErrEndpointProtocol` (a newer one also matches `strictjson.ErrNewerSchema`).
 It refuses a reply naming another attempt or launcher with `ErrEndpointMismatch`; an error reply is `ErrEndpointRequest`.
 A failed call never proves the owner exited: a silent endpoint is unknown until the owner's identity is proven gone.
 

@@ -27,7 +27,7 @@ type Options struct {
 	// Schema is the schema prefix, such as "guildhall.message/". When set, the
 	// document must be an object whose top-level "schema" is Schema followed
 	// by a version number written without sign or leading zeros, at least 1.
-	// Empty means the document has no schema field.
+	// Empty disables schema-version validation; fields still follow the target type.
 	Schema string
 	// Version is the newest schema version the caller supports; a newer one is
 	// ErrNewerSchema. It is ignored when Schema is empty.
