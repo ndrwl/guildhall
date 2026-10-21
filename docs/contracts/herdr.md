@@ -7,4 +7,4 @@
 
 ## Tests
 
-`runner_test.go` (shared contract test, real `execRun` and `fakeRunner`), `herdr_test.go` (client against recorded Herdr 0.9.5 responses), `shell_test.go`, `shell_exec_test.go` (round trips executed in each installed shell)
+`runner_test.go` (shared contract test, real `execRun` and `fakeRunner`), `herdr_test.go` (client against recorded Herdr 0.9.5 responses), `shell_test.go`, `shell_exec_test.go` (round trips executed in each installed shell; a missing shell the runner requires fails)

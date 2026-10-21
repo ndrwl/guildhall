@@ -50,6 +50,7 @@ Put platform-specific code or test cases in `_windows.go` files or files with a 
 Where a platform or shell cannot do something, refuse it with an error that names the limit rather than emulating it.
 Run programs with `os/exec` argument lists; where text must cross an interactive shell, quote it per shell and refuse what that shell cannot pass unchanged.
 Shell round-trip tests execute installed shells against an argument-echoing child and skip missing shells by name rather than replacing the shell with a fake.
+A skip for a missing tool or platform goes through `testenv.SkipUnlessRequired`, so a CI runner that names it in `GUILDHALL_CI_REQUIRE` fails instead of skipping silently.
 
 ## Current contracts
 
@@ -80,5 +81,6 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/steward`](contracts/steward.md)
 - [`internal/store`](contracts/store.md)
 - [`internal/strictjson`](contracts/strictjson.md)
+- [`internal/testenv`](contracts/testenv.md)
 - [`internal/workflow`](contracts/workflow.md)
 - [`skills`](contracts/skills.md)

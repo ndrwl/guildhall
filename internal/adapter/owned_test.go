@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 func TestOwnedWorkerHelper(t *testing.T) {
@@ -45,7 +47,7 @@ func TestOwnedWorkerHelper(t *testing.T) {
 
 func TestOwnedWorkerStopContract(t *testing.T) {
 	if runtime.GOOS != "windows" {
-		t.Skip("native handle contract requires Windows")
+		testenv.SkipUnlessRequired(t, "windows", "native handle contract requires Windows")
 	}
 	dir := t.TempDir()
 	exe, err := os.Executable()
@@ -121,7 +123,7 @@ func TestOwnedWorkerStopContract(t *testing.T) {
 
 func TestOwnedWorkerRejectsUnverifiedIdentity(t *testing.T) {
 	if runtime.GOOS != "windows" {
-		t.Skip("native handle identity requires Windows")
+		testenv.SkipUnlessRequired(t, "windows", "native handle identity requires Windows")
 	}
 	exe, err := os.Executable()
 	if err != nil {
