@@ -78,6 +78,28 @@ The ownership record holds the current launcher identity; the receipt holds the 
 - `FinishAttempt` releases the attempt's ownership record in the same mutation and keeps it, still naming its launcher; a released record is never updated or taken again, because a finished attempt cannot be owned.
 - A replayed mutation id returns its original receipt without probing, as every mutation does.
 
+### Containment record
+
+The ownership record's `containment` is the recovery description of the unit the owner's worker runs in, so a later sweep can find that unit after the launcher is gone.
+Every [Artisan containment kind](artisan.md#recording-the-containment) has one, copied field for field from the unit's `Containment` plus the worker identity `Start` returned:
+
+```json
+{"kind": "subreaper+pgroup", "reason": "no cgroup v2 mounted at /sys/fs/cgroup", "worker": {"pid": 4242, "token": "boot:…:91234"}}
+```
+
+| Kind | `name` | `worker` |
+|---|---|---|
+| `job` | The job name, required | Optional |
+| `cgroup` | The cgroup directory, required | Optional |
+| `subreaper+pgroup` | Must be empty | Required: the group is found by its leader, the worker |
+| `pgroup` | Must be empty | Required: the group is found by its leader, the worker |
+
+A process group has no name of its own, and no group id or other invented name may stand in for the worker identity, because a group id is reused once its leader is gone.
+`reason` keeps the Linux detection result that chose the kind, such as why no delegated cgroup v2 was usable.
+`Containment.Recoverable` is the rule a sweep checks first: it fails with `ErrUnrecoverable` for an unknown kind, a named kind without a name, a process group without a worker identity or with a name, an invalid worker identity, and a blank, oversized or invalid name or reason.
+Writes refuse a containment that is not recoverable with `ErrInvalid`.
+Records written before this rule, whose containment held only `kind` and `name`, still read unchanged; a recoverable one keeps working, and one that is not never authorises a sweep or a take-over: `TakeOwnership` refuses it with `ErrOwnerUnknown` without probing, even when its launcher has exited.
+
 Taking ownership records the mutation id the caller chooses.
 The planned launcher convention is `own:<repository>:<task>:<step>:<number>:<launcher pid>`, because mutation ids cannot contain `/`; launcher command integration is not implemented yet.
 Under that convention a different PID gives a different id; reusing an id with a different creation token returns `ErrMutationConflict`, never a new take-over.

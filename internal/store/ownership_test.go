@@ -149,7 +149,7 @@ func TestTakeOwnershipAfterProvenExit(t *testing.T) {
 	ownedAttempt(t, s)
 	running := sampleOwnership(launcherA)
 	running.Attempt, running.State = 1, OwnerRunning
-	running.Containment, running.Endpoint = Containment{Kind: "pgroup", Name: "4242"}, "/state/a1/ctl.sock"
+	running.Containment, running.Endpoint = Containment{Kind: ContainmentGroup, Worker: worker}, "/state/a1/ctl.sock"
 	if _, err := s.UpdateOwnership("m-run", running); err != nil {
 		t.Fatal(err)
 	}

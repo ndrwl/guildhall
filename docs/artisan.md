@@ -71,6 +71,8 @@ The methods are safe for concurrent use.
 | `subreaper+pgroup` | Linux process group with the launcher as child subreaper | none |
 | `pgroup` | macOS process group | none |
 
+The store's ownership record keeps the same description, with the worker identity in place of a name for a process group ([containment record](store.md#containment-record)).
+
 ### Linux: detection
 
 A Linux unit uses the cgroup backend only when all of these hold, and otherwise falls back to the subreaper and process group with the first failed check as its reason:
