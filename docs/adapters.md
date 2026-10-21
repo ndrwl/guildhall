@@ -86,7 +86,7 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 | `ignore-cancel=true` | No fake process exits on the cancel marker; the adapter still refuses a result written after it |
 | `ignore-interrupt=true` | Every fake process handles and discards an interrupt (SIGINT, CTRL_C, CTRL_BREAK) |
 | `interactive=true` | The worker echoes each line of its standard input |
-| `inventory=<absolute dir>` | Every fake process records its identity there as `<role>-<pid>.json`, and the worker records each native grandchild |
+| `inventory=<absolute dir>` | Every fake process records its identity there with `artisan.RecordProcess` ([inventory](artisan.md#harness)), and the worker records each native grandchild |
 | `output=<path>:<text>` | Before the result, write `<text>` and a newline to `<path>`, a relative slash-separated path in the working directory, and list it as the result's one output, as a stage's output port needs |
 
 Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.

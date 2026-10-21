@@ -2,7 +2,9 @@ package artisantest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -51,12 +53,12 @@ type Worker struct {
 	Inventory string `json:"inventory,omitempty"`
 }
 
-// Entry is one inventory record: a process the worker tree started.
+// Entry is one inventory record: a process the worker tree started, as
+// artisan.ProcessRecord with the worker's own fields beside it. Its Role is
+// "worker", "grandchild", "sentinel" or "breakaway" (the worker's record of a
+// breakaway request, under the worker's identity).
 type Entry struct {
-	artisan.Identity
-	// Role is "worker", "grandchild", "sentinel" or "breakaway" (the
-	// worker's record of a breakaway request).
-	Role string `json:"role"`
+	artisan.ProcessRecord
 	// Setsid is set on a grandchild started in its own session.
 	Setsid bool `json:"setsid,omitempty"`
 	// Breakaway is "refused: <error>" or "succeeded" on a breakaway record.
@@ -92,34 +94,19 @@ func WorkerOf(cmd *exec.Cmd) (Worker, bool) {
 	return w, false
 }
 
-// Record writes e into the inventory directory dir.
+// Record writes e into the inventory directory dir with artisan.RecordProcess.
 func Record(dir string, e Entry) error {
-	b, err := json.Marshal(e)
-	if err != nil {
-		return err
-	}
-	return atomicfile.Write(filepath.Join(dir, fmt.Sprintf("%s-%d.json", e.Role, e.PID)), b)
+	return artisan.RecordProcess(dir, e)
 }
 
-// Inventory reads every entry recorded in dir.
+// Inventory reads every entry recorded in dir with
+// artisan.ReadProcessRecordsAs; a directory not yet created holds none.
 func Inventory(dir string) ([]Entry, error) {
-	names, err := filepath.Glob(filepath.Join(dir, "*.json"))
-	if err != nil {
-		return nil, err
+	out, err := artisan.ReadProcessRecordsAs[Entry](dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
 	}
-	var out []Entry
-	for _, n := range names {
-		b, err := atomicfile.Read(n)
-		if err != nil {
-			return nil, err
-		}
-		var e Entry
-		if err := json.Unmarshal(b, &e); err != nil {
-			return nil, fmt.Errorf("%s: %w", n, err)
-		}
-		out = append(out, e)
-	}
-	return out, nil
+	return out, err
 }
 
 // MainIfWorker runs the worker and exits when the test binary was started by
@@ -152,7 +139,7 @@ func (w Worker) run() int {
 	if err != nil {
 		return 2
 	}
-	if err := Record(w.Inventory, Entry{Identity: self, Role: w.Role, Setsid: w.Role == "grandchild" && w.SetsidGrandchild && setsidAvailable}); err != nil {
+	if err := Record(w.Inventory, Entry{ProcessRecord: artisan.ProcessRecord{Identity: self, Role: w.Role}, Setsid: w.Role == "grandchild" && w.SetsidGrandchild && setsidAvailable}); err != nil {
 		return 2
 	}
 	if w.Role == "worker" {
@@ -209,17 +196,17 @@ func (w Worker) spawnGrandchild() error {
 	g := w
 	g.Role, g.Grandchildren, g.ExitAfterSpawn, g.Result = "grandchild", 0, false, ""
 	if w.BreakawayGrandchild && breakawayAvailable {
+		self, err := artisan.Self()
+		if err != nil {
+			return err
+		}
 		c := g.command()
 		applyBreakaway(c)
-		e := Entry{Role: "breakaway", Breakaway: "succeeded"}
+		e := Entry{ProcessRecord: artisan.ProcessRecord{Identity: self, Role: "breakaway"}, Breakaway: "succeeded"}
 		if err := c.Start(); err != nil {
 			e.Breakaway = "refused: " + err.Error()
 		} else {
 			go func() { _ = c.Wait() }()
-		}
-		e.Identity = artisan.Identity{PID: os.Getpid()}
-		if c.Process != nil {
-			e.PID = c.Process.Pid
 		}
 		if err := Record(w.Inventory, e); err != nil || e.Breakaway == "succeeded" {
 			return err

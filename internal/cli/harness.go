@@ -6,8 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -148,26 +146,11 @@ func ownedProcesses(own *store.Ownership, dir string) ([]ownedProcess, error) {
 	if dir == "" {
 		return out, nil
 	}
-	entries, err := os.ReadDir(dir)
+	recs, err := artisan.ReadProcessRecords(dir)
 	if err != nil {
 		return nil, err
 	}
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		n := filepath.Join(dir, entry.Name())
-		b, err := os.ReadFile(n)
-		if err != nil {
-			return nil, err
-		}
-		var e struct {
-			artisan.Identity
-			Role string `json:"role"`
-		}
-		if err := json.Unmarshal(b, &e); err != nil || e.PID == 0 || e.Role == "" {
-			return nil, fmt.Errorf("inventory entry %s is not a recorded process: %v", n, err)
-		}
+	for _, e := range recs {
 		add(e.Role, e.Identity)
 	}
 	return out, nil
