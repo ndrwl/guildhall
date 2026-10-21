@@ -17,6 +17,6 @@ The retry policy does not cover cancel-marker checks.
 ## Tests
 
 `retry_test.go` was written red first against a stub that did not retry: a race is retried until success, a permanent error or a race followed by one returns at once, and a lasting race is returned after the bound.
-`TestReadDuringWrite` republishes one file for a second while another goroutine reads it on every runner, pausing 1 ms after each read; every read and write succeeds and sees a whole version, and the writer republishes more than 100 times.
+`TestReadDuringWrite` runs 128 concurrent read/write pairs on every runner, joining each pair before starting the next so a Windows rename faces only one bounded read; every read and write succeeds and each read sees a whole version, without a machine-speed-dependent throughput requirement.
 On Windows, `TestReadWaitsForExclusiveHolder` holds the file without sharing for 50 ms and `TestWriteWaitsForReader` holds it open for reading, and `TestTransientWindows` pins the two errors.
 `internal/artisan`'s `TestResultHeldAtDecisionIsFinished` (Windows) holds a published result without sharing while the launcher decides and requires `finished` with no error, the failure `TestStopContract`'s L16 hit on `main`; `TestStopContract`, `TestFakeStopContract` and `TestWaitResult*` pass unchanged.
