@@ -98,9 +98,10 @@ var StopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 // AttemptFiles is the attempt's result and cancel marker as the launcher
 // consumes them. The launcher calls them only while holding the attempt lock.
-// An error decides the attempt failed, so result reads use the bounded
-// publication-race retry policy in docs/contracts/atomicfile.md before
-// returning an error to the launcher.
+// An error decides the attempt failed, so every adapter reads the result
+// through the bounded publication-race retry (internal/atomicfile,
+// docs/contracts/atomicfile.md) before returning an error to the launcher;
+// artisantest.RunStopContract checks it on Windows.
 type AttemptFiles interface {
 	// ValidResult reports whether a valid result for this attempt is
 	// published. A missing or invalid result is false with no error.
@@ -251,7 +252,7 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	worker, err := l.c.Unit.Start(cmd)
 	if err != nil {
 		d, derr := l.decide(false, "start worker: "+err.Error())
-		return l.finish(d, 0, nil, derr)
+		return l.finish(d, 0, nil, errors.Join(err, derr))
 	}
 	l.mu.Lock()
 	l.started = true
@@ -394,6 +395,7 @@ func (l *Launcher) ladder(d Outcome, first int, err error, explicit bool, signal
 	}
 	if l.empty() {
 		if first == 1 {
+			// The marker emptied the tree before the first check.
 			l.event("rung-emptied", map[string]any{"rung": 1})
 			return l.finish(d, 1, nil, err)
 		}

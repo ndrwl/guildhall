@@ -101,7 +101,7 @@ flowchart TB
     INSP --> STORE
     MSG --- STORE
     INTERP -. "not yet wired" .-> WRAP
-    WRAP -. "not yet wired" .-> ADAPT
+    WRAP --> ADAPT
     ADAPT --> RT
     WRAP -.-> EXEC
     WRAP -.-> MSG
@@ -110,7 +110,8 @@ flowchart TB
 
 Green boxes are on `main`; grey dashed boxes are designed but not built, and dotted arrows are connections not yet wired.
 
-- The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; starting the agent through a runtime adapter and delivering stored messages to it are not wired yet, and no command runs it (see [the launcher](docs/artisan.md)).
+- The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; see [Artisan commands](docs/artisan.md#commands) for the implemented fake-adapter integration.
+  Starting a real agent through a runtime adapter and delivering stored messages to it are not wired yet.
 - A **runtime adapter** launches an agent's normal interactive session with a prompt file and working directory; an attempt completes only when the Artisan writes a valid result file, not when a process exits or a terminal closes.
   See [adapters](docs/adapters.md) for the implemented fake adapter and current runtime support.
 - The **execution environment** is the local machine first; a Docker environment is a planned separate boundary and is not built.
@@ -162,7 +163,7 @@ Each command is described in its own page; a new command adds its page and one l
 - `guildhall messages send|list|read|ack` handles local Director and Artisan messages kept in a store; see [messaging](docs/messaging.md).
 - `guildhall workflow approve|approvals` records and lists workflow approvals; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall render <request.json>` renders a prompt with embedded release skills first; see [prompt rendering](docs/rendering.md).
-- `guildhall artisan run` and `guildhall fake-artisan` launch one Artisan attempt with the test-only fake adapter; see [adapters](docs/adapters.md).
+- `guildhall artisan run|stop|status` runs, stops and classifies one owned Artisan attempt with the test-only fake adapter, and `guildhall fake-artisan` is that adapter; see [Artisan commands](docs/artisan.md#commands).
 - `guildhall task new|show|list|timeline|files|finding rule|review` creates and inspects tasks and records the Director's rulings on review findings and full-review requests, without launching anything; see [tasks](docs/tasks.md).
 - `guildhall decide list|show|answer` lists, shows and answers decisions waiting for the Guildmaster; see [decisions](docs/decisions-cli.md).
 - `guildhall help` lists the commands.
@@ -265,5 +266,6 @@ sequenceDiagram
 - `docs/adapters.md`: the Artisan adapter contract, result file and Herdr access.
 - `docs/tasks.md`: creating Director tasks and the workflow and configuration they bind.
 - `docs/rendering.md`: Artisan prompts, skills, their manifest and Guildmaster questions.
-- `docs/artisan.md`: the Artisan launcher's process identity, containment, control endpoint, stop ladder, heartbeat and reconcile classification.
+- `docs/artisan.md`: the Artisan launcher's process identity, containment, control endpoint, stop ladder, heartbeat, reconcile classification and commands.
+- `docs/glossary.md`: terms several packages use with different meanings.
 - `CONTRIBUTING.md`: how to contribute.

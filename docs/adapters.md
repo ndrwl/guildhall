@@ -16,14 +16,10 @@ Guildhall gives an Artisan one task attempt as a spec:
 | Environment | Extra `NAME=VALUE` entries |
 
 An adapter turns the spec into a program invocation: an argument list, never shell text.
-Guildhall starts it either as a direct child process, which tests and CI use, or in a new tab of a named Herdr session.
+Guildhall starts it through the [owned attempt launcher](artisan.md#commands) or in a [Herdr tab](#running-an-attempt).
 The attempt is complete only when the result file holds a valid result for the attempt's exact identity.
 Process exit, a closed or vanished tab, a Herdr restart and Herdr's agent-state signals never complete an attempt (R1.23, R1.52).
-A direct child process that exits with no result file is reported as exited without a result, which is not a completion.
-When the wait times out or is interrupted without a result, Guildhall kills and waits for a direct child process.
-A rejected result does not trigger that stop path.
-For native Windows tabs, `--stop-on-timeout` uses an attempt-owned worker handshake and verified native process handle, independently of Herdr presentation.
-Other platforms request Ctrl+C in the owned pane; delivering Ctrl+C alone never proves termination.
+Process supervision and stop semantics depend on the launch mode; see the linked command documentation above.
 
 Each adapter declares optional capabilities: a pre-assigned session id, native background sessions, hooks, structured output and remote control.
 They all default to absent, and the core uses none of them until a capability is proven (R1.24).
@@ -61,7 +57,7 @@ A rejected result is reported as rejected; it is never treated as success or fai
 
 Guildhall writes a result once: it writes a temporary file beside the result path and hard-links it into place, so a reader sees either no file or the whole result, and an existing result is never replaced.
 The result directory must be on a file system that supports hard links.
-`guildhall artisan run` refuses to launch when the result file already exists; a new attempt needs a new result path.
+The [Herdr tab mode](#running-an-attempt) refuses to launch when the result file already exists; the [owned mode](artisan.md#commands) uses the launcher's decision precedence.
 An identity-bound stop first persists `<result>.cancelled`, containing the attempt's `task_id` and `attempt_id`.
 Result reads and writes reject that cancelled attempt, including after a client restart; a mismatched or invalid cancellation sidecar is also rejected.
 The marker remains even if termination fails, but that failure is explicitly reported rather than claiming the worker stopped.
@@ -86,10 +82,11 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 
 ## Running an attempt
 
-`guildhall artisan run --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir>` launches one attempt and waits for its result file.
+Without Herdr flags, `guildhall artisan run` owns a stored attempt as its launcher; see [Artisan commands](artisan.md#commands).
 
-- Without Herdr flags the Artisan runs as a direct child process whose output goes to standard error; timeout and interruption handling follow the baseline contract above.
-- With `--herdr-session <name> --herdr-workspace <id>` the Artisan runs in a new tab of that workspace, labelled `artisan <task>/<attempt>` unless `--tab-label` is given.
+`guildhall artisan run --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
+
+- The tab is labelled `artisan <task>/<attempt>` unless `--tab-label` is given.
   `--herdr-exec` names the Herdr program, repeated once per word when the program needs leading arguments; the default is `herdr` on `PATH`.
   On timeout or interruption without a result the Artisan is left running unless `--stop-on-timeout` is given; a rejected result does not trigger stopping, and Guildhall never closes the tab.
   On native Windows that option establishes ownership before work starts, then terminates and waits on the exact retained process handle when the wait ends.
@@ -102,7 +99,7 @@ A valid result is printed to standard output as one JSON line.
 | Exit status | Meaning |
 |---|---|
 | 0 | A valid result with status `succeeded` |
-| 1 | An error, a rejected result, or a direct child that exited without a result |
+| 1 | An error or a rejected result |
 | 2 | A usage error |
 | 3 | No result yet when the wait ended; the attempt is not finished |
 | 4 | A valid result with status `failed` |

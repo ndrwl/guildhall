@@ -185,6 +185,25 @@ func ReadResult(path string, want Identity) (Result, error) {
 	return r, nil
 }
 
+// Cancelled reports whether the cancel marker of the attempt id is present:
+// the `.cancelled` sidecar beside the result file resultFile. A missing
+// sidecar is false; one naming another attempt is an error matching
+// ErrIdentityMismatch, and an unreadable one is an error.
+func Cancelled(resultFile string, id Identity) (bool, error) {
+	err := checkCancellation(resultFile, id)
+	if errors.Is(err, ErrAttemptCancelled) {
+		return true, nil
+	}
+	return false, err
+}
+
+// MarkCancelled writes the cancel marker of the attempt id beside the result
+// file resultFile, durably; marking a marked attempt changes nothing. Once it
+// is present ReadResult and WriteResult refuse with ErrAttemptCancelled.
+func MarkCancelled(resultFile string, id Identity) error {
+	return cancelAttempt(resultFile, id)
+}
+
 // WriteResult validates r and publishes it at path exactly once: the content
 // is written to a temporary file beside path and then hard-linked into place,
 // so a reader sees either no file or the whole result, and an existing result

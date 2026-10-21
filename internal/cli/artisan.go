@@ -12,12 +12,16 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
+	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // Exit codes of `artisan run` beyond 0 (succeeded), 1 (error or rejected
@@ -25,7 +29,11 @@ import (
 const (
 	exitNoResultYet  = 3
 	exitResultFailed = 4
+	exitStopped      = 5
 )
+
+// defaultStopTimeout bounds `artisan stop`'s wait for the stop ladder.
+const defaultStopTimeout = time.Minute
 
 // resultPoll is how often `artisan run` checks the result file.
 const resultPoll = 200 * time.Millisecond
@@ -54,14 +62,98 @@ func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
 // artisan dispatches `guildhall artisan <command>`.
 func (a *App) artisan(args []string) int {
-	if len(args) == 0 || args[0] != "run" {
-		return a.usageError("artisan: the only command is run")
+	if len(args) > 0 {
+		switch args[0] {
+		case "run":
+			return a.artisanRun(args[1:])
+		case "stop", "status":
+			return a.artisanOwned(args[0], args[1:])
+		}
 	}
-	return a.artisanRun(args[1:])
+	return a.usageError("artisan: the commands are run, stop and status")
 }
 
-// artisanRun launches one Artisan attempt, as a direct child process or in a
-// new tab of a named Herdr session, and waits for its result file.
+// attemptFlags name an owned attempt (docs/artisan.md#commands).
+type attemptFlags struct{ store, state, repository, task, step, attempt string }
+
+func (f *attemptFlags) register(fl *flag.FlagSet) {
+	fl.StringVar(&f.store, "store", "", "Director store file")
+	fl.StringVar(&f.state, "state", "", "state directory")
+	fl.StringVar(&f.repository, "repository", "", "repository id")
+	fl.StringVar(&f.task, "task", "", "task id")
+	fl.StringVar(&f.step, "step", "", "step id")
+	fl.StringVar(&f.attempt, "attempt", "", "attempt number")
+}
+
+func (f attemptFlags) parse() (launch.Attempt, error) {
+	n, err := strconv.Atoi(f.attempt)
+	switch {
+	case f.store == "" || f.state == "" || f.repository == "" || f.task == "" || f.step == "":
+		return launch.Attempt{}, errors.New("--store, --state, --repository, --task, --step and --attempt are required")
+	case err != nil || n < 1:
+		return launch.Attempt{}, fmt.Errorf("--attempt %q must be a positive attempt number", f.attempt)
+	}
+	state, err := filepath.Abs(f.state)
+	return launch.Attempt{Store: f.store, StateDir: state, Key: artisan.AttemptKey{Repository: f.repository, TaskID: f.task, Step: f.step, Attempt: n}}, err
+}
+
+// artisanOwned runs `artisan stop` or `artisan status` and prints the result
+// as one JSON line: 0 when stop proves the attempt not running and whenever
+// status classifies it, 1 on an error or an attempt that may still run.
+func (a *App) artisanOwned(cmd string, args []string) int {
+	fl := flag.NewFlagSet("artisan "+cmd, flag.ContinueOnError)
+	fl.SetOutput(io.Discard)
+	var f attemptFlags
+	f.register(fl)
+	timeout := fl.Duration("timeout", defaultStopTimeout, "how long stop waits for the stop ladder")
+	if err := fl.Parse(args); err != nil {
+		return a.usageError("artisan " + cmd + ": " + err.Error())
+	}
+	at, err := f.parse()
+	switch {
+	case err != nil:
+		return a.usageError("artisan " + cmd + ": " + err.Error())
+	case fl.NArg() > 0:
+		return a.usageError(fmt.Sprintf("artisan %s: unexpected argument %q", cmd, fl.Arg(0)))
+	case *timeout <= 0:
+		return a.usageError("artisan " + cmd + ": --timeout must be positive")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	var out any
+	if cmd == "stop" {
+		out, err = launch.Stop(ctx, at)
+	} else {
+		out, err = launch.Status(ctx, at)
+	}
+	if !errors.Is(err, launch.ErrNotStopped) && err != nil {
+		return a.fail(err)
+	}
+	if code := a.printJSON(out); code != 0 {
+		return code
+	}
+	if err != nil {
+		a.notef("guildhall: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// printJSON prints v as one JSON line.
+func (a *App) printJSON(v any) int {
+	line, err := json.Marshal(v)
+	if err != nil {
+		return a.fail(err)
+	}
+	if _, err := fmt.Fprintf(a.Stdout, "%s\n", line); err != nil {
+		return 1
+	}
+	return 0
+}
+
+// artisanRun launches one Artisan attempt: owned by this process as its
+// launcher, or with --herdr-session in a new tab of a named Herdr session,
+// waiting for its result file.
 func (a *App) artisanRun(args []string) int {
 	fl := flag.NewFlagSet("artisan run", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
@@ -72,14 +164,14 @@ func (a *App) artisanRun(args []string) int {
 		timeout                              time.Duration
 		stopOnTimeout                        bool
 		id                                   adapter.Identity
+		owned                                attemptFlags
 	)
+	owned.register(fl)
 	fl.StringVar(&adapterName, "adapter", "", "runtime adapter (only fake)")
-	fl.StringVar(&id.TaskID, "task", "", "task id")
-	fl.StringVar(&id.AttemptID, "attempt", "", "attempt id")
 	fl.StringVar(&prompt, "prompt", "", "prompt file")
 	fl.StringVar(&result, "result", "", "result file")
 	fl.StringVar(&workdir, "workdir", "", "working directory")
-	fl.DurationVar(&timeout, "timeout", 30*time.Minute, "how long to wait for the result")
+	fl.DurationVar(&timeout, "timeout", 0, "how long to wait for the result; zero is no limit for an owned attempt and 30m in a tab")
 	fl.StringVar(&session, "herdr-session", "", "named Herdr session")
 	fl.StringVar(&workspace, "herdr-workspace", "", "Herdr workspace id for the tab")
 	fl.Var(&herdrExec, "herdr-exec", "Herdr program, then leading arguments (repeat per word)")
@@ -88,19 +180,31 @@ func (a *App) artisanRun(args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan run: " + err.Error())
 	}
+	id.TaskID, id.AttemptID = owned.task, owned.attempt
 	switch {
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("artisan run: unexpected argument %q", fl.Arg(0)))
 	case adapterName != "fake":
 		return a.usageError(fmt.Sprintf("artisan run: --adapter %q: the only adapter is fake", adapterName))
+	case timeout < 0:
+		return a.usageError("artisan run: --timeout must not be negative")
+	case session == "":
+		if result != "" || workspace != "" || len(herdrExec) > 0 || label != "" || stopOnTimeout {
+			return a.usageError("artisan run: --result, --herdr-workspace, --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
+		}
+		at, err := owned.parse()
+		if err != nil || prompt == "" || workdir == "" {
+			return a.usageError(fmt.Sprintf("artisan run: --prompt and --workdir are required: %v", err))
+		}
+		return a.runOwned(at, prompt, workdir, timeout)
+	case owned.store != "" || owned.state != "" || owned.repository != "" || owned.step != "":
+		return a.usageError("artisan run: --store, --state, --repository and --step do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan run: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):
 		return a.usageError("artisan run: --herdr-session and --herdr-workspace go together")
-	case session == "" && (len(herdrExec) > 0 || label != "" || stopOnTimeout):
-		return a.usageError("artisan run: --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
-	case timeout <= 0:
-		return a.usageError("artisan run: --timeout must be positive")
+	case timeout == 0:
+		timeout = 30 * time.Minute
 	}
 
 	spec := adapter.Spec{Identity: id}
@@ -137,9 +241,6 @@ func (a *App) artisanRun(args []string) int {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	if session == "" {
-		return a.runChild(ctx, spec, cmd)
-	}
 	if len(herdrExec) == 0 {
 		herdrExec = stringList{"herdr"}
 	}
@@ -149,29 +250,55 @@ func (a *App) artisanRun(args []string) int {
 	return a.runInTab(ctx, spec, cmd, herdr.Options{Session: session, Command: herdrExec}, workspace, label, stopOnTimeout)
 }
 
-// runChild runs the Artisan as a direct child process. The child's output goes
-// to stderr so stdout carries only the recorded result. On timeout or
-// interruption without a result, it stops the otherwise unsupervised child.
-func (a *App) runChild(ctx context.Context, spec adapter.Spec, cmd adapter.Command) int {
-	p, err := adapter.StartProcess(cmd, a.Stderr, a.Stderr)
+// runOwned runs attempt at as its launcher (launch.Run): the fake Artisan
+// runs in a containment unit with this process's terminal, its output on
+// stderr so stdout carries only the report, and the exit code is the store
+// outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error.
+func (a *App) runOwned(at launch.Attempt, prompt, workdir string, timeout time.Duration) int {
+	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile}
+	for _, p := range []struct {
+		dst *string
+		src string
+	}{{&spec.PromptFile, prompt}, {&spec.WorkDir, workdir}} {
+		abs, err := filepath.Abs(p.src)
+		if err != nil {
+			return a.fail(err)
+		}
+		*p.dst = abs
+	}
+	exe, err := a.Executable()
 	if err != nil {
 		return a.fail(err)
 	}
-	r, err := adapter.WaitResult(ctx, spec.ResultFile, spec.Identity, adapter.WaitOptions{Poll: resultPoll, Exited: p.Exited()})
-	if errors.Is(err, adapter.ErrNoResultYet) {
-		if stopErr := p.Stop(); stopErr != nil {
-			a.notef("guildhall: stopping the artisan process: %v\n", stopErr)
+	cmd, err := fake.Adapter{Executable: exe}.Command(spec)
+	if err != nil {
+		return a.fail(err)
+	}
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	signals := make(chan os.Signal, 4)
+	signal.Notify(signals, artisan.StopSignals...)
+	defer signal.Stop(signals)
+	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals})
+	if rep.Outcome.State != "" {
+		if code := a.printJSON(rep); code != 0 {
+			return code
 		}
-		<-p.Exited()
-		a.notef("guildhall: no result yet (%v); the artisan process was stopped and the attempt is not finished\n", err)
-		return exitNoResultYet
 	}
-	// Let the child finish its own output before printing the result.
-	select {
-	case <-p.Exited():
-	case <-ctx.Done():
+	if err != nil {
+		return a.fail(err)
 	}
-	return a.report(r, err)
+	switch rep.AttemptOutcome {
+	case store.AttemptSucceeded:
+		return 0
+	case store.AttemptStopped:
+		return exitStopped
+	}
+	return exitResultFailed
 }
 
 // runInTab runs the Artisan in a new tab of the named Herdr session. The tab is

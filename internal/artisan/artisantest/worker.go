@@ -38,10 +38,12 @@ type Worker struct {
 	// CancelMarker makes every process honour the cancel marker: it exits
 	// once that file exists.
 	CancelMarker string `json:"cancel_marker,omitempty"`
-	// Result makes the worker publish ResultBody at that path once ResultAfter
-	// has elapsed and ResultMarker, if set, exists, then exit. Release and
-	// CancelMarker take precedence over publication.
+	// Result makes the worker publish ResultBody, or ResultBody the constant
+	// when that is empty, at that path once ResultAfter has elapsed and
+	// ResultMarker, if set, exists, then exit. Release and CancelMarker take
+	// precedence over publication.
 	Result       string        `json:"result,omitempty"`
+	ResultBody   string        `json:"result_body,omitempty"`
 	ResultAfter  time.Duration `json:"result_after,omitempty"`
 	ResultMarker string        `json:"result_marker,omitempty"`
 
@@ -193,7 +195,11 @@ func (w Worker) Wait() {
 					continue
 				}
 			}
-			_ = atomicfile.Write(w.Result, []byte(ResultBody))
+			body := w.ResultBody
+			if body == "" {
+				body = ResultBody
+			}
+			_ = atomicfile.Write(w.Result, []byte(body))
 			return
 		}
 	}
