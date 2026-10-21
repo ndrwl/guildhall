@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -29,7 +30,7 @@ func FixtureDigest(t testing.TB, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return digest(data)
+	return string(digest.Of(data))
 }
 
 // ReviewFixture returns the review outcome in reviews/<name>.json.
@@ -101,7 +102,7 @@ func (a Attempt) Render(t testing.TB) interp.Spec {
 	var inputs []render.Input
 	for _, in := range a.Inputs {
 		d := FixtureDigest(t, "docs/"+in.Doc)
-		inputs = append(inputs, render.Input{Port: in.Port, Name: "tasks/t7/" + in.Doc, SHA256: d[len("sha256:"):], Path: fixture("docs/" + in.Doc)})
+		inputs = append(inputs, render.Input{Port: in.Port, Name: "tasks/t7/" + in.Doc, SHA256: digest.Digest(d).Hex(), Path: fixture("docs/" + in.Doc)})
 	}
 	roots := []render.SkillRoot{{Name: "release", Dir: fixture("skills/release")}, {Name: "managed", Dir: fixture("skills/managed")}}
 	dir := filepath.Join(t.TempDir(), "attempt")

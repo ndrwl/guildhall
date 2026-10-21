@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -87,18 +88,22 @@ func (r *run) checkPrepared(s workflow.Step, n int, dir string, inputs []render.
 	}
 	want := make([]render.InputFile, len(inputs))
 	for i, in := range inputs {
-		want[i] = render.InputFile{Port: in.Port, Path: in.Name, Digest: "sha256:" + in.SHA256}
+		d, err := digest.ParseHex(in.SHA256)
+		if err != nil {
+			return refuse("input %s: %v", in.Name, err)
+		}
+		want[i] = render.InputFile{Port: in.Port, Path: in.Name, Digest: string(d)}
 	}
 	if !slices.Equal(m.Inputs, want) {
 		return refuse("manifest inputs %+v are not the recorded binding %+v", m.Inputs, want)
 	}
 
 	files := map[string]string{manifestFile: ""}
-	expect := func(name, digest string) error {
-		if old, ok := files[name]; ok && old != digest {
+	expect := func(name, sum string) error {
+		if old, ok := files[name]; ok && old != sum {
 			return fmt.Errorf("manifest names %s twice with different digests", name)
 		}
-		files[name] = digest
+		files[name] = sum
 		return nil
 	}
 	if m.Prompt.Path != render.PromptFile {
@@ -148,7 +153,7 @@ func (r *run) checkPrepared(s workflow.Step, n int, dir string, inputs []render.
 		if err != nil {
 			return err
 		}
-		if got := "sha256:" + digest(data); got != want {
+		if got := string(digest.Of(data)); got != want {
 			return fmt.Errorf("%s is %s, manifest names %s", name, got, want)
 		}
 		return nil
@@ -169,9 +174,9 @@ func treeDigest(files []render.File) string {
 	sorted := slices.SortedFunc(slices.Values(files), func(a, b render.File) int { return strings.Compare(a.Path, b.Path) })
 	var lines strings.Builder
 	for _, f := range sorted {
-		fmt.Fprintf(&lines, "%s  %s\n", strings.TrimPrefix(f.Digest, "sha256:"), f.Path)
+		fmt.Fprintf(&lines, "%s  %s\n", digest.Digest(f.Digest).Hex(), f.Path)
 	}
-	return "sha256:" + digest([]byte(lines.String()))
+	return string(digest.Of([]byte(lines.String())))
 }
 
 // decodeStrict decodes exactly one JSON value with no unknown fields and nothing after it.

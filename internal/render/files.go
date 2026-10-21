@@ -1,8 +1,6 @@
 package render
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -37,11 +36,6 @@ func identity(stage Stage, kind workflow.Kind) Identity {
 	}
 }
 
-func digest(data []byte) string {
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
 // normalise replaces CRLF and lone CR line endings with LF.
 func normalise(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
@@ -65,7 +59,7 @@ func readSource(what string, src Source) (File, string, error) {
 		return File{}, "", fmt.Errorf("render: %s %s: %w", what, name, err)
 	}
 	text := normalise(string(data))
-	return File{Path: name, Digest: digest([]byte(text))}, text, nil
+	return File{Path: name, Digest: string(digest.Of([]byte(text)))}, text, nil
 }
 
 func checkInput(in Input) (InputFile, []byte, error) {
@@ -77,11 +71,11 @@ func checkInput(in Input) (InputFile, []byte, error) {
 	if err != nil {
 		return InputFile{}, nil, fmt.Errorf("render: input %s: %w", name, err)
 	}
-	got := digest(data)
-	if got != "sha256:"+in.SHA256 {
+	got := digest.Of(data)
+	if got.Hex() != in.SHA256 {
 		return InputFile{}, nil, fmt.Errorf("render: input %s: %w: recorded %s, file is %s", name, ErrDigestMismatch, in.SHA256, got)
 	}
-	return InputFile{Port: in.Port, Path: name, Digest: got}, data, nil
+	return InputFile{Port: in.Port, Path: name, Digest: string(got)}, data, nil
 }
 
 // prepareDir creates dir, or accepts an existing empty one, and reports whether it created it.
@@ -168,7 +162,7 @@ func copySkill(sk foundSkill, dst string) (Skill, error) {
 		if err := os.Chmod(target, info.Mode().Perm()); err != nil {
 			return err
 		}
-		skill.Files = append(skill.Files, File{Path: filepath.ToSlash(rel), Digest: digest(data)})
+		skill.Files = append(skill.Files, File{Path: filepath.ToSlash(rel), Digest: string(digest.Of(data))})
 		return nil
 	})
 	if err != nil {
@@ -177,8 +171,8 @@ func copySkill(sk foundSkill, dst string) (Skill, error) {
 	slices.SortFunc(skill.Files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	var lines strings.Builder
 	for _, f := range skill.Files {
-		fmt.Fprintf(&lines, "%s  %s\n", strings.TrimPrefix(f.Digest, "sha256:"), f.Path)
+		fmt.Fprintf(&lines, "%s  %s\n", digest.Digest(f.Digest).Hex(), f.Path)
 	}
-	skill.Digest = digest([]byte(lines.String()))
+	skill.Digest = string(digest.Of([]byte(lines.String())))
 	return skill, nil
 }

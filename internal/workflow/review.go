@@ -1,11 +1,12 @@
 package workflow
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // ReviewOutcomeSchema identifies the review outcome contract shared by every review and document-review step, whoever its actor.
@@ -172,17 +173,17 @@ func (o ReviewOutcome) Validate() error {
 	case subject.CodeHead != "" && subject.DocumentDigest != "":
 		problems = append(problems, "subject needs a code_head or a document_digest, not both")
 	case subject.CodeHead != "":
-		if !isHex(subject.CodeHead, 40) && !isHex(subject.CodeHead, 64) {
+		if !digest.ValidHead(subject.CodeHead) {
 			problems = append(problems, "code_head must be a full commit id")
 		}
-		if !isDigest(o.Revisions.SpecDigest) {
+		if _, err := digest.Parse(o.Revisions.SpecDigest); err != nil {
 			problems = append(problems, `spec_digest must be "sha256:<64 hex>" when the subject is a code head`)
 		}
 	default:
-		if !isDigest(subject.DocumentDigest) {
+		if _, err := digest.Parse(subject.DocumentDigest); err != nil {
 			problems = append(problems, `document_digest must be "sha256:<64 hex>"`)
 		}
-		if o.Revisions.SpecDigest != "" && !isDigest(o.Revisions.SpecDigest) {
+		if _, err := digest.Parse(o.Revisions.SpecDigest); o.Revisions.SpecDigest != "" && err != nil {
 			problems = append(problems, `spec_digest must be "sha256:<64 hex>"`)
 		}
 	}
@@ -220,17 +221,4 @@ func (o ReviewOutcome) BoundTo(want Revisions) error {
 		return fmt.Errorf("review outcome is stale: %s differ", strings.Join(stale, ", "))
 	}
 	return nil
-}
-
-func isDigest(s string) bool {
-	digest, ok := strings.CutPrefix(s, "sha256:")
-	return ok && isHex(digest, 64)
-}
-
-func isHex(s string, n int) bool {
-	if len(s) != n || strings.ToLower(s) != s {
-		return false
-	}
-	_, err := hex.DecodeString(s)
-	return err == nil
 }

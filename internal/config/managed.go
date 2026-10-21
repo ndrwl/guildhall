@@ -2,7 +2,6 @@ package config
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 type managedFile struct {
@@ -24,7 +25,7 @@ func EncodeManaged(settings map[string]ManagedSetting) ([]byte, error) {
 	if err := encoder.Encode(managedFile{SchemaVersion: SchemaVersion, Managed: settings}); err != nil {
 		return nil, err
 	}
-	return fmt.Appendf(nil, "# sha256:%x\n%s", sha256.Sum256(body.Bytes()), body.Bytes()), nil
+	return fmt.Appendf(nil, "# %s\n%s", digest.Of(body.Bytes()), body.Bytes()), nil
 }
 
 func ParseCombined(local, managed []byte) (*Config, error) {
@@ -41,7 +42,7 @@ func ParseCombined(local, managed []byte) (*Config, error) {
 		return nil, errors.New("inline managed settings conflict with managed.toml; move managed settings out of config.toml during enrolment")
 	}
 	header, body, ok := bytes.Cut(managed, []byte("\n"))
-	if !ok || string(header) != fmt.Sprintf("# sha256:%x", sha256.Sum256(body)) {
+	if !ok || string(header) != "# "+string(digest.Of(body)) {
 		return nil, errors.New("managed.toml: incomplete or corrupt transfer (checksum mismatch)")
 	}
 	var m managedFile

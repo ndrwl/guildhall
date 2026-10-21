@@ -7,7 +7,7 @@ import (
 )
 
 func sampleApproval(c byte) WorkflowApproval {
-	return WorkflowApproval{Name: "default", Digest: digest(c), Words: "Approved: two reviews before deliver.\r\n"}
+	return WorkflowApproval{Name: "default", Digest: sampleDigest(c), Words: "Approved: two reviews before deliver.\r\n"}
 }
 
 func TestApproveWorkflowRecordsOnce(t *testing.T) {
@@ -100,8 +100,8 @@ func TestWorkflowApprovalsListAndSurviveReopen(t *testing.T) {
 		t.Fatalf("approvals = %+v, %v", got, err)
 	}
 	for i, c := range []byte{'a', 'b', 'c'} {
-		if got[i].Digest != digest(c) {
-			t.Errorf("approval %d digest = %s, want %s (digest order)", i, got[i].Digest, digest(c))
+		if got[i].Digest != sampleDigest(c) {
+			t.Errorf("approval %d digest = %s, want %s (digest order)", i, got[i].Digest, sampleDigest(c))
 		}
 	}
 	rep, err := r.Doctor()

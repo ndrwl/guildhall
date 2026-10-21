@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -58,7 +59,7 @@ func (r *run) bind(s workflow.Step, n int, inputs []render.Input, revisions *wor
 		return err
 	}
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
-		Path: path.Join("tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d.inputs.json", s.ID, n)), SHA256: digest(data)}, data)
+		Path: path.Join("tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d.inputs.json", s.ID, n)), SHA256: digest.Of(data).Hex()}, data)
 }
 
 // boundInputs returns the inputs an attempt was given, as render inputs.
@@ -88,10 +89,16 @@ func (r *run) want(s workflow.Step, inputs []render.Input) (workflow.Revisions, 
 	want := workflow.Revisions{StandardsRevision: r.e.StandardsRevision}
 	for _, in := range inputs {
 		switch in.Port {
-		case "subject":
-			want.Subject.DocumentDigest = "sha256:" + in.SHA256
-		case "spec":
-			want.SpecDigest = "sha256:" + in.SHA256
+		case "subject", "spec":
+			d, err := digest.ParseHex(in.SHA256)
+			if err != nil {
+				return want, err
+			}
+			if in.Port == "subject" {
+				want.Subject.DocumentDigest = string(d)
+			} else {
+				want.SpecDigest = string(d)
+			}
 		case "head":
 			h, err := r.head(in)
 			if err != nil {
@@ -301,7 +308,7 @@ func (r *run) acceptOutcome(s workflow.Step, d store.Decision, origin firing) er
 	if err != nil {
 		return err
 	}
-	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest(data)}, data)
+	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest.Of(data).Hex()}, data)
 }
 
 // checkOutcome refuses a review attempt's outcome that is not bound to the revisions the attempt was given,

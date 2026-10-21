@@ -2,8 +2,6 @@ package interp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -465,7 +464,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		d := store.DocumentRef{
 			Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
 			Path:   path.Join("tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d", s.ID, n), o.Path),
-			SHA256: digest(data),
+			SHA256: digest.Of(data).Hex(),
 		}
 		if err := r.put(d, data); err != nil {
 			return err
@@ -478,7 +477,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 func checkPort(t workflow.ArtifactType, data []byte) error {
 	switch t {
 	case workflow.CodeHead:
-		if !isHead(strings.TrimSpace(string(data))) {
+		if !digest.ValidHead(strings.TrimSpace(string(data))) {
 			return fmt.Errorf("code head output is not a 40 or 64 lowercase hex object id")
 		}
 	case workflow.ReviewResult:
@@ -493,7 +492,7 @@ func checkPort(t workflow.ArtifactType, data []byte) error {
 func (r *run) put(d store.DocumentRef, data []byte) error {
 	file := filepath.Join(r.e.DocumentDir, filepath.FromSlash(d.Path))
 	if prior, err := os.ReadFile(file); err == nil {
-		if digest(prior) != d.SHA256 {
+		if digest.Of(prior).Hex() != d.SHA256 {
 			return fmt.Errorf("document file %s already holds other content", d.Path)
 		}
 	} else if err := writeFile(file, data); err != nil {
@@ -569,7 +568,7 @@ func (r *run) humanOutcome(d store.Decision) error {
 	if err != nil {
 		return err
 	}
-	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest(data)}, data)
+	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "outcome.json"), SHA256: digest.Of(data).Hex()}, data)
 }
 
 // subjectPorts names the input whose artefact each Guildmaster or engine decision binds to.
@@ -611,7 +610,8 @@ func (r *run) subject(s workflow.Step, inputs []render.Input) (*store.Subject, e
 		h, err := r.head(inputs[i])
 		return &store.Subject{Kind: store.SubjectHead, Digest: h}, err
 	}
-	return &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + inputs[i].SHA256}, nil
+	d, err := digest.ParseHex(inputs[i].SHA256)
+	return &store.Subject{Kind: store.SubjectDocument, Digest: string(d)}, err
 }
 
 func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask) (Next, error) {
@@ -634,7 +634,11 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 				revisions.Subject.CodeHead = subject.Digest
 				for _, in := range inputs {
 					if in.Port == "spec" {
-						revisions.SpecDigest = "sha256:" + in.SHA256
+						spec, err := digest.ParseHex(in.SHA256)
+						if err != nil {
+							return Next{}, err
+						}
+						revisions.SpecDigest = string(spec)
 					}
 				}
 			}
@@ -646,7 +650,7 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 			if err != nil {
 				return Next{}, err
 			}
-			if err := r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "revisions.json"), SHA256: digest(data)}, data); err != nil {
+			if err := r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "revisions.json"), SHA256: digest.Of(data).Hex()}, data); err != nil {
 				return Next{}, err
 			}
 		}
@@ -669,7 +673,7 @@ func (r *run) accept(s workflow.Step, d store.Decision) error {
 		return err
 	}
 	i := slices.IndexFunc(inputs, func(in render.Input) bool { return in.Port == "spec" })
-	if d.Subject == nil || "sha256:"+inputs[i].SHA256 != d.Subject.Digest {
+	if spec, err := digest.ParseHex(inputs[i].SHA256); err != nil || d.Subject == nil || string(spec) != d.Subject.Digest {
 		return fmt.Errorf("%w: decision %s approved another document than %s", ErrSpecGate, d.ID, inputs[i].Name)
 	}
 	doc := store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: inputs[i].Name, SHA256: inputs[i].SHA256}
@@ -769,10 +773,11 @@ func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 // specGate checks that an accepted spec is the document its approval decision approved.
 func (r *run) specGate(source string, doc store.DocumentRef) error {
 	d := r.decision(source)
+	spec, err := digest.ParseHex(doc.SHA256)
 	switch {
 	case d == nil || !d.Answered || (d.Kind != store.DecisionApproval || d.Choice != string(workflow.VerdictApproved)) && (d.Kind != store.DecisionLoopExit || d.Choice != "accept"):
 		return fmt.Errorf("%w: %s has no approved decision", ErrSpecGate, doc.Name)
-	case d.Subject == nil || d.Subject.Digest != "sha256:"+doc.SHA256:
+	case d.Subject == nil || d.Subject.Digest != string(spec) || err != nil:
 		return fmt.Errorf("%w: accepted spec %s is sha256:%s, decision %s approved %v", ErrSpecGate, doc.Name, doc.SHA256, d.ID, d.Subject)
 	}
 	return nil
@@ -785,7 +790,7 @@ func (r *run) head(in render.Input) (string, error) {
 		return "", err
 	}
 	h := strings.TrimSpace(string(data))
-	if !isHead(h) {
+	if !digest.ValidHead(h) {
 		return "", fmt.Errorf("document %s is not a code head", in.Name)
 	}
 	return h, nil
@@ -797,7 +802,7 @@ func (r *run) read(d store.DocumentRef) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if digest(data) != d.SHA256 {
+	if digest.Of(data).Hex() != d.SHA256 {
 		return nil, fmt.Errorf("document %s does not match its recorded digest", d.Path)
 	}
 	return data, nil
@@ -812,7 +817,7 @@ func (r *run) notifyDecision(d store.Decision, step string) error {
 func (r *run) notify(what, typ, text string) error {
 	id := fmt.Sprintf("%s.%s.%s", r.task.Repository, r.task.ID, what)
 	if len(id) > 100 {
-		id = "advance." + digest([]byte(id))[:64]
+		id = "advance." + digest.Of([]byte(id)).Hex()
 	}
 	_, err := r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, messaging.Envelope{
 		Schema: messaging.SchemaPrefix + strconv.Itoa(messaging.SchemaVersion), ID: id, Recipient: store.RecipientDirector,
@@ -827,7 +832,7 @@ func (r *run) mutation(kind string, parts ...string) string {
 	if len(id) <= 128 {
 		return id
 	}
-	return kind + ":sha256:" + digest([]byte(id))
+	return kind + ":" + string(digest.Of([]byte(id)))
 }
 
 func (r *run) identity(step string, n int) adapter.Identity {
@@ -840,19 +845,6 @@ func (r *run) attemptDir(step string, n int) string {
 
 func (r *run) resultFile(step string, n int) string {
 	return filepath.Join(r.attemptDir(step, n), "result.json")
-}
-
-func isHead(s string) bool {
-	if len(s) != 40 && len(s) != 64 {
-		return false
-	}
-	_, err := hex.DecodeString(s)
-	return err == nil && strings.ToLower(s) == s
-}
-
-func digest(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
 }
 
 func exists(p string) bool {

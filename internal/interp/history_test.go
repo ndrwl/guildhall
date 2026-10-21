@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -61,7 +62,7 @@ func (f files) read(d store.DocumentRef) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("document %s: file not found", d.Path)
 	}
-	if digest(data) != d.SHA256 {
+	if digest.Of(data).Hex() != d.SHA256 {
 		return nil, fmt.Errorf("document %s does not match its recorded digest", d.Path)
 	}
 	return data, nil
@@ -70,7 +71,7 @@ func (f files) read(d store.DocumentRef) ([]byte, error) {
 // doc records data as document name in f.
 func (f files) doc(name string, data []byte) store.DocumentRef {
 	f[name] = data
-	return store.DocumentRef{Name: name, Path: name, SHA256: digest(data)}
+	return store.DocumentRef{Name: name, Path: name, SHA256: digest.Of(data).Hex()}
 }
 
 func outcomeData(t *testing.T, v workflow.Verdict) []byte {
@@ -217,7 +218,7 @@ func TestMissingOriginIsExplicit(t *testing.T) {
 			t.Fatal("origin of exit 2 found without round 2")
 		}
 		// Round 2's outcome recorded, but its file holds other content.
-		h.addDocument(store.DocumentRef{Name: "review-2-outcome", Path: "review-2-outcome", SHA256: digest([]byte("other"))})
+		h.addDocument(store.DocumentRef{Name: "review-2-outcome", Path: "review-2-outcome", SHA256: digest.Of([]byte("other")).Hex()})
 		f["review-2-outcome"] = outcomeData(t, workflow.VerdictChangesRequested)
 		if _, _, err := h.output("review", "outcome"); err == nil || !strings.Contains(err.Error(), "digest") {
 			t.Fatalf("output over a corrupt outcome = %v, want a digest error", err)
@@ -249,7 +250,7 @@ func TestHistorySeesItsWrites(t *testing.T) {
 	}
 	d.Answered, d.Choice = true, changesRequested
 	fs, err := h.firings(guildmasterReview)
-	if err != nil || len(fs) != 1 || fs[0].round != 1 || fs[0].path != "tasks/app/t7/review-1/answer.md" || fs[0].sha256 != digest(nil) {
+	if err != nil || len(fs) != 1 || fs[0].round != 1 || fs[0].path != "tasks/app/t7/review-1/answer.md" || fs[0].sha256 != digest.Of(nil).Hex() {
 		t.Fatalf("firings after answering = %+v, %v", fs, err)
 	}
 	h.addDocument(store.DocumentRef{Name: "review-1-outcome"})

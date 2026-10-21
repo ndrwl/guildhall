@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -259,7 +260,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, ins
 	if err := os.WriteFile(r.PromptPath, prompt, 0o644); err != nil {
 		return fmt.Errorf("render: %w", err)
 	}
-	m.Prompt = File{Path: PromptFile, Digest: digest(prompt)}
+	m.Prompt = File{Path: PromptFile, Digest: string(digest.Of(prompt))}
 	return nil
 }
 
