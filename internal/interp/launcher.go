@@ -33,7 +33,7 @@ type Launcher interface {
 }
 
 // Spec is what the interpreter gives a Launcher for one attempt: the rendered prompt and where its result goes.
-// AdapterSpec maps it onto the adapter.Spec a runtime adapter receives.
+// AdapterSpec is the reference mapping onto adapter.Spec that the adapter conformance suite uses; production launch builds its own spec today.
 type Spec struct {
 	// Identity is the attempt identity the result file must name.
 	Identity adapter.Identity
