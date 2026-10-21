@@ -124,14 +124,20 @@ func (p *Process) owned(ctx context.Context, c *child) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	exited := false
 	for {
 		o, err := c.at.owner()
 		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity && o.Endpoint != "" {
 			return nil
 		}
+		if exited {
+			return errors.New("the launcher exited before owning the attempt")
+		}
 		select {
 		case <-c.exited:
-			return errors.New("the launcher exited before owning the attempt")
+			// A fast launcher can record ownership and finish after the read
+			// above. Read its durable record again before reporting failure.
+			exited = true
 		case <-ctx.Done():
 			return fmt.Errorf("the launcher did not own the attempt: %w", ctx.Err())
 		case <-time.After(20 * time.Millisecond):
