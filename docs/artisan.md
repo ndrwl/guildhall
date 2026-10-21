@@ -249,6 +249,7 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 
 ```json
 {
+  "schema": "guildhall.attempt-heartbeat/1",
   "repository": "app",
   "task_id": "t-1",
   "step": "build",
@@ -260,15 +261,19 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 }
 ```
 
-- It is `artisan.Heartbeat`, and the store's heartbeat record `store.Heartbeat` has the same fields and JSON, so a beat converts to it directly and the record the interpreter reads for [`worker-stalled`](interpreter.md#worker-stalled-observations) has the shape the launcher writes; feeding the file to `PutHeartbeat` is the command-line slice's.
-- `sequence` increases with every write, continuing from a heartbeat an earlier launcher of the attempt left, as the store requires.
-- `worker_state` is the launcher's phase: `starting`, `running` or `stopping`.
+- It is `artisan.Heartbeat`, written with `WriteHeartbeat`; reconcile and the interpreter's [`worker-stalled`](interpreter.md#worker-stalled-observations) observation read it with `ReadHeartbeat`.
+- It is an observation, not a store record: it has no receipt, replay or ownership meaning, and reading or writing it never changes a record.
+- `sequence` is positive and increases with every write, continuing from a heartbeat an earlier launcher of the attempt left.
+- `worker_state` is the launcher's phase: `starting`, `running` or `stopping`; it is nonblank UTF-8 of at most 256 bytes.
 - `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began.
   A later time than the beat is reported as the beat's time.
 - The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live.
   Beats continue during result grace and cooperative supervision, but pause while the stop ladder waits on a signal rung.
 - A failed write is logged as `heartbeat-failed` in `events.jsonl` and retried on the next beat; it never ends the attempt.
-- `ReadHeartbeat` reads the file.
+- `WriteHeartbeat` validates nonempty repository, task and step names, a positive attempt and sequence, nonzero times with `last_output_at` not after `time`, and the worker-state bound above; invalid values return `ErrInvalidHeartbeat` without writing.
+  It sets the schema and replaces the file without reading the previous beat; the launcher is responsible for increasing the sequence.
+- `ReadHeartbeat` decodes the file with [`strictjson`](contracts/strictjson.md) and never guesses: no file is `ErrNoHeartbeat`, a newer schema matches `strictjson.ErrNewerSchema`, and an unversioned, malformed or rule-breaking file is `ErrInvalidHeartbeat`.
+  Other filesystem read failures are returned unchanged.
 
 ## Reconcile
 
@@ -337,6 +342,6 @@ Its cases are the P0 lifecycle scenarios: a cooperative worker stopping at rung 
 It also covers SIGTERM and SIGHUP stopping the attempt, a forwarded interrupt leaving it running, an invalid result failing it, a decided attempt not run again, and survivors reported after the last rung.
 
 `internal/reconcile/reconcile_test.go` runs `Classify` against recorded attempt directories and live processes: the test binary plays the worker tree, an in-process launcher with a bound endpoint, and a separate launcher process for the crash.
-The four heartbeat cases are a wedged launcher whose supervision loop is really blocked (stuck while its identity and endpoint live, then running again); a stalled worker whose fresh heartbeat with an old `last_output_at` is running, not stuck, and is accepted and read back by a real store; a stale heartbeat while the launcher lives (stuck, take-over refused with `ErrOwnerLive`, running once beats resume); and a killed launcher process whose frozen heartbeat is reported while the identity decides, `unknown` while contained processes survive and `exited` once they are gone.
+The four heartbeat cases are a wedged launcher whose supervision loop is really blocked (stuck while its identity and endpoint live, then running again); a stalled worker whose fresh heartbeat with an old `last_output_at` is running, not stuck; a stale heartbeat while the launcher lives (stuck, take-over refused with `ErrOwnerLive`, running once beats resume); and a killed launcher process whose frozen heartbeat is reported while the identity decides, `unknown` while contained processes survive and `exited` once they are gone.
 The pinned scratch cases are the files deciding first (L22), a gone launcher with an emptied or surviving unit (L13, L14), a broken endpoint of a live launcher (L19), a reused PID (L20) and a leftover endpoint file (L21).
 Every case checks that the processes it caused are gone.

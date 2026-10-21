@@ -30,23 +30,6 @@ Containment fields follow the [containment record](#containment-record) rules.
 Document paths are relative to the Director's document directory and must be clean, local, slash-separated paths of at most 1024 bytes, without backslashes or colons.
 Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` before hashing or persistence.
 
-## Attempt heartbeats
-
-`PutHeartbeat` stores the latest heartbeat per repository, task, step and attempt in the repository's `heartbeats` bucket, using the same key as an attempt.
-The record contains `sequence`, `time`, `worker_state` and `last_output_at`.
-Sequence must be positive and increase; times must be nonzero and last output cannot follow heartbeat time; worker state is nonblank UTF-8 bounded by `MaxTextBytes`.
-Only a running, existing attempt accepts writes; missing attempts return `ErrNotFound`, while completed attempts and non-increasing sequence return `ErrInvalid`.
-Mutation replay is unchanged and receipts name `heartbeat/<step>/<number>`.
-`Heartbeat` returns the latest record or `ErrNotFound`; reading or writing a heartbeat never changes the attempt.
-`Heartbeat` is a store value with the fields and JSON of `artisan.Heartbeat`, the record the launcher writes to its attempt directory about every five seconds ([launcher heartbeat](artisan.md#heartbeat)).
-Heartbeats are read separately, not through `TaskHistory`.
-
-The shared Records contract and worker-stalled integration tests were written before implementation, but no failure was observed then.
-On 2026-10-21, after implementation was written, temporarily stubbing both heartbeat reads to return `ErrNotFound` made `TestRecordsContract/{store,double}/heartbeat` fail on the persisted heartbeat read (`record not found`) and `TestWorkerStalled/{double,store}` fail with `stalls = 0, want 1`.
-Both implementations were restored for focused verification.
-These [captured runs](evidence/heartbeat-2026-10-21.md) are post-implementation failure evidence, not historical red-first evidence.
-See [store contract](contracts/store.md).
-
 ## Mutations and receipts
 
 Every change is a mutation that names a caller-chosen mutation id of 1 to 128 characters from letters, digits, `.`, `_`, `:` and `-`, starting with a letter or digit.
@@ -55,10 +38,10 @@ After a crash, either the records and the receipt are both present or neither is
 
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, the record it wrote, a store-wide sequence number starting at 1 and the commit time in UTC.
 The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, `ruling/<document>/<finding>` for recording and contesting a ruling, and `message/<id>` for sending and acknowledging a message.
-Heartbeat receipts follow the [attempt heartbeat contract](#attempt-heartbeats).
 It is not part of the request digest, so receipts written before it existed have no record and still replay; mutations outside a task, such as workflow approvals, have none.
-`TaskHistory` reads a task, its attempts, documents, decisions and rulings, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership` and heartbeats with `Heartbeat`.
+`TaskHistory` reads a task, its attempts, documents, decisions and rulings, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership`.
 It scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
+The launcher's [heartbeat](artisan.md#heartbeat) is a file in the attempt directory, not a store record, so it writes no receipt.
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.
 The [decision command reference](decisions-cli.md#answers) defines answer mutation ids (D23).

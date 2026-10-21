@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/digest"
-	"github.com/ndrwl/guildhall/internal/store"
 )
 
 func (r *run) workerStalled(step string, number int) error {
@@ -14,12 +14,15 @@ func (r *run) workerStalled(step string, number int) error {
 	if interval <= 0 {
 		return nil
 	}
-	h, err := r.e.Records.Heartbeat(r.task.Repository, r.task.ID, step, number)
-	if errors.Is(err, store.ErrNotFound) {
+	h, err := artisan.ReadHeartbeat(r.attemptDir(step, number))
+	if errors.Is(err, artisan.ErrNoHeartbeat) {
 		return nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("interp: %w", err)
+	}
+	if h.Key() != (artisan.AttemptKey{Repository: r.task.Repository, TaskID: r.task.ID, Step: step, Attempt: number}) {
+		return nil
 	}
 	now := time.Now()
 	if r.e.Now != nil {
