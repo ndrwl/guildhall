@@ -10,6 +10,8 @@ Its consumer seams: `Records` (the store methods it calls), `Prompter` with `Pro
 `BlockedQuestion` is the provisional file a blocked attempt writes.
 The private history view ([history](../interpreter.md#history)) is a contract inside the package, not a seam: one parser edge for record names and the reads every step makes of rounds, exits, firings, feedback and outputs.
 
+Result intake is complete only after all output documents, ruling contests and stall notifications have succeeded and the outcome has been recorded or reconciled. The engine atomically publishes `intake.json` in the attempt directory at that boundary; without it, launcher-completed attempts replay all intake operations idempotently before workflow traversal can consume their documents. A concurrent identical `FinishAttempt` outcome is replay; a conflicting outcome is preserved and reported as an error without successful advancement.
+
 The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat file read, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
 
 ## Tests
@@ -38,4 +40,5 @@ The full-review case of `RunRecordsContract` (refusals, replay, one pending requ
 The revision-change regression was added during review after implementation.
 It came with the implementation from an earlier branch; on 2026-10-21, with `rebase` stubbed to return a full scope and no range, the rebase cases failed (`manifest lacks required input "resolution"`) and so did the full cases' range check.
 `launcher_outcome_test.go` was written red first on both backends: a plan the launcher recorded succeeded before its intake, or before any event named it, failed with `plan.spec has no recorded document`, and now has its output recorded once and opens the approval; a stopped outcome standing over a succeeded result passed unchanged and pins that the launcher's outcome stands.
+Review regressions added in this round exercise interrupted second-output intake and same/conflicting finish races on both backends in `launcher_outcome_test.go`. The contested case in `rulings_test.go` interrupts intake after the outcome document but before contesting; `TestStallSignals` interrupts notification after the launcher has recorded success. Recovery must retain every output, contest once, pause for the Guildmaster and deliver the stall notification. These cases execute `Engine.Advance`; no separate pre-fix run was performed under the review round's single-verification constraint. The focused run exposed recovery occurring too late in workflow traversal for interrupted contest and stall intake; recovery was moved before traversal afterwards, pending the outer validation phase's confirmation.
 `launcher_test.go` (the guard inside and outside a test binary); `Spec.Validate` through the shared suite in `interptest`.

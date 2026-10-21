@@ -13,6 +13,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // LogFile is the launcher process's output, appended in the attempt directory.
@@ -35,8 +36,8 @@ const LogFile = "launcher.log"
 // a process that exits first is an error, and one that does not get there
 // within StartTimeout is stopped and is an error.
 //
-// Stop stops the attempt through Stop (the package function) and waits for
-// the process Launch started to exit. It refuses a handle this Process did
+// Stop asks only the process Launch started to stop through its endpoint and
+// waits for that process to exit. It refuses a handle this Process did
 // not return; stopping again, or after the attempt finished, is not an error.
 // Both are safe for concurrent use.
 type Process struct {
@@ -57,8 +58,9 @@ var _ interp.Launcher = (*Process)(nil)
 
 // child is one process Launch started.
 type child struct {
-	at     Attempt
-	exited chan struct{}
+	at       Attempt
+	identity artisan.Identity
+	exited   chan struct{}
 }
 
 // Launch implements interp.Launcher.Launch; see Process.
@@ -97,10 +99,11 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	if err != nil {
 		return interp.Handle{}, fmt.Errorf("launch: start %s: %w", k, err)
 	}
-	c := &child{at: at, exited: make(chan struct{})}
+	id, identityErr := artisan.Lookup(cmd.Process.Pid)
+	c := &child{at: at, identity: id, exited: make(chan struct{})}
 	go func() { _ = cmd.Wait(); close(c.exited) }()
 	h := interp.Handle{Identity: spec.Identity, Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
-	if err := p.owned(ctx, c, cmd.Process.Pid); err != nil {
+	if err := errors.Join(identityErr, p.owned(ctx, c)); err != nil {
 		_ = p.stop(c)
 		return interp.Handle{}, fmt.Errorf("launch: %s: %w; see %s", k, err, filepath.Join(at.Dir(), LogFile))
 	}
@@ -113,8 +116,8 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	return h, nil
 }
 
-// owned waits until process pid owns c's attempt with its endpoint recorded.
-func (p *Process) owned(ctx context.Context, c *child, pid int) error {
+// owned waits until c owns its attempt with its endpoint recorded.
+func (p *Process) owned(ctx context.Context, c *child) error {
 	timeout := p.StartTimeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -123,7 +126,7 @@ func (p *Process) owned(ctx context.Context, c *child, pid int) error {
 	defer cancel()
 	for {
 		o, err := c.at.owner()
-		if err == nil && o != nil && o.LauncherIdentity.PID == pid && o.Endpoint != "" {
+		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity && o.Endpoint != "" {
 			return nil
 		}
 		select {
@@ -147,18 +150,45 @@ func (p *Process) Stop(h interp.Handle) error {
 	return p.stop(c)
 }
 
-// stop stops c's attempt and waits for its process to exit, then checks again that it is stopped.
+// stop asks c's endpoint to stop and waits for its process to exit.
 func (p *Process) stop(c *child) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	_, err := Stop(ctx, c.at)
-	select {
-	case <-c.exited:
-	case <-ctx.Done():
-		return errors.Join(err, fmt.Errorf("launch: the launcher of %s did not exit: %w", c.at.Key, ctx.Err()))
+	for {
+		o, err := c.at.owner()
+		if err != nil {
+			return err
+		}
+		select {
+		case <-c.exited:
+			if o != nil && artisan.Identity(o.LauncherIdentity) == c.identity {
+				if live, err := ProbeOwner(*o); err != nil || live != store.ProbeGone {
+					return errors.Join(ErrNotStopped, err)
+				}
+			}
+			return nil
+		default:
+		}
+		if o != nil && artisan.Identity(o.LauncherIdentity) == c.identity && o.Endpoint != "" {
+			_, err := artisan.Call(ctx, o.Endpoint, c.at.Key, c.identity, artisan.OpStop)
+			select {
+			case <-c.exited:
+				if err != nil && !errors.Is(err, artisan.ErrEndpointRequest) {
+					if live, probeErr := ProbeOwner(*o); probeErr == nil && live == store.ProbeGone {
+						return nil
+					}
+				}
+				return err
+			case <-ctx.Done():
+				return errors.Join(err, ctx.Err())
+			}
+		}
+		select {
+		case <-c.exited:
+			continue
+		case <-ctx.Done():
+			return fmt.Errorf("launch: the launcher of %s did not exit: %w", c.at.Key, ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
-	if errors.Is(err, ErrNotStopped) {
-		_, err = Stop(ctx, c.at)
-	}
-	return err
 }

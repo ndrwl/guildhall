@@ -1,6 +1,7 @@
 package interp_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -280,6 +281,13 @@ func TestStallSignals(t *testing.T) {
 			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
 			// Build 2 returns the unchanged head, so the review runs again on it with its previous outcome.
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "review", Attempt: 2})
+			if _, err := e.h.Records.FinishAttempt("launcher-review-2", "app", "t7", "review", 2, store.AttemptSucceeded); err != nil {
+				t.Fatal(err)
+			}
+			e.eng.Outbox = &interruptedOutbox{Outbox: e.eng.Outbox, fail: true}
+			if _, err := e.eng.Advance(context.Background(), interp.Event{Kind: interp.AttemptResult, Repository: "app", Task: "t7", Step: "review", Attempt: 2}); err == nil {
+				t.Fatal("expected interrupted stall notification")
+			}
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 3})
 			msgs := e.messages(t)
 			stall, ok := msgs["app.t7.stall.review-2"]

@@ -184,6 +184,17 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 		return Next{}, err
 	}
 	for _, step := range def.Steps {
+		if step.Actor() != workflow.ArtisanActor {
+			continue
+		}
+		a := r.latestAttempt(step.ID)
+		if a != nil && a.Outcome == store.AttemptSucceeded && !r.taken(step, a.Number) {
+			if err := r.takeResult(step, a); err != nil {
+				return Next{}, err
+			}
+		}
+	}
+	for _, step := range def.Steps {
 		done, next, err := r.step(step)
 		if err != nil {
 			return Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)
@@ -299,11 +310,6 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 			return false, Next{}, err
 		}
 		return false, next, r.launch(s, a.Number, name, r.boundInputs(b))
-	case a.Outcome == store.AttemptSucceeded && !r.taken(s, a.Number):
-		// The launcher recorded the outcome before the result's intake: take its outputs now.
-		if err := r.takeResult(s, a); err != nil {
-			return false, Next{}, err
-		}
 	case a.Outcome != store.AttemptSucceeded:
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), "attempt-failed",
 			fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome))
@@ -428,10 +434,8 @@ func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render
 	return writeFile(filepath.Join(r.attemptDir(s.ID, n), launchedFile), data)
 }
 
-// taken reports whether succeeded attempt n of s has its output port's document recorded.
 func (r *run) taken(s workflow.Step, n int) bool {
-	kind, _ := workflow.LookupKind(s.Type, s.Version)
-	return len(kind.Outputs) == 0 || r.document(documentName(place{step: s.ID, round: n, part: kind.Outputs[0].Name})) != nil
+	return exists(filepath.Join(r.attemptDir(s.ID, n), "intake.json"))
 }
 
 // takeResult records a finished attempt: its outputs as documents when it succeeded, then its outcome.
@@ -454,15 +458,23 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 		}
 		outcome = store.AttemptSucceeded
 	}
-	if a.Outcome != "" {
-		return nil
+	if a.Outcome == "" {
+		n := strconv.Itoa(a.Number)
+		if _, err := r.e.Records.FinishAttempt(r.mutation("attempt-finish", s.ID, n), r.task.Repository, r.task.ID, s.ID, a.Number, outcome); err != nil {
+			attempts, readErr := r.e.Records.Attempts(r.task.Repository, r.task.ID)
+			if readErr != nil {
+				return fmt.Errorf("interp: %w", errors.Join(err, readErr))
+			}
+			i := slices.IndexFunc(attempts, func(recorded store.StageAttempt) bool {
+				return recorded.Step == s.ID && recorded.Number == a.Number && recorded.Outcome == outcome
+			})
+			if i < 0 {
+				return fmt.Errorf("interp: %w", err)
+			}
+		}
+		a.Outcome = outcome
 	}
-	n := strconv.Itoa(a.Number)
-	if _, err := r.e.Records.FinishAttempt(r.mutation("attempt-finish", s.ID, n), r.task.Repository, r.task.ID, s.ID, a.Number, outcome); err != nil {
-		return fmt.Errorf("interp: %w", err)
-	}
-	a.Outcome = outcome
-	return nil
+	return writeFile(filepath.Join(r.attemptDir(s.ID, a.Number), "intake.json"), []byte("{}\n"))
 }
 
 // recordOutputs copies each output into the document directory and records it; the first is the step's

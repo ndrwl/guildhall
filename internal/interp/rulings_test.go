@@ -1,6 +1,7 @@
 package interp_test
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -57,6 +58,15 @@ func TestDirectorRulings(t *testing.T) {
 					t.Fatal(err)
 				}
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
+				if tc.name == "contested" {
+					if _, err := e.h.Records.FinishAttempt("launcher-review-2", "app", "t7", "review", 2, store.AttemptSucceeded); err != nil {
+						t.Fatal(err)
+					}
+					e.eng.Records = &interruptedIntake{Records: e.h.Records, failContest: true}
+					if _, err := e.eng.Advance(context.Background(), interp.Event{Kind: interp.AttemptResult, Repository: "app", Task: "t7", Step: "review", Attempt: 2}); err == nil {
+						t.Fatal("expected interrupted contest")
+					}
+				}
 				for range 2 { // a replayed advance contests nothing twice
 					want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), tc.next)
 				}

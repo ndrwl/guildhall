@@ -115,6 +115,41 @@ func TestProcessRefusesASpecOutsideItsAttemptLayout(t *testing.T) {
 	}
 }
 
+func TestProcessDuplicateLeavesOwnerRunning(t *testing.T) {
+	p := newProcess(t)
+	spec := prepared(t, p, fixtureSpec(t, instructions[interptest.Hangs]))
+	h, err := p.Launch(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Stop(h) })
+	duplicate := &launch.Process{Executable: p.Executable, Env: p.Env, Store: p.Store, StateDir: p.StateDir}
+	if _, err := duplicate.Launch(context.Background(), spec); err == nil {
+		t.Fatal("duplicate launch succeeded")
+	}
+	at := launch.Attempt{Store: p.Store, StateDir: p.StateDir, Key: artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}}
+	var o store.Ownership
+	withStore(t, at, func(s *store.Store) {
+		var err error
+		o, err = s.Ownership(at.Key.Repository, at.Key.TaskID, at.Key.Step, at.Key.Attempt)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if o.State == store.OwnerReleased {
+		t.Fatal("duplicate launch released the original owner")
+	}
+	if _, err := artisan.Call(context.Background(), o.Endpoint, at.Key, artisan.Identity(o.LauncherIdentity), artisan.OpStatus); err != nil {
+		t.Fatalf("original owner no longer serves status: %v", err)
+	}
+	if err := p.Stop(h); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Stop(h); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProcessLaunchFailsWhenTheLauncherExitsFirst(t *testing.T) {
 	p := newProcess(t)
 	spec := prepared(t, p, fixtureSpec(t, ""))
