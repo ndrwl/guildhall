@@ -1,6 +1,6 @@
 ---
 name: guildhall-spec
-description: Use in a plan stage to write the spec the Guildmaster accepts: problem, solution, contracts, contract tests, acceptance criteria, out of scope and size.
+description: Use in a plan stage to write the spec the Guildmaster accepts, including problem, solution, contracts, contract tests, acceptance criteria, out of scope and size.
 ---
 
 Adapted from `to-spec` and `triage/AGENT-BRIEF.md` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
