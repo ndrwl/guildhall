@@ -136,9 +136,15 @@ func (u *fakeUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 	}
 	go func() {
 		w.Wait()
-		u.procs.end(escaped...)
 		u.mu.Lock()
 		defer u.mu.Unlock()
+		select {
+		case <-u.exited:
+			// Unit shutdown released this waiter, not the escaped processes.
+			return
+		default:
+		}
+		u.procs.end(escaped...)
 		u.endLocked()
 	}()
 	return u.worker, nil
