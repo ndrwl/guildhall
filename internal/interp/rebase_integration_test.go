@@ -18,38 +18,41 @@ import (
 // Exercise the engine with actual commit ranges and durable records. Only the
 // worker responses are scripted: this test neither requires nor invokes a model.
 func TestRebaseRealGitStore(t *testing.T) {
+	// One history serves every scenario: classification only reads it, and each scenario names its commits by id.
+	repo := t.TempDir()
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(repo, "empty-gitconfig"))
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=integration", "-c", "user.email=integration@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	commit := func(name, content, message string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		run("add", name)
+		run("commit", "-qm", message)
+		return run("rev-parse", "HEAD")
+	}
+	run("init", "-q")
+	b1 := commit("base.txt", "base\n", "base")
+	h1 := commit("task.txt", "task\n", "task")
+	run("checkout", "-q", "--detach", b1)
+	b2 := commit("base.txt", "upstream\n", "upstream")
+	run("cherry-pick", h1)
+	rebased := run("rev-parse", "HEAD")
+	edited := commit("task.txt", "changed task\n", "edit task")
 	for _, scenario := range []string{"rebase", "requested-full", "requested-full-missing-base", "edited-patch", "changed-standards", "missing-base", "unknown-head"} {
 		t.Run(scenario, func(t *testing.T) {
-			repo := t.TempDir()
-			t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-			t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(repo, "empty-gitconfig"))
-			run := func(args ...string) string {
-				t.Helper()
-				cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=integration", "-c", "user.email=integration@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					t.Fatalf("git %v: %v: %s", args, err, out)
-				}
-				return strings.TrimSpace(string(out))
-			}
-			commit := func(name, content, message string) string {
-				t.Helper()
-				if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0600); err != nil {
-					t.Fatal(err)
-				}
-				run("add", name)
-				run("commit", "-qm", message)
-				return run("rev-parse", "HEAD")
-			}
-			run("init", "-q")
-			b1 := commit("base.txt", "base\n", "base")
-			h1 := commit("task.txt", "task\n", "task")
-			run("checkout", "-q", "--detach", b1)
-			b2 := commit("base.txt", "upstream\n", "upstream")
-			run("cherry-pick", h1)
-			h2 := run("rev-parse", "HEAD")
+			h2 := rebased
 			if scenario == "edited-patch" {
-				h2 = commit("task.txt", "changed task\n", "edit task")
+				h2 = edited
 			}
 			if scenario == "unknown-head" {
 				h2 = strings.Repeat("0", 40)
