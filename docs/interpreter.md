@@ -83,6 +83,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | `review` | `review` | The code head on the `head` input |
 | `deliver` | `merge` | The code head on the `head` input |
 | loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
+| `audit`, after a sampled merge | `audit` | The head that merged |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
 Every attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails); one refused at a cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, naming `step retry` for a refused retry and `task start` otherwise, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.
@@ -130,6 +131,7 @@ A `hold` answer merges nothing: the task waits for the Director (`director`, nam
 A `merge` answer calls `Forge.Merge` for the recorded remote and pull request number at the decision's head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
 A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
 When the forge merges, the engine records `<decision>-merge` (`tasks/<repo>/<task>/<decision>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<decision>`, type `merged`, [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
+Before marking it `done`, when the [quality settings](configuration.md#quality-settings) sample the task for the Guildmaster's audit ([G4](quality.md#honesty-and-evidence-g)), it opens decision `audit`, kind `audit`, bound to the head that merged and naming the pull request, with options `yes` and `no` for its first question, and sends it to the Director like every decision; the wait is still `done`, and answering it records the answer only.
 A later advance of a done task is refused with `ErrTaskClosed`.
 
 When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is merged.

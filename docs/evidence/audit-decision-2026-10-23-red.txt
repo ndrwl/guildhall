@@ -1,0 +1,25 @@
+# Audit decision red runs, 2026-10-23, before the implementation (Linux)
+
+## go vet ./internal/config ./internal/store ./internal/interp before any stub
+vet: internal/config/quality_test.go:113:12: tc.q.Audits undefined (type Quality has no field or method Audits)
+vet: internal/store/records_test.go:311:71: undefined: DecisionAudit
+vet: internal/interp/audit_test.go:38:23: undefined: store.DecisionAudit
+
+## go test -run 'Audit|OpenDecision' ./internal/config ./internal/store ./internal/interp against a stub Quality.Audits returning false and an audit kind the store did not accept
+--- FAIL: TestQualityAudits (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.004s
+--- FAIL: TestOpenDecisionValidates (0.45s)
+    records_test.go:357: audit: store: invalid store request: decision kind "audit" must be one of approval, review, loop-exit, merge or question
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.459s
+--- FAIL: TestAuditAfterMerge (0.16s)
+        audit_test.go:37: decision "audit" not recorded; have [{Repository:app TaskID:t7 ID:accept-1 Kind:approval Subject:… Options:[approved changes_requested] Question:Approval needed for app/t7, step accept (guildmaster-approval version 1), attempt 1. …
+        audit_test.go:37: decision "audit" not recorded; have [{Repository:app TaskID:t7 ID:accept-1 Kind:approval Subject:… Options:[approved changes_requested] Question:Approval needed for app/t7, step accept (guildmaster-approval version 1), attempt 1. …
+--- FAIL: TestAuditReplay (0.13s)
+        audit_test.go:122: decision "audit" not recorded; have [{Repository:app TaskID:t7 ID:accept-1 Kind:approval Subject:… Options:[approved changes_requested] Question:Approval needed for app/t7, step accept (guildmaster-approval version 1), attempt 1. …
+        audit_test.go:122: decision "audit" not recorded; have [{Repository:app TaskID:t7 ID:accept-1 Kind:approval Subject:… Options:[approved changes_requested] Question:Approval needed for app/t7, step accept (guildmaster-approval version 1), attempt 1. …
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.966s
+FAIL
+    (and quality_test.go:120 "one in 1: Audits(app, t-<i>) = false" for each of t-0 to t-49)

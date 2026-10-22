@@ -308,6 +308,7 @@ func TestOpenDecisionValidates(t *testing.T) {
 		{"missing kind", func(d *Decision) { d.Kind = "" }},
 		{"unknown kind", func(d *Decision) { d.Kind = "vote" }},
 		{"missing subject", func(d *Decision) { d.Subject = nil }},
+		{"audit without a subject", func(d *Decision) { d.Kind, d.Subject = DecisionAudit, nil }},
 		{"unknown subject kind", func(d *Decision) { d.Subject.Kind = "branch" }},
 		{"document digest without prefix", func(d *Decision) { d.Subject.Digest = strings.Repeat("c", 64) }},
 		{"short head", func(d *Decision) { d.Subject = &Subject{Kind: SubjectHead, Digest: strings.Repeat("e", 39)} }},
@@ -342,13 +343,15 @@ func TestOpenDecisionValidates(t *testing.T) {
 			}
 		})
 	}
-	// A question may omit its subject, and a head subject takes a SHA-1 or SHA-256 object id.
+	// A question may omit its subject, a head subject takes a SHA-1 or SHA-256 object id, and an audit binds to the head that merged.
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
 	for i, d := range []Decision{
 		{Repository: "app", TaskID: "t-1", ID: "ask", Kind: DecisionQuestion, Question: "Which port?"},
 		{Repository: "app", TaskID: "t-1", ID: "merge-sha1", Kind: DecisionMerge, Subject: &Subject{Kind: SubjectHead, Digest: strings.Repeat("e", 40)}, Question: "Merge?"},
 		{Repository: "app", TaskID: "t-1", ID: "merge-sha256", Kind: DecisionMerge, Subject: &Subject{Kind: SubjectHead, Digest: strings.Repeat("f", 64)}, Question: "Merge?"},
+		{Repository: "app", TaskID: "t-1", ID: "audit", Kind: DecisionAudit, Subject: &Subject{Kind: SubjectHead, Digest: strings.Repeat("e", 40)},
+			Options: []string{"yes", "no"}, Question: "Would you have merged this as is?"},
 	} {
 		if _, err := s.OpenDecision(fmt.Sprint("m-open-", i), d); err != nil {
 			t.Errorf("%s: %v", d.ID, err)

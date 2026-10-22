@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -93,5 +94,45 @@ func TestQualityRefusesAnInvalidSetting(t *testing.T) {
 		if _, err := cfg.Quality(); err == nil {
 			t.Errorf("Quality of unparsed %v succeeded", local)
 		}
+	}
+}
+
+// TestQualityAudits: a delivered task is audited only while self-review is on and the sample is not 0; at 1 every
+// task is, and otherwise the task's identity alone chooses, so asking again gives the same answer and about one task
+// in N is chosen.
+func TestQualityAudits(t *testing.T) {
+	on := Quality{SelfReview: true, AuditSample: 1}
+	for _, tc := range []struct {
+		name string
+		q    Quality
+	}{
+		{"self-review off", Quality{SelfReview: false, AuditSample: 1}},
+		{"the audit off", Quality{SelfReview: true, AuditSample: 0}},
+	} {
+		for i := range 50 {
+			if tc.q.Audits("app", fmt.Sprint("t-", i)) {
+				t.Errorf("%s: Audits(app, t-%d) = true", tc.name, i)
+			}
+		}
+	}
+	for i := range 50 {
+		if !on.Audits("app", fmt.Sprint("t-", i)) {
+			t.Errorf("one in 1: Audits(app, t-%d) = false", i)
+		}
+	}
+	five := Quality{SelfReview: true, AuditSample: 5}
+	chosen := 0
+	for i := range 2000 {
+		id := fmt.Sprint("t-", i)
+		got := five.Audits("app", id)
+		if got != five.Audits("app", id) {
+			t.Fatalf("Audits(app, %s) changed between calls", id)
+		}
+		if got {
+			chosen++
+		}
+	}
+	if chosen < 300 || chosen > 500 {
+		t.Errorf("one in 5 chose %d of 2000 tasks, want about 400", chosen)
 	}
 }

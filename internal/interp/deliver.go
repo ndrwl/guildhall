@@ -50,6 +50,12 @@ type refusalDoc struct {
 // mergeOptions are the answers the merge decision offers.
 var mergeOptions = []string{"merge", "hold"}
 
+// auditDecision is the id of a delivered task's audit decision; a step's decisions are always <step>-<round>, so
+// it is never one of them. auditOptions are the answers to its first question.
+const auditDecision = "audit"
+
+var auditOptions = []string{"yes", "no"}
+
 // repository returns the task's repository configuration.
 func (r *run) repository() (config.Repository, error) {
 	i := slices.IndexFunc(r.e.Config.Repositories, func(c config.Repository) bool { return c.ID == r.task.Repository })
@@ -240,10 +246,45 @@ func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h
 	if err := r.retire(d, repo, h); err != nil {
 		return false, Next{}, err
 	}
+	if err := r.audit(s, h, pr); err != nil {
+		return false, Next{}, err
+	}
 	if _, err := r.e.Records.SetTaskState(r.mutation("task-state", string(store.TaskDone)), r.task.Repository, r.task.ID, store.TaskDone); err != nil {
 		return false, Next{}, err
 	}
 	return false, Next{Wait: WaitDone, Step: s.ID}, nil
+}
+
+// audit opens the Guildmaster's three-question audit of the task merged at head h, bound to h, when the quality
+// settings sample the task (docs/quality.md, G4), and tells the Director; an audit already opened is not opened again.
+// It opens before the task closes, so a close that fails replays to the same audit.
+func (r *run) audit(s workflow.Step, h string, pr *pullRequestDoc) error {
+	q, err := r.e.Config.Quality()
+	if err != nil {
+		return err
+	}
+	if !q.Audits(r.task.Repository, r.task.ID) {
+		return nil
+	}
+	d := r.decision(auditDecision)
+	if d == nil {
+		question := fmt.Sprintf("Audit of delivered task %s/%s, merged at head %s.\n", r.task.Repository, r.task.ID, h)
+		if pr != nil {
+			question += fmt.Sprintf("Pull request: %s\n", pr.URL)
+		}
+		question += "\nThree questions, under two minutes:\n" +
+			"1. Would you have merged this as is?\n" +
+			"2. Was anything asked that should not have been?\n" +
+			"3. Was anything decided that should have been asked?\n" +
+			fmt.Sprintf("\nAnswer the first with one of: %s; then the other two in your own words after a blank line.\n", strings.Join(auditOptions, ", "))
+		nd := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: auditDecision, Kind: store.DecisionAudit,
+			Subject: &store.Subject{Kind: store.SubjectHead, Digest: h}, Options: auditOptions, Question: question}
+		if _, err := r.e.Records.OpenDecision(r.mutation("decision", auditDecision), nd); err != nil {
+			return err
+		}
+		d = r.addDecision(nd)
+	}
+	return r.notifyDecision(*d, s.ID)
 }
 
 // recordRefusal records a refusal of the merge decision d as its next refusal document, unless one of its refusals
