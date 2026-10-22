@@ -137,7 +137,7 @@ guildhall: resumed, 2 waiting (messages 1, paused 1)
 
 Otherwise it types nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session and pane reasons, and the work waits for the Director's next turn.
 If reading the session for the wake fails, resume reports the error on standard error and omits `wake`, without failing or undoing the resume.
-The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/director-checks-watch.md)).
+The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/0086-director-checks-watch.md)).
 A `checks` item is the supervisor's and a `decision` item the Guildmaster's, so neither counts nor wakes.
 
 A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0, with no `wake` and nothing typed.
@@ -145,7 +145,7 @@ Both are exit 1 for no session, a session that is `recovering` (run `director re
 
 ## Checks
 
-A task whose validate step waits for its published head's checks, `next.json` `{"wait":"checks","step":"validate"}`, is moved on by the session supervisor, not by the Director ([decision](decisions/director-checks-watch.md)).
+A task whose validate step waits for its published head's checks, `next.json` `{"wait":"checks","step":"validate"}`, is moved on by the session supervisor, not by the Director ([decision](decisions/0086-director-checks-watch.md)).
 On its first supervisor tick, then on the first tick at least [`checks_refresh`](configuration.md#settings) after the previous round ends, the supervisor's checks watcher lists the open tasks waiting for checks and advances each in turn as `task start` does, in the supervisor process and with no model turn, while the session is `recovering` or `running`.
 The interval has a 30-second minimum, including when `checks_refresh` is `"0s"`.
 The advance reads the checks under the [validate step's pacing](interpreter.md#validate): checks still pending send nothing new, since a head's `checks-pending` message is sent once, and checks that finish send `checks-passed` or `checks-failed` and take the task on, which [wakes](messaging.md#waking-the-director) the Director as any send does.
@@ -228,7 +228,7 @@ A session directory whose socket path would pass the platform's AF_UNIX limit ge
 guildhall director context-report [--copy <dir>]
 ```
 
-Three triggers tell the Director a handoff is due before its context runs out ([decision](decisions/director-handoff-triggers.md)); each is a [`[director]` setting](configuration.md#the-director-table) and 0 turns it off:
+Three triggers tell the Director a handoff is due before its context runs out ([decision](decisions/0085-director-handoff-triggers.md)); each is a [`[director]` setting](configuration.md#the-director-table) and 0 turns it off:
 
 - `handoff_after_tasks` (off unless set): every that many tasks moved to `done` or `cancelled` since the session started;
 - `handoff_context_percent` (70 unless set): the context the runtime last reported as used reaches the percent;

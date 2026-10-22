@@ -1,4 +1,4 @@
-# The supervisor's checks watcher and the resume wake
+# D86. The supervisor's checks watcher and the resume wake
 
 The Sol cross-review of the Director (X1 and X5) found two places where work waited with nothing owned to move it on.
 A task waiting at [validate](../interpreter.md#validate) for pending checks was advanced only by a `task start` someone happened to run, so a pull request whose CI turned green after the watcher's advance stayed at validate indefinitely.

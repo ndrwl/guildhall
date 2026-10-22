@@ -98,3 +98,5 @@ Until then a new decision is cited by its file path rather than a number.
 - [D82. Handoff notes, `director reload` and the end of a turn](decisions/0082-director-handoff-reload.md)
 - [D83. The quality rubric ships as a document and a Director skill, each practice behind a setting](decisions/0083-quality-rubric.md)
 - [D84. Holding admission, stopping unowned attempts and containing the Director's runtime](decisions/0084-director-stop-admission.md)
+- [D85. Automatic handoff triggers and the context reporter](decisions/0085-director-handoff-triggers.md)
+- [D86. The supervisor's checks watcher and the resume wake](decisions/0086-director-checks-watch.md)
