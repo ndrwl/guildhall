@@ -46,9 +46,10 @@ On Unix a hangup or termination of the supervisor, such as the terminal closing,
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.
 A session already stopped or superseded by a newer one is left as it is.
 While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime at the [end of the turn](#the-end-of-a-turn), records the session `stopped` and exits 0.
-When it ends the runtime for a [reload](#reload), or the runtime ends by itself while a reload is requested and the session is not stopping, it records the session `stopped` with the end reason `reloaded`, reads the copy's config again and starts session `<n+1>` the same way in the same terminal, which records the reload `applied` from session `<n>` to `<n+1>`.
+When it ends the runtime for a [reload](#reload) it records the session `stopped` with the end reason `reloaded`, reads the copy's config again and starts session `<n+1>` the same way in the same terminal, which records the reload `applied` from session `<n>` to `<n+1>`.
 The config read again chooses the runtime too: unless `director start` named one, a changed `[director] adapter` takes effect, checked on `PATH` as the preflight checks it, and a runtime refused then ends the supervisor with exit 1, with session `<n>` recorded `stopped` as `reloaded` and the reload left requested.
-A reload requested while no supervisor runs is recorded `applied` by the next `director start`.
+A `director stop` recorded while the runtime is ending for the reload wins: the session is recorded `stopped` as for a stop and the supervisor exits 0 with no new session.
+A runtime that ends by itself is recorded `stopped` and gives the terminal back, even with a reload requested; that reload, like one requested while no supervisor runs, is recorded `applied` by the next `director start`.
 
 ## Skills
 

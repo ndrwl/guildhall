@@ -47,7 +47,8 @@ type endInput struct {
 	Quiet, IdleAfter time.Duration
 	// Hook is set when the runtime signals the start and end of its turns and the session endpoint is bound.
 	Hook bool
-	// StageRunning is set when a Director stage attempt is running. It is read only for a plain reload.
+	// StageRunning is set when a Director stage attempt is running. It is read only for a plain reload that would
+	// otherwise be applied.
 	StageRunning bool
 	// Waited is how long the end now decided on has been wanted, and Grace how long the end of a turn is
 	// awaited without a hook.
@@ -107,8 +108,13 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 			}
 			return code
 		}
-		if err := endSession(storePath, n, "reloaded"); err != nil {
+		stopped, err := reloadSession(storePath, n)
+		if err != nil {
 			return a.fail(fmt.Errorf("director start: record session %d reloaded: %w", n, err))
+		}
+		if stopped {
+			_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by director stop\n", n)
+			return 0
 		}
 		_, _ = fmt.Fprintf(a.Stdout, "session: %d reloaded\n", n)
 		// A reload takes the copy's current settings, its runtime among them.
@@ -231,7 +237,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return 0, false
 	case ended != nil:
 		return a.fail(fmt.Errorf("director start: ended by %v", ended)), false
-	case ending == endForReload || w.reloadWanted():
+	case ending == endForReload:
 		return 0, true
 	case errors.As(err, &exit):
 		return a.fail(fmt.Errorf("director start: the runtime exited with status %d", exit.ExitCode())), false
@@ -359,11 +365,6 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 		}
 		in.Idle = w.turned && w.woke <= w.turnWake
 		in.Quiet = now.Sub(w.signalled)
-		if in.Reload != nil && !in.Reload.Now && (in.Idle || !w.hook || in.Quiet >= in.IdleAfter) {
-			starts, err := runningDirectorStages(s, w.state)
-			in.StageRunning = len(starts) > 0
-			return in, err
-		}
 		return in, nil
 	})
 	if err != nil {
@@ -377,21 +378,19 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 		w.wanted = now
 	}
 	in.Waited = now.Sub(w.wanted)
-	return decideEnd(in)
-}
-
-// reloadWanted reports whether a runtime that ended by itself should be followed by a new session: a reload is
-// requested and the session is not stopping.
-func (w *sessionWatch) reloadWanted() bool {
-	ok, err := withStore(w.storePath, true, func(s *store.Store) (bool, error) {
-		d, err := s.DirectorSession(w.n)
-		if err != nil || d.State == store.DirectorStopping {
-			return false, err
-		}
-		r, err := s.LatestDirectorReload()
-		return err == nil && r.State == store.ReloadRequested, nil
+	act := decideEnd(in)
+	if act != endForReload || in.Reload.Now {
+		return act
+	}
+	running, err := withStore(w.storePath, true, func(s *store.Store) (bool, error) {
+		starts, err := runningDirectorStages(s, w.state)
+		return len(starts) > 0, err
 	})
-	return err == nil && ok
+	if err != nil {
+		return keepRunning
+	}
+	in.StageRunning = running
+	return decideEnd(in)
 }
 
 // stopSession records session n stopped unless it already is or a newer session superseded it.
@@ -407,15 +406,20 @@ func stopSession(storePath string, n int) error {
 	return err
 }
 
-// endSession records session n stopped with reason unless it already is stopped or a newer session superseded it.
-func endSession(storePath string, n int, reason string) error {
-	_, err := withStore(storePath, false, func(s *store.Store) (struct{}, error) {
+// reloadSession records session n stopped as reloaded unless it already is stopped or a newer session superseded
+// it. A session a director stop has made stopping meanwhile is recorded stopped as a stop does instead, and
+// reported stopped, since a stop wins over a reload.
+func reloadSession(storePath string, n int) (bool, error) {
+	return withStore(storePath, false, func(s *store.Store) (bool, error) {
 		d, err := s.LatestDirectorSession()
-		if err != nil || d.Number != n || d.State == store.DirectorStopped {
-			return struct{}{}, err
+		switch {
+		case err != nil || d.Number != n || d.State == store.DirectorStopped:
+			return false, err
+		case d.State == store.DirectorStopping:
+			_, err = s.SetDirectorState(n, store.DirectorStopped, d.StateSequence)
+			return true, err
 		}
-		_, err = s.EndDirectorSession(n, reason, d.StateSequence)
-		return struct{}{}, err
+		_, err = s.EndDirectorSession(n, "reloaded", d.StateSequence)
+		return false, err
 	})
-	return err
 }

@@ -392,6 +392,50 @@ func TestPlainReloadWaitsForAQuietPoint(t *testing.T) {
 	}
 }
 
+// TestRuntimeEndingByItselfGivesTheTerminalBack: a runtime that exits by itself while a plain reload waits for a
+// quiet point ends the supervisor with the session stopped, not reloaded, and the reload left for the next
+// director start.
+func TestRuntimeEndingByItselfGivesTheTerminalBack(t *testing.T) {
+	dir, _ := supervisedCopy(t)
+	done, typing := superviseTyping(t, dir, time.Hour)
+	copyRun(t, dir, "director", "reload")
+	holdsOne(t, dir, 1)
+	if _, err := typing.WriteString("/exit\n"); err != nil {
+		t.Fatal(err)
+	}
+	if code := ended(t, done); code != 0 {
+		t.Errorf("director start exited %d, want 0", code)
+	}
+	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorStopped || got[0].EndReason == "reloaded" {
+		t.Errorf("sessions = %+v; want session 1 stopped, not reloaded, and no other", got)
+	}
+	if r := readReload(t, filepath.Join(dir, "director.store")); r.State != store.ReloadRequested {
+		t.Errorf("reload = %+v; want it still requested", r)
+	}
+}
+
+// TestStopWhileEndingForAReloadWins: a stop recorded after the supervisor ended the runtime for a reload, before
+// the runtime exited, records the session stopped as a stop does, not reloaded.
+func TestStopWhileEndingForAReloadWins(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n")
+	path := filepath.Join(dir, "director.store")
+	recordSession(t, path, false, store.DirectorRunning, store.DirectorStopping)
+	if stopped, err := reloadSession(path, 1); err != nil || !stopped {
+		t.Fatalf("reloadSession of a stopping session = %v, %v; want it stopped", stopped, err)
+	}
+	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorStopped || got[0].EndReason == "reloaded" {
+		t.Errorf("sessions = %+v; want session 1 stopped, not reloaded", got)
+	}
+	running := directorCopy(t, "[director]\nadapter = \"fake\"\n")
+	recordSession(t, filepath.Join(running, "director.store"), false, store.DirectorRunning)
+	if stopped, err := reloadSession(filepath.Join(running, "director.store"), 1); err != nil || stopped {
+		t.Fatalf("reloadSession of a running session = %v, %v; want it reloaded", stopped, err)
+	}
+	if got := sessions(t, running); len(got) != 1 || got[0].State != store.DirectorStopped || got[0].EndReason != "reloaded" {
+		t.Errorf("sessions = %+v; want session 1 stopped as reloaded", got)
+	}
+}
+
 // TestReloadTakesTheCurrentRuntime: a reload resolves the runtime again from the copy's config, so one changed to
 // a runtime not on PATH ends the supervisor with an error once the old session is recorded stopped as reloaded.
 func TestReloadTakesTheCurrentRuntime(t *testing.T) {
