@@ -28,7 +28,7 @@ var roundTripArgs = []string{
 	"plain", "two words", "it's", "$HOME", "`x`", `back\slash`, "*", "?", "[a]",
 	";", "&", "|", "a>b", "<in", "héllo", `C:\Program Files\x`, "--flag=value",
 	"%PATH%", "$(echo no)", "#not-a-comment", "@(1)", "{a,b}", "~", "!x",
-	`trailing\`,
+	`trailing\`, "guildhall: 3 unread (attempt-failed 1, question 2)",
 }
 
 // posixOnlyArgs are passed unchanged by POSIX shells; PowerShell refuses them.

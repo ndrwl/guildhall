@@ -1,0 +1,126 @@
+package messaging
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
+	"github.com/ndrwl/guildhall/internal/store"
+)
+
+// Sender types a wake records (docs/messaging.md#waking-the-director). Every type wakes on every message
+// today; they are the inputs a per-sender wake policy reads.
+const (
+	// SenderGuildhall is Guildhall itself: the engine's outbox and the launcher.
+	SenderGuildhall = "guildhall"
+	// SenderLocal is `guildhall messages send`, run by anyone who can write the store: the Guildmaster,
+	// firstmate or an Artisan. It is asserted, not authenticated.
+	SenderLocal = "local"
+)
+
+// ErrNotRunning reports a Director pane whose runtime is not running, so a typed line would reach a shell.
+var ErrNotRunning = errors.New("the director runtime is not running in its pane")
+
+// DirectorPane is the terminal a wake types into.
+// TypeLine types line and Enter into pane, a pane an earlier Guildhall process created for the Director and
+// recorded in its session. It returns ErrNotRunning, typing nothing, when the pane's runtime has ended.
+// Success means the terminal accepted the line, not that the Director read it.
+type DirectorPane interface {
+	TypeLine(ctx context.Context, pane store.DirectorPane, line string) error
+}
+
+// WakeStore is the store as Wake reads and writes it. *store.Store implements it; a caller that must not hold
+// the store's lock while Wake types implements it by opening the store for each call.
+type WakeStore interface {
+	WakeFor(messageID string) (store.Wake, error)
+	Message(id string) (store.Message, error)
+	LatestDirectorSession() (store.DirectorSession, error)
+	DirectorUnread() (map[string]int, error)
+	RecordWake(w store.Wake) (store.Receipt, error)
+}
+
+// Wake is the one wake function: after a message to the Director is stored, it decides whether to wake the
+// Director, acts on that decision and records it as the message's store.Wake.
+//
+// With the newest session running or recovering and a bound pane, it types one fixed line into that pane,
+// WakeLine of the Director's unread counts, which carries counts only and never message text, and records
+// woke. Otherwise it types nothing and records queued with the reason: "no session", the session's state
+// ("paused", "stopping" or "stopped"), "no pane", "nothing unread" when the message was acknowledged first,
+// "runtime not running", or "pane: <error>" when typing failed.
+// A queued message still waits in the inbox for the Director's next turn.
+//
+// A message already woken for, such as a replayed send, returns its recorded wake and types nothing new.
+// Two concurrent wakes for one message may both type; the first decision recorded stands and both return it.
+// A nil pane is a Director with no terminal: it records "no pane".
+func Wake(ctx context.Context, st WakeStore, pane DirectorPane, messageID, senderType string) (store.Wake, error) {
+	if w, err := st.WakeFor(messageID); !errors.Is(err, store.ErrNotFound) {
+		return w, err
+	}
+	m, err := st.Message(messageID)
+	if err != nil {
+		return store.Wake{}, err
+	}
+	if m.Recipient != store.RecipientDirector {
+		return store.Wake{}, fmt.Errorf("messaging: wake: %w: message %q is addressed to %s", store.ErrInvalid, messageID, FormatRecipient(m.To()))
+	}
+	w := store.Wake{MessageID: messageID, SenderType: senderType, Decision: store.WakeQueued}
+	if w.Reason, err = wakeReason(ctx, st, pane); err != nil {
+		return store.Wake{}, err
+	}
+	if w.Reason == "" {
+		w.Decision = store.WakeWoke
+	}
+	// A conflict means a concurrent wake recorded its decision first; that one stands.
+	if _, err := st.RecordWake(w); err != nil && !errors.Is(err, store.ErrMutationConflict) {
+		return store.Wake{}, err
+	}
+	return st.WakeFor(messageID)
+}
+
+// wakeReason types the wake line when the Director can be woken and returns why not otherwise; an error is
+// the store's.
+func wakeReason(ctx context.Context, st WakeStore, pane DirectorPane) (string, error) {
+	d, err := st.LatestDirectorSession()
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return "no session", nil
+	case err != nil:
+		return "", err
+	case d.State != store.DirectorRunning && d.State != store.DirectorRecovering:
+		return string(d.State), nil
+	case d.Pane == (store.DirectorPane{}) || pane == nil:
+		return "no pane", nil
+	}
+	unread, err := st.DirectorUnread()
+	if err != nil {
+		return "", err
+	}
+	if len(unread) == 0 {
+		return "nothing unread", nil
+	}
+	err = pane.TypeLine(ctx, d.Pane, WakeLine(unread))
+	switch {
+	case errors.Is(err, ErrNotRunning):
+		return "runtime not running", nil
+	case err != nil:
+		reason := strings.Join(strings.Fields("pane: "+err.Error()), " ")
+		if len(reason) > store.MaxWakeReasonBytes {
+			reason = strings.ToValidUTF8(reason[:store.MaxWakeReasonBytes], "")
+		}
+		return reason, nil
+	}
+	return "", nil
+}
+
+// WakeLine is the line a wake types: "guildhall: <n> unread (<type> <count>, ...)", types in name order.
+func WakeLine(unread map[string]int) string {
+	total, parts := 0, make([]string, 0, len(unread))
+	for _, typ := range slices.Sorted(maps.Keys(unread)) {
+		total += unread[typ]
+		parts = append(parts, fmt.Sprintf("%s %d", typ, unread[typ]))
+	}
+	return fmt.Sprintf("guildhall: %d unread (%s)", total, strings.Join(parts, ", "))
+}

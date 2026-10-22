@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"io"
 	"os"
 	"os/exec"
@@ -98,6 +99,8 @@ type App struct {
 	Workspaces interp.Workspaces
 	// Getenv reads the environment, such as GUILDHALL_COPY; nil means an empty environment.
 	Getenv func(string) string
+	// DirectorPane types wake lines into the Director's recorded pane; nil means Herdr, found on PATH as herdr.
+	DirectorPane messaging.DirectorPane
 }
 
 // New returns an App wired to the real process environment.

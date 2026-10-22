@@ -109,6 +109,12 @@ func (a *App) messages(args []string) int {
 	if err := json.NewEncoder(a.Stdout).Encode(out); err != nil {
 		return 1
 	}
+	// The message is stored whatever the wake does; a failed wake is reported, not an error.
+	if sub == "send" && to.Role == store.RecipientDirector {
+		if _, err := a.wake(*path, env.ID, messaging.SenderLocal); err != nil {
+			_, _ = fmt.Fprintf(a.Stderr, "guildhall: messages send: wake: %v\n", err)
+		}
+	}
 	return 0
 }
 

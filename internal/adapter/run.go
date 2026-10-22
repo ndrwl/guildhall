@@ -70,10 +70,15 @@ type TabRef struct {
 
 // tabHost is the terminal a TabLauncher drives: it creates tabs and operates
 // only on tabs it created. RunInTab success means the terminal accepted the
-// line, not that the command ran or finished; InterruptTab sends Ctrl+C and
-// proves nothing about what stopped. Every operation honours its context.
+// line, not that the command ran or finished; it types into whatever runs in
+// the pane. InterruptTab sends Ctrl+C and proves nothing about what stopped.
+// AdoptTab accepts a tab an earlier host on the same terminal created, as a
+// durable Guildhall record names it, once it has checked that the tab is still
+// there in the host's session and the recorded workspace; it types nothing.
+// Every operation honours its context.
 type tabHost interface {
 	CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, error)
+	AdoptTab(ctx context.Context, tab TabRef) error
 	PaneProcessInfo(ctx context.Context, tab TabRef) (herdr.ProcessInfo, error)
 	RunInTab(ctx context.Context, tab TabRef, line string) error
 	InterruptTab(ctx context.Context, tab TabRef) error
@@ -116,6 +121,50 @@ func (h *HerdrTabs) lookup(ref TabRef) (herdr.OwnedTab, error) {
 		return herdr.OwnedTab{}, fmt.Errorf("tab %q in session %q: %w", ref.TabID, ref.Session, errNotOwned)
 	}
 	return t, nil
+}
+
+// AdoptTab accepts a tab Guildhall created and recorded in an earlier process.
+func (h *HerdrTabs) AdoptTab(ctx context.Context, ref TabRef) error {
+	if ref.Session != h.client.Session() {
+		return fmt.Errorf("tab %q is in session %q, not %q", ref.TabID, ref.Session, h.client.Session())
+	}
+	t, err := h.client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID)
+	if err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.owned[ref] = t
+	return nil
+}
+
+// TypeRecorded types one line into a recorded tab; see typeRecorded.
+func (h *HerdrTabs) TypeRecorded(ctx context.Context, ref TabRef, line string) error {
+	return typeRecorded(ctx, h, ref, line)
+}
+
+// ErrShellIdle reports a recorded pane whose shell is its only foreground
+// process, so the program the record names is no longer running there and a
+// typed line would reach the shell prompt.
+var ErrShellIdle = errors.New("the pane's shell is idle; its program is not running")
+
+// typeRecorded types one line and Enter into a tab an earlier Guildhall
+// process created and recorded, such as the Director's pane: it adopts the
+// tab, then types only while a program other than the shell runs in it, so a
+// line meant for that program never reaches a shell prompt (ErrShellIdle).
+// Success means the terminal accepted the line, not that the program read it.
+func typeRecorded(ctx context.Context, h tabHost, ref TabRef, line string) error {
+	if err := h.AdoptTab(ctx, ref); err != nil {
+		return err
+	}
+	info, err := h.PaneProcessInfo(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if info.ShellIdle() {
+		return ErrShellIdle
+	}
+	return h.RunInTab(ctx, ref, line)
 }
 
 // PaneProcessInfo reads the shell and foreground processes of a created tab.

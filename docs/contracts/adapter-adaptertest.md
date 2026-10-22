@@ -7,7 +7,7 @@
 `Subject.Attempt` lays out each attempt the way the launch path feeding the runtime does, such as an interpreter-rendered prompt mapped through `interp.Spec.AdapterSpec`; nil writes the behaviour's prompt as the whole prompt file.
 `StartInPane` is a `Subject.Start` through `adapter.TabLauncher`: the command typed into a new tab quoted for its shell, a stop by Ctrl+C, and exit when the tab's shell is again its only foreground process.
 It needs a host whose `RunInTab` returns only once the line is the pane's foreground process, as `ShellPanes` does; it is not a harness for a live Herdr server, which types the line and may still show an idle shell on the first poll.
-`ShellPanes` (Unix only) is the terminal host for that where no Herdr server exists, as in CI: tabs only in its one workspace and only its own operated on, one non-empty line run as `sh -c` in the tab's directory and environment, Ctrl+C as SIGINT to the line's process group, repeated until it exits or a bounded wait ends, and every call honouring its context.
+`ShellPanes` (Unix only) is the terminal host for that where no Herdr server exists, as in CI: tabs only in its one workspace and only its own operated on, one non-empty line run as `sh -c` in the tab's directory and environment, Ctrl+C as SIGINT to the line's process group, repeated until it exits or a bounded wait ends, a line typed while another runs logged and ignored as input to that program, `Reopen` for a later host on the same panes that owns none until it adopts them, and every call honouring its context.
 Every runtime adapter runs the suite, the [Claude adapter](adapter-claude.md) included ([adapters](../adapters.md#conformance)).
 
 ## Tests

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -320,6 +321,34 @@ func (s *Store) Wakes(after uint64, limit int) ([]Wake, bool, error) {
 		return nil, false, fmt.Errorf("store: wakes: %w", err)
 	}
 	return out, more, nil
+}
+
+// DirectorUnread counts the Director's unacknowledged messages by message type.
+// Its cost grows with the number of unread messages and repositories, not with the store.
+func (s *Store) DirectorUnread() (map[string]int, error) {
+	counts := map[string]int{}
+	err := s.view(func(tx *bolt.Tx) error {
+		prefix := inboxPrefix(Recipient{Role: RecipientDirector})
+		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
+			inbox := repoBucket(tx, string(repo), bucketInbox)
+			if inbox == nil {
+				return nil
+			}
+			c := inbox.Cursor()
+			for k, id := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, id = c.Next() {
+				var m Message
+				if err := getJSON(repoBucket(tx, string(repo), bucketMessages), id, &m); err != nil {
+					return fmt.Errorf("inbox message %q: %w", id, err)
+				}
+				counts[m.Type]++
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: director unread: %w", err)
+	}
+	return counts, nil
 }
 
 func directorBucket(tx *bolt.Tx, name []byte) *bolt.Bucket {

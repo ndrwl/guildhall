@@ -15,6 +15,7 @@ import (
 func TestShellPanesContract(t *testing.T) {
 	adapter.RunTabHostContract(t, func(t *testing.T) adapter.TabHostHarness {
 		p := adaptertest.NewShellPanes(t, "lab", "w1")
-		return adapter.TabHostHarness{Host: p, Foreign: adaptertest.NewShellPanes(t, "other-lab", "w1"), Session: "lab", Sent: p.Sent}
+		return adapter.TabHostHarness{Host: p, Foreign: adaptertest.NewShellPanes(t, "other-lab", "w1"), Session: "lab", Sent: p.Sent,
+			Reopen: func() adapter.TabHost { return p.Reopen() }}
 	})
 }

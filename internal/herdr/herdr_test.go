@@ -444,3 +444,40 @@ func TestReportAgentReturnsHerdrsRefusal(t *testing.T) {
 		t.Errorf("ReportAgent = %v, want Herdr's invalid_resume_argv", err)
 	}
 }
+
+func TestRecordedTabChecksTheTabStillExists(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"tab get":  {stdout: fixture(t, "tab_get.json")},
+		"pane run": {},
+	})
+	tab, err := c.RecordedTab(context.Background(), "w1", "w1:t2", "w1:p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tab.Session() != "guildhall-lab" || tab.WorkspaceID() != "w1" || tab.ID() != "w1:t2" || tab.PaneID() != "w1:p2" {
+		t.Errorf("tab = %+v", tab)
+	}
+	if want := []string{"herdr", "tab", "get", "w1:t2", "--session", "guildhall-lab"}; !slices.Equal(f.calls[0].args, want) {
+		t.Errorf("argv = %q, want %q", f.calls[0].args, want)
+	}
+	if err := c.RunInOwnedTab(context.Background(), tab, "guildhall: 1 unread (note 1)"); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"herdr", "pane", "run", "w1:p2", "guildhall: 1 unread (note 1)", "--session", "guildhall-lab"}; !slices.Equal(f.calls[1].args, want) {
+		t.Errorf("run argv = %q", f.calls[1].args)
+	}
+	if _, err := c.RecordedTab(context.Background(), "w9", "w1:t2", "w1:p2"); err == nil {
+		t.Error("RecordedTab accepted a tab now in another workspace")
+	}
+	for _, ids := range [][3]string{{"", "w1:t2", "w1:p2"}, {"w1", "-t", "w1:p2"}, {"w1", "w1:t2", ""}} {
+		calls := len(f.calls)
+		if _, err := c.RecordedTab(context.Background(), ids[0], ids[1], ids[2]); err == nil || len(f.calls) != calls {
+			t.Errorf("RecordedTab%q = %v after %d calls; want a refusal sending nothing", ids, err, len(f.calls)-calls)
+		}
+	}
+
+	gone, _ := newTestClient(t, map[string]response{"tab get": {stderr: fixture(t, "error_tab_not_found.json"), exit: 1}})
+	if _, err := gone.RecordedTab(context.Background(), "w9", "w9:t9", "w9:p9"); !IsNotFound(err) {
+		t.Errorf("RecordedTab of a closed tab = %v, want not found", err)
+	}
+}

@@ -31,10 +31,18 @@ import (
 // sent while the line is still starting can be lost; it proves nothing about
 // what stopped. The
 // pane's shell is represented by the host process, so an idle pane reports it
-// as its shell and only foreground process.
+// as its shell and only foreground process. A line typed while another runs
+// is input to that line's program: it is logged and, as a program that does
+// not read its terminal would, ignored. Hosts from Reopen share the panes and
+// own only the tabs they create or adopt.
 type ShellPanes struct {
 	session, workspace string
+	*shellTerminal
+	owned map[adapter.TabRef]bool
+}
 
+// shellTerminal is the state hosts on one terminal share, under mu.
+type shellTerminal struct {
 	mu    sync.Mutex
 	next  int
 	panes map[adapter.TabRef]*shellPane
@@ -54,7 +62,8 @@ const interruptWait = 10 * time.Second
 // NewShellPanes returns a ShellPanes for session with the one workspace, and
 // kills any line still running when t ends.
 func NewShellPanes(t *testing.T, session, workspace string) *ShellPanes {
-	p := &ShellPanes{session: session, workspace: workspace, panes: map[adapter.TabRef]*shellPane{}}
+	p := &ShellPanes{session: session, workspace: workspace, shellTerminal: &shellTerminal{panes: map[adapter.TabRef]*shellPane{}},
+		owned: map[adapter.TabRef]bool{}}
 	t.Cleanup(func() {
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -82,7 +91,28 @@ func (p *ShellPanes) CreateTab(ctx context.Context, spec herdr.TabSpec) (adapter
 	ref := adapter.TabRef{Session: p.session, WorkspaceID: p.workspace,
 		TabID: fmt.Sprintf("%s:t%d", p.workspace, p.next), PaneID: fmt.Sprintf("%s:p%d", p.workspace, p.next)}
 	p.panes[ref] = &shellPane{spec: spec}
+	p.owned[ref] = true
 	return ref, nil
+}
+
+// Reopen returns a new host on p's panes, as a later process would make, that
+// owns none of them until it adopts them.
+func (p *ShellPanes) Reopen() *ShellPanes {
+	return &ShellPanes{session: p.session, workspace: p.workspace, shellTerminal: p.shellTerminal, owned: map[adapter.TabRef]bool{}}
+}
+
+// AdoptTab accepts a pane this terminal holds in the host's session and workspace.
+func (p *ShellPanes) AdoptTab(ctx context.Context, ref adapter.TabRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.panes[ref]; !ok || ref.Session != p.session {
+		return &herdr.APIError{Code: "tab_not_found", Message: "tab " + ref.TabID + " not found"}
+	}
+	p.owned[ref] = true
+	return nil
 }
 
 // pane returns a tab this host created, under the lock, and ends a line
@@ -92,7 +122,7 @@ func (p *ShellPanes) pane(ctx context.Context, ref adapter.TabRef) (*shellPane, 
 		return nil, err
 	}
 	sp, ok := p.panes[ref]
-	if !ok {
+	if !ok || !p.owned[ref] {
 		return nil, fmt.Errorf("tab %q in session %q was not created by this host", ref.TabID, ref.Session)
 	}
 	if sp.cmd != nil {
@@ -131,10 +161,10 @@ func (p *ShellPanes) RunInTab(ctx context.Context, ref adapter.TabRef, line stri
 	if line == "" || strings.ContainsAny(line, "\r\n") {
 		return errors.New("a pane runs exactly one non-empty line")
 	}
-	if sp.cmd != nil {
-		return fmt.Errorf("pane %s is still running a line", ref.PaneID)
-	}
 	p.sent = append(p.sent, "run "+ref.PaneID+" "+line)
+	if sp.cmd != nil {
+		return nil
+	}
 	c := exec.Command("sh", "-c", line)
 	c.Dir = sp.spec.Cwd
 	c.Env = append(os.Environ(), sp.spec.Env...)
