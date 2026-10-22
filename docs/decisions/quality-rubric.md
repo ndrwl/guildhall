@@ -15,8 +15,8 @@ The practices are switched by flat `quality_*` [settings](../configuration.md#qu
 - `quality_judge_separate_family`, `on` by default: the judge is always a separate session and profile, and of a different model family when quota allows.
 - `quality_skill_edits_need_approval`, `on` by default for the first cycle: an edit to the review, build or spec skill text is a design change that needs the Guildmaster's approval.
 
-Only the self-review switch and the size budget are read today, by the skill through [`director status`](../director.md#status)'s `quality` section.
-The audit, reference-run, judge and skill-edit settings are parsed, validated and documented now so a copy can set them, and have no behaviour until the work that consumes them lands.
+This initial increment consumed only the self-review switch and the size budget, through [`director status`](../director.md#status)'s `quality` section.
+See [quality settings](../configuration.md#quality-settings) for the current consumers and [the audit decision](quality-audit.md) for the subsequent delivery-audit increment.
 
 ## The facts script
 
@@ -28,7 +28,9 @@ Duplication, complexity and vulnerability tools such as `dupl`, `gocognit` and `
 
 The self-review document is written under the copy's `quality/` directory rather than recorded as a task document reference, because no command records a Director document for a delivered task.
 Model-judged scores are left pending with a judge brief, because nothing launches a judge session outside a workflow step yet; the Director never scores its own task.
-The reference task set and its runner, the audit decision kind, the lesson-proposal shape that applies `quality_skill_edits_need_approval` to edits of the review, build and spec skills, and pinning actions by SHA are later work.
+For the remaining quality-practice work after the subsequent audit increment, see [Running it](../quality.md#running-it).
+Pinning actions by SHA also remains later work.
 
-Consequences: a copy that turns nothing on behaves exactly as before, and its config digest is unchanged; a copy that turns self-review on gains a Director step after each merge that costs one Director turn and no Artisan attempt.
+Consequences of this initial increment: the config digest was unchanged, and self-review added a Director step after each merge only when enabled, costing one Director turn and no Artisan attempt.
+The subsequent [audit decision](quality-audit.md) changes the default post-merge behavior independently of self-review.
 A model-judged score stays pending until the judge session lands, so the first self-reviews hold facts, gates and trends only.

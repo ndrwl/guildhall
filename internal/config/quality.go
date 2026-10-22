@@ -97,9 +97,9 @@ func (c *Config) Quality() (Quality, error) {
 	return q, nil
 }
 
-// Audits reports whether the delivered task repository/task is sampled for the Guildmaster's audit:
-// no task at AuditSample 0, every task at 1 and otherwise the task whose SHA-256 of
-// "<repository>/<task>" is 0 modulo AuditSample, so about one in AuditSample is and asking again gives the same answer.
+// Audits reports whether the delivered task repository/task is sampled for the Guildmaster's audit.
+// Sampling depends only on task identity so retries need no counter and choose the same task;
+// docs/contracts/config.md owns the sampling contract.
 func (q Quality) Audits(repository, task string) bool {
 	if q.AuditSample == 0 {
 		return false

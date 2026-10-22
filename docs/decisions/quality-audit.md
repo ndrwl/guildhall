@@ -19,7 +19,7 @@ The alternative, a `question` decision with the audit's wording, would leave the
 The audit is controlled by `quality_audit_sample` alone: 0 disables it, 1 selects every task, and the default of 5 samples about one in five tasks even when self-review is off.
 The Guildmaster's spot checks are useful independently of model self-reviews; enabling either practice does not require enabling the other.
 
-A task is sampled when the SHA-256 of `<repository>/<task>` is 0 modulo the sample, every task at 1.
+The deterministic hash sample is defined by the [`Quality.Audits` contract](../contracts/config.md).
 The task's identity alone chooses, so a replayed or retried close gives the same answer with no counter to keep, and two tasks closing at once cannot race for the same count.
 It is about one in N rather than exactly every Nth: a counter of delivered tasks would be exact but needs a store record updated in the same transaction as the close, which this sample does not need.
 
@@ -29,4 +29,5 @@ Reference runs are not sampled, because the reference runner does not exist yet;
 Agreement between the judge and these answers is not computed yet, because the judge session is later work.
 The report's fix-PR link line, which C5 and E2 read, is not part of this change.
 
-Consequences: by default a copy gains, for about one in five merged tasks, one decision after the merge and one `decision` message to the Director, even with self-review off. Setting `quality_audit_sample` to 0 disables those audits; the default values and the config digest of a copy that sets nothing are unchanged.
+Consequences: by default a copy gains, for about one in five merged tasks, one decision after the merge and one `decision` message to the Director, even with self-review off.
+Setting `quality_audit_sample` to 0 disables those audits; the default values and the config digest of a copy that sets nothing are unchanged.
