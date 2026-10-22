@@ -47,11 +47,11 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
    Install nothing: a tool that is missing is recorded as `not run: not installed`, which is missing evidence, never a pass.
 6. Record every gate `docs/quality.md` lists: A1, B1, C1 for its forbidden cases, D4, D5 for its claims, E1, E4, F1 to F3, G1, G2, H3 and H4.
    E1 comes from the validation result for the exact head; A1, B1, C1, D4, D5, F1 to F3 and G1 from the review outcomes and the facts; E4, H3 and H4 from the timeline, `main` CI after the merge and the Director safety checks.
-   G2 is a script pass only when `assertions_removed` is 0; otherwise it is `judge: pending` and `pass: null` with the `assertion-removed` items as its evidence, for the judge to confirm.
+   G2 is never a script pass, because the facts script cannot see removed table cases, changed `want` values or assertion libraries: it is always `judge: pending` and `pass: null`, with `assertions_removed` and any `assertion-removed` items as its evidence.
    A gate the records cannot show is `pass: null` with what is missing as its evidence, never a guess.
 7. Record the script-judged scores, such as G3 from the skip and sleep items, and every trend number: the H1, E3 and E5 numbers come from the timeline.
 8. Leave every model-judged score `pending` with `score: null`, for a judge session that is neither you nor the task's builder; D1 is always one of them, with the facts script's `nontest_lines`, `files` and `size_over` as its evidence, and `size_over: yes` is also a flag.
-   Write the judge's brief beside the document as `self-review-<n>-judge.md`: the criteria to score and any gate left pending, the anchors from `docs/quality.md`, and the files it reads.
+   Write the judge's brief beside the document as `self-review-<n>-judge.md`: the criteria to score, G2 and any other gate left pending, the anchors from `docs/quality.md`, and the files it reads.
 9. Write `self-review-<n>.json` in the shape below, then tell the Guildmaster in one or two sentences: the lowest pillar, any flag, and any gate the records could not show.
 
 ## The document
@@ -75,7 +75,7 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
   "tools": {"gocognit": "not run: not installed", "dupl": "not run: not installed", "govulncheck": "No vulnerabilities found."},
   "criteria": [
     {"id": "E1", "kind": "gate", "judge": "script", "pass": true, "evidence": "validate-1-result: all checks passed for head 9a8b7c6"},
-    {"id": "G2", "kind": "gate", "judge": "script", "pass": true, "evidence": "assertions_removed: 0"},
+    {"id": "G2", "kind": "gate", "judge": "pending", "pass": null, "evidence": "assertions_removed: 0"},
     {"id": "E4", "kind": "gate", "judge": "script", "pass": null, "evidence": "not shown: main CI after the merge has not finished"},
     {"id": "D1", "kind": "score", "judge": "pending", "score": null, "evidence": "nontest_lines: 140, files: 6, size_over: no"},
     {"id": "B2", "kind": "score", "judge": "pending", "score": null, "evidence": ""},

@@ -334,6 +334,7 @@ The criteria read these records:
 
 - Any deleted or loosened assertion, removed case or widened tolerance cites the requirement or decision that makes the old expectation wrong.
 - Look at: `*_test.go` deletions and changed `want` values, and the facts script's `assertion-removed` items.
+- The facts script flags only removed `Error`, `Errorf`, `Fatal`, `Fatalf`, `Fail` and `FailNow` calls on a `t`, `b`, `tb` or `f` testing receiver, so a model always confirms G2.
 - Source: the [contract method](contracts.md) (project); consensus.
 - Guildhall today: the contract-TDD rule.
 
