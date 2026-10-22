@@ -134,12 +134,14 @@ func same(a, b string) bool {
 	return err == nil && os.SameFile(fa, fb)
 }
 
-// create builds the worktree at w.Dir+".partial", clearing any an interrupted Ensure left there, and moves it
-// into place. The branch is created from the remote's HEAD only when the repository has no branch of its name.
+// create builds the worktree at w.Dir+".partial", clearing any an interrupted Ensure left there and any stale
+// registration of the missing w.Dir, and moves it into place. The branch is created from the remote's HEAD only when the repository has no branch of its name.
 func (p Program) create(ctx context.Context, w Workspace) error {
 	partial := w.Dir + ".partial"
 	// Nothing ever ran in a partial worktree, so it is removed whatever it holds, registered or not.
 	_, _ = p.git(ctx, w.Repository, "worktree", "remove", "--force", "--force", partial)
+	// w.Dir is missing here, so a registration git still holds for it is stale and only blocks the branch.
+	_, _ = p.git(ctx, w.Repository, "worktree", "remove", "--force", "--force", w.Dir)
 	if err := os.RemoveAll(partial); err != nil {
 		return err
 	}

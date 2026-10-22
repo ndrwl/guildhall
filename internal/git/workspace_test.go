@@ -148,6 +148,18 @@ func TestEnsureProgram(t *testing.T) {
 			t.Errorf("worktree created again at %s, want the branch's %s", got, commit)
 		}
 	})
+	t.Run("a worktree deleted without git is created again", func(t *testing.T) {
+		w, _ := arrangeWorkspace(t)
+		ensure(t, w)
+		commit := repo{t, w.Dir, global}.commit("attempt", map[string]string{"c.txt": "c\n"})
+		if err := os.RemoveAll(w.Dir); err != nil {
+			t.Fatal(err)
+		}
+		ensure(t, w)
+		if got := head(t, w.Dir); got != commit {
+			t.Errorf("worktree created again at %s, want the branch's %s", got, commit)
+		}
+	})
 	t.Run("an agent may move the worktree's branch", func(t *testing.T) {
 		w, _ := arrangeWorkspace(t)
 		ensure(t, w)
