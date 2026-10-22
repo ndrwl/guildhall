@@ -14,6 +14,7 @@ Every shipped skill keeps these rules, which the tests enforce:
 - Each adapted skill carries `CREDITS.md` with the upstream MIT notice inside its own directory so installed and rendered copies retain attribution.
 - A script lives in `scripts/` as a `.sh` and `.ps1` twin, and each parses in its shell.
 - `guildhall-contract-tdd`'s `check` twins run exactly `gofmt -l .`, `go vet ./...` and `go test ./...` in that order with `GOPROXY=off` and `GOTOOLCHAIN=local`, fail when `gofmt` lists a file, stop at the first failing command and exit non-zero, and both twins make the same calls and the same pass or fail decision.
+- The Director's skills, `guildhall-director-startup`, `guildhall-director-inbox`, `guildhall-director-tasks`, `guildhall-director-stage` and `guildhall-handoff`, together name every command of the README's command list that the Guildmaster would otherwise type, as `guildhall <command>`, so [plain English is the primary interface](../decisions/0057-director-conversation-first.md); the commands the Guildmaster never asks the Director for are listed in the test with why.
 - `guildhall-review` holds only `SKILL.md`, `smells.md` and `CREDITS.md`, with no scripts and no sub-agent definitions; its example outcome parses as a valid [review outcome](../configuration.md#review-outcome) representing a blocking round with dispositions and a rule-less suggestion.
 
 Rationale: [Release skills root](../decisions/0030-release-skills-root.md).
@@ -21,5 +22,7 @@ Pure over embedded files: no interface and no double.
 
 ## Tests
 
-`skills_test.go`: the rules above over the embedded and checked-out root, the golden digests on the CI platform matrix with LF checkout enforced by `.gitattributes`, script parsing with `sh -n` and the PowerShell parser, the `check` twins run in those shells against the test binary acting as `go` and `gofmt` in a clean run and each failure case (a missing shell is skipped by name in both, and fails a runner that requires it), the `guildhall-review` example outcome through `workflow.ParseReviewOutcome`, and `Install` rendered through `render.Prompt` ahead of a decoy managed root.
+`skills_test.go`: the rules above over the embedded and checked-out root, the golden digests on the CI platform matrix with LF checkout enforced by `.gitattributes`, script parsing with `sh -n` and the PowerShell parser, the `check` twins run in those shells against the test binary acting as `go` and `gofmt` in a clean run and each failure case (a missing shell is skipped by name in both, and fails a runner that requires it), the `guildhall-review` example outcome through `workflow.ParseReviewOutcome`, the Director skills' coverage of the README commands, and `Install` rendered through `render.Prompt` ahead of a decoy managed root.
 No test starts a model.
+`TestDirectorSkillsNameEveryReadmeCommand` was written red first ([red run](../evidence/director-skills-2026-10-22-red.txt)), before the Director's skills existed.
+The other direction, that every command a skill names is one `guildhall help` lists, is the [CLI's](cli.md#tests) `TestHelpNamesReadmeCommands`, which owns the help text.

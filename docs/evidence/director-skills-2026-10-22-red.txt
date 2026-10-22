@@ -1,0 +1,39 @@
+Red run for the Director's skills (D8b), 2026-10-22, on a10f8e3 with the coverage test and no Director skill written.
+
+## skills: go test ./skills -run TestDirectorSkillsNameEveryReadmeCommand
+--- FAIL: TestDirectorSkillsNameEveryReadmeCommand
+    skills_test.go:637: guildhall-director-inbox: open guildhall-director-inbox: file does not exist
+    skills_test.go:637: guildhall-director-stage: open guildhall-director-stage: file does not exist
+    skills_test.go:637: guildhall-director-startup: open guildhall-director-startup: file does not exist
+    skills_test.go:637: guildhall-director-tasks: open guildhall-director-tasks: file does not exist
+    skills_test.go:637: guildhall-handoff: open guildhall-handoff: file does not exist
+    skills_test.go:645: no Director skill names `guildhall version`
+    skills_test.go:645: no Director skill names `guildhall doctor`
+    skills_test.go:645: no Director skill names `guildhall task new`
+    skills_test.go:645: no Director skill names `guildhall task show`
+    skills_test.go:645: no Director skill names `guildhall task list`
+    skills_test.go:645: no Director skill names `guildhall task timeline`
+    skills_test.go:645: no Director skill names `guildhall task files`
+    skills_test.go:645: no Director skill names `guildhall task finding rule`
+    skills_test.go:645: no Director skill names `guildhall task review`
+    skills_test.go:645: no Director skill names `guildhall task start`
+    skills_test.go:645: no Director skill names `guildhall step done`
+    skills_test.go:645: no Director skill names `guildhall step retry`
+    skills_test.go:645: no Director skill names `guildhall decide list`
+    skills_test.go:645: no Director skill names `guildhall decide show`
+    skills_test.go:645: no Director skill names `guildhall decide answer`
+    skills_test.go:645: no Director skill names `guildhall director status`
+    skills_test.go:645: no Director skill names `guildhall director ready`
+    skills_test.go:645: no Director skill names `guildhall artisan stop`
+    skills_test.go:645: no Director skill names `guildhall artisan status`
+    skills_test.go:645: no Director skill names `guildhall artisan resume`
+    skills_test.go:645: no Director skill names `guildhall messages send`
+    skills_test.go:645: no Director skill names `guildhall messages list`
+    skills_test.go:645: no Director skill names `guildhall messages read`
+    skills_test.go:645: no Director skill names `guildhall messages ack`
+    skills_test.go:645: no Director skill names `guildhall workflow approve`
+    skills_test.go:645: no Director skill names `guildhall workflow approvals`
+    skills_test.go:645: no Director skill names `guildhall store doctor`
+FAIL
+FAIL	github.com/ndrwl/guildhall/skills
+FAIL
