@@ -579,8 +579,8 @@ func TestSelfReviewSkillDocumentShape(t *testing.T) {
 			t.Errorf("criterion %s: judge %q", c.ID, c.Judge)
 		}
 		switch {
-		case c.Kind == "gate" && c.Pass == nil, c.Kind == "trend" && c.Value == nil:
-			t.Errorf("criterion %s: a %s needs its pass or value", c.ID, c.Kind)
+		case c.Kind == "gate" && c.Pass == nil && c.Evidence == "", c.Kind == "trend" && c.Value == nil:
+			t.Errorf("criterion %s: a %s needs its pass, what is missing, or its value", c.ID, c.Kind)
 		case c.Kind == "score" && c.Judge == "pending" && c.Score != nil:
 			t.Errorf("criterion %s: a pending score has no score", c.ID)
 		case c.Kind == "score" && c.Judge != "pending" && (c.Score == nil || *c.Score < 0 || *c.Score > 3):

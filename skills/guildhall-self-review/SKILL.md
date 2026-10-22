@@ -45,11 +45,13 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
    Exit status 2 is a usage error, never a finding.
 5. Run the report-only tools that are already installed on the changed packages, such as `gocognit -over 15`, `dupl` and `govulncheck`, and record each one's output.
    Install nothing: a tool that is missing is recorded as `not run: not installed`, which is missing evidence, never a pass.
-6. Record the gates from the records: E1 from the validation result for the exact head, A1, B1, D4, D5, F1 to F3, G1 and G2 from the review outcomes and the facts.
-   A gate the records cannot show is `pass: null` with what is missing, never a guess.
+6. Record every gate `docs/quality.md` lists: A1, B1, C1 for its forbidden cases, D4, D5 for its claims, E1, E4, F1 to F3, G1, G2, H3 and H4.
+   E1 comes from the validation result for the exact head; A1, B1, C1, D4, D5, F1 to F3 and G1 from the review outcomes and the facts; E4, H3 and H4 from the timeline, `main` CI after the merge and the Director safety checks.
+   G2 is a script pass only when `assertions_removed` is 0; otherwise it is `judge: pending` and `pass: null` with the `assertion-removed` items as its evidence, for the judge to confirm.
+   A gate the records cannot show is `pass: null` with what is missing as its evidence, never a guess.
 7. Record the script-judged scores, such as G3 from the skip and sleep items, and every trend number: the H1, E3 and E5 numbers come from the timeline.
 8. Leave every model-judged score `pending` with `score: null`, for a judge session that is neither you nor the task's builder; D1 is always one of them, with the facts script's `nontest_lines`, `files` and `size_over` as its evidence, and `size_over: yes` is also a flag.
-   Write the judge's brief beside the document as `self-review-<n>-judge.md`: the criteria to score, the anchors from `docs/quality.md`, and the files it reads.
+   Write the judge's brief beside the document as `self-review-<n>-judge.md`: the criteria to score and any gate left pending, the anchors from `docs/quality.md`, and the files it reads.
 9. Write `self-review-<n>.json` in the shape below, then tell the Guildmaster in one or two sentences: the lowest pillar, any flag, and any gate the records could not show.
 
 ## The document
@@ -74,6 +76,7 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
   "criteria": [
     {"id": "E1", "kind": "gate", "judge": "script", "pass": true, "evidence": "validate-1-result: all checks passed for head 9a8b7c6"},
     {"id": "G2", "kind": "gate", "judge": "script", "pass": true, "evidence": "assertions_removed: 0"},
+    {"id": "E4", "kind": "gate", "judge": "script", "pass": null, "evidence": "not shown: main CI after the merge has not finished"},
     {"id": "D1", "kind": "score", "judge": "pending", "score": null, "evidence": "nontest_lines: 140, files: 6, size_over: no"},
     {"id": "B2", "kind": "score", "judge": "pending", "score": null, "evidence": ""},
     {"id": "H1", "kind": "trend", "judge": "script", "value": 1, "evidence": "one review round, no fix round"},
@@ -84,7 +87,7 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
 }
 ```
 
-`criteria` holds one entry per criterion recorded, by its id in `docs/quality.md`: a gate has `pass`, a score has `score` from 0 to 3, and a trend has `value`.
+`criteria` holds one entry per criterion recorded, by its id in `docs/quality.md`: a gate has `pass`, or `pass: null` with what is missing, a score has `score` from 0 to 3, and a trend has `value`.
 `judge` is `script`, `model`, `guildmaster` or `pending`, and `evidence` quotes the record, `file:line` or command output the entry rests on.
 `flags` lists what the Guildmaster should see, such as a size over budget, a secret item or a gate that failed; a flag never blocks anything.
 `lowest_pillar` is the letter of the pillar with the lowest recorded score, or empty when no score is recorded yet.
@@ -95,4 +98,4 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
 - Never score a model-judged criterion yourself, D1 included, and never turn a trend into a target for the next task.
 - Read the ledger of self-reviews at hallmark time and in a handoff note: the criteria lowest over the window are what a workflow-change proposal must target.
 
-The review is complete when the document records every gate, the facts and tools, the script-judged scores and trends, a pending entry with a judge brief for each model-judged score, and the Guildmaster has the summary.
+The review is complete when the document records every gate in step 6, each with `pass` or with `pass: null` and what is missing, the facts and tools, the script-judged scores and trends, a pending entry with a judge brief for each model-judged score, and the Guildmaster has the summary.

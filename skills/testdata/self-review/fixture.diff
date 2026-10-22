@@ -16,7 +16,7 @@ diff --git a/internal/store/store_test.go b/internal/store/store_test.go
 index 3333333..4444444 100644
 --- a/internal/store/store_test.go
 +++ b/internal/store/store_test.go
-@@ -20,6 +20,6 @@ func TestOpen(t *testing.T) {
+@@ -20,8 +20,6 @@ func TestOpen(t *testing.T) {
  	if err := open(); err != nil {
 -		t.Errorf("open() = %v", err)
 +		t.Log(err)
@@ -25,6 +25,8 @@ index 3333333..4444444 100644
 -	t.Fatalf("unreachable")
 +	t.Skip("flaky on Windows")
 -	msg := err.Error()
+-	return fmt.Errorf("bad %d", n)
+-	log.Fatal(err)
  }
 diff --git a/docs/notes.md b/docs/notes.md
 index 5555555..6666666 100644
