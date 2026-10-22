@@ -54,7 +54,7 @@ func (f *advanceFlags) resolve(getenv func(string) string) error {
 	return nil
 }
 
-// next is what `task start`, `step done` and `step retry` print: interp.Next as JSON.
+// next is what `task start`, `step done`, `step finish` and `step retry` print: interp.Next as JSON.
 type next struct {
 	Wait     interp.Wait `json:"wait"`
 	Step     string      `json:"step"`
@@ -109,15 +109,17 @@ func newWorkAdmitted(path, repo, task string) error {
 	return err
 }
 
-// step runs `guildhall step done|retry`.
+// step runs `guildhall step done|finish|retry`.
 func (a *App) step(args []string) int {
 	switch {
 	case len(args) > 0 && args[0] == "done":
 		return a.stepDone(args[1:])
+	case len(args) > 0 && args[0] == "finish":
+		return a.stepFinish(args[1:])
 	case len(args) > 0 && args[0] == "retry":
 		return a.stepRetry(args[1:])
 	}
-	return a.usageError("step: the commands are done and retry")
+	return a.usageError("step: the commands are done, finish and retry")
 }
 
 // stepRetry runs `guildhall step retry`: it feeds attempt-retried for the Director's retry of a failed or
@@ -332,12 +334,18 @@ func nextOf(n interp.Next) next {
 }
 
 // baselinePrompter renders from baseline/ beside the config file, falling back file by file to the installed
-// release baseline, and the release skills root (docs/running.md).
+// release baseline, and the release skills root (docs/running.md). A Director stage is rendered with the Director's
+// role, as its session is (docs/director.md#start).
 func baselinePrompter(cfg *config.Config, cfgDir, release, skills string) interp.PromptFunc {
 	return func(stage render.Stage, inputs []render.Input) (render.Rendered, error) {
 		base := filepath.Join(cfgDir, "baseline")
 		b := render.Baseline{Role: baselineSource(base, release, "roles/artisan.md"), Guide: baselineSource(base, release, "stages/"+stage.Step.Type+".md")}
-		if name := stage.Step.Profile(); name != "" {
+		if stage.Step.Actor() == workflow.DirectorActor {
+			b.Role = baselineSource(base, release, "roles/director.md")
+			if d := cfg.Director; d != nil && d.Role != "" {
+				b.Role = render.Source{Name: d.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(d.Role)), Root: "copy"}
+			}
+		} else if name := stage.Step.Profile(); name != "" {
 			if p, err := cfg.Profile(name); err == nil && p.Role != "" {
 				b.Role = render.Source{Name: p.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(p.Role)), Root: "copy"}
 			}

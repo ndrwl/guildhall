@@ -446,8 +446,8 @@ func (publishOnly) Checks(_ context.Context, _ forge.Commit) ([]forge.Check, err
 	return nil, errors.New("checks unavailable")
 }
 
-// TestDefaultWorkflowDelivers runs the shipped default workflow, with its grill overridden to an Artisan as a
-// repository meant to run unattended does, from task creation to a merged pull request over the fake forge:
+// TestDefaultWorkflowDelivers runs the shipped default workflow, with its grill overridden to an Artisan with no
+// skills as a repository meant to run unattended does, from task creation to a merged pull request over the fake forge:
 // grill, research, plan, acceptance, build, review, publish, a failed validation that takes the loop back to
 // build, the new head reviewed, published and validated, and the merge.
 func TestDefaultWorkflowDelivers(t *testing.T) {
@@ -459,6 +459,9 @@ func TestDefaultWorkflowDelivers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// An override changes only the actor, so the grill would still list the Director's live-grill skills; an
+	// unattended repository lists its own, and the fixture skill roots hold none of them.
+	def.Steps[0].Settings["skills"] = json.RawMessage(`[]`)
 	if err := workflow.Validate(def); err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,21 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "director-grill",
+  "description": "The straight path behind a live grill: the Director grills, an Artisan researches, and the plan takes both notes as context before acceptance, build, review, sign-off and delivery.",
+  "steps": [
+    {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director", "skills": ["go-tdd"]}},
+    {"id": "research", "type": "research", "version": 1},
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"},
+     "inputs": {"context": ["grill.notes", "research.notes"]}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
+    {"id": "sign-off", "type": "review", "version": 1, "settings": {"actor": "guildmaster"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome", "sign-off.outcome"]}}
+  ]
+}

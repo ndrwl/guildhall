@@ -136,6 +136,9 @@ func (e *env) prompt(stage render.Stage, inputs []render.Input) (render.Rendered
 		return render.Source{Name: name, Path: filepath.Join(interptest.Testdata(), "baseline", filepath.FromSlash(name))}
 	}
 	b := render.Baseline{Role: src("roles/artisan.md"), Guide: src("stages/" + stage.Step.Type + ".md"), Standards: []render.Source{src("standards/go.md")}}
+	if stage.Step.Actor() == workflow.DirectorActor {
+		b.Role = src("roles/director.md")
+	}
 	if stage.Step.Type == "review" {
 		b.Role = src("roles/reviewer.md")
 		b.Standards = append(b.Standards, src("standards/review.md"))

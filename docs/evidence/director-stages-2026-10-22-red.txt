@@ -1,0 +1,60 @@
+Red runs for Director stages in the engine and step finish (D9), 2026-10-22, on bdfc0e8 with the branch's tests.
+
+## interp: go test ./internal/interp -run 'DirectorStage|FailedDirectorStage', engine with WaitDirectorStage and DirectorStage declared and director steps still refused
+--- FAIL: TestDirectorStageWaitsWithoutLaunching (0.04s)
+    --- FAIL: TestDirectorStageWaitsWithoutLaunching/double (0.00s)
+        director_stage_test.go:62: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+    --- FAIL: TestDirectorStageWaitsWithoutLaunching/store (0.04s)
+        director_stage_test.go:62: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+--- FAIL: TestDirectorStageReplaysAfterACrashBeforeTheMark (0.03s)
+    --- FAIL: TestDirectorStageReplaysAfterACrashBeforeTheMark/double (0.00s)
+        director_stage_test.go:132: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+    --- FAIL: TestDirectorStageReplaysAfterACrashBeforeTheMark/store (0.03s)
+        director_stage_test.go:132: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+--- FAIL: TestDirectorStageResultMovesTheTaskOn (0.04s)
+    --- FAIL: TestDirectorStageResultMovesTheTaskOn/double (0.00s)
+        director_stage_test.go:167: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+        script.go:165: mock agent: 2 expected launches never happened: research, plan
+    --- FAIL: TestDirectorStageResultMovesTheTaskOn/store (0.03s)
+        director_stage_test.go:167: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+        script.go:165: mock agent: 2 expected launches never happened: research, plan
+--- FAIL: TestFailedDirectorStageRetries (0.04s)
+    --- FAIL: TestFailedDirectorStageRetries/double (0.00s)
+        director_stage_test.go:205: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+        script.go:165: mock agent: 1 expected launches never happened: research
+    --- FAIL: TestFailedDirectorStageRetries/store (0.03s)
+        director_stage_test.go:205: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+        script.go:165: mock agent: 1 expected launches never happened: research
+--- FAIL: TestDirectorStageAfterAnArtisanStage (0.09s)
+    --- FAIL: TestDirectorStageAfterAnArtisanStage/double (0.01s)
+        director_stage_test.go:248: Advance({Kind:attempt-result Repository:app Task:t7 Step:research Attempt:1 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+        script.go:165: mock agent: 1 expected launches never happened: plan
+    --- FAIL: TestDirectorStageAfterAnArtisanStage/store (0.08s)
+        director_stage_test.go:248: Advance({Kind:attempt-result Repository:app Task:t7 Step:research Attempt:1 Decision: Reason:}) = interp: app/t7 step grill: not supported by the engine: grill steps run by the director
+        script.go:165: mock agent: 1 expected launches never happened: plan
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.248s
+FAIL
+
+## cli: go test ./internal/cli -run StepFinish, with the engine handing Director stages over and no step finish or Director role in the prompter
+--- FAIL: TestStepFinishHandsTheGrillOn (0.16s)
+    finish_test.go:79: grill prompt role {Path:roles/artisan.md Digest:sha256:e626056d05599900f0f2491955459f19c3d5693858aedddc78ffc0c4c7c26296 Root:copy}, guide {Path:stages/grill.md Digest:sha256:f353ac5e5cd1e4577089e6e0604c5f43aed9e4e4cdd4cb85b6a93311cd793dea Root:release}; want the release Director role and grill guide
+    finish_test.go:85: step finish: exit 2, "", stderr guildhall: step: the commands are done and retry
+--- FAIL: TestStepFinishFailedThenRetry (0.13s)
+    finish_test.go:138: a later attempt: exit 2, "", stderr guildhall: step: the commands are done and retry
+    finish_test.go:138: another output port: exit 2, "", stderr guildhall: step: the commands are done and retry
+    finish_test.go:138: a missing file: exit 2, "", stderr guildhall: step: the commands are done and retry
+    finish_test.go:138: a step not run: exit 2, "", stderr guildhall: step: the commands are done and retry
+    finish_test.go:138: an unknown task: exit 2, "", stderr guildhall: step: the commands are done and retry
+    finish_test.go:149: step finish --failed: exit 2, "", stderr guildhall: step: the commands are done and retry
+--- FAIL: TestStepFinishUsage (0.00s)
+    finish_test.go:193: help does not list step finish:
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.297s
+FAIL
+
+## workflow: go test ./internal/workflow -run DefaultGrill, default.json as on bdfc0e8
+    grill_test.go:71: default first step grill, actor director, skills []; want the Director's grill with guildhall-grill and guildhall-domain-model
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/workflow	0.005s
+FAIL

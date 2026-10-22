@@ -35,6 +35,8 @@ type runDirector struct {
 	forge interp.Forge
 	// workspaces is the App's workspaces: the double, with app's remote's default branch set.
 	workspaces *gittest.Workspaces
+	// panes, when set, is the App's Director pane.
+	panes *typedPanes
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -106,6 +108,9 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app.Forge = d.forge
 	if d.workspaces != nil {
 		app.Workspaces = d.workspaces
+	}
+	if d.panes != nil {
+		app.DirectorPane = d.panes
 	}
 	code := app.Run(args)
 	return code, stdout.String(), stderr.String()

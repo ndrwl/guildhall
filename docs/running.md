@@ -1,6 +1,6 @@
 # Running a task
 
-`guildhall task start`, `guildhall step done` and `guildhall step retry` drive a task through the [interpreter](interpreter.md) from the command line.
+`guildhall task start`, `guildhall step done`, `guildhall step finish` and `guildhall step retry` drive a task through the [interpreter](interpreter.md) from the command line.
 Each runs one `interp.Engine.Advance` and prints where the task now stands; launching an Artisan attempt runs it as its own [owned launcher](artisan.md#commands) process, which outlives the command.
 When the advance runs from a [copy](#copies), each attempt's launcher is also the task's watcher: once it records the attempt's outcome it runs `step done` or `task start` itself ([the watcher](#the-watcher)), so nobody types `step done`.
 Over explicit `--store`, `--config` and `--state` paths nothing advances in the background, and the caller runs `step done` once the result file exists.
@@ -8,6 +8,7 @@ Over explicit `--store`, `--config` and `--state` paths nothing advances in the 
 ```sh
 guildhall task start --store <file> --config <director.toml> --state <dir> --repo <id> [--decision <id>] <task>
 guildhall step done --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> --result <file>
+guildhall step finish --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> --summary <text> (--output <port>=<file>... | --failed)
 guildhall step retry --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> [--reason <text>]
 ```
 
@@ -37,7 +38,7 @@ The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/conf
 | Standards revision | The config setting `standards_revision` |
 | Stall interval | The config setting [`stall_interval`](configuration.md#settings), default 15 minutes, `0s` off: the attempt's launcher, given it as `--stall-interval`, sends the Director one [`worker-stalled`](interpreter.md#worker-stalled-observations) message from its heartbeat when its worker has been silent for longer, and an advance that finds a launched attempt waiting sends the same message, a replay when the launcher sent it, when its heartbeat is fresh and its worker silent for longer |
 | Forge | [`forge.GitHub`](contracts/forge.md): `git` pushes from the repository's `path` to its `remote`, and `gh`, found on `PATH` and signed in with its own credentials, opens and merges pull requests; only `github.com` remotes are supported |
-| Baseline | The role `roles/artisan.md` and the guide `stages/<kind>.md` from `baseline/` beside the config file when there, else from the [release baseline](contracts/baseline.md) embedded in the binary, so a copy with only its config file runs every shipped Artisan kind; every `baseline/standards/*.md` in name order, because the release ships no standards; a step profile's `role` overrides the default role and is resolved relative to the config directory; a guide in neither root is refused, as is a copy file that exists but cannot be read, and the manifest records each file's root, `copy` or `release` |
+| Baseline | The role `roles/artisan.md`, or for a [Director stage](interpreter.md#director-stages) `roles/director.md` unless the config's `[director] role` names another, and the guide `stages/<kind>.md` from `baseline/` beside the config file when there, else from the [release baseline](contracts/baseline.md) embedded in the binary, so a copy with only its config file runs every shipped Artisan kind; every `baseline/standards/*.md` in name order, because the release ships no standards; a step profile's `role` overrides the default role and is resolved relative to the config directory; a guide in neither root is refused, as is a copy file that exists but cannot be read, and the manifest records each file's root, `copy` or `release` |
 | Skills | The embedded release skills, installed into a temporary root for the advance |
 | Attempts | `<state>/<repository>/<task>/<step>-<n>`, laid out by `artisan.AttemptKey` |
 | Working directory | `<state>/<repository>/<task>/work`, a [git worktree](interpreter.md#the-working-directory) of the repository's `path` on branch `guildhall/<task>`, which the first attempt creates from the default branch of the repository's `remote`, fetched with `git` found on `PATH`, and every later attempt reuses, and the merge that closes the task removes with its local branch when nothing in them is undelivered; the `path` must be absolute on the machine the Director runs on |
@@ -77,6 +78,16 @@ It then feeds `attempt-result`: a succeeded result's outputs are recorded as doc
 The attempt's launcher records its store outcome when it decides the attempt, which may be before or after `step done`.
 The [interpreter's recovery contract](interpreter.md#replay-and-recovery) defines intake replay and outcome reconciliation when these operations overlap.
 
+## `step finish`
+
+`step finish` is the Director's verb for a [Director stage](interpreter.md#director-stages), which leaves the task waiting with `{"wait":"director-stage",...}` and sends the Director a `director-stage` message naming the stage's prompt.
+It ends attempt `--attempt` of `--step` with the Director's `--summary`, either succeeded with one `--output <port>=<file>` for each output port the step's kind declares (a grill's is `notes`), or abandoned with `--failed` and no output.
+Under the task's lock it copies each file into the task's working directory as `<port><ext>`, `<ext>` being the file's extension, so `--output notes=agreed.md` becomes `work/notes.md`, then writes the attempt's `result.json` with `adapter.WriteResult`, which never replaces a result, and feeds `attempt-result` exactly as `step done` does: the notes are recorded as `<step>-<n>-notes` and the task moves on.
+A `--failed` finish leaves the task waiting for the Director, and [`step retry`](#step-retry) hands the stage's next attempt to it.
+
+It is refused with exit status 1, copying and writing nothing, when the step is not in the repository's workflow or not run by the `director`, when an output names a port the step's kind does not declare or a file that cannot be read, when the attempt is not recorded or a later attempt of the step follows it, when it is already finished (its outcome recorded or its result written; a written result not yet taken is taken with `step done`), and when the engine has not yet handed it to the Director (`task start` hands it).
+A missing `--summary`, an output that is not `<port>=<file>`, a port named twice, outputs with `--failed` or none without it are usage errors.
+
 ## `step retry`
 
 `step retry` is the Director's decision after a failed or stopped attempt, which leaves the task waiting with `{"wait":"director",...}`.
@@ -89,7 +100,7 @@ An attempt whose launcher died is first settled with [`artisan resume`](artisan.
 
 ## Output and exit status
 
-All three print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start` reads again once `checks_refresh` has passed, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
+All four print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"director-stage","step":"grill","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start` reads again once `checks_refresh` has passed, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
 
 | Exit status | Meaning |
 |---|---|
