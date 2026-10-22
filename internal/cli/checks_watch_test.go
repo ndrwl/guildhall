@@ -16,6 +16,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // watchDouble is checksWatch's waiting, advance and clock: it lists tasks and records each advance, holding each
@@ -297,7 +298,7 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 	f.SetChecks("git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567", forge.Check{Name: "ci", State: forge.CheckPassed})
 	next := filepath.Join(d.state, "app", "t-1", nextFile)
 	want := `{"wait":"decision","step":"deliver","decision":"deliver-1"}`
-	for end := time.Now().Add(3 * time.Minute); strings.TrimSpace(readFileString(t, next)) != want; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(3 * time.Minute)); strings.TrimSpace(readFileString(t, next)) != want; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(end) {
 			t.Fatalf("next.json = %s, want %s once the checks passed", readFileString(t, next), want)
 		}
