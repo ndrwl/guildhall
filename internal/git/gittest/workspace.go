@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -426,43 +425,13 @@ func Repositories(t *testing.T) func(*testing.T) (repository, remote, base strin
 			built = true
 		}
 		root := ct.TempDir()
-		if err := copyTree(template, root); err != nil {
+		if err := os.CopyFS(root, os.DirFS(template)); err != nil {
 			ct.Fatalf("copy the repository fixture: %v", err)
 		}
 		repository, remote := filepath.Join(root, "repository"), filepath.Join(root, "remote.git")
 		repositoryGit(ct, filepath.Join(root, "gitconfig"))(repository, "remote", "set-url", "origin", remote)
 		return repository, remote, head
 	}
-}
-
-// copyTree copies the regular files and directories under from into the existing directory to, keeping their
-// permission bits.
-func copyTree(from, to string) error {
-	return filepath.WalkDir(from, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(from, path)
-		if err != nil || rel == "." {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		dst := filepath.Join(to, rel)
-		if d.IsDir() {
-			return os.Mkdir(dst, info.Mode().Perm()|0o700)
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("%s is not a regular file", path)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(dst, data, info.Mode().Perm())
-	})
 }
 
 // Retire implements the contract over the double's directories, where every file is untracked.

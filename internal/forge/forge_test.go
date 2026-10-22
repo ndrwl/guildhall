@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,7 +31,19 @@ func TestMain(m *testing.M) {
 	if state := os.Getenv(fakeGHEnv); state != "" {
 		os.Exit(fakeGH(state, os.Getenv(fakeGHRemoteEnv), os.Args[1:]))
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if fixture.dir != "" {
+		_ = os.RemoveAll(fixture.dir)
+	}
+	os.Exit(code)
+}
+
+// fixture is the repository and bare remote newGitHub builds with real git once per test binary and copies for
+// each test, with the commits it made.
+var fixture struct {
+	mu               sync.Mutex
+	dir              string
+	base, h0, h1, h2 string
 }
 
 // remote is the GitHub remote every test repository is configured with; git maps it to a local bare repository.
@@ -57,36 +70,15 @@ func newGitHub(t *testing.T) *gh {
 	}
 	dir := t.TempDir()
 	g := &gh{state: filepath.Join(dir, "gh-state.json"), global: filepath.Join(dir, "gitconfig"), bare: filepath.Join(dir, "remote.git")}
-	url := filepath.ToSlash(g.bare)
-	if !strings.HasPrefix(url, "/") {
-		url = "/" + url
-	}
-	config := fmt.Sprintf("[url \"file://%s\"]\n\tinsteadOf = %s\n[user]\n\tname = t\n\temail = t@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n", url, remote)
-	if err := os.WriteFile(g.global, []byte(config), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_CONFIG_GLOBAL", g.global)
 	t.Setenv(fakeGHEnv, g.state)
 	t.Setenv(fakeGHRemoteEnv, g.bare)
-	g.git(t, "", "init", "-q", "--bare", g.bare)
-	work := filepath.Join(dir, "work")
-	g.git(t, "", "init", "-q", work)
-	commit := func(name string) string {
-		if err := os.WriteFile(filepath.Join(work, name), []byte(name+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		g.git(t, work, "add", name)
-		g.git(t, work, "commit", "-q", "-m", name)
-		return g.git(t, work, "rev-parse", "HEAD")
+	base, h0, h1, h2 := copyFixture(t, dir)
+	if err := writeGitConfig(g.global, g.bare); err != nil {
+		t.Fatal(err)
 	}
-	base := commit("base")
-	g.git(t, work, "push", "-q", remote, "main")
-	h0 := commit("one")
-	h1 := commit("two")
-	g.git(t, work, "checkout", "-q", "--detach", base)
-	h2 := commit("rewrite")
-	g.git(t, work, "checkout", "-q", "main")
+	t.Setenv("GIT_CONFIG_GLOBAL", g.global)
+	work := filepath.Join(dir, "work")
 	g.writeState(t, ghState{})
 	exe, err := os.Executable()
 	if err != nil {
@@ -117,6 +109,60 @@ func newGitHub(t *testing.T) *gh {
 		},
 	}
 	return g
+}
+
+// writeGitConfig writes the global git configuration that maps remote to the bare repository bare.
+func writeGitConfig(path, bare string) error {
+	url := filepath.ToSlash(bare)
+	if !strings.HasPrefix(url, "/") {
+		url = "/" + url
+	}
+	config := fmt.Sprintf("[url \"file://%s\"]\n\tinsteadOf = %s\n[user]\n\tname = t\n\temail = t@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n", url, remote)
+	return os.WriteFile(path, []byte(config), 0o644)
+}
+
+// copyFixture copies the fixture's work repository and bare remote into dir, building the fixture with real git
+// on first use: main at base and then h0 and h1, with only base pushed, and h2 a rewrite of h0 on base.
+func copyFixture(t *testing.T, dir string) (base, h0, h1, h2 string) {
+	t.Helper()
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	if fixture.dir == "" {
+		root, err := os.MkdirTemp("", "forge-fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := &gh{global: filepath.Join(root, "gitconfig"), bare: filepath.Join(root, "remote.git")}
+		if err := writeGitConfig(g.global, g.bare); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GIT_CONFIG_GLOBAL", g.global)
+		g.git(t, "", "init", "-q", "--bare", g.bare)
+		work := filepath.Join(root, "work")
+		g.git(t, "", "init", "-q", work)
+		commit := func(name string) string {
+			if err := os.WriteFile(filepath.Join(work, name), []byte(name+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			g.git(t, work, "add", name)
+			g.git(t, work, "commit", "-q", "-m", name)
+			return g.git(t, work, "rev-parse", "HEAD")
+		}
+		fixture.base = commit("base")
+		g.git(t, work, "push", "-q", remote, "main")
+		fixture.h0 = commit("one")
+		fixture.h1 = commit("two")
+		g.git(t, work, "checkout", "-q", "--detach", fixture.base)
+		fixture.h2 = commit("rewrite")
+		g.git(t, work, "checkout", "-q", "main")
+		fixture.dir = root
+	}
+	for _, name := range []string{"work", "remote.git"} {
+		if err := os.CopyFS(filepath.Join(dir, name), os.DirFS(filepath.Join(fixture.dir, name))); err != nil {
+			t.Fatalf("copy the fixture's %s: %v", name, err)
+		}
+	}
+	return fixture.base, fixture.h0, fixture.h1, fixture.h2
 }
 
 // setChecks makes nodes, in GitHub's statusCheckRollup context form, the checks the fake gh reports for head.
