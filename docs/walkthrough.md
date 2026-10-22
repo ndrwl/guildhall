@@ -32,7 +32,7 @@ The `task new` and `task start` lines need the copy's Director config, `demo/con
 A task is one unit of work in one repository; creating it records it and binds the exact workflow and configuration it was accepted under.
 `task start` launches the task's next ready stage as an owned Artisan attempt.
 The engine does not run Director stages yet, and the default workflow's first stage, `grill`, is run by the Director, so until it does, give `app` a workflow without Director stages; see [configuration and workflows](configuration.md).
-Nothing waits in the background yet, so you run `guildhall step done` once an attempt's result file exists; see [tasks](tasks.md) and [running a task](running.md).
+Because the task runs from a copy, each attempt's launcher takes its own result with `step done`, or runs `task start` after a failure so you get an `attempt-failed` message, so you do not type `step done`; see [the watcher](running.md#the-watcher) and [tasks](tasks.md).
 
 Each task follows a workflow.
 The shipped [default workflow](../internal/workflow/default.json) is:

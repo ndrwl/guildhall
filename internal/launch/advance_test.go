@@ -34,9 +34,9 @@ type advanceDouble struct {
 // attempt outcome and ownership state, read as the child starts.
 type advanceSeen struct {
 	Argv         []string             `json:"argv"`
-	Decided      artisan.OutcomeState        `json:"decided"`
+	Decided      artisan.OutcomeState `json:"decided"`
 	Outcome      store.AttemptOutcome `json:"outcome"`
-	Owner        store.OwnershipState     `json:"owner"`
+	Owner        store.OwnershipState `json:"owner"`
 	ObservedErrs []string             `json:"errors,omitempty"`
 }
 

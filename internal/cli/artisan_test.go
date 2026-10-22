@@ -28,7 +28,10 @@ func TestMain(m *testing.M) {
 	runStewardSCPStub()
 	switch os.Getenv(roleEnv) {
 	case "guildhall":
-		os.Exit(New().Run(os.Args[1:]))
+		// As cmd/guildhall assembles it, with an empty release skills root: a launcher's advance installs it.
+		app := New()
+		app.InstallSkills = func(string) error { return nil }
+		os.Exit(app.Run(os.Args[1:]))
 	case "herdr":
 		os.Exit(fakeHerdr(os.Args[1:]))
 	}

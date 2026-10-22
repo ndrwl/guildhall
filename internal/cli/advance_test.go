@@ -294,9 +294,9 @@ func (d runDirector) waitDecision(t *testing.T, id string) {
 	t.Fatalf("decision %s was not opened within a minute; plan-1 launcher log:\n%s", id, log)
 }
 
-// TestTaskStartAndStepDoneByTheWatcher is D3: task start from a copy launches the plan attempt with --advance,
-// and the attempt's launcher, once it records the result, runs step done itself, so the task reaches the
-// accept-1 decision without step done typed by hand.
+// TestTaskStartAndStepDoneByTheWatcher is TestTaskStartAndStepDone from a copy (D3): task start launches the plan
+// attempt with --advance, and the attempt's launcher, once it records the result, runs step done itself, so the
+// task reaches the accept-1 decision without step done typed by hand.
 func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {
 	d, dir := newRunCopy(t)
 	code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1")
@@ -309,6 +309,9 @@ func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {
 	}
 	if got := d.attempts(t); len(got) != 1 || got[0].Outcome != store.AttemptSucceeded {
 		t.Errorf("attempts %+v, want plan-1 succeeded", got)
+	} // Each advance leaves what the task waits for beside its task lock, for director status.
+	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "next.json")); err != nil || string(b) != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
+		t.Errorf("next.json = %q, %v", b, err)
 	}
 }
 

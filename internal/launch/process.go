@@ -96,6 +96,9 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
 		"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
 		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
+	if p.Copy != "" {
+		cmd.Args = append(cmd.Args, "--copy", p.Copy, "--advance")
+	}
 	cmd.Env = append(os.Environ(), p.Env...)
 	cmd.Stdout, cmd.Stderr = log, log
 	detach(cmd)
