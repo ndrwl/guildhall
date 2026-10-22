@@ -283,7 +283,7 @@ What is measured:
 
 ## Safety checks
 
-Four checks in `cmd/guildhall` drive the built binary through `director start` with a stand-in runtime playing the Director from its role prompt's script, on every CI runner and with no model calls ([decision](decisions/director-safety-checks.md)).
+Four checks in `cmd/guildhall` drive the built binary through `director start` with a stand-in runtime playing the Director from its role prompt's script, on every CI runner and with no model calls ([decision](decisions/0080-director-safety-checks.md)).
 The fake Director and the Claude stub play the same script, so each check runs on both.
 Each check counts the stand-in's turns, one for its first message and one for each line typed to it, and the fake Artisans' recorded processes, before and after, and ends only when every one of those processes is gone.
 
