@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
@@ -324,6 +325,8 @@ func validateCopy(t *testing.T, f *forgetest.Fake) (string, runDirector) {
 func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 	f := forgetest.NewFake()
 	dir, d := validateCopy(t, f)
+	turnLog := filepath.Join(dir, "director-turns.log")
+	t.Setenv(fake.TurnLogEnv, turnLog)
 	writeFile(t, d.config, strings.Replace(readFileString(t, d.config), "[local]\n", "[local]\nchecks_refresh = \"100ms\"\n", 1))
 	pending := len(directorMessages(t, d.store))
 	cf := &countingForge{Fake: f}
@@ -338,7 +341,30 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 	if got := directorMessages(t, d.store); len(got) != pending {
 		t.Fatalf("pending re-reads sent %v", got[pending:])
 	}
+	if got := turns(t, turnLog); !slices.Equal(got, []string{"start"}) {
+		t.Fatalf("pending checks caused runtime turns: %q", got)
+	}
+	t.Logf("pending checks: forge reads=%d; runtime turns=%v; Director messages unchanged=%v", cf.reads.Load(), turns(t, turnLog), directorMessages(t, d.store))
+	if code, out, stderr := d.run(t, "director", "status", "--json", "--copy", dir); code != 0 {
+		t.Fatalf("status: %s %s", out, stderr)
+	} else {
+		t.Logf("pending status feed: %s", out)
+	}
+	if code, out, stderr := d.run(t, "director", "pause", "--copy", dir); code != 0 {
+		t.Fatalf("pause: %s %s", out, stderr)
+	}
+	// Let a round already in flight finish, then challenge the paused guard with green CI.
+	time.Sleep(300 * time.Millisecond)
+	reads := cf.reads.Load()
 	f.SetChecks("git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567", forge.Check{Name: "ci", State: forge.CheckPassed})
+	time.Sleep(400 * time.Millisecond)
+	if cf.reads.Load() != reads || strings.TrimSpace(readFileString(t, filepath.Join(d.state, "app", "t-1", nextFile))) != `{"wait":"checks","step":"validate"}` {
+		t.Fatal("paused supervisor observed or advanced green checks")
+	}
+	t.Logf("green while paused: forge reads remain %d; task still waits for checks", reads)
+	if code, out, stderr := d.run(t, "director", "resume", "--copy", dir); code != 0 {
+		t.Fatalf("resume: %s %s", out, stderr)
+	}
 	next := filepath.Join(d.state, "app", "t-1", nextFile)
 	want := `{"wait":"decision","step":"deliver","decision":"deliver-1"}`
 	for end := time.Now().Add(testenv.Ceiling(3 * time.Minute)); strings.TrimSpace(readFileString(t, next)) != want; time.Sleep(50 * time.Millisecond) {
@@ -346,6 +372,7 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 			t.Fatalf("next.json = %s, want %s once the checks passed", readFileString(t, next), want)
 		}
 	}
+	t.Logf("autonomous continuation, without task start: next=%s; messages=%v", readFileString(t, next), directorMessages(t, d.store))
 	if got := directorMessages(t, d.store); !slices.Contains(got, "app.t-1.checks-passed.validate-1") {
 		t.Errorf("Director messages = %v, want checks-passed", got)
 	}

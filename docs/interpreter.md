@@ -166,7 +166,7 @@ A forge that gives no run ids cannot show a re-run that failed the same way, whi
 
 **Pacing.** `Engine.ChecksRefresh`, the config's [`checks_refresh`](configuration.md#settings) (default one minute), paces the reads: once a validate step has read a head's checks, an advance reads that head's checks again only after `ChecksRefresh` has passed, and otherwise returns the same wait without calling the forge.
 The time of the last read is kept in `<state>/<repo>/<task>/<step>.checks.json`; a new head is read at once, and zero reads at every advance.
-Nothing in the engine reads the checks in the background: an advance does, such as `task start`, or the Director session supervisor's [checks watcher](director.md#checks), which advances each task waiting for checks every `ChecksRefresh`, but never more often than every 30 seconds, while the session runs.
+Nothing in the engine reads the checks in the background: an advance does, such as `task start`, or the Director session supervisor's [checks watcher](director.md#checks).
 
 The **validation gate**: when `deliver`'s `validation` input is wired, its document must be a `passed` result for the head being delivered, or `deliver` is refused with `ErrValidationGate`.
 Because validate only completes on a passed result for its current head, the gate holds whenever the walk reaches `deliver`; it is kept deliberately as defence in depth, as the review gate is, and guards a workflow and records that disagree.
