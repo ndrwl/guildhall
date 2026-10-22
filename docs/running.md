@@ -10,6 +10,21 @@ guildhall step done --store <file> --config <director.toml> --state <dir> --repo
 guildhall step retry --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> [--reason <text>]
 ```
 
+With a [copy](#copies), `--copy <dir> --repo <id>` replaces `--store`, `--config` and `--state`.
+
+## Copies
+
+A Director copy is one directory holding `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)).
+Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, the owned `artisan` commands and `store init|doctor`) accepts `--copy <dir>`, or, when that flag is absent, the environment variable `GUILDHALL_COPY`.
+The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/config.toml` and `--state` to `<dir>/state`, for each of those flags the command takes; `workflow approve` takes the copy's config only with `--repo` and no `--file`.
+`config.Load` reads the copy's config as it reads any other.
+
+- `--copy` overrides `GUILDHALL_COPY`.
+- `GUILDHALL_COPY` must be an absolute path, so a child that inherits it in another working directory selects the same copy; a relative value is a usage error.
+- A path flag given with a copy must name the copy's own file, compared absolute and cleaned (ignoring case on Windows); one elsewhere, such as a `--store` outside the copy, is a usage error, exit 2.
+- With neither `--copy` nor `GUILDHALL_COPY`, the path flags are required as before.
+- A copy, like a `--store`, without a store file is refused with exit 1, naming `guildhall store init <dir>/director.store`; no command but `store init` creates a store.
+
 ## What an advance runs over
 
 | Input | Where it comes from |

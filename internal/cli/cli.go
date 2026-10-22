@@ -26,6 +26,8 @@ const usage = `Usage: guildhall <command>
 Commands:
   version        print the guildhall version and platform
   doctor         report the platform and the tools guildhall uses
+  store init <path>
+                 create and initialize an empty store file
   store doctor <path>
                  check a store file read-only and count its records
   steward rollout ...
@@ -87,6 +89,8 @@ type App struct {
 	// Forge publishes and merges task branches for task start and step done; nil means forge.GitHub over git
 	// and gh found on PATH.
 	Forge interp.Forge
+	// Getenv reads the environment, such as GUILDHALL_COPY; nil means an empty environment.
+	Getenv func(string) string
 }
 
 // New returns an App wired to the real process environment.
@@ -100,6 +104,7 @@ func New() *App {
 			return exec.CommandContext(ctx, path, args...).CombinedOutput()
 		},
 		Executable: os.Executable,
+		Getenv:     os.Getenv,
 	}
 }
 
@@ -140,10 +145,7 @@ func (a *App) Run(args []string) int {
 		}
 		out = a.doctor()
 	case "store":
-		if len(rest) != 2 || rest[0] != "doctor" {
-			return a.usageError("usage: guildhall store doctor <path>")
-		}
-		return a.storeDoctor(rest[1])
+		return a.storeCmd(rest)
 	case "messages":
 		return a.messages(rest)
 	case "workflow":

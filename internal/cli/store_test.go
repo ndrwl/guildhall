@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,103 @@ func TestStoreUsageErrors(t *testing.T) {
 		{"store", "compact", "x"},
 		{"store", "doctor"},
 		{"store", "doctor", "a", "b"},
+	} {
+		app, _, stderr := newTestApp(nil, nil)
+		if code := app.Run(args); code != 2 {
+			t.Errorf("%q: exit code = %d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "Usage:") {
+			t.Errorf("%q: stderr %q lacks usage", args, stderr)
+		}
+	}
+}
+
+func TestStoreInitCreatesEmptyStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "director.store")
+	app, stdout, stderr := newTestApp(nil, nil)
+
+	if code := app.Run([]string{"store", "init", path}); code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr)
+	}
+	got := decodeJSON[map[string]any](t, stdout.String())
+	if len(got) != 2 || got["store"] != path || got["schema_version"] != float64(store.SchemaVersion) {
+		t.Errorf("stdout = %q, want the store path and schema version", stdout)
+	}
+	// The new store is one every other command accepts.
+	app, stdout, stderr = newTestApp(nil, nil)
+	if code := app.Run([]string{"store", "doctor", path}); code != 0 {
+		t.Fatalf("doctor exit code = %d, want 0; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout.String(), "integrity: ok\nreceipts: 0\n") {
+		t.Errorf("doctor stdout = %q, want an empty, intact store", stdout)
+	}
+}
+
+// store init never overwrites or repairs: whatever already exists at the path is refused and left as it was.
+func TestStoreInitRefusesExistingPath(t *testing.T) {
+	dir := t.TempDir()
+	existing := writeStore(t)
+	text := filepath.Join(dir, "notes.txt")
+	writeFile(t, text, "not a store\n")
+	empty := filepath.Join(dir, "empty.store")
+	writeFile(t, empty, "")
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{existing, text, empty, sub} {
+		before, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data []byte
+		if !before.IsDir() {
+			if data, err = os.ReadFile(path); err != nil {
+				t.Fatal(err)
+			}
+		}
+		app, stdout, stderr := newTestApp(nil, nil)
+		if code := app.Run([]string{"store", "init", path}); code != 1 {
+			t.Errorf("%s: exit code = %d, want 1", path, code)
+		}
+		if stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "guildhall: store init: ") || !strings.Contains(stderr.String(), path) || !strings.Contains(stderr.String(), "already exists") {
+			t.Errorf("%s: stdout %q, stderr %q; want a refusal naming the path", path, stdout, stderr)
+		}
+		after, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.IsDir() != before.IsDir() || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+			t.Errorf("%s changed: %v, was %v", path, after, before)
+		}
+		if !before.IsDir() {
+			if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, data) {
+				t.Errorf("%s contents changed (%v)", path, err)
+			}
+		}
+	}
+}
+
+// A store whose directory is missing is not created along with it, and the failed init leaves nothing behind.
+func TestStoreInitMissingDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "absent", "director.store")
+	app, stdout, stderr := newTestApp(nil, nil)
+	if code := app.Run([]string{"store", "init", path}); code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "guildhall: store init: ") {
+		t.Errorf("stdout %q, stderr %q; want an init failure", stdout, stderr)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Errorf("init created %s: %v", filepath.Dir(path), err)
+	}
+}
+
+func TestStoreInitUsageErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"store", "init"},
+		{"store", "init", "a", "b"},
+		{"store", "init", "--force", "a"},
 	} {
 		app, _, stderr := newTestApp(nil, nil)
 		if code := app.Run(args); code != 2 {

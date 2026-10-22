@@ -311,7 +311,7 @@ The designed additions are:
 | `guildhall ticket file --sender <sender> --from-message <id>` | Requires both identity fields; files a ticket from that sender's `handoff-offer` or `dependency-notice` and opens its Guildmaster decision. |
 | `guildhall ticket list` | Lists tickets and their states. |
 
-Every command keeps the existing conventions: one JSON document on success, exit 1 on refusal or failure, exit 2 on a usage error, no command creates a store.
+Every command keeps the existing conventions: one JSON document on success, exit 1 on refusal or failure, exit 2 on a usage error, no messages command creates a store ([`store init`](store.md#guildhall-store-init) does).
 
 ### Config keys
 

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,19 +25,27 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// advanceFlags name what an advance runs over (docs/running.md).
-type advanceFlags struct{ store, config, state, repo string }
+// advanceFlags name what an advance runs over (docs/running.md); a copy defaults the store, config and state.
+type advanceFlags struct {
+	store, config, state, repo string
+	copy                       copyFlags
+}
 
 func (f *advanceFlags) register(fl *flag.FlagSet) {
+	f.copy.register(fl)
 	fl.StringVar(&f.store, "store", "", "Director store file")
 	fl.StringVar(&f.config, "config", "", "Director config file")
 	fl.StringVar(&f.state, "state", "", "state directory")
 	fl.StringVar(&f.repo, "repo", "", "repository id")
 }
 
-func (f advanceFlags) check() error {
+// resolve fills the paths from the copy, if one is selected, and checks every flag is given.
+func (f *advanceFlags) resolve(getenv func(string) string) error {
+	if err := f.copy.apply(getenv, &f.store, &f.config, &f.state); err != nil {
+		return err
+	}
 	if f.store == "" || f.config == "" || f.state == "" || f.repo == "" {
-		return errors.New("--store, --config, --state and --repo are required")
+		return errors.New("--store, --config, --state and --repo are required, or --copy and --repo")
 	}
 	return nil
 }
@@ -60,7 +69,7 @@ func (a *App) taskStart(args []string) int {
 	if err := parseInterspersed(fl, args); err != nil {
 		return a.taskUsage("task start: " + err.Error())
 	}
-	if err := f.check(); err != nil {
+	if err := f.resolve(a.Getenv); err != nil {
 		return a.taskUsage("task start: " + err.Error())
 	}
 	if fl.NArg() != 1 || !workflow.ValidID(fl.Arg(0)) {
@@ -99,9 +108,9 @@ func (a *App) stepRetry(args []string) int {
 		return a.usageError("step retry: " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch {
-	case f.check() != nil:
-		return a.usageError("step retry: " + f.check().Error())
+	switch ferr := f.resolve(a.Getenv); {
+	case ferr != nil:
+		return a.usageError("step retry: " + ferr.Error())
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("step retry: unexpected argument %q", fl.Arg(0)))
 	case *task == "" || *step == "" || *attempt == "":
@@ -128,9 +137,9 @@ func (a *App) stepDone(args []string) int {
 		return a.usageError("step done: " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch {
-	case f.check() != nil:
-		return a.usageError("step done: " + f.check().Error())
+	switch ferr := f.resolve(a.Getenv); {
+	case ferr != nil:
+		return a.usageError("step done: " + ferr.Error())
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("step done: unexpected argument %q", fl.Arg(0)))
 	case *task == "" || *step == "" || *result == "":
@@ -204,7 +213,9 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, err
 	}
-	if _, err := os.Stat(f.store); err != nil {
+	if _, err := os.Stat(f.store); errors.Is(err, fs.ErrNotExist) {
+		return interp.Next{}, noStore(f.store)
+	} else if err != nil {
 		return interp.Next{}, fmt.Errorf("no store at %s: %w", f.store, err)
 	}
 	exe, err := a.Executable()

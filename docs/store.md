@@ -146,7 +146,17 @@ A read-only open never creates, initializes or writes a file.
 The repository holds a schema 1 store file (`internal/store/testdata/schema-v1.store`) that the tests open on Linux, Windows and macOS in CI, so every platform reads a file another platform wrote.
 bbolt records the page size in the file, and every release target is little-endian.
 
+## `guildhall store init`
+
+`guildhall store init <path>` creates the file at `<path>` and initializes it as an empty schema 1 store with `store.Open`, then prints `{"store": "<path>", "schema_version": 1}` and exits 0.
+It refuses anything already at `<path>`, whether a store, an empty file, another file or a directory, with `store.ErrExists` naming the path, and exits 1 without changing it: it never overwrites or repairs.
+The file is created exclusively, so something appearing after the check is still refused; a failed initialization removes the file it created, and a missing parent directory is not created.
+Usage errors exit 2.
+`store init` is the only command that creates a store; every other command opens with `RequireStore` and, given a missing store, names `store init`.
+
 ## `guildhall store doctor`
 
 `guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count and each repository's record counts, including rulings, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.
+
+Both commands take `--copy <dir>`, or `GUILDHALL_COPY`, in place of `<path>`, naming the copy's `director.store`; a path given as well must be that file ([copies](running.md#copies)).

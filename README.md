@@ -103,17 +103,18 @@ Prebuilt binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, will b
 ## Try it today
 
 Until the Director exists, you can run the steps it will run yourself.
-The quickest look needs nothing but the binary: copy the sample store, which holds one task, and inspect it.
+A Director's copy is a directory holding its `config.toml`, its store `director.store` and its `state/` directory.
+The quickest look needs nothing but the binary: create an empty store with `store init`, which refuses anything already at that path, and inspect it.
 
 ```sh
-cp internal/store/testdata/schema-v1.store demo.store
-./guildhall task list --store demo.store --json
-./guildhall task timeline --store demo.store --repo app t-1 --json
-./guildhall decide list --store demo.store
-./guildhall store doctor demo.store
+mkdir -p demo/state
+./guildhall store init demo/director.store
+./guildhall task list --copy demo --json
+./guildhall decide list --copy demo
+./guildhall store doctor --copy demo
 ```
 
-Never point commands at the committed file itself; always use a copy.
+Every command that takes a store accepts `--copy demo` in place of `--store demo/director.store`, `--config demo/config.toml` and `--state demo/state`, or reads the copy from the environment variable `GUILDHALL_COPY`, which must be an absolute path; see [copies](docs/running.md#copies).
 
 To go further (create a task in your own repository, launch an agent for a stage, answer its decisions, send messages, preview a Steward rollout), follow the [walkthrough](docs/walkthrough.md).
 It needs a small Director config naming your repository; see [configuration and workflows](docs/configuration.md).
@@ -146,7 +147,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall steward rollout`: preview and apply shared settings to enrolled machines; see [Steward rollouts](docs/steward.md).
 - `guildhall render <request.json>`: render an agent prompt with its skills; see [prompt rendering](docs/rendering.md).
-- `guildhall store doctor <path>`: check a store file without changing it; see [the store](docs/store.md).
+- `guildhall store init <path>` and `guildhall store doctor <path>`: create an empty store file, or check one without changing it; see [the store](docs/store.md).
 - `guildhall help`: list the commands.
 
 ## Learn more

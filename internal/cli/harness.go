@@ -65,7 +65,7 @@ func (a *App) artisanHarness(args []string) int {
 	}
 	var own *store.Ownership
 	if f != (attemptFlags{}) {
-		at, err := f.parse()
+		at, err := f.parse(a.Getenv)
 		if err != nil {
 			return a.usageError("artisan harness " + cmd + ": " + err.Error())
 		}

@@ -2,14 +2,84 @@ package cli
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 )
+
+// storeCmd runs `guildhall store init|doctor`, on the path given or the selected copy's store.
+func (a *App) storeCmd(args []string) int {
+	const usage = "usage: guildhall store init|doctor <path>, or --copy <dir>"
+	if len(args) == 0 || (args[0] != "init" && args[0] != "doctor") {
+		return a.usageError(usage)
+	}
+	fl := flag.NewFlagSet("store "+args[0], flag.ContinueOnError)
+	fl.SetOutput(io.Discard)
+	var cp copyFlags
+	cp.register(fl)
+	if err := parseInterspersed(fl, args[1:]); err != nil {
+		return a.usageError("store " + args[0] + ": " + err.Error())
+	}
+	var path string
+	if fl.NArg() == 1 {
+		path = fl.Arg(0)
+	}
+	if err := cp.apply(a.Getenv, &path, nil, nil); err != nil {
+		return a.usageError("store " + args[0] + ": " + err.Error())
+	}
+	if fl.NArg() > 1 || path == "" {
+		return a.usageError(usage)
+	}
+	if args[0] == "init" {
+		return a.storeInit(path)
+	}
+	return a.storeDoctor(path)
+}
+
+// storeInit creates and initializes an empty store at path. It refuses anything already there, of any kind,
+// and never overwrites or repairs it; it exits 0 with the new store's path and schema version, 1 otherwise.
+func (a *App) storeInit(path string) int {
+	fail := func(err error) int {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: store init: %v\n", err)
+		return 1
+	}
+	exists := func() int {
+		return fail(fmt.Errorf("%s already exists, and store init never replaces or repairs it: %w", path, store.ErrExists))
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return exists()
+	}
+	// Exclusive creation keeps the refusal when something appears after the check.
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return exists()
+	} else if err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return fail(err)
+	}
+	// Open initializes the empty file this command just created.
+	s, err := store.Open(path, store.Options{})
+	if err == nil {
+		err = s.Close()
+	}
+	if err != nil {
+		_ = os.Remove(path)
+		return fail(err)
+	}
+	return a.printJSON(struct {
+		Store         string `json:"store"`
+		SchemaVersion int    `json:"schema_version"`
+	}{path, store.SchemaVersion})
+}
 
 // storeDoctor opens the store at path read-only, checks it and reports what it found.
 // It exits 0 only when the store opened and showed no problems.
@@ -20,7 +90,7 @@ func (a *App) storeDoctor(path string) int {
 	}
 	s, err := store.Open(path, store.Options{ReadOnly: true})
 	if errors.Is(err, fs.ErrNotExist) {
-		return fail(fmt.Errorf("no store at %s", path))
+		return fail(noStore(path))
 	} else if err != nil {
 		return fail(err)
 	}

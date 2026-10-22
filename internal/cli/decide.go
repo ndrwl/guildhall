@@ -18,7 +18,8 @@ import (
 const decideUsage = `usage:
   guildhall decide list --store <path> [--repo <id>]
   guildhall decide show --store <path> --repo <id> --task <id> --decision <id>
-  guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->`
+  guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
+--copy <dir>, or GUILDHALL_COPY, may stand in for --store: the copy's director.store`
 
 // decide runs a decide subcommand against an existing store and prints its result as one JSON document
 // (docs/decisions-cli.md). list prints the open decisions, the per-machine inbox (R1.20), by repository,
@@ -38,16 +39,18 @@ func (a *App) decide(args []string) int {
 	task := flags.String("task", "", "task id")
 	id := flags.String("decision", "", "decision id")
 	answerFile := flags.String("answer-file", "", "answer file, or - for standard input")
+	var cp copyFlags
+	cp.register(flags)
 	var required, allowed []string
 	switch sub {
 	case "list":
-		required, allowed = []string{"store"}, []string{"store", "repo"}
+		required, allowed = []string{"store"}, []string{"store", "copy", "repo"}
 	case "show":
 		required = []string{"store", "repo", "task", "decision"}
-		allowed = required
+		allowed = append(required, "copy")
 	case "answer":
 		required = []string{"store", "repo", "task", "decision", "answer-file"}
-		allowed = required
+		allowed = append(required, "copy")
 	default:
 		return a.decideUsage(fmt.Sprintf("unknown decide subcommand %q", sub))
 	}
@@ -63,6 +66,9 @@ func (a *App) decide(args []string) int {
 			usageErr = fmt.Sprintf("--%s does not apply to decide %s", f.Name, sub)
 		}
 	})
+	if err := cp.apply(a.Getenv, path, nil, nil); err != nil {
+		return a.decideUsage(err.Error())
+	}
 	for _, name := range required {
 		if flags.Lookup(name).Value.String() == "" {
 			usageErr = fmt.Sprintf("decide %s requires --%s", sub, name)
@@ -89,7 +95,7 @@ func (a *App) decide(args []string) int {
 		}
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
-		return fail(fmt.Errorf("no store at %s", *path))
+		return fail(noStore(*path))
 	}
 	s, err := store.Open(*path, store.Options{ReadOnly: sub != "answer", RequireStore: true})
 	if err != nil {
