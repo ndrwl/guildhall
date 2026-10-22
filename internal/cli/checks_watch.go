@@ -26,13 +26,14 @@ type taskRef struct{ repo, task string }
 // Each round lists the tasks waiting with waiting and advances each in turn with advance, as task start would,
 // reporting each failure with report; the advance itself sends the Director what changed, and its messages wake
 // the Director only for what is new. tick starts a round when none is running and every has passed since the last
-// round started, so the checks are read at most once per every, the config's checks_refresh; the first tick
-// starts one at once. A failed advance is tried again in the next round. wait waits for a running round to end.
+// round ended, by now, so each read a round makes is at least every old by the next and the checks are read once
+// per every, the config's checks_refresh; the first tick starts one at once. A failed advance is tried again in the next round. wait waits for a running round to end.
 type checksWatch struct {
 	every   time.Duration
 	waiting func() ([]taskRef, error)
 	advance func(taskRef) error
 	report  func(taskRef, error)
+	now     func() time.Time
 
 	mu      sync.Mutex
 	last    time.Time
@@ -47,13 +48,13 @@ func (w *checksWatch) tick(now time.Time) {
 	if w.busy || w.started && now.Sub(w.last) < w.every {
 		return
 	}
-	w.busy, w.started, w.last = true, true, now
+	w.busy, w.started = true, true
 	w.running.Add(1)
 	go func() {
 		defer w.running.Done()
 		w.round()
 		w.mu.Lock()
-		w.busy = false
+		w.busy, w.last = false, w.now()
 		w.mu.Unlock()
 	}()
 }
@@ -131,7 +132,7 @@ func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state str
 		_ = f.Close()
 	}
 	f := advanceFlags{store: storePath, config: p.cfgPath, state: state, copy: copyFlags{dir: copyDir}}
-	return &checksWatch{every: every, waiting: checksWaiting(storePath, state),
+	return &checksWatch{every: every, waiting: checksWaiting(storePath, state), now: time.Now,
 		advance: func(t taskRef) error {
 			if hold, err := heldNow(storePath); err != nil || hold {
 				return err
