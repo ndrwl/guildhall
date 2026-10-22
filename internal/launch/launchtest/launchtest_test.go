@@ -26,11 +26,11 @@ func (s *script) stop() (launch.StopReport, error) {
 }
 
 var (
-	notStopped = errors.New("exit 1: attempt is not proven stopped")
-	released   = "not asked: ownership released"
-	answered   = launch.StopReport{Endpoint: launch.EndpointStopped, Classification: reconcile.Classification{State: reconcile.Running}}
-	advancing  = launch.StopReport{Endpoint: released, Launcher: launch.LauncherAdvancing, Classification: reconcile.Classification{State: reconcile.Finished}}
-	goneEmpty  = launch.StopReport{Endpoint: released, Launcher: launch.LauncherGone, Classification: reconcile.Classification{State: reconcile.Finished}}
+	errNotStopped = errors.New("exit 1: attempt is not proven stopped")
+	released      = "not asked: ownership released"
+	answered      = launch.StopReport{Endpoint: launch.EndpointStopped, Classification: reconcile.Classification{State: reconcile.Running}}
+	advancing     = launch.StopReport{Endpoint: released, Launcher: launch.LauncherAdvancing, Classification: reconcile.Classification{State: reconcile.Finished}}
+	goneEmpty     = launch.StopReport{Endpoint: released, Launcher: launch.LauncherGone, Classification: reconcile.Classification{State: reconcile.Finished}}
 )
 
 func TestStopRule(t *testing.T) {
@@ -44,19 +44,19 @@ func TestStopRule(t *testing.T) {
 		{name: "no ownership record", reports: []launch.StopReport{{Endpoint: "not asked: no ownership record"}}, errs: []error{nil}, calls: 1, proven: true},
 		{name: "a launcher gone after its endpoint failed", reports: []launch.StopReport{{Endpoint: "no stop: EOF"}}, errs: []error{nil}, calls: 1, proven: true},
 		{name: "an answered stop waits out the advance", reports: []launch.StopReport{answered, advancing, advancing, advancing, goneEmpty},
-			errs: []error{nil, notStopped, notStopped, notStopped, nil}, calls: 5, proven: true},
-		{name: "a launcher seen gone is stopped once more", reports: []launch.StopReport{advancing, goneEmpty}, errs: []error{notStopped, nil}, calls: 2, proven: true},
+			errs: []error{nil, errNotStopped, errNotStopped, errNotStopped, nil}, calls: 5, proven: true},
+		{name: "a launcher seen gone is stopped once more", reports: []launch.StopReport{advancing, goneEmpty}, errs: []error{errNotStopped, nil}, calls: 2, proven: true},
 		{name: "released at setup with no containment", reports: []launch.StopReport{advancing,
 			{Endpoint: released, Launcher: launch.LauncherGone, Classification: reconcile.Classification{State: reconcile.Exited}}},
-			errs: []error{notStopped, notStopped}, calls: 2, proven: true},
+			errs: []error{errNotStopped, errNotStopped}, calls: 2, proven: true},
 		{name: "a gone launcher whose unit is not proven empty", reports: []launch.StopReport{advancing,
 			{Endpoint: released, Launcher: launch.LauncherGone, Classification: reconcile.Classification{State: reconcile.Finished}}},
-			errs: []error{notStopped, notStopped}, calls: 3},
+			errs: []error{errNotStopped, errNotStopped}, calls: 3},
 		{name: "a killed launcher whose worker survives", reports: []launch.StopReport{
 			{Endpoint: "no stop: connection refused", Classification: reconcile.Classification{State: reconcile.Unknown, Launcher: "gone"}}},
-			errs: []error{notStopped}, calls: 2},
-		{name: "a launcher that keeps advancing", reports: []launch.StopReport{advancing}, errs: []error{notStopped}},
-		{name: "an unverified launcher", reports: []launch.StopReport{{Endpoint: released, Launcher: launch.LauncherUnverified}}, errs: []error{notStopped}},
+			errs: []error{errNotStopped}, calls: 2},
+		{name: "a launcher that keeps advancing", reports: []launch.StopReport{advancing}, errs: []error{errNotStopped}},
+		{name: "an unverified launcher", reports: []launch.StopReport{{Endpoint: released, Launcher: launch.LauncherUnverified}}, errs: []error{errNotStopped}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -105,7 +105,7 @@ func TestStopAllFailsForEachUnproven(t *testing.T) {
 		if k.Step == "plan" {
 			return launch.StopReport{Endpoint: "not asked: no ownership record"}, nil
 		}
-		return advancing, notStopped
+		return advancing, errNotStopped
 	}, 50*time.Millisecond, time.Millisecond)
 	if len(ft.errors) != 1 || !strings.Contains(ft.errors[0], "build-1") {
 		t.Errorf("StopAll errors = %q, want one naming build-1", ft.errors)
