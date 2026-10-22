@@ -5,7 +5,7 @@ R1.34 says work is not capped by an attempt budget, so the next attempt must be 
 
 A fourth event, `attempt-retried` with a step and attempt number, carries the decision, and `guildhall step retry --task --step --attempt [--reason]` feeds it ([events](../interpreter.md#events), [running a task](../running.md#step-retry)).
 It is valid only when the named attempt is the step's latest and finished `failed` or `stopped`; the engine then starts the next attempt through the same path as a first attempt.
-Naming the attempt, rather than only the step, makes the decision about one outcome: a retry of attempt 1 that arrives after attempt 2 started is a replay that writes nothing, and one aimed at an older attempt is refused, so a stale or repeated command cannot start two attempts.
+Naming the attempt, rather than only the step, makes the decision about one outcome: a retry of attempt 1 that arrives after attempt 2 started is a replay that records and launches nothing beyond a reason an interrupted retry had not yet sent, and one aimed at an older attempt is refused, so a stale or repeated command cannot start two attempts.
 Refusals use the engine's `ErrEvent`, as every event that does not match the records does; the engine has no `ErrInvalid` of its own.
 
 The reason, when given, is sent as Director message `<repo>.<task>.attempt-retried.<step>-<n>` only after the next attempt is recorded, under an id derived from the retried attempt.
