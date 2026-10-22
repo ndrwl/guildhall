@@ -16,8 +16,8 @@ func StartRecorded(u Unit, cmd *exec.Cmd, record func(Identity) error) (Identity
 	if err != nil {
 		return Identity{}, err
 	}
-	defer read.Close()
-	defer write.Close()
+	defer func() { _ = read.Close() }()
+	defer func() { _ = write.Close() }()
 	argv := append([]string{"sh", "-c", "IFS= read -r gate <&3 && [ \"$gate\" = run ] || exit 125; exec 3<&-; exec \"$@\"", "sh", cmd.Path}, cmd.Args[1:]...)
 	cmd.Path, cmd.Args = "/bin/sh", argv
 	cmd.ExtraFiles = []*os.File{read}

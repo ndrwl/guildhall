@@ -64,7 +64,7 @@ On Linux the runtime is also killed if the supervisor dies.
 Once the unit reports the gated or suspended runtime process created, before its program can execute, the supervisor records the unit on the session, as an Artisan's [ownership](artisan.md) records its worker: its kind, its name (the Job Object's name or the cgroup's directory; a process group has none), the Linux detection reason, and the runtime's process identity ([decision](decisions/director-runtime-record.md)).
 A record that fails ends the runtime and its unit, and the supervisor exits 1 naming the failure, so no runtime runs that the record does not name.
 The record is what lets the session's processes be found after the supervisor has died, such as when its terminal is closed with `kill -9` or a crash: [`director stop`](#stop) sweeps the recorded unit and `director start` refuses while it holds a process.
-On Unix the runtime waits behind a pipe gate until its record commits; supervisor death before release closes the pipe and the gate exits without executing the runtime. On Windows the runtime remains suspended in its kill-on-close Job Object until the record commits. After release, recovery can always find the recorded unit.
+The [record-before-run decision](decisions/director-runtime-record.md) describes the Unix gate and Windows suspension that enforce this guarantee.
 
 ## Skills
 
@@ -183,8 +183,10 @@ Each attempt that cannot be proven stopped is reported on standard error and mak
 
 A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopping`, ends every process still in the session's [recorded runtime unit](#the-runtimes-record), killing them from outside as a resumed Artisan attempt's unit is swept, stops its attempts and then records it `stopped` with the end reason `superseded`.
 Survivors of the unit that are not proven ended within 10 seconds, or a unit that cannot be read, are reported on standard error and make the exit 1, with the session left `stopping` and `sweeping` and not recorded `stopped`; the diagnostic tells the user to run `guildhall director stop` again to finish the sweep.
-A session from a release without runtime records has no unit to sweep. In current releases, a crash before the record cannot leave an executing runtime.
-A previously `stopped` session whose recorded runtime unit is not proven empty remains eligible for `stop` recovery. Before either sweep, the stop request sets `sweeping` atomically while preserving the stopped state and end metadata; it holds admission on failure until a later `director stop` completes both sweeps.
+A session from a release without runtime records has no unit to sweep.
+In current releases, a crash before the record cannot leave an executing runtime.
+A previously `stopped` session whose recorded runtime unit is not proven empty remains eligible for `stop` recovery.
+Before either sweep, the stop request sets `sweeping` atomically while preserving the stopped state and end metadata; it holds admission on failure until a later `director stop` completes both sweeps.
 No session, or a session already `stopped` whose stop has finished its sweep and whose runtime unit is proven empty, is exit 1.
 
 The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands later.

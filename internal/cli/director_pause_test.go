@@ -246,6 +246,7 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 		if code, out, stderr := d.run(t, c.args...); code != 0 || out != held {
 			t.Fatalf("%s %s while paused: exit %d, %q, stderr %s; want %q", c.args[0], c.args[1], code, out, stderr, held)
 		}
+		t.Logf("%s %s for %s returned %s", c.args[0], c.args[1], c.task, held)
 		if b, err := os.ReadFile(filepath.Join(d.state, "app", c.task, "next.json")); err != nil || string(b) != held {
 			t.Errorf("%s next.json while paused = %q, %v; want %q", c.task, b, err, held)
 		}
@@ -260,6 +261,7 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
 		t.Fatalf("resume: exit %d, %v, %s", code, err, stderr)
 	}
+	t.Logf("director resume: %s", out)
 	for _, task := range []string{"t-1", "t-2"} {
 		index := slices.IndexFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == task })
 		if index < 0 {
@@ -270,6 +272,8 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 			args = append(args, "--store", d.store, "--state", d.state, "--config", d.config)
 			if code, out, stderr := d.run(t, args...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":2}`+"\n" {
 				t.Fatalf("paused retry command: exit %d, %q, %s", code, out, stderr)
+			} else {
+				t.Logf("resume recovery command %q: %s", doc.NeedsMe[index].Command, out)
 			}
 		}
 	}

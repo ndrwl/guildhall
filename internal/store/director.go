@@ -221,7 +221,8 @@ const MaxEndReasonBytes = 256
 // "director-stop:<n>:<turn|now>:<from>", where from is the StateSequence the caller read; now sets StopNow, and
 // every request sets Sweeping.
 // A recovering, running or paused session moves to stopping; a stopping session without StopNow takes it when
-// now is set and stays stopping. Every other move, a stale from and a superseded or stopped session are refused
+// now is set and stays stopping. A stopped, non-sweeping session with a recorded runtime sets only Sweeping
+// for recovery, preserving its end metadata. Every other move, a stale from and a superseded session are refused
 // as SetDirectorState refuses them. Replaying returns the original receipt.
 func (s *Store) RequestDirectorStop(n int, now bool, from uint64) (Receipt, error) {
 	req := struct {
@@ -325,8 +326,8 @@ func (s *Store) RecordDirectorRuntime(n int, c Containment) (Receipt, error) {
 
 // moveSession applies move to the newest session, number n, read at state sequence from, as mutation id: it
 // refuses a missing session with ErrNotFound and a superseded, stopped or since-moved one with ErrInvalid, except
-// that FinishDirectorStop finishes a stopped one, sets ReadyAt on the first move to running and EndedAt on the move
-// to stopped, and records the new StateSequence.
+// that FinishDirectorStop finishes a stopped one and RequestDirectorStop may hold it for recovery.
+// It sets ReadyAt on the first move to running and EndedAt on the move to stopped, and records the new StateSequence.
 func (s *Store) moveSession(id, op string, req any, n int, from uint64, move func(*DirectorSession) error) (Receipt, error) {
 	if n < 1 {
 		return Receipt{}, invalid("director session number %d must be positive", n)

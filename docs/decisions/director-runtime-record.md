@@ -19,9 +19,11 @@ It also found that a `task start` or `step retry` the Director's hold refused be
   `checkSupersede` reads the newest session's recorded unit with `artisan.Contained` in the transaction that records the next session, and refuses with `director: live`, naming the survivors and `director stop`, unless it is proven empty.
   This holds whatever the session's state, since a session is recorded `stopped` by its own supervisor only after the unit is empty and as `superseded` only after the sweep.
 - **The program cannot run before its record commits.**
-  On Unix a shell in the runtime's unit waits on a private pipe before executing the runtime; the supervisor releases it only after recording its identity and containment. A supervisor crash before release closes the pipe, so the shell exits without executing the program. After release the recorded unit supports recovery.
+  On Unix a shell in the runtime's unit waits on a private pipe before executing the runtime; the supervisor releases it only after recording its identity and containment.
+  A supervisor crash before release closes the pipe, so the shell exits without executing the program.
+  After release the recorded unit supports recovery.
   On Windows the process remains suspended in its kill-on-close Job Object until the record commits; supervisor death closes the job.
-  An unproven cleanup leaves the supervisor's session stopping and sweeping. Even a previously stopped session with an unproven recorded unit can be swept by `director stop`: its stop request atomically sets `sweeping` before either sweep, preserving its stopped state and end metadata. The hold remains on failure and is cleared only after both runtime and attempt sweeps finish.
+  Unproven cleanup and previously stopped sessions follow the [stop recovery rules](../director.md#stop).
 - **A held start leaves its wait.**
   `task start` and `step retry` no longer read the hold before the advance; the engine's `Hold`, and the start transaction's `AttemptCaps.Hold` behind it, are the one check, and a held advance writes `{"wait":"paused","step":"<step>"}` to the task's `next.json`, which `needs_me` lists as `paused`.
   The pre-advance read only spared an advance that would be held its preparation, at the cost of the record the resume relies on.

@@ -154,6 +154,7 @@ func TestDirectorStopEndsAGoneSupervisorsRuntime(t *testing.T) {
 		}
 	}
 	d := sessions(t, dir)[0]
+	t.Logf("running session with recorded runtime: %+v", d)
 	rt := artisan.Identity(d.Runtime.Worker)
 	if d.Runtime.Kind == "" || rt.PID == 0 {
 		t.Errorf("session 1 records no runtime unit: %+v", d)
@@ -180,6 +181,7 @@ func TestDirectorStopEndsAGoneSupervisorsRuntime(t *testing.T) {
 		}
 		app, stdout, stderr := supervisorApp(nil, time.Hour)
 		code := app.Run([]string{"director", "start", "--copy", dir})
+		t.Logf("director start beside orphan tree %v: exit=%d stderr=%s", tree, code, stderr)
 		if msg := stderr.String(); code != 1 || !strings.Contains(msg, "director: live") || !strings.Contains(msg, strconv.Itoa(tree[0].PID)) ||
 			!strings.Contains(msg, "guildhall director stop") {
 			t.Errorf("director start beside the orphaned runtime: exit %d, stdout %s, stderr %s; want director: live naming process %d and director stop",
@@ -190,10 +192,12 @@ func TestDirectorStopEndsAGoneSupervisorsRuntime(t *testing.T) {
 		}
 	}
 	code, printed, stderr := stopCopy(t, dir)
+	t.Logf("director stop: exit=%d session=%+v stderr=%s", code, printed, stderr)
 	if code != 0 || printed.State != store.DirectorStopped || printed.EndReason != store.EndSuperseded || printed.Sweeping {
 		t.Fatalf("director stop: exit %d, %+v, stderr %s; want session 1 stopped as superseded", code, printed, stderr)
 	}
 	assertGone(t, "after director stop", tree...)
+	t.Logf("verified orphan tree gone: %v", tree)
 	if rt.PID != 0 {
 		assertGone(t, "after director stop", rt)
 	}

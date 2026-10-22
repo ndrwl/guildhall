@@ -107,8 +107,9 @@ A move names the state sequence it read, the receipt sequence that recorded the 
 
 [`director stop`](director.md#stop) records its moves with their own methods, under the same rules.
 `RequestDirectorStop` moves a `recovering`, `running` or `paused` session to `stopping`, setting `StopNow` for `stop --now`; a `stopping` session without `StopNow` takes it, staying `stopping`, and any other repeat is refused as staying put.
+A stopped, non-sweeping session with a recorded runtime accepts a recovery request that sets only `Sweeping`, preserving its stopped state and end metadata.
 Its mutation id is `director-stop:<n>:<turn|now>:<from>`.
-Every stop request sets `Sweeping`, which holds new attempts, the session's state aside, until `FinishDirectorStop` clears it once `director stop` has stopped every attempt, with the mutation id `director-swept:<n>:<from>`; it finishes a `stopped` session too, keeping its end time, and is refused when no stop is sweeping.
+Every stop request sets `Sweeping`, which holds new attempts, the session's state aside, until `FinishDirectorStop` clears it once `director stop` has completed the [runtime and attempt sweeps](director.md#stop), with the mutation id `director-swept:<n>:<from>`; it finishes a `stopped` session too, keeping its end time, and is refused when no stop is sweeping.
 `EndDirectorSession` moves a session that has not stopped to `stopped` with a non-blank one-line end reason of at most 256 bytes, such as `superseded` for a session whose supervisor is gone, with the mutation id `director-end:<n>:<from>`.
 
 `RecordDirectorRuntime` records the [containment unit](director.md#the-runtimes-record) the session's runtime runs in on the newest session, number `<n>`, once the supervisor has started it, with the mutation id `director-runtime:<n>`: a containment as an [ownership record](#containment-record) carries it, which must be recoverable and name the runtime as its worker.
