@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -360,6 +361,51 @@ func TestParseUsage(t *testing.T) {
 	}
 }
 
+// TestDenials: the tool uses Claude Code's print mode denied, from its result message's permission_denials, each as
+// the tool and its command or file; output without any, or that is not a result message, has none.
+func TestDenials(t *testing.T) {
+	out := `{"type":"result","result":"done","permission_denials":[` +
+		`{"tool_name":"Bash","tool_use_id":"t1","tool_input":{"command":"go test ./...","description":"Run tests"}},` +
+		`{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"git commit -m 'Sort tasks'"}},` +
+		`{"tool_name":"Write","tool_use_id":"t3","tool_input":{"file_path":"/etc/hosts","content":"x"}},` +
+		`{"tool_name":"WebFetch","tool_use_id":"t4","tool_input":{"url":"https://example.com"}}]}`
+	want := []string{"Bash(go test ./...)", "Bash(git commit -m 'Sort tasks')", "Write(/etc/hosts)", "WebFetch"}
+	if got := claude.Denials([]byte(out)); !slices.Equal(got, want) {
+		t.Errorf("Denials = %q, want %q", got, want)
+	}
+	for name, out := range map[string]string{
+		"stub output": string(claudetest.Output()),
+		"none":        `{"type":"result","permission_denials":[]}`,
+		"text output": "I did the task.\n",
+	} {
+		if got := claude.Denials([]byte(out)); len(got) != 0 {
+			t.Errorf("%s: Denials = %q, want none", name, got)
+		}
+	}
+}
+
+// TestRunReportsDenials: the wrapper names on its error output each tool use print mode denied, so an attempt that
+// could not run its checks or commit says why in its launcher log; a session denied nothing reports nothing.
+func TestRunReportsDenials(t *testing.T) {
+	claudetest.Install(t)
+	for _, b := range []adaptertest.Behaviour{adaptertest.Succeed, adaptertest.Behaviour(claudetest.Denied)} {
+		t.Run(string(b), func(t *testing.T) {
+			spec := testSpec(t)
+			if err := os.WriteFile(spec.PromptFile, []byte(claudetest.Prompt(b)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stderr bytes.Buffer
+			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
+				t.Fatal(err)
+			}
+			denied := strings.Contains(stderr.String(), "denied 1 tool use: Bash(go test ./...)")
+			if want := b != adaptertest.Succeed; denied != want || want && !strings.Contains(stderr.String(), "docs/adapters.md#artisan-permissions") {
+				t.Errorf("stderr = %q; want the denial reported %v, naming the docs", stderr.String(), want)
+			}
+		})
+	}
+}
+
 // TestRunWritesUsage: once Claude exits the wrapper writes the usage its output reports beside the result, a
 // draft or not, and passes the session's result text through; a stopped session writes none, so its usage is
 // unknown.
@@ -473,5 +519,48 @@ func TestLiveClaude(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(spec.WorkDir, "hello.txt"))
 	if r.Status != adapter.StatusSucceeded || err != nil || strings.TrimSpace(string(got)) != "hello" {
 		t.Errorf("result %+v; hello.txt %q, %v", r, got, err)
+	}
+}
+
+// TestLiveClaudeBuildPermissions is the Artisan permissions' live acceptance: one real attempt through the
+// wrapper, in a git repository, asked to run a check and commit as the build stage asks. It passes only where
+// Claude's settings allow those shell commands (docs/adapters.md#artisan-permissions); a denial is named in the
+// failure. Run it by hand with
+// GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m
+func TestLiveClaudeBuildPermissions(t *testing.T) {
+	if os.Getenv(LiveEnv) != "1" {
+		t.Skipf("set %s=1 to run a real Claude Code session; it makes a model call", LiveEnv)
+	}
+	spec := testSpec(t)
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", spec.WorkDir, "-c", "user.name=Guildhall", "-c", "user.email=guildhall@example.invalid"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %q: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("commit", "-q", "--allow-empty", "-m", "base")
+	base := git("rev-parse", "HEAD")
+	prompt := "This is a Guildhall Artisan permissions check. Create the file hello.txt in the working directory containing the single line `hello`. " +
+		"Run the repository's check, `git status --short`, then commit hello.txt with git, message `Add hello`. " +
+		"Report success only if the commit was made, listing hello.txt as your one output; otherwise report failure and say which command was refused.\n"
+	if err := os.WriteFile(spec.PromptFile, []byte(prompt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(spec.WorkDir)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	var stderr bytes.Buffer
+	runErr := claude.Run(ctx, args(spec), os.Stdout, io.MultiWriter(os.Stderr, &stderr))
+	r, err := adapter.ReadResult(spec.ResultFile, spec.Identity)
+	if err != nil {
+		t.Fatalf("result: %v (run: %v)", err, runErr)
+	}
+	t.Logf("result: %+v", r)
+	if head := git("rev-parse", "HEAD"); r.Status != adapter.StatusSucceeded || head == base {
+		t.Errorf("result %s, head %s from base %s; want a new commit. Wrapper output:\n%s", r.Status, head, base, stderr.String())
 	}
 }

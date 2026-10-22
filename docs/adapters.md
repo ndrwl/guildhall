@@ -131,7 +131,7 @@ claude --print <instruction> --output-format json --permission-mode acceptEdits 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
 - The instruction names the prompt copy and a draft result file, `model/result.json`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
-- `acceptEdits` lets Claude edit files in the working directory and the model directory; every other tool that needs permission, such as shell commands, is denied, because a print-mode session has no one to ask.
+- `acceptEdits` lets Claude edit files in the working directory and the model directory; every other tool that needs permission, such as shell commands, is denied unless Claude's own settings allow it, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
 - Claude gets no standard input; with `--output-format json` it prints one result message as it exits, which the wrapper reads, and its error output goes to the wrapper's.
 
 The wrapper keeps the result protocol, not the model:
@@ -142,11 +142,32 @@ The wrapper keeps the result protocol, not the model:
 - Claude's exit status does not decide completion: a failing exit after a published draft is still reported;
 - once Claude exits, before publishing, it writes the [usage file](#usage-file) from the result message: its `usage` input, output, cache creation and cache read tokens are `measured`, and its `total_cost_usd`, Claude Code's price for those tokens, is an `estimated` cost; what the message lacks is `unknown`, and output that is not one JSON object gives an unknown usage; it then writes the message's `result` text to its own output, as print mode printed it, or the output unchanged when it is not a result message.
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
+- it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
 This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort.
 Transcripts, session resume and the Herdr tab mode are later work.
 
 The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills and whose `.claude/settings.json` lets Bash run `guildhall` and read-only `git`, denies any `git` command with `--output`, and denies edits to the copy's `config.toml` and `managed.toml`.
+
+### Artisan permissions
+
+The default workflow's build stage asks its Artisan to run the repository's checks and commit its work ([`build.md`](../baseline/stages/build.md)), and both are shell commands, which the wrapper's `acceptEdits` does not allow.
+Guildhall grants nothing more itself: widening the Artisan's permissions is a guard-rail decision for the Director's managed settings ([D55](decisions/0055-claude-adapter-wrapper.md)), and managed mode is not built yet.
+Until it is, a Claude Artisan can run them only where Claude Code's own settings allow them: the user's `~/.claude/settings.json`, or the repository's `.claude/settings.json`, which the task's worktree carries, with `permissions.allow` rules such as `Bash(go test:*)`, `Bash(git add:*)` and `Bash(git commit:*)` for the repository's checks.
+On a machine with neither, a build attempt can edit files but neither run the checks nor commit, so it leaves no new head to publish.
+
+So the dependency is never silent:
+
+- [`director start`](director.md#start)'s preflight prints an `artisans` line naming each profile that runs the claude adapter and this dependency; it refuses nothing, because Guildhall cannot see every settings file Claude Code reads;
+- the wrapper names each denied tool use in the attempt's launcher log, as above.
+
+Whether a clean machine's Claude Artisan can complete a build is settled only by a live run, `TestLiveClaudeBuildPermissions`, which asks a real session to run a check and commit in a git repository and fails naming any denial:
+
+```sh
+GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m
+```
+
+It has not been run yet; it is part of the live acceptance before the Director's first unattended task.
 
 ## Conformance
 
@@ -154,7 +175,7 @@ Every runtime adapter passes one shared suite, `adaptertest.RunConformance`, bef
 The suite makes no model calls; a runtime proves each behaviour through prompts it understands.
 
 The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the mapping `launch.Process` starts attempts from.
-The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names, plays the behaviour a `claude-stub:` prompt line asks for and prints a result message with fixed usage, with no model call.
+The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names, plays the behaviour a `claude-stub:` prompt line asks for and prints a result message with fixed usage, with no model call; its extra behaviour `denied` succeeds and reports one denied shell command, `go test ./...`, as the message's `permission_denials`.
 Inside a test binary the interpreter's adapter guard admits `claude` only while `claude` on `PATH` is the stub `claudetest.Install` names in `GUILDHALL_TEST_CLAUDE_STUB`, so `task start` runs a profile naming `claude` over the stub and never a real Claude Code.
 `TestLiveClaude` runs one real session instead when `GUILDHALL_CLAUDE_LIVE=1` is set; CI never sets it:
 

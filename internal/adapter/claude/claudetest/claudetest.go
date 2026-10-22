@@ -38,10 +38,17 @@ const Summary = "The stub did the task."
 // of what the wrapper records are deterministic.
 var Usage = adapter.Usage{Tokens: adapter.Measured, InputTokens: 1200, OutputTokens: 340, CacheCreationInputTokens: 5000, CacheReadInputTokens: 18000, Cost: adapter.Estimated, CostUSD: 0.0421}
 
+// Denied is the stub behaviour that succeeds after print mode denied it one shell command, `go test ./...`, which
+// its result message reports as Claude Code's does.
+const Denied = "denied"
+
 // Output is the print-mode JSON output the stub writes on standard output when it exits, shaped as Claude Code's
 // result message, reporting Usage.
-func Output() []byte {
-	data, _ := json.Marshal(map[string]any{
+func Output() []byte { return output(nil) }
+
+// output is Output reporting denials as the message's permission_denials.
+func output(denials []any) []byte {
+	msg := map[string]any{
 		"type": "result", "subtype": "success", "is_error": false, "num_turns": 3,
 		"result": Summary, "session_id": "00000000-0000-0000-0000-000000000000",
 		"total_cost_usd": Usage.CostUSD,
@@ -50,7 +57,11 @@ func Output() []byte {
 			"cache_creation_input_tokens": Usage.CacheCreationInputTokens, "cache_read_input_tokens": Usage.CacheReadInputTokens,
 			"service_tier": "standard",
 		},
-	})
+	}
+	if denials != nil {
+		msg["permission_denials"] = denials
+	}
+	data, _ := json.Marshal(msg)
 	return append(data, '\n')
 }
 
@@ -194,7 +205,11 @@ func stub(args []string) error {
 	}
 	if b != adaptertest.Hang {
 		// Claude Code prints its result message as it exits, whatever the session did.
-		defer func() { _, _ = os.Stdout.Write(Output()) }()
+		var denials []any
+		if b == Denied {
+			denials = []any{map[string]any{"tool_name": "Bash", "tool_use_id": "toolu_stub", "tool_input": map[string]any{"command": "go test ./..."}}}
+		}
+		defer func() { _, _ = os.Stdout.Write(output(denials)) }()
 	}
 	result := map[string]any{
 		"schema": adapter.ResultSchema, "version": adapter.ResultVersion,
@@ -202,7 +217,7 @@ func stub(args []string) error {
 		"status": "succeeded", "summary": Summary, "outputs": []any{},
 	}
 	switch b {
-	case adaptertest.Succeed, adaptertest.ExitErrorAfterResult:
+	case adaptertest.Succeed, adaptertest.ExitErrorAfterResult, Denied:
 	case adaptertest.Fail:
 		result["status"] = "failed"
 	case adaptertest.WrongIdentity:

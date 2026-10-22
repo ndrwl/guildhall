@@ -20,6 +20,7 @@ package claude
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -225,9 +226,37 @@ func ParseUsage(output []byte) (adapter.Usage, error) {
 	return u, nil
 }
 
+// Denials are the tool uses Claude Code's print mode denied, from its result message's permission_denials, each
+// named as its tool with the shell command or file it asked for, such as `Bash(go test ./...)`, or the tool alone.
+// Output that is not a result message has none.
+func Denials(output []byte) []string {
+	msg, err := parseResultMessage(output)
+	if err != nil {
+		return nil
+	}
+	var denials []string
+	for _, d := range msg.PermissionDenials {
+		subject := cmp.Or(d.ToolInput.Command, d.ToolInput.FilePath, d.ToolInput.NotebookPath)
+		if subject == "" {
+			denials = append(denials, d.ToolName)
+		} else {
+			denials = append(denials, d.ToolName+"("+subject+")")
+		}
+	}
+	return denials
+}
+
 // resultMessage is the part of Claude Code's print-mode JSON result message the wrapper reads.
 type resultMessage struct {
-	Result       *string  `json:"result"`
+	Result            *string `json:"result"`
+	PermissionDenials []struct {
+		ToolName  string `json:"tool_name"`
+		ToolInput struct {
+			Command      string `json:"command"`
+			FilePath     string `json:"file_path"`
+			NotebookPath string `json:"notebook_path"`
+		} `json:"tool_input"`
+	} `json:"permission_denials"`
 	TotalCostUSD *float64 `json:"total_cost_usd"`
 	Usage        *struct {
 		InputTokens              int64 `json:"input_tokens"`
@@ -340,9 +369,15 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	return usageErr
 }
 
-// report writes the usage Claude's output reports as a's usage file, unknown when the output reports none, and
-// passes the session's result text to stdout, or the output itself when it is not a result message.
+// report writes the usage Claude's output reports as a's usage file, unknown when the output reports none, names
+// on stderr each tool use print mode denied, and passes the session's result text to stdout, or the output itself
+// when it is not a result message.
 func report(a Args, output *limitedBuffer, stdout, stderr io.Writer) error {
+	if denied := Denials(output.buf.Bytes()); len(denied) > 0 {
+		plural := map[bool]string{true: "s"}[len(denied) > 1]
+		_, _ = fmt.Fprintf(stderr, "guildhall: %s: Claude was denied %d tool use%s: %s; print mode allows only edits unless Claude's settings allow more (docs/adapters.md#artisan-permissions)\n",
+			Subcommand, len(denied), plural, strings.Join(denied, ", "))
+	}
 	u, err := ParseUsage(output.buf.Bytes())
 	if err != nil || output.truncated {
 		_, _ = fmt.Fprintf(stderr, "guildhall: %s: usage unknown: %v\n", Subcommand, errors.Join(err, output.err()))
