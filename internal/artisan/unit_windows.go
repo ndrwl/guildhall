@@ -40,6 +40,8 @@ type jobUnit struct {
 	workerHandle windows.Handle
 	closed       bool
 	done         chan struct{}
+	// console keeps the worker in the caller's console process group (NewSessionUnit).
+	console bool
 }
 
 // newUnit creates the job Local\guildhall-<name>; a name already in use is
@@ -71,6 +73,26 @@ func newUnit(name string) (Unit, error) {
 	return u, nil
 }
 
+// newSessionUnit is newUnit with the worker left in the caller's console process group and breakaway allowed.
+func newSessionUnit(name string) (Unit, error) {
+	u, err := newUnit(name)
+	if err != nil {
+		return nil, err
+	}
+	j := u.(*jobUnit)
+	j.console = true
+	// A process the runtime starts detached, an attempt's launcher, breaks away from the job (CREATE_BREAKAWAY_FROM_JOB);
+	// every other descendant stays in it.
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
+	if _, err := windows.SetInformationJobObject(j.job, windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
+		_ = windows.CloseHandle(j.job)
+		return nil, fmt.Errorf("%w: SetInformationJobObject: %v", ErrContainment, err)
+	}
+	return j, nil
+}
+
 // Start creates the worker suspended, assigns it to the job, verifies that
 // with IsProcessInJob and only then resumes it, so no descendant can start
 // outside the job.
@@ -83,7 +105,11 @@ func (u *jobUnit) Start(cmd *exec.Cmd) (Identity, error) {
 	case u.cmd != nil:
 		return Identity{}, ErrStarted
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP}
+	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP)
+	if u.console {
+		flags = windows.CREATE_SUSPENDED
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
 	if err := cmd.Start(); err != nil {
 		return Identity{}, err
 	}
@@ -209,6 +235,9 @@ func (u *jobUnit) Interrupt() error {
 	defer u.mu.Unlock()
 	if err := u.usable(); err != nil {
 		return err
+	}
+	if u.console {
+		return ErrUnsupportedRung
 	}
 	if _, err := identityFromHandle(u.worker.PID, u.workerHandle); errors.Is(err, errNoProcess) {
 		return nil

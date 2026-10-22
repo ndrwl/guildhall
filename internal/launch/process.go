@@ -98,19 +98,21 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 		return interp.Handle{}, err
 	}
 	k := at.Key
-	cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
-		"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
-		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
-	if p.Copy != "" {
-		cmd.Args = append(cmd.Args, "--copy", p.Copy, "--advance")
+	build := func() *exec.Cmd {
+		cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
+			"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
+			"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
+		if p.Copy != "" {
+			cmd.Args = append(cmd.Args, "--copy", p.Copy, "--advance")
+		}
+		if p.StallInterval > 0 {
+			cmd.Args = append(cmd.Args, "--stall-interval", p.StallInterval.String())
+		}
+		cmd.Env = append(os.Environ(), p.Env...)
+		cmd.Stdout, cmd.Stderr = log, log
+		return cmd
 	}
-	if p.StallInterval > 0 {
-		cmd.Args = append(cmd.Args, "--stall-interval", p.StallInterval.String())
-	}
-	cmd.Env = append(os.Environ(), p.Env...)
-	cmd.Stdout, cmd.Stderr = log, log
-	detach(cmd)
-	err = cmd.Start()
+	cmd, err := startDetached(build)
 	// The child holds its own handle on the log.
 	_ = log.Close()
 	if err != nil {

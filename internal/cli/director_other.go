@@ -8,7 +8,7 @@ import "os"
 var sessionSignals = []os.Signal{os.Interrupt}
 
 // terminate passes nothing on: the console's interrupt has already reached the runtime.
-func terminate(*os.Process, os.Signal) bool { return false }
+func terminate(runtimeUnit, os.Signal) bool { return false }
 
-// endRuntime ends the runtime p: Windows has no termination signal to ask it with.
-func endRuntime(p *os.Process) { _ = p.Kill() }
+// endRuntime ends every process in the runtime's unit u: Windows has no termination signal to ask them with.
+func endRuntime(u runtimeUnit) { _ = u.Kill() }

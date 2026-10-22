@@ -119,6 +119,28 @@ type Unit interface {
 // cgroup guildhall-<name>); a name already in use is refused.
 func NewUnit(name string) (Unit, error) { return newUnit(name) }
 
+// NewSessionUnit returns an unstarted unit for an interactive session's runtime, such as the Director's, which
+// shares the caller's terminal or console. It is NewUnit, except that on Windows the worker stays in the caller's
+// console process group, so the console's Ctrl+C reaches it, and Interrupt, which would reach the caller too,
+// returns ErrUnsupportedRung once the unit has started; and its Job Object allows breakaway, which a process asks for
+// only when it is started detached (SessionEnv).
+func NewSessionUnit(name string) (Unit, error) { return newSessionUnit(name) }
+
+// DetachCgroupEnv names, in a session runtime's environment, the cgroup directory a process the runtime starts
+// detached, such as an attempt's launcher, is created in, so that it is not a member of the runtime's cgroup unit.
+const DetachCgroupEnv = "GUILDHALL_DETACH_CGROUP"
+
+// SessionEnv returns the environment entries a runtime started in the session unit u needs so that the processes
+// it starts detached leave u: for a Linux cgroup unit, DetachCgroupEnv naming the cgroup u was created in; for
+// every other backend none, since a process-group unit's detached process leaves it with its own session and a
+// Windows session unit allows a detached process to break away.
+func SessionEnv(u Unit) []string {
+	if c := u.Containment(); c.Kind == KindCgroup {
+		return []string{DetachCgroupEnv + "=" + filepath.Dir(c.Name)}
+	}
+	return nil
+}
+
 // Containment kinds.
 const (
 	// KindJob is a Windows Job Object.

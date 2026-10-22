@@ -31,3 +31,6 @@ func (dyingUnit) Start(*exec.Cmd) (artisan.Identity, error) {
 		time.Sleep(time.Hour)
 	}
 }
+
+// MainIfDetacher plays the detaching session runtime of TestDetachedLauncherLeavesTheSessionUnit.
+var MainIfDetacher = mainIfDetacher

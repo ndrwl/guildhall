@@ -38,6 +38,19 @@ func nativeHarness(t *testing.T) artisantest.Harness {
 	return h
 }
 
+// TestSessionUnitContract runs the containment contract against the session unit a Director runtime runs in.
+func TestSessionUnitContract(t *testing.T) {
+	h := artisantest.Native(func(t *testing.T) artisan.Unit {
+		u, err := artisan.NewSessionUnit("session-contract-" + rand.Text()[:8])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	})
+	platformHarness(t, &h)
+	artisantest.RunUnitContract(t, h)
+}
+
 // TestFakeUnitContract keeps the double the launcher's tests use honest.
 func TestFakeUnitContract(t *testing.T) {
 	artisantest.RunUnitContract(t, newFakeHarness())

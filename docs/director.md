@@ -40,10 +40,10 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command;
 - `manifest.json`: the digest of every file above.
 
-It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory, with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
+It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory, inside a containment unit of its own ([runtime containment](decisions/director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
 For Claude Code that is `claude --append-system-prompt-file role.md --add-dir <copy> [--model <model>] "<first message>"`; `[director] effort` is not passed, since Claude Code reads effort from its own settings.
 The terminal's interrupt reaches the runtime, which handles it; the supervisor waits for the runtime to end, records the session `stopped`, and exits 0, or 1 naming the status when the runtime exited nonzero.
-On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
+On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime's unit as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.
 A session already stopped or superseded by a newer one is left as it is.
 While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime at the [end of the turn](#the-end-of-a-turn), records the session `stopped` and exits 0.
@@ -51,6 +51,8 @@ When it ends the runtime for a [reload](#reload) it records the session `stopped
 The config read again chooses the runtime too: unless `director start` named one, a changed `[director] adapter` takes effect, checked on `PATH` as the preflight checks it, and a runtime refused then ends the supervisor with exit 1, with session `<n>` recorded `stopped` as `reloaded` and the reload left requested.
 A `director stop` recorded while the runtime is ending for the reload wins: the session is recorded `stopped` as for a stop and the supervisor exits 0 with no new session.
 A runtime that ends by itself is recorded `stopped` and gives the terminal back, even with a reload requested; that reload, like one requested while no supervisor runs, is recorded `applied` by the next `director start`.
+However the runtime ends, the supervisor kills whatever it left running in its unit and records the session `stopped` only once the unit is empty; a unit not proven empty within 10 seconds of the runtime's end makes the exit 1, naming the survivors.
+On Linux the runtime is also killed if the supervisor dies.
 
 ## Skills
 
@@ -114,7 +116,8 @@ guildhall director resume [--copy <dir> | --store <file> --state <dir>]
 ```
 
 `director pause` moves the newest session from `running` to `paused` and prints it as one JSON line ([decision](decisions/director-pause-stop.md)).
-A paused session starts no new attempt, while attempts already running finish:
+A paused session starts no new attempt, while attempts already running finish.
+The hold is read in the same store transaction that records a new attempt, so an advance that started before the pause and records its attempt after it is held too:
 
 - `task start` and `step retry` print `{"wait":"paused"}` and exit 0, recording nothing.
 - `task start --decision` still feeds the Guildmaster's answer, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
@@ -134,8 +137,11 @@ guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]
 ```
 
 `director stop` ends the Director session and its Artisan attempts ([decision](decisions/director-pause-stop.md)).
-It records the newest session `stopping`, then stops every running attempt in the store as [`artisan stop`](artisan.md#commands) does, and prints the session as one JSON line.
-A stopping session starts no new attempt, as a paused one does.
+It records the newest session `stopping`, then stops every running attempt in the store, and prints the session as one JSON line.
+A stopping session starts no new attempt, as a paused one does, so every attempt recorded before the stop is one the stop sees.
+An attempt with an owning launcher is stopped as [`artisan stop`](artisan.md#commands) does.
+An attempt nothing owns, a [Director stage](interpreter.md#director-stages) such as the grill or an Artisan attempt an advance recorded but has not launched, is recorded `stopped` under its task's lock, after any advance or `step finish` in progress on the task, so it no longer counts against the [attempt caps](#guard-rails), [`needs_me`](#status) lists it to retry, a later `step finish` of it is refused and no launcher can take it.
+A Director stage whose result `step finish` already published has finished its work and is left for its advance to take.
 The session's supervisor then ends the runtime and records the session `stopped`: at the [end of the current turn](#the-end-of-a-turn), or, with `--now`, at once.
 A stopping session is stopped again without changing it, and `stop --now` after a plain stop ends the runtime at once.
 Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `stopping`.
