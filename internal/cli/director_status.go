@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/reconcile"
@@ -69,6 +70,19 @@ type statusSession struct {
 	EndedAt   time.Time              `json:"ended_at,omitzero"`
 	StopNow   bool                   `json:"stop_now,omitempty"`
 	EndReason string                 `json:"end_reason,omitempty"`
+	// GuardRails are the copy's guard rails and what the attempt caps count today (docs/director.md#guard-rails).
+	GuardRails statusGuardRails `json:"guard_rails"`
+}
+
+// statusGuardRails is the config's guard rails, when the copy has a config, beside the attempt caps' counts.
+// ConfigError says why a config that exists gives no rails.
+type statusGuardRails struct {
+	*config.GuardRails
+	ConfigError     string `json:"config_error,omitempty"`
+	RunningAttempts int    `json:"running_attempts"`
+	AttemptsToday   int    `json:"attempts_today"`
+	// Day is the UTC day AttemptsToday counts.
+	Day string `json:"day"`
 }
 
 // statusMode is the copy's mode; standalone until managed mode exists.
@@ -151,11 +165,14 @@ func (a *App) directorStatusCmd(args []string) int {
 	cp.register(fl)
 	path := fl.String("store", "", "Director store file")
 	state := fl.String("state", "", "state directory")
+	cfg := fl.String("config", "", "Director config file")
 	asJSON := fl.Bool("json", false, "print JSON")
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("director status: " + err.Error())
 	}
-	switch err := cp.apply(a.Getenv, path, nil, state); {
+	named := false
+	fl.Visit(func(f *flag.Flag) { named = named || f.Name == "config" })
+	switch err := cp.apply(a.Getenv, path, cfg, state); {
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("director status: unexpected argument %q", fl.Arg(0)))
 	case !*asJSON:
@@ -168,21 +185,42 @@ func (a *App) directorStatusCmd(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return a.fail(fmt.Errorf("director status: %w", noStore(*path)))
 	}
-	out, err := readDirectorStatus(context.Background(), *path, *state)
+	out, err := readDirectorStatus(context.Background(), *path, *state, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director status: %w", err))
 	}
+	out.Session.GuardRails.GuardRails, out.Session.GuardRails.ConfigError = statusRails(*cfg, named)
 	return a.printJSON(out)
 }
 
-// readDirectorStatus builds the status feed: one read-only store transaction, then each task's next.json and
-// the live classification of every running attempt under the state directory.
-func readDirectorStatus(ctx context.Context, path, stateDir string) (directorStatus, error) {
+// statusRails reads the guard rails of the config at path: none for no path or a copy's config that does not
+// exist, and the reason for a config that cannot give them.
+func statusRails(path string, named bool) (*config.GuardRails, string) {
+	if path == "" {
+		return nil, ""
+	}
+	cfg, err := config.Load(path)
+	if errors.Is(err, fs.ErrNotExist) && !named {
+		return nil, ""
+	}
+	if err != nil {
+		return nil, err.Error()
+	}
+	g, err := cfg.GuardRails()
+	if err != nil {
+		return nil, err.Error()
+	}
+	return &g, ""
+}
+
+// readDirectorStatus builds the status feed: one read-only store transaction, by the clock now (nil is wall time),
+// then each task's next.json and the live classification of every running attempt under the state directory.
+func readDirectorStatus(ctx context.Context, path, stateDir string, now func() time.Time) (directorStatus, error) {
 	stateDir, err := filepath.Abs(stateDir)
 	if err != nil {
 		return directorStatus{}, err
 	}
-	v, err := withStore(path, true, func(s *store.Store) (store.DirectorView, error) { return s.DirectorView() })
+	v, err := withStoreClock(path, true, now, func(s *store.Store) (store.DirectorView, error) { return s.DirectorView() })
 	if err != nil {
 		return directorStatus{}, err
 	}
@@ -197,8 +235,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string) (directorSta
 		NeedsMe:   []needsMeItem{},
 	}
 
+	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly)}
+	out.Session.GuardRails = usage
 	if d := v.Session; d != nil {
-		out.Session = statusSession{State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
+		out.Session = statusSession{GuardRails: usage, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
 			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, EndReason: d.EndReason}
 		if d.State == store.DirectorRecovering {
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",

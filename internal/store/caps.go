@@ -1,0 +1,131 @@
+package store
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
+)
+
+// ErrAttemptCap reports a start refused because the Director is at an attempt cap; the refusal is a *CapRefusal.
+var ErrAttemptCap = errors.New("attempt cap reached")
+
+// Cap names one attempt cap in a CapRefusal.
+type Cap string
+
+const (
+	// CapRunning caps the attempts running at once across the store.
+	CapRunning Cap = "running"
+	// CapDaily caps the attempts started in one UTC day across the store.
+	CapDaily Cap = "daily"
+)
+
+// AttemptCaps bounds StartCappedAttempt across the whole store; a zero or negative field is no cap.
+type AttemptCaps struct {
+	MaxRunning, MaxPerDay int
+}
+
+// CapRefusal is the error a capped start returns at a cap: Count is what the cap counted, which has reached
+// Limit, on the UTC day starting at Day. It wraps ErrAttemptCap.
+type CapRefusal struct {
+	Cap          Cap
+	Count, Limit int
+	Day          time.Time
+}
+
+func (e *CapRefusal) Error() string {
+	if e.Cap == CapRunning {
+		return fmt.Sprintf("%v: %d attempts are running, the cap is %d", ErrAttemptCap, e.Count, e.Limit)
+	}
+	return fmt.Sprintf("%v: %d attempts were started on %s (UTC), the cap is %d", ErrAttemptCap, e.Count, e.Day.Format(time.DateOnly), e.Limit)
+}
+
+func (e *CapRefusal) Unwrap() error { return ErrAttemptCap }
+
+// AttemptUsage is what the attempt caps count, read at one instant: Running is every stage attempt started and
+// not finished, in any repository, which includes every attempt with an unreleased ownership record; Today is
+// every attempt started (a start-attempt or start-owned-attempt receipt) since Day, the start of the current UTC
+// day by the store's clock (Options.Now).
+type AttemptUsage struct {
+	Running int       `json:"running"`
+	Today   int       `json:"today"`
+	Day     time.Time `json:"day"`
+}
+
+// AttemptUsage reads what the caps count without writing. Like DirectorView it scans every receipt.
+func (s *Store) AttemptUsage() (AttemptUsage, error) {
+	var u AttemptUsage
+	err := s.view(func(tx *bolt.Tx) error {
+		var err error
+		u, err = attemptUsage(tx, s.now())
+		return err
+	})
+	if err != nil {
+		return AttemptUsage{}, fmt.Errorf("store: attempt usage: %w", err)
+	}
+	return u, nil
+}
+
+func attemptUsage(tx *bolt.Tx, now time.Time) (AttemptUsage, error) {
+	y, m, d := now.UTC().Date()
+	u := AttemptUsage{Day: time.Date(y, m, d, 0, 0, 0, 0, time.UTC)}
+	err := tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
+		var attempts []StageAttempt
+		if err := scan(repoBucket(tx, string(repo), bucketAttempts), nil, &attempts); err != nil {
+			return err
+		}
+		for _, a := range attempts {
+			if a.Outcome == "" {
+				u.Running++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return AttemptUsage{}, err
+	}
+	err = tx.Bucket(bucketReceipts).ForEach(func(k, raw []byte) error {
+		var r Receipt
+		if err := json.Unmarshal(raw, &r); err != nil {
+			return fmt.Errorf("receipt %q: %w", k, err)
+		}
+		if (r.Operation == "start-attempt" || r.Operation == "start-owned-attempt") && !r.CommittedAt.Before(u.Day) {
+			u.Today++
+		}
+		return nil
+	})
+	return u, err
+}
+
+// StartCappedAttempt is StartAttempt refused, writing nothing, with a *CapRefusal when caps.MaxRunning attempts
+// are already running or caps.MaxPerDay were already started today (AttemptUsage). The count and the start are
+// one mutation under the store's single-writer lock, so concurrent starts never exceed a cap. The caps are not
+// part of the request: a replayed mutation id returns its original receipt whatever the caps are now, so an
+// attempt already recorded is never refused. StartAttempt is StartCappedAttempt with no caps.
+func (s *Store) StartCappedAttempt(mutationID, repository, taskID, step string, caps AttemptCaps) (Receipt, error) {
+	if err := validateIDs(repository, taskID, step); err != nil {
+		return Receipt{}, err
+	}
+	req := StageAttempt{Repository: repository, TaskID: taskID, Step: step}
+	return s.mutate(mutationID, "start-attempt", req, func(tx *bolt.Tx, r *Receipt) error {
+		if caps.MaxRunning > 0 || caps.MaxPerDay > 0 {
+			if _, err := openTask(tx, repository, taskID); err != nil {
+				return err
+			}
+			u, err := attemptUsage(tx, s.now())
+			if err != nil {
+				return err
+			}
+			switch {
+			case caps.MaxRunning > 0 && u.Running >= caps.MaxRunning:
+				return &CapRefusal{Cap: CapRunning, Count: u.Running, Limit: caps.MaxRunning, Day: u.Day}
+			case caps.MaxPerDay > 0 && u.Today >= caps.MaxPerDay:
+				return &CapRefusal{Cap: CapDaily, Count: u.Today, Limit: caps.MaxPerDay, Day: u.Day}
+			}
+		}
+		_, err := startAttempt(tx, r, repository, taskID, step)
+		return err
+	})
+}

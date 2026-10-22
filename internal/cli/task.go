@@ -268,9 +268,9 @@ func loadRepository(cfgPath, repo string) (*config.Config, config.Repository, er
 	if err != nil {
 		return nil, config.Repository{}, fmt.Errorf("config: %w", err)
 	}
-	r, ok := cfg.Repository(repo)
-	if !ok {
-		return nil, config.Repository{}, fmt.Errorf("config %s has no repository %q", cfgPath, repo)
+	r, err := cfg.ListedRepository(repo)
+	if err != nil {
+		return nil, config.Repository{}, fmt.Errorf("config %s: %w", cfgPath, err)
 	}
 	return cfg, r, nil
 }

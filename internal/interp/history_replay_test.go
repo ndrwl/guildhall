@@ -18,12 +18,12 @@ var errInjected = errors.New("injected write failure")
 
 // A write made while the engine applies an answered decision is a decision answer whatever its method.
 var writeKinds = map[string]string{
-	"StartAttempt":      "attempt start",
-	"PutDocument":       "document put",
-	"OpenDecision":      "decision open",
-	"FinishAttempt":     "attempt finish",
-	"ConsumeFullReview": "full-review consume",
-	"":                  "decision answer",
+	"StartCappedAttempt": "attempt start",
+	"PutDocument":        "document put",
+	"OpenDecision":       "decision open",
+	"FinishAttempt":      "attempt finish",
+	"ConsumeFullReview":  "full-review consume",
+	"":                   "decision answer",
 }
 
 type flakyRecords struct {
@@ -51,8 +51,8 @@ func (r *flakyRecords) write(method string, do func() (store.Receipt, error)) (s
 	return store.Receipt{}, errInjected
 }
 
-func (r *flakyRecords) StartAttempt(id, repo, task, step string) (store.Receipt, error) {
-	return r.write("StartAttempt", func() (store.Receipt, error) { return r.Records.StartAttempt(id, repo, task, step) })
+func (r *flakyRecords) StartCappedAttempt(id, repo, task, step string, caps store.AttemptCaps) (store.Receipt, error) {
+	return r.write("StartCappedAttempt", func() (store.Receipt, error) { return r.Records.StartCappedAttempt(id, repo, task, step, caps) })
 }
 
 func (r *flakyRecords) FinishAttempt(id, repo, task, step string, n int, o store.AttemptOutcome) (store.Receipt, error) {

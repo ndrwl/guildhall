@@ -246,7 +246,7 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string) in
 // runSession renders session n and runs its runtime to the end, returning the supervisor's exit status. A signal
 // received before the runtime starts ends the session with no runtime started.
 func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, signals <-chan os.Signal) int {
-	status, err := readDirectorStatus(context.Background(), storePath, state)
+	status, err := readDirectorStatus(context.Background(), storePath, state, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: in-flight snapshot: %w", err))
 	}

@@ -84,6 +84,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
+Every attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails); one refused at a cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.
 Publishing, validating and merging send `published`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, described below.
 
 ## Director stages

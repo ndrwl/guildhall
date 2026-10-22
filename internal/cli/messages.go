@@ -9,17 +9,18 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
 const messagesUsage = `usage:
-  guildhall messages send --store <path> <recipient> <envelope-file|->
+  guildhall messages send --store <path> [--config <path>] <recipient> <envelope-file|->
   guildhall messages list --store <path> [--after <sequence>] [--limit <n>] <recipient>
   guildhall messages read --store <path> <message-id>
   guildhall messages ack --store <path> <recipient> <message-id>
 a recipient is "director" or "artisan:<repository>/<task>/<step>/<attempt>"
---copy <dir>, or GUILDHALL_COPY, may stand in for --store: the copy's director.store`
+--copy <dir>, or GUILDHALL_COPY, may stand in for --store and --config: the copy's director.store and config.toml`
 
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
 // It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
@@ -31,6 +32,7 @@ func (a *App) messages(args []string) int {
 	flags := flag.NewFlagSet("messages "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	path := flags.String("store", "", "store file")
+	cfgPath := flags.String("config", "", "Director config file")
 	var cp copyFlags
 	cp.register(flags)
 	after := flags.Uint64("after", 0, "list messages after this sequence")
@@ -49,7 +51,7 @@ func (a *App) messages(args []string) int {
 	}
 	set := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) { set[f.Name] = true })
-	cerr := cp.apply(a.Getenv, path, nil, nil)
+	cerr := cp.apply(a.Getenv, path, cfgPath, nil)
 	switch {
 	case cerr != nil:
 		return a.messagesUsage(cerr.Error())
@@ -59,6 +61,8 @@ func (a *App) messages(args []string) int {
 		return a.messagesUsage(fmt.Sprintf("messages %s takes %d arguments", sub, want))
 	case sub != "list" && (set["after"] || set["limit"]):
 		return a.messagesUsage("--after and --limit apply only to messages list")
+	case sub != "send" && set["config"]:
+		return a.messagesUsage("--config applies only to messages send")
 	}
 	pos := flags.Args()
 	var to store.Recipient
@@ -77,6 +81,9 @@ func (a *App) messages(args []string) int {
 	if sub == "send" {
 		var err error
 		if env, err = a.readEnvelope(pos[1]); err != nil {
+			return fail(err)
+		}
+		if err := listedEnvelope(*cfgPath, set["config"], env); err != nil {
 			return fail(err)
 		}
 	}
@@ -116,6 +123,26 @@ func (a *App) messages(args []string) int {
 		}
 	}
 	return 0
+}
+
+// listedEnvelope refuses a message about a repository the config at path does not list: the repositories guard
+// rail (docs/director.md#guard-rails). A copy's config that does not exist checks nothing; one named by --config
+// must load.
+func listedEnvelope(path string, named bool, env messaging.Envelope) error {
+	if path == "" || env.Repository == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); !named && errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	if _, err := cfg.ListedRepository(env.Repository); err != nil {
+		return fmt.Errorf("config %s: %w", path, err)
+	}
+	return nil
 }
 
 // readEnvelope reads an envelope from a file, or from standard input for "-".

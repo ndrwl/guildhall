@@ -127,7 +127,7 @@ func (a *App) directorResume(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("director resume: %w", err))
 	}
-	status, err := readDirectorStatus(context.Background(), path, state)
+	status, err := readDirectorStatus(context.Background(), path, state, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director resume: needs_me: %w", err))
 	}

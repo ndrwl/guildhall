@@ -120,6 +120,8 @@ type App struct {
 	// StopGrace is how long the supervisor of a stopping session lets the runtime end by itself before ending
 	// it; zero means 60 seconds.
 	StopGrace time.Duration
+	// Now is the clock director status counts today's attempts by; nil means wall time.
+	Now func() time.Time
 }
 
 // New returns an App wired to the real process environment.

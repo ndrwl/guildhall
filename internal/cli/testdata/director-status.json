@@ -24,7 +24,22 @@
       "pane": "w1:p2"
     },
     "started_at": "2026-10-22T09:23:00Z",
-    "ready_at": "2026-10-22T09:25:00Z"
+    "ready_at": "2026-10-22T09:25:00Z",
+    "guard_rails": {
+      "repositories": [
+        "app",
+        "lib"
+      ],
+      "merge_policies": {
+        "app": "auto",
+        "lib": "approval"
+      },
+      "max_running_attempts": 3,
+      "max_attempts_per_day": 40,
+      "running_attempts": 2,
+      "attempts_today": 6,
+      "day": "2026-10-22"
+    }
   },
   "mode": {
     "name": "standalone"

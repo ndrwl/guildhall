@@ -19,6 +19,7 @@ func directorCmd(t *testing.T, getenv func(string) string, args ...string) (int,
 	t.Helper()
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Getenv = getenv
+	app.Now = func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }
 	code := app.Run(append([]string{"director"}, args...))
 	return code, stdout.String(), stderr.String()
 }
@@ -151,6 +152,27 @@ func checkIndentedGolden(t *testing.T, name, line string) {
 
 func TestDirectorStatusGolden(t *testing.T) {
 	dir := statusCopy(t)
+	// The copy's config gives the guard rails the status shows beside today's counts.
+	writeFile(t, filepath.Join(dir, "config.toml"), `schema_version = 1
+mode = "director"
+name = "alpha"
+
+[local]
+max_running_attempts = "3"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+merge_policy = "auto"
+
+[[repository]]
+id = "lib"
+path = "/srv/lib"
+remote = "git@github.com:example/lib.git"
+owner_machine = "workstation"
+`)
 	path := filepath.Join(dir, "director.store")
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -169,7 +191,7 @@ func TestDirectorStatusGolden(t *testing.T) {
 	}
 
 	// The explicit paths read the same copy, and GUILDHALL_COPY selects it.
-	_, explicit, _ := directorCmd(t, nil, "status", "--store", path, "--state", filepath.Join(dir, "state"), "--json")
+	_, explicit, _ := directorCmd(t, nil, "status", "--store", path, "--state", filepath.Join(dir, "state"), "--config", filepath.Join(dir, "config.toml"), "--json")
 	_, env, _ := directorCmd(t, func(k string) string {
 		if k == copyEnvVar {
 			return dir
@@ -191,7 +213,7 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
 	}
 	want := `{"as_of":{"partial":true,"excluded":["worker files","transcripts","forge state"],"sequence":0,"committed_at":"0001-01-01T00:00:00Z"},` +
-		`"session":{"state":"no session"},"mode":{"name":"standalone"},"tasks":[],"decisions":[],` +
+		`"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22"}},"mode":{"name":"standalone"},"tasks":[],"decisions":[],` +
 		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[]}` + "\n"
 	if out != want {
 		t.Fatalf("empty copy:\n got %s\nwant %s", out, want)

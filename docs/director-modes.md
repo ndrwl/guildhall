@@ -61,8 +61,9 @@ The binary enforces the same guard rails in both modes; only where their values 
 |---|---|---|
 | Allowed repositories | `[[repository]]` in `config.toml` | The same, checked against the roster at each rollout |
 | Merge rule | `merge_policy` per repository | The same; a future managed key may only tighten it to `approval` |
+| Attempt caps | `max_running_attempts` and `max_attempts_per_day` under `[local]` | Managed keys, read-only to the Director |
 
-Spend limits belong to slice 4's guard-rail design and are not designed here.
+The binary's enforcement is described in [the Director's guard rails](director.md#guard-rails).
 
 In managed mode the Director binary never writes `managed.toml`, and no Director command sets a managed key.
 Each managed revision the binary applies is recorded with its digest.

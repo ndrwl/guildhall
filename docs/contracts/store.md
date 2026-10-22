@@ -8,6 +8,9 @@ The ownership record's `Containment` is a recovery description of every Artisan 
 
 Director sessions and wakes in the `director` bucket ([director-session-record](../decisions/director-session-record.md)): `StartDirectorSession` numbered from 1 and superseding every earlier session that has not stopped, `SetDirectorState`'s forward-only moves with `running` and `paused` moving to each other and a compare-and-set on `StateSequence`, `RequestDirectorStop` to `stopping` with `StopNow` and `EndDirectorSession` to `stopped` with an end reason under the same rules ([director-pause-stop](../decisions/director-pause-stop.md)), `DirectorSession` and `LatestDirectorSession`; `RecordWake` once per message to the Director with `WakeFor` and ordered, bounded `Wakes`; `DirectorUnread`'s counts by type, keyed only by Guildhall's own types and `other` for every other type, which the [wake](../messaging.md#waking-the-director) types; and `DirectorView.Session`, the newest session read in the view's transaction.
 
+Attempt caps ([guard rails](../decisions/guard-rails.md)): `StartCappedAttempt` counts running attempts and the current UTC day's starts in the start's own mutation and refuses at a cap with a `*CapRefusal` wrapping `ErrAttemptCap`, writing nothing; a replay returns its receipt whatever the caps; `StartAttempt` is it with no caps; `AttemptUsage` and `DirectorView.Usage` read the same counts ([attempts](../store.md#attempts)).
+`DirectorUnread` counts `budget-refused` by name.
+
 The [attempt ownership contract](../store.md#attempt-ownership) defines monotonic recovery evidence, `ProbeLauncher`'s containment refusal and the explicit containment-aware recovery path.
 
 ## Tests
@@ -34,3 +37,5 @@ Sustainability review 8, F20, was written red first ([red run](../evidence/owner
 `Containment.Recoverable` already accepted a job or cgroup without a worker, so its cases there pin rather than change it.
 `TestProbeLauncherAgainstRealProcesses` pins the scratch launcher's owner cases (a live owner refused; a reused PID with another token taken over).
 Store-neutral owner value tests: `TestStoreDoesNotImportArtisan` (dependency direction), `TestTakeOwnershipRequiresProbe` (nil-probe refusal), `TestProbeLauncherNeverClassifiesSurvivorsGone`, and the no-verdict case of `TestTakeOwnershipRefusesUnknownOwner`.
+`caps_test.go` was written red first against a `StartCappedAttempt` that ignored its caps and a zero `AttemptUsage` ([red run](../evidence/guard-rails-2026-10-22-red.txt)): the fifth start across two repositories refused at the running cap with no attempt or receipt written, a replay admitted under smaller caps, admission once one attempt finishes, the daily cap on an injected clock refusing the fourth start of a UTC day and admitting the first of the next, uncapped starts counted, and an unknown task and a running step still refused as `StartAttempt` refuses them.
+`TestDirectorView`'s usage check and `TestDirectorUnreadCountsByType`'s `budget-refused` count were red against the view without `Usage` and the type list without `budget-refused`.

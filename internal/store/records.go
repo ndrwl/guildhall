@@ -222,14 +222,7 @@ func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskSt
 // StartAttempt records a new running attempt of step and returns its number in the receipt.
 // It refuses while an earlier attempt of the same step is still running.
 func (s *Store) StartAttempt(mutationID, repository, taskID, step string) (Receipt, error) {
-	if err := validateIDs(repository, taskID, step); err != nil {
-		return Receipt{}, err
-	}
-	req := StageAttempt{Repository: repository, TaskID: taskID, Step: step}
-	return s.mutate(mutationID, "start-attempt", req, func(tx *bolt.Tx, r *Receipt) error {
-		_, err := startAttempt(tx, r, repository, taskID, step)
-		return err
-	})
+	return s.StartCappedAttempt(mutationID, repository, taskID, step, AttemptCaps{})
 }
 
 // startAttempt writes the next running attempt of step and fills the receipt's record fields.

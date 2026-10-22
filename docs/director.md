@@ -2,7 +2,7 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-`director status`, the [session record](store.md#director-sessions), the session supervisor `director start --foreground` that writes it, `director ready`, `director pause`, `director resume` and `director stop` are built; the session's Herdr tab and the handoff and reload commands are designed in the slice 4 plan and land later.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start --foreground` that writes it, `director ready`, `director pause`, `director resume`, `director stop` and the standalone [guard rails](#guard-rails) are built; the session's Herdr tab and the handoff and reload commands are designed in the slice 4 plan and land later.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Start
@@ -95,10 +95,28 @@ No session, or a session already `stopped`, is exit 1.
 
 The stop does not yet ask the Director to write a handoff note first or wait for the end of its turn; both land with handoff notes.
 
+## Guard rails
+
+The guard rails are limits the binary enforces on a Director whatever it asks ([decision](decisions/guard-rails.md)); `config.GuardRails` reads all three from the config.
+In a standalone copy they are the copy's own config, which the Guildmaster edits; managed mode will make them read-only to the Director ([modes](director-modes.md#guard-rails)).
+
+- Allowed repositories: the config's `[[repository]]` entries.
+  `task new`, `task start`, `step done`, `step finish`, `step retry` and `messages send` refuse any other repository with exit 1, `guard rail repositories: the config does not list repository "<id>"`, before writing anything.
+  `messages send` checks the envelope's repository when it has a config: the copy's, or one given with `--config`.
+- Merge rule: each repository's `merge_policy`, which [deliver](interpreter.md#publish-and-deliver) enforces.
+- Attempt caps: [`max_running_attempts`](configuration.md#settings), default 4, and `max_attempts_per_day`, default 40, across all the Director's repositories.
+  An attempt runs from its start to its finish, and a day is a UTC day.
+  The caps count attempts, not tokens or cost, since no runtime reports cost to Guildhall yet.
+
+An advance whose next attempt would pass a cap, from `task start`, `step done`, `step finish`, `step retry` or a launcher's own advance, records and launches nothing and exits 1 naming the rail, such as `guard rail max_running_attempts: ... 4 attempts are running, the cap is 4`.
+It also sends the Director a `budget-refused` message, once per task and UTC day.
+The count and the start are one store write, so two advances never both take the last place, and an attempt already recorded is always launched again after a crash.
+Nothing starts the refused attempt by itself: once an attempt finishes or the day turns, the Director runs `guildhall task start` for the task again, or `step retry` again for a refused retry.
+
 ## Status
 
 ```sh
-guildhall director status --json [--copy <dir> | --store <file> --state <dir>]
+guildhall director status --json [--copy <dir> | --store <file> --state <dir> [--config <file>]]
 ```
 
 `director status` is the Director's status feed and the Guildmaster's "what needs me" query in one read-only JSON document ([decision](decisions/director-status-feed.md)).
@@ -107,7 +125,7 @@ firstmate's external monitor reads it, the Director's skills run it at every tur
 It reads the store in one read transaction, opened read-only and waiting up to 30 seconds for a writer's lock as every advance does, so it never writes, never creates a store and succeeds once a writer lets go.
 It then reads files under the state directory: each task's newest `next.json` and the attempt directories of running attempts, which it classifies with [`reconcile.Classify`](artisan.md#reconcile) and the launcher identity probe; classifying may create an attempt's `attempt.lock`, as `artisan status` does.
 It prints one JSON line and exits 0; a missing store is exit 1 naming `guildhall store init`, a store that cannot be read is exit 1, and a usage error, including a missing `--json`, is exit 2.
-With a [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY` stands in for `--store` and `--state`.
+With a [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY` stands in for `--store`, `--state` and `--config`.
 
 The document has these sections:
 
@@ -116,7 +134,9 @@ The document has these sections:
   `sequence` and `committed_at` are the newest mutation committed anywhere in the store when the read began; an empty store has sequence 0.
   Live attempt state is read after the store, so it can be newer than `sequence`.
 - `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, and the `end_reason` of a session [stopped](#stop) as `superseded`.
-  A store with no session reports only `{"state":"no session"}`.
+  A store with no session reports only its `state`, `"no session"`, and `guard_rails`.
+  `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_policies`, `max_running_attempts` and `max_attempts_per_day`, when the copy has a config, and always `running_attempts`, `attempts_today` and the UTC `day` they count, read in the same store transaction.
+  A config that exists but cannot be read gives `config_error` in place of the rails.
   The identity's liveness is not probed yet.
 - `mode`: `{"name":"standalone"}` until managed mode lands.
 - `tasks`: every task in repository then id order, with its `state` (`open`, `done` or `cancelled`), bound `workflow`, and:

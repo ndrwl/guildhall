@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -19,6 +20,8 @@ import (
 // once-only rules and its sentinel errors, and passes RunRecordsContract with cli.storeRecords and *store.Store.
 // It does not repeat the store's field validation beyond a decision's subject.
 type Records struct {
+	// Now stamps receipts and so decides the day StartCappedAttempt's daily cap counts; nil is wall time.
+	Now       func() time.Time
 	mu        sync.Mutex
 	seq       uint64
 	receipts  map[string]receipt
@@ -253,32 +256,71 @@ func (r *Records) SetTaskState(mutationID, repository, taskID string, state stor
 // StartAttempt implements interp.Records.
 func (r *Records) StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error) {
 	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
-	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error {
-		rc.Repository, rc.TaskID = repository, taskID
-		t, ok := r.tasks[[2]string{repository, taskID}]
-		switch {
-		case !ok:
-			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
-		case t.State != store.TaskOpen:
-			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error { return r.startAttempt(rc, repository, taskID, step) })
+}
+
+func (r *Records) startAttempt(rc *store.Receipt, repository, taskID, step string) error {
+	rc.Repository, rc.TaskID = repository, taskID
+	t, ok := r.tasks[[2]string{repository, taskID}]
+	switch {
+	case !ok:
+		return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+	case t.State != store.TaskOpen:
+		return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+	}
+	n := 0
+	for _, a := range r.attempts {
+		if a.Repository == repository && a.TaskID == taskID && a.Step == step {
+			if a.Outcome == "" {
+				return fmt.Errorf("%w: attempt %d of step %q is still running", store.ErrInvalid, a.Number, step)
+			}
+			n = max(n, a.Number)
 		}
-		n := 0
-		for _, a := range r.attempts {
-			if a.Repository == repository && a.TaskID == taskID && a.Step == step {
+	}
+	a := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: n + 1}
+	rc.Attempt, rc.Record = a.Number, fmt.Sprintf("attempt/%s/%d", step, a.Number)
+	r.attempts = append(r.attempts, a)
+	slices.SortFunc(r.attempts, func(x, y store.StageAttempt) int {
+		return cmp.Or(cmp.Compare(x.Step, y.Step), cmp.Compare(x.Number, y.Number))
+	})
+	return nil
+}
+
+// StartCappedAttempt implements interp.Records, counting the day by Now.
+func (r *Records) StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error) {
+	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
+	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error {
+		if _, ok := r.tasks[[2]string{repository, taskID}]; ok && (caps.MaxRunning > 0 || caps.MaxPerDay > 0) {
+			y, m, d := r.now().Date()
+			day := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+			running := 0
+			for _, a := range r.attempts {
 				if a.Outcome == "" {
-					return fmt.Errorf("%w: attempt %d of step %q is still running", store.ErrInvalid, a.Number, step)
+					running++
 				}
-				n = max(n, a.Number)
+			}
+			today := 0
+			for _, prior := range r.receipts {
+				if prior.op == "start-attempt" && !prior.r.CommittedAt.Before(day) {
+					today++
+				}
+			}
+			switch {
+			case caps.MaxRunning > 0 && running >= caps.MaxRunning:
+				return &store.CapRefusal{Cap: store.CapRunning, Count: running, Limit: caps.MaxRunning, Day: day}
+			case caps.MaxPerDay > 0 && today >= caps.MaxPerDay:
+				return &store.CapRefusal{Cap: store.CapDaily, Count: today, Limit: caps.MaxPerDay, Day: day}
 			}
 		}
-		a := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: n + 1}
-		rc.Attempt, rc.Record = a.Number, fmt.Sprintf("attempt/%s/%d", step, a.Number)
-		r.attempts = append(r.attempts, a)
-		slices.SortFunc(r.attempts, func(x, y store.StageAttempt) int {
-			return cmp.Or(cmp.Compare(x.Step, y.Step), cmp.Compare(x.Number, y.Number))
-		})
-		return nil
+		return r.startAttempt(rc, repository, taskID, step)
 	})
+}
+
+func (r *Records) now() time.Time {
+	if r.Now != nil {
+		return r.Now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 // FinishAttempt implements interp.Records.
@@ -366,6 +408,7 @@ func (r *Records) mutate(mutationID, op string, req any, apply func(rc *store.Re
 		return store.Receipt{}, fmt.Errorf("records: %s %s: %w", op, mutationID, err)
 	}
 	r.seq++
+	rc.CommittedAt = r.now()
 	r.receipts[mutationID] = receipt{op, string(body), rc}
 	return rc, nil
 }
@@ -504,6 +547,46 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		}
 		_, err = h.Records.StartAttempt("start-x", "app", "t8", "plan")
 		want(t, "StartAttempt of an unknown task", err, store.ErrNotFound)
+	})
+
+	t.Run("refuses a start at a cap and admits it after a finish", func(t *testing.T) {
+		h := setup(t)
+		other := task
+		other.Repository, other.ID = "site", "t9"
+		if _, err := h.CreateTask("task:site:t9", other); err != nil {
+			t.Fatal(err)
+		}
+		caps := store.AttemptCaps{MaxRunning: 2}
+		if _, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", caps); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", caps); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", caps)
+		refusal, ok := errors.AsType[*store.CapRefusal](err)
+		if !errors.Is(err, store.ErrAttemptCap) || !ok || refusal.Cap != store.CapRunning || refusal.Count != 2 || refusal.Limit != 2 {
+			t.Fatalf("start past the running cap = %v, want a running cap refusal at 2 of 2", err)
+		}
+		if got, _ := h.Records.Attempts("app", "t7"); len(got) != 1 {
+			t.Fatalf("a refused start recorded an attempt: %+v", got)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", store.AttemptCaps{MaxRunning: 1, MaxPerDay: 1}); err != nil || r.Attempt != 1 {
+			t.Errorf("replayed capped start = %+v, %v; want its receipt", r, err)
+		}
+		if _, err := h.Records.FinishAttempt("finish-site", "site", "t9", "plan", 1, store.AttemptSucceeded); err != nil {
+			t.Fatal(err)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", caps); err != nil || r.Attempt != 1 {
+			t.Fatalf("start after a finish = %+v, %v", r, err)
+		}
+		// Three starts today, counted whatever caps they were made under; skipped across a UTC midnight.
+		day := time.Now().UTC().Truncate(24 * time.Hour)
+		_, err = h.Records.StartCappedAttempt("start-review", "app", "t7", "review", store.AttemptCaps{MaxPerDay: 3})
+		refusal, ok = errors.AsType[*store.CapRefusal](err)
+		if time.Now().UTC().Truncate(24*time.Hour).Equal(day) && (!ok || refusal.Cap != store.CapDaily || refusal.Count != 3 || refusal.Limit != 3) {
+			t.Fatalf("start past the daily cap = %v, want a daily cap refusal at 3 of 3", err)
+		}
 	})
 
 	t.Run("replays a mutation id and refuses its reuse", func(t *testing.T) {

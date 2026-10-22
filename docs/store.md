@@ -67,6 +67,10 @@ Several writers finish attempts, each under its own mutation id: the launcher wh
 - A different outcome is refused with `ErrInvalid` (`already finished`) and writes nothing.
 - Finding the finishing receipt scans every receipt by operation and request digest, including legacy receipts without a record label; it happens only when a second writer arrives.
 
+`StartCappedAttempt` is `StartAttempt` under the Director's [attempt caps](director.md#guard-rails): in the same mutation it counts the attempts started and not finished in every repository, and the `start-attempt` and `start-owned-attempt` receipts committed since the start of the current UTC day by the store's clock, and refuses with a `*CapRefusal`, wrapping `ErrAttemptCap`, at either cap, writing nothing.
+The caps are not part of the request, so a replay returns its receipt whatever they are now.
+`AttemptUsage`, and `DirectorView`'s `Usage`, read the same counts without writing; like the view they scan every receipt.
+
 ## One writer
 
 A store has exactly one writer at a time.

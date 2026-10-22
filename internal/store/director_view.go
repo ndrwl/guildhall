@@ -30,6 +30,8 @@ type DirectorView struct {
 	Receipts []Receipt
 	// Session is the newest Director session, or nil when the store has none.
 	Session *DirectorSession
+	// Usage is what the attempt caps count (AttemptUsage), by the store's clock.
+	Usage AttemptUsage
 }
 
 // DirectorView reads the Director's view of the whole store without writing.
@@ -76,6 +78,11 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				v.Unread = append(v.Unread, m)
 			}
 		}
+		u, err := attemptUsage(tx, s.now())
+		if err != nil {
+			return err
+		}
+		v.Usage = u
 		switch d, err := latestSession(tx); {
 		case err == nil:
 			v.Session = &d
