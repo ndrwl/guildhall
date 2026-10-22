@@ -54,7 +54,7 @@ func TestSessionCommand(t *testing.T) {
 
 // TestSessionSettingsGolden pins the session's Claude Code settings: guildhall and read-only git allowed, no
 // edit of the copy's config.toml or managed.toml, the UserPromptSubmit hook running guildhall director
-// turn-started and the Stop hook running guildhall director turn-ended.
+// turn-started and the Stop and StopFailure hooks running guildhall director turn-ended.
 func TestSessionSettingsGolden(t *testing.T) {
 	files := claude.Adapter{}.SessionFiles("/home/g/copy")
 	if len(files) != 1 {
@@ -136,5 +136,35 @@ func TestSessionSettingsKeepGitReadOnly(t *testing.T) {
 		if got := allowed(t, settings, command); got != want {
 			t.Errorf("%q allowed = %v, want %v", command, got, want)
 		}
+	}
+}
+
+// TestSessionSettingsSignalEveryTurn reads the settings as Claude Code does: a prompt runs the turn-start
+// command, and a turn's end runs the turn-end command whether it ends normally (Stop) or in an API error
+// (StopFailure).
+func TestSessionSettingsSignalEveryTurn(t *testing.T) {
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(claude.Settings("/home/g/copy"), &settings); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"UserPromptSubmit": claude.TurnStartCommand, "Stop": claude.TurnEndCommand, "StopFailure": claude.TurnEndCommand}
+	if len(settings.Hooks) != len(want) {
+		t.Errorf("hook events = %v, want %v", settings.Hooks, want)
+	}
+	for event, command := range want {
+		m := settings.Hooks[event]
+		if len(m) != 1 || len(m[0].Hooks) != 1 || m[0].Hooks[0].Type != "command" || m[0].Hooks[0].Command != command {
+			t.Errorf("%s hooks = %+v, want the one command %q", event, m, command)
+		}
+	}
+	if claude.TurnStartCommand != "guildhall director turn-started" || claude.TurnEndCommand != "guildhall director turn-ended" {
+		t.Errorf("hook commands = %q, %q", claude.TurnStartCommand, claude.TurnEndCommand)
 	}
 }

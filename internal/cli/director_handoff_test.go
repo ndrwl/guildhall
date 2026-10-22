@@ -414,42 +414,80 @@ func TestReloadTakesTheCurrentRuntime(t *testing.T) {
 	}
 }
 
-// TestTurnStartKeepsAHookedRuntimeBusy: with a hook, a stop or a reload --now past the grace waits for the end of
-// a turn that started after the last turn end.
+// hookedWatch records session 1 running in a new copy and returns a watch over it with a hook, a minute's grace,
+// five minutes' idle_after and a clock the test moves.
+func hookedWatch(t *testing.T) (*sessionWatch, *time.Time, string) {
+	t.Helper()
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n")
+	path := filepath.Join(dir, "director.store")
+	recordSession(t, path, false, store.DirectorRunning)
+	clock := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	w := &sessionWatch{storePath: path, state: filepath.Join(dir, "state"), n: 1, grace: time.Minute, hook: true,
+		idleAfter: 5 * time.Minute, now: func() time.Time { return clock }}
+	return w, &clock, path
+}
+
+// ask records a stop, a reload --now or a plain reload of session 1 in the store at path.
+func ask(t *testing.T, path, what string) {
+	t.Helper()
+	s, err := store.Open(path, store.Options{RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch what {
+	case "stop":
+		var d store.DirectorSession
+		if d, err = s.DirectorSession(1); err == nil {
+			_, err = s.RequestDirectorStop(1, false, d.StateSequence)
+		}
+	default:
+		_, err = s.RequestDirectorReload(what == "reload --now")
+	}
+	if cerr := s.Close(); err != nil || cerr != nil {
+		t.Fatal(err, cerr)
+	}
+}
+
+var askedEnd = map[string]endAction{"stop": endForStop, "reload --now": endForReload, "reload": endForReload}
+
+// TestTurnStartKeepsAHookedRuntimeBusy: with a hook, a stop, a reload --now past the grace and a plain reload wait
+// for the end of a turn that started after the last turn end.
 func TestTurnStartKeepsAHookedRuntimeBusy(t *testing.T) {
-	for _, now := range []bool{false, true} {
-		dir := directorCopy(t, "[director]\nadapter = \"fake\"\n")
-		path := filepath.Join(dir, "director.store")
-		recordSession(t, path, false, store.DirectorRunning)
-		w := sessionWatch{storePath: path, state: filepath.Join(dir, "state"), n: 1, grace: time.Nanosecond, hook: true}
+	for what, want := range askedEnd {
+		w, clock, path := hookedWatch(t)
 		if got := w.decide(session.TurnEnded); got != keepRunning {
-			t.Fatalf("now %v: turn end with nothing asked = %d", now, got)
+			t.Fatalf("%s: turn end with nothing asked = %d", what, got)
 		}
 		w.decide(session.TurnStarted)
-		s, err := store.Open(path, store.Options{RequireStore: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := endForStop
-		if now {
-			want = endForReload
-			_, err = s.RequestDirectorReload(true)
-		} else {
-			var d store.DirectorSession
-			if d, err = s.DirectorSession(1); err == nil {
-				_, err = s.RequestDirectorStop(1, false, d.StateSequence)
-			}
-		}
-		if cerr := s.Close(); err != nil || cerr != nil {
-			t.Fatal(err, cerr)
-		}
+		ask(t, path, what)
 		w.decide("")
-		time.Sleep(time.Millisecond)
+		*clock = clock.Add(2 * time.Minute)
 		if got := w.decide(""); got != keepRunning {
-			t.Errorf("now %v: past the grace mid-turn = %d, want the runtime kept running", now, got)
+			t.Errorf("%s: past the grace mid-turn = %d, want the runtime kept running", what, got)
 		}
 		if got := w.decide(session.TurnEnded); got != want {
-			t.Errorf("now %v: at the turn end = %d, want %d", now, got, want)
+			t.Errorf("%s: at the turn end = %d, want %d", what, got, want)
+		}
+	}
+}
+
+// TestInterruptedTurnGoesIdleAfterIdleAfter: a turn the captain interrupts sends turn-started and no turn-ended,
+// so the runtime counts as idle once idle_after has passed with no turn signal or wake, and a stop, a reload --now
+// or a plain reload then ends it.
+func TestInterruptedTurnGoesIdleAfterIdleAfter(t *testing.T) {
+	for what, want := range askedEnd {
+		w, clock, path := hookedWatch(t)
+		w.decide(session.TurnEnded)
+		w.decide(session.TurnStarted)
+		ask(t, path, what)
+		w.decide("")
+		*clock = clock.Add(5*time.Minute - time.Second)
+		if got := w.decide(""); got != keepRunning {
+			t.Errorf("%s: before idle_after = %d, want the runtime kept running", what, got)
+		}
+		*clock = clock.Add(time.Second)
+		if got := w.decide(""); got != want {
+			t.Errorf("%s: at idle_after = %d, want %d", what, got, want)
 		}
 	}
 }
@@ -462,7 +500,7 @@ func TestDecideEnd(t *testing.T) {
 	paused := store.DirectorSession{Number: 1, State: store.DirectorPaused}
 	plain := &store.DirectorReload{Sequence: 9, State: store.ReloadRequested}
 	now := &store.DirectorReload{Sequence: 9, State: store.ReloadRequested, Now: true}
-	grace := time.Minute
+	grace, idleAfter := time.Minute, 5*time.Minute
 	cases := []struct {
 		name string
 		in   endInput
@@ -486,9 +524,15 @@ func TestDecideEnd(t *testing.T) {
 		{"plain reload with no hook after the grace", endInput{Session: running, Reload: plain, Waited: grace}, endForReload},
 		{"plain reload with no hook mid-stage after the grace", endInput{Session: running, Reload: plain, Waited: grace, StageRunning: true}, keepRunning},
 		{"plain reload with a hook, busy, after the grace", endInput{Session: running, Reload: plain, Hook: true, Waited: grace}, keepRunning},
+		{"stop with a hook, quiet for idle_after, after the grace", endInput{Session: stopping, Hook: true, Waited: grace, Quiet: idleAfter}, endForStop},
+		{"stop with a hook, quiet for idle_after, in the grace", endInput{Session: stopping, Hook: true, Quiet: idleAfter}, keepRunning},
+		{"reload --now with a hook, quiet for idle_after, after the grace", endInput{Session: running, Reload: now, Hook: true, Waited: grace, Quiet: idleAfter}, endForReload},
+		{"plain reload with a hook, quiet for idle_after", endInput{Session: running, Reload: plain, Hook: true, Quiet: idleAfter}, endForReload},
+		{"plain reload with a hook, quiet for idle_after, mid-stage", endInput{Session: running, Reload: plain, Hook: true, Quiet: idleAfter, StageRunning: true}, keepRunning},
+		{"plain reload with a hook, quiet for less than idle_after", endInput{Session: running, Reload: plain, Hook: true, Quiet: idleAfter - time.Second}, keepRunning},
 	}
 	for _, c := range cases {
-		c.in.Grace = grace
+		c.in.Grace, c.in.IdleAfter = grace, idleAfter
 		if got := decideEnd(c.in); got != c.want {
 			t.Errorf("%s: decideEnd = %d, want %d", c.name, got, c.want)
 		}

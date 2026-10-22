@@ -172,15 +172,18 @@ The [status feed](#status)'s session section carries the newest request as `relo
 ## The end of a turn
 
 A stop or a reload `--now` ends the runtime at the end of the Director's current turn, not in the middle of it.
-A runtime with turn hooks says when a turn starts and ends: Claude Code's `UserPromptSubmit` hook runs `guildhall director turn-started` and its `Stop` hook `guildhall director turn-ended`, each of which finds the newest session from the copy in `GUILDHALL_COPY` and signals its supervisor over the session endpoint, an AF_UNIX socket at `supervisor.sock` in the session directory, bound as an [Artisan's endpoint](artisan.md#control-endpoint) is, on Windows as on Unix.
+A runtime with turn hooks says when a turn starts and ends: Claude Code's `UserPromptSubmit` hook runs `guildhall director turn-started` and its `Stop` and `StopFailure` hooks `guildhall director turn-ended`, the second for a turn that ends in an API error, each of which finds the newest session from the copy in `GUILDHALL_COPY` and signals its supervisor over the session endpoint, an AF_UNIX socket at `supervisor.sock` in the session directory, bound as an [Artisan's endpoint](artisan.md#control-endpoint) is, on Windows as on Unix.
 Each is exit 0 once the supervisor has answered and exit 1 otherwise, including for a usage error, because a `Stop` hook's exit 2 tells Claude Code to keep going and a `UserPromptSubmit` hook's exit 2 blocks the prompt.
 The Director is idle while the newest of these signals is a turn end and no wake has typed into its pane since.
+A turn the captain interrupts with Esc runs no hook at its end, so a runtime with hooks also counts as idle once no turn signal and no wake has arrived for [`[director] idle_after`](configuration.md#the-director-table), 5 minutes unless set; a turn that runs that long without a signal counts as idle too.
 The supervisor decides at each signal and about once a second:
 
 - `stop --now` ends the runtime at once;
 - a stop or a reload `--now` ends it at the next turn end, or once 60 seconds have passed, when the runtime has no hook or the Director is idle;
 - a plain reload ends it at a quiet point, or once 60 seconds have passed with no Director stage running when the runtime has no hook;
 - a stop wins over a reload.
+
+`director stop --now` is the escape when the runtime must end before then: it ends the runtime at once, mid-turn if need be.
 
 The fake runtime has no hooks, so its sessions wait out the 60 seconds unless their script runs `turn-started` and `turn-ended` itself; without a turn-start hook a turn the captain starts is not seen, so once a turn has ended the Director counts as idle until a wake types into its pane.
 A session directory whose socket path would pass the platform's AF_UNIX limit gets no endpoint; the supervisor says so when it starts and waits out the 60 seconds as for a runtime without a hook.

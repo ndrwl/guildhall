@@ -29,6 +29,10 @@ The automatic triggers (`handoff_after_tasks`, `handoff_context_percent`, `hando
   Waiting instead for a turn end after each request was rejected: an idle Director would then never reload.
   The endpoint keeps the newest unread signal, so a turn that starts before the supervisor reads the previous end is never taken as idle.
   A runtime without the hooks keeps the turn-end-only rule.
+- **A quiet runtime is idle.**
+  A turn can end with no turn end: Claude Code runs no `Stop` hook for a turn the captain interrupts with Esc, and runs `StopFailure` instead for one that ends in an API error.
+  `StopFailure` is registered to send `turn-ended` as `Stop` does; for Esc, which no hook reports, a runtime with hooks counts as idle once no turn signal and no wake has arrived for `[director] idle_after`, 5 minutes by default, so a stop or `--now` ends it after the grace and a plain reload applies.
+  The cost is that a turn running longer than `idle_after` with no signal is taken as idle; `director stop --now` stays the immediate escape.
 - **The hook commands name no path.**
   The Claude hooks are `guildhall director turn-started` and `guildhall director turn-ended` with no `--copy`: the hooks inherit the session's `GUILDHALL_COPY`, so no path has to be quoted for the shell Claude Code runs hooks in, on any platform.
   The slice plan wrote `--copy <dir>`; the environment carries the same copy.

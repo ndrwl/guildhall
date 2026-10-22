@@ -25,7 +25,8 @@ var readOnlyGit = []string{"status", "log", "diff", "show", "rev-parse", "ls-fil
 // Settings is the session's Claude Code settings for the Director copy dir: Bash may run guildhall, the
 // read-only git commands and `git remote -v` without asking but no git command writing an --output file, no
 // edit tool may change the copy's config.toml or managed.toml, the UserPromptSubmit hook runs TurnStartCommand
-// at the start of every turn and the Stop hook TurnEndCommand at the end of every turn. It is JSON with a trailing newline, the same bytes for the same copy.
+// at the start of every turn, and the Stop and StopFailure hooks TurnEndCommand at the end of every turn, the
+// second when a turn ends in an API error. It is JSON with a trailing newline, the same bytes for the same copy.
 func Settings(copyDir string) []byte {
 	allow := []string{"Bash(guildhall)", "Bash(guildhall *)"}
 	for _, g := range readOnlyGit {
@@ -53,6 +54,7 @@ func Settings(copyDir string) []byte {
 	}{permissions{allow, deny}, map[string][]matcher{
 		"UserPromptSubmit": {{[]command{{"command", TurnStartCommand}}}},
 		"Stop":             {{[]command{{"command", TurnEndCommand}}}},
+		"StopFailure":      {{[]command{{"command", TurnEndCommand}}}},
 	}}, "", "  ")
 	return append(b, '\n')
 }
@@ -92,10 +94,11 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 }
 
 // TurnEndHook reports true: Settings registers TurnStartCommand as the session's UserPromptSubmit hook and
-// TurnEndCommand as its Stop hook.
+// TurnEndCommand as its Stop and StopFailure hooks.
 func (Adapter) TurnEndHook() bool { return true }
 
-// TurnStartCommand and TurnEndCommand are the UserPromptSubmit and Stop hooks of a Director session. They name
+// TurnStartCommand and TurnEndCommand are the UserPromptSubmit and Stop (and StopFailure) hooks of a Director
+// session. They name
 // no copy: the hooks inherit the session's GUILDHALL_COPY, so no path crosses the shell Claude Code runs hooks in.
 const (
 	TurnStartCommand = "guildhall director turn-started"

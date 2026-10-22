@@ -93,6 +93,7 @@ It belongs to a Director config; a Steward config with one is refused.
 | `adapter` | The runtime adapter, such as `claude`; required to start a session, and a positional runtime overrides it for one command. |
 | `model`, `effort` | Passed to the adapter as given; empty means the adapter's default. |
 | `role` | A role prompt replacing the copy's `baseline/roles/director.md` and the release's Director role: a relative slash-separated path inside the config file's directory. |
+| `idle_after` | How long a session whose runtime has turn hooks may go with no turn signal and no wake before the supervisor counts the Director as [idle](director.md#the-end-of-a-turn), such as after a turn the captain interrupted: a positive Go duration, `5m` when unset. |
 
 Like a profile it names no credential.
 A config without the table has the same config digest as before the table existed.
