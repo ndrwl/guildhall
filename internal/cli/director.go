@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,7 +135,8 @@ type startPlan struct {
 }
 
 // preflight checks, in order, that the config is admitted, the runtime is known and on PATH, the store opens and
-// the release skills install, printing one doctor-style line per check. A failed check prints its line, then
+// the release skills install, printing one doctor-style line per check, then names the Artisan permissions the
+// claude profiles depend on, which refuses nothing. A failed check prints its line, then
 // errStartRefused; nothing is recorded.
 func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPlan, error) {
 	p := startPlan{cfgPath: cfgPath}
@@ -188,7 +190,29 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 		}
 	}
 	line("skills", "%d release skills install", n)
+	line("artisans", "%s", artisanPermissions(cfg))
 	return p, nil
+}
+
+// artisanPermissions says which profiles run the claude adapter, whose print mode allows edits only, so a build's
+// checks and commits depend on Claude's own settings allowing Bash (docs/adapters.md#artisan-permissions).
+func artisanPermissions(cfg *config.Config) string {
+	var names []string
+	for name, p := range cfg.Profiles {
+		if p.Adapter == adapter.ClaudeName {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return "no profile runs the claude adapter"
+	}
+	slices.Sort(names)
+	runs := "profile %s runs"
+	if len(names) > 1 {
+		runs = "profiles %s run"
+	}
+	return fmt.Sprintf(runs+" claude print mode, which allows edits only: a build's checks and commits need Bash allowed by Claude's settings (docs/adapters.md#artisan-permissions)",
+		strings.Join(names, ", "))
 }
 
 // preflightLine prints one preflight check's line.

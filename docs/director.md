@@ -23,6 +23,7 @@ It first runs a preflight and prints one line per check, as `doctor` prints, sto
 - `runtime`: the runtime is one of the adapters, and the program it runs is on `PATH`; the fake runtime is the `guildhall` executable itself.
 - `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.
 - `skills`: the release skills and baseline install.
+- `artisans`: names each profile that runs the claude adapter, whose print mode allows edits only, so a build's checks and commits need Bash allowed by Claude's own settings ([Artisan permissions](adapters.md#artisan-permissions)); it refuses nothing.
 
 A failed check is exit 1 with nothing recorded and nothing written in the copy, and `--check` exits 0 after the preflight, also recording nothing.
 
@@ -279,6 +280,7 @@ The document has these sections:
 - `needs_me`: what is waiting on the Director or the Guildmaster, each item with its `kind`, the task and attempt or decision it concerns, a `reason`, and the `command` the Director would run next, written without `--copy` because a Director session sets `GUILDHALL_COPY`.
   Items come in this order, and within a kind by repository, task, then step or message order:
   1. `advance`: an open task's step whose latest attempt is finished while the task's `next.json` still says `"wait":"attempt"` for that attempt, as a [watcher](running.md#the-watcher) whose advance failed leaves it; `guildhall step done --repo <r> --task <t> --step <s> --attempt <n> --result <file>` for a `succeeded` attempt whose result file exists, otherwise `guildhall task start --repo <r> <t>`.
+     A [Director stage](interpreter.md#director-stages) whose attempt is unfinished but has a published result, as a `step finish` that stopped before its advance leaves it, is also an `advance` item, with that `step done` command, whether or not its stage message was read.
   2. `retry`, `retryable: true`: an open task's step whose latest attempt finished `failed` or `stopped`; `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`, to which the Director adds `--reason`.
   3. `resume`, `resume: true`: a running attempt of an open task classified `stuck`, `exited` or `unknown`; `guildhall artisan resume --repo <r> --task <t> --step <s> --attempt <n>`.
   4. `stalled`: an unread `worker-stalled` message; `guildhall messages read <id>`.

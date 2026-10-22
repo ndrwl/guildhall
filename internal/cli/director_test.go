@@ -228,6 +228,30 @@ func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 	}
 }
 
+// TestDirectorStartCheckNamesArtisanPermissions: the preflight's artisans line names each profile that runs the
+// claude adapter and the permissions its print mode lacks for a build's checks and commits, without refusing.
+func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"claude\"\n", "/exit")
+	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
+	}
+	line := ""
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "artisans: ") {
+			line = l
+		}
+	}
+	for _, want := range []string{"profile builder runs", "edits only", "Bash", "docs/adapters.md#artisan-permissions"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("artisans line %q lacks %q:\n%s", line, want, out)
+		}
+	}
+	if strings.Contains(line, "refused") {
+		t.Errorf("artisans line %q refuses", line)
+	}
+}
+
 func TestDirectorStartRefusals(t *testing.T) {
 	cases := []struct {
 		name, table string
