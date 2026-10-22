@@ -34,3 +34,9 @@ A finished outcome without a readable result is refused, not guessed.
 - `adapter.Identity` is a task and attempt id pair, such as `t-1` and `build-1`, that a result file must name.
 - `artisan.Identity` is a process: its PID and a creation token that differs for a later process reusing the PID.
 - `artisan.AttemptKey` names an owned attempt as repository, task, step and attempt number; its adapter identity is the task and `<step>-<number>`.
+
+## Forge
+
+- A forge is the service that hosts a repository's pull requests, such as GitHub.
+- `interp.Forge` is the interpreter's seam for delivery: it publishes a task branch as a pull request and merges it ([forge contract](contracts/forge.md)).
+- `forge.GitHub` is its only implementation, over the `gh` program; any other remote is refused ([D60](decisions/0060-delivery-stage.md)).

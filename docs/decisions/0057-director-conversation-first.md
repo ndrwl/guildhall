@@ -1,4 +1,4 @@
-# Plain English to the Director is the primary interface
+# D57. Plain English to the Director is the primary interface
 
 The Guildmaster's main way to use Guildhall is talking to their Director in plain English.
 The Director turns each request into `guildhall` commands through its rendered skills; the commands are the Director's tools, not the Guildmaster's daily interface.

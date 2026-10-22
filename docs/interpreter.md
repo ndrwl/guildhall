@@ -83,7 +83,7 @@ Publishing and merging send `published`, `merge-held`, `merge-refused` and `merg
 
 ## Publish and deliver
 
-Guildhall prescribes only the edges of delivery: what is pushed where, the pull request, and merging under the repository's merge policy without bypassing the forge's protection ([decision](decisions/delivery-stage.md)).
+Guildhall prescribes only the edges of delivery: what is pushed where, the pull request, and merging under the repository's merge policy without bypassing the forge's protection ([decision](decisions/0060-delivery-stage.md)).
 Inside its task copy an Artisan uses git as it likes, and the Director decides how to recover from anything the forge refuses.
 Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts/forge.md); with no `Engine.Forge`, publishing and merging are refused with `ErrUnsupported`.
 

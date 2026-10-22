@@ -1,4 +1,4 @@
-# The grill is the Director's live interview of the Guildmaster
+# D61. The grill is the Director's live interview of the Guildmaster
 
 A grill stage exists so the Artisans build the product the Guildmaster wants.
 With the default `director` actor it is a live interview in the Director's conversation with the Guildmaster: rounds of numbered questions over a design tree, each with a recommended answer worded so "yes" accepts it, until both share an understanding.

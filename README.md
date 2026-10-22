@@ -42,7 +42,7 @@ Once the Director is built, these are the kinds of jobs Guildhall is designed fo
 ## How you will use it
 
 You will talk to your Director, and never need to type a command to give work, answer a decision or approve a merge.
-This is the standing rule, recorded in [plain English to the Director](docs/decisions/director-conversation-first.md).
+This is the standing rule, recorded in [plain English to the Director](docs/decisions/0057-director-conversation-first.md).
 The session below is illustrative: it shows the intended experience, which is not built yet.
 
 > **You:** Add a health check endpoint to the app repository.
@@ -125,7 +125,7 @@ It needs a small Director config naming your repository; see [configuration and 
 | --- | --- |
 | Creating, inspecting and timing tasks; answering decisions; local messages | Built, driven by hand with commands |
 | Advancing a task stage by stage and launching an agent for each stage | Built, with a test-only fake agent and a minimal Claude adapter whose live acceptance is pending |
-| Publishing and merging a task's pull request through `gh` | Built |
+| Publishing and merging a task's pull request through `gh` | Built, exercised in CI against a stand-in `gh`; live GitHub behaviour is not claimed |
 | Steward rollouts of shared settings over SSH | Built, preview and apply |
 | The conversational Director (`guildhall director start`) | Planned |
 | Running stages that the Director itself performs, and background watching of running agents | Planned |

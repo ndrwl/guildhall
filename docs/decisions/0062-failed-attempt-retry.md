@@ -1,4 +1,4 @@
-# A failed attempt has a next attempt
+# D62. A failed attempt has a next attempt
 
 After a failed or stopped attempt the engine waits for the Director ([D52](0052-task-start-and-step-done.md)), but no event or command expressed the Director's decision to try again: the engine starts an attempt only when a step has none, or after a succeeded one whose inputs moved, so a task whose launcher was killed waited for good (sustainability review 9, F27).
 R1.34 says work is not capped by an attempt budget, so the next attempt must be reachable.

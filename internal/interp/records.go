@@ -27,7 +27,7 @@ import (
 // Implementations are safe for concurrent use.
 // Rulings are recorded by the Director (guildhall task finding rule), never by the engine.
 //
-// Workflow approvals are not read here: enforcing them at task creation is separate work (S10).
+// Workflow approvals are not read here: they are enforced at task creation (docs/decisions/0056-approval-enforcement-at-task-creation.md).
 type Records interface {
 	Task(repository, taskID string) (store.Task, error)
 	Attempts(repository, taskID string) ([]store.StageAttempt, error)

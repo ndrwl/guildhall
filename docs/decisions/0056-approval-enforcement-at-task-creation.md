@@ -1,4 +1,4 @@
-# Approval enforcement at task creation
+# D56. Approval enforcement at task creation
 
 `task new` admits a repository's effective workflow only when its digest is shipped with the release, approved by the Guildmaster in the Director's store, or a change that meets the review floor and weakens nothing in an authorized baseline ([configuration](../configuration.md#enforcement-at-task-creation)).
 The policy is `workflow.Authority.Admit`, a pure function over definitions: the store supplies approved digests and the CLI supplies the shipped definitions and the repository's file, so the policy is tested without a store and the store keeps only approval records ([D22](0022-workflow-approvals-per-director-keyed-by.md)).
