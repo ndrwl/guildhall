@@ -83,10 +83,14 @@ func (a *App) artisan(args []string) int {
 	return a.usageError("artisan: the commands are start, stop, status, resume and harness")
 }
 
-// attemptFlags name an owned attempt (docs/artisan.md#commands).
-type attemptFlags struct{ store, state, repo, task, step, attempt string }
+// attemptFlags name an owned attempt (docs/artisan.md#commands); a copy defaults the store and state.
+type attemptFlags struct {
+	store, state, repo, task, step, attempt string
+	copy                                    copyFlags
+}
 
 func (f *attemptFlags) register(fl *flag.FlagSet) {
+	f.copy.register(fl)
 	fl.StringVar(&f.store, "store", "", "Director store file")
 	fl.StringVar(&f.state, "state", "", "state directory")
 	fl.StringVar(&f.repo, "repo", "", "repository id")
@@ -97,11 +101,15 @@ func (f *attemptFlags) register(fl *flag.FlagSet) {
 	fl.StringVar(&f.attempt, "attempt", "", "attempt number")
 }
 
-func (f attemptFlags) parse() (launch.Attempt, error) {
+// parse fills the paths from the copy, if one is selected, and returns the attempt the flags name.
+func (f attemptFlags) parse(getenv func(string) string) (launch.Attempt, error) {
+	if err := f.copy.apply(getenv, &f.store, nil, &f.state); err != nil {
+		return launch.Attempt{}, err
+	}
 	n, err := strconv.Atoi(f.attempt)
 	switch {
 	case f.store == "" || f.state == "" || f.repo == "" || f.task == "" || f.step == "":
-		return launch.Attempt{}, errors.New("--store, --state, --repo, --task, --step and --attempt are required")
+		return launch.Attempt{}, errors.New("--store, --state, --repo, --task, --step and --attempt are required, or --copy, --repo, --task, --step and --attempt")
 	case err != nil || n < 1:
 		return launch.Attempt{}, fmt.Errorf("--attempt %q must be a positive attempt number", f.attempt)
 	}
@@ -122,7 +130,7 @@ func (a *App) artisanOwned(cmd string, args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan " + cmd + ": " + err.Error())
 	}
-	at, err := f.parse()
+	at, err := f.parse(a.Getenv)
 	switch {
 	case err != nil:
 		return a.usageError("artisan " + cmd + ": " + err.Error())
@@ -130,6 +138,9 @@ func (a *App) artisanOwned(cmd string, args []string) int {
 		return a.usageError(fmt.Sprintf("artisan %s: unexpected argument %q", cmd, fl.Arg(0)))
 	case *timeout <= 0:
 		return a.usageError("artisan " + cmd + ": --timeout must be positive")
+	}
+	if _, err := os.Stat(at.Store); errors.Is(err, fs.ErrNotExist) {
+		return a.fail(fmt.Errorf("artisan %s: %w", cmd, noStore(at.Store)))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
@@ -210,13 +221,16 @@ func (a *App) artisanStart(args []string) int {
 		if result != "" || workspace != "" || len(herdrExec) > 0 || label != "" || stopOnTimeout {
 			return a.usageError("artisan start: --result, --herdr-workspace, --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
 		}
-		at, err := owned.parse()
+		at, err := owned.parse(a.Getenv)
 		if err != nil || prompt == "" || workdir == "" {
 			return a.usageError(fmt.Sprintf("artisan start: --prompt and --workdir are required: %v", err))
 		}
+		if _, err := os.Stat(at.Store); errors.Is(err, fs.ErrNotExist) {
+			return a.fail(fmt.Errorf("artisan start: %w", noStore(at.Store)))
+		}
 		return a.runOwned(at, adapterName, prompt, workdir, timeout)
-	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "":
-		return a.usageError("artisan start: --store, --state, --repo and --step do not apply in a Herdr tab")
+	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "":
+		return a.usageError("artisan start: --store, --state, --repo, --step and --copy do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):

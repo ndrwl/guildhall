@@ -26,7 +26,9 @@ const taskUsage = `usage:
   guildhall task files --store <path> --repo <id> <task> --json
   guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move out-of-scope|duplicate|defer --reason <text> <task>
   guildhall task review --full --store <path> --repo <id> <task>
-  guildhall task start --store <path> --config <director.toml> --state <dir> --repo <id> [--decision <id>] <task>`
+  guildhall task start --store <path> --config <director.toml> --state <dir> --repo <id> [--decision <id>] <task>
+--copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
+config.toml and state`
 
 // dependsOn collects repeated --depends-on flags in the order given.
 type dependsOn []store.TaskRef
@@ -86,6 +88,8 @@ func (a *App) task(args []string) int {
 	full := flags.Bool("full", false, "request a full review")
 	var deps dependsOn
 	flags.Var(&deps, "depends-on", "task this one depends on")
+	var cp copyFlags
+	cp.register(flags)
 	var want int
 	var allowed map[string]bool
 	switch sub {
@@ -124,17 +128,25 @@ func (a *App) task(args []string) int {
 		}
 		remaining = remaining[n:]
 	}
+	allowed["copy"] = true
 	var extra string
 	flags.Visit(func(f *flag.Flag) {
 		if !allowed[f.Name] {
 			extra = f.Name
 		}
 	})
+	var copyConfig *string
+	if sub == "new" {
+		copyConfig = cfgPath
+	}
+	cerr := cp.apply(a.Getenv, path, copyConfig, nil)
 	switch {
 	case extra != "":
 		return a.taskUsage(fmt.Sprintf("--%s does not apply to task %s", extra, sub))
+	case cerr != nil:
+		return a.taskUsage(cerr.Error())
 	case *path == "":
-		return a.taskUsage("--store is required")
+		return a.taskUsage("--store is required, or --copy")
 	case sub == "new" && (*cfgPath == "" || *repo == "" || *title == ""):
 		return a.taskUsage("task new requires --config, --repo and --title")
 	case sub != "new" && sub != "list" && *repo == "":
@@ -165,7 +177,7 @@ func (a *App) task(args []string) int {
 		task.ID, task.Title, task.DependsOn = positional[0], *title, deps
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
-		return fail(fmt.Errorf("no store at %s", *path))
+		return fail(noStore(*path))
 	}
 	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule" && sub != "review", RequireStore: true})
 	if err != nil {

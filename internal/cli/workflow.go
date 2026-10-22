@@ -20,7 +20,9 @@ import (
 const workflowUsage = `usage:
   guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
   guildhall workflow approve --store <path> --config <director.toml> --repo <id> --words-file <path|->
-  guildhall workflow approvals --store <path> [--json]`
+  guildhall workflow approvals --store <path> [--json]
+--copy <dir>, or GUILDHALL_COPY, may stand in for --store, and for --config with --repo: the copy's director.store
+and config.toml`
 
 // listedApproval is one line of workflow approvals: a definition shipped with this release
 // ("release") or one the Guildmaster approved in this store ("guildmaster").
@@ -54,12 +56,22 @@ func (a *App) workflowCmd(args []string) int {
 	repo := flags.String("repo", "", "repository id")
 	wordsFile := flags.String("words-file", "", "approval words file, or - for standard input")
 	asJSON := flags.Bool("json", false, "print JSON")
+	var cp copyFlags
+	cp.register(flags)
 	if err := flags.Parse(args[1:]); err != nil {
 		return a.workflowUsage(err.Error())
 	}
+	// A copy's config is the definition only for approve of a repository's effective workflow.
+	var copyConfig *string
+	if sub == "approve" && *file == "" && *repo != "" {
+		copyConfig = cfgPath
+	}
+	cerr := cp.apply(a.Getenv, path, copyConfig, nil)
 	switch {
+	case cerr != nil:
+		return a.workflowUsage(cerr.Error())
 	case *path == "":
-		return a.workflowUsage("--store is required")
+		return a.workflowUsage("--store is required, or --copy")
 	case flags.NArg() != 0:
 		return a.workflowUsage(fmt.Sprintf("workflow %s takes no arguments", sub))
 	case sub == "approve" && *file != "" && *cfgPath != "":
@@ -102,7 +114,7 @@ func (a *App) workflowCmd(args []string) int {
 		}
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
-		return fail(fmt.Errorf("no store at %s", *path))
+		return fail(noStore(*path))
 	}
 	s, err := store.Open(*path, store.Options{ReadOnly: sub == "approvals", RequireStore: true})
 	if err != nil {

@@ -18,7 +18,8 @@ const messagesUsage = `usage:
   guildhall messages list --store <path> [--after <sequence>] [--limit <n>] <recipient>
   guildhall messages read --store <path> <message-id>
   guildhall messages ack --store <path> <recipient> <message-id>
-a recipient is "director" or "artisan:<repository>/<task>/<step>/<attempt>"`
+a recipient is "director" or "artisan:<repository>/<task>/<step>/<attempt>"
+--copy <dir>, or GUILDHALL_COPY, may stand in for --store: the copy's director.store`
 
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
 // It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
@@ -30,6 +31,8 @@ func (a *App) messages(args []string) int {
 	flags := flag.NewFlagSet("messages "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	path := flags.String("store", "", "store file")
+	var cp copyFlags
+	cp.register(flags)
 	after := flags.Uint64("after", 0, "list messages after this sequence")
 	limit := flags.Int("limit", 20, "list at most this many messages")
 	var want int
@@ -41,14 +44,17 @@ func (a *App) messages(args []string) int {
 	default:
 		return a.messagesUsage(fmt.Sprintf("unknown messages subcommand %q", sub))
 	}
-	if err := flags.Parse(args[1:]); err != nil {
+	if err := parseInterspersed(flags, args[1:]); err != nil {
 		return a.messagesUsage(err.Error())
 	}
 	set := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	cerr := cp.apply(a.Getenv, path, nil, nil)
 	switch {
+	case cerr != nil:
+		return a.messagesUsage(cerr.Error())
 	case *path == "":
-		return a.messagesUsage("--store is required")
+		return a.messagesUsage("--store is required, or --copy")
 	case flags.NArg() != want:
 		return a.messagesUsage(fmt.Sprintf("messages %s takes %d arguments", sub, want))
 	case sub != "list" && (set["after"] || set["limit"]):
@@ -76,7 +82,7 @@ func (a *App) messages(args []string) int {
 	}
 	// Preserve the CLI's missing-store diagnostic before the existing-store-only open.
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
-		return fail(fmt.Errorf("no store at %s", *path))
+		return fail(noStore(*path))
 	}
 	s, err := store.Open(*path, store.Options{ReadOnly: sub == "list" || sub == "read", RequireStore: true})
 	if err != nil {

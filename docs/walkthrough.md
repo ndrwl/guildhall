@@ -3,10 +3,12 @@
 Until the conversational Director is built, you run the steps it will run, yourself, with the `guildhall` commands.
 This page is the full manual walkthrough the [README](../README.md#try-it-today) summarises.
 
-Today's commands take the Director's store file with `--store`; no command creates a store yet, so copy the test store, which holds task `t-1` in repository `app`, and never use the committed file:
+A Director's copy is a directory holding its `config.toml`, its store `director.store` and its `state/` directory; every command below selects it with `--copy demo`, see [copies](running.md#copies).
+Create the copy's store with `store init`, which refuses anything already at that path:
 
 ```sh
-cp internal/store/testdata/schema-v1.store demo.store
+mkdir -p demo/state
+./guildhall store init demo/director.store
 ```
 
 ## 1. Set up a Director
@@ -19,18 +21,17 @@ Start a role through Guildhall rather than running the agent directly, so it get
 
 ## 2. Give it work
 
-The `task new` and `task start` lines need a Director config, `director.toml`, that declares a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](configuration.md) name other repositories, so change one to `app` before using it.
-`task start` also needs a `baseline/` directory beside the config holding `roles/artisan.md` and `stages/<kind>.md`; see [what an advance runs over](running.md#what-an-advance-runs-over).
+The `task new` and `task start` lines need the copy's Director config, `demo/config.toml`, to declare a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](configuration.md) name other repositories, so change one to `app` before using it.
+`task start` also needs a `baseline/` directory beside the config, `demo/baseline/`, holding `roles/artisan.md` and `stages/<kind>.md`; see [what an advance runs over](running.md#what-an-advance-runs-over).
 
 ```sh
-./guildhall task new --store demo.store --config director.toml --repo app --title "Add a health check" t-2
-./guildhall task start --store demo.store --config director.toml --state state --repo app t-2
+./guildhall task new --copy demo --repo app --title "Add a health check" t-1
+./guildhall task start --copy demo --repo app t-1
 ```
 
 A task is one unit of work in one repository; creating it records it and binds the exact workflow and configuration it was accepted under.
 `task start` launches the task's next ready stage as an owned Artisan attempt.
-The engine does not run Director stages yet, and the default workflow's first stage, `grill`, is run by the Director, so to try this give `app` a `[repository.workflow_overrides.grill]` with `actor = "artisan"`.
-The override changes only the actor: for the unattended grill, in which the Artisan proposes answers for you to review at acceptance instead of the Director interviewing you, the workflow's grill step must also list `guildhall-grill-unattended` in its `skills`.
+The engine does not run Director stages yet, and the default workflow's first stage, `grill`, is run by the Director, so until it does, give `app` a workflow without Director stages; see [configuration and workflows](configuration.md).
 Nothing waits in the background yet, so you run `guildhall step done` once an attempt's result file exists; see [tasks](tasks.md) and [running a task](running.md).
 
 Each task follows a workflow.
@@ -52,8 +53,8 @@ A repository can have you review instead of an Artisan without changing any othe
 ## 3. Watch it
 
 ```sh
-./guildhall task list --store demo.store --json
-./guildhall task timeline --store demo.store --repo app t-1 --json
+./guildhall task list --copy demo --json
+./guildhall task timeline --copy demo --repo app t-1 --json
 ```
 
 `task show`, `timeline` and `files` read a task's attempts, decisions and documents without changing anything; `guildhall artisan status` classifies one Artisan attempt; see [Artisan commands](artisan.md#commands).
@@ -65,9 +66,9 @@ Directors and Artisans also exchange informational [messages](messaging.md), whi
 Decisions waiting for you are listed per machine; there is no push service.
 
 ```sh
-./guildhall decide list --store demo.store
-./guildhall decide show --store demo.store --repo app --task t-1 --decision <id>
-printf 'approve\n\nKeep the migration behind a flag.\n' | ./guildhall decide answer --store demo.store --repo app --task t-1 --decision <id> --answer-file -
+./guildhall decide list --copy demo
+./guildhall decide show --copy demo --repo app --task t-1 --decision <id>
+printf 'approve\n\nKeep the migration behind a flag.\n' | ./guildhall decide answer --copy demo --repo app --task t-1 --decision <id> --answer-file -
 ```
 
 Your exact words are recorded; for a decision offering `approve` and `reject`, a leading `approve` is taken as the choice and the rest as a note.
@@ -83,33 +84,34 @@ To stop one running Artisan attempt, use `guildhall artisan stop`; see [Artisan 
 
 ### Send and acknowledge a message
 
+With the copy from above; the output shown is for a copy where only `task new` has run, so `task start` and answered decisions add their own receipts and records:
+
 ```sh
-cp internal/store/testdata/schema-v1.store demo.store
 cat > note.json <<'EOF'
 {"schema": "guildhall.message/1", "id": "t-1-note-1", "recipient": "director", "repository": "app", "task": "t-1", "type": "note", "text": "Build finished; the plan is ready for review."}
 EOF
-./guildhall messages send --store demo.store director note.json
-./guildhall messages list --store demo.store director
-./guildhall messages ack --store demo.store director t-1-note-1
-./guildhall store doctor demo.store
+./guildhall messages send --copy demo director note.json
+./guildhall messages list --copy demo director
+./guildhall messages ack --copy demo director t-1-note-1
+./guildhall store doctor --copy demo
 ```
 
 `send` prints the receipt only after the message is committed, and sending the same envelope again prints the same receipt and stores nothing new:
 
 ```json
-{"mutation_id":"message:t-1-note-1","operation":"send-message","request_digest":"sha256:8c4f3149fed51b4795c3dedf5bb628671bd249f1c5923c77723be239346f628f","repository":"app","task_id":"t-1","sequence":8,"committed_at":"2026-10-20T19:06:04.839891945Z"}
+{"mutation_id":"message:t-1-note-1","operation":"send-message","request_digest":"sha256:8c4f3149fed51b4795c3dedf5bb628671bd249f1c5923c77723be239346f628f","repository":"app","task_id":"t-1","record":"message/t-1-note-1","sequence":2,"committed_at":"2026-10-22T07:56:28.47136214Z"}
 ```
 
 `list` shows the unacknowledged message, and after `ack` the inbox is empty while the message stays readable by id:
 
 ```console
-$ ./guildhall store doctor demo.store
-store: demo.store
+$ ./guildhall store doctor --copy demo
+store: demo/director.store
 schema_version: 1 (supported: 1)
 integrity: ok
-receipts: 9
+receipts: 3
 workflow approvals: 0
-repository app: tasks 1, attempts 1, documents 1, pane bindings 1, decisions 1, rulings 0, owners 0 (0 starting without containment), messages 1 (0 unread)
+repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 0, rulings 0, owners 0 (0 starting without containment), messages 1 (0 unread)
 ```
 
 ### Preview a Steward rollout

@@ -34,7 +34,7 @@ func TestResumeArgvShape(t *testing.T) {
 	if err := fl.Parse(argv[3:]); err != nil || fl.NArg() != 0 {
 		t.Fatalf("resume flags %q do not parse: %v, %q", argv[3:], err, fl.Args())
 	}
-	got, err := f.parse()
+	got, err := f.parse(nil)
 	if err != nil || got != at {
 		t.Errorf("resume flags name %+v (%v), want %+v", got, err, at)
 	}
