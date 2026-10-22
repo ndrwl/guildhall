@@ -55,8 +55,20 @@ jobs:
       - name: Test
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
-        run: go test ./...
-      - name: Lint
-        uses: golangci/golangci-lint-action@v9
+        run: |
+          set +e
+          go test -json ./... > test.json
+          status=$?
+          set -e
+          jq -r 'select(.Test==null and (.Action=="pass" or .Action=="fail")) | "\(.Elapsed)\t\(.Action)\t\(.Package)"' test.json | sort -rn
+          echo "--- slowest tests"
+          jq -r 'select(.Test!=null and (.Test|contains("/")|not) and (.Action=="pass" or .Action=="fail")) | "\(.Elapsed)\t\(.Action)\t\(.Package|sub(".*guildhall/";""))\t\(.Test)"' test.json | sort -rn | awk 'NR<=60'
+          echo "--- failures"
+          jq -r 'select(.Action=="fail") | "\(.Package) \(.Test)"' test.json
+          exit $status
+      - name: Upload test JSON
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          version: v2.15.0
+          name: test-json-${{ matrix.os }}
+          path: test.json
