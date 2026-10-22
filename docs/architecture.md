@@ -8,7 +8,7 @@ The product requirements are in [requirements.md](requirements.md).
 Everything a Director does for you is a `guildhall` command, and the commands are the only way anything changes the store.
 The same commands serve three callers:
 
-- **The Director**, which calls them through its rendered skills (see [prompt rendering](rendering.md)); every request in the [README conversation](../README.md#talking-to-your-director-planned) maps to a command in the [README list](../README.md#the-commands).
+- **The Director**, which calls them through its rendered skills (see [prompt rendering](rendering.md)); every request in the [README conversation](../README.md#how-you-will-use-it) maps to a command in the [README list](../README.md#the-commands).
 - **You, directly**, when no Director is running, when you want to script something, or when you want to inspect a task yourself; see the [walkthrough](walkthrough.md).
 - **An outside monitor**, such as the planned read-only Claude status band (R1.26), which reads status by calling `guildhall` with `--json` and is never state or lifecycle authority.
 

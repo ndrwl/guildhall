@@ -11,7 +11,7 @@ It plans the work, hands each piece to an agent working in its own copy of your 
 Everything is written down as it happens, so closing a terminal or restarting your machine never loses work.
 
 > **Status: early, not ready for real work.**
-> Guildhall builds and runs on Linux, Windows and macOS, but no agent runtime or platform is supported for real work yet.
+> Guildhall builds and its tests pass in CI on Linux, Windows and macOS, but no agent runtime or platform is supported for real work yet.
 > The conversational Director described below is **planned, not built**.
 > What you can try today is driving the same steps by hand with the `guildhall` commands; see [Try it today](#try-it-today) and [What works today](#what-works-today).
 
@@ -20,8 +20,11 @@ Everything is written down as it happens, so closing a terminal or restarting yo
 Coding agents are good at doing one task while you watch.
 Guildhall is for when you want several of them working while you don't:
 
-- **One conversation, many agents.** You talk to one Director per machine, not to each agent. It keeps track of every task and agent for you.
-- **You make the calls.** Plans, questions and merges wait for your answer, and waiting costs no model tokens. Agents never merge on their own say-so.
+- **One conversation, many agents.** You talk to a Director, not to each agent.
+  It keeps track of every task and agent for you.
+- **You make the calls.** Plans and questions wait for your answer, and so do merges unless you set a repository to merge automatically.
+  Waiting costs no model tokens.
+  Agents never merge on their own say-so.
 - **Your rules hold.** Each repository has its own merge policy and workflow, for example "a human reviews every change here", and a workflow cannot run arbitrary commands.
 - **Nothing gets lost.** Task state lives in a file on disk, not in an agent's chat history or a terminal tab.
 - **Your machines, your agents.** It runs on hardware you own and is built to work with agent tools such as Claude Code, so you can switch runtimes without losing work.
@@ -30,10 +33,11 @@ Guildhall is for when you want several of them working while you don't:
 
 Once the Director is built, these are the kinds of jobs Guildhall is designed for:
 
-- **Hand off a backlog.** "Add a health check endpoint, fix the flaky login test, and update the README." Each becomes its own task; independent tasks run in parallel.
+- **Hand off a backlog.** "Add a health check endpoint, fix the flaky login test, and update the README."
+  Each becomes its own task; independent tasks run in parallel.
 - **Plan first, then build.** Each task is researched and planned, and you accept the plan before any code is written.
 - **Reviewed changes, not raw diffs.** A second agent reviews each change against the plan you accepted before it comes to you to merge.
-- **Several repositories, several machines.** Run a Director per machine, each covering one or more repositories, and keep shared settings in step with an optional Steward.
+- **Several repositories, several machines.** Run a Director for one or more repositories on each machine, and keep shared settings in step with an optional Steward.
 
 ## How you will use it
 
@@ -72,7 +76,7 @@ See [configuration and workflows](docs/configuration.md).
 - To try the task commands: a git checkout of a repository to work on.
 - Optional, depending on what you try: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) for the minimal Claude adapter, `gh` for publishing and merging pull requests on GitHub, `ssh` for Steward rollouts, and Herdr, a terminal multiplexer, for showing agents in tabs.
 
-`guildhall doctor` tells you which of these it can find.
+`guildhall doctor` tells you which of `git`, `ssh`, `claude` and `herdr` it can find; it does not check for Go or `gh`.
 
 ## Install
 
