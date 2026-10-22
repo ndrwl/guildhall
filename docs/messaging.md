@@ -93,7 +93,7 @@ The fake is not durable and not shared between processes.
 
 Flags come before the positional arguments.
 Each command prints one JSON document on success and exits 0; it exits 1 when the store is missing, locked, refuses the request or fails, and 2 on a usage error, printing the reason on standard error.
-No command creates a store.
+No messages command creates a store; [`store init`](store.md#guildhall-store-init) does.
 
 - `guildhall messages send --store <path> <recipient> <envelope-file|->` stores a message and prints its receipt.
   `-` reads the envelope from standard input.
