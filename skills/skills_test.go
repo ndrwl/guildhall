@@ -591,14 +591,16 @@ var directorSkills = []string{
 
 // notAskedOfTheDirector lists the README commands the Guildmaster never asks the Director to run, with why.
 var notAskedOfTheDirector = map[string]string{
-	"help":            "the Director answers in plain English",
-	"store init":      "a store exists before any Director runs",
-	"director start":  "the Guildmaster starts the Director; a session cannot start itself",
-	"artisan start":   "task start and step retry launch every attempt",
-	"fake-artisan":    "a test wrapper artisan start runs",
-	"claude-artisan":  "the Claude wrapper artisan start runs",
-	"steward rollout": "the Steward's command, not the Director's",
-	"render":          "the engine renders every prompt",
+	"help":                  "the Director answers in plain English",
+	"store init":            "a store exists before any Director runs",
+	"director start":        "the Guildmaster starts the Director; a session cannot start itself",
+	"artisan start":         "task start and step retry launch every attempt",
+	"fake-artisan":          "a test wrapper artisan start runs",
+	"claude-artisan":        "the Claude wrapper artisan start runs",
+	"steward rollout":       "the Steward's command, not the Director's",
+	"render":                "the engine renders every prompt",
+	"director turn-started": "the runtime's hook runs it when a turn starts",
+	"director turn-ended":   "the runtime's hook runs it when a turn ends",
 }
 
 // readmeCommand finds each `guildhall <command>` in the README's command list.
