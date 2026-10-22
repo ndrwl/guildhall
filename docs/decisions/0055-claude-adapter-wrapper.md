@@ -1,4 +1,4 @@
-# The Claude adapter runs print mode under a wrapper that owns the result
+# D55. The Claude adapter runs print mode under a wrapper that owns the result
 
 The first Claude adapter runs `claude --print` for one attempt, as an owned attempt, under `guildhall claude-artisan`, a wrapper in the same binary.
 Claude reads a copy of the prompt and writes a draft in the attempt's model directory, the only directory it may write besides its worktree; the wrapper publishes the draft's bytes as the result by hard link once Claude exits.

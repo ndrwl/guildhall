@@ -1,4 +1,4 @@
-# Delivery pushes a task branch, opens a pull request and merges it under the merge policy
+# D60. Delivery pushes a task branch, opens a pull request and merges it under the merge policy
 
 The engine now runs `publish` and the merge half of `deliver` (requirements R1.12, R1.36 and R1.63) through a forge boundary, [`internal/forge`](../contracts/forge.md), consumed as `interp.Forge` ([publish and deliver](../interpreter.md#publish-and-deliver)).
 The Guildmaster chose each product question below from the recommended options on 2026-10-21, on the principle that Guildhall prescribes only the edges of delivery (the push target, the pull request, merging under the policy, never force-pushing the base and never bypassing protection), repository configuration sets defaults, and agents use git freely inside their task copy and decide recovery.

@@ -111,7 +111,7 @@ flowchart TB
     RENDER["Prompt rendering<br/>and skills"]:::built
     WRAP["Artisan launcher<br/>containment, endpoint, stop ladder"]:::built
     ADAPT["Adapter contract<br/>and fake adapter"]:::built
-    RT["Runtime adapter<br/>Claude Code first"]:::planned
+    RT["Runtime adapter<br/>minimal Claude Code adapter"]:::built
     EXEC["Docker execution<br/>environment"]:::planned
     HERDR["Herdr tab<br/>presentation only"]:::built
 
@@ -132,9 +132,10 @@ flowchart TB
 Green boxes are on `main`; grey dashed boxes are designed but not built, and dotted arrows are connections not yet wired.
 
 - The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; see [Artisan commands](artisan.md#commands) for the implemented fake-adapter integration.
-  Starting a real agent through a runtime adapter and delivering stored messages to it are not wired yet.
-- A **runtime adapter** launches an agent's normal interactive session with a prompt file and working directory; an attempt completes only when the Artisan writes a valid result file, not when a process exits or a terminal closes.
-  See [adapters](adapters.md) for the implemented fake adapter and current runtime support.
+  `guildhall task start` launches a real agent through the minimal Claude adapter; delivering stored messages to it is not wired yet.
+- A **runtime adapter** launches an agent's session with a prompt file and working directory; an attempt completes only when the Artisan writes a valid result file, not when a process exits or a terminal closes.
+  The only built runtime adapter, the [Claude adapter](adapters.md#claude-adapter), runs a print-mode session under a wrapper; the designed interactive session, including the Director's, is not built.
+  See [adapters](adapters.md) for the fake adapter and the session mode each adapter runs.
 - The **execution environment** is the local machine first; a Docker environment is a planned separate boundary and is not built.
 - **Herdr**, a terminal multiplexer, shows each Director and Artisan in its own tab.
   A tab is a presentation binding only: closing it, restarting Herdr or rebooting never changes task state or loses work.

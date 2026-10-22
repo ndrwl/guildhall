@@ -1,4 +1,4 @@
-# One package owns the runtime names
+# D58. One package owns the runtime names
 
 The choice of runtime was spelled in three places across two processes: `launch.Process` held a list of the adapters it would launch, `artisan start` a map from name to adapter, and its Herdr tab path built the fake directly; the conformance suite's spec mapping, `interp.Spec.AdapterSpec`, was not the one the launcher sent (sustainability review 9, F28).
 Every new runtime would have had to edit each site, and a drift between the suite's spec and the launcher's arguments was caught only end to end.

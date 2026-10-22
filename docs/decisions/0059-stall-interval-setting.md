@@ -1,4 +1,4 @@
-# Stall observation is on by default through a config setting
+# D59. Stall observation is on by default through a config setting
 
 The interpreter's worker-stalled observation was off in production: `task start` and `step done` built the engine without `Engine.StallInterval`, and the setting had no home in the config, so the one observation the engine makes about a running worker never reached the Director (sustainability review 9, F26).
 
