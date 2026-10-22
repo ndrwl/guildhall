@@ -92,7 +92,8 @@ A Director stage is a step whose `actor` setting is `director`, such as the defa
 The engine runs it as an attempt, so everything after the attempt's result is the Artisan path unchanged:
 
 1. With no attempt yet, the engine resolves the inputs (no adapter is checked), records the attempt's binding and attempt `n` with `StartAttempt`, makes the [working directory](#the-working-directory) ready and [prepares](#attempt-preparation) `<step>-<n>/prompt` through `Prompter`, which renders the Director's role (`roles/director.md`, or the config's `[director] role`), the step's stage guide, its `skills` and its inputs.
-2. It launches nothing. It sends the Director message `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, naming the step, the prompt's path, the kind's output ports and the `step finish` command that ends the stage; the CLI's outbox wakes the Director for it, once, as for every Director message.
+2. It launches nothing.
+   It sends the Director message `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, naming the step, the prompt's path, the kind's output ports and the `step finish` command that ends the stage; the CLI's outbox wakes the Director for it, once, as for every Director message.
 3. It then writes `launched.json` as `{"launcher":"director","identity":{...}}`, with no process, and returns `{"wait":"director-stage","step":<step>,"attempt":<n>}`.
 
 A crash between recording the attempt and the mark replays the hand-off from the published preparation: nothing is rendered again, and the message, sent again under the same id, is a replay that neither stores nor wakes twice.
