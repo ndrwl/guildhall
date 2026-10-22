@@ -1,4 +1,4 @@
-# The quality rubric ships as a document and a Director skill, each practice behind a setting
+# D83. The quality rubric ships as a document and a Director skill, each practice behind a setting
 
 The Guildmaster accepted the engineering-quality research's six recommendations, each behind configuration so every practice stays optional.
 This change ships the first two pieces: the [rubric](../quality.md) as the scored and trend layer above the review standard's S1 to S11, and the [`guildhall-self-review`](../../skills/guildhall-self-review/SKILL.md) skill that records a delivered task against it.
