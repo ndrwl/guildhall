@@ -48,6 +48,8 @@ Commands:
                  advance a task, launching its next ready stage
   step done --store <path> --config <file> --state <dir> ...
                  take one attempt's result file and advance its task
+  step retry --store <path> --config <file> --state <dir> ...
+                 start the next attempt after a failed or stopped one
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
   help           print this help
@@ -160,7 +162,7 @@ func (a *App) Run(args []string) int {
 		}
 		return a.task(rest)
 	case "step":
-		return a.stepDone(rest)
+		return a.step(rest)
 	case "decide":
 		return a.decide(rest)
 	default:

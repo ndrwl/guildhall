@@ -1,0 +1,40 @@
+Red runs for the attempt-retried event and step retry (F27), 2026-10-22, on 5b2d221 with the branch's tests.
+
+## interp: go test ./internal/interp -run TestRetry, engine with AttemptRetried declared and not handled
+--- FAIL: TestRetryStartsTheNextAttempt (0.10s)
+        retry_test.go:30: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:the runner was killed}) = interp: event does not match the task's records: unknown event kind "attempt-retried"
+        retry_test.go:30: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:the runner was killed}) = interp: event does not match the task's records: unknown event kind "attempt-retried"
+--- FAIL: TestRetryWithoutAReasonSendsNoMessage (0.01s)
+    retry_test.go:75: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) = interp: event does not match the task's records: unknown event kind "attempt-retried"
+--- FAIL: TestRetryOfAStoppedAttempt (0.08s)
+    retry_test.go:91: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) = interp: event does not match the task's records: unknown event kind "attempt-retried"
+--- FAIL: TestRetryIsRefusedUnlessTheLatestAttemptFailedOrStopped (0.07s)
+        retry_test.go:134: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) = interp: event does not match the task's records: unknown event kind "attempt-retried"
+--- FAIL: TestRetryCarriesPendingFeedback (0.15s)
+    retry_test.go:168: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:2 Decision: Reason:}) = interp: event does not match the task's records: unknown event kind "attempt-retried"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.429s
+FAIL
+
+## interp: TestRetryCarriesPendingFeedback with retry handled and a failed attempt still counted as serving its feedback
+--- FAIL: TestRetryCarriesPendingFeedback (0.17s)
+    script.go:209: mock agent: manifest lacks required input "feedback"
+    retry_test.go:168: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:2 Decision: Reason:}) = interp: app/t7 step plan: launch attempt 3: mock agent: manifest lacks required input "feedback"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.175s
+FAIL
+
+## cli: go test ./internal/cli -run 'TestStepRetry|TestTaskStartAndStepDoneUsage', production code at 5b2d221
+--- FAIL: TestStepRetryRefusesASucceededAttempt (0.25s)
+    advance_test.go:165: retry of a succeeded attempt: exit 2, "", stderr guildhall: step: the only command is done
+    advance_test.go:171: help does not list step retry: (the help text that followed is omitted)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.263s
+FAIL
+
+## cmd/guildhall: go test ./cmd/guildhall -run TestRetryAfterAKilledLauncher, production code at 5b2d221
+--- FAIL: TestRetryAfterAKilledLauncher (0.83s)
+    run_test.go:279: guildhall step retry --store <tmp>/director.store --config <tmp>/config.toml --state <tmp> --repo app --task t-1 --step plan --attempt 1 --reason The launcher was killed; try again.: exit status 2
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	0.833s
+FAIL

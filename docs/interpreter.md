@@ -3,7 +3,7 @@
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
 It follows `changes_requested` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review gate before `deliver`, and [publishes and merges](#publish-and-deliver) through the forge; the checks gate, `validate`, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
-[`task start` and `step done`](running.md) run it from the command line; the per-task watcher is later work.
+[`task start`, `step done` and `step retry`](running.md) run it from the command line; the per-task watcher is later work.
 
 ## Seams
 
@@ -29,7 +29,7 @@ The engine persists that revision, the subject, and (for code review) the accept
 ## Worker-stalled observations
 
 Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; nonpositive values disable them.
-`task start` and `step done` set it from the config's [`stall_interval`](configuration.md#settings), 15 minutes unless the config says otherwise, so the observation is on in production.
+`task start`, `step done` and `step retry` set it from the config's [`stall_interval`](configuration.md#settings), 15 minutes unless the config says otherwise, so the observation is on in production.
 `Engine.Now` supplies the clock in tests and defaults to wall time.
 When an advance reaches a launched, unfinished attempt with no result, the engine reads the launcher's [`heartbeat.json`](artisan.md#heartbeat) from the attempt directory beside `launched.json` with `artisan.ReadHeartbeat`; a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
 Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
@@ -45,8 +45,10 @@ There is no seam: like `launched.json` and `result.json`, the file is read from 
 | `task-created` | The task exists and is open. | Nothing by itself. |
 | `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. When its launcher already recorded the outcome, that outcome stands, and a succeeded one has its outputs recorded by the next advance, whatever its event. |
 | `decision-answered` | The named decision exists and is answered. | Nothing by itself: the answer is already recorded. |
+| `attempt-retried` | The named attempt of the named step exists, finished `failed` or `stopped`, and is the step's latest. When the step's latest attempt is the next one, the event is a replay. | The step's next attempt, started as a first attempt starts; once it has launched, the Director's reason, when given, as message `<repo>.<task>.attempt-retried.<step>-<n>`, type `attempt-retried`. A replay launches the next attempt if it was recorded but not launched, and records nothing but that message, sent again when it is missing. |
 
 Any other event, or one that does not match the records, is refused with `ErrEvent` and changes nothing.
+So `attempt-retried` is refused for a running or succeeded attempt, for one a later attempt of the step follows other than its retry, and for an unknown step or attempt; a closed task is refused with `ErrTaskClosed`, as for every event.
 
 ## Advance
 
@@ -54,7 +56,8 @@ After intake, the engine walks the steps in order, from the records, and stops a
 
 - **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records the attempt's [binding](#rounds-and-loops) and attempt `n`, [prepares](#attempt-preparation) its prompt in `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt.
   A succeeded attempt completes the step while it is current; a review step's outcome must also not block (see [rounds and loops](#rounds-and-loops)).
-  A failed or stopped attempt waits for the Director, who is told through the outbox.
+  A failed or stopped attempt waits for the Director, who is told through the outbox; the Director's `attempt-retried` for it starts the next attempt exactly as a first attempt starts: inputs bound again, prompt prepared, launched and marked `launched.json`.
+  Attempts are not capped (R1.34): each retry is the Director's decision.
 - **Guildmaster step.** The engine opens decision `<step>-<round>` with the question and options `render.Question` gives, bound to its subject, and waits.
   An answer counts only while its subject is unchanged; when the subject moved, the next round is asked.
   An `approved` answer completes the step; a Guildmaster approval then records the approved document as the accepted spec, `<step>-<round>-spec`.
@@ -122,6 +125,7 @@ Besides its wired inputs, an attempt may be given:
 - `rulings`: the Director's [rulings](#director-rulings) on findings of a review step's previous outcome, recorded first as document `<step>-<n>-rulings` (`tasks/<repo>/<task>/<step>-<n>.rulings.json`), a JSON array of rulings;
 - `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`).
 
+Feedback a failed or stopped attempt was given is still pending, so the attempt that retries it is given it again.
 A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.
 So when a looped build lands a new head, every review after it runs again on that head.
 

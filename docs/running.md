@@ -1,12 +1,13 @@
 # Running a task
 
-`guildhall task start` and `guildhall step done` drive a task through the [interpreter](interpreter.md) from the command line.
+`guildhall task start`, `guildhall step done` and `guildhall step retry` drive a task through the [interpreter](interpreter.md) from the command line.
 Each runs one `interp.Engine.Advance` and prints where the task now stands; launching an Artisan attempt runs it as its own [owned launcher](artisan.md#commands) process, which outlives the command.
 Nothing waits in the background yet: the per-task watcher that waits on the result file and calls `step done` is the next slice, so today the caller runs `step done` once the result file exists.
 
 ```sh
 guildhall task start --store <file> --config <director.toml> --state <dir> --repo <id> [--decision <id>] <task>
 guildhall step done --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> --result <file>
+guildhall step retry --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> [--reason <text>]
 ```
 
 ## What an advance runs over
@@ -42,9 +43,19 @@ It then feeds `attempt-result`: a succeeded result's outputs are recorded as doc
 The attempt's launcher records its store outcome when it decides the attempt, which may be before or after `step done`.
 The [interpreter's recovery contract](interpreter.md#replay-and-recovery) defines intake replay and outcome reconciliation when these operations overlap.
 
+## `step retry`
+
+`step retry` is the Director's decision after a failed or stopped attempt, which leaves the task waiting with `{"wait":"director",...}`.
+It feeds [`attempt-retried`](interpreter.md#events) for attempt `--attempt` of `--step`: valid only when that attempt is the step's latest and finished `failed` or `stopped`, and the task is open.
+The engine then starts the next attempt exactly as `task start` starts a first one, and prints `{"wait":"attempt",...}` for it.
+`--reason`, when given, is recorded as the Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the next attempt has launched, so `task timeline` shows why the attempt was retried.
+A retry whose start or launch fails exits 1 and sends no reason, so it can be repeated with another reason; when the next attempt was recorded but not launched, the repeat launches it.
+A running or succeeded attempt, or one a later attempt already follows, is refused with exit status 1 and nothing is recorded; repeating the command after the next attempt launched prints what the task waits for and writes nothing beyond the reason, if an interrupted retry had not yet sent it.
+An attempt whose launcher died is first settled with [`artisan resume`](artisan.md#commands).
+
 ## Output and exit status
 
-Both print one JSON line, what the task waits for: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`) or, once the merge landed, `{"wait":"done","step":"deliver"}`.
+All three print one JSON line, what the task waits for: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`) or, once the merge landed, `{"wait":"done","step":"deliver"}`.
 
 | Exit status | Meaning |
 |---|---|

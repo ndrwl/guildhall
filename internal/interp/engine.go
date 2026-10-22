@@ -35,6 +35,8 @@ const (
 	AttemptResult EventKind = "attempt-result"
 	// DecisionAnswered: the Guildmaster answered one of the task's decisions.
 	DecisionAnswered EventKind = "decision-answered"
+	// AttemptRetried: the Director asked for the next attempt of a step whose latest attempt failed or stopped.
+	AttemptRetried EventKind = "attempt-retried"
 )
 
 // Event is one thing that happened to a task, given to Engine.Advance.
@@ -42,11 +44,13 @@ type Event struct {
 	Kind       EventKind
 	Repository string
 	Task       string
-	// Step and Attempt name the attempt whose result arrived (AttemptResult only).
+	// Step and Attempt name the attempt whose result arrived (AttemptResult) or that is retried (AttemptRetried).
 	Step    string
 	Attempt int
 	// Decision is the id of the answered decision (DecisionAnswered only).
 	Decision string
+	// Reason is the Director's reason for a retry, recorded as a Director message when not empty (AttemptRetried only).
+	Reason string
 }
 
 // Wait says what a task waits for after an advance.
@@ -113,7 +117,8 @@ var (
 //     the Director (docs/interpreter.md#publish-and-deliver).
 //
 // A succeeded result copies the attempt's outputs into DocumentDir and records them as documents, the
-// first under the step's output port; a failed or stopped attempt waits for the Director.
+// first under the step's output port; a failed or stopped attempt waits for the Director, whose
+// attempt-retried for it starts the step's next attempt as a first attempt starts.
 // Each Artisan attempt first records its binding, what it was given; it stands while that is current.
 // A blocking review outcome or changes_requested answer follows the step's loop rule up to its max,
 // then opens a loop-exit decision; deliver first checks the review gate (docs/interpreter.md#rounds-and-loops).
@@ -225,6 +230,8 @@ type run struct {
 	ctx  context.Context
 	task store.Task
 	def  *workflow.Definition
+	// retry is the attempt-retried event whose failed or stopped attempt the walk follows with the next.
+	retry *Event
 	*history
 }
 
@@ -270,6 +277,8 @@ func (r *run) intake(ev Event) error {
 			return nil
 		}
 		return r.takeResult(r.def.Steps[i], a)
+	case AttemptRetried:
+		return r.retried(ev)
 	case DecisionAnswered:
 		d := r.decision(ev.Decision)
 		switch {
@@ -282,6 +291,35 @@ func (r *run) intake(ev Event) error {
 	default:
 		return fmt.Errorf("interp: %w: unknown event kind %q", ErrEvent, ev.Kind)
 	}
+}
+
+// retried validates a retry of attempt n of a step: n must have finished failed or stopped and be the step's
+// latest attempt, which the walk then follows with the next. When attempt n+1 already exists the event is a
+// replay: it resends the reason once n+1 has launched, launching it first when it has not; any other attempt is
+// refused.
+func (r *run) retried(ev Event) error {
+	a := r.attempt(ev.Step, ev.Attempt)
+	if !slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == ev.Step }) || a == nil {
+		return fmt.Errorf("interp: %w: no attempt %d of step %q", ErrEvent, ev.Attempt, ev.Step)
+	}
+	if a.Outcome != store.AttemptFailed && a.Outcome != store.AttemptStopped {
+		state := string(a.Outcome)
+		if state == "" {
+			state = "running"
+		}
+		return fmt.Errorf("interp: %w: attempt %d of step %s is %s; only a failed or stopped attempt is retried", ErrEvent, a.Number, a.Step, state)
+	}
+	switch latest := r.latestAttempt(ev.Step).Number; latest {
+	case ev.Attempt:
+	case ev.Attempt + 1:
+		if exists(filepath.Join(r.attemptDir(ev.Step, ev.Attempt+1), launchedFile)) {
+			return r.retryReason(ev)
+		}
+	default:
+		return fmt.Errorf("interp: %w: attempt %d of step %s is not its latest, %d", ErrEvent, a.Number, a.Step, latest)
+	}
+	r.retry = &ev
+	return nil
 }
 
 // step moves the task through one step and reports whether it is complete; when it is not,
@@ -324,7 +362,10 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 		if err != nil {
 			return false, Next{}, err
 		}
-		return false, next, r.launch(s, a.Number, name, r.boundInputs(b))
+		return false, next, r.retryLaunched(s.ID, a.Number, r.launch(s, a.Number, name, r.boundInputs(b)))
+	case a.Outcome != store.AttemptSucceeded && r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt == a.Number:
+		next, err := r.start(s)
+		return false, next, r.retryLaunched(s.ID, next.Attempt, err)
 	case a.Outcome != store.AttemptSucceeded:
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), "attempt-failed",
 			fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome))
@@ -364,6 +405,30 @@ func (r *run) prepare(s workflow.Step) (string, []render.Input, error) {
 	}
 	inputs, err := r.inputs(s)
 	return name, inputs, err
+}
+
+// retryLaunched sends the reason of the retry that attempt n of step follows once its launch succeeded, so a
+// refused start or launch sends nothing.
+func (r *run) retryLaunched(step string, n int, err error) error {
+	ev := r.retry
+	if err != nil || ev == nil || ev.Step != step || ev.Attempt+1 != n {
+		return err
+	}
+	r.retry = nil
+	return r.retryReason(*ev)
+}
+
+// retryReason sends the Director's reason for a retry under an id derived from the retried attempt, so a replay
+// resends it. A replay with a different reason conflicts with the one already sent and is ignored.
+func (r *run) retryReason(ev Event) error {
+	if ev.Reason == "" {
+		return nil
+	}
+	err := r.notify(fmt.Sprintf("attempt-retried.%s-%d", ev.Step, ev.Attempt), "attempt-retried", ev.Reason)
+	if errors.Is(err, store.ErrMutationConflict) {
+		return nil
+	}
+	return err
 }
 
 // start records the step's binding and its next attempt, then launches it with its wired inputs plus

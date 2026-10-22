@@ -359,7 +359,8 @@ func bindingName(step string, n int) string {
 // served reports whether an attempt of step t was given the firing as feedback.
 func (h *history) served(t string, f firing) (bool, error) {
 	for _, a := range h.attempts {
-		if a.Step != t {
+		// A failed or stopped attempt did not act on its feedback, so the retry that follows it is given it again.
+		if a.Step != t || a.Outcome == store.AttemptFailed || a.Outcome == store.AttemptStopped {
 			continue
 		}
 		b, err := h.binding(t, a.Number)
