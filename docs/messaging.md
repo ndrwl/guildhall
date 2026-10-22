@@ -145,7 +145,7 @@ Otherwise nothing is typed and the wake is recorded `queued` with its reason, an
 | `no session` | No Director session has been recorded. |
 | `paused`, `stopping`, `stopped` | The newest session is in that state; a paused Director is not woken. |
 | `no pane` | The session has no bound pane: it runs in a terminal Guildhall did not create. |
-| `nothing unread` | The Director has no unread message, for example it read this one before the wake counted. |
+| `nothing unread` | The Director has no unread message: this one was acknowledged before the wake counted unread messages. |
 | `runtime not running` | The pane's shell is idle, so the Director's runtime has ended and the line would reach a shell prompt. |
 | `pane: <error>` | Herdr refused or failed the typing, for example a closed tab. |
 
