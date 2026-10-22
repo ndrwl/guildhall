@@ -315,6 +315,49 @@ func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {
 	}
 }
 
+// TestTheWatcherReportsASetupFailure: from a copy, a plan attempt whose launcher cannot listen on its endpoint
+// fails at setup; task start returns that error at once rather than waiting out the launcher, so the launcher's
+// task start takes the task lock and sends the Director attempt-failed.
+func TestTheWatcherReportsASetupFailure(t *testing.T) {
+	d, dir := newRunCopy(t)
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	path, err := artisan.EndpointPath(d.state, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	begun := time.Now()
+	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1"); code == 0 || !strings.Contains(stderr, "plan") {
+		t.Fatalf("task start over a setup failure: exit %d, %q, stderr %s; want the launch error", code, out, stderr)
+	}
+	if took := time.Since(begun); took > 10*time.Second {
+		t.Errorf("task start took %v to report the setup failure; want no wait for the launcher's advance", took)
+	}
+	var msg store.Message
+	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err == nil {
+			msg, err = s.Message("app.t-1.attempt-failed.plan-1")
+			_ = s.Close()
+		}
+		if err == nil {
+			break
+		}
+		if time.Now().After(end) {
+			log, _ := os.ReadFile(filepath.Join(k.Dir(d.state), launch.LogFile))
+			t.Fatalf("no attempt-failed message within a minute: %v; plan-1 launcher log:\n%s", err, log)
+		}
+	}
+	if msg.Type != "attempt-failed" {
+		t.Errorf("message %+v, want attempt-failed", msg)
+	}
+	if got := d.attempts(t); len(got) != 1 || got[0].Outcome != store.AttemptFailed {
+		t.Errorf("attempts %+v, want plan-1 failed", got)
+	}
+}
+
 // TestArtisanStartAdvanceNeedsACopy: --advance advances over a copy, so without one it is a usage error.
 func TestArtisanStartAdvanceNeedsACopy(t *testing.T) {
 	d := runDirector{store: "s", config: "c", state: "st"}

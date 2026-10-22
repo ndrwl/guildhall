@@ -81,3 +81,13 @@ FAIL
 FAIL
 FAIL	github.com/ndrwl/guildhall/cmd/guildhall	181.844s
 FAIL
+
+$ go test ./internal/cli -run TestTheWatcherReportsASetupFailure -count=1   # review regression, before the fix to Process.owned
+--- FAIL: TestTheWatcherReportsASetupFailure (90.14s)
+    advance_test.go:300: task start took 30.05411757s to report the setup failure; want no wait for the launcher's advance
+    advance_test.go:314: no attempt-failed message within a minute: store: record not found: message "app.t-1.attempt-failed.plan-1"; plan-1 launcher log:
+        guildhall: lock task app/t-1: context deadline exceeded
+        guildhall: artisan: leftover endpoint file cannot be proven stale: /tmp/gc1632455034/state/endpoints/app.t-1.plan.1.sock is a directory; kept
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	90.149s
+FAIL

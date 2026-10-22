@@ -37,8 +37,9 @@ const LogFile = "launcher.log"
 // The process's output is appended to LogFile in the attempt directory.
 // Launch returns once the process owns the attempt and has recorded its
 // endpoint, so a Stop reaches it, and never waits for the attempt to finish;
-// a process that exits first is an error, and one that does not get there
-// within StartTimeout is stopped and is an error.
+// a process that exits first is an error, one that finishes the attempt
+// before recording its endpoint is an error at once, and one that does not
+// get there within StartTimeout is stopped and is an error.
 //
 // Stop asks only the process Launch started to stop through its endpoint and
 // waits for that process to exit. It refuses a handle this Process did
@@ -113,7 +114,9 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	go func() { _ = cmd.Wait(); close(c.exited) }()
 	h := interp.Handle{Identity: as.Identity, Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
 	if err := errors.Join(identityErr, p.owned(ctx, c)); err != nil {
-		_ = p.stop(c)
+		if !errors.Is(err, errReleased) {
+			_ = p.stop(c)
+		}
 		return interp.Handle{}, fmt.Errorf("launch: %s: %w; see %s", k, err, filepath.Join(at.Dir(), LogFile))
 	}
 	p.mu.Lock()
@@ -125,7 +128,11 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	return h, nil
 }
 
-// owned waits until c owns its attempt with its endpoint recorded.
+// errReleased is owned's error for a launcher that finished its attempt before recording its endpoint: the
+// attempt failed at setup and there is nothing to stop, and the launcher's advance waits for the caller's lock.
+var errReleased = errors.New("the launcher finished the attempt before recording its endpoint")
+
+// owned waits until c owns its attempt with its endpoint recorded, and fails at once when c released it without one.
 func (p *Process) owned(ctx context.Context, c *child) error {
 	timeout := p.StartTimeout
 	if timeout <= 0 {
@@ -136,8 +143,13 @@ func (p *Process) owned(ctx context.Context, c *child) error {
 	exited := false
 	for {
 		o, err := c.at.owner()
-		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity && o.Endpoint != "" {
-			return nil
+		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity {
+			if o.Endpoint != "" {
+				return nil
+			}
+			if o.State == store.OwnerReleased {
+				return errReleased
+			}
 		}
 		if exited {
 			return errors.New("the launcher exited before owning the attempt")
