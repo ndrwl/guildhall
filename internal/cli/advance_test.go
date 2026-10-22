@@ -288,6 +288,17 @@ func newRunCopy(t *testing.T) (runDirector, string) {
 		t.Fatal(err)
 	}
 	d := runDirector{store: filepath.Join(dir, "director.store"), config: filepath.Join(dir, "config.toml"), state: filepath.Join(dir, "state")}
+	// A launcher's advance runs as guildhall, with real git workspaces, so app is a real repository and remote.
+	repository, remote, _ := gittest.Repository(t)
+	b, err := os.ReadFile(d.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = bytes.Replace(b, []byte(`path = "/srv/app"`), []byte("path = '"+repository+"'"), 1)
+	b = bytes.Replace(b, []byte(`remote = "git@github.com:example/app.git"`), []byte("remote = '"+remote+"'"), 1)
+	if err := os.WriteFile(d.config, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	s, err := store.Open(d.store, store.Options{})
 	if err != nil {
 		t.Fatal(err)
