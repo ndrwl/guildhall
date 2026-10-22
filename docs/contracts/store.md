@@ -12,11 +12,17 @@ Attempt caps ([guard rails](../decisions/guard-rails.md)): `StartCappedAttempt` 
 Attempt spend ([attempt spend](../decisions/attempt-spend.md)): `StageAttempt.Spend`, a `Spend` of tokens and a US dollar cost each with a `Measure` (`SpendMeasured`, `SpendEstimated`, `SpendUnknown`), recorded by `RecordAttemptSpend` on a running or finished attempt, refused with `ErrInvalid` when invalid, the first record standing and a different one refused ([attempts](../store.md#attempts)); `SpendTotal.AddAttempt` from `NoSpend` is the one rule for totals, and `AttemptUsage.Spend` totals the attempts started on its day.
 `DirectorUnread` counts `budget-refused` and `advance-failed` by name; the `advance-failed` count in `TestDirectorUnreadCountsByType` was red against the list without it ([red run](../evidence/watcher-advance-and-wake-2026-10-22-red.txt)).
 
+`SkipSyncForTests` makes every store a test binary opens afterwards skip bbolt's fsync of each commit ([windows-ci-speed](../decisions/windows-ci-speed.md)); records, receipts, locking and replay are unchanged and only a power loss could lose a commit.
+It panics outside a test binary (`testing.Testing`), so production stores sync every commit.
+The test binaries of `internal/store`, `messaging`, `interp`, `cli`, `launch`, `artisan` and `reconcile` call it from `TestMain`, which their own child processes run too; `cmd/guildhall`'s built binary syncs as production does.
+
 The [attempt ownership contract](../store.md#attempt-ownership) defines monotonic recovery evidence, `ProbeLauncher`'s containment refusal and the explicit containment-aware recovery path.
 
 ## Tests
 
 Real bbolt files: `store_test.go`, `records_test.go`, `messages_test.go`, `approvals_test.go`, `history_test.go`, `ownership_test.go`, `process_test.go` (separate processes, including a take-over refused while another process owns the attempt and allowed once it is killed), `fixture_test.go` (schema v1 file), `rulings_test.go`; full-review requests are pinned by the store run of `interptest.RunRecordsContract`
+
+`testsync_test.go` was written red first against a `SkipSyncForTests` that set nothing ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): `TestOpenSyncsEveryCommitByDefault` pins that a store opened without it syncs and its commit survives a reopen, and `TestSkipSyncForTestsSkipsFsync`, which was red, that one opened after it does not sync and its commit still survives a reopen.
 
 `TestFinishAttemptFirstFinishStands` was written red first ([red run](../evidence/finish-first-stands-2026-10-21-red.txt)), with the equal-outcome case of `RunRecordsContract`: a second finish with an equal outcome under a new mutation id returns the first finish's receipt, writes no receipt and takes no sequence number; another outcome is refused with `ErrInvalid`.
 

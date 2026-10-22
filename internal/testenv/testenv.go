@@ -1,5 +1,6 @@
 // Package testenv lets a CI job turn a test's skip for a missing platform
-// capability into a failure.
+// capability into a failure, and scales a test's wait ceilings for slow CI
+// runners (Ceiling).
 //
 // A test that needs an installed tool or a particular operating system skips
 // by name when the host lacks it, so a local run proves what the host can. A CI
