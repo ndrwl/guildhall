@@ -3,7 +3,7 @@
   "name": "default",
   "description": "Grill and research, plan, Guildmaster acceptance, build, independent automated review with bounded fix rounds, publish, validation, delivery under the repository's merge policy.",
   "steps": [
-    {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director"}},
+    {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director", "skills": ["guildhall-grill", "guildhall-domain-model"]}},
     {"id": "research", "type": "research", "version": 1},
     {"id": "plan", "type": "plan", "version": 1,
      "inputs": {"context": ["grill.notes", "research.notes"]}},

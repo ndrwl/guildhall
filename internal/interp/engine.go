@@ -69,13 +69,19 @@ const (
 	WaitChecks Wait = "checks"
 	// WaitDone: deliver merged the task's pull request and the task is done.
 	WaitDone Wait = "done"
+	// WaitDirectorStage: a Director stage's attempt is handed to the Director, whose `step finish` writes its result
+	// (docs/interpreter.md#director-stages).
+	WaitDirectorStage Wait = "director-stage"
 )
+
+// DirectorStage is the type of the Director message that hands it a Director stage's attempt.
+const DirectorStage = "director-stage"
 
 // Next is where a task stands after an advance.
 type Next struct {
 	Wait Wait
 	Step string
-	// Attempt is the attempt number for WaitAttempt and WaitDirector.
+	// Attempt is the attempt number for WaitAttempt, WaitDirectorStage and WaitDirector.
 	Attempt int
 	// Decision is the open decision's id for WaitDecision, and for WaitDirector the decision the
 	// Director must act on: a rejected loop exit or a changes_requested answer without a loop rule.
@@ -83,8 +89,8 @@ type Next struct {
 }
 
 var (
-	// ErrUnsupported reports a step, actor or outcome the engine does not run yet, such as a Director stage,
-	// a rejected outcome or a loop back to a non-Artisan step.
+	// ErrUnsupported reports a step, actor or outcome the engine does not run yet, such as a rejected outcome or a
+	// loop back to a non-Artisan step.
 	ErrUnsupported = errors.New("not supported by the engine")
 	// ErrSpecGate reports an accepted spec whose digest is not the one the Guildmaster approved.
 	ErrSpecGate = errors.New("spec gate")
@@ -116,6 +122,9 @@ var (
 //
 //   - an Artisan step records a new attempt, renders its prompt (Prompter) and launches it (Launcher),
 //     then waits for its result;
+//   - a Director stage records and prepares an attempt as an Artisan step does but launches nothing: it sends the
+//     Director a director-stage message, marks the attempt launched by the Director and waits for the result the
+//     Director's `step finish` writes, taken as an Artisan's is (docs/interpreter.md#director-stages);
 //   - a Guildmaster step opens a typed decision bound to its subject and waits for the answer;
 //   - publish pushes the head to the task branch and records its pull request (Forge);
 //   - validate reads the forge's checks of the published head and waits while they are pending; finished
@@ -150,7 +159,7 @@ var (
 // recorded binding, and refuses one that fails with ErrPreparation, launching and removing nothing.
 // Only an unpublished prompt.partial, which no launch was given, is removed and rendered again.
 //
-// The checks gate, automatic merging, Director stages and loops back to a step not run by an Artisan are
+// The checks gate, automatic merging and loops back to a step not run by an Artisan are
 // refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
 type Engine struct {
 	Records  Records
@@ -220,7 +229,7 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 		return Next{}, err
 	}
 	for _, step := range def.Steps {
-		if step.Actor() != workflow.ArtisanActor {
+		if !runsAttempts(step) {
 			continue
 		}
 		a := r.latestAttempt(step.ID)
@@ -351,8 +360,8 @@ func (r *run) retried(ev Event) error {
 // next is what the task waits for.
 func (r *run) step(s workflow.Step) (done bool, next Next, err error) {
 	switch actor := s.Actor(); {
-	case actor == workflow.ArtisanActor:
-		return r.artisan(s)
+	case runsAttempts(s):
+		return r.attempted(s)
 	case actor == workflow.GuildmasterActor:
 		return r.guildmaster(s)
 	case actor == workflow.EngineActor && s.Type == "publish":
@@ -366,18 +375,35 @@ func (r *run) step(s workflow.Step) (done bool, next Next, err error) {
 	}
 }
 
-func (r *run) artisan(s workflow.Step) (bool, Next, error) {
+// runsAttempts reports whether s runs as attempts with result files: an Artisan step, or a Director stage handed to
+// the Director (docs/interpreter.md#director-stages).
+func runsAttempts(s workflow.Step) bool {
+	return s.Actor() == workflow.ArtisanActor || s.Actor() == workflow.DirectorActor
+}
+
+// waitFor is what a task waits for while an attempt of s runs.
+func waitFor(s workflow.Step) Wait {
+	if s.Actor() == workflow.DirectorActor {
+		return WaitDirectorStage
+	}
+	return WaitAttempt
+}
+
+func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 	a := r.latestAttempt(s.ID)
 	switch {
 	case a == nil:
 		next, err := r.start(s)
 		return false, next, err
 	case a.Outcome == "":
-		next := Next{Wait: WaitAttempt, Step: s.ID, Attempt: a.Number}
+		next := Next{Wait: waitFor(s), Step: s.ID, Attempt: a.Number}
 		if exists(r.resultFile(s.ID, a.Number)) {
 			return false, next, nil
 		}
 		if exists(filepath.Join(r.attemptDir(s.ID, a.Number), launchedFile)) {
+			if s.Actor() == workflow.DirectorActor {
+				return false, next, nil
+			}
 			return false, next, r.workerStalled(s.ID, a.Number)
 		}
 		// Recorded but never marked launched: the advance stopped between the two.
@@ -417,8 +443,13 @@ func (r *run) artisan(s workflow.Step) (bool, Next, error) {
 	return true, Next{}, nil
 }
 
-// prepare resolves the adapter and the inputs of an Artisan step; both are checked before anything is recorded.
+// prepare resolves the adapter and the inputs of an Artisan step, or the inputs alone of a Director stage, which
+// runs no adapter; both are checked before anything is recorded.
 func (r *run) prepare(s workflow.Step) (string, []render.Input, error) {
+	if s.Actor() == workflow.DirectorActor {
+		inputs, err := r.inputs(s)
+		return "", inputs, err
+	}
 	name := r.e.DefaultAdapter
 	if p := s.Profile(); p != "" {
 		profile, ok := r.e.Config.Profiles[p]
@@ -507,13 +538,14 @@ func (r *run) start(s workflow.Step) (Next, error) {
 		return Next{}, fmt.Errorf("recorded attempt %d, expected %d: another writer advanced the task", rc.Attempt, n)
 	}
 	r.addAttempt(store.StageAttempt{Repository: r.task.Repository, TaskID: r.task.ID, Step: s.ID, Number: n})
-	return Next{Wait: WaitAttempt, Step: s.ID, Attempt: n}, r.launch(s, n, name, inputs)
+	return Next{Wait: waitFor(s), Step: s.ID, Attempt: n}, r.launch(s, n, name, inputs)
 }
 
 // launchedFile marks an attempt directory whose attempt Launch accepted.
 const launchedFile = "launched.json"
 
-// launch launches attempt n from its published preparation, rendering and publishing it first when none was.
+// launch launches attempt n from its published preparation, rendering and publishing it first when none was;
+// a Director stage's attempt is handed to the Director instead.
 func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render.Input) error {
 	work, err := r.workDir()
 	if err != nil {
@@ -522,6 +554,9 @@ func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render
 	p, err := r.preparation(s, n, inputs)
 	if err != nil {
 		return err
+	}
+	if s.Actor() == workflow.DirectorActor {
+		return r.hand(s, n, p)
 	}
 	h, err := r.e.Launcher.Launch(r.ctx, Spec{
 		Identity:   r.identity(s.ID, n),
@@ -535,6 +570,52 @@ func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render
 		return fmt.Errorf("launch attempt %d: %w", n, err)
 	}
 	data, err := json.Marshal(h)
+	if err != nil {
+		return err
+	}
+	return writeFile(filepath.Join(r.attemptDir(s.ID, n), launchedFile), data)
+}
+
+// directorLauncher is launched.json's launcher for a Director stage's attempt, which runs no process.
+const directorLauncher = "director"
+
+// directorMark is launched.json for a Director stage's attempt.
+type directorMark struct {
+	Launcher string           `json:"launcher"`
+	Identity adapter.Identity `json:"identity"`
+}
+
+// HandedToDirector reports whether the engine handed the attempt in attempt directory dir to the Director as a
+// Director stage: its launched.json names the director launcher. An attempt not yet marked launched, or launched
+// by any other launcher, is not.
+func HandedToDirector(dir string) (bool, error) {
+	data, err := os.ReadFile(filepath.Join(dir, launchedFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var m directorMark
+	return json.Unmarshal(data, &m) == nil && m.Launcher == directorLauncher, nil
+}
+
+// hand gives attempt n of a Director stage to the Director: it sends the Director the stage message, under an id
+// derived from the attempt so a replay resends nothing new, and only then marks the attempt launched by the
+// Director, so a crash between the two sends the message again as a replay (docs/interpreter.md#director-stages).
+func (r *run) hand(s workflow.Step, n int, p prepared) error {
+	kind, _ := workflow.LookupKind(s.Type, s.Version)
+	var ports, outputs []string
+	for _, port := range kind.Outputs {
+		ports = append(ports, fmt.Sprintf("%s (%s)", port.Name, port.Type))
+		outputs = append(outputs, fmt.Sprintf("--output %s=<file>", port.Name))
+	}
+	text := fmt.Sprintf("Step %s (%s version %d), attempt %d, is a Director stage for you to run.\nPrompt: %s\nOutput ports: %s\nFinish it with: guildhall step finish --repo %s --task %s --step %s --attempt %d --summary <text> %s, or --failed to abandon it.",
+		s.ID, s.Type, s.Version, n, p.promptFile, strings.Join(ports, ", "), r.task.Repository, r.task.ID, s.ID, n, strings.Join(outputs, " "))
+	if err := r.notify(fmt.Sprintf("stage.%s-%d", s.ID, n), DirectorStage, text); err != nil {
+		return err
+	}
+	data, err := json.Marshal(directorMark{directorLauncher, r.identity(s.ID, n)})
 	if err != nil {
 		return err
 	}

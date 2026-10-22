@@ -58,3 +58,16 @@ func TestGrillSkillsValidation(t *testing.T) {
 		t.Error("accepted missing actor")
 	}
 }
+
+// TestDefaultGrillIsTheDirectorsLiveGrill: the shipped workflow's first stage is the Director's grill with the live
+// grill's two skills (D61).
+func TestDefaultGrillIsTheDirectorsLiveGrill(t *testing.T) {
+	def, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	grill := def.Steps[0]
+	if grill.ID != "grill" || grill.Actor() != DirectorActor || !slices.Equal(grill.Skills(), []string{"guildhall-grill", "guildhall-domain-model"}) {
+		t.Errorf("default first step %s, actor %s, skills %q; want the Director's grill with guildhall-grill and guildhall-domain-model", grill.ID, grill.Actor(), grill.Skills())
+	}
+}
