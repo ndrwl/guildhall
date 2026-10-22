@@ -352,6 +352,8 @@ func TestTaskDelivers(t *testing.T) {
 	f.SetBranch(remote, "main", strings.Repeat("a", 40))
 	f.AddCommit(appRepo, head)
 	d.forge = f
+	// The fake build reports the remote's default branch as its head, so its worktree holds nothing undelivered.
+	d.workspaces.SetDefault(remote, head)
 	step := func(args ...string) string {
 		t.Helper()
 		code, out, stderr := d.run(t, args...)
@@ -393,6 +395,10 @@ func TestTaskDelivers(t *testing.T) {
 	ws := git.Workspace{Repository: appRepo, Remote: remote, Branch: "guildhall/t-1", Dir: filepath.Join(d.state, "app", "t-1", "work")}
 	if calls := d.workspaces.Calls(); len(calls) != 2 || calls[0] != ws || calls[1] != ws {
 		t.Errorf("workspaces = %+v, want %+v for the plan and build attempts", calls, ws)
+	}
+	// The merge retired it.
+	if _, err := os.Stat(ws.Dir); !os.IsNotExist(err) {
+		t.Errorf("workspace after the merge: %v, want it removed", err)
 	}
 }
 

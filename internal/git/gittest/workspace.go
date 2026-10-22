@@ -14,12 +14,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
 )
 
 // WorkspaceHarness is one implementation of git.Program.Ensure under the workspace contract suite.
 type WorkspaceHarness struct {
 	Ensure func(ctx context.Context, w git.Workspace) error
+	Retire func(ctx context.Context, r git.Retirement) ([]string, error)
 	// Arrange returns a workspace whose remote's default branch is at base, whose Dir and branch do not exist yet
 	// and whose Dir's parent does.
 	Arrange func(t *testing.T) (w git.Workspace, base string)
@@ -145,6 +147,83 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 			t.Errorf("Ensure with an ended context created the working directory: %v", err)
 		}
 	})
+	retired := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
+		t.Helper()
+		if kept, err := h.Retire(ctx, r); err != nil || len(kept) > 0 {
+			t.Fatalf("Retire = %q, %v; want the workspace removed", kept, err)
+		}
+		if _, err := os.Stat(r.Dir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("retired working directory is still there: %v", err)
+		}
+	}
+	// arrangeMerged ensures a workspace, commits in it, writes an output and returns a retirement at that commit.
+	arrangeMerged := func(t *testing.T, h WorkspaceHarness) git.Retirement {
+		t.Helper()
+		w, _ := h.Arrange(t)
+		ensure(t, h, w)
+		head := h.Commit(t, w.Dir, "change.txt")
+		writeFile(t, filepath.Join(w.Dir, "out", "spec.md"), "the spec\n")
+		return git.Retirement{Workspace: w, Head: head, Outputs: map[string]string{"out/spec.md": digest.Of([]byte("the spec\n")).Hex()}}
+	}
+	kept := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
+		t.Helper()
+		k, err := h.Retire(ctx, r)
+		if err != nil || len(k) == 0 {
+			t.Fatalf("Retire = %q, %v; want the workspace kept with a reason", k, err)
+		}
+		t.Logf("kept: %q", k)
+		if _, err := os.Stat(filepath.Join(r.Dir, "change.txt")); err != nil {
+			t.Errorf("a kept workspace lost a file: %v", err)
+		}
+	}
+	t.Run("retires a merged workspace once", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		retired(t, h, r)
+		retired(t, h, r)
+	})
+	t.Run("a workspace never created is already retired", func(t *testing.T) {
+		h := newHarness(t)
+		w, base := h.Arrange(t)
+		retired(t, h, git.Retirement{Workspace: w, Head: base})
+	})
+	t.Run("keeps an untracked file that is not an output", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		writeFile(t, filepath.Join(r.Dir, "notes.txt"), "mine\n")
+		kept(t, h, r)
+	})
+	t.Run("keeps an output with other bytes", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		writeFile(t, filepath.Join(r.Dir, "out", "spec.md"), "edited after it was recorded\n")
+		kept(t, h, r)
+	})
+	t.Run("keeps commits after the merged head", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		h.Commit(t, r.Dir, "later.txt")
+		kept(t, h, r)
+	})
+	t.Run("refuses an invalid retirement or a plain directory", func(t *testing.T) {
+		h := newHarness(t)
+		w, base := h.Arrange(t)
+		for name, r := range map[string]git.Retirement{
+			"invalid head": {Workspace: w, Head: "main"},
+			"relative dir": {Workspace: git.Workspace{Repository: w.Repository, Remote: w.Remote, Branch: w.Branch, Dir: "work"}, Head: base},
+		} {
+			if _, err := h.Retire(ctx, r); !errors.Is(err, git.ErrInvalidWorkspace) {
+				t.Errorf("%s: Retire = %v, want ErrInvalidWorkspace", name, err)
+			}
+		}
+		writeFile(t, filepath.Join(w.Dir, "plan.md"), "plan\n")
+		if _, err := h.Retire(ctx, git.Retirement{Workspace: w, Head: base}); !errors.Is(err, git.ErrNotWorkspace) {
+			t.Errorf("Retire over a plain directory = %v, want ErrNotWorkspace", err)
+		}
+		if _, err := os.Stat(filepath.Join(w.Dir, "plan.md")); err != nil {
+			t.Errorf("Retire changed a plain directory: %v", err)
+		}
+	})
 }
 
 func writeFile(t *testing.T, name, data string) {
@@ -166,16 +245,22 @@ type Workspaces struct {
 	branches map[[2]string]string
 	trees    map[string]tree
 	commits  map[string]map[string]bool
+	parents  map[string]string
 	calls    []git.Workspace
 	n        int
 }
 
-// tree is one working directory the double created: its repository and the commit it is at.
-type tree struct{ repository, head string }
+// tree is one working directory the double created: its repository, branch and the commit it is at.
+type tree struct {
+	repository, branch, head string
+	// committed holds each file's sha256 as of the tree's last commit.
+	committed map[string]string
+}
 
 // NewWorkspaces returns a double with no remotes.
 func NewWorkspaces() *Workspaces {
-	return &Workspaces{defaults: map[string]string{}, branches: map[[2]string]string{}, trees: map[string]tree{}, commits: map[string]map[string]bool{}}
+	return &Workspaces{defaults: map[string]string{}, branches: map[[2]string]string{}, trees: map[string]tree{}, commits: map[string]map[string]bool{},
+		parents: map[string]string{}}
 }
 
 // SetDefault points remote's default branch at head; Ensure fails for a remote with none.
@@ -221,7 +306,7 @@ func (f *Workspaces) Ensure(ctx context.Context, w git.Workspace) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	f.trees[dir] = tree{repository: w.Repository, head: head}
+	f.trees[dir] = tree{repository: w.Repository, branch: w.Branch, head: head}
 	return nil
 }
 
@@ -250,8 +335,13 @@ func (f *Workspaces) Commit(dir string) string {
 	}
 	f.n++
 	sum := sha1.Sum([]byte(tr.head + strconv.Itoa(f.n)))
-	tr.head = hex.EncodeToString(sum[:])
+	next := hex.EncodeToString(sum[:])
+	f.parents[next] = tr.head
+	tr.head = next
+	tr.committed = map[string]string{}
+	_ = walkFiles(dir, func(rel string, data []byte) { tr.committed[rel] = digest.Of(data).Hex() })
 	f.trees[dir] = tr
+	f.branches[[2]string{tr.repository, tr.branch}] = next
 	f.add(tr.repository, tr.head)
 	return tr.head
 }
@@ -302,4 +392,83 @@ func Repository(t *testing.T) (repository, remote, base string) {
 	commit("a.txt")
 	git(root, "clone", "-q", remote, repository)
 	return repository, remote, commit("b.txt")
+}
+
+// Retire implements the contract over the double's directories, where every file is untracked.
+func (f *Workspaces) Retire(ctx context.Context, r git.Retirement) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !filepath.IsAbs(r.Repository) || !filepath.IsAbs(r.Dir) || r.Branch == "" || !digest.ValidHead(r.Head) {
+		return nil, fmt.Errorf("%w: %+v", git.ErrInvalidWorkspace, r)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dir := filepath.Clean(r.Dir)
+	branch := [2]string{r.Repository, r.Branch}
+	var kept []string
+	if tip, ok := f.branches[branch]; ok && !f.merged(tip, r.Head) {
+		kept = append(kept, "branch "+r.Branch+" is at "+tip+", which was not merged")
+	}
+	tr, ours := f.trees[dir]
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		ours = false
+	} else if err != nil {
+		return nil, err
+	} else if !ours {
+		return nil, fmt.Errorf("%w: %s", git.ErrNotWorkspace, dir)
+	}
+	if ours {
+		if !f.merged(tr.head, r.Head) {
+			kept = append(kept, "HEAD is at "+tr.head+", which was not merged")
+		}
+		err := walkFiles(dir, func(rel string, data []byte) {
+			sum := digest.Of(data).Hex()
+			if tr.committed[rel] != sum && r.Outputs[rel] != sum {
+				kept = append(kept, "changed or untracked "+rel)
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(kept) > 0 {
+		return kept, nil
+	}
+	if ours {
+		if err := os.RemoveAll(dir); err != nil {
+			return nil, err
+		}
+		delete(f.trees, dir)
+	}
+	delete(f.branches, branch)
+	return nil, nil
+}
+
+// merged reports whether commit is head or one of its ancestors.
+func (f *Workspaces) merged(commit, head string) bool {
+	for c := head; c != ""; c = f.parents[c] {
+		if c == commit {
+			return true
+		}
+	}
+	return false
+}
+
+// walkFiles calls fn with every file under dir, by slash path relative to it, and its bytes.
+func walkFiles(dir string, fn func(rel string, data []byte)) error {
+	return filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err == nil {
+			fn(filepath.ToSlash(rel), data)
+		}
+		return err
+	})
 }

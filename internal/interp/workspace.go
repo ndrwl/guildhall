@@ -2,8 +2,15 @@ package interp
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
+
+	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/store"
 
 	"github.com/ndrwl/guildhall/internal/git"
 )
@@ -12,6 +19,7 @@ import (
 // contract is git.Program.Ensure), and gittest.Workspaces is its double.
 type Workspaces interface {
 	Ensure(ctx context.Context, w git.Workspace) error
+	Retire(ctx context.Context, r git.Retirement) ([]string, error)
 }
 
 var _ Workspaces = git.Program{}
@@ -34,4 +42,37 @@ func (r *run) workDir() (string, error) {
 		return "", err
 	}
 	return work, r.e.Workspaces.Ensure(r.ctx, git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: branchPrefix + r.task.ID, Dir: work})
+}
+
+// retire removes the merged task's workspace when nothing in it would be lost, before the task closes, so a replay
+// after a crash retires it again. A kept or unremovable workspace never fails the merge: the Director is told, by a
+// workspace-kept message, what it holds or why it could not be removed. Only a failed message is an error.
+func (r *run) retire(d store.Decision, repo config.Repository, head string) error {
+	if r.e.Workspaces == nil {
+		return nil
+	}
+	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: branchPrefix + r.task.ID, Dir: r.workPath()}
+	kept, err := r.e.Workspaces.Retire(r.ctx, git.Retirement{Workspace: w, Head: head, Outputs: r.outputs()})
+	if err != nil {
+		kept = []string{"it could not be removed: " + err.Error()}
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	text := fmt.Sprintf("Kept the working directory %s and branch %s after merging head %s (decision %s), because %s.\nNothing was removed; the Director decides what happens to them.",
+		w.Dir, w.Branch, head, d.ID, strings.Join(kept, "; "))
+	return r.notify(fmt.Sprintf("workspace-kept.%s.%s", d.ID, digest.Of([]byte(text)).Hex()[:12]), "workspace-kept", text)
+}
+
+// outputs are the task's recorded documents by their path below their record directory, the path an output had
+// in the working directory, with their sha256.
+func (r *run) outputs() map[string]string {
+	prefix := path.Join("tasks", r.task.Repository, r.task.ID) + "/"
+	out := map[string]string{}
+	for _, d := range r.documents {
+		if _, rel, ok := strings.Cut(strings.TrimPrefix(d.Path, prefix), "/"); ok && strings.HasPrefix(d.Path, prefix) {
+			out[rel] = d.SHA256
+		}
+	}
+	return out
 }

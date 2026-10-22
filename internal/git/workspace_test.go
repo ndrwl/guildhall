@@ -24,6 +24,7 @@ func TestWorkspaceContract(t *testing.T) {
 			f := gittest.NewWorkspaces()
 			return gittest.WorkspaceHarness{
 				Ensure: f.Ensure,
+				Retire: f.Retire,
 				Arrange: func(t *testing.T) (git.Workspace, string) {
 					base := strings.Repeat("b", 40)
 					f.SetDefault("remote", base)
@@ -74,6 +75,7 @@ func programHarness(t *testing.T) gittest.WorkspaceHarness {
 	global := isolate(t)
 	return gittest.WorkspaceHarness{
 		Ensure:  git.Program{}.Ensure,
+		Retire:  git.Program{}.Retire,
 		Arrange: func(t *testing.T) (git.Workspace, string) { return arrangeWorkspace(t) },
 		Head:    func(t *testing.T, dir string) string { return repo{t, dir, global}.run("rev-parse", "HEAD") },
 		Commit: func(t *testing.T, dir, name string) string {
@@ -214,4 +216,99 @@ func writeFile(t *testing.T, name, data string) {
 	if err := os.WriteFile(name, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestRetireProgram pins what only git shows about retiring: tracked changes, ignored files, the branch's own tip
+// and an interrupted retirement.
+func TestRetireProgram(t *testing.T) {
+	ctx := context.Background()
+	global := isolate(t)
+	merged := func(t *testing.T) (git.Retirement, repo) {
+		t.Helper()
+		w, _ := arrangeWorkspace(t)
+		if err := (git.Program{}).Ensure(ctx, w); err != nil {
+			t.Fatal(err)
+		}
+		r := repo{t, w.Dir, global}
+		head := r.commit("change", map[string]string{".gitignore": "build/\n", "c.txt": "c\n"})
+		return git.Retirement{Workspace: w, Head: head}, r
+	}
+	branch := func(t *testing.T, ret git.Retirement) bool {
+		return exec.Command("git", "-C", ret.Repository, "show-ref", "--verify", "--quiet", "refs/heads/"+ret.Branch).Run() == nil
+	}
+	retire := func(t *testing.T, ret git.Retirement) []string {
+		t.Helper()
+		kept, err := (git.Program{}).Retire(ctx, ret)
+		if err != nil {
+			t.Fatalf("Retire = %v", err)
+		}
+		return kept
+	}
+	t.Run("removes the worktree and its branch, keeping other branches", func(t *testing.T) {
+		ret, r := merged(t)
+		r.run("branch", "experiment")
+		writeFile(t, filepath.Join(ret.Dir, "build", "out.bin"), "ignored")
+		if kept := retire(t, ret); len(kept) > 0 {
+			t.Fatalf("kept %q", kept)
+		}
+		if branch(t, ret) {
+			t.Error("the task branch survived its retirement")
+		}
+		if exec.Command("git", "-C", ret.Repository, "show-ref", "--verify", "--quiet", "refs/heads/experiment").Run() != nil {
+			t.Error("retiring deleted another branch")
+		}
+		if list := (repo{t, ret.Repository, global}).run("worktree", "list", "--porcelain"); strings.Contains(filepath.ToSlash(list), "/work") {
+			t.Errorf("the worktree is still registered:\n%s", list)
+		}
+	})
+	t.Run("a worktree behind the merged head is retired", func(t *testing.T) {
+		ret, r := merged(t)
+		ret.Head = r.commit("more", map[string]string{"d.txt": "d\n"})
+		r.run("reset", "-q", "--hard", "HEAD~1")
+		if kept := retire(t, ret); len(kept) > 0 {
+			t.Fatalf("kept %q", kept)
+		}
+		if _, err := os.Stat(ret.Dir); !errors.Is(err, os.ErrNotExist) || branch(t, ret) {
+			t.Errorf("worktree there: %v, branch there %v; want both removed", err, branch(t, ret))
+		}
+	})
+	t.Run("keeps a changed tracked file", func(t *testing.T) {
+		ret, _ := merged(t)
+		writeFile(t, filepath.Join(ret.Dir, "c.txt"), "edited\n")
+		if kept := retire(t, ret); len(kept) == 0 {
+			t.Fatal("retired a worktree with a changed file")
+		}
+		if b, err := os.ReadFile(filepath.Join(ret.Dir, "c.txt")); err != nil || string(b) != "edited\n" {
+			t.Errorf("kept worktree lost its change: %q, %v", b, err)
+		}
+	})
+	t.Run("keeps a branch whose tip was not merged", func(t *testing.T) {
+		ret, r := merged(t)
+		r.commit("unmerged", map[string]string{"e.txt": "e\n"})
+		r.run("checkout", "-q", "--detach", ret.Head)
+		kept := retire(t, ret)
+		if len(kept) == 0 || !branch(t, ret) {
+			t.Fatalf("kept %q, branch there %v; want both kept", kept, branch(t, ret))
+		}
+		if _, err := os.Stat(ret.Dir); err != nil {
+			t.Errorf("kept worktree removed: %v", err)
+		}
+	})
+	t.Run("an interrupted retirement deletes the branch", func(t *testing.T) {
+		ret, _ := merged(t)
+		(repo{t, ret.Repository, global}).run("worktree", "remove", ret.Dir)
+		if kept := retire(t, ret); len(kept) > 0 || branch(t, ret) {
+			t.Fatalf("kept %q, branch there %v; want the branch deleted", kept, branch(t, ret))
+		}
+	})
+	t.Run("a head the repository lacks is an error", func(t *testing.T) {
+		ret, _ := merged(t)
+		ret.Head = strings.Repeat("0", 40)
+		if _, err := (git.Program{}).Retire(ctx, ret); err == nil {
+			t.Fatal("Retire at an unknown head succeeded")
+		}
+		if _, err := os.Stat(ret.Dir); err != nil {
+			t.Errorf("worktree removed: %v", err)
+		}
+	})
 }

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // Workspace is one task's working directory: a git worktree of the task's repository, so that a commit an
@@ -190,5 +192,148 @@ func (p Program) git(ctx context.Context, dir string, args ...string) ([]byte, e
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		return nil, fmt.Errorf("git %s: no answer within %v: %w", strings.Join(args, " "), timeout, context.DeadlineExceeded)
 	}
-	return nil, fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+}
+
+// Retirement is a task workspace whose change was merged, to be removed.
+type Retirement struct {
+	Workspace
+	// Head is the full commit id the task's change was merged at: work at it or behind it was delivered.
+	Head string
+	// Outputs are the files Guildhall recorded from the working directory, by clean slash-separated path relative
+	// to it, with their sha256 in lowercase hex: untracked files that are copies of them are not work.
+	Outputs map[string]string
+}
+
+// Retire removes a merged task's worktree, w.Dir, and its local branch, w.Branch, when nothing in them would be
+// lost, and otherwise removes nothing and returns why it kept them.
+//
+// Something would be lost when a tracked file is changed or staged; when an untracked file is not one of
+// r.Outputs with the same bytes; when the worktree's HEAD is not r.Head or one of its ancestors; or when the
+// branch exists and its tip is not. Files git ignores are not work and are removed with the worktree; other local
+// branches and stashes are the repository's and are kept. The branch is deleted only while still at the tip
+// that was checked.
+//
+// Retire is idempotent and replay safe: a missing w.Dir with no branch is already retired, whatever r.Head is, and a branch left by an interrupted
+// Retire is deleted when its tip is merged. It refuses an invalid workspace or head (ErrInvalidWorkspace) and a
+// w.Dir that exists and is not a worktree of w.Repository (ErrNotWorkspace), removing nothing; a git failure,
+// including a head the repository does not have, is an error, and ctx ending is an error.
+func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !digest.ValidHead(r.Head) {
+		return nil, fmt.Errorf("%w: head %q is not a full commit id", ErrInvalidWorkspace, r.Head)
+	}
+	if err := p.validate(ctx, r.Workspace); err != nil {
+		return nil, err
+	}
+	ok, err := p.isWorktree(ctx, r.Workspace)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		if _, err := os.Lstat(r.Dir); err == nil {
+			return nil, fmt.Errorf("%w: %s is not a worktree of %s", ErrNotWorkspace, r.Dir, r.Repository)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
+	ref := "refs/heads/" + r.Branch
+	tip := ""
+	if out, err := p.git(ctx, r.Repository, "show-ref", "--verify", "--hash", ref); err == nil {
+		tip = strings.TrimSpace(string(out))
+	} else if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if !ok && tip == "" {
+		return nil, nil
+	}
+	if _, err := p.git(ctx, r.Repository, "cat-file", "-e", r.Head+"^{commit}"); err != nil {
+		return nil, err
+	}
+	if tip != "" {
+		if merged, err := p.merged(ctx, r.Repository, tip, r.Head); err != nil {
+			return nil, err
+		} else if !merged {
+			kept = append(kept, fmt.Sprintf("branch %s is at %s, which is not the merged head %s or behind it", r.Branch, tip, r.Head))
+		}
+	}
+	if ok {
+		more, err := p.unmerged(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		kept = append(kept, more...)
+	}
+	if len(kept) > 0 {
+		return kept, nil
+	}
+	if ok {
+		// Untracked outputs and ignored files remain, which only --force removes; unmerged work was ruled out above.
+		if _, err := p.git(ctx, r.Repository, "worktree", "remove", "--force", r.Dir); err != nil {
+			return nil, err
+		}
+	}
+	if tip != "" {
+		// Deleted only while still at the tip that was checked.
+		if _, err := p.git(ctx, r.Repository, "update-ref", "-d", ref, tip); err != nil {
+			return nil, err
+		}
+	}
+	return nil, nil
+}
+
+// unmerged lists what in the worktree r.Dir would be lost: a HEAD that is not r.Head or behind it, a changed or
+// staged tracked file, and an untracked file that is not one of r.Outputs with the same bytes.
+func (p Program) unmerged(ctx context.Context, r Retirement) ([]string, error) {
+	var kept []string
+	out, err := p.git(ctx, r.Dir, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return nil, err
+	}
+	head := strings.TrimSpace(string(out))
+	if merged, err := p.merged(ctx, r.Repository, head, r.Head); err != nil {
+		return nil, err
+	} else if !merged {
+		kept = append(kept, fmt.Sprintf("HEAD is at %s, which is not the merged head %s or behind it", head, r.Head))
+	}
+	status, err := p.git(ctx, r.Dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none")
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Split(strings.TrimSuffix(string(status), "\x00"), "\x00")
+	for i := 0; i < len(fields); i++ {
+		e := fields[i]
+		if len(e) < 4 {
+			continue
+		}
+		code, name := e[:2], e[3:]
+		if code[0] == 'R' || code[0] == 'C' {
+			i++ // the entry's original path follows it
+		}
+		if code != "??" {
+			kept = append(kept, "changed "+name)
+			continue
+		}
+		want, ok := r.Outputs[name]
+		data, err := os.ReadFile(filepath.Join(r.Dir, filepath.FromSlash(name)))
+		if !ok || err != nil || digest.Of(data).Hex() != want {
+			kept = append(kept, "untracked "+name)
+		}
+	}
+	return kept, nil
+}
+
+// merged reports whether commit is head or one of its ancestors in the repository.
+func (p Program) merged(ctx context.Context, repository, commit, head string) (bool, error) {
+	_, err := p.git(ctx, repository, "merge-base", "--is-ancestor", commit, head)
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
+		return false, nil
+	}
+	return false, err
 }

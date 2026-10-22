@@ -67,3 +67,41 @@ FAIL
 FAIL
 FAIL	github.com/ndrwl/guildhall/internal/cli	0.470s
 FAIL
+
+## Retirement: go test -run 'TestWorkspaceContract|TestRetireProgram' ./internal/git/ against a stub Program.Retire returning nothing
+--- FAIL: TestWorkspaceContract (6.01s)
+    --- FAIL: TestWorkspaceContract/program (5.95s)
+        --- FAIL: TestWorkspaceContract/program/retires_a_merged_workspace_once (0.44s)
+        --- FAIL: TestWorkspaceContract/program/keeps_an_untracked_file_that_is_not_an_output (0.45s)
+        --- FAIL: TestWorkspaceContract/program/keeps_an_output_with_other_bytes (0.43s)
+        --- FAIL: TestWorkspaceContract/program/keeps_commits_after_the_merged_head (0.61s)
+        --- FAIL: TestWorkspaceContract/program/refuses_an_invalid_retirement_or_a_plain_directory (0.32s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/git	6.017s
+FAIL
+--- FAIL: TestRetireProgram (2.70s)
+    --- FAIL: TestRetireProgram/removes_the_worktree_and_its_branch,_keeping_other_branches (0.42s)
+    --- FAIL: TestRetireProgram/keeps_a_changed_tracked_file (0.42s)
+    --- FAIL: TestRetireProgram/keeps_a_branch_whose_tip_was_not_merged (0.49s)
+    --- FAIL: TestRetireProgram/an_interrupted_retirement_deletes_the_branch (0.44s)
+    --- FAIL: TestRetireProgram/a_head_the_repository_lacks_is_an_error (0.46s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/git	2.708s
+FAIL
+
+## Retirement: go test -run 'Retire|Unmerged|Retirement' ./internal/interp/ with Workspaces.Retire declared but never called
+--- FAIL: TestMergeRetiresTheWorkspace (0.32s)
+    --- FAIL: TestMergeRetiresTheWorkspace/double (0.05s)
+        workspace_test.go:152: workspace still there after the merge: <nil>
+    --- FAIL: TestMergeRetiresTheWorkspace/store (0.27s)
+        workspace_test.go:152: workspace still there after the merge: <nil>
+--- FAIL: TestMergeKeepsUnmergedWork (0.33s)
+    --- FAIL: TestMergeKeepsUnmergedWork/double (0.06s)
+        workspace_test.go:180: workspace-kept = "", want it to name <tmp>/TestMergeKeepsUnmergedWorkdouble785477965/002/app/t7/work and notes.txt
+    --- FAIL: TestMergeKeepsUnmergedWork/store (0.26s)
+        workspace_test.go:180: workspace-kept = "", want it to name <tmp>/TestMergeKeepsUnmergedWorkstore2409061223/003/app/t7/work and notes.txt
+--- FAIL: TestFailedRetirementNeverFailsTheMerge (0.04s)
+    workspace_test.go:198: workspace-kept = "", want the failure
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.692s
+FAIL

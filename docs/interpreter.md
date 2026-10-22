@@ -81,7 +81,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
-Publishing, validating and merging send `published`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused` and `merged` messages, described below.
+Publishing, validating and merging send `published`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, described below.
 
 ## Publish and deliver
 
@@ -106,7 +106,7 @@ A new head, such as a build round after review findings, publishes the next roun
 A `hold` answer merges nothing: the task waits for the Director (`director`, naming the decision) and the Director is told as `<repo>.<task>.merge-held.<decision>`.
 A `merge` answer calls `Forge.Merge` for the recorded remote and pull request number at the decision's head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
 A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
-When the forge merges, the engine records `<decision>-merge` (`tasks/<repo>/<task>/<decision>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<decision>`, type `merged`, marks the task `done` and returns the wait `done`.
+When the forge merges, the engine records `<decision>-merge` (`tasks/<repo>/<task>/<decision>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<decision>`, type `merged`, [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
 A later advance of a done task is refused with `ErrTaskClosed`.
 
 When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is merged.
@@ -237,6 +237,10 @@ Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`int
 
 Ensure is replay safe: the worktree is built beside the working directory and moved into place only when complete, so a crash leaves no working directory or a complete one, and the attempt, recorded but not marked launched, is launched by the next advance.
 When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.
+When a merge closes the task, the engine calls `Workspaces.Retire` with the merged head and the task's recorded documents, before marking the task `done`, so a replay retires it again.
+It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.
+Otherwise it removes nothing, and the Director is sent `<repo>.<task>.workspace-kept.<decision>.<digest>`, type `workspace-kept`, naming the directory, the branch and what they hold, where `<digest>` is the first 12 hex digits of the text's sha256; the Director decides what happens to them.
+A retirement that fails, such as git refusing to remove the worktree, is reported the same way and never fails the merge or keeps the task open.
 With no `Engine.Workspaces` the working directory is a plain directory, which is how the engine's own tests run; publish cannot push from one.
 
 ## History
