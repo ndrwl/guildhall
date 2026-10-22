@@ -86,39 +86,43 @@ func TestRunningCapRefusesALaunchUntilOneFinishes(t *testing.T) {
 // TestDailyCapRefusesUntilTheNextDay: the daily cap counts the day's starts by the records' clock, and the refusal
 // message is sent once per day per task.
 func TestDailyCapRefusesUntilTheNextDay(t *testing.T) {
-	plan := planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)}))
-	e := newEnv(t, backends[0], plan)
-	now := time.Date(2026, 10, 22, 23, 30, 0, 0, time.UTC)
-	e.h.Records.(*interptest.Records).Now = func() time.Time { return now }
-	e.eng.Caps = store.AttemptCaps{MaxRunning: 4, MaxPerDay: 2}
-	occupy(t, e, "plan")
-	if _, err := e.h.Records.FinishAttempt("finish:plan", "app", "t8", "plan", 1, store.AttemptSucceeded); err != nil {
-		t.Fatal(err)
-	}
-	occupy(t, e, "build")
-	if _, err := e.h.Records.FinishAttempt("finish:build", "app", "t8", "build", 1, store.AttemptSucceeded); err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		if err := advanceErr(t, e, interp.Event{Kind: interp.TaskCreated}); !errors.Is(err, store.ErrAttemptCap) || !strings.Contains(err.Error(), "guard rail "+config.MaxAttemptsPerDayKey) {
-			t.Fatalf("third start of the day = %v, want a refusal naming guard rail %s", err, config.MaxAttemptsPerDayKey)
-		}
-	}
-	if got := budgetMessages(t, e); len(got) != 1 || got["app.t7.budget-refused.2026-10-22"] == "" {
-		t.Fatalf("budget-refused messages = %v, want one for 2026-10-22", got)
-	}
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			plan := planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)}))
+			e := newEnv(t, b, plan)
+			now := time.Date(2026, 10, 22, 23, 30, 0, 0, time.UTC)
+			e.h.Clock.Set(now)
+			e.eng.Caps = store.AttemptCaps{MaxRunning: 4, MaxPerDay: 2}
+			occupy(t, e, "plan")
+			if _, err := e.h.Records.FinishAttempt("finish:plan", "app", "t8", "plan", 1, store.AttemptSucceeded); err != nil {
+				t.Fatal(err)
+			}
+			occupy(t, e, "build")
+			if _, err := e.h.Records.FinishAttempt("finish:build", "app", "t8", "build", 1, store.AttemptSucceeded); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := advanceErr(t, e, interp.Event{Kind: interp.TaskCreated}); !errors.Is(err, store.ErrAttemptCap) || !strings.Contains(err.Error(), "guard rail "+config.MaxAttemptsPerDayKey) {
+					t.Fatalf("third start of the day = %v, want a refusal naming guard rail %s", err, config.MaxAttemptsPerDayKey)
+				}
+			}
+			if got := budgetMessages(t, e); len(got) != 1 || got["app.t7.budget-refused.2026-10-22"] == "" {
+				t.Fatalf("budget-refused messages = %v, want one for 2026-10-22", got)
+			}
 
-	now = now.Add(time.Hour)
-	occupy(t, e, "review")
-	occupy(t, e, "fix")
-	if err := advanceErr(t, e, interp.Event{Kind: interp.TaskCreated}); !errors.Is(err, store.ErrAttemptCap) {
-		t.Fatalf("third start of the next day = %v, want a refusal", err)
+			e.h.Clock.Set(now.Add(time.Hour))
+			occupy(t, e, "review")
+			occupy(t, e, "fix")
+			if err := advanceErr(t, e, interp.Event{Kind: interp.TaskCreated}); !errors.Is(err, store.ErrAttemptCap) {
+				t.Fatalf("third start of the next day = %v, want a refusal", err)
+			}
+			if got := budgetMessages(t, e); len(got) != 2 || got["app.t7.budget-refused.2026-10-23"] == "" {
+				t.Fatalf("budget-refused messages = %v, want a second one for 2026-10-23", got)
+			}
+			e.eng.Caps.MaxPerDay = 3
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
+		})
 	}
-	if got := budgetMessages(t, e); len(got) != 2 || got["app.t7.budget-refused.2026-10-23"] == "" {
-		t.Fatalf("budget-refused messages = %v, want a second one for 2026-10-23", got)
-	}
-	e.eng.Caps.MaxPerDay = 3
-	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
 }
 
 // TestRetryPastACapSendsNoReason: a retry refused at a cap sends no reason, its budget-refused message names

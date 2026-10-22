@@ -1,0 +1,35 @@
+# Stop cleanup (F45): red run, 2026-10-22
+
+The new tests against StopReport.Launcher declared but never set, and launchtest's Stop, StopAll and Bound as stubs.
+
+```
+$ go test ./internal/launch/launchtest ./internal/launch -run 'TestStopRule|TestBoundIsTheWatchersWorstCase|TestStopAllFailsForEachUnproven|TestStopNamesALauncherStillAdvancing' -count=1
+    launchtest_test.go:64: Stop = launchtest: not implemented, want proven
+    launchtest_test.go:64: Stop = launchtest: not implemented, want proven
+    launchtest_test.go:64: Stop = launchtest: not implemented, want proven
+    launchtest_test.go:64: Stop = launchtest: not implemented, want proven
+    launchtest_test.go:64: Stop = launchtest: not implemented, want proven
+    launchtest_test.go:68: Stop = launchtest: not implemented, want the last stop's error
+    launchtest_test.go:68: Stop = launchtest: not implemented, want the last stop's error
+    launchtest_test.go:68: Stop = launchtest: not implemented, want the last stop's error
+--- FAIL: TestStopRule (0.00s)
+    --- FAIL: TestStopRule/no_ownership_record (0.00s)
+    --- FAIL: TestStopRule/a_launcher_gone_after_its_endpoint_failed (0.00s)
+    --- FAIL: TestStopRule/an_answered_stop_waits_out_the_advance (0.00s)
+    --- FAIL: TestStopRule/a_launcher_seen_gone_is_stopped_once_more (0.00s)
+    --- FAIL: TestStopRule/released_at_setup_with_no_containment (0.00s)
+    --- FAIL: TestStopRule/a_gone_launcher_whose_unit_is_not_proven_empty (0.00s)
+    --- FAIL: TestStopRule/a_launcher_that_keeps_advancing (0.00s)
+    --- FAIL: TestStopRule/an_unverified_launcher (0.00s)
+    launchtest_test.go:80: Bound() = 0s, want 2m0s
+--- FAIL: TestBoundIsTheWatchersWorstCase (0.00s)
+    launchtest_test.go:104: StopAll errors = [], want one naming build-1
+--- FAIL: TestStopAllFailsForEachUnproven (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch/launchtest	0.006s
+    stop_advancing_test.go:46: Stop while the advance is held = {Endpoint:not asked: ownership released Classification:{State:cancelled Reason:launcher outcome: cancel marker present Outcome:0x… Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]} Launcher:}, attempt is not proven stopped; want launcher advancing and attempt is not proven stopped
+--- FAIL: TestStopNamesALauncherStillAdvancing (0.09s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	0.096s
+FAIL
+```

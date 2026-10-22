@@ -527,7 +527,10 @@ func attemptTag(k artisan.AttemptKey, launcher artisan.Identity) string {
 // recorded unit is proven empty by artisan.Contained; missing containment,
 // survivors, or a unit that cannot be checked, are unverified.
 func ProbeOwner(o store.Ownership) (store.Liveness, error) {
-	w := reconcile.ProbeOwner(o)
+	return ownerLiveness(reconcile.ProbeOwner(o))
+}
+
+func ownerLiveness(w reconcile.Owner) (store.Liveness, error) {
 	switch {
 	case w.Launcher == artisan.Alive:
 		return store.ProbeAlive, w.ProbeErr
@@ -620,7 +623,23 @@ type StopReport struct {
 	// otherwise why it was not asked or did not answer.
 	Endpoint       string                   `json:"endpoint"`
 	Classification reconcile.Classification `json:"classification"`
+	// Launcher is, on a released ownership, the recorded launcher's state: LauncherAdvancing while it lives,
+	// LauncherGone once it has exited, LauncherUnverified when its probe failed; empty otherwise.
+	Launcher string `json:"launcher,omitempty"`
 }
+
+// The StopReport.Launcher states of a released ownership's launcher.
+const (
+	// LauncherAdvancing is a launcher still running after it released its attempt: running the task's advance,
+	// or exiting.
+	LauncherAdvancing = "advancing"
+	LauncherGone      = "gone"
+	// LauncherUnverified is a launcher whose probe failed.
+	LauncherUnverified = "unverified"
+)
+
+// EndpointStopped is StopReport.Endpoint when the owner's endpoint answered the stop.
+const EndpointStopped = "stopped"
 
 // Stop asks the attempt's owner, through the endpoint its unreleased
 // ownership record names, to stop it, waiting within ctx for the stop
@@ -629,7 +648,8 @@ type StopReport struct {
 // and a recorded unit proven empty. Otherwise it returns ErrNotStopped.
 // Endpoint request errors are preserved; transport errors may be superseded
 // by verified termination. The report carries the classification afterwards,
-// which alone does not prove termination.
+// which alone does not prove termination, and on a released ownership the
+// recorded launcher's state (StopReport.Launcher).
 func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 	var rep StopReport
 	var stopErr error
@@ -644,7 +664,7 @@ func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 	case o.Endpoint == "":
 		rep.Endpoint = "not asked: no endpoint recorded"
 	default:
-		rep.Endpoint = "stopped"
+		rep.Endpoint = EndpointStopped
 		if _, stopErr = artisan.Call(ctx, o.Endpoint, a.Key, artisan.Identity(o.LauncherIdentity), artisan.OpStop); stopErr != nil {
 			rep.Endpoint = "no stop: " + stopErr.Error()
 		}
@@ -652,7 +672,7 @@ func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 	if rep.Classification, err = Status(ctx, a); err != nil {
 		return rep, errors.Join(stopErr, err)
 	}
-	if rep.Endpoint == "stopped" {
+	if rep.Endpoint == EndpointStopped {
 		return rep, nil
 	}
 	if errors.Is(stopErr, artisan.ErrEndpointRequest) {
@@ -665,7 +685,20 @@ func Stop(ctx context.Context, a Attempt) (StopReport, error) {
 	if o == nil {
 		return rep, nil
 	}
-	lv, err := ProbeOwner(*o)
+	w := reconcile.ProbeOwner(*o)
+	if o.State == store.OwnerReleased {
+		switch {
+		case w.ProbeErr != nil:
+			rep.Launcher = LauncherUnverified
+		case w.Launcher == artisan.Alive:
+			rep.Launcher = LauncherAdvancing
+		case w.Launcher == artisan.Gone:
+			rep.Launcher = LauncherGone
+		default:
+			rep.Launcher = LauncherUnverified
+		}
+	}
+	lv, err := ownerLiveness(w)
 	if err != nil || lv != store.ProbeGone {
 		return rep, errors.Join(ErrNotStopped, stopErr, err)
 	}

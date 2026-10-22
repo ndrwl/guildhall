@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
+	"slices"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -78,40 +80,56 @@ func (s *Store) AttemptUsage() (AttemptUsage, error) {
 }
 
 func attemptUsage(tx *bolt.Tx, now time.Time) (AttemptUsage, error) {
-	y, m, d := now.UTC().Date()
-	u := AttemptUsage{Day: time.Date(y, m, d, 0, 0, 0, 0, time.UTC), Spend: NoSpend}
-	// startedToday holds each attempt started today by its repository, task and record name.
-	startedToday := map[[3]string]bool{}
+	var receipts []Receipt
 	err := tx.Bucket(bucketReceipts).ForEach(func(k, raw []byte) error {
 		var r Receipt
 		if err := json.Unmarshal(raw, &r); err != nil {
 			return fmt.Errorf("receipt %q: %w", k, err)
 		}
-		if (r.Operation == "start-attempt" || r.Operation == "start-owned-attempt") && !r.CommittedAt.Before(u.Day) {
-			u.Today++
-			startedToday[[3]string{r.Repository, r.TaskID, r.Record}] = true
-		}
+		receipts = append(receipts, r)
 		return nil
 	})
 	if err != nil {
 		return AttemptUsage{}, err
 	}
+	var attempts []StageAttempt
 	err = tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
-		var attempts []StageAttempt
-		if err := scan(repoBucket(tx, string(repo), bucketAttempts), nil, &attempts); err != nil {
+		var in []StageAttempt
+		if err := scan(repoBucket(tx, string(repo), bucketAttempts), nil, &in); err != nil {
 			return err
 		}
-		for _, a := range attempts {
-			if a.Outcome == "" {
-				u.Running++
-			}
-			if startedToday[[3]string{a.Repository, a.TaskID, attemptRecord(a.Step, a.Number)}] {
-				u.Spend.AddAttempt(a)
-			}
-		}
+		attempts = append(attempts, in...)
 		return nil
 	})
-	return u, err
+	if err != nil {
+		return AttemptUsage{}, err
+	}
+	return CountUsage(slices.Values(receipts), slices.Values(attempts), now), nil
+}
+
+// CountUsage is the one rule for what the attempt caps count (AttemptUsage), given every receipt and every stage
+// attempt of a store at the instant now: Running counts the attempts with no outcome, Today the start-attempt and
+// start-owned-attempt receipts committed since now's UTC day began, and Spend the attempts those receipts started.
+func CountUsage(receipts iter.Seq[Receipt], attempts iter.Seq[StageAttempt], now time.Time) AttemptUsage {
+	y, m, d := now.UTC().Date()
+	u := AttemptUsage{Day: time.Date(y, m, d, 0, 0, 0, 0, time.UTC), Spend: NoSpend}
+	// startedToday holds each attempt started today by its repository, task and record name.
+	startedToday := map[[3]string]bool{}
+	for r := range receipts {
+		if (r.Operation == "start-attempt" || r.Operation == "start-owned-attempt") && !r.CommittedAt.Before(u.Day) {
+			u.Today++
+			startedToday[[3]string{r.Repository, r.TaskID, r.Record}] = true
+		}
+	}
+	for a := range attempts {
+		if a.Outcome == "" {
+			u.Running++
+		}
+		if startedToday[[3]string{a.Repository, a.TaskID, attemptRecord(a.Step, a.Number)}] {
+			u.Spend.AddAttempt(a)
+		}
+	}
+	return u
 }
 
 // StartCappedAttempt is StartAttempt refused, writing nothing, with ErrDirectorHeld when caps.Hold is set and the

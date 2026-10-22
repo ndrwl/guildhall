@@ -402,6 +402,7 @@ Startup failures remain returned errors even when the failed outcome is successf
 It never signals a process itself.
 Without a successful endpoint answer, success requires no ownership record, or a launcher proven gone and its recorded unit proven empty; missing containment is unverified, including during startup.
 A released record alone does not prove termination while its launcher still lives.
+On a released record the report's `launcher` names the recorded launcher: `advancing` while it lives, running the task's [advance](running.md#the-watcher) after releasing its attempt, which exits 1 as not proven stopped; `gone` once it has exited, when stop exits 0 if the recorded unit is proven empty; `unverified` when it cannot be probed.
 It prints what the endpoint did and the classification afterwards.
 Endpoint request errors, including reported surviving processes, are preserved and exit 1; a transport failure can still succeed if the fallback proves termination.
 Unproven termination exits 1 regardless of a `finished`, `cancelled` or `failed` classification.

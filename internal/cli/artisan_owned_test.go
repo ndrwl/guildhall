@@ -299,8 +299,11 @@ func TestArtisanStartCustody(t *testing.T) {
 		t.Errorf("ownership changed from %+v to %+v", owner, now)
 	}
 
+	// The launcher may exit before its answer reaches stop, which then proves the stop by the launcher gone and
+	// its unit empty (docs/artisan.md#commands).
 	code, stdout, stderr := guildhall(t, "", o.args("stop")...)
-	if code != 0 || !strings.Contains(stdout, `"endpoint":"stopped"`) || !strings.Contains(stdout, `"state":"cancelled"`) {
+	answered := strings.Contains(stdout, `"endpoint":"stopped"`) || strings.Contains(stdout, `"endpoint":"no stop: `) && strings.Contains(stdout, `"launcher":"gone"`)
+	if code != 0 || !answered || !strings.Contains(stdout, `"state":"cancelled"`) {
 		t.Errorf("stop: exit %d; stdout %q; stderr %q", code, stdout, stderr)
 	}
 	select {

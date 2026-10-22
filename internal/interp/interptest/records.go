@@ -317,33 +317,34 @@ func PauseStoreDirector(s *store.Store) error {
 	return err
 }
 
-// StartCappedAttempt implements interp.Records, counting the day by Now.
+// StartCappedAttempt implements interp.Records, refusing an unknown or closed task before it counts and counting
+// with store.CountUsage by Now.
 func (r *Records) StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error) {
 	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
 	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error {
 		if caps.Hold && r.held {
 			return fmt.Errorf("%w: the double is paused", store.ErrDirectorHeld)
 		}
-		if _, ok := r.tasks[[2]string{repository, taskID}]; ok && (caps.MaxRunning > 0 || caps.MaxPerDay > 0) {
-			y, m, d := r.now().Date()
-			day := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-			running := 0
-			for _, a := range r.attempts {
-				if a.Outcome == "" {
-					running++
+		if caps.MaxRunning > 0 || caps.MaxPerDay > 0 {
+			switch t, ok := r.tasks[[2]string{repository, taskID}]; {
+			case !ok:
+				return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+			case t.State != store.TaskOpen:
+				return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+			}
+			receipts := func(yield func(store.Receipt) bool) {
+				for _, prior := range r.receipts {
+					if !yield(prior.r) {
+						return
+					}
 				}
 			}
-			today := 0
-			for _, prior := range r.receipts {
-				if prior.op == "start-attempt" && !prior.r.CommittedAt.Before(day) {
-					today++
-				}
-			}
+			u := store.CountUsage(receipts, slices.Values(r.attempts), r.now())
 			switch {
-			case caps.MaxRunning > 0 && running >= caps.MaxRunning:
-				return &store.CapRefusal{Cap: store.CapRunning, Count: running, Limit: caps.MaxRunning, Day: day}
-			case caps.MaxPerDay > 0 && today >= caps.MaxPerDay:
-				return &store.CapRefusal{Cap: store.CapDaily, Count: today, Limit: caps.MaxPerDay, Day: day}
+			case caps.MaxRunning > 0 && u.Running >= caps.MaxRunning:
+				return &store.CapRefusal{Cap: store.CapRunning, Count: u.Running, Limit: caps.MaxRunning, Day: u.Day}
+			case caps.MaxPerDay > 0 && u.Today >= caps.MaxPerDay:
+				return &store.CapRefusal{Cap: store.CapDaily, Count: u.Today, Limit: caps.MaxPerDay, Day: u.Day}
 			}
 		}
 		return r.startAttempt(rc, repository, taskID, step)
@@ -463,6 +464,8 @@ type RecordsHarness struct {
 	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
 	// PauseDirector pauses the Director, so a start with AttemptCaps.Hold is refused with store.ErrDirectorHeld.
 	PauseDirector func() error
+	// Clock stamps the receipts Records writes, so it decides the day the daily cap counts.
+	Clock *Clock
 	// Writers and Operations size the concurrent case, defaulting to 4 writers of 30 operations each;
 	// an implementation that opens the store per operation across processes sets the writers production has.
 	Writers, Operations int
@@ -470,9 +473,36 @@ type RecordsHarness struct {
 
 // NewRecordsHarness returns the double under the contract suite.
 func NewRecordsHarness(*testing.T) RecordsHarness {
-	r := NewRecords()
+	r, clock := NewRecords(), NewClock()
+	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, PauseDirector: r.PauseDirector}
+		RequestFullReview: r.RequestFullReview, PauseDirector: r.PauseDirector, Clock: clock}
+}
+
+// Clock is a settable clock for a RecordsHarness; until Set it reads wall time.
+type Clock struct {
+	mu  sync.Mutex
+	set time.Time
+}
+
+// NewClock returns a clock reading wall time.
+func NewClock() *Clock { return &Clock{} }
+
+// Now is the time last Set, or wall time before any Set.
+func (c *Clock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.set.IsZero() {
+		return time.Now()
+	}
+	return c.set
+}
+
+// Set fixes the time Now reads.
+func (c *Clock) Set(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.set = t
 }
 
 // RunRecordsContract runs the interp.Records contract against fresh harnesses from newHarness.
@@ -484,6 +514,7 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 	}
 	setup := func(t *testing.T) RecordsHarness {
 		h := newHarness(t)
+		h.Clock.Set(time.Date(2031, 3, 9, 12, 0, 0, 0, time.UTC))
 		if _, err := h.CreateTask("task:app:t7", task); err != nil {
 			t.Fatal(err)
 		}
@@ -616,11 +647,10 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if r, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", caps); err != nil || r.Attempt != 1 {
 			t.Fatalf("start after a finish = %+v, %v", r, err)
 		}
-		// Three starts today, counted whatever caps they were made under; skipped across a UTC midnight.
-		day := time.Now().UTC().Truncate(24 * time.Hour)
+		// Three starts today, counted whatever caps they were made under.
 		_, err = h.Records.StartCappedAttempt("start-review", "app", "t7", "review", store.AttemptCaps{MaxPerDay: 3})
 		refusal, ok = errors.AsType[*store.CapRefusal](err)
-		if time.Now().UTC().Truncate(24*time.Hour).Equal(day) && (!ok || refusal.Cap != store.CapDaily || refusal.Count != 3 || refusal.Limit != 3) {
+		if !ok || refusal.Cap != store.CapDaily || refusal.Count != 3 || refusal.Limit != 3 {
 			t.Fatalf("start past the daily cap = %v, want a daily cap refusal at 3 of 3", err)
 		}
 	})
@@ -644,6 +674,46 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		}
 		if r, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", store.AttemptCaps{}); err != nil || r.Attempt != 1 {
 			t.Errorf("start without Hold while paused = %+v, %v; want it admitted", r, err)
+		}
+	})
+
+	t.Run("refuses at the daily cap until the clock crosses a UTC midnight", func(t *testing.T) {
+		h := setup(t)
+		h.Clock.Set(time.Date(2031, 3, 9, 23, 30, 0, 0, time.UTC))
+		caps := store.AttemptCaps{MaxRunning: 10, MaxPerDay: 2}
+		for _, step := range []string{"plan", "build"} {
+			if _, err := h.Records.StartCappedAttempt("start-"+step, "app", "t7", step, caps); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, err := h.Records.StartCappedAttempt("start-review", "app", "t7", "review", caps)
+		refusal, ok := errors.AsType[*store.CapRefusal](err)
+		if !ok || refusal.Cap != store.CapDaily || refusal.Count != 2 || !refusal.Day.Equal(time.Date(2031, 3, 9, 0, 0, 0, 0, time.UTC)) {
+			t.Fatalf("third start before midnight = %v, want a daily cap refusal at 2 on 2031-03-09", err)
+		}
+		h.Clock.Set(time.Date(2031, 3, 10, 0, 30, 0, 0, time.UTC))
+		if r, err := h.Records.StartCappedAttempt("start-review", "app", "t7", "review", caps); err != nil || r.Attempt != 1 {
+			t.Fatalf("first start after midnight = %+v, %v; want it admitted", r, err)
+		}
+		_, err = h.Records.StartCappedAttempt("start-fix", "app", "t7", "fix", store.AttemptCaps{MaxPerDay: 1})
+		refusal, ok = errors.AsType[*store.CapRefusal](err)
+		if !ok || refusal.Cap != store.CapDaily || refusal.Count != 1 || !refusal.Day.Equal(time.Date(2031, 3, 10, 0, 0, 0, 0, time.UTC)) {
+			t.Fatalf("second start after midnight = %v, want a daily cap refusal at 1 on 2031-03-10", err)
+		}
+	})
+
+	t.Run("refuses a capped start of a closed task as invalid", func(t *testing.T) {
+		h := setup(t)
+		caps := store.AttemptCaps{MaxRunning: 1}
+		if _, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", caps); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.Records.SetTaskState("close", "app", "t7", store.TaskCancelled); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", caps)
+		if _, ok := errors.AsType[*store.CapRefusal](err); ok || !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("capped start of a closed task at a cap = %v, want %v and no cap refusal", err, store.ErrInvalid)
 		}
 	})
 
