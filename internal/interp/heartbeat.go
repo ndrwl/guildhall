@@ -9,6 +9,9 @@ import (
 	"github.com/ndrwl/guildhall/internal/digest"
 )
 
+// WorkerStalled is the type of the Director message a stalled worker observation sends.
+const WorkerStalled = "worker-stalled"
+
 func (r *run) workerStalled(step string, number int) error {
 	interval := r.e.StallInterval
 	if interval <= 0 {
@@ -32,6 +35,6 @@ func (r *run) workerStalled(step string, number int) error {
 		return nil
 	}
 	output := h.LastOutputAt.UTC().Format(time.RFC3339Nano)
-	return r.notify(fmt.Sprintf("worker-stalled.%s-%d.%s", step, number, digest.Of([]byte(output)).Hex()), "worker-stalled",
+	return r.notify(fmt.Sprintf("worker-stalled.%s-%d.%s", step, number, digest.Of([]byte(output)).Hex()), WorkerStalled,
 		fmt.Sprintf("Attempt %d of step %s has a fresh heartbeat but no output since %s.", number, step, output))
 }

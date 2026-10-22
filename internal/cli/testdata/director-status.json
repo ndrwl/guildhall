@@ -1,0 +1,437 @@
+{
+  "as_of": {
+    "partial": true,
+    "excluded": [
+      "worker files",
+      "transcripts",
+      "forge state"
+    ],
+    "sequence": 23,
+    "committed_at": "2026-10-22T09:22:00Z"
+  },
+  "session": {
+    "state": "no session"
+  },
+  "mode": {
+    "name": "standalone"
+  },
+  "tasks": [
+    {
+      "repository": "app",
+      "id": "t-1",
+      "title": "Unstarted",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7"
+      },
+      "steps": []
+    },
+    {
+      "repository": "app",
+      "id": "t-2",
+      "title": "Running",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7"
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "live": {
+            "state": "absent",
+            "reason": "no attempt directory and no ownership record"
+          }
+        }
+      ]
+    },
+    {
+      "repository": "app",
+      "id": "t-3",
+      "title": "Failed latest",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7"
+      },
+      "next": {
+        "wait": "director",
+        "step": "build",
+        "attempt": 1
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "outcome": "succeeded"
+        },
+        {
+          "step": "build",
+          "attempt": 1,
+          "outcome": "failed"
+        }
+      ]
+    },
+    {
+      "repository": "app",
+      "id": "t-4",
+      "title": "Decision open",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7"
+      },
+      "next": {
+        "wait": "decision",
+        "step": "plan",
+        "decision": "accept-plan"
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "outcome": "succeeded"
+        }
+      ]
+    },
+    {
+      "repository": "app",
+      "id": "t-5",
+      "title": "Done",
+      "state": "done",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7"
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "outcome": "stopped"
+        }
+      ]
+    },
+    {
+      "repository": "app",
+      "id": "t-6",
+      "title": "Killed launcher",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7"
+      },
+      "steps": [
+        {
+          "step": "build",
+          "attempt": 1,
+          "live": {
+            "state": "exited",
+            "reason": "launcher identity gone; no containment recorded"
+          }
+        }
+      ]
+    },
+    {
+      "repository": "lib",
+      "id": "t-1",
+      "title": "Other repository",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7"
+      },
+      "steps": []
+    }
+  ],
+  "decisions": [
+    {
+      "repository": "app",
+      "task_id": "t-4",
+      "id": "accept-plan",
+      "kind": "approval",
+      "subject": {
+        "kind": "document",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "options": [
+        "approve",
+        "reject"
+      ],
+      "question": "Accept the plan?",
+      "opened_at": "2026-10-22T09:14:00Z"
+    }
+  ],
+  "messages": {
+    "unread": 2,
+    "by_type": {
+      "question": 1,
+      "worker-stalled": 1
+    },
+    "headers": [
+      {
+        "id": "app.t-2.worker-stalled.plan-1.abc",
+        "type": "worker-stalled",
+        "repository": "app",
+        "task_id": "t-2",
+        "step": "plan",
+        "attempt": 1,
+        "sequence": 20
+      },
+      {
+        "id": "q-1",
+        "type": "question",
+        "repository": "lib",
+        "task_id": "t-1",
+        "sequence": 23
+      }
+    ]
+  },
+  "recent": [
+    {
+      "mutation_id": "i-4",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-4",
+      "record": "task",
+      "sequence": 4,
+      "committed_at": "2026-10-22T09:03:00Z"
+    },
+    {
+      "mutation_id": "i-5",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-5",
+      "record": "task",
+      "sequence": 5,
+      "committed_at": "2026-10-22T09:04:00Z"
+    },
+    {
+      "mutation_id": "i-6",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-6",
+      "record": "task",
+      "sequence": 6,
+      "committed_at": "2026-10-22T09:05:00Z"
+    },
+    {
+      "mutation_id": "i-7",
+      "operation": "create-task",
+      "repository": "lib",
+      "task_id": "t-1",
+      "record": "task",
+      "sequence": 7,
+      "committed_at": "2026-10-22T09:06:00Z"
+    },
+    {
+      "mutation_id": "i-8",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-2",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 8,
+      "committed_at": "2026-10-22T09:07:00Z"
+    },
+    {
+      "mutation_id": "i-9",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-3",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 9,
+      "committed_at": "2026-10-22T09:08:00Z"
+    },
+    {
+      "mutation_id": "i-10",
+      "operation": "finish-attempt",
+      "repository": "app",
+      "task_id": "t-3",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 10,
+      "committed_at": "2026-10-22T09:09:00Z"
+    },
+    {
+      "mutation_id": "i-11",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-3",
+      "attempt": 1,
+      "record": "attempt/build/1",
+      "sequence": 11,
+      "committed_at": "2026-10-22T09:10:00Z"
+    },
+    {
+      "mutation_id": "i-12",
+      "operation": "finish-attempt",
+      "repository": "app",
+      "task_id": "t-3",
+      "attempt": 1,
+      "record": "attempt/build/1",
+      "sequence": 12,
+      "committed_at": "2026-10-22T09:11:00Z"
+    },
+    {
+      "mutation_id": "i-13",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-4",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 13,
+      "committed_at": "2026-10-22T09:12:00Z"
+    },
+    {
+      "mutation_id": "i-14",
+      "operation": "finish-attempt",
+      "repository": "app",
+      "task_id": "t-4",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 14,
+      "committed_at": "2026-10-22T09:13:00Z"
+    },
+    {
+      "mutation_id": "i-15",
+      "operation": "open-decision",
+      "repository": "app",
+      "task_id": "t-4",
+      "record": "decision/accept-plan",
+      "sequence": 15,
+      "committed_at": "2026-10-22T09:14:00Z"
+    },
+    {
+      "mutation_id": "i-16",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-5",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 16,
+      "committed_at": "2026-10-22T09:15:00Z"
+    },
+    {
+      "mutation_id": "i-17",
+      "operation": "finish-attempt",
+      "repository": "app",
+      "task_id": "t-5",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 17,
+      "committed_at": "2026-10-22T09:16:00Z"
+    },
+    {
+      "mutation_id": "i-18",
+      "operation": "set-task-state",
+      "repository": "app",
+      "task_id": "t-5",
+      "record": "task",
+      "sequence": 18,
+      "committed_at": "2026-10-22T09:17:00Z"
+    },
+    {
+      "mutation_id": "i-19",
+      "operation": "start-owned-attempt",
+      "repository": "app",
+      "task_id": "t-6",
+      "attempt": 1,
+      "record": "attempt/build/1",
+      "sequence": 19,
+      "committed_at": "2026-10-22T09:18:00Z"
+    },
+    {
+      "mutation_id": "message:app.t-2.worker-stalled.plan-1.abc",
+      "operation": "send-message",
+      "repository": "app",
+      "task_id": "t-2",
+      "attempt": 1,
+      "record": "message/app.t-2.worker-stalled.plan-1.abc",
+      "sequence": 20,
+      "committed_at": "2026-10-22T09:19:00Z"
+    },
+    {
+      "mutation_id": "message:n-1",
+      "operation": "send-message",
+      "repository": "app",
+      "task_id": "t-4",
+      "record": "message/n-1",
+      "sequence": 21,
+      "committed_at": "2026-10-22T09:20:00Z"
+    },
+    {
+      "mutation_id": "message-ack:n-1",
+      "operation": "ack-message",
+      "repository": "app",
+      "task_id": "t-4",
+      "record": "message/n-1",
+      "sequence": 22,
+      "committed_at": "2026-10-22T09:21:00Z"
+    },
+    {
+      "mutation_id": "message:q-1",
+      "operation": "send-message",
+      "repository": "lib",
+      "task_id": "t-1",
+      "record": "message/q-1",
+      "sequence": 23,
+      "committed_at": "2026-10-22T09:22:00Z"
+    }
+  ],
+  "needs_me": [
+    {
+      "kind": "retry",
+      "repository": "app",
+      "task_id": "t-3",
+      "step": "build",
+      "attempt": 1,
+      "retryable": true,
+      "reason": "attempt 1 of build failed",
+      "command": "guildhall step retry --repo app --task t-3 --step build --attempt 1"
+    },
+    {
+      "kind": "resume",
+      "repository": "app",
+      "task_id": "t-6",
+      "step": "build",
+      "attempt": 1,
+      "resume": true,
+      "reason": "exited: launcher identity gone; no containment recorded",
+      "command": "guildhall artisan resume --repo app --task t-6 --step build --attempt 1"
+    },
+    {
+      "kind": "stalled",
+      "repository": "app",
+      "task_id": "t-2",
+      "step": "plan",
+      "attempt": 1,
+      "message": "app.t-2.worker-stalled.plan-1.abc",
+      "reason": "No output for 20m.",
+      "command": "guildhall messages read app.t-2.worker-stalled.plan-1.abc"
+    },
+    {
+      "kind": "decision",
+      "repository": "app",
+      "task_id": "t-4",
+      "decision": "accept-plan",
+      "reason": "Accept the plan?",
+      "command": "guildhall decide show --repo app --task t-4 --decision accept-plan"
+    },
+    {
+      "kind": "messages",
+      "count": 1,
+      "reason": "1 unread Director message",
+      "command": "guildhall messages list director"
+    },
+    {
+      "kind": "director",
+      "repository": "app",
+      "task_id": "t-3",
+      "reason": "the last advance waits for the Director",
+      "command": "guildhall task timeline --repo app --json t-3"
+    }
+  ]
+}

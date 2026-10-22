@@ -54,6 +54,8 @@ Commands:
                  start the next attempt after a failed or stopped one
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
+  director status --json --store <path> --state <dir>
+                 print the Director's status feed and what needs the Director or Guildmaster
   help           print this help
 `
 
@@ -167,6 +169,8 @@ func (a *App) Run(args []string) int {
 		return a.step(rest)
 	case "decide":
 		return a.decide(rest)
+	case "director":
+		return a.director(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

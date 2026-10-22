@@ -1,0 +1,32 @@
+Red runs for director status (D7), 2026-10-22, on b000a8d with the branch's tests against stub bodies.
+
+## store: go test ./internal/store -run DirectorView, DirectorView returning an error
+--- FAIL: TestDirectorViewOfAnEmptyStore (0.03s)
+    director_view_test.go:12: store: director view is not implemented
+--- FAIL: TestDirectorView (0.15s)
+    director_view_test.go:66: store: director view is not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.190s
+FAIL
+
+## cli: go test ./internal/cli -run DirectorStatus, director a usage error
+--- FAIL: TestDirectorStatusGolden (0.23s)
+    director_status_test.go:145: exit 2, stderr guildhall: director: not implemented
+--- FAIL: TestDirectorStatusOfAnEmptyCopy (0.02s)
+    director_status_test.go:175: exit 2, stderr guildhall: director: not implemented
+--- FAIL: TestDirectorStatusWaitsForTheWriter (0.24s)
+    director_status_test.go:203: status finished while the writer held the store: exit 2, guildhall: director: not implemented
+--- FAIL: TestDirectorStatusNext (0.22s)
+    director_status_test.go:224: exit 2, guildhall: director: not implemented
+--- FAIL: TestDirectorStatusUsage (0.22s)
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 2 naming "director: the command is status"
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 2 naming "director: the command is status"
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 2 naming "prints JSON only; pass --json"
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 2 naming "--store and --state are required, or --copy"
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 2 naming "--store and --state are required, or --copy"
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 2 naming "unexpected argument \"extra\""
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 2 naming "flag provided but not defined: -repo"
+        director_status_test.go:278: exit 2, stdout "", stderr "guildhall: director: not implemented\n\nUsage: …"; want exit 1 naming "guildhall store init"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.961s
+FAIL
