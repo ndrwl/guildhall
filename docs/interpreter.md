@@ -36,6 +36,7 @@ When an advance reaches a launched, unfinished attempt with no result, the engin
 Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
 `interp.StalledMessage(key, lastOutput)` is that message, id, type and text; the attempt's launcher sends the same message from its own heartbeat when it runs with [`--stall-interval`](artisan.md#heartbeat), which `launch.Process` passes from `Engine.StallInterval`, so a silent worker is reported without anything advancing its task, and an advance observing the same crossing replays it.
 The advance's observation stays as the fallback, for a launcher that runs without the interval or could not send.
+`interp.AdvanceFailedMessage(key, command, lastErr)` is the other message a launcher sends, `advance-failed`, once per attempt, when its [watcher](running.md#the-watcher) advance failed twice.
 Attempts, their records and waits are unchanged.
 Missing or stale heartbeats, and one naming another attempt, emit nothing; a stale heartbeat of a live launcher is reconcile's [`stuck`](artisan.md#reconcile).
 A heartbeat file the engine cannot accept, such as a newer schema, fails the advance with that error rather than being guessed at.

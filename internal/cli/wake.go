@@ -47,7 +47,7 @@ func (h herdrPanes) TypeLine(ctx context.Context, p store.DirectorPane, line str
 	return err
 }
 
-// wakingOutbox is the engine's outbox: it sends through records and then wakes the Director for a message
+// wakingOutbox is the launcher's outbox: it sends through records and then wakes the Director for a message
 // addressed to it (docs/messaging.md#waking-the-director). A failed wake does not fail the send: the message
 // is stored and waits for the Director's next turn, the failure is reported on stderr, and a replayed send,
 // as the engine's recovery makes, tries the wake again.
@@ -60,13 +60,41 @@ type wakingOutbox struct {
 func (o wakingOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
 	r, err := o.records.Send(to, e)
 	if err == nil && to.Role == store.RecipientDirector {
-		ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
-		defer cancel()
-		if _, werr := messaging.Wake(ctx, o.records, o.pane, e.ID, messaging.SenderGuildhall); werr != nil {
-			_, _ = fmt.Fprintf(o.stderr, "guildhall: wake: %v\n", werr)
-		}
+		o.wake(e.ID)
 	}
 	return r, err
+}
+
+// wake wakes the Director for message id, bounded by wakeTimeout, reporting a failure on stderr.
+func (o wakingOutbox) wake(id string) {
+	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+	defer cancel()
+	if _, err := messaging.Wake(ctx, o.records, o.pane, id, messaging.SenderGuildhall); err != nil {
+		_, _ = fmt.Fprintf(o.stderr, "guildhall: wake: %v\n", err)
+	}
+}
+
+// deferredOutbox is the engine's outbox in an advance: it sends through records under the task lock and keeps the
+// ids of the messages sent to the Director, which wakeAll wakes once the advance has released the lock, one wake
+// per message as wakingOutbox makes, so the lock is held for records and launches only.
+type deferredOutbox struct {
+	records storeRecords
+	ids     []string
+}
+
+func (o *deferredOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
+	r, err := o.records.Send(to, e)
+	if err == nil && to.Role == store.RecipientDirector {
+		o.ids = append(o.ids, e.ID)
+	}
+	return r, err
+}
+
+// wakeAll wakes the Director for each message sent, in send order, through w.
+func (o *deferredOutbox) wakeAll(w wakingOutbox) {
+	for _, id := range o.ids {
+		w.wake(id)
+	}
 }
 
 func (p storeRecords) WakeFor(id string) (store.Wake, error) {

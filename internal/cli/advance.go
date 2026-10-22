@@ -309,6 +309,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return interp.Next{}, err
 	}
+	// Deferred before the task lock is taken, so the Director is woken for what the advance sent once the lock is
+	// released (docs/messaging.md#waking-the-director), whether or not the advance succeeded.
+	outbox := &deferredOutbox{records: storeRecords(f.store)}
+	defer outbox.wakeAll(wakingOutbox{storeRecords(f.store), a.directorPane(), a.Stderr})
 	ctx, cancel := context.WithTimeout(context.Background(), storeWait)
 	release, err := artisan.LockAttempt(ctx, taskDir)
 	cancel()
@@ -345,7 +349,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Records:  storeRecords(f.store),
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
-		Outbox:   wakingOutbox{storeRecords(f.store), a.directorPane(), a.Stderr},
+		Outbox:   outbox,
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,

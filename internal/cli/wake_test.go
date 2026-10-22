@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -110,5 +111,58 @@ func TestMessagesSendToAnArtisanWakesNoDirector(t *testing.T) {
 	}
 	if ws := readWakes(t, path); len(ws) != 0 || len(panes.lines) != 0 {
 		t.Fatalf("wakes = %+v, typed %q", ws, panes.lines)
+	}
+}
+
+// slowPane is a Director pane that types its first line only once released, past any bound of its own, as a hung
+// terminal multiplexer would; typing is closed when that line begins, and later lines are typed at once.
+type slowPane struct {
+	typing, release chan struct{}
+	once            sync.Once
+}
+
+func (p *slowPane) TypeLine(context.Context, store.DirectorPane, string) error {
+	first := false
+	p.once.Do(func() { first = true; close(p.typing) })
+	if first {
+		<-p.release
+	}
+	return nil
+}
+
+// TestTheAdvanceWakesOutsideTheTaskLock (F36): task start's advance records the grill's stage message under the task
+// lock and wakes the Director for it after releasing the lock, so while that wake types into a slow pane a second
+// task start of the same task takes the lock and proceeds instead of waiting it out.
+func TestTheAdvanceWakesOutsideTheTaskLock(t *testing.T) {
+	d := newRunDirectorWith(t, "grill.toml")
+	pane := &slowPane{typing: make(chan struct{}), release: make(chan struct{})}
+	d.pane = pane
+	startSession(t, d.store, store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"})
+	start := append([]string{"task", "start"}, d.flags("t-1")...)
+	want := `{"wait":"director-stage","step":"grill","attempt":1}` + "\n"
+	type ran struct {
+		code        int
+		out, stderr string
+	}
+	first := make(chan ran, 1)
+	go func() {
+		code, out, stderr := d.run(t, start...)
+		first <- ran{code, out, stderr}
+	}()
+	select {
+	case <-pane.typing:
+	case r := <-first:
+		t.Fatalf("the first task start returned without waking: %+v", r)
+	}
+	code, out, stderr := d.run(t, start...)
+	close(pane.release)
+	if code != 0 || out != want {
+		t.Errorf("a second task start while the first one's wake types: exit %d, %q, stderr %s; want it to proceed", code, out, stderr)
+	}
+	if r := <-first; r.code != 0 || r.out != want {
+		t.Errorf("the first task start: %+v", r)
+	}
+	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].MessageID != "app.t-1.stage.grill-1" || ws[0].Decision != store.WakeWoke {
+		t.Errorf("wakes = %+v, want one woke for the stage message", ws)
 	}
 }

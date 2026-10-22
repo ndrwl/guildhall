@@ -29,9 +29,11 @@
 //  6. with Config.Advance, once the store outcome is recorded it advances the
 //     attempt's task as its watcher (advance): step done after a finished
 //     attempt with a valid result, otherwise task start, so the engine sends
-//     the Director attempt-failed. The advance's failure is only logged and
-//     never changes the outcome or Run's result: both commands are
-//     idempotent, and the Director's next task start repeats them.
+//     the Director attempt-failed. A failed advance is logged and run once
+//     more; when that fails too the Director is sent advance-failed through
+//     Config.Outbox (interp.AdvanceFailedMessage). Neither changes the outcome
+//     or Run's result: both commands are idempotent, and the Director's next
+//     task start or step done repeats them.
 //
 // When survivors outlive the last rung (artisan.ErrNotEmpty) the attempt is
 // left running and owned, so reconcile sees the survivors once this process
@@ -208,7 +210,8 @@ type Config struct {
 	// the worker's output time is the newest modification of Stdout and Stderr when they are regular files.
 	// Zero, or a nil Outbox, sends nothing.
 	StallInterval time.Duration
-	Outbox        interp.Outbox
+	// Outbox sends the launcher's Director messages, worker-stalled and advance-failed; nil sends none.
+	Outbox interp.Outbox
 }
 
 // Report is how an owned attempt ended.
@@ -332,8 +335,10 @@ func Run(ctx context.Context, c Config) (Report, error) {
 
 // advance runs c.Advance for the attempt rep recorded: the program, then step done with the attempt's identity
 // and result file after a finished attempt with a valid result, otherwise task start with its task, then the
-// rest of c.Advance and the identity. The child's output is appended to LogFile in the attempt directory and its
-// end is logged as an advance event; neither its failure nor the log's changes the attempt.
+// rest of c.Advance and the identity. The child's output is appended to LogFile in the attempt directory and each
+// run's end is logged as an advance event. A run that fails is run once more, which waits the task lock's wait
+// again; when that run fails too, the Director is sent interp.AdvanceFailedMessage through c.Outbox, which needs no
+// task lock and wakes it as any send does. Neither a failure nor the log's changes the attempt.
 func (c Config) advance(rep Report) {
 	if len(c.Advance) == 0 {
 		return
@@ -345,19 +350,63 @@ func (c Config) advance(rep Report) {
 		command = []string{"step", "done"}
 		identity = []string{"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt), "--result", c.Files().ResultFile}
 	}
-	argv := slices.Concat(c.Advance[1:], identity)
-	cmd := exec.Command(c.Advance[0], append(command, argv...)...)
+	argv := append(slices.Clone(command), slices.Concat(c.Advance[1:], identity)...)
+	name := strings.Join(command, " ")
+	var lastErr string
+	for range 2 {
+		var err error
+		if lastErr, err = c.runAdvance(name, argv); err == nil {
+			return
+		}
+	}
+	if c.Outbox != nil {
+		_, _ = c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, interp.AdvanceFailedMessage(k, name, lastErr))
+	}
+}
+
+// runAdvance runs c.Advance's program once with argv, the command called name and its arguments, appending its
+// output to LogFile and logging its end as an advance event. A failed run's error is returned with its last line of
+// error output, or the error's text when it wrote none.
+func (c Config) runAdvance(name string, argv []string) (string, error) {
+	cmd := exec.Command(c.Advance[0], argv...)
+	var tail lastLine
+	cmd.Stdout, cmd.Stderr = io.Discard, &tail
 	log, err := os.OpenFile(filepath.Join(c.Dir(), LogFile), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err == nil {
 		defer func() { _ = log.Close() }()
-		cmd.Stdout, cmd.Stderr = log, log
+		cmd.Stdout, cmd.Stderr = log, io.MultiWriter(log, &tail)
 	}
-	err = errors.Join(err, cmd.Run())
+	runErr := cmd.Run()
+	err = errors.Join(err, runErr)
 	exit := -1
 	if cmd.ProcessState != nil {
 		exit = cmd.ProcessState.ExitCode()
 	}
-	_ = artisan.LogAdvance(c.Dir(), strings.Join(command, " "), exit, err)
+	_ = artisan.LogAdvance(c.Dir(), name, exit, err)
+	if runErr == nil {
+		return "", nil
+	}
+	if line := tail.String(); line != "" {
+		return line, runErr
+	}
+	return runErr.Error(), runErr
+}
+
+// lastLine keeps the last non-empty line written to it, up to its last 4 KiB.
+type lastLine struct{ buf []byte }
+
+func (l *lastLine) Write(p []byte) (int, error) {
+	const keep = 4 << 10
+	l.buf = append(l.buf, p...)
+	if len(l.buf) > 2*keep {
+		l.buf = append([]byte(nil), l.buf[len(l.buf)-keep:]...)
+	}
+	return len(p), nil
+}
+
+func (l *lastLine) String() string {
+	lines := strings.Split(strings.TrimSpace(string(l.buf)), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 // lastOutput is the worker's last output for the heartbeat: the newest modification time of those of ws that are
