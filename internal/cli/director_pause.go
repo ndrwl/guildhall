@@ -355,13 +355,6 @@ func held(s *store.Store) (bool, error) {
 	return d.Holds(), err
 }
 
-func heldWithRecords(records storeRecords) (bool, error) {
-	if _, err := os.Stat(records.path); err != nil {
-		return false, nil
-	}
-	return withRecords(records, true, nil, held)
-}
-
 // testHookStopWaitsForTask, when set, is called as director stop starts waiting for a task's lock to stop an attempt
 // nothing owns.
 var testHookStopWaitsForTask func()
