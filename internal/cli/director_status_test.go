@@ -178,13 +178,15 @@ func checkIndentedGolden(t *testing.T, name, line string) {
 
 func TestDirectorStatusGolden(t *testing.T) {
 	dir := statusCopy(t)
-	// The copy's config gives the guard rails the status shows beside today's counts.
+	// The copy's config gives the guard rails the status shows beside today's counts, and the quality settings.
 	writeFile(t, filepath.Join(dir, "config.toml"), `schema_version = 1
 mode = "director"
 name = "alpha"
 
 [local]
 max_running_attempts = "3"
+quality_self_review = "on"
+quality_size_budget_lines = "300"
 
 [[repository]]
 id = "app"
@@ -291,6 +293,47 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "state")); !os.IsNotExist(err) {
 		t.Fatalf("status created the state directory (%v)", err)
+	}
+}
+
+// TestDirectorStatusOfAnInvalidConfig: a config Parse refuses gives its reason as the guard rails' config_error
+// and no quality settings, rather than failing the feed.
+func TestDirectorStatusOfAnInvalidConfig(t *testing.T) {
+	dir := t.TempDir()
+	if app, _, stderr := newTestApp(nil, nil); app.Run([]string{"store", "init", filepath.Join(dir, "director.store")}) != 0 {
+		t.Fatalf("store init: %s", stderr)
+	}
+	writeFile(t, filepath.Join(dir, "config.toml"), `schema_version = 1
+mode = "director"
+name = "alpha"
+
+[local]
+quality_self_review = "yes"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+`)
+	code, out, stderr := directorCmd(t, nil, "status", "--copy", dir, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	var st struct {
+		Session struct {
+			GuardRails map[string]any `json:"guard_rails"`
+		} `json:"session"`
+		Quality *json.RawMessage `json:"quality"`
+	}
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		t.Fatal(err)
+	}
+	if msg, _ := st.Session.GuardRails["config_error"].(string); !strings.Contains(msg, "quality_self_review") {
+		t.Errorf("config_error = %q, want the refusal naming quality_self_review", msg)
+	}
+	if st.Quality != nil {
+		t.Errorf("quality = %s, want none for a config that cannot be read", *st.Quality)
 	}
 }
 
