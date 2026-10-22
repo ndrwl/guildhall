@@ -182,8 +182,11 @@ func (a *App) directorStop(args []string) int {
 // superseded when its supervisor is gone, and returns it. A session a newer one has superseded is left as it is.
 func finishStop(s *store.Store, n int, gone bool) (store.DirectorSession, error) {
 	d, err := s.LatestDirectorSession()
-	if err != nil || d.Number != n {
+	if err != nil {
 		return d, err
+	}
+	if d.Number != n {
+		return s.DirectorSession(n)
 	}
 	if gone && d.State != store.DirectorStopped {
 		if _, err := s.EndDirectorSession(n, store.EndSuperseded, d.StateSequence); err != nil {

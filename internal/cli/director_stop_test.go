@@ -265,6 +265,7 @@ func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
 		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != pausedWait+"\n" {
 			t.Errorf("task start after the runtime ended, during the sweep: exit %d, %q, stderr %s", code, out, stderr)
 		}
+		startRefused(t, dir)
 	})
 	code, out, stderr := d.run(t, "director", "stop", "--now", "--copy", dir)
 	var printed store.DirectorSession
@@ -282,6 +283,63 @@ func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
 	}
 	if code, _, stderr := d.run(t, "director", "stop", "--copy", dir); code != 1 || !strings.Contains(stderr, "is stopped") {
 		t.Errorf("director stop of a swept stopped session: exit %d, stderr %s; want it refused", code, stderr)
+	}
+	d.restart(t, dir)
+}
+
+// restart checks director start is admitted over dir's stopped session, as session 2, and stops it again.
+func (d runDirector) restart(t *testing.T, dir string) {
+	t.Helper()
+	done := supervise(t, dir, time.Hour)
+	if code, out, stderr := d.run(t, "director", "stop", "--now", "--copy", dir); code != 0 {
+		t.Fatalf("director stop --now of session 2: exit %d, %s %s", code, out, stderr)
+	}
+	if code := ended(t, done); code != 0 {
+		t.Errorf("director start of session 2 exited %d, want 0", code)
+	}
+	if got := sessions(t, dir); len(got) != 2 || got[1].State != store.DirectorStopped {
+		t.Errorf("sessions = %+v; want session 2 started and stopped", got)
+	}
+}
+
+// TestDirectorStartWaitsForAnInterruptedSweep: a session recorded stopped while its stop's sweep had not finished
+// refuses director start, recording nothing; director stop again finishes the sweep and prints that session, and
+// director start is then admitted.
+func TestDirectorStartWaitsForAnInterruptedSweep(t *testing.T) {
+	dir, d := supervisedCopy(t)
+	recordSession(t, d.store, false, store.DirectorRunning, store.DirectorStopping, store.DirectorStopped)
+	d.recordUnlaunched(t, "t-2")
+	startRefused(t, dir)
+	code, out, stderr := d.run(t, "director", "stop", "--copy", dir)
+	var printed store.DirectorSession
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.Number != 1 || printed.State != store.DirectorStopped || printed.Sweeping {
+		t.Fatalf("director stop: exit %d, %q (%v), stderr %s; want session 1 stopped and swept", code, out, err, stderr)
+	}
+	d.restart(t, dir)
+}
+
+// TestDirectorStartRefusesAStoppingGoneSession: a session left stopping by a supervisor that is gone, its sweep
+// done, still needs director stop to record its end, so a start is refused until then.
+func TestDirectorStartRefusesAStoppingGoneSession(t *testing.T) {
+	path := emptyStore(t)
+	recordSession(t, path, true, store.DirectorRunning, store.DirectorStopping)
+	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		ds, err := s.DirectorSession(1)
+		if err != nil {
+			return store.Receipt{}, err
+		}
+		return s.FinishDirectorStop(1, ds.StateSequence)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := withStore(path, true, checkSupersede); !errors.Is(err, errStopSweeping) {
+		t.Fatalf("start over a stopping session whose supervisor is gone = %v, want errStopSweeping", err)
+	}
+	if code, out, stderr := runCLI(t, "director", "stop", "--store", path, "--state", t.TempDir()); code != 0 {
+		t.Fatalf("director stop: exit %d, %s %s", code, out, stderr)
+	}
+	if n, err := withStore(path, true, checkSupersede); err != nil || n != 1 {
+		t.Errorf("start after director stop = %d, %v; want session 1 superseded", n, err)
 	}
 }
 

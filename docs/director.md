@@ -29,6 +29,7 @@ A failed check is exit 1 with nothing recorded and nothing written in the copy, 
 
 A start is refused with exit 1, naming `director: live` and recording nothing, while the newest session is not `stopped` and its supervisor's recorded identity names a live process, or cannot be shown gone.
 A session whose supervisor is gone, such as one whose machine restarted, is superseded instead.
+A start is refused with exit 1 the same way, naming `director: stop sweeping`, while the newest session's [stop](#stop) has not finished stopping its attempts: the session is `sweeping`, or `stopping` with its supervisor gone; wait for `director stop` to finish, or run it again to finish the sweep.
 
 Then it records session `<n>`, one more than the newest, as `recovering` with its own process identity, release and config digest, which records an earlier session still recorded live as `stopped` with the end reason `superseded`.
 `--herdr-session`, `--herdr-workspace`, `--herdr-tab` and `--herdr-pane`, given all together and never with `--tab`, are the pane binding the [tab wrapper](#the-directors-tab) passes; the session records them, and a [wake](messaging.md#waking-the-director) types into that pane.
@@ -139,7 +140,7 @@ guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]
 `director stop` ends the Director session and its Artisan attempts ([decision](decisions/director-pause-stop.md)).
 It records the newest session `stopping` and `sweeping`, then stops every running attempt in the store, records the sweep finished, and prints the session as one JSON line.
 A stopping session starts no new attempt, as a paused one does, and neither does a session whose stop is still `sweeping`, even once its supervisor has recorded it `stopped`, so every attempt recorded before the stop is one the stop sees.
-Once the sweep is finished the hold lifts, and a `task start` by the Guildmaster with no Director running works again.
+Once the sweep is finished the hold lifts, and a `task start` by the Guildmaster with no Director running works again; until then [`director start`](#start) is refused, so no new session lifts the hold either.
 An attempt with an owning launcher is stopped as [`artisan stop`](artisan.md#commands) does.
 An attempt nothing owns, a [Director stage](interpreter.md#director-stages) such as the grill or an Artisan attempt an advance recorded but has not launched, is recorded `stopped` under its task's lock, after any advance or `step finish` in progress on the task, so it no longer counts against the [attempt caps](#guard-rails), [`needs_me`](#status) lists it to retry, a later `step finish` of it is refused and no launcher can take it.
 A Director stage whose result `step finish` already published has finished its work and is left for its advance to take.

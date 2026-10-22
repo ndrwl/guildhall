@@ -16,6 +16,7 @@ The captain's semantics stand: pause stops new work only and running attempts fi
   `RequestDirectorStop` therefore sets the session's durable `Sweeping`, and `director stop` clears it with `FinishDirectorStop` only once every attempt is proven stopped; `Holds` is `paused`, `stopping` or `Sweeping`, so `held` and the start transaction read the same rule.
   A gone supervisor's session is recorded `stopping` first and `stopped` as `superseded` only after the sweep.
   A sweep that did not finish leaves the hold on, and `director stop` again sweeps a `stopped` session that is still `Sweeping` rather than refusing it; once it is finished, a Guildmaster's `task start` with no Director running is admitted again.
+  The hold reads only the newest session, so `director start` refuses, recording nothing, while that session is `Sweeping` or `stopping` with its supervisor gone (`director: stop sweeping`), naming `director stop` to finish it; a new session would otherwise hide the unfinished sweep, and `director stop` again would target the new session.
   `Engine.Hold` stays as an early read that spares a held advance its preparation; it no longer decides.
   A replayed start returns its receipt whatever the session is now, so replay identity is unchanged.
   Another uncoordinated read before the start was rejected: it only narrows the window.
