@@ -18,6 +18,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // roleEnv makes the test binary act as another program in child processes:
@@ -183,7 +184,7 @@ func TestArtisanStartInHerdrTabTypesCommandAndWaitsForFile(t *testing.T) {
 	t.Setenv("FAKE_HERDR_LOG", log)
 	prompt, result, dir := artisanFiles(t, "Do it.\n")
 	app, stdout, stderr := newArtisanApp(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(60*time.Second))
 	defer cancel()
 	app.Stderr = artisanTestWriter(func(p []byte) (int, error) {
 		n, err := stderr.Write(p)

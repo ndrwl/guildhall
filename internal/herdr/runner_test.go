@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // Client.run is the client's process boundary: it runs argv with exactly env
@@ -126,10 +128,10 @@ func testRunner(t *testing.T, newRunner func(t *testing.T) runnerUnderTest) {
 				_, _, exit, err := r.run(ctx, argv, minimalEnv())
 				done <- ret{exit, err}
 			}()
-			deadline := time.Now().Add(30 * time.Second)
+			deadline := time.Now().Add(testenv.Ceiling(30 * time.Second))
 			for !r.started() {
 				if time.Now().After(deadline) {
-					t.Fatal("hung program did not start within 30s")
+					t.Fatalf("hung program did not start within %v", testenv.Ceiling(30*time.Second))
 				}
 				select {
 				case got := <-done:

@@ -43,7 +43,7 @@ func mainIfSpeaker() {
 type storeOutbox string
 
 func (p storeOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
-	s, err := store.Open(string(p), store.Options{RequireStore: true})
+	s, err := store.Open(string(p), store.Options{RequireStore: true, LockTimeout: storeWait})
 	if err != nil {
 		return store.Receipt{}, err
 	}

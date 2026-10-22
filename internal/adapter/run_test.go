@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/herdr"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // helperEnv makes the test binary act as a child process for process tests.
@@ -50,7 +51,7 @@ func TestStartProcessCompletesFromResultFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(30*time.Second))
 	defer cancel()
 	r, err := WaitResult(ctx, result, testID, WaitOptions{Poll: 10 * time.Millisecond, Exited: p.Exited()})
 	if err != nil || r.Summary != "child env-passed" {
@@ -63,7 +64,7 @@ func TestStartProcessExitWithoutResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(30*time.Second))
 	defer cancel()
 	_, err = WaitResult(ctx, filepath.Join(t.TempDir(), "r.json"), testID, WaitOptions{Poll: 10 * time.Millisecond, Exited: p.Exited()})
 	if !errors.Is(err, ErrExitedWithoutResult) {
@@ -81,7 +82,7 @@ func TestProcessStop(t *testing.T) {
 	}
 	select {
 	case <-p.Exited():
-	case <-time.After(30 * time.Second):
+	case <-time.After(testenv.Ceiling(30 * time.Second)):
 		t.Fatal("process did not exit after Stop")
 	}
 	if err := p.Stop(); err != nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // ownedAttempt is attempt app/t-1/build/1, running in a new store, with a
@@ -76,10 +77,10 @@ func guildhall(t *testing.T, stdin string, args ...string) (int, string, string)
 	go func() { _ = cmd.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(testenv.Ceiling(30 * time.Second)):
 		_ = cmd.Process.Kill()
 		<-done
-		t.Fatalf("guildhall %q did not finish within 30s; stderr %s", args, stderr.String())
+		t.Fatalf("guildhall %q did not finish within %v; stderr %s", args, testenv.Ceiling(30*time.Second), stderr.String())
 	}
 	return cmd.ProcessState.ExitCode(), stdout.String(), stderr.String()
 }
@@ -254,7 +255,7 @@ func TestArtisanStartCustody(t *testing.T) {
 	t.Cleanup(func() {
 		select {
 		case <-exited:
-		case <-time.After(30 * time.Second):
+		case <-time.After(testenv.Ceiling(30 * time.Second)):
 			_ = run.Process.Kill()
 			t.Errorf("the launcher did not exit; stderr %s", runErr.String())
 		}
@@ -262,7 +263,7 @@ func TestArtisanStartCustody(t *testing.T) {
 
 	var c classification
 	var owner store.Ownership
-	for end := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(30 * time.Second)); ; time.Sleep(100 * time.Millisecond) {
 		if time.Now().After(end) {
 			t.Fatalf("waited for running with recorded containment; classification %+v; ownership %+v; launcher stderr %s", c, owner, runErr.String())
 		}
@@ -304,7 +305,7 @@ func TestArtisanStartCustody(t *testing.T) {
 	}
 	select {
 	case <-exited:
-	case <-time.After(30 * time.Second):
+	case <-time.After(testenv.Ceiling(30 * time.Second)):
 		t.Fatalf("the launcher did not exit after the stop; stderr %s", runErr.String())
 	}
 	if code := run.ProcessState.ExitCode(); code != 5 {

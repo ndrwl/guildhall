@@ -19,6 +19,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // binDirector runs the built binary over one store, config and state directory, recording each attempt it
@@ -120,7 +121,7 @@ func (d *binDirector) stopAll() {
 	d.t.Helper()
 	for _, a := range d.attempts {
 		step, n, _ := strings.Cut(a, "/")
-		for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 			out, stderr, err := d.try("", "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", n)
 			if err == nil {
 				break
@@ -139,7 +140,7 @@ func (d *binDirector) done(step string, n int) string {
 	d.launched(step, n)
 	k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}
 	result := filepath.Join(k.Dir(d.state), artisan.ResultFile)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(2*time.Minute))
 	defer cancel()
 	if _, err := adapter.WaitResult(ctx, result, adapter.Identity{TaskID: "t-1", AttemptID: k.AttemptID()}, adapter.WaitOptions{Poll: 50 * time.Millisecond}); err != nil {
 		log, _ := os.ReadFile(filepath.Join(k.Dir(d.state), "launcher.log"))
@@ -258,7 +259,7 @@ func newBinCopy(t *testing.T, cfgDir string) *binDirector {
 // waitDecision waits until the store records decision id of task app/t-1, as the watcher's advance opens it.
 func (d *binDirector) waitDecision(id string) {
 	d.t.Helper()
-	for end := time.Now().Add(2 * time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(2 * time.Minute)); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err != nil {
 			continue
@@ -314,7 +315,7 @@ func TestTheWatcherTellsTheDirectorOfAKilledWorker(t *testing.T) {
 	d.launched("plan", 1)
 
 	var worker int
-	for end := time.Now().Add(time.Minute); worker == 0; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); worker == 0; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(end) {
 			t.Fatal("the plan attempt's launcher did not record its worker")
 		}
@@ -340,7 +341,7 @@ func TestTheWatcherTellsTheDirectorOfAKilledWorker(t *testing.T) {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
-	for end := time.Now().Add(time.Minute); ; time.Sleep(100 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(100 * time.Millisecond) {
 		out, stderr, err := d.try("", read...)
 		if err == nil {
 			if err := json.Unmarshal([]byte(out), &msg); err != nil {
@@ -441,7 +442,7 @@ func TestRetryAfterAKilledLauncher(t *testing.T) {
 	d.launched("plan", 1)
 
 	var pid int
-	for end := time.Now().Add(time.Minute); pid == 0; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); pid == 0; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(end) {
 			t.Fatal("the plan attempt's launcher did not record itself running")
 		}
@@ -464,7 +465,7 @@ func TestRetryAfterAKilledLauncher(t *testing.T) {
 	}
 	// resume refuses while the killed launcher is still seen live.
 	resume := []string{"artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"}
-	for end := time.Now().Add(time.Minute); ; time.Sleep(100 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(100 * time.Millisecond) {
 		out, stderr, err := d.try("", resume...)
 		if err == nil {
 			if !strings.Contains(out, `"attempt_outcome":"failed"`) {

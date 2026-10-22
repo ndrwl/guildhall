@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // The rollout writer lock is .rollout.lock in the private config directory, on real files.
@@ -72,7 +74,7 @@ func TestApplyWriterLockExcludesASecondWriter(t *testing.T) {
 	case <-entered:
 	case err := <-done:
 		t.Fatalf("first Apply returned before transport: %v", err)
-	case <-time.After(30 * time.Second):
+	case <-time.After(testenv.Ceiling(30 * time.Second)):
 		t.Fatal("first Apply did not reach transport")
 	}
 	if !lockExists(t, r) {
@@ -184,7 +186,7 @@ func TestStaleWriterLockNeedsManualRecoveryAfterOwnerStops(t *testing.T) {
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- owner.Wait() }()
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(testenv.Ceiling(30 * time.Second))
 	for !lockExists(t, r) {
 		select {
 		case err := <-exited:
@@ -193,7 +195,7 @@ func TestStaleWriterLockNeedsManualRecoveryAfterOwnerStops(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			_ = owner.Process.Kill()
-			t.Fatal("owner did not take the lock within 30 seconds")
+			t.Fatalf("owner did not take the lock within %v", testenv.Ceiling(30*time.Second))
 		}
 	}
 

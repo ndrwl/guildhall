@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // nativeWorker is the operating-system boundary behind OwnedWorker.Stop.
@@ -26,10 +28,10 @@ func testNativeWorker(t *testing.T, open func(t *testing.T) nativeUnderTest) {
 	ctx := context.Background()
 	waitExit := func(t *testing.T, n nativeUnderTest) {
 		t.Helper()
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.Now().Add(testenv.Ceiling(5 * time.Second))
 		for !n.exited() {
 			if time.Now().After(deadline) {
-				t.Fatal("process did not exit within 5s")
+				t.Fatalf("process did not exit within %v", testenv.Ceiling(5*time.Second))
 			}
 			time.Sleep(10 * time.Millisecond)
 		}

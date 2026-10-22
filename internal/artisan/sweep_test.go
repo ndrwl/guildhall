@@ -14,6 +14,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // startedProcess starts a test-binary worker outside any unit and returns
@@ -30,7 +31,7 @@ func startedProcess(t *testing.T) (artisan.Identity, *exec.Cmd) {
 		_ = os.WriteFile(release, nil, 0o600)
 		_ = cmd.Wait()
 	})
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if inv, _ := artisantest.Inventory(dir); len(inv) == 1 {
 			return inv[0].Identity, cmd
 		}
@@ -43,7 +44,7 @@ func waitGone(t *testing.T, ids ...artisan.Identity) {
 	t.Helper()
 	for _, id := range ids {
 		lv, err := artisan.Probe(id)
-		for end := time.Now().Add(10 * time.Second); lv != artisan.Gone && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); lv != artisan.Gone && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 			lv, err = artisan.Probe(id)
 		}
 		if lv != artisan.Gone {
@@ -88,7 +89,7 @@ func TestSweepKillsARecordedUnitFromOutside(t *testing.T) {
 		t.Fatal(err)
 	}
 	var tree []artisan.Identity
-	for end := time.Now().Add(10 * time.Second); len(tree) < 2 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); len(tree) < 2 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		inv, _ := artisantest.Inventory(dir)
 		tree = tree[:0]
 		for _, e := range inv {
@@ -109,7 +110,7 @@ func TestSweepKillsARecordedUnitFromOutside(t *testing.T) {
 		}
 	}
 	var left []artisan.Identity
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if left, err = artisan.Contained(c, worker); err == nil && len(left) == 0 {
 			break
 		}
