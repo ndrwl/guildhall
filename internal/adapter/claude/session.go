@@ -19,18 +19,20 @@ func (Adapter) SkillsDir() string { return ".claude/skills" }
 // Program is the program a Claude Code Director session needs on PATH.
 func (Adapter) Program() string { return Program }
 
-// readOnlyGit are the git subcommands a Director session may run without asking.
-var readOnlyGit = []string{"status", "log", "diff", "show", "rev-parse", "ls-files", "branch --list", "remote -v"}
+// readOnlyGit are the git subcommands a Director session may run with any arguments without asking.
+var readOnlyGit = []string{"status", "log", "diff", "show", "rev-parse", "ls-files", "branch --list"}
 
-// Settings is the session's Claude Code settings for the Director copy dir: Bash may run guildhall and the
-// read-only git commands without asking, and no edit tool may change the copy's config.toml or managed.toml.
-// It is JSON with a trailing newline, the same bytes for the same copy.
+// Settings is the session's Claude Code settings for the Director copy dir: Bash may run guildhall, the
+// read-only git commands and `git remote -v` without asking but no git command writing an --output file, and
+// no edit tool may change the copy's config.toml or managed.toml. It is JSON with a trailing newline, the same
+// bytes for the same copy.
 func Settings(copyDir string) []byte {
 	allow := []string{"Bash(guildhall)", "Bash(guildhall *)"}
 	for _, g := range readOnlyGit {
 		allow = append(allow, "Bash(git "+g+")", "Bash(git "+g+" *)")
 	}
-	var deny []string
+	allow = append(allow, "Bash(git remote -v)")
+	deny := []string{"Bash(git *--output*)"}
 	for _, name := range []string{"config.toml", "managed.toml"} {
 		deny = append(deny, "Edit("+absoluteRule(filepath.Join(copyDir, name))+")")
 	}

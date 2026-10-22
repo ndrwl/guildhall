@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -83,5 +84,53 @@ func TestSessionSettingsWriteAWindowsCopyInPOSIXForm(t *testing.T) {
 	got := string(claude.Settings(`C:/Users/g/copy`))
 	if !strings.Contains(got, `"Edit(//c/Users/g/copy/config.toml)"`) || !strings.Contains(got, `"Edit(//c/Users/g/copy/managed.toml)"`) {
 		t.Errorf("settings for a Windows copy:\n%s", got)
+	}
+}
+
+// allowed is whether Claude Code's settings let Bash run command without asking: a deny rule wins over an
+// allow rule, and * in a rule matches any run of characters.
+func allowed(t *testing.T, settings []byte, command string) bool {
+	t.Helper()
+	var s struct {
+		Permissions struct{ Allow, Deny []string }
+	}
+	if err := json.Unmarshal(settings, &s); err != nil {
+		t.Fatal(err)
+	}
+	matches := func(rules []string) bool {
+		for _, r := range rules {
+			pattern, ok := strings.CutPrefix(r, "Bash(")
+			if !ok {
+				continue
+			}
+			pattern = strings.TrimSuffix(pattern, ")")
+			glob := strings.ReplaceAll(regexp.QuoteMeta(pattern), `\*`, ".*")
+			if regexp.MustCompile("^" + glob + "$").MatchString(command) {
+				return true
+			}
+		}
+		return false
+	}
+	return !matches(s.Permissions.Deny) && matches(s.Permissions.Allow)
+}
+
+// TestSessionSettingsKeepGitReadOnly sees read-only git allowed and git writing a file or changing a remote not.
+func TestSessionSettingsKeepGitReadOnly(t *testing.T) {
+	settings := claude.Settings("/home/g/copy")
+	for command, want := range map[string]bool{
+		"git diff HEAD~1":                            true,
+		"git log --oneline -5":                       true,
+		"git ls-files -o":                            true,
+		"git remote -v":                              true,
+		"guildhall director status":                  true,
+		"git diff --output=../../config.toml HEAD~1": false,
+		"git log --output ../../managed.toml":        false,
+		"git show --output=/home/g/copy/config.toml": false,
+		"git remote -v add evil git@example.com:x":   false,
+		"git push": false,
+	} {
+		if got := allowed(t, settings, command); got != want {
+			t.Errorf("%q allowed = %v, want %v", command, got, want)
+		}
 	}
 }
