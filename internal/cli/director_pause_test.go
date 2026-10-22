@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,50 @@ func TestTaskStartWhilePausedLaunchesNothing(t *testing.T) {
 		t.Fatalf("attempts after resume = %+v", got)
 	}
 	d.waitResult(t, "plan", 1)
+}
+
+// TestDecisionAnsweredWhilePausedIsFed: while the Director is paused, task start --decision still feeds the
+// Guildmaster's answer but starts no next attempt; next.json waits paused, needs_me lists the task, and after
+// resume its task start starts the held build.
+func TestDecisionAnsweredWhilePausedIsFed(t *testing.T) {
+	d := newRunDirector(t)
+	recordSession(t, d.store, false, store.DirectorRunning)
+	step := func(args ...string) string {
+		t.Helper()
+		code, out, stderr := d.run(t, args...)
+		if code != 0 {
+			t.Fatalf("guildhall %q: exit %d, %s", args, code, stderr)
+		}
+		return out
+	}
+	step(append([]string{"task", "start"}, d.flags("t-1")...)...)
+	d.waitResult(t, "plan", 1)
+	step(append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...)
+	step("director", "pause", "--store", d.store)
+	answer := filepath.Join(t.TempDir(), "answer")
+	writeFile(t, answer, "approved\n")
+	step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", "accept-1", "--answer-file", answer)
+	const held = `{"wait":"paused","step":"build"}` + "\n"
+	if out := step(append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...); out != held {
+		t.Fatalf("task start --decision while paused = %q, want %q", out, held)
+	}
+	if got := d.attempts(t); len(got) != 1 {
+		t.Fatalf("attempts while paused = %+v, want plan-1 alone", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "next.json")); err != nil || string(b) != held {
+		t.Fatalf("next.json = %q, %v; want %q", b, err, held)
+	}
+	var doc struct {
+		NeedsMe []needsMeItem `json:"needs_me"`
+	}
+	if err := json.Unmarshal([]byte(step("director", "resume", "--store", d.store, "--state", d.state)), &doc); err != nil ||
+		!slices.ContainsFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == "t-1" }) {
+		t.Fatalf("resume needs_me = %+v, %v; want t-1 paused", doc.NeedsMe, err)
+	}
+	if out := step(append([]string{"task", "start"}, d.flags("t-1")...)...); out != `{"wait":"attempt","step":"build","attempt":1}`+"\n" {
+		t.Fatalf("task start after resume = %q", out)
+	}
+	d.waitResult(t, "build", 1)
 }
 
 // TestHeldWhilePausedOrStopping: the advance's hold holds new attempts only while the newest session is paused

@@ -202,11 +202,11 @@ type Engine struct {
 	// Forge publishes, reads the checks of and merges a repository's task branches; nil refuses publish,
 	// validate and merging with ErrUnsupported.
 	Forge Forge
-	// Hold, when set, is asked before each new attempt of an Artisan step is recorded; true holds it: the advance
-	// records, renders and launches nothing for it and returns WaitPaused for the step, and a later advance once
-	// Hold answers false starts it. An error fails the advance. Results, decisions and messages are never held,
-	// nor is the relaunch of an attempt already recorded. `task start`, `step done` and `step retry` hold while
-	// the Director's session is paused or stopping (docs/director.md#pause-and-resume).
+	// Hold, when set, is asked before each new attempt, of an Artisan step or a Director stage, is recorded; true
+	// holds it: the advance records, renders and launches nothing for it and returns WaitPaused for the step, and a
+	// later advance once Hold answers false starts it. An error fails the advance. Results, decisions and messages
+	// are never held, nor is the relaunch of an attempt already recorded. `task start`, `step done` and `step retry`
+	// hold while the Director's session is paused or stopping (docs/director.md#pause-and-resume).
 	Hold func() (bool, error)
 }
 

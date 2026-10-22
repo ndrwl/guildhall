@@ -83,8 +83,10 @@ func (a *App) taskStart(args []string) int {
 	if *decision != "" {
 		ev.Kind, ev.Decision = interp.DecisionAnswered, *decision
 	}
-	if hold, err := heldNow(f.store); err != nil || hold {
-		return a.paused("task start", err)
+	if *decision == "" {
+		if hold, err := heldNow(f.store); err != nil || hold {
+			return a.paused("task start", err)
+		}
 	}
 	if err := newWorkAdmitted(f.store, f.repo, ev.Task); err != nil {
 		return a.fail(fmt.Errorf("task start: %w", err))

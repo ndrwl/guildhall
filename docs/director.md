@@ -67,6 +67,7 @@ guildhall director resume [--copy <dir> | --store <file> --state <dir>]
 A paused session starts no new attempt, while attempts already running finish:
 
 - `task start` and `step retry` print `{"wait":"paused"}` and exit 0, recording nothing.
+- `task start --decision` still feeds the Guildmaster's answer, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
 - `step done` still takes the attempt's result and opens any decision it leads to, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
 - `decide answer`, `messages`, `artisan stop` and every read are unaffected.
 
