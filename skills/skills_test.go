@@ -257,6 +257,30 @@ func TestSkillFrontmatter(t *testing.T) {
 	}
 }
 
+// TestAdaptedSkillsCarryCredits checks that a skill carries CREDITS.md exactly when its body names an upstream source.
+func TestAdaptedSkillsCarryCredits(t *testing.T) {
+	notice, err := fs.ReadFile(skills.Release(), "CREDITS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range shipped(t) {
+		data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		adapted := strings.Contains(string(data), "\nAdapted from `")
+		credits, err := fs.ReadFile(skills.Release(), name+"/CREDITS.md")
+		switch {
+		case adapted && !bytes.Equal(credits, notice):
+			t.Errorf("%s is adapted but its CREDITS.md is not the release's: %v", name, err)
+		case adapted && !strings.Contains(string(notice), "| `"+name+"` |"):
+			t.Errorf("%s is adapted but CREDITS.md does not list its upstream source", name)
+		case !adapted && err == nil:
+			t.Errorf("%s carries CREDITS.md but names no upstream source", name)
+		}
+	}
+}
+
 func TestRegularFilesWithLFOnly(t *testing.T) {
 	for _, name := range append(shipped(t), "CREDITS.md") {
 		err := filepath.WalkDir(name, func(p string, d fs.DirEntry, err error) error {
@@ -518,6 +542,9 @@ func TestInstallIsTheFirstRenderRoot(t *testing.T) {
 	}
 	want := goldenDigests(t)
 	for _, s := range r.Manifest.Skills {
+		if _, err := fs.Stat(skills.Release(), s.Name+"/CREDITS.md"); errors.Is(err, fs.ErrNotExist) {
+			continue // not adapted; TestAdaptedSkillsCarryCredits checks which skills are
+		}
 		for _, dir := range []string{release, r.SkillsPath} {
 			notice, err := os.ReadFile(filepath.Join(dir, s.Name, "CREDITS.md"))
 			if err != nil {

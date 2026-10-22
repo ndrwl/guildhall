@@ -44,6 +44,19 @@ A session already stopped or superseded by a newer one is left as it is.
 While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime, records the session `stopped` and exits 0.
 A reload request that starts a new session in the same supervisor lands with handoff notes.
 
+## Skills
+
+The release ships the Director's own skills beside the stage skills, each rendered into every session ([decision](decisions/director-skills.md)):
+
+- `guildhall-director-startup`: handle `startup.md`, work each in-flight item, then `director ready`.
+- `guildhall-director-inbox`: on every wake line and turn start, read `director status` and each unread message, act and acknowledge.
+- `guildhall-director-tasks`: turn what the Guildmaster says into commands, from giving work and answering decisions to merging, retrying, stopping, rulings and pausing.
+- `guildhall-director-stage`: run a [Director stage](interpreter.md#director-stages) from its brief and finish it with `step finish`.
+- `guildhall-handoff`: record a handoff note and reload; the Guildmaster can type `/guildhall-handoff`.
+
+Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
+The pause, stop, handoff and reload commands they name are designed and land later.
+
 ## Ready
 
 ```sh
