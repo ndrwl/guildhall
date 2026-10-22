@@ -76,7 +76,10 @@ func stalledFor(t *testing.T, a launch.Attempt, m store.Message) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := interp.StalledMessage(key, hb.LastOutputAt)
+	want, err := interp.StalledMessage(key, hb.LastOutputAt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if m.ID != want.ID || m.Type != want.Type || m.Text != want.Text || m.Repository != want.Repository || m.TaskID != want.Task {
 		t.Fatalf("stall %+v, want the engine's %+v", m, want)
 	}

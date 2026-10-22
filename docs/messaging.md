@@ -143,7 +143,7 @@ guildhall: 3 unread (attempt-failed 1, question 2)
 
 The line counts the Director's unread messages by type, in type order, and never carries message text, so no sender can type instructions into the Director's session.
 Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `director-stage`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
-The engine sends only by the registry's constants, which a test of `internal/interp` checks at every send, so a type is added to the registry by the change that sends it and never by a sender.
+The engine and the launcher refuse to send a Director message whose type is not in the registry, so a type is added to the registry by the change that sends it and never by a sender; a local sender's `messages send` still chooses any type, which counts as `other`.
 When an [automatic handoff](director.md#automatic-handoff) trigger holds, the line ends `; handoff due (<reason>)`, such as `; handoff due (context 72%)`, and the wake records the crossing, so the reminder rides on a line the Director reads anyway; the reason is Guildhall's own text, never a sender's.
 Otherwise nothing is typed and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
 

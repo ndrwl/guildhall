@@ -1080,13 +1080,20 @@ func (r *run) notifyDecision(d store.Decision, step string) error {
 // notify sends the Director one message about the task, with an id derived from the task and what
 // happened so resending it replays. It names no attempt, so it is accepted whatever the attempt's state.
 func (r *run) notify(what, typ, text string) error {
-	_, err := r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, directorMessage(r.task.Repository, r.task.ID, what, typ, text))
+	m, err := directorMessage(r.task.Repository, r.task.ID, what, typ, text)
+	if err != nil {
+		return err
+	}
+	_, err = r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, m)
 	return err
 }
 
 // directorMessage is the Director message about task repo/task with an id derived from both and what, hashing
-// ids longer than 100 bytes.
-func directorMessage(repo, task, what, typ, text string) messaging.Envelope {
+// ids longer than 100 bytes. It refuses a type not in store.MessageTypes, the registry the wake line counts by.
+func directorMessage(repo, task, what, typ, text string) (messaging.Envelope, error) {
+	if _, ok := store.MessageTypes[typ]; !ok {
+		return messaging.Envelope{}, fmt.Errorf("interp: director message type %q is not in store.MessageTypes", typ)
+	}
 	id := fmt.Sprintf("%s.%s.%s", repo, task, what)
 	if len(id) > 100 {
 		id = "advance." + digest.Of([]byte(id)).Hex()
@@ -1094,7 +1101,7 @@ func directorMessage(repo, task, what, typ, text string) messaging.Envelope {
 	return messaging.Envelope{
 		Schema: messaging.SchemaPrefix + strconv.Itoa(messaging.SchemaVersion), ID: id, Recipient: store.RecipientDirector,
 		Repository: repo, Task: task, Type: typ, Text: text,
-	}
+	}, nil
 }
 
 // mutation derives a write's mutation id from the task and the record, hashing ids longer than the store allows.

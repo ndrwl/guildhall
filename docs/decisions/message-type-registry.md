@@ -9,11 +9,12 @@ Sustainability review 11 (F40) found the types of the Director messages Guildhal
 `DirectorUnread`, and so the [wake](../messaging.md#waking-the-director) line, counts by it and counts every other type as `other`, so no sender-chosen type is ever typed into the Director's pane.
 The store is the one package every sender already imports, so the registry needs no new dependency.
 
-## The engine sends by constant, checked at every send
+## The engine sends by constant, refused at every send
 
 `internal/interp` names a message's type only as a registry constant; its own `AdvanceFailed`, `WorkerStalled`, `DirectorStage` and `BudgetRefused` constants are gone.
-`TestSentTypesAreRegistered` reads the package's sources and fails on any `notify` or `directorMessage` call whose type is not a `store` constant in the registry, so a new message type is added to the registry by the change that sends it.
-A source check was chosen over a runtime one because a send that only some workflows reach would escape a test that runs workflows.
+`directorMessage`, the one function every engine and launcher send of a Director message goes through, refuses a type not in the registry with an error naming it and sends nothing, so a new message type is added to the registry by the change that sends it.
+The check is at the send rather than in a test reading the package's sources, so a send that only some workflows reach still fails the first time it runs; the engine's test envs also fail on any unregistered type their suites send.
+The store's `SendMessage` and `messages send` do not check: a local sender may still choose any type, which counts as `other`.
 
 ## Not changed
 

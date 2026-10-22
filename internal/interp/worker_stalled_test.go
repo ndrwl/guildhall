@@ -72,7 +72,10 @@ func TestWorkerStalled(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			sent := interp.StalledMessage(hb.Key(), hb.LastOutputAt)
+			sent, err := interp.StalledMessage(hb.Key(), hb.LastOutputAt)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if m := page.Messages[len(page.Messages)-1]; sent.ID == "" || m.ID != sent.ID || m.Type != sent.Type || m.Text != sent.Text || m.Repository != sent.Repository || m.Task != sent.Task {
 				t.Fatalf("engine sent %+v, StalledMessage is %+v", m, sent)
 			}
