@@ -74,18 +74,26 @@ func statusCopy(t *testing.T) string {
 		func() (store.Receipt, error) { return s.CreateTask("i-7", task("lib", "t-1", "Other repository")) },
 		func() (store.Receipt, error) { return s.StartAttempt("i-8", "app", "t-2", "plan") },
 		func() (store.Receipt, error) { return s.StartAttempt("i-9", "app", "t-3", "plan") },
-		func() (store.Receipt, error) { return s.FinishAttempt("i-10", "app", "t-3", "plan", 1, store.AttemptSucceeded) },
+		func() (store.Receipt, error) {
+			return s.FinishAttempt("i-10", "app", "t-3", "plan", 1, store.AttemptSucceeded)
+		},
 		func() (store.Receipt, error) { return s.StartAttempt("i-11", "app", "t-3", "build") },
-		func() (store.Receipt, error) { return s.FinishAttempt("i-12", "app", "t-3", "build", 1, store.AttemptFailed) },
+		func() (store.Receipt, error) {
+			return s.FinishAttempt("i-12", "app", "t-3", "build", 1, store.AttemptFailed)
+		},
 		func() (store.Receipt, error) { return s.StartAttempt("i-13", "app", "t-4", "plan") },
-		func() (store.Receipt, error) { return s.FinishAttempt("i-14", "app", "t-4", "plan", 1, store.AttemptSucceeded) },
+		func() (store.Receipt, error) {
+			return s.FinishAttempt("i-14", "app", "t-4", "plan", 1, store.AttemptSucceeded)
+		},
 		func() (store.Receipt, error) {
 			return s.OpenDecision("i-15", store.Decision{Repository: "app", TaskID: "t-4", ID: "accept-plan", Kind: store.DecisionApproval,
 				Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("a", 64)},
 				Options: []string{"approve", "reject"}, Question: "Accept the plan?"})
 		},
 		func() (store.Receipt, error) { return s.StartAttempt("i-16", "app", "t-5", "plan") },
-		func() (store.Receipt, error) { return s.FinishAttempt("i-17", "app", "t-5", "plan", 1, store.AttemptStopped) },
+		func() (store.Receipt, error) {
+			return s.FinishAttempt("i-17", "app", "t-5", "plan", 1, store.AttemptStopped)
+		},
 		func() (store.Receipt, error) { return s.SetTaskState("i-18", "app", "t-5", store.TaskDone) },
 		func() (store.Receipt, error) {
 			return s.StartOwnedAttempt("i-19", store.Ownership{Repository: "app", TaskID: "t-6", Step: "build", LauncherIdentity: killed})
@@ -97,7 +105,9 @@ func statusCopy(t *testing.T) string {
 		func() (store.Receipt, error) {
 			return s.SendMessage(store.Message{ID: "n-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-4", Type: "note", Text: "Read."})
 		},
-		func() (store.Receipt, error) { return s.AckMessage(store.Recipient{Role: store.RecipientDirector}, "n-1") },
+		func() (store.Receipt, error) {
+			return s.AckMessage(store.Recipient{Role: store.RecipientDirector}, "n-1")
+		},
 		func() (store.Receipt, error) {
 			return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "lib", TaskID: "t-1", Type: "question", Text: "Which parser?"})
 		},

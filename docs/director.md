@@ -10,7 +10,7 @@ Only `director status` is built; the session supervisor (`director start`), its 
 guildhall director status --json [--copy <dir> | --store <file> --state <dir>]
 ```
 
-`director status` is the Director's status feed and the Guildmaster's "what needs me" query in one read-only JSON document.
+`director status` is the Director's status feed and the Guildmaster's "what needs me" query in one read-only JSON document ([decision](decisions/director-status-feed.md)).
 firstmate's external monitor reads it, the Director's skills run it at every turn, and the session supervisor will render its `needs_me` into a new session's startup instructions.
 
 It reads the store in one read transaction, opened read-only and waiting up to 30 seconds for a writer's lock as every advance does, so it never writes, never creates a store and succeeds once a writer lets go.

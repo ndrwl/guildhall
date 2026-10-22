@@ -472,8 +472,14 @@ func Status(ctx context.Context, a Attempt) (reconcile.Classification, error) {
 	if err != nil {
 		return reconcile.Classification{}, err
 	}
+	return Classify(ctx, a, o), nil
+}
+
+// Classify is Status given the attempt's ownership record o, nil when it has none, already read from the store,
+// so a caller that read many records in one transaction classifies without opening the store again.
+func Classify(ctx context.Context, a Attempt, o *store.Ownership) reconcile.Classification {
 	if _, err := os.Stat(a.Dir()); o == nil && errors.Is(err, fs.ErrNotExist) {
-		return reconcile.Classification{State: reconcile.Absent, Reason: "no attempt directory and no ownership record"}, nil
+		return reconcile.Classification{State: reconcile.Absent, Reason: "no attempt directory and no ownership record"}
 	}
-	return reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o}, reconcile.Options{}), nil
+	return reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o}, reconcile.Options{})
 }

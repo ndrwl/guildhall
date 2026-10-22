@@ -142,6 +142,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall task start` and `guildhall step done`: advance a task through its workflow; see [running a task](docs/running.md).
 - `guildhall step retry`: start the next attempt of a step after a failed or stopped one; see [running a task](docs/running.md#step-retry).
 - `guildhall decide list|show|answer`: decisions waiting for you; see [decisions](docs/decisions-cli.md).
+- `guildhall director status --json`: everything in flight and what needs the Director or you, in one JSON document; see [the Director](docs/director.md#status).
 - `guildhall artisan start|stop|status|resume`: control one agent attempt; `guildhall fake-artisan` and `guildhall claude-artisan` are the fake and Claude wrappers; see [Artisan commands](docs/artisan.md#commands) and [adapters](docs/adapters.md).
 - `guildhall messages send|list|read|ack`: informational messages between the Director and its agents; see [messaging](docs/messaging.md).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
