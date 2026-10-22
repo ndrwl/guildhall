@@ -321,11 +321,10 @@ func neverPlanned(t *testing.T) string {
 	return dir
 }
 
-// TestRetryWithAnUnknownAdapterRecordsNothing pins T1 through the binary, where interp.CheckAdapter allows any
-// name: a retry whose profile names an adapter the launcher does not run is refused before attempt 2 or its
-// reason is recorded, so once the profile is fixed a retry with another reason starts attempt 2 and stores that
-// reason.
-func TestRetryWithAnUnknownAdapterRecordsNothing(t *testing.T) {
+// TestRetryWithAnUnknownAdapterSendsNoReason pins T1 through the binary, where interp.CheckAdapter allows any
+// name: a retry whose profile names an adapter the launcher does not run fails to launch attempt 2 and stores no
+// reason, so once the profile is fixed a retry with another reason launches attempt 2 and stores that reason.
+func TestRetryWithAnUnknownAdapterSendsNoReason(t *testing.T) {
 	dir := neverPlanned(t)
 	cfg := filepath.Join(dir, "claude.toml")
 	profile := func(adapter string) {
@@ -348,7 +347,7 @@ func TestRetryWithAnUnknownAdapterRecordsNothing(t *testing.T) {
 
 	profile("nosuch")
 	retry := append(append([]string{"step", "retry"}, d.flags...), "--task", "t-1", "--step", "plan", "--attempt", "1")
-	if out, stderr, err := d.try("", append(retry, "--reason", "Reason A")...); err == nil || !strings.Contains(stderr, `adapter "nosuch"`) {
+	if out, stderr, err := d.try("", append(retry, "--reason", "Reason A")...); err == nil || !strings.Contains(stderr, "launch attempt 2") {
 		t.Fatalf("retry with adapter nosuch: %v\nstdout %s\nstderr %s", err, out, stderr)
 	}
 	reason := []string{"messages", "read", "--store", d.store, "app.t-1.attempt-retried.plan-1"}

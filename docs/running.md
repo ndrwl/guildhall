@@ -48,9 +48,9 @@ The [interpreter's recovery contract](interpreter.md#replay-and-recovery) define
 `step retry` is the Director's decision after a failed or stopped attempt, which leaves the task waiting with `{"wait":"director",...}`.
 It feeds [`attempt-retried`](interpreter.md#events) for attempt `--attempt` of `--step`: valid only when that attempt is the step's latest and finished `failed` or `stopped`, and the task is open.
 The engine then starts the next attempt exactly as `task start` starts a first one, and prints `{"wait":"attempt",...}` for it.
-`--reason`, when given, is recorded as the Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the next attempt is recorded, so `task timeline` shows why the attempt was retried; a retry refused before then sends nothing, so it can be repeated with another reason.
-A step whose adapter the launcher does not run is refused this way, before anything is recorded.
-A running or succeeded attempt, or one a later attempt already follows, is refused with exit status 1 and nothing is recorded; repeating the command after the next attempt started prints what the task waits for and writes nothing beyond the reason, if an interrupted retry had not yet sent it.
+`--reason`, when given, is recorded as the Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the next attempt has launched, so `task timeline` shows why the attempt was retried.
+A retry whose start or launch fails exits 1 and sends no reason, so it can be repeated with another reason; when the next attempt was recorded but not launched, the repeat launches it.
+A running or succeeded attempt, or one a later attempt already follows, is refused with exit status 1 and nothing is recorded; repeating the command after the next attempt launched prints what the task waits for and writes nothing beyond the reason, if an interrupted retry had not yet sent it.
 An attempt whose launcher died is first settled with [`artisan resume`](artisan.md#commands).
 
 ## Output and exit status
