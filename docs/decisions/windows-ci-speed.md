@@ -20,6 +20,10 @@ Defender was already off and no test leaked a process.
   Real git, shells and processes stay the subject of their seams' contract tests; only the repeated setup around them is shared.
   `gittest.Repositories` and the forge tests build their git fixtures once and copy the files per case; `TestRebaseRealGitStore` shares one read-only history across scenarios; `internal/launch`'s table tests share one exited owner; the shell round trips type every line into one run of each shell.
 
+## Effect
+
+On instrumented runs ([timings](../evidence/windows-ci-speed-2026-10-22-timings.md)) the Windows `go test` took 249 s and 365 s on main and 91 s and 176 s on this change; Linux went from 52 s to 42-50 s and macOS stayed at about 100 s.
+
 ## Not changed
 
 What CI runs: every package on all three platforms, with the same required tools.
