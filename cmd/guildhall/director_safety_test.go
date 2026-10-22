@@ -23,6 +23,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -44,6 +45,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	runHerdrStubIf()
 	claudetest.RunIfStub()
 	code := m.Run()
 	if toolsDir != "" {
@@ -52,8 +54,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// sessionPath is a PATH holding the built binary as guildhall and this test binary as claude, the stub, ahead of
-// the inherited PATH; the binary is built once for every check.
+// sessionPath is a PATH holding the built binary as guildhall and this test binary as claude and herdr, the
+// stand-ins, ahead of the inherited PATH; the binary is built once for every check.
 func sessionPath(t *testing.T) string {
 	t.Helper()
 	toolsOnce.Do(func() {
@@ -78,14 +80,18 @@ func sessionPath(t *testing.T) string {
 			toolsErr = err
 			return
 		}
-		stub := filepath.Join(toolsDir, claude.Program+exe)
-		if err := os.Link(self, stub); err != nil {
-			b, rerr := os.ReadFile(self)
-			if rerr != nil {
-				toolsErr = rerr
-				return
+		for _, name := range []string{claude.Program, "herdr"} {
+			stub := filepath.Join(toolsDir, name+exe)
+			if err := os.Link(self, stub); err != nil {
+				b, rerr := os.ReadFile(self)
+				if rerr != nil {
+					toolsErr = rerr
+					return
+				}
+				if toolsErr = os.WriteFile(stub, b, 0o755); toolsErr != nil {
+					return
+				}
 			}
-			toolsErr = os.WriteFile(stub, b, 0o755)
 		}
 	})
 	if toolsErr != nil {
@@ -96,11 +102,12 @@ func sessionPath(t *testing.T) string {
 
 // safetyCopy is one check's Director copy: internal/cli/testdata/run pointed at a real repository and remote,
 // local settings added under [local], an empty store, and the plan and build stages' fake Artisans recording
-// their processes in the copy's inventory directory, with plan's extra directives.
+// their processes in the copy's inventory directory, with plan's extra directives. The Herdr stand-in records
+// the lines typed into the Director's pane in the copy's herdr directory.
 type safetyCopy struct {
 	t                *testing.T
 	dir, path, turns string
-	inventory        string
+	inventory, herdr string
 }
 
 func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
@@ -116,7 +123,11 @@ func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
 		t.Fatal(err)
 	}
 	repository, remote, _ := gittest.Repository(t)
-	c := &safetyCopy{t: t, dir: dir, path: path, turns: filepath.Join(dir, "turns.log"), inventory: filepath.Join(dir, "inventory")}
+	c := &safetyCopy{t: t, dir: dir, path: path, turns: filepath.Join(dir, "turns.log"), inventory: filepath.Join(dir, "inventory"),
+		herdr: filepath.Join(dir, "herdr")}
+	if err := os.Mkdir(c.herdr, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	c.edit("config.toml", func(b string) string {
 		b = strings.Replace(b, `path = "/srv/app"`, "path = '"+repository+"'", 1)
 		b = strings.Replace(b, `remote = "git@github.com:example/app.git"`, "remote = '"+remote+"'", 1)
@@ -185,7 +196,7 @@ func (c *safetyCopy) script(steps ...string) {
 
 func (c *safetyCopy) command(stdin io.Reader, args ...string) *exec.Cmd {
 	cmd := exec.Command(filepath.Join(strings.SplitN(c.path, string(os.PathListSeparator), 2)[0], "guildhall"), args...)
-	cmd.Env = append(os.Environ(), "PATH="+c.path, fake.TurnLogEnv+"="+c.turns)
+	cmd.Env = append(os.Environ(), "PATH="+c.path, fake.TurnLogEnv+"="+c.turns, HerdrStubEnv+"="+c.herdr)
 	cmd.Stdin = stdin
 	return cmd
 }
@@ -209,8 +220,8 @@ func (c *safetyCopy) approve() {
 	c.guildhall("Approved for the safety checks.\n", "workflow", "approve", "--repo", "app", "--words-file", "-")
 }
 
-// session is one `director start <runtime>` of the copy: the test holds its standard input open, as
-// a terminal does, and collects its output.
+// session is one `director start <runtime>` of the copy in this terminal: the test holds its standard input open, as
+// a terminal does, and collects its output. Lines written to stdin are what the terminal types to the runtime.
 type session struct {
 	c      *safetyCopy
 	cmd    *exec.Cmd
@@ -233,14 +244,15 @@ func (s *session) text() string {
 	return s.output.String()
 }
 
-func (c *safetyCopy) start(rt string) *session {
+// start starts a session with runtime rt and the further director start args.
+func (c *safetyCopy) start(rt string, args ...string) *session {
 	c.t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		c.t.Fatal(err)
 	}
 	s := &session{c: c, stdin: w, done: make(chan struct{})}
-	s.cmd = c.command(r, "director", "start", rt, "--copy", c.dir)
+	s.cmd = c.command(r, append([]string{"director", "start", rt, "--copy", c.dir}, args...)...)
 	s.cmd.Stdout, s.cmd.Stderr = s, s
 	if err := s.cmd.Start(); err != nil {
 		c.t.Fatal(err)
@@ -296,6 +308,19 @@ func (c *safetyCopy) waitFor(what string, cond func() bool) {
 			c.t.Fatalf("%s: not within %s", what, ceiling)
 		}
 	}
+}
+
+// typed are the lines the Herdr stand-in accepted for the Director's pane.
+func (c *safetyCopy) typed() []string {
+	c.t.Helper()
+	b, err := os.ReadFile(filepath.Join(c.herdr, "typed"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
 }
 
 // read runs fn over the copy's store opened read-only, retrying while a writer holds it.
@@ -603,9 +628,9 @@ func TestSafetyCrashRecovery(t *testing.T) {
 	})
 }
 
-// TestSafetyZeroIdleTurns: with one open decision and nothing else, a ready Director takes no turn and is sent no
-// wake over a 30 s hold; a Guildmaster note then records exactly one wake, which a session started without --tab
-// queues for no pane (docs/director.md#safety-checks).
+// TestSafetyZeroIdleTurns: with one open decision and nothing else, a ready Director in a bound pane takes no turn
+// and is sent no wake over a 30 s hold; a Guildmaster note then records exactly one wake, woke, which types one
+// line into the pane, and the runtime takes exactly one turn from it (docs/director.md#safety-checks).
 func TestSafetyZeroIdleTurns(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "", "")
@@ -620,7 +645,7 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 			c.guildhall("", "messages", "ack", "director", m.ID)
 		}
 		c.script("guildhall director ready")
-		s := c.start(rt)
+		s := c.start(rt, herdrBinding...)
 		c.waitFor("the session ready", func() bool { return c.latestSession().State == store.DirectorRunning })
 		wakes := func() []store.Wake {
 			return read(c, func(s *store.Store) ([]store.Wake, error) {
@@ -646,18 +671,28 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 				got = append(got, w)
 			}
 		}
-		// A session started without --tab binds no pane, so the one wake is recorded queued and types nothing; the note
-		// waits for the Director's next turn.
-		if len(got) != 1 || got[0].Decision != store.WakeQueued || got[0].Reason != "no pane" {
-			t.Errorf("wakes for the note %+v, want exactly one, queued for no pane", got)
+		if len(got) != 1 || got[0].Decision != store.WakeWoke || got[0].Reason != "" {
+			t.Errorf("wakes for the note %+v, want exactly one, woke", got)
 		}
-		if got := c.turnLines(); len(got) != 1 {
-			t.Errorf("turns after the note %q, want only the first message's", got)
+		want := messaging.WakeLine(map[string]int{"note": 1})
+		typed := c.typed()
+		if len(typed) != 1 || typed[0] != want {
+			t.Fatalf("typed into the pane %q, want only %q", typed, want)
+		}
+		// The terminal hands the typed line to the runtime in the pane, the session's standard input.
+		if _, err := io.WriteString(s.stdin, typed[0]+"\n"); err != nil {
+			t.Fatal(err)
+		}
+		c.waitFor("the runtime's turn on the typed line", func() bool { return len(c.turnLines()) >= 2 })
+		turns := c.turnLines()
+		first, _, _ := strings.Cut(turns[0], " ")
+		if len(turns) != 2 || turns[1] != first+" input" {
+			t.Errorf("turns after the note %q, want the first message's and one input turn of the same runtime", turns)
 		}
 		if code := s.end(); code != 0 {
 			t.Fatalf("director start exited %d", code)
 		}
-		c.finish(1)
+		c.finish(2)
 	})
 }
 

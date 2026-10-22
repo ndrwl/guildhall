@@ -186,9 +186,9 @@ Each check counts the stand-in's turns, one for its first message and one for ea
   `director status --json` lists the attempt in `needs_me` with `resume: true`.
   `director start` again renders a `startup.md` that names the attempt to resume and the unread message, `task new` is refused until the Director runs `director ready`, and the Director resumes and retries the attempt.
   The watcher then takes the task through the rest of the fake-straight workflow, the check answering each decision as the Director would, with the same `decide answer` and `task start --decision` commands, to the build attempt, the sign-off and the deliver step's merge decision, the workflow's final wait.
-- Zero idle turns: with one open decision and nothing else, a ready Director takes no turn and is sent no wake over a 30 s hold.
-  A Guildmaster note then records exactly one wake.
-  A session started without `--tab` binds no pane, so that wake is queued and types nothing; that the wake types one line, which the runtime takes as one turn, is not checked because CI runners have no Herdr host.
+- Zero idle turns: with one open decision and nothing else, a ready Director whose session is bound to a Herdr pane takes no turn and is sent no wake over a 30 s hold.
+  A Guildmaster note then records exactly one wake, `woke`, which types one line, the [wake line](messaging.md#waking-the-director), into the pane, and the runtime takes exactly one turn from it.
+  A stand-in `herdr` on PATH plays the pane, as no Herdr server runs in CI.
 
 A managed copy's guard rails, a Director-edited `managed.toml` refused with an alert, are checked when managed mode lands.
 
