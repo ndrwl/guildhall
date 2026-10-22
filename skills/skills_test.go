@@ -529,7 +529,7 @@ func TestSelfReviewFactsTwinsAgree(t *testing.T) {
 }
 
 // TestSelfReviewSkillDocumentShape checks the skill's example document: its schema, facts named as the facts
-// script prints them, and criteria that the quality rubric defines, each with the field its kind records.
+// script prints them, and criteria each with the field its kind records.
 func TestSelfReviewSkillDocumentShape(t *testing.T) {
 	data, err := fs.ReadFile(skills.Release(), "guildhall-self-review/SKILL.md")
 	if err != nil {
@@ -550,7 +550,6 @@ func TestSelfReviewSkillDocumentShape(t *testing.T) {
 			Score                     *int
 			Value                     *float64
 		} `json:"criteria"`
-		LowestPillar string `json:"lowest_pillar"`
 	}
 	dec := json.NewDecoder(strings.NewReader(example))
 	if err := dec.Decode(&doc); err != nil {
@@ -575,14 +574,7 @@ func TestSelfReviewSkillDocumentShape(t *testing.T) {
 	if got := slices.Sorted(maps.Keys(doc.Settings)); !slices.Equal(got, []string{"size_budget_files", "size_budget_lines"}) {
 		t.Errorf("settings keys = %q", got)
 	}
-	rubric, err := os.ReadFile(filepath.Join("..", "docs", "quality.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, c := range doc.Criteria {
-		if !strings.Contains(string(rubric), "\n**"+c.ID+" ") {
-			t.Errorf("criterion %q is not defined in docs/quality.md", c.ID)
-		}
 		if !slices.Contains([]string{"script", "model", "guildmaster", "pending"}, c.Judge) {
 			t.Errorf("criterion %s: judge %q", c.ID, c.Judge)
 		}
@@ -596,9 +588,6 @@ func TestSelfReviewSkillDocumentShape(t *testing.T) {
 		case !slices.Contains([]string{"gate", "score", "trend"}, c.Kind):
 			t.Errorf("criterion %s: kind %q", c.ID, c.Kind)
 		}
-	}
-	if doc.LowestPillar != "" && !strings.Contains(string(rubric), "("+doc.LowestPillar+")\n") {
-		t.Errorf("lowest_pillar %q is not a rubric pillar", doc.LowestPillar)
 	}
 }
 

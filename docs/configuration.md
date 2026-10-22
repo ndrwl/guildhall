@@ -64,9 +64,10 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_reference_runs_per_task` | How many times each reference task runs per workflow version: a positive whole number, default 3. |
 | `quality_reference_cost_cap_usd` | The cap on one reference evaluation's cost in US dollars, such as `"25"` or `"12.50"`; unset by default, and required while `quality_reference_runs` is not `off`. |
 | `quality_judge_separate_family` | `on`, the default, asks for a judge of a different model family from the builder when quota allows; `off` lets the judge share the builder's family, though never its session. |
+| `quality_skill_edits_need_approval` | `on`, the default for the first cycle, treats an edit to the review, build or spec skill text as a design change that needs the Guildmaster's approval; `off` treats it as any other lesson. |
 
 Only `quality_self_review` and the size budget are read today, by the self-review skill.
-The audit, reference-run and judge settings are parsed and validated so a copy can set them now; the audit decision, the reference runner and the judge session that will read them are later work.
+The audit, reference-run, judge and skill-edit settings are parsed and validated so a copy can set them now; the audit decision, the reference runner, the judge session and the lesson-proposal shape that will read them are later work.
 
 ### Repositories
 

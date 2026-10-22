@@ -7,7 +7,7 @@ import (
 
 func TestQuality(t *testing.T) {
 	defaults := Quality{SelfReview: false, SizeBudgetLines: 400, SizeBudgetFiles: 15, AuditSample: 5,
-		ReferenceRuns: ReferenceRunsOff, ReferenceRunsPerTask: 3, JudgeSeparateFamily: true}
+		ReferenceRuns: ReferenceRunsOff, ReferenceRunsPerTask: 3, JudgeSeparateFamily: true, SkillEditsNeedApproval: true}
 	with := func(edit func(*Quality)) Quality {
 		q := defaults
 		edit(&q)
@@ -33,6 +33,8 @@ func TestQuality(t *testing.T) {
 		{name: "a cost cap with reference runs off", local: `quality_reference_cost_cap_usd = "25"`,
 			want: with(func(q *Quality) { q.ReferenceCostCapUSD = "25" })},
 		{name: "judge of the same family", local: `quality_judge_separate_family = "off"`, want: with(func(q *Quality) { q.JudgeSeparateFamily = false })},
+		{name: "skill edits without approval", local: `quality_skill_edits_need_approval = "off"`,
+			want: with(func(q *Quality) { q.SkillEditsNeedApproval = false })},
 		{name: "a managed switch", managed: "[managed.quality_self_review]\nvalue = \"on\"\n", want: with(func(q *Quality) { q.SelfReview = true })},
 		{name: "an overridable managed budget replaced locally", local: `quality_size_budget_lines = "600"`,
 			managed: "[managed.quality_size_budget_lines]\nvalue = \"300\"\noverridable = true\n", want: with(func(q *Quality) { q.SizeBudgetLines = 600 })},
@@ -70,6 +72,7 @@ func TestQualityRefusesAnInvalidSetting(t *testing.T) {
 		{`quality_reference_cost_cap_usd = "1e3"`, QualityReferenceCostCapKey},
 		{`quality_reference_cost_cap_usd = "2.505"`, QualityReferenceCostCapKey},
 		{`quality_judge_separate_family = "when quota allows"`, QualityJudgeSeparateFamilyKey},
+		{`quality_skill_edits_need_approval = "first cycle"`, QualitySkillEditsNeedApprovalKey},
 		{`quality_reference_runs = "on-change-and-release"`, QualityReferenceCostCapKey},
 	} {
 		data := strings.Replace(director(t), "[local]", "[local]\n"+tc.bad, 1)

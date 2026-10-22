@@ -47,8 +47,8 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
    Install nothing: a tool that is missing is recorded as `not run: not installed`, which is missing evidence, never a pass.
 6. Record the gates from the records: E1 from the validation result for the exact head, A1, B1, D4, D5, F1 to F3, G1 and G2 from the review outcomes and the facts.
    A gate the records cannot show is `pass: null` with what is missing, never a guess.
-7. Record the script-judged scores and every trend number: D1 is 3 when `size_over` is `no`, and the H1, E3 and E5 numbers come from the timeline.
-8. Leave every model-judged score `pending` with `score: null`, for a judge session that is neither you nor the task's builder.
+7. Record the script-judged scores and every trend number: D1 is 3 by `script` only when `size_over` is `no`, and the H1, E3 and E5 numbers come from the timeline.
+8. Leave every model-judged score `pending` with `score: null`, for a judge session that is neither you nor the task's builder; D1 over budget is one of them, with the size facts as its evidence, since the judge reads whether the pull request says why it could not split.
    Write the judge's brief beside the document as `self-review-<n>-judge.md`: the criteria to score, the anchors from `docs/quality.md`, and the files it reads.
 9. Write `self-review-<n>.json` in the shape below, then tell the Guildmaster in one or two sentences: the lowest pillar, any flag, and any gate the records could not show.
 
@@ -92,7 +92,7 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
 ## Rules
 
 - Change nothing in the task or the repository: no edits, pushes, retries, decisions or rulings.
-- Never score a model-judged criterion yourself, and never turn a trend into a target for the next task.
+- Never score a model-judged criterion yourself, D1 over budget included, and never turn a trend into a target for the next task.
 - Read the ledger of self-reviews at hallmark time and in a handoff note: the criteria lowest over the window are what a workflow-change proposal must target.
 
 The review is complete when the document records every gate, the facts and tools, the script-judged scores and trends, a pending entry with a judge brief for each model-judged score, and the Guildmaster has the summary.

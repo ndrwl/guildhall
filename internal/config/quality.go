@@ -10,7 +10,7 @@ import (
 // docs/quality.md on or off and size them. They are settings read through Setting, so a Steward's managed value is
 // read-only to the Director and a standalone copy sets them under [local]. Every practice is optional.
 // Today only the self-review switch and the size budget are read, by the guildhall-self-review skill through
-// director status; the audit, reference-run and judge settings are parsed and validated for later work.
+// director status; the audit, reference-run, judge and skill-edit settings are parsed and validated for later work.
 const (
 	// QualitySelfReviewKey switches the guildhall-self-review skill after each delivered task: "on" or "off".
 	QualitySelfReviewKey = "quality_self_review"
@@ -28,6 +28,9 @@ const (
 	QualityReferenceCostCapKey = "quality_reference_cost_cap_usd"
 	// QualityJudgeSeparateFamilyKey asks for a judge of a different model family when quota allows: "on" or "off".
 	QualityJudgeSeparateFamilyKey = "quality_judge_separate_family"
+	// QualitySkillEditsNeedApprovalKey treats an edit to the review, build or spec skill text as a design change
+	// that needs the Guildmaster's approval: "on" or "off".
+	QualitySkillEditsNeedApprovalKey = "quality_skill_edits_need_approval"
 )
 
 // ReferenceRuns is when the reference set runs on a real model.
@@ -41,15 +44,17 @@ const (
 )
 
 // The defaults of a config that sets no quality setting: self-review off, the 400-line or 15-file budget, one in
-// five tasks audited, reference runs off at three per task, and a judge of a separate family when quota allows.
+// five tasks audited, reference runs off at three per task, a judge of a separate family when quota allows, and
+// skill edits needing approval.
 const (
-	DefaultQualitySelfReview           = false
-	DefaultQualitySizeBudgetLines      = 400
-	DefaultQualitySizeBudgetFiles      = 15
-	DefaultQualityAuditSample          = 5
-	DefaultQualityReferenceRuns        = ReferenceRunsOff
-	DefaultQualityReferenceRunsPerTask = 3
-	DefaultQualityJudgeSeparateFamily  = true
+	DefaultQualitySelfReview             = false
+	DefaultQualitySizeBudgetLines        = 400
+	DefaultQualitySizeBudgetFiles        = 15
+	DefaultQualityAuditSample            = 5
+	DefaultQualityReferenceRuns          = ReferenceRunsOff
+	DefaultQualityReferenceRunsPerTask   = 3
+	DefaultQualityJudgeSeparateFamily    = true
+	DefaultQualitySkillEditsNeedApproval = true
 )
 
 // Quality is the effective value of every quality setting.
@@ -62,8 +67,9 @@ type Quality struct {
 	ReferenceRuns        ReferenceRuns `json:"reference_runs"`
 	ReferenceRunsPerTask int           `json:"reference_runs_per_task"`
 	// ReferenceCostCapUSD is the setting exactly as written, or "" when it is unset.
-	ReferenceCostCapUSD string `json:"reference_cost_cap_usd,omitempty"`
-	JudgeSeparateFamily bool   `json:"judge_separate_family"`
+	ReferenceCostCapUSD    string `json:"reference_cost_cap_usd,omitempty"`
+	JudgeSeparateFamily    bool   `json:"judge_separate_family"`
+	SkillEditsNeedApproval bool   `json:"skill_edits_need_approval"`
 }
 
 // Quality returns the effective quality settings, each its default when unset.
@@ -73,7 +79,7 @@ func (c *Config) Quality() (Quality, error) {
 	q := Quality{SelfReview: DefaultQualitySelfReview, SizeBudgetLines: DefaultQualitySizeBudgetLines,
 		SizeBudgetFiles: DefaultQualitySizeBudgetFiles, AuditSample: DefaultQualityAuditSample,
 		ReferenceRuns: DefaultQualityReferenceRuns, ReferenceRunsPerTask: DefaultQualityReferenceRunsPerTask,
-		JudgeSeparateFamily: DefaultQualityJudgeSeparateFamily}
+		JudgeSeparateFamily: DefaultQualityJudgeSeparateFamily, SkillEditsNeedApproval: DefaultQualitySkillEditsNeedApproval}
 	for _, s := range qualitySettings {
 		if v, ok := c.Setting(s.key); ok {
 			if err := s.set(&q, v); err != nil {
@@ -129,6 +135,10 @@ var qualitySettings = []struct {
 	}},
 	{QualityJudgeSeparateFamilyKey, func(q *Quality, v string) (err error) {
 		q.JudgeSeparateFamily, err = parseSwitch(QualityJudgeSeparateFamilyKey, v)
+		return
+	}},
+	{QualitySkillEditsNeedApprovalKey, func(q *Quality, v string) (err error) {
+		q.SkillEditsNeedApproval, err = parseSwitch(QualitySkillEditsNeedApprovalKey, v)
 		return
 	}},
 }
