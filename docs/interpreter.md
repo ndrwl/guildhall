@@ -241,6 +241,7 @@ When a merge closes the task, the engine calls `Workspaces.Retire` with the merg
 It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.
 Otherwise it removes nothing, and the Director is sent `<repo>.<task>.workspace-kept.<decision>.<digest>`, type `workspace-kept`, naming the directory, the branch and what they hold, where `<digest>` is the first 12 hex digits of the text's sha256; the Director decides what happens to them.
 A retirement that fails, such as git refusing to remove the worktree, is reported the same way and never fails the merge or keeps the task open.
+A retirement cut short by an interrupt is not: the advance fails before the task is marked `done`, no `workspace-kept` message is sent, and running the command again replays the merge and retires the working directory again.
 With no `Engine.Workspaces` the working directory is a plain directory, which is how the engine's own tests run; publish cannot push from one.
 
 ## History

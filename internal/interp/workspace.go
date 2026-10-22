@@ -46,7 +46,8 @@ func (r *run) workDir() (string, error) {
 
 // retire removes the merged task's workspace when nothing in it would be lost, before the task closes, so a replay
 // after a crash retires it again. A kept or unremovable workspace never fails the merge: the Director is told, by a
-// workspace-kept message, what it holds or why it could not be removed. Only a failed message is an error.
+// workspace-kept message, what it holds or why it could not be removed. Only a failed message or the advance's
+// context ending is an error, so an interrupted retirement leaves the task open and a replay retires it again.
 func (r *run) retire(d store.Decision, repo config.Repository, head string) error {
 	if r.e.Workspaces == nil {
 		return nil
@@ -54,6 +55,9 @@ func (r *run) retire(d store.Decision, repo config.Repository, head string) erro
 	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: branchPrefix + r.task.ID, Dir: r.workPath()}
 	kept, err := r.e.Workspaces.Retire(r.ctx, git.Retirement{Workspace: w, Head: head, Outputs: r.outputs()})
 	if err != nil {
+		if r.ctx.Err() != nil {
+			return r.ctx.Err()
+		}
 		kept = []string{"it could not be removed: " + err.Error()}
 	}
 	if len(kept) == 0 {

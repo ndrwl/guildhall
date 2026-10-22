@@ -201,3 +201,47 @@ func TestFailedRetirementNeverFailsTheMerge(t *testing.T) {
 		t.Errorf("task state = %q, want done", got)
 	}
 }
+
+// interruptedRetire is the workspace double with a Retire interrupted by the advance's context ending.
+type interruptedRetire struct {
+	*gittest.Workspaces
+	cancel context.CancelFunc
+}
+
+func (i interruptedRetire) Retire(ctx context.Context, _ git.Retirement) ([]string, error) {
+	i.cancel()
+	return nil, ctx.Err()
+}
+
+// TestInterruptedRetirementKeepsTheTaskOpen: an interrupt during retirement fails the advance before the task
+// closes and tells the Director nothing, and the next advance retires the workspace and closes the task.
+func TestInterruptedRetirementKeepsTheTaskOpen(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, f, ws := newRetireEnv(t, b)
+			want(t, e.toSignOff(t), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			e.answer(t, "deliver-1", "merge")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			e.eng.Workspaces = interruptedRetire{f, cancel}
+			ev := interp.Event{Kind: interp.DecisionAnswered, Repository: "app", Task: "t7", Decision: "deliver-1"}
+			if _, err := e.eng.Advance(ctx, ev); !errors.Is(err, context.Canceled) {
+				t.Fatalf("interrupted Advance = %v, want context.Canceled", err)
+			}
+			if got := e.task(t).State; got == store.TaskDone {
+				t.Errorf("task closed by an interrupted retirement")
+			}
+			if got := e.keptMessage(t); got != "" {
+				t.Errorf("workspace-kept = %q, want none for an interrupt", got)
+			}
+			e.eng.Workspaces = f
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), interp.Next{Wait: interp.WaitDone, Step: "deliver"})
+			if _, err := os.Stat(ws.Dir); !errors.Is(err, os.ErrNotExist) || f.Head(ws.Dir) != "" {
+				t.Errorf("workspace still there after the replay: %v", err)
+			}
+			if got := e.task(t).State; got != store.TaskDone {
+				t.Errorf("task state = %q, want done", got)
+			}
+		})
+	}
+}
