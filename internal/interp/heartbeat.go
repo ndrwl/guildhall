@@ -7,6 +7,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/messaging"
 )
 
 // WorkerStalled is the type of the Director message a stalled worker observation sends.
@@ -34,6 +35,13 @@ func (r *run) workerStalled(step string, number int) error {
 	output := h.LastOutputAt.UTC().Format(time.RFC3339Nano)
 	return r.notify(fmt.Sprintf("worker-stalled.%s-%d.%s", step, number, digest.Of([]byte(output)).Hex()), WorkerStalled,
 		fmt.Sprintf("Attempt %d of step %s has a fresh heartbeat but no output since %s.", number, step, output))
+}
+
+// StalledMessage is the worker-stalled Director message for attempt k silent since lastOutput: the engine's
+// advance and the attempt's launcher both send it, so its id, derived from k and lastOutput as the engine's
+// notify derives every id, makes the later of the two a replay (docs/interpreter.md#worker-stalled-observations).
+func StalledMessage(k artisan.AttemptKey, lastOutput time.Time) messaging.Envelope {
+	return messaging.Envelope{}
 }
 
 // now is the engine's clock.

@@ -63,6 +63,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -199,6 +200,12 @@ type Config struct {
 	// takes, such as `guildhall --copy <dir>`: once the store outcome is recorded, Run advances the task with it
 	// (the package comment's step 6). Nil advances nothing.
 	Advance []string
+	// StallInterval, when positive, is how long the worker may be silent before the launcher sends the Director
+	// interp.StalledMessage through Outbox, once per crossing, from its heartbeat (docs/artisan.md#heartbeat);
+	// the worker's output time is the newest modification of Stdout and Stderr when they are regular files.
+	// Zero, or a nil Outbox, sends nothing.
+	StallInterval time.Duration
+	Outbox        interp.Outbox
 }
 
 // Report is how an owned attempt ended.

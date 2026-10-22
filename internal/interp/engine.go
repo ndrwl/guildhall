@@ -940,15 +940,21 @@ func (r *run) notifyDecision(d store.Decision, step string) error {
 // notify sends the Director one message about the task, with an id derived from the task and what
 // happened so resending it replays. It names no attempt, so it is accepted whatever the attempt's state.
 func (r *run) notify(what, typ, text string) error {
-	id := fmt.Sprintf("%s.%s.%s", r.task.Repository, r.task.ID, what)
+	_, err := r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, directorMessage(r.task.Repository, r.task.ID, what, typ, text))
+	return err
+}
+
+// directorMessage is the Director message about task repo/task with an id derived from both and what, hashing
+// ids longer than 100 bytes.
+func directorMessage(repo, task, what, typ, text string) messaging.Envelope {
+	id := fmt.Sprintf("%s.%s.%s", repo, task, what)
 	if len(id) > 100 {
 		id = "advance." + digest.Of([]byte(id)).Hex()
 	}
-	_, err := r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, messaging.Envelope{
+	return messaging.Envelope{
 		Schema: messaging.SchemaPrefix + strconv.Itoa(messaging.SchemaVersion), ID: id, Recipient: store.RecipientDirector,
-		Repository: r.task.Repository, Task: r.task.ID, Type: typ, Text: text,
-	})
-	return err
+		Repository: repo, Task: task, Type: typ, Text: text,
+	}
 }
 
 // mutation derives a write's mutation id from the task and the record, hashing ids longer than the store allows.

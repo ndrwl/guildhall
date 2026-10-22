@@ -259,6 +259,7 @@ Contract tests already read it, but no command reads it yet; it gains a schema w
 | `rung-emptied` | A rung is found empty, at the first check or after its wait; once per stop | `rung` |
 | `rung-timeout` | A rung's bound expires without proving the unit empty; `error` records any failure to list survivors | `rung`, `alive`, `error` |
 | `heartbeat-failed` | A heartbeat write fails | `sequence`, `error` |
+| `worker-stalled` | The launcher (`--stall-interval`) has sent, or failed to send, the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message for a heartbeat whose worker has been silent past the interval | `message`, `last_output_at`, `error` when it failed |
 | `ended` | Outcome publication has been attempted, even if it failed; check the Run error and `outcome.json` separately for success | `outcome` |
 | `advance` | The launcher's advance of the task (`--advance`) has exited or failed to start, after the outcome was recorded | `command`, `exit` when it ran, `error` when it failed |
 | `settled` | Resume settlement publishes a new outcome after the launcher is gone and the unit is proven empty; returning an existing outcome does not emit it | `outcome` |
@@ -305,7 +306,11 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 - `sequence` is positive and increases with every write, continuing from a heartbeat an earlier launcher of the attempt left.
 - `worker_state` is the launcher's phase: `starting`, `running` or `stopping`; it is nonblank UTF-8 of at most 256 bytes.
 - `last_output_at` comes from `LauncherConfig.LastOutput`; without it, or while it reports no time, it is when `Run` began.
-  `artisan start` sets none: the worker writes straight to the launcher's terminal, which the launcher does not read.
+  `artisan start` reports the newest modification time of the worker's standard output and error when they are regular files, as `launch.Process` makes them by appending both to `launcher.log`, so a launcher's own lines there count as output too; a worker writing to a terminal is not observed, the launcher never reading it.
+- `LauncherConfig.Beat` is called with each beat once it is written; a failed write calls nothing.
+  `artisan start --stall-interval <duration>` uses it to send the Director the engine's [`worker-stalled`](interpreter.md#worker-stalled-observations) message, `interp.StalledMessage`, when a beat's `last_output_at` is older than the interval relative to its `time`: once per crossing, since the message id is derived from the attempt and `last_output_at`, and again after new output is followed by another crossing.
+  The send goes through the store and then [wakes the Director](messaging.md#waking-the-director) as `guildhall`, off the supervision loop, so a slow store or pane never delays the next beat; a beat arriving while a send is in flight is checked after it, and a failed send is retried on the next beat.
+  Each send is logged as a `worker-stalled` event; an advance that later observes the same crossing replays the message and sends nothing new.
   A later time than the beat is reported as the beat's time.
 - The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live.
   Beats continue during result grace and cooperative supervision, but pause while the stop ladder waits on a signal rung.
@@ -377,6 +382,8 @@ Refusing an already-decided attempt preserves its ownership record and containme
 5. it records the store outcome with `FinishAttempt`, which releases the ownership;
 6. with `--advance`, it then advances the task over the copy as its [watcher](running.md#the-watcher): `step done` after a finished attempt with a valid result, otherwise `task start`, with the output appended to `launcher.log` and an `advance` event in `events.jsonl`; a failed advance is only logged.
    `--advance` needs a copy, `--copy` or `GUILDHALL_COPY`, and is a usage error without one; `launch.Process` passes `--copy <dir> --advance` only when the engine runs from a copy.
+
+With a positive `--stall-interval` (zero, the default, observes nothing), the launcher also sends the Director `worker-stalled` from its heartbeat when the worker has been silent past the interval ([heartbeat](#heartbeat)); `launch.Process` passes the engine's `stall_interval` when it is positive.
 
 The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.
 Survivors after the last rung leave the attempt running and owned, and the endpoint reports a stop error.

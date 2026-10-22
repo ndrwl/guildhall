@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -165,6 +166,34 @@ func TestProcessAsksAnEngineCopysLauncherToAdvance(t *testing.T) {
 	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
 		"--repo", "app", "--task", "t7", "--step", "build", "--attempt", "1",
 		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir, "--copy", p.Copy, "--advance"}
+	if !slices.Equal(got, want) {
+		t.Errorf("argv = %q\nwant %q", got, want)
+	}
+}
+
+// TestProcessPassesTheEnginesStallInterval: a Process given a positive stall interval passes it as
+// --stall-interval, so the launcher observes its worker's silence from its heartbeat.
+func TestProcessPassesTheEnginesStallInterval(t *testing.T) {
+	p := newProcess(t)
+	p.StallInterval = 15 * time.Minute
+	argv := filepath.Join(t.TempDir(), "argv.json")
+	p.Env = []string{argvEnv + "=" + argv}
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	if _, err := p.Launch(context.Background(), spec); err == nil {
+		t.Fatal("Launch of a refusing launcher succeeded")
+	}
+	b, err := os.ReadFile(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	as := spec.AdapterSpec()
+	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
+		"--repo", "app", "--task", "t7", "--step", "build", "--attempt", "1",
+		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir, "--stall-interval", "15m0s"}
 	if !slices.Equal(got, want) {
 		t.Errorf("argv = %q\nwant %q", got, want)
 	}
