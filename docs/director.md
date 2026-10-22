@@ -182,7 +182,7 @@ The stop does not yet send the Director a `stop-requested` message asking it to 
 guildhall director handoff --note-file <path|-> [--copy <dir> | --store <file> --state <dir>]
 ```
 
-`director handoff` records a handoff note: what the next session needs to carry on, written by the Director before its session ends ([decision](decisions/director-handoff-reload.md)).
+`director handoff` records a handoff note: what the next session needs to carry on, written by the Director before its session ends ([decision](decisions/0082-director-handoff-reload.md)).
 The note is read from the file, or from standard input for `-`, with the rules of a [decision answer](decisions-cli.md#answers): a leading UTF-8 byte order mark is dropped, CRLF line endings become LF and UTF-16 is refused.
 It must not be blank and is at most 64 KiB after that.
 The note is a document, not a store record (R1.13): it is written to `<state>/documents/director/handoff-<seq>.md`, and the store records a [handoff note](store.md#handoff-notes) naming the newest session, the path relative to the document directory and the note's sha256.

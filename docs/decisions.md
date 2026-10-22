@@ -94,3 +94,5 @@ Until then a new decision is cited by its file path rather than a number.
 - [D78. The Director's Herdr tab](decisions/0078-director-tab.md)
 - [D79. Each attempt records the tokens and cost its runtime reports, marked measured, estimated or unknown](decisions/0079-attempt-spend.md)
 - [D80. The Director safety checks drive the built binary with stand-in runtimes](decisions/0080-director-safety-checks.md)
+- [D81. Faster, steadier Windows CI](decisions/0081-windows-ci-speed.md)
+- [D82. Handoff notes, `director reload` and the end of a turn](decisions/0082-director-handoff-reload.md)

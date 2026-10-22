@@ -379,10 +379,10 @@ func TestDoctorCountsDirectorRecords(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsDamagedDirectorRecords shows a session or wake that does not decode is a problem, not a
-// clean store.
+// TestDoctorReportsDamagedDirectorRecords shows a session, wake, handoff note or reload request that does not
+// decode is a problem, not a clean store.
 func TestDoctorReportsDamagedDirectorRecords(t *testing.T) {
-	for _, bucket := range []string{"sessions", "wakes"} {
+	for _, bucket := range []string{"sessions", "wakes", "handoffs", "reloads"} {
 		t.Run(bucket, func(t *testing.T) {
 			s, path := messagingStore(t)
 			mustStartSession(t, s, sampleSession(1))
@@ -396,7 +396,11 @@ func TestDoctorReportsDamagedDirectorRecords(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := db.Update(func(tx *bolt.Tx) error {
-				return tx.Bucket([]byte("director")).Bucket([]byte(bucket)).Put([]byte("99999999999999999999"), []byte("{not json"))
+				b, err := tx.Bucket([]byte("director")).CreateBucketIfNotExists([]byte(bucket))
+				if err != nil {
+					return err
+				}
+				return b.Put([]byte("99999999999999999999"), []byte("{not json"))
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -408,9 +412,12 @@ func TestDoctorReportsDamagedDirectorRecords(t *testing.T) {
 			if len(rep.Problems) != 1 || !strings.Contains(rep.Problems[0], "director "+bucket) {
 				t.Fatalf("problems = %q, want one naming director %s", rep.Problems, bucket)
 			}
-			sessions, wakes := 1, 2
-			if bucket == "sessions" {
-				sessions, wakes = 2, 1
+			sessions, wakes := 1, 1
+			switch bucket {
+			case "sessions":
+				sessions = 2
+			case "wakes":
+				wakes = 2
 			}
 			if rep.DirectorSessions != sessions || rep.Wakes != wakes {
 				t.Fatalf("director sessions %d, wakes %d; want %d and %d", rep.DirectorSessions, rep.Wakes, sessions, wakes)

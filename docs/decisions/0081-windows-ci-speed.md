@@ -1,4 +1,4 @@
-# Faster, steadier Windows CI
+# D81. Faster, steadier Windows CI
 
 The Windows test job took three to four minutes and failed merges whenever a runner was slower than usual.
 The diagnosis on 2026-10-22 found Windows time to be latency, not compute: the slow packages fsync a bbolt store on every commit or start many processes (git, PowerShell, test-binary children), each costing tens of milliseconds there against microseconds on Linux.

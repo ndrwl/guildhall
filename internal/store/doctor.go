@@ -83,10 +83,14 @@ func (s *Store) Doctor() (Report, error) {
 		}{
 			{bucketSessions, &rep.DirectorSessions, func() any { return new(DirectorSession) }},
 			{bucketWakes, &rep.Wakes, func() any { return new(Wake) }},
+			{bucketHandoffs, nil, func() any { return new(HandoffNote) }},
+			{bucketReloads, nil, func() any { return new(DirectorReload) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {
-					*d.n++
+					if d.n != nil {
+						*d.n++
+					}
 					if err := decode(k, v, d.record()); err != nil {
 						problem("director %s: %v", d.name, err)
 					}

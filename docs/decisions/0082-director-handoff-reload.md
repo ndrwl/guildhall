@@ -1,4 +1,4 @@
-# Handoff notes, `director reload` and the end of a turn
+# D82. Handoff notes, `director reload` and the end of a turn
 
 A Director session's context runs out, its settings change and it is stopped, so a session must be able to hand over to the next one and end at a point that loses nothing.
 This is the first half of the slice 4 handoff plan (D11a): the note, `director reload [--now]`, the turn signals and the supervisor's loop.

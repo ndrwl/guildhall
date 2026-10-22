@@ -2,7 +2,7 @@
 
 ## Contract
 
-The Director session supervisor's control endpoint ([the end of a turn](../director.md#the-end-of-a-turn), [decision](../decisions/director-handoff-reload.md)).
+The Director session supervisor's control endpoint ([the end of a turn](../director.md#the-end-of-a-turn), [decision](../decisions/0082-director-handoff-reload.md)).
 `EndpointPath` is `supervisor.sock` in an absolute session directory, `ErrPath` for a relative directory or a path longer than `artisan.MaxEndpointPath`.
 `Listen` binds an AF_UNIX stream socket there for one session number, on Windows as on Unix, removing a leftover socket nothing listens on and refusing, and keeping, one that answers or any file that is not a socket; `Close` stops it and removes the socket file, idempotently.
 `Signal` sends one `guildhall.session-control/1` request line naming the session and the turn signal, `TurnStarted` (op `turn-started`) or `TurnEnded` (op `turn-ended`), and waits for the reply line; nothing listening is `ErrNoSupervisor`, an endpoint for another session `ErrMismatch` and a reply that is not the protocol `ErrProtocol`.
