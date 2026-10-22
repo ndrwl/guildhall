@@ -221,7 +221,8 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 				}
 			}
 		}
-		settle := time.Now().Add(testenv.Ceiling(10 * time.Second))
+		// Not a ceiling: a case that orphans a worker waits all of it, so it stays the same on every host.
+		settle := time.Now().Add(10 * time.Second)
 		for _, p := range procs {
 			id := artisan.Identity{PID: p.PID, Token: p.Token}
 			lv, err := artisan.Probe(id)
