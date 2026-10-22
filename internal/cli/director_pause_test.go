@@ -298,7 +298,7 @@ func TestDecisionAnsweredWhilePausedIsFed(t *testing.T) {
 }
 
 // TestHeldWhilePausedOrStopping: the advance's hold holds new attempts only while the newest session is paused
-// or stopping.
+// or stopping, or stopped before its stop's sweep finished.
 func TestHeldWhilePausedOrStopping(t *testing.T) {
 	for _, c := range []struct {
 		path []store.DirectorState
@@ -309,6 +309,7 @@ func TestHeldWhilePausedOrStopping(t *testing.T) {
 		{[]store.DirectorState{store.DirectorRunning, store.DirectorPaused}, true},
 		{[]store.DirectorState{store.DirectorRunning, store.DirectorStopping}, true},
 		{[]store.DirectorState{store.DirectorStopped}, false},
+		{[]store.DirectorState{store.DirectorRunning, store.DirectorStopping, store.DirectorStopped}, true},
 	} {
 		path := emptyStore(t)
 		recordSession(t, path, false, c.path...)
@@ -433,7 +434,7 @@ func TestDirectorStopEndsTheSessionAndItsAttempts(t *testing.T) {
 	}
 	code, out, stderr := d.run(t, "director", "stop", "--copy", dir)
 	var printed store.DirectorSession
-	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopping || printed.StopNow {
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopping && printed.State != store.DirectorStopped || printed.StopNow || printed.Sweeping {
 		t.Fatalf("director stop: exit %d, %q (%v), stderr %s", code, out, err, stderr)
 	}
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {

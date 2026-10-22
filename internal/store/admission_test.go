@@ -86,6 +86,44 @@ func TestHeldStartIsAdmittedAfterResume(t *testing.T) {
 	}
 }
 
+// TestStopHoldsUntilItsSweepFinishes: a stop request holds starts while the session is stopping and, once the
+// session is recorded stopped, until FinishDirectorStop records the stop's sweep finished, which keeps the session's
+// end time and is refused when no stop is sweeping; after it a start is admitted.
+func TestStopHoldsUntilItsSweepFinishes(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "task-1", sampleTask("app", "t-1"))
+	mustStartSession(t, s, sampleSession(1))
+	mustMove(t, s, 1, DirectorRunning)
+	d, _ := s.DirectorSession(1)
+	if _, err := s.FinishDirectorStop(1, d.StateSequence); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("finish with no stop = %v, want ErrInvalid", err)
+	}
+	if _, err := s.RequestDirectorStop(1, true, d.StateSequence); err != nil {
+		t.Fatal(err)
+	}
+	mustMove(t, s, 1, DirectorStopped)
+	stopped, _ := s.DirectorSession(1)
+	if !stopped.Sweeping || !stopped.Holds() {
+		t.Fatalf("stopped session = %+v; want it sweeping and holding", stopped)
+	}
+	if _, err := s.StartCappedAttempt("start-build", "app", "t-1", "build", AttemptCaps{Hold: true}); !errors.Is(err, ErrDirectorHeld) {
+		t.Fatalf("start while the stop sweeps = %v, want ErrDirectorHeld", err)
+	}
+	if _, err := s.FinishDirectorStop(1, stopped.StateSequence); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.DirectorSession(1)
+	if after.Sweeping || after.Holds() || after.State != DirectorStopped || !after.EndedAt.Equal(stopped.EndedAt) {
+		t.Fatalf("session after the sweep = %+v; want stopped at %v, not holding", after, stopped.EndedAt)
+	}
+	if _, err := s.FinishDirectorStop(1, after.StateSequence); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a second finish = %v, want ErrInvalid", err)
+	}
+	if _, err := s.StartCappedAttempt("start-build", "app", "t-1", "build", AttemptCaps{Hold: true}); err != nil {
+		t.Fatalf("start after the sweep = %v, want admitted", err)
+	}
+}
+
 // TestHeldStartAndPauseNeverInterleave races held starts against a pause across two handles on one file: every
 // start is either recorded with a receipt committed before the pause's or refused, never committed after it.
 func TestHeldStartAndPauseNeverInterleave(t *testing.T) {

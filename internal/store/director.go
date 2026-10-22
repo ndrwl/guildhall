@@ -28,6 +28,7 @@ const (
 	opRecordWake           = "record-wake"
 	opRequestDirectorStop  = "request-director-stop"
 	opEndDirectorSession   = "end-director-session"
+	opFinishDirectorStop   = "finish-director-stop"
 )
 
 // MaxWakeReasonBytes bounds a wake's reason.
@@ -87,9 +88,18 @@ type DirectorSession struct {
 	StateSequence uint64 `json:"state_sequence"`
 	// StopNow is set by RequestDirectorStop for `director stop --now`: the supervisor ends the runtime at once.
 	StopNow bool `json:"stop_now,omitempty"`
+	// Sweeping is set by RequestDirectorStop and cleared by FinishDirectorStop once director stop has swept the
+	// session's attempts; while it is set the session holds new attempts (Holds), stopped or not.
+	Sweeping bool `json:"sweeping,omitempty"`
 	// EndReason is the reason EndDirectorSession recorded, such as "superseded" for a gone supervisor, or
 	// EndSuperseded when StartDirectorSession recorded a newer session over a session not yet stopped.
 	EndReason string `json:"end_reason,omitempty"`
+}
+
+// Holds reports whether the session holds new attempts: while it is paused or stopping, and while a stop's sweep
+// of its attempts has not finished.
+func (d DirectorSession) Holds() bool {
+	return d.State == DirectorPaused || d.State == DirectorStopping || d.Sweeping
 }
 
 // EndSuperseded is the end reason of a session recorded stopped because its supervisor is gone, by
@@ -200,7 +210,8 @@ func (s *Store) SetDirectorState(n int, to DirectorState, from uint64) (Receipt,
 const MaxEndReasonBytes = 256
 
 // RequestDirectorStop moves the newest session, number n, to stopping for `director stop`, with the mutation id
-// "director-stop:<n>:<turn|now>:<from>", where from is the StateSequence the caller read; now sets StopNow.
+// "director-stop:<n>:<turn|now>:<from>", where from is the StateSequence the caller read; now sets StopNow, and
+// every request sets Sweeping.
 // A recovering, running or paused session moves to stopping; a stopping session without StopNow takes it when
 // now is set and stays stopping. Every other move, a stale from and a superseded or stopped session are refused
 // as SetDirectorState refuses them. Replaying returns the original receipt.
@@ -215,7 +226,7 @@ func (s *Store) RequestDirectorStop(n int, now bool, from uint64) (Receipt, erro
 		if d.State == DirectorStopping && (d.StopNow || !now) {
 			return invalid("director session %d is already stopping", n)
 		}
-		d.State, d.StopNow = DirectorStopping, now
+		d.State, d.StopNow, d.Sweeping = DirectorStopping, now, true
 		return nil
 	})
 }
@@ -242,9 +253,28 @@ func (s *Store) EndDirectorSession(n int, reason string, from uint64) (Receipt, 
 	})
 }
 
+// FinishDirectorStop clears Sweeping on the newest session, number n, once director stop has swept its attempts,
+// with the mutation id "director-swept:<n>:<from>", stopped or not. It is refused with ErrInvalid when Sweeping is
+// not set, and a stale from and a superseded session as SetDirectorState refuses them. Replaying returns the
+// original receipt.
+func (s *Store) FinishDirectorStop(n int, from uint64) (Receipt, error) {
+	req := struct {
+		Number int    `json:"number"`
+		From   uint64 `json:"from"`
+	}{n, from}
+	return s.moveSession(fmt.Sprintf("director-swept:%d:%d", n, from), opFinishDirectorStop, req, n, from, func(d *DirectorSession) error {
+		if !d.Sweeping {
+			return invalid("director session %d has no stop sweeping its attempts", n)
+		}
+		d.Sweeping = false
+		return nil
+	})
+}
+
 // moveSession applies move to the newest session, number n, read at state sequence from, as mutation id: it
-// refuses a missing session with ErrNotFound and a superseded, stopped or since-moved one with ErrInvalid, sets
-// ReadyAt on the first move to running and EndedAt on the move to stopped, and records the new StateSequence.
+// refuses a missing session with ErrNotFound and a superseded, stopped or since-moved one with ErrInvalid, except
+// that FinishDirectorStop finishes a stopped one, sets ReadyAt on the first move to running and EndedAt on the move
+// to stopped, and records the new StateSequence.
 func (s *Store) moveSession(id, op string, req any, n int, from uint64, move func(*DirectorSession) error) (Receipt, error) {
 	if n < 1 {
 		return Receipt{}, invalid("director session number %d must be positive", n)
@@ -262,7 +292,7 @@ func (s *Store) moveSession(id, op string, req any, n int, from uint64, move fun
 		switch {
 		case d.StateSequence != from:
 			return invalid("director session %d changed at sequence %d, after the read at %d", n, d.StateSequence, from)
-		case d.State == DirectorStopped:
+		case d.State == DirectorStopped && op != opFinishDirectorStop:
 			return invalid("director session %d is stopped", n)
 		}
 		if err := move(&d); err != nil {
@@ -272,7 +302,7 @@ func (s *Store) moveSession(id, op string, req any, n int, from uint64, move fun
 		if d.State == DirectorRunning && d.ReadyAt.IsZero() {
 			d.ReadyAt = now
 		}
-		if d.State == DirectorStopped {
+		if d.State == DirectorStopped && d.EndedAt.IsZero() {
 			d.EndedAt = now
 		}
 		d.StateSequence = r.Sequence

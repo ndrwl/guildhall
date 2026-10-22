@@ -9,8 +9,13 @@ The captain's semantics stand: pause stops new work only and running attempts fi
 ## Decisions
 
 - **The hold is read where the attempt is recorded.**
-  `store.AttemptCaps.Hold` makes `StartCappedAttempt` refuse with `store.ErrDirectorHeld`, writing nothing, while the newest Director session is `paused` or `stopping`, in the same transaction as the cap count and the start.
+  `store.AttemptCaps.Hold` makes `StartCappedAttempt` refuse with `store.ErrDirectorHeld`, writing nothing, while the newest Director session holds new attempts (`DirectorSession.Holds`), in the same transaction as the cap count and the start.
   A start therefore either commits before a pause or stop, and is seen by the stop's sweep, or is refused; the engine treats the refusal as `Engine.Hold` and waits `paused`.
+- **A stop holds admission until its sweep has finished.**
+  The supervisor may record the session `stopped` before `director stop`'s sweep is done, as `stop --now` does at once, and a session whose supervisor is gone used to be recorded `stopped` before its sweep began; either lifted a hold read from the state alone while an attempt's advance, or a tool the runtime left, could still start one.
+  `RequestDirectorStop` therefore sets the session's durable `Sweeping`, and `director stop` clears it with `FinishDirectorStop` only once every attempt is proven stopped; `Holds` is `paused`, `stopping` or `Sweeping`, so `held` and the start transaction read the same rule.
+  A gone supervisor's session is recorded `stopping` first and `stopped` as `superseded` only after the sweep.
+  A sweep that did not finish leaves the hold on, and `director stop` again sweeps a `stopped` session that is still `Sweeping` rather than refusing it; once it is finished, a Guildmaster's `task start` with no Director running is admitted again.
   `Engine.Hold` stays as an early read that spares a held advance its preparation; it no longer decides.
   A replayed start returns its receipt whatever the session is now, so replay identity is unchanged.
   Another uncoordinated read before the start was rejected: it only narrows the window.

@@ -137,17 +137,18 @@ guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]
 ```
 
 `director stop` ends the Director session and its Artisan attempts ([decision](decisions/director-pause-stop.md)).
-It records the newest session `stopping`, then stops every running attempt in the store, and prints the session as one JSON line.
-A stopping session starts no new attempt, as a paused one does, so every attempt recorded before the stop is one the stop sees.
+It records the newest session `stopping` and `sweeping`, then stops every running attempt in the store, records the sweep finished, and prints the session as one JSON line.
+A stopping session starts no new attempt, as a paused one does, and neither does a session whose stop is still `sweeping`, even once its supervisor has recorded it `stopped`, so every attempt recorded before the stop is one the stop sees.
+Once the sweep is finished the hold lifts, and a `task start` by the Guildmaster with no Director running works again.
 An attempt with an owning launcher is stopped as [`artisan stop`](artisan.md#commands) does.
 An attempt nothing owns, a [Director stage](interpreter.md#director-stages) such as the grill or an Artisan attempt an advance recorded but has not launched, is recorded `stopped` under its task's lock, after any advance or `step finish` in progress on the task, so it no longer counts against the [attempt caps](#guard-rails), [`needs_me`](#status) lists it to retry, a later `step finish` of it is refused and no launcher can take it.
 A Director stage whose result `step finish` already published has finished its work and is left for its advance to take.
 The session's supervisor then ends the runtime and records the session `stopped`: at the [end of the current turn](#the-end-of-a-turn), or, with `--now`, at once.
 A stopping session is stopped again without changing it, and `stop --now` after a plain stop ends the runtime at once.
-Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `stopping`.
+Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `sweeping`, holding new attempts, and running `stop` again, even over a session since recorded `stopped`, finishes the sweep.
 
-A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopped` with the end reason `superseded`, and still stops its attempts.
-No session, or a session already `stopped`, is exit 1.
+A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopping`, stops its attempts and then records it `stopped` with the end reason `superseded`.
+No session, or a session already `stopped` whose stop has finished its sweep, is exit 1.
 
 The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands with the automatic handoff triggers.
 
@@ -268,7 +269,7 @@ The document has these sections:
   `partial` is always `true`; `excluded` names what the feed does not inspect: `worker files`, `transcripts` and `forge state`.
   `sequence` and `committed_at` are the newest mutation committed anywhere in the store when the read began; an empty store has sequence 0.
   Live attempt state is read after the store, so it can be newer than `sequence`.
-- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, and the `end_reason` of a session [stopped](#stop) as `superseded`.
+- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, `sweeping` while a [stop](#stop) has not finished stopping its attempts, and the `end_reason` of a session [stopped](#stop) as `superseded`.
   A store with no session reports only its `state`, `"no session"`, and `guard_rails`.
   `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_policies`, `max_running_attempts` and `max_attempts_per_day`, when the copy has a config, and always `running_attempts`, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
   A config that exists but cannot be read gives `config_error` in place of the rails.

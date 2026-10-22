@@ -6,12 +6,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // stopDirector runs director stop over d's store and state and checks it reports the session stopping and every
@@ -190,6 +193,114 @@ func TestDirectorStopWaitsForAnInFlightAdvance(t *testing.T) {
 	}
 	if err := artisantest.KillVerified(launcher); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// duringSweep runs fn once, as director stop's sweep reaches an attempt nothing owns.
+func duringSweep(t *testing.T, fn func()) {
+	t.Helper()
+	var once sync.Once
+	testHookStopWaitsForTask = func() { once.Do(fn) }
+	t.Cleanup(func() { testHookStopWaitsForTask = nil })
+}
+
+// recordUnlaunched records attempt plan-1 of task id as an advance that never launched it would, for director
+// stop's sweep to stop with no owner.
+func (d runDirector) recordUnlaunched(t *testing.T, id string) {
+	t.Helper()
+	newTask(t, d.store, d.config, "app", "Another task", id)
+	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+		return s.StartAttempt("recorded-not-launched", "app", id, "plan")
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDirectorStopOfAGoneSupervisorHoldsUntilItsSweepEnds: with the supervisor gone, director stop records the
+// session stopping before its sweep, so a task start during the sweep is held and records nothing; once the sweep
+// is done the session is stopped as superseded and a task start launches again with no Director running.
+func TestDirectorStopOfAGoneSupervisorHoldsUntilItsSweepEnds(t *testing.T) {
+	d := newRunDirector(t)
+	recordSession(t, d.store, true, store.DirectorRunning)
+	d.recordUnlaunched(t, "t-2")
+	duringSweep(t, func() {
+		if got, _ := latestSession(t, d.store); got.State != store.DirectorStopping || !got.Sweeping {
+			t.Errorf("session during the sweep = %+v; want stopping and sweeping", got)
+		}
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != pausedWait+"\n" {
+			t.Errorf("task start during the sweep: exit %d, %q, stderr %s", code, out, stderr)
+		}
+	})
+	code, out, stderr := d.run(t, "director", "stop", "--store", d.store, "--state", d.state)
+	var printed store.DirectorSession
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopped ||
+		printed.EndReason != store.EndSuperseded || printed.Sweeping {
+		t.Fatalf("director stop: exit %d, %q (%v), stderr %s", code, out, err, stderr)
+	}
+	if got := d.attempts(t); len(got) != 0 {
+		t.Fatalf("attempts of t-1 after the held start = %+v", got)
+	}
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start after the sweep: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitResult(t, "plan", 1)
+}
+
+// TestDirectorStopNowHoldsUntilItsSweepEnds: stop --now lets the supervisor end the runtime and record the session
+// stopped while the stop is still sweeping; an advance starting a new attempt then is held and records nothing, and
+// the hold lifts once the sweep is done, after which a second director stop is refused as stopped.
+func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
+	dir, d := supervisedCopy(t)
+	done := supervise(t, dir, time.Hour)
+	d.recordUnlaunched(t, "t-2")
+	duringSweep(t, func() {
+		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
+			if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorStopped {
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatalf("the supervisor never recorded the session stopped: %+v", sessions(t, dir))
+			}
+		}
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != pausedWait+"\n" {
+			t.Errorf("task start after the runtime ended, during the sweep: exit %d, %q, stderr %s", code, out, stderr)
+		}
+	})
+	code, out, stderr := d.run(t, "director", "stop", "--now", "--copy", dir)
+	var printed store.DirectorSession
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopped || printed.Sweeping {
+		t.Fatalf("director stop --now: exit %d, %q (%v), stderr %s", code, out, err, stderr)
+	}
+	if code := ended(t, done); code != 0 {
+		t.Errorf("director start exited %d, want 0", code)
+	}
+	if got := d.attempts(t); len(got) != 0 {
+		t.Fatalf("attempts of t-1 after the held start = %+v", got)
+	}
+	if hold, err := heldNow(d.store); err != nil || hold {
+		t.Errorf("held after the sweep = %v, %v; want the hold lifted", hold, err)
+	}
+	if code, _, stderr := d.run(t, "director", "stop", "--copy", dir); code != 1 || !strings.Contains(stderr, "is stopped") {
+		t.Errorf("director stop of a swept stopped session: exit %d, stderr %s; want it refused", code, stderr)
+	}
+}
+
+// TestDirectorStopFinishesAnInterruptedSweep: a session recorded stopped while its stop's sweep had not finished
+// still holds new attempts; director stop again sweeps and lifts the hold rather than refusing it as stopped.
+func TestDirectorStopFinishesAnInterruptedSweep(t *testing.T) {
+	d := newRunDirector(t)
+	recordSession(t, d.store, false, store.DirectorRunning, store.DirectorStopping, store.DirectorStopped)
+	d.recordUnlaunched(t, "t-2")
+	if hold, err := heldNow(d.store); err != nil || !hold {
+		t.Fatalf("held before the sweep = %v, %v; want held", hold, err)
+	}
+	code, out, stderr := d.run(t, "director", "stop", "--store", d.store, "--state", d.state)
+	var printed store.DirectorSession
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopped || printed.Sweeping {
+		t.Fatalf("director stop: exit %d, %q (%v), stderr %s", code, out, err, stderr)
+	}
+	if hold, err := heldNow(d.store); err != nil || hold {
+		t.Errorf("held after the sweep = %v, %v; want the hold lifted", hold, err)
 	}
 }
 
