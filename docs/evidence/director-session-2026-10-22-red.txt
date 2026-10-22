@@ -1,0 +1,50 @@
+Red runs for the Director session record (D5a), 2026-10-22, on 8812bc1 with the branch's tests against stub bodies.
+Each subtest of TestDirectorStateMoves failed at its first StartDirectorSession; they are folded into its one line here.
+
+## store: go test ./internal/store -run 'Director|Wake', every new store method returning "not implemented"
+--- FAIL: TestDirectorSessionStartsRecoveringAndSurvivesRestart (0.05s)
+    director_test.go:41: latest session of an empty store = not implemented, want ErrNotFound
+--- FAIL: TestDirectorSessionStartRefusals (0.02s)
+    director_test.go:87: skips a number: err = not implemented, want ErrInvalid
+    director_test.go:87: starts running: err = not implemented, want ErrInvalid
+    director_test.go:87: no token: err = not implemented, want ErrInvalid
+    director_test.go:87: started at given: err = not implemented, want ErrInvalid
+    director_test.go:87: state sequence give: err = not implemented, want ErrInvalid
+    director_test.go:87: unknown state: err = not implemented, want ErrInvalid
+    director_test.go:87: no pid: err = not implemented, want ErrInvalid
+    director_test.go:87: no release: err = not implemented, want ErrInvalid
+    director_test.go:87: bad config digest: err = not implemented, want ErrInvalid
+    director_test.go:87: half a pane: err = not implemented, want ErrInvalid
+    director_test.go:87: ready at given: err = not implemented, want ErrInvalid
+    director_test.go:87: number 0: err = not implemented, want ErrInvalid
+    director_test.go:96: StartDirectorSession(1): not implemented
+--- FAIL: TestDirectorStateMoves (0.31s)
+--- FAIL: TestDirectorStateRecordsTimesAndReplays (0.02s)
+    director_test.go:155: StartDirectorSession(1): not implemented
+--- FAIL: TestSecondDirectorSessionSupersedesTheFirst (0.02s)
+    director_test.go:187: StartDirectorSession(1): not implemented
+--- FAIL: TestWakesAreRecordedOncePerMessageInOrder (0.07s)
+    director_test.go:225: not implemented
+--- FAIL: TestRecordWakeRefusals (0.06s)
+    director_test.go:292: artisan message: err = not implemented, want ErrInvalid
+    director_test.go:292: unknown decision: err = not implemented, want ErrInvalid
+    director_test.go:292: queued no reason: err = not implemented, want ErrInvalid
+    director_test.go:292: sequence given: err = not implemented, want ErrInvalid
+    director_test.go:292: reason with newline: err = not implemented, want ErrInvalid
+    director_test.go:292: reason too long: err = not implemented, want ErrInvalid
+    director_test.go:292: time given: err = not implemented, want ErrInvalid
+    director_test.go:292: bad sender type: err = not implemented, want ErrInvalid
+    director_test.go:292: woke with reason: err = not implemented, want ErrInvalid
+    director_test.go:296: missing message: err = not implemented, want ErrNotFound
+--- FAIL: TestDirectorUnreadCountsByType (0.05s)
+    director_test.go:306: unread of an empty inbox = map[], not implemented
+--- FAIL: TestDirectorRecordsOnSchemaV1Fixture (0.01s)
+    director_test.go:335: latest session on the fixture = not implemented, want ErrNotFound
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.784s
+FAIL
+
+## cli: go test ./internal/cli -run DirectorStatusGolden, the status feed still reporting "no session" with a running session recorded
+--- FAIL: TestDirectorStatusGolden (0.23s)
+            "sequence": 25,
+            "state": "no session"

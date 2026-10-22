@@ -20,6 +20,8 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Ruling | repository, task, outcome document, finding id | The Director's `out-of-scope`, `duplicate` or `defer` ruling on one finding of a recorded review outcome, with a non-blank reason; recorded once, `defer` only for a finding that cites no rule. Contested at most once, recording the attempt that contested it. See [Director rulings](tasks.md#director-rulings). |
 | Full-review request | repository, task, number | The Director's request that the task's next code review round be full, numbered from 1 per task; at most one is pending. Consumed once, recording the attempt it made full. See [full review](tasks.md#full-review). |
 | Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its [containment recovery description](#containment-record), its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
+| Director session | session number | One run of the Director's runtime under its supervisor: the supervisor's process identity, the Guildhall release, the `sha256:` digest of the configuration it started under, the Herdr pane Guildhall created for it if any, and a state; see [Director sessions](#director-sessions). Not per repository. |
+| Wake | sequence | One wake decision for one message to the Director: the message id, the sender type, `woke` or `queued` with a one-line reason of at most 256 bytes, and the UTC time; at most one per message, written by the Director's wake ([Director messaging](messaging.md#store-records)). Not per repository. |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
 Options must be non-blank valid UTF-8 without line breaks or surrounding white space, distinct and at most 256 bytes each.
@@ -38,13 +40,15 @@ A mutation runs in one bbolt transaction that writes its records and a receipt t
 After a crash, either the records and the receipt are both present or neither is.
 
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, the record it wrote, a store-wide sequence number starting at 1 and the commit time in UTC.
-The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, `ruling/<document>/<finding>` for recording and contesting a ruling, `full-review/<n>` for requesting and consuming a full review, and `message/<id>` for sending and acknowledging a message.
+The record is named within its task: `task` for creating a task and changing its state, `attempt/<step>/<number>` for starting and finishing an attempt, `document/<name>`, `pane` for binding and unbinding, `decision/<id>` for opening and answering, `owner/<step>/<number>` for taking and updating an attempt's ownership, `ruling/<document>/<finding>` for recording and contesting a ruling, `full-review/<n>` for requesting and consuming a full review, `message/<id>` for sending and acknowledging a message, and `wake/<id>` for recording the wake for message `<id>`.
+Director session mutations are outside any task and name the record `director/session/<n>`.
 It is not part of the request digest, so receipts written before it existed have no record and still replay; mutations outside a task, such as workflow approvals, have none.
 `TaskHistory` reads a task, its attempts, documents, decisions, rulings and full-review requests, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership`.
 It scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
-`DirectorView` reads, in one read transaction, every task and attempt, the unreleased ownership records, the open decisions, the Director's unacknowledged messages and every receipt that names a task, labelled the same way; it is what [`director status`](director.md#status) reads, and it scans every receipt too.
+`DirectorView` reads, in one read transaction, every task and attempt, the unreleased ownership records, the open decisions, the Director's unacknowledged messages, the newest Director session and every receipt that names a task, labelled the same way; it is what [`director status`](director.md#status) reads, and it scans every receipt too.
 The launcher's [heartbeat](artisan.md#heartbeat) is a file in the attempt directory, not a store record, so it writes no receipt.
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.
+Starting Director session `<n>` records the mutation `director-session:<n>`, moving it to a state records `director-state:<n>:<state>:<from>`, where `<from>` is the receipt sequence of the state it leaves, and recording the wake for message `<id>` records `wake:<id>`.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.
 The [decision command reference](decisions-cli.md#answers) defines answer mutation ids (D23).
 
@@ -75,6 +79,17 @@ The kernel releases the lock when the holding process exits, including when it i
 
 Within one open store, calls are safe from many goroutines; bbolt serializes writes.
 `Close` waits for in-flight calls to finish, then releases the lock; later calls fail with `ErrClosed`, and closing again does nothing.
+
+## Director sessions
+
+The newest Director session is the Director's current one; the session supervisor records it and its state moves, and [`director status`](director.md#status) reports it.
+`StartDirectorSession` records session `<n>` as `recovering` when `<n>` is one more than the newest session's number, or 1 in a store with none; the store sets its start time and refuses a session given any time or state sequence.
+Starting it records every earlier session that has not stopped as `stopped`, in the same transaction, so exactly one session is current.
+
+`SetDirectorState` moves only the newest session, and only forward: `recovering`, then `running` or `paused`, then `stopping`, then `stopped`, except that `running` and `paused` move to each other.
+`paused` starts no new work while running attempts finish, and `stopping` lasts until the runtime ends; `stopped` never changes.
+The first move to `running` sets the ready time and the move to `stopped` the end time.
+A move names the state sequence it read, the receipt sequence that recorded the current state, and is refused with `ErrInvalid` when the session has moved since, so racing moves cannot overwrite each other; moving backward, staying put and moving a superseded session are refused the same way.
 
 ## Attempt ownership
 
@@ -134,10 +149,10 @@ Reusing an id with a different creation token returns `ErrMutationConflict`, nev
 It checks existing metadata instead of initializing buckets, while leaving successful opens writable unless `ReadOnly` is also set.
 All messaging commands use this option; `send` and `ack` cannot initialize a store as a side effect of a refused operation.
 
-The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, an optional `workflow-approvals` bucket keyed by workflow digest, and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `owners`, `documents`, `panes`, `decisions`, `messages` and `inbox`.
+The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, an optional `workflow-approvals` bucket keyed by workflow digest, an optional `director` bucket holding `sessions` keyed by session number and `wakes` keyed by sequence, and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `owners`, `documents`, `panes`, `decisions`, `messages` and `inbox`.
 `inbox` indexes unacknowledged messages by recipient and sequence, holding each message's id.
 A per-repository bucket is created by the first record that needs it, so a schema 1 file written before messages existed accepts them unchanged.
-The `workflow-approvals` bucket is likewise created by the first approval; it is not required, and a store without it has no recorded approvals.
+The `workflow-approvals` bucket is likewise created by the first approval, and the `director` bucket by the first session or wake; neither is required, and a store without one has no such records.
 Records and receipts are JSON.
 
 Opening refuses a file that is not a Guildhall store (`ErrNotStore`), including another program's bbolt file, and a store whose `schema_version` is newer than this Guildhall supports (`ErrNewerSchema`); a refusal releases the lock.

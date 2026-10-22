@@ -2,7 +2,7 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-Only `director status` is built; the session supervisor (`director start`), its session record and the handoff commands are designed in the slice 4 plan and land later.
+Only `director status` and the [session record](store.md#director-sessions) are built; the session supervisor (`director start`) that writes the record, and the pause, stop and handoff commands, are designed in the slice 4 plan and land later.
 
 ## Status
 
@@ -24,8 +24,9 @@ The document has these sections:
   `partial` is always `true`; `excluded` names what the feed does not inspect: `worker files`, `transcripts` and `forge state`.
   `sequence` and `committed_at` are the newest mutation committed anywhere in the store when the read began; an empty store has sequence 0.
   Live attempt state is read after the store, so it can be newer than `sequence`.
-- `session`: the newest Director session.
-  Until the session record lands it is always `{"state":"no session"}`.
+- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, and `started_at`, `ready_at` and `ended_at` once set.
+  A store with no session reports only `{"state":"no session"}`.
+  The identity's liveness is not probed yet.
 - `mode`: `{"name":"standalone"}` until managed mode lands.
 - `tasks`: every task in repository then id order, with its `state` (`open`, `done` or `cancelled`), bound `workflow`, and:
   - `next`: the `next.json` the task's last advance wrote beside its task lock, at `<state>/<repo>/<task>/next.json`, copied as JSON exactly as written; absent when there is none.
@@ -45,7 +46,7 @@ The document has these sections:
   5. `messages`: one item counting the other unread messages; `guildhall messages list director`.
   6. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
 
-  A Director session in `recovering` will be the first item once the session record lands.
+  A Director session in `recovering` will be the first item once the session supervisor lands.
   Done and cancelled tasks contribute no `retry`, `resume` or `director` item.
 
 Times are commit times of the store's receipts, in UTC.
