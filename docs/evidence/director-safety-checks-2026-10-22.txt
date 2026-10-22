@@ -1,0 +1,57 @@
+Evidence for the Director safety checks (D14), 2026-10-22, on d0b5dd4 with the branch's tests.
+
+## Red run: go test ./internal/adapter/fake -run TestRunScriptCountsTurns, TurnLogEnv declared and RunScript unchanged
+--- FAIL: TestRunScriptCountsTurns (0.00s)
+    director_test.go:74: open /tmp/fm-guildhall-d14-safety-checks/gotmp/TestRunScriptCountsTurns2530052262/001/turns: no such file or directory
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	0.005s
+FAIL
+
+The four safety checks pass on first run against main's behaviour: they join slices already merged.
+Each was then run against a mutated binary with one safety behaviour removed, and each failed; the mutation was then reverted.
+
+## Mutation approval: workflow.Authority.Admit admits a revision below the review floor
+--- FAIL: TestSafetyApproval (0.00s)
+    --- FAIL: TestSafetyApproval/claude (0.99s)
+        director_safety_test.go:435: want one refused task new naming the review floor, got 0 refusals:
+    --- FAIL: TestSafetyApproval/fake (0.99s)
+        director_safety_test.go:435: want one refused task new naming the review floor, got 0 refusals:
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	1.001s
+FAIL
+
+## Mutation caps: store.StartCappedAttempt never refuses for max_running_attempts
+--- FAIL: TestSafetyGuardRails (0.00s)
+    --- FAIL: TestSafetyGuardRails/claude (1.41s)
+        director_safety_test.go:474: the running cap refused 0 launches, want 1:
+        director_safety_test.go:483: the Director was not told of the refused launch
+    --- FAIL: TestSafetyGuardRails/fake (1.42s)
+        director_safety_test.go:474: the running cap refused 0 launches, want 1:
+        director_safety_test.go:483: the Director was not told of the refused launch
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	1.426s
+FAIL
+
+## Mutation recovering: cli.refuseWhileRecovering never refuses
+--- FAIL: TestSafetyCrashRecovery (0.00s)
+    --- FAIL: TestSafetyCrashRecovery/fake (1.54s)
+        director_safety_test.go:555: task new before ready recorded true, after ready true; want refused, then admitted
+    --- FAIL: TestSafetyCrashRecovery/claude (1.74s)
+        director_safety_test.go:555: task new before ready recorded true, after ready true; want refused, then admitted
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	1.750s
+FAIL
+
+## Mutation polling: fake.RunScript takes a turn every 5 s while it waits, as a polling runtime would
+--- FAIL: TestSafetyZeroIdleTurns (0.00s)
+    --- FAIL: TestSafetyZeroIdleTurns/claude (31.70s)
+        director_safety_test.go:601: turns over the idle hold ["1391889 start" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll"], want only the first message's
+        director_safety_test.go:621: turns after the note ["1391889 start" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll"], want only the first message's
+        director_safety_test.go:626: the stand-in took 7 turns ["1391889 start" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll" "1391889 poll"], want 1
+    --- FAIL: TestSafetyZeroIdleTurns/fake (31.75s)
+        director_safety_test.go:601: turns over the idle hold ["1391953 start" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll"], want only the first message's
+        director_safety_test.go:621: turns after the note ["1391953 start" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll"], want only the first message's
+        director_safety_test.go:626: the stand-in took 7 turns ["1391953 start" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll" "1391953 poll"], want 1
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	31.763s
+FAIL
