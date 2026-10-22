@@ -54,8 +54,8 @@ type Spec struct {
 	Profile  string
 }
 
-// Validate checks the identity, that every path is absolute, that the result file is distinct
-// from the prompt file, that an adapter is named and that the manifest is a prompt manifest.
+// Validate checks the identity, that the working directory, prompt and result paths are absolute,
+// that the result file differs from the prompt, that an adapter is named and that the manifest is a prompt manifest.
 func (s Spec) Validate() error {
 	if err := s.Identity.Validate(); err != nil {
 		return err
