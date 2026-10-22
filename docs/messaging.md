@@ -159,7 +159,7 @@ The line is typed before the decision is recorded, so a send retried after a cra
 A failed wake never fails the send; the command reports the wake's failure on standard error, and `messages send` still prints the receipt as usual.
 The pane is reached through the Herdr session it was recorded in, with `herdr` found on `PATH`.
 
-`director resume` wakes the Director once more, for the work that waited while it was [paused](director.md#pause-and-resume), with its own line, `guildhall: resumed, <n> waiting (<kind> <count>, ...)`, counting `needs_me` items by kind; it records no wake, so each message keeps the wake it recorded.
+`director resume` wakes the Director once more, for the work that waited while it was [paused](director.md#pause-and-resume), with its own line, `guildhall: resumed, <n> waiting (<kind> <count>, ...)`, counting `needs_me` items by kind but neither `checks` items, which the supervisor moves on, nor `decision` items, which wait on the Guildmaster; it records no wake, so each message keeps the wake it recorded.
 
 Every wake records its sender type: `guildhall` for the engine and `local` for `messages send`, which cannot tell the Guildmaster from an Artisan.
 Both wake on every message; the per-sender [wake policies](#waking-a-director) below are designed, not built.

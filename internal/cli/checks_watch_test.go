@@ -205,7 +205,7 @@ func TestChecksWatchWithNothingWaitingAdvancesNothing(t *testing.T) {
 
 // checksItem is the needs_me item of task app/t-1 waiting for its checks.
 var checksItem = needsMeItem{Kind: "checks", Repository: "app", TaskID: "t-1", Step: "validate",
-	Reason:  "step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh and wakes you when they finish",
+	Reason:  "step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh, at most every 30 seconds, and wakes you when they finish",
 	Command: "guildhall task start --repo app t-1"}
 
 // TestStatusListsATaskWaitingForChecks: a task whose next.json waits for checks is listed in needs_me, after the
