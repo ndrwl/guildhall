@@ -1,0 +1,22 @@
+--- FAIL: TestDoctorCountsDirectorRecords (0.06s)
+    director_test.go:378: director sessions 0, wakes 0; want 1 and 1
+--- FAIL: TestDoctorReportsDamagedDirectorRecords (0.15s)
+    --- FAIL: TestDoctorReportsDamagedDirectorRecords/sessions (0.07s)
+        director_test.go:409: problems = [], want one naming director sessions
+    --- FAIL: TestDoctorReportsDamagedDirectorRecords/wakes (0.08s)
+        director_test.go:409: problems = [], want one naming director wakes
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.221s
+FAIL
+--- FAIL: TestMessagesListShowsWake (0.07s)
+    messages_test.go:304: send to artisan:app/t-1/build/1: guildhall: messages send: messaging: invalid message: message "m-artisan" is addressed to artisan:app/t-1/build/1, not artisan:app/t-1/build/1
+--- FAIL: TestStoreDoctorReportsStore (0.05s)
+    store_test.go:50: stdout = "store: $TMP/TestStoreDoctorReportsStore3591882279/001/guildhall.store\nschema_version: 1 (supported: 1)\nintegrity: ok\nreceipts: 2\nworkflow approvals: 0\nrepository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 1, rulings 0, owners 0 (0 starting without containment), messages 0 (0 unread)\n", want "store: $TMP/TestStoreDoctorReportsStore3591882279/001/guildhall.store\nschema_version: 1 (supported: 1)\nintegrity: ok\nreceipts: 2\nworkflow approvals: 0\ndirector: sessions 0, wakes 0\nrepository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 1, rulings 0, owners 0 (0 starting without containment), messages 0 (0 unread)\n"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.121s
+FAIL
+--- FAIL: TestMessagesListShowsWake (0.08s)
+    messages_test.go:318: director list = {"messages":[{"schema":"guildhall.message/1","id":"m-director","recipient":"director","repository":"app","task":"t-1","step":"build","attempt":1,"type":"note","text":"Tests pass locally; pushing the branch next.","sequence":4,"acknowledged":false}],"more":false}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.086s
+FAIL

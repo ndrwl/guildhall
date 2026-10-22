@@ -1,4 +1,4 @@
-# The Director's session record
+# D67. The Director's session record
 
 The minimal Director needs a durable answer to "which Director session is current and what state is it in".
 Slice 4 plans the session supervisor (`director start`) to write it, the pause, resume and stop commands to move it, and the status feed to report it; the wake that tells a running Director a message arrived records its decisions beside it.

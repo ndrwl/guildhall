@@ -1,6 +1,6 @@
-# Each attempt records the tokens and cost its runtime reports, marked measured, estimated or unknown
+# D79. Each attempt records the tokens and cost its runtime reports, marked measured, estimated or unknown
 
-The Guildmaster asked to log or estimate each attempt's token use and cost alongside the [attempt caps](guard-rails.md).
+The Guildmaster asked to log or estimate each attempt's token use and cost alongside the [attempt caps](0074-guard-rails.md).
 Guildhall now records, on every owned attempt's store record, what the attempt's runtime reported it spent, and `director status` sums it per task and per day beside the caps ([spend](../director.md#spend)).
 
 ## The runtime reports, the launcher records

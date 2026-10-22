@@ -91,7 +91,7 @@ Publishing, validating and merging send `published`, `checks-pending`, `checks-p
 
 ## Director stages
 
-A Director stage is a step whose `actor` setting is `director`, such as the default workflow's `grill`: the Director runs it in its own session, in conversation with the Guildmaster, and ends it with a recorded result ([decision](decisions/director-stages.md)).
+A Director stage is a step whose `actor` setting is `director`, such as the default workflow's `grill`: the Director runs it in its own session, in conversation with the Guildmaster, and ends it with a recorded result ([decision](decisions/0072-director-stages.md)).
 The engine runs it as an attempt, so everything after the attempt's result is the Artisan path unchanged:
 
 1. With no attempt yet, the engine resolves the inputs (no adapter is checked), records the attempt's binding and attempt `n` with `StartAttempt`, makes the [working directory](#the-working-directory) ready and [prepares](#attempt-preparation) `<step>-<n>/prompt` through `Prompter`, which renders the Director's role (`roles/director.md`, or the config's `[director] role`), the step's stage guide, its `skills` and its inputs.
@@ -144,7 +144,7 @@ Replay follows the general rule: a crash before `publish-<k>-head` publishes the
 
 ## Validate
 
-Validate reads its `head` input, which must be a publish step's output: a head no publish step pushed is refused with `ErrUnsupported`, and so is validating with no `Engine.Forge` ([decision](decisions/validate-stage.md)).
+Validate reads its `head` input, which must be a publish step's output: a head no publish step pushed is refused with `ErrUnsupported`, and so is validating with no `Engine.Forge` ([decision](decisions/0066-validate-stage.md)).
 When the step's latest result is for that head and `passed`, the step is complete and nothing is called.
 Otherwise each advance calls `Forge.Checks` for the repository's `path`, the remote the head was published to and the head, the commit's checks rather than whatever its pull request is at now:
 
@@ -253,7 +253,7 @@ An input `step.port` resolves to that port's document of the latest round, and i
 
 ## The working directory
 
-Every Artisan attempt of a task runs in one working directory, which a Director stage's outputs are also copied into, `<state>/<repo>/<task>/work`, a git worktree of the repository's configured `path` ([decision](decisions/worktree-custody.md)).
+Every Artisan attempt of a task runs in one working directory, which a Director stage's outputs are also copied into, `<state>/<repo>/<task>/work`, a git worktree of the repository's configured `path` ([decision](decisions/0068-worktree-custody.md)).
 Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`internal/git`](contracts/git.md#workspaces), with that path, the repository's `path` and `remote`, and branch `guildhall/<task>`, the branch publish pushes to:
 
 - the first attempt creates the worktree on a new local branch `guildhall/<task>` at the commit the remote's default branch is at then, or on an existing local branch of that name as it is;

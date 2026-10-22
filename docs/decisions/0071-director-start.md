@@ -1,13 +1,13 @@
-# The Director's session supervisor
+# D71. The Director's session supervisor
 
 `guildhall director start [runtime]` is the first way to run the Director as a Guildhall session rather than a bare `claude`, as the [role grammar](0053-cli-role-grammar.md) requires.
-It is the session supervisor the [session record](director-session-record.md) was designed for: it records the session, renders what the runtime reads, runs the runtime as its child and records the end.
+It is the session supervisor the [session record](0067-director-session-record.md) was designed for: it records the session, renders what the runtime reads, runs the runtime as its child and records the end.
 
 ## Decisions
 
 - **Foreground first.**
   The session runs as the supervisor's child in the current terminal, with the terminal's input and output.
-  It is the default, because it is what a user typing the command most likely wants; the session's own [Herdr tab](director-tab.md) is opt-in with `--tab`, which runs this same supervisor in the tab.
+  It is the default, because it is what a user typing the command most likely wants; the session's own [Herdr tab](0078-director-tab.md) is opt-in with `--tab`, which runs this same supervisor in the tab.
   The pre-release `--foreground` flag is gone, with no alias.
 - **Recovering starts no new work.**
   A new session is `recovering` until the Director runs `guildhall director ready`, which follows the captain's rule that a restarted Director handles what is in flight before starting anything.
@@ -27,5 +27,5 @@ It is the session supervisor the [session record](director-session-record.md) wa
 
 ## Not yet
 
-The status-line context reporter, the reload loop that starts a new session after a handoff and handoff notes in `startup.md` land with the handoff and reload slices; the Herdr status preflight line and the Herdr tab landed with the [tab slice](director-tab.md).
+The status-line context reporter, the reload loop that starts a new session after a handoff and handoff notes in `startup.md` land with the handoff and reload slices; the Herdr status preflight line and the Herdr tab landed with the [tab slice](0078-director-tab.md).
 A live Claude Code Director session has not been run; the stub proves only the command shape and settings the adapter writes.

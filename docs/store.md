@@ -214,7 +214,8 @@ Usage errors exit 2.
 
 ## `guildhall store doctor`
 
-`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count and each repository's record counts, including rulings, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread.
+`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count, the count of [Director sessions](#director-sessions) and of [wakes](messaging.md#waking-the-director) and each repository's record counts, including rulings, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread.
+A record that does not decode, such as a damaged session or wake, is printed as a `problem:` line.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.
 
 Both commands take `--copy <dir>`, or `GUILDHALL_COPY`, in place of `<path>`, naming the copy's `director.store`; a path given with `--copy` must be that file, and a path given without it overrides `GUILDHALL_COPY` ([copies](running.md#copies)).

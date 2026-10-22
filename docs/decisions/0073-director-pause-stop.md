@@ -1,7 +1,7 @@
-# Pausing, resuming and stopping the Director
+# D73. Pausing, resuming and stopping the Director
 
 `guildhall director pause`, `director resume` and `director stop` are the Guildmaster's and firstmate's controls over a running Director session, following the [role grammar](0053-cli-role-grammar.md).
-Each moves the newest [session record](director-session-record.md) and prints it.
+Each moves the newest [session record](0067-director-session-record.md) and prints it.
 The captain fixed the semantics: pause stops new work only and running attempts finish; stop also stops the Director's Artisan attempts.
 
 ## Decisions

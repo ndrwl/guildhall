@@ -1,4 +1,4 @@
-# A failed watcher advance is told and shown
+# D76. A failed watcher advance is told and shown
 
 [D64](0064-launcher-advances-its-task.md) made the attempt's launcher the task's watcher and only logged a failed advance, leaving the Director's next `task start` to recover it.
 Sustainability review 11 (F35) found that silent: an advance that loses the task lock to another advance of the same task, such as the Director's own `task start` while the attempt ends, waits 30 seconds and exits 1; the finished attempt then sits with a stale `next.json`, no message, no wake and an empty `needs_me` until someone happens to run `task start`.

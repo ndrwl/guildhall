@@ -1,4 +1,4 @@
-# Guard rails are enforced by the binary, with attempt caps counted inside the start
+# D74. Guard rails are enforced by the binary, with attempt caps counted inside the start
 
 A Director's guard rails are three limits the binary enforces whatever the Director asks ([guard rails](../director.md#guard-rails)): the repositories it may act on, each repository's merge rule, and caps on the Artisan attempts it starts.
 `config.GuardRails` returns all three in one place, and the caps are settings read through `Config.Setting`, so a Steward's managed value is read-only to the Director and a standalone copy sets them under `[local]`.
@@ -17,7 +17,7 @@ The merge rule is the repository's `merge_policy`, which `deliver` already enfor
 
 `max_running_attempts` (default 4) and `max_attempts_per_day` (default 40) are per Director, across every repository.
 They meter attempts, not tokens or cost.
-Each attempt's token use and cost, which the Guildmaster asked for alongside the caps, is now recorded and shown beside them ([attempt spend](attempt-spend.md)): the Claude adapter's tokens are measured and its cost is Claude Code's estimate, and a runtime that reports nothing is recorded as unknown.
+Each attempt's token use and cost, which the Guildmaster asked for alongside the caps, is now recorded and shown beside them ([attempt spend](0079-attempt-spend.md)): the Claude adapter's tokens are measured and its cost is Claude Code's estimate, and a runtime that reports nothing is recorded as unknown.
 A token or cost budget is a follow-up.
 
 - The count and the start are one store mutation, `store.StartCappedAttempt`, under the store's single-writer lock, so two advances in different processes can never both take the last slot.

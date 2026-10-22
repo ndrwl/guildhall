@@ -1,4 +1,4 @@
-# The Director's status feed is one store read plus files
+# D65. The Director's status feed is one store read plus files
 
 The Guildmaster asked to monitor the Director and to ask it "what needs me"; the Director needs the same answer at every turn and when a session starts after a crash.
 Before this, answering took `task list`, a `task timeline` per task, `decide list`, `messages list` and an `artisan status` per running attempt, each opening the store separately, so the answer could mix store states.

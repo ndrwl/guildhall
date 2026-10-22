@@ -1,4 +1,4 @@
-# Director stages are attempts the Director finishes
+# D72. Director stages are attempts the Director finishes
 
 A step whose actor is `director`, the default workflow's `grill`, runs in the Director's own session rather than as an Artisan launch ([D61](0061-grill-live-interview.md)), and until now the engine refused it with `ErrUnsupported`.
 The engine now runs it ([Director stages](../interpreter.md#director-stages)).

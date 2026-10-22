@@ -1,0 +1,28 @@
+--- FAIL: TestSentTypesAreRegistered (0.02s)
+    message_types_test.go:61: advancefailed.go:28:7: the message type AdvanceFailed is not a store constant
+    message_types_test.go:61: deliver.go:105:12: the message type "published" is not a store constant
+    message_types_test.go:61: deliver.go:199:4: the message type "merge-held" is not a store constant
+    message_types_test.go:61: deliver.go:224:5: the message type "merge-refused" is not a store constant
+    message_types_test.go:61: deliver.go:234:12: the message type "merged" is not a store constant
+    message_types_test.go:61: engine.go:440:10: the message type "attempt-failed" is not a store constant
+    message_types_test.go:61: engine.go:502:9: the message type "attempt-retried" is not a store constant
+    message_types_test.go:61: engine.go:588:13: the message type BudgetRefused is not a store constant
+    message_types_test.go:61: engine.go:665:12: the message type DirectorStage is not a store constant
+    message_types_test.go:61: engine.go:1068:9: the message type "decision" is not a store constant
+    message_types_test.go:61: heartbeat.go:45:9: the message type WorkerStalled is not a store constant
+    message_types_test.go:61: loops.go:247:23: the message type "changes-requested" is not a store constant
+    message_types_test.go:61: loops.go:305:69: the message type "loop-exit-rejected" is not a store constant
+    message_types_test.go:61: loops.go:516:9: the message type "stall" is not a store constant
+    message_types_test.go:61: validate.go:149:53: the message type "checks-pending" is not a store constant
+    message_types_test.go:61: validate.go:250:10: the message type "checks-passed" is not a store constant
+    message_types_test.go:61: validate.go:253:10: the message type "checks-passed" is not a store constant
+    message_types_test.go:61: validate.go:259:9: the message type "checks-failed" is not a store constant
+    message_types_test.go:61: workspace.go:68:9: the message type "workspace-kept" is not a store constant
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.030s
+FAIL
+--- FAIL: TestDirectorUnreadCountsByType (0.46s)
+    director_test.go:327: unread = map[advance-failed:1 attempt-failed:1 budget-refused:1 other:2 question:1 workspace-kept:1], <nil>
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.493s
+FAIL

@@ -18,4 +18,4 @@ Anything beyond a quick check, such as an investigation or a cross-cutting analy
 
 The engine does not run Director stages yet, and the default workflow's grill step lists no skills.
 Handing the grill stage to the Director, with these two skills, comes with the Director slice; until then an `artisan` override is the only grill the engine runs, and a workflow that wants the unattended skill lists it in the grill step's `skills`, because `workflow_overrides` changes only the actor.
-The Director slice has since done so ([Director stages](director-stages.md)): the default grill lists both skills and the engine hands it to the Director.
+The Director slice has since done so ([Director stages](0072-director-stages.md)): the default grill lists both skills and the engine hands it to the Director.

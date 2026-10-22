@@ -1,4 +1,4 @@
-# The Director's skills
+# D75. The Director's skills
 
 [D57](0057-director-conversation-first.md) makes plain English to the Director the primary interface and requires the Director's skills to cover everything a Guildmaster would otherwise type.
 The release now ships those skills, and a test holds them to that rule.
@@ -6,7 +6,7 @@ The release now ships those skills, and a test holds them to that rule.
 ## Decisions
 
 - **Five skills, by when the Director needs them.**
-  `guildhall-director-startup` handles a new session's `startup.md` and ends with `director ready`; `guildhall-director-inbox` runs on every wake line and turn start; `guildhall-director-tasks` turns what the Guildmaster says into commands, including answering decisions in conversation and merging; `guildhall-director-stage` runs a [Director stage](director-stages.md) and finishes it with `step finish`; `guildhall-handoff` records a handoff note and reloads.
+  `guildhall-director-startup` handles a new session's `startup.md` and ends with `director ready`; `guildhall-director-inbox` runs on every wake line and turn start; `guildhall-director-tasks` turns what the Guildmaster says into commands, including answering decisions in conversation and merging; `guildhall-director-stage` runs a [Director stage](0072-director-stages.md) and finishes it with `step finish`; `guildhall-handoff` records a handoff note and reloads.
   Splitting by moment rather than by command keeps each description precise enough for the runtime to load the right one.
 - **Coverage is checked mechanically.**
   A table test reads the README's command list and fails for any command no Director skill names as `guildhall <command>`, except a short list the Guildmaster never asks the Director for, each with why: `help`, `store init`, `director start`, `artisan start`, the `fake-artisan` and `claude-artisan` wrappers, `steward rollout` and `render`.

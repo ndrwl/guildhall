@@ -66,7 +66,7 @@ This is attempt-local cancellation evidence, not task completion or a separate t
 
 ## Usage file
 
-An adapter that can report what an attempt spent writes a usage file, `usage.json`, beside the result file, before it publishes any result ([decision](decisions/attempt-spend.md)):
+An adapter that can report what an attempt spent writes a usage file, `usage.json`, beside the result file, before it publishes any result ([decision](decisions/0079-attempt-spend.md)):
 
 ```json
 {

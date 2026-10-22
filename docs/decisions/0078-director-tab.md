@@ -1,7 +1,7 @@
-# The Director's Herdr tab
+# D78. The Director's Herdr tab
 
 The Director is a long-running conversation the Guildmaster and firstmate come back to, so it needs its own visible tab in Herdr (R1.37) rather than whichever terminal ran `director start`.
-The [session supervisor](director-start.md) already runs a session in the foreground; this slice puts that supervisor in a tab Guildhall creates.
+The [session supervisor](0071-director-start.md) already runs a session in the foreground; this slice puts that supervisor in a tab Guildhall creates.
 
 ## Decisions
 
