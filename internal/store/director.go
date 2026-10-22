@@ -430,6 +430,9 @@ func (s *Store) Wakes(after uint64, limit int) ([]Wake, bool, error) {
 	return out, more, nil
 }
 
+// MessageTypes is the registry of the message types Guildhall sends, stubbed for the red test.
+var MessageTypes = map[string]string{}
+
 // unreadTypes are the message types DirectorUnread counts by name; every other type, which any sender may
 // choose, counts as "other", so the wake line carries no sender-chosen text. The engine sends attempt-failed,
 // attempt-retried, budget-refused and decision (internal/interp/engine.go), changes-requested, loop-exit-rejected and stall
