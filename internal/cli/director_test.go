@@ -206,7 +206,7 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 			t.Errorf("startup.md lacks %q:\n%s", want, startup)
 		}
 	}
-	if !strings.Contains(startup, "checks: step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh and wakes you when they finish; the session supervisor advances it") ||
+	if !strings.Contains(startup, "checks: step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh, at most every 30 seconds, and wakes you when they finish; the session supervisor advances it") ||
 		strings.Contains(startup, "guildhall task start --repo app t-2") {
 		t.Errorf("startup.md does not list t-2's checks as the supervisor's:\n%s", startup)
 	}
