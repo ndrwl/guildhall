@@ -56,6 +56,16 @@
   "mode": {
     "name": "standalone"
   },
+  "quality": {
+    "self_review": true,
+    "size_budget_lines": 300,
+    "size_budget_files": 15,
+    "audit_sample": 5,
+    "reference_runs": "off",
+    "reference_runs_per_task": 3,
+    "judge_separate_family": true,
+    "skill_edits_need_approval": true
+  },
   "tasks": [
     {
       "repository": "app",

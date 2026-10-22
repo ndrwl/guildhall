@@ -451,6 +451,146 @@ func TestContractTDDCheckTwinsAgree(t *testing.T) {
 	}
 }
 
+// TestSelfReviewFactsTwinsAgree runs both installed facts scripts on a fixture diff, with no model and no tool but
+// the shell: each prints the golden facts, flags the size budget it is given, and refuses a missing diff or a
+// budget that is not a whole number.
+func TestSelfReviewFactsTwinsAgree(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "release")
+	if err := skills.Install(root); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := filepath.Abs(filepath.Join("testdata", "self-review", "fixture.diff"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden, err := os.ReadFile(filepath.Join("testdata", "self-review", "fixture.facts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(t.TempDir(), "empty.diff")
+	if err := os.WriteFile(empty, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// budget rewrites the golden's size lines for the budget given.
+	budget := func(lines, files, over string) string {
+		return strings.Replace(string(golden), "size_budget_lines: 400\nsize_budget_files: 15\nsize_over: no\n",
+			"size_budget_lines: "+lines+"\nsize_budget_files: "+files+"\nsize_over: "+over+"\n", 1)
+	}
+	cases := []struct {
+		name string
+		args []string
+		want string
+		ok   bool
+	}{
+		{name: "default budget", args: []string{fixture}, want: string(golden), ok: true},
+		{name: "at the budget", args: []string{fixture, "21", "8"}, want: budget("21", "8", "no"), ok: true},
+		{name: "over the line budget", args: []string{fixture, "20", "0"}, want: budget("20", "0", "yes"), ok: true},
+		{name: "over the file budget", args: []string{fixture, "0", "7"}, want: budget("0", "7", "yes"), ok: true},
+		{name: "budget off", args: []string{fixture, "0", "0"}, want: budget("0", "0", "no"), ok: true},
+		{name: "empty diff", args: []string{empty}, ok: true, want: "files: 0\ntest_files: 0\nnontest_lines: 0\nsize_budget_lines: 400\n" +
+			"size_budget_files: 15\nsize_over: no\nsleeps_added: 0\nsleeps_removed: 0\nskips_added: 0\nskips_removed: 0\n" +
+			"assertions_removed: 0\nsecrets: 0\nworkflow_problems: 0\n"},
+		{name: "missing diff", args: []string{filepath.Join(t.TempDir(), "absent.diff")}},
+		{name: "no diff", args: nil},
+		{name: "budget not a number", args: []string{fixture, "many"}},
+		{name: "negative budget", args: []string{fixture, "400", "-1"}},
+	}
+	scripts := map[string][]string{
+		"sh":   {filepath.Join(root, "guildhall-self-review", "scripts", "facts.sh")},
+		"pwsh": {"-NoProfile", "-NonInteractive", "-File", filepath.Join(root, "guildhall-self-review", "scripts", "facts.ps1")},
+	}
+	for _, shell := range []string{"sh", "pwsh"} {
+		t.Run(shell, func(t *testing.T) {
+			if _, err := exec.LookPath(shell); err != nil {
+				testenv.SkipUnlessRequired(t, shell, "%s is not installed", shell)
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					var stdout, stderr bytes.Buffer
+					cmd := exec.Command(shell, append(slices.Clone(scripts[shell]), c.args...)...)
+					cmd.Dir, cmd.Stdout, cmd.Stderr = t.TempDir(), &stdout, &stderr
+					err := cmd.Run()
+					if ok := err == nil; ok != c.ok {
+						t.Fatalf("passed = %t, want %t: %v\n%s%s", ok, c.ok, err, &stdout, &stderr)
+					}
+					if !c.ok {
+						if stderr.Len() == 0 {
+							t.Errorf("a refusal says nothing on stderr")
+						}
+						return
+					}
+					if got := strings.ReplaceAll(stdout.String(), "\r\n", "\n"); got != c.want {
+						t.Errorf("facts:\n%s\nwant:\n%s\nstderr: %s", got, c.want, &stderr)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestSelfReviewSkillDocumentShape checks the skill's example document: its schema, facts named as the facts
+// script prints them, and criteria each with the field its kind records.
+func TestSelfReviewSkillDocumentShape(t *testing.T) {
+	data, err := fs.ReadFile(skills.Release(), "guildhall-self-review/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, example, ok := strings.Cut(string(data), "```json\n")
+	example, _, closed := strings.Cut(example, "```")
+	if !ok || !closed {
+		t.Fatal("SKILL.md has no fenced json example document")
+	}
+	var doc struct {
+		Schema   string                     `json:"schema"`
+		Settings map[string]int             `json:"settings"`
+		Facts    map[string]json.RawMessage `json:"facts"`
+		Criteria []struct {
+			ID, Kind, Judge, Evidence string
+			Pass                      *bool
+			Score                     *int
+			Value                     *float64
+		} `json:"criteria"`
+	}
+	dec := json.NewDecoder(strings.NewReader(example))
+	if err := dec.Decode(&doc); err != nil {
+		t.Fatalf("example document: %v", err)
+	}
+	if doc.Schema != "guildhall.self-review/1" {
+		t.Errorf("schema = %q", doc.Schema)
+	}
+	golden, err := os.ReadFile(filepath.Join("testdata", "self-review", "fixture.facts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"items"}
+	for line := range strings.Lines(string(golden)) {
+		if key, _, ok := strings.Cut(line, ": "); ok && !strings.HasPrefix(key, "size_budget_") {
+			want = append(want, key)
+		}
+	}
+	if got := slices.Sorted(maps.Keys(doc.Facts)); !slices.Equal(got, slices.Sorted(slices.Values(want))) {
+		t.Errorf("facts keys = %q, want the facts script's counts and items %q", got, want)
+	}
+	if got := slices.Sorted(maps.Keys(doc.Settings)); !slices.Equal(got, []string{"size_budget_files", "size_budget_lines"}) {
+		t.Errorf("settings keys = %q", got)
+	}
+	for _, c := range doc.Criteria {
+		if !slices.Contains([]string{"script", "model", "guildmaster", "pending"}, c.Judge) {
+			t.Errorf("criterion %s: judge %q", c.ID, c.Judge)
+		}
+		switch {
+		case c.Kind == "gate" && c.Pass == nil && c.Evidence == "", c.Kind == "trend" && c.Value == nil:
+			t.Errorf("criterion %s: a %s needs its pass, what is missing, or its value", c.ID, c.Kind)
+		case c.Kind == "score" && c.Judge == "pending" && c.Score != nil:
+			t.Errorf("criterion %s: a pending score has no score", c.ID)
+		case c.Kind == "score" && c.Judge != "pending" && (c.Score == nil || *c.Score < 0 || *c.Score > 3):
+			t.Errorf("criterion %s: a judged score is 0 to 3", c.ID)
+		case !slices.Contains([]string{"gate", "score", "trend"}, c.Kind):
+			t.Errorf("criterion %s: kind %q", c.ID, c.Kind)
+		}
+	}
+}
+
 func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
 	const name = "guildhall-review"
 	var files []string

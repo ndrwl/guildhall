@@ -1,0 +1,116 @@
+# Quality rubric and self-review: red runs, 2026-10-22
+
+Each run is the new tests against contract stubs, before the implementation.
+
+## config
+
+--- FAIL: TestQuality (0.04s)
+    --- FAIL: TestQuality/unset_are_the_defaults (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/self-review_on (0.01s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:true SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/self-review_off (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/a_local_size_budget (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:250 SizeBudgetFiles:8 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/zero_turns_a_budget_off (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:0 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/audit_off (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:0 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/audit_every_task (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:1 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/reference_runs_on_with_a_cap (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:on-change-and-release ReferenceRunsPerTask:5 ReferenceCostCapUSD:40.50 JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/a_cost_cap_with_reference_runs_off (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD:25 JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/judge_of_the_same_family (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:false}
+    --- FAIL: TestQuality/a_managed_switch (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:true SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/an_overridable_managed_budget_replaced_locally (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:600 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true}
+    --- FAIL: TestQuality/a_managed_cap_beside_local_reference_runs (0.00s)
+        quality_test.go:52: Quality() = {SelfReview:false SizeBudgetLines:0 SizeBudgetFiles:0 AuditSample:0 ReferenceRuns: ReferenceRunsPerTask:0 ReferenceCostCapUSD: JudgeSeparateFamily:false}, <nil>; want {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:on-change-and-release ReferenceRunsPerTask:3 ReferenceCostCapUSD:10 JudgeSeparateFamily:true}
+--- FAIL: TestQualityRefusesAnInvalidSetting (0.04s)
+    quality_test.go:77: "quality_self_review = \"yes\"": Parse error <nil>, want one naming quality_self_review
+    quality_test.go:82: managed "quality_self_review = \"yes\"": Parse error <nil>, want one naming quality_self_review
+    quality_test.go:77: "quality_self_review = \"ON\"": Parse error <nil>, want one naming quality_self_review
+    quality_test.go:82: managed "quality_self_review = \"ON\"": Parse error <nil>, want one naming quality_self_review
+    quality_test.go:77: "quality_size_budget_lines = \"-1\"": Parse error <nil>, want one naming quality_size_budget_lines
+    quality_test.go:82: managed "quality_size_budget_lines = \"-1\"": Parse error <nil>, want one naming quality_size_budget_lines
+    quality_test.go:77: "quality_size_budget_lines = \"lots\"": Parse error <nil>, want one naming quality_size_budget_lines
+    quality_test.go:82: managed "quality_size_budget_lines = \"lots\"": Parse error <nil>, want one naming quality_size_budget_lines
+    quality_test.go:77: "quality_size_budget_files = \"07\"": Parse error <nil>, want one naming quality_size_budget_files
+    quality_test.go:82: managed "quality_size_budget_files = \"07\"": Parse error <nil>, want one naming quality_size_budget_files
+    quality_test.go:77: "quality_audit_sample = \"0.2\"": Parse error <nil>, want one naming quality_audit_sample
+    quality_test.go:82: managed "quality_audit_sample = \"0.2\"": Parse error <nil>, want one naming quality_audit_sample
+    quality_test.go:77: "quality_reference_runs = \"nightly\"": Parse error <nil>, want one naming quality_reference_runs
+    quality_test.go:82: managed "quality_reference_runs = \"nightly\"": Parse error <nil>, want one naming quality_reference_runs
+    quality_test.go:77: "quality_reference_runs_per_task = \"0\"": Parse error <nil>, want one naming quality_reference_runs_per_task
+    quality_test.go:82: managed "quality_reference_runs_per_task = \"0\"": Parse error <nil>, want one naming quality_reference_runs_per_task
+    quality_test.go:77: "quality_reference_cost_cap_usd = \"0\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:82: managed "quality_reference_cost_cap_usd = \"0\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:77: "quality_reference_cost_cap_usd = \"$25\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:82: managed "quality_reference_cost_cap_usd = \"$25\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:77: "quality_reference_cost_cap_usd = \"1e3\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:82: managed "quality_reference_cost_cap_usd = \"1e3\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:77: "quality_reference_cost_cap_usd = \"2.505\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:82: managed "quality_reference_cost_cap_usd = \"2.505\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:77: "quality_judge_separate_family = \"when quota allows\"": Parse error <nil>, want one naming quality_judge_separate_family
+    quality_test.go:82: managed "quality_judge_separate_family = \"when quota allows\"": Parse error <nil>, want one naming quality_judge_separate_family
+    quality_test.go:77: "quality_reference_runs = \"on-change-and-release\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:82: managed "quality_reference_runs = \"on-change-and-release\"": Parse error <nil>, want one naming quality_reference_cost_cap_usd
+    quality_test.go:91: Quality of unparsed map[quality_audit_sample:some] succeeded
+    quality_test.go:91: Quality of unparsed map[quality_reference_runs:on-change-and-release] succeeded
+
+## cli
+
+With the `quality` field declared but never set, the golden's new `quality` section was missing from the feed:
+
+--- FAIL: TestDirectorStatusGolden (0.28s)
+    director_status_test.go:221: director-status.json mismatch:
+         got: {... "mode": {"name": "standalone"}, "tasks": [...]}
+        want: {... "mode": {"name": "standalone"}, "quality": {"self_review": true, "size_budget_lines": 300, ...}, "tasks": [...]}
+
+## skills
+
+--- FAIL: TestSelfReviewFactsTwinsAgree (4.97s)
+    --- FAIL: TestSelfReviewFactsTwinsAgree/sh (0.05s)
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/default_budget (0.00s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/at_the_budget (0.00s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/over_the_line_budget (0.00s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/over_the_file_budget (0.01s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/budget_off (0.00s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/empty_diff (0.00s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/missing_diff (0.00s)
+            skills_test.go:518: a refusal says nothing on stderr
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/no_diff (0.00s)
+            skills_test.go:518: a refusal says nothing on stderr
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/budget_not_a_number (0.01s)
+            skills_test.go:518: a refusal says nothing on stderr
+        --- FAIL: TestSelfReviewFactsTwinsAgree/sh/negative_budget (0.00s)
+            skills_test.go:518: a refusal says nothing on stderr
+    --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh (4.90s)
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/default_budget (0.49s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/at_the_budget (0.45s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/over_the_line_budget (0.48s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/over_the_file_budget (0.48s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/budget_off (0.49s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/empty_diff (0.48s)
+            skills_test.go:514: passed = false, want true: exit status 1
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/missing_diff (0.52s)
+            skills_test.go:518: a refusal says nothing on stderr
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/no_diff (0.49s)
+            skills_test.go:518: a refusal says nothing on stderr
+        --- FAIL: TestSelfReviewFactsTwinsAgree/pwsh/budget_not_a_number (0.49s)

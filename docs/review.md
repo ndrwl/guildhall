@@ -3,6 +3,8 @@
 Every pull request is reviewed against this standard, the requirements in `docs/requirements.md`, the decisions in `docs/decisions.md` and `CONTRIBUTING.md`.
 Human and automated reviewers apply the same rules.
 
+The [quality rubric](quality.md) is the scored and trend layer above these rules: it records how good a delivered change was, maps each rule below to its criteria, and never changes what blocks a merge.
+
 ## Findings
 
 Each finding names the file and line, the rule it breaks (a requirement id such as `R1.27` or a rule id below such as `S4`), and a concrete failure: the input or state and the wrong result.
