@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -89,31 +90,49 @@ func (d runDirector) waitResult(t *testing.T, step string, n int) {
 	}
 }
 
-// stopAll proves every attempt's launcher stopped, so no process outlives the test.
+// stopAll fails the test for every leftover, so no process outlives the test.
 func (d runDirector) stopAll(t *testing.T) {
 	t.Helper()
+	for _, l := range d.leftovers(t, "") {
+		t.Error(l)
+	}
+}
+
+// leftovers proves every attempt's launcher stopped and describes each attempt it could not prove so;
+// inv, the fake's inventory directory, is not read yet.
+func (d runDirector) leftovers(t *testing.T, inv string) []string {
+	t.Helper()
+	var out []string
 	s, err := store.Open(d.store, store.Options{ReadOnly: true})
 	if err != nil {
-		t.Error(err)
-		return
+		return []string{err.Error()}
 	}
 	attempts, err := s.Attempts("app", "t-1")
 	_ = s.Close()
 	if err != nil {
-		t.Error(err)
+		out = append(out, err.Error())
 	}
 	for _, a := range attempts {
 		// A launcher that has just recorded its outcome may still be exiting: stop proves it only once gone.
 		for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
-			code, out, stderr := d.run(t, "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number))
+			code, stdout, stderr := d.run(t, "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number))
 			if code == 0 {
 				break
 			}
 			if time.Now().After(end) {
-				t.Errorf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, out, stderr)
+				out = append(out, fmt.Sprintf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, stdout, stderr))
 				break
 			}
 		}
+	}
+	return out
+}
+
+// sweep runs artisan resume over an attempt whose launcher is gone and fails the test unless it succeeds.
+func (d runDirector) sweep(t *testing.T, step string, n int) {
+	t.Helper()
+	if code, out, stderr := d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", strconv.Itoa(n)); code != 0 {
+		t.Errorf("artisan resume %s-%d: exit %d, %s %s", step, n, code, out, stderr)
 	}
 }
 

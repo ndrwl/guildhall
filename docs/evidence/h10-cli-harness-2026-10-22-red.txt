@@ -1,0 +1,5 @@
+--- FAIL: TestRunCleanupReportsAnOrphanedWorker (…)
+    orphan_test.go:58: leftovers with the grandchild orphaned = [], want it reported
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli
+FAIL
