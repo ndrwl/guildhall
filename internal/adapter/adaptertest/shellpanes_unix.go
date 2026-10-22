@@ -21,8 +21,8 @@ import (
 
 // ShellPanes is a terminal host for running a runtime in a Herdr pane where
 // no Herdr server is available, as in CI. It keeps the contract of the
-// terminal boundary adapter.TabLauncher drives: it creates tabs only in its
-// one workspace, operates only on tabs it created, refuses anything but one
+// terminal boundary adapter.TabLauncher drives: it creates tabs only in the
+// workspaces its terminal holds, operates only on tabs it created, refuses anything but one
 // non-empty line and honours each call's context. A line typed into a pane
 // runs as `sh -c <line>` with the POSIX sh on PATH, in the tab's working
 // directory with the tab's environment added; the pane is busy until that
@@ -43,10 +43,11 @@ type ShellPanes struct {
 
 // shellTerminal is the state hosts on one terminal share, under mu.
 type shellTerminal struct {
-	mu    sync.Mutex
-	next  int
-	panes map[adapter.TabRef]*shellPane
-	sent  []string
+	mu         sync.Mutex
+	workspaces []herdr.Workspace
+	next       int
+	panes      map[adapter.TabRef]*shellPane
+	sent       []string
 }
 
 // shellPane is one tab and the line running in it, if any.
@@ -59,11 +60,12 @@ type shellPane struct {
 // interruptWait bounds Ctrl+C's wait for the line to exit.
 const interruptWait = 10 * time.Second
 
-// NewShellPanes returns a ShellPanes for session with the one workspace, and
-// kills any line still running when t ends.
+// NewShellPanes returns a ShellPanes for session whose terminal starts with
+// one workspace, labelled with its id, and kills any line still running when
+// t ends.
 func NewShellPanes(t *testing.T, session, workspace string) *ShellPanes {
-	p := &ShellPanes{session: session, workspace: workspace, shellTerminal: &shellTerminal{panes: map[adapter.TabRef]*shellPane{}},
-		owned: map[adapter.TabRef]bool{}}
+	p := &ShellPanes{session: session, workspace: workspace, owned: map[adapter.TabRef]bool{},
+		shellTerminal: &shellTerminal{workspaces: []herdr.Workspace{{ID: workspace, Label: workspace}}, panes: map[adapter.TabRef]*shellPane{}}}
 	t.Cleanup(func() {
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -77,19 +79,42 @@ func NewShellPanes(t *testing.T, session, workspace string) *ShellPanes {
 	return p
 }
 
-// CreateTab creates an idle pane in the host's workspace.
+// Workspaces lists the terminal's workspaces.
+func (p *ShellPanes) Workspaces(ctx context.Context) ([]herdr.Workspace, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.workspaces), nil
+}
+
+// CreateWorkspace creates a workspace on the terminal, labelled label. Unlike
+// Herdr's, it holds no first tab of its own.
+func (p *ShellPanes) CreateWorkspace(ctx context.Context, label, cwd string) (herdr.Workspace, error) {
+	if err := ctx.Err(); err != nil {
+		return herdr.Workspace{}, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	w := herdr.Workspace{ID: fmt.Sprintf("%s-%d", p.workspace, len(p.workspaces)+1), Label: label}
+	p.workspaces = append(p.workspaces, w)
+	return w, nil
+}
+
+// CreateTab creates an idle pane in one of the terminal's workspaces.
 func (p *ShellPanes) CreateTab(ctx context.Context, spec herdr.TabSpec) (adapter.TabRef, error) {
 	if err := ctx.Err(); err != nil {
 		return adapter.TabRef{}, err
 	}
-	if spec.WorkspaceID != p.workspace {
-		return adapter.TabRef{}, &herdr.APIError{Code: "workspace_not_found", Message: "workspace not found"}
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if !slices.ContainsFunc(p.workspaces, func(w herdr.Workspace) bool { return w.ID == spec.WorkspaceID }) {
+		return adapter.TabRef{}, &herdr.APIError{Code: "workspace_not_found", Message: "workspace not found"}
+	}
 	p.next++
-	ref := adapter.TabRef{Session: p.session, WorkspaceID: p.workspace,
-		TabID: fmt.Sprintf("%s:t%d", p.workspace, p.next), PaneID: fmt.Sprintf("%s:p%d", p.workspace, p.next)}
+	ref := adapter.TabRef{Session: p.session, WorkspaceID: spec.WorkspaceID,
+		TabID: fmt.Sprintf("%s:t%d", spec.WorkspaceID, p.next), PaneID: fmt.Sprintf("%s:p%d", spec.WorkspaceID, p.next)}
 	p.panes[ref] = &shellPane{spec: spec}
 	p.owned[ref] = true
 	return ref, nil

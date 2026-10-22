@@ -87,9 +87,14 @@ type DirectorSession struct {
 	StateSequence uint64 `json:"state_sequence"`
 	// StopNow is set by RequestDirectorStop for `director stop --now`: the supervisor ends the runtime at once.
 	StopNow bool `json:"stop_now,omitempty"`
-	// EndReason is the reason EndDirectorSession recorded, such as "superseded" for a gone supervisor.
+	// EndReason is the reason EndDirectorSession recorded, such as "superseded" for a gone supervisor, or
+	// EndSuperseded when StartDirectorSession recorded a newer session over a session not yet stopped.
 	EndReason string `json:"end_reason,omitempty"`
 }
+
+// EndSuperseded is the end reason of a session recorded stopped because its supervisor is gone, by
+// StartDirectorSession when a newer session is recorded and by director stop.
+const EndSuperseded = "superseded"
 
 // WakeDecision is what a wake did.
 type WakeDecision string
@@ -155,7 +160,7 @@ func (s *Store) StartDirectorSession(d DirectorSession) (Receipt, error) {
 				return err
 			}
 			if prev.State != DirectorStopped {
-				prev.State, prev.EndedAt, prev.StateSequence = DirectorStopped, now, r.Sequence
+				prev.State, prev.EndedAt, prev.EndReason, prev.StateSequence = DirectorStopped, now, EndSuperseded, r.Sequence
 				if err := putJSON(sessions, sessionKey(newest), prev); err != nil {
 					return err
 				}
@@ -461,8 +466,8 @@ func validateSession(d DirectorSession) error {
 		return invalid("a new director session is %s, not %q", DirectorRecovering, d.State)
 	case d.Identity.PID < 1:
 		return invalid("director session pid %d must be positive", d.Identity.PID)
-	case !d.StartedAt.IsZero() || !d.ReadyAt.IsZero() || !d.EndedAt.IsZero() || d.StateSequence != 0:
-		return invalid("director session times and state sequence are set by the store")
+	case !d.StartedAt.IsZero() || !d.ReadyAt.IsZero() || !d.EndedAt.IsZero() || d.StateSequence != 0 || d.EndReason != "":
+		return invalid("director session times, end reason and state sequence are set by the store")
 	}
 	if err := validateText("director session token", d.Identity.Token, 256); err != nil {
 		return err

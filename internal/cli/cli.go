@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"io"
@@ -60,8 +61,8 @@ Commands:
                  list open decisions, show one and record the Guildmaster's answer
   director status --json --store <path> --state <dir>
                  print the Director's status feed and what needs the Director or Guildmaster
-  director start [runtime] --foreground [--check] --copy <dir>
-                 run a Director session in this terminal under its supervisor
+  director start [runtime] [--foreground] [--check] --copy <dir>
+                 open the Director's Herdr tab and run its session there, or in this terminal with --foreground
   director ready --copy <dir>
                  say the recovering Director session is ready to start new work
   director pause --copy <dir>
@@ -122,6 +123,10 @@ type App struct {
 	StopGrace time.Duration
 	// Now is the clock director status counts today's attempts by; nil means wall time.
 	Now func() time.Time
+	// DirectorTabs opens the terminal host director start opens the Director's tab in, for the named Herdr
+	// session, after checking the session's server, and returns the server's version; nil means Herdr, found
+	// on PATH as herdr.
+	DirectorTabs func(ctx context.Context, session string) (adapter.TabHost, string, error)
 }
 
 // New returns an App wired to the real process environment.
