@@ -1,0 +1,49 @@
+{
+  "schema": "guildhall.session-manifest/1",
+  "session": 3,
+  "role": {
+    "path": "role.md",
+    "digest": "sha256:b67c59d7bc09b087194e1eaab51a108ba1367aae601f7dec80ae42b6674901e3",
+    "root": "copy"
+  },
+  "startup": {
+    "path": "startup.md",
+    "digest": "sha256:bab38781dee4a70b20c9b5353e1861610f1cd873e408768ef469cdbc92ce33b0"
+  },
+  "files": [
+    {
+      "path": ".claude/settings.json",
+      "digest": "sha256:ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    }
+  ],
+  "skills": [
+    {
+      "name": "go-tdd",
+      "root": "release",
+      "path": ".claude/skills/go-tdd",
+      "digest": "sha256:5771b0a0a8393288c7caeea797aea949d98ec66b2193390a826a6e9f6be1b33b",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "digest": "sha256:c1d1160a457c78f3b61c3fa11040ee710f0bb38ef40a60f24e233cc2abf73060"
+        },
+        {
+          "path": "scripts/check.sh",
+          "digest": "sha256:ca4b5179596dc897c978e4d062b631dd0848f5159e5fe879d45ec477ae60b04a"
+        }
+      ]
+    },
+    {
+      "name": "guildhall-contributing",
+      "root": "managed",
+      "path": ".claude/skills/guildhall-contributing",
+      "digest": "sha256:0c385355800932af2d91f9f247c393032ab5909542166fa7c75a3812c9364039",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "digest": "sha256:1cb89ac2ac84c9e435221f4fdc51a63b194c0d856dd30f4f0ffa47b1ad7e0def"
+        }
+      ]
+    }
+  ]
+}

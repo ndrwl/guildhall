@@ -64,6 +64,23 @@ Every digest is `sha256:<64 lowercase hex>`.
 | `inputs[]` | `port`, the recorded `path` and the digest of the file's bytes. |
 | `skills[]` | `name`, the `root` it was resolved from, `path` (`skills/<name>`), the tree `digest` and every file with its digest. |
 
+## Director sessions
+
+`render.Session(input, roots)` renders one Director session into its session directory, which must not exist or be empty (`ErrNotEmpty`), for [`director start`](director.md#start).
+It writes, and lists with digests in `manifest.json`, schema `guildhall.session-manifest/1`:
+
+| Field | Meaning |
+|---|---|
+| `session` | The session number. |
+| `role` | `role.md`, the role prompt with line endings normalised to LF, the digest of that text and the baseline `root` it came from, so a CRLF checkout renders the same digest. |
+| `startup` | `startup.md` and the digest of its bytes: the session is starting up and recovering, the newest handoff note's path or `None.`, and the in-flight snapshot one item per line or `None.`. |
+| `files[]` | The runtime's own files, such as Claude Code's `.claude/settings.json`, by slash path, with the digest of their bytes. |
+| `skills[]` | Every skill of the roots, in name order: `name`, the first `root` holding it, `path` under the runtime's skills directory, the tree `digest` and every file with its digest, copied as [skills](#skills) are for an attempt. |
+
+A root directory that does not exist holds no skills, and a root's files, such as `CREDITS.md`, are not skills.
+A skills directory or runtime file path that is not relative and slash-separated, or that collides with another file the session writes, and an in-flight item of more than one line, are refused before anything is written; on any error nothing `Session` wrote is left behind.
+`render.StartupMessage` is the session's one-line first message, naming `startup.md`.
+
 ## Guildmaster questions
 
 `render.Question(stage, inputs)` refuses an Artisan stage (`ErrWrongActor`) and reads no files.

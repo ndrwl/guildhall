@@ -15,8 +15,8 @@ With a [copy](#copies), `--copy <dir> --repo <id>` replaces `--store`, `--config
 
 ## Copies
 
-A Director copy is one directory holding `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)).
-Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, the owned `artisan` commands and `store init|doctor`) accepts `--copy <dir>`, or, when that flag is absent, the environment variable `GUILDHALL_COPY`.
+A Director copy is one directory holding `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)), and, once a session has run, `director/session-<n>/` for each [Director session](director.md#start).
+Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, `director`, the owned `artisan` commands and `store init|doctor`) accepts `--copy <dir>`, or, when that flag is absent, the environment variable `GUILDHALL_COPY`.
 The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/config.toml` and `--state` to `<dir>/state`, for each of those flags the command takes; `workflow approve` takes the copy's config only with `--repo` and no `--file`.
 `config.Load` reads the copy's config as it reads any other.
 

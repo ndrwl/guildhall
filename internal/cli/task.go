@@ -186,6 +186,9 @@ func (a *App) task(args []string) int {
 	var out any
 	switch sub {
 	case "new":
+		if err = refuseWhileRecovering(s); err != nil {
+			break
+		}
 		if err = admitWorkflow(s, accepted); err != nil {
 			err = fmt.Errorf("%w; the Guildmaster approves this revision with guildhall workflow approve --config <director.toml> --repo %s", err, *repo)
 		} else {

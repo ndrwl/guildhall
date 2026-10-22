@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(guildhall)",
+      "Bash(guildhall *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git show)",
+      "Bash(git show *)",
+      "Bash(git rev-parse)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files)",
+      "Bash(git ls-files *)",
+      "Bash(git branch --list)",
+      "Bash(git branch --list *)",
+      "Bash(git remote -v)"
+    ],
+    "deny": [
+      "Bash(git *--output*)",
+      "Edit(//home/g/copy/config.toml)",
+      "Edit(//home/g/copy/managed.toml)"
+    ]
+  }
+}

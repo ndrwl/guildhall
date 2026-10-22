@@ -279,8 +279,8 @@ func TestDirectorStatusUsage(t *testing.T) {
 		code int
 		want string
 	}{
-		{"no subcommand", nil, 2, "director: the command is status"},
-		{"unknown subcommand", []string{"start"}, 2, "director: the command is status"},
+		{"no subcommand", nil, 2, "director: the commands are status, start and ready"},
+		{"unknown subcommand", []string{"resume"}, 2, "director: the commands are status, start and ready"},
 		{"no json", []string{"status", "--copy", dir}, 2, "prints JSON only; pass --json"},
 		{"no store", []string{"status", "--json"}, 2, "--store and --state are required, or --copy"},
 		{"store without state", []string{"status", "--json", "--store", filepath.Join(dir, "director.store")}, 2, "--store and --state are required, or --copy"},
