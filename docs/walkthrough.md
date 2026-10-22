@@ -102,14 +102,15 @@ EOF
 {"mutation_id":"message:t-1-note-1","operation":"send-message","request_digest":"sha256:8c4f3149fed51b4795c3dedf5bb628671bd249f1c5923c77723be239346f628f","repository":"app","task_id":"t-1","record":"message/t-1-note-1","sequence":2,"committed_at":"2026-10-22T07:56:28.47136214Z"}
 ```
 
-`list` shows the unacknowledged message, and after `ack` the inbox is empty while the message stays readable by id:
+`list` shows the unacknowledged message, and after `ack` the inbox is empty while the message stays readable by id.
+With no Director session recorded, the send also recorded its [wake](messaging.md#waking-the-director) as `queued`, which is one of the receipts:
 
 ```console
 $ ./guildhall store doctor --copy demo
 store: demo/director.store
 schema_version: 1 (supported: 1)
 integrity: ok
-receipts: 3
+receipts: 4
 workflow approvals: 0
 repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 0, rulings 0, owners 0 (0 starting without containment), messages 1 (0 unread)
 ```

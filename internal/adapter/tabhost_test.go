@@ -29,6 +29,9 @@ type tabHostUnderTest struct {
 	session string
 	// sent returns the lines and keys that reached the terminal, in order.
 	sent func() []string
+	// reopen returns a new host on the same terminal, as a later process would
+	// make: it holds the tabs host created but owns none of them.
+	reopen func() tabHost
 }
 
 func testTabHost(t *testing.T, newHost func(t *testing.T) tabHostUnderTest) {
@@ -138,6 +141,96 @@ func testTabHost(t *testing.T, newHost func(t *testing.T) tabHostUnderTest) {
 	})
 }
 
+// testRecordedTabs is the contract for tabs a later host adopts from a durable
+// record, and for typing into them, as the Director's wake does.
+func testRecordedTabs(t *testing.T, newHost func(t *testing.T) tabHostUnderTest) {
+	ctx := context.Background()
+	spec := herdr.TabSpec{WorkspaceID: "w1", Label: "director", Cwd: t.TempDir()}
+	const wake = "guildhall: 2 unread (note 1, question 1)"
+
+	t.Run("a later host adopts a recorded tab and then operates on it", func(t *testing.T) {
+		h := newHost(t)
+		ref := mustCreate(t, h.host, spec)
+		if err := h.host.RunInTab(ctx, ref, "sleep 60"); err != nil {
+			t.Fatal(err)
+		}
+		later := h.reopen()
+		if err := later.RunInTab(ctx, ref, "early"); err == nil {
+			t.Fatal("a later host typed into a tab it had not adopted")
+		}
+		if err := later.AdoptTab(ctx, ref); err != nil {
+			t.Fatal(err)
+		}
+		if info, err := later.PaneProcessInfo(ctx, ref); err != nil || info.ShellIdle() {
+			t.Errorf("adopted tab's process info = %+v, %v; want the running program", info, err)
+		}
+		if err := later.RunInTab(ctx, ref, wake); err != nil {
+			t.Fatal(err)
+		}
+		if want := []string{"run " + ref.PaneID + " sleep 60", "run " + ref.PaneID + " " + wake}; !slices.Equal(h.sent(), want) {
+			t.Errorf("sent = %q, want %q", h.sent(), want)
+		}
+	})
+	t.Run("adopt refuses a tab the terminal does not hold in the host's session", func(t *testing.T) {
+		h := newHost(t)
+		own := mustCreate(t, h.host, spec)
+		foreign := mustCreate(t, h.foreign, spec)
+		missing, otherWorkspace, otherSession := own, own, own
+		missing.TabID, missing.PaneID = "w1:t99", "w1:p99"
+		otherWorkspace.WorkspaceID = "w2"
+		otherSession.Session = "other-lab"
+		later := h.reopen()
+		for name, ref := range map[string]TabRef{"zero": {}, "foreign": foreign, "missing": missing, "other workspace": otherWorkspace, "other session": otherSession} {
+			if err := later.AdoptTab(ctx, ref); err == nil {
+				t.Errorf("%s: AdoptTab accepted %+v", name, ref)
+			}
+			if err := later.RunInTab(ctx, ref, "echo no"); err == nil {
+				t.Errorf("%s: RunInTab accepted %+v after a refused adoption", name, ref)
+			}
+		}
+		if sent := h.sent(); len(sent) != 0 {
+			t.Errorf("refused adoptions reached the terminal: %q", sent)
+		}
+	})
+	t.Run("adopt honours its context", func(t *testing.T) {
+		h := newHost(t)
+		ref := mustCreate(t, h.host, spec)
+		done, cancel := context.WithCancel(ctx)
+		cancel()
+		if err := h.reopen().AdoptTab(done, ref); !errors.Is(err, context.Canceled) {
+			t.Errorf("AdoptTab = %v", err)
+		}
+	})
+	t.Run("typing into a recorded tab reaches its running program", func(t *testing.T) {
+		h := newHost(t)
+		ref := mustCreate(t, h.host, spec)
+		if err := h.host.RunInTab(ctx, ref, "sleep 60"); err != nil {
+			t.Fatal(err)
+		}
+		if err := typeRecorded(ctx, h.reopen(), ref, wake); err != nil {
+			t.Fatal(err)
+		}
+		if sent := h.sent(); len(sent) != 2 || sent[1] != "run "+ref.PaneID+" "+wake {
+			t.Errorf("sent = %q", sent)
+		}
+	})
+	t.Run("typing into a recorded tab whose shell is idle sends nothing", func(t *testing.T) {
+		h := newHost(t)
+		ref := mustCreate(t, h.host, spec)
+		if err := typeRecorded(ctx, h.reopen(), ref, wake); !errors.Is(err, ErrShellIdle) {
+			t.Errorf("typeRecorded = %v, want ErrShellIdle", err)
+		}
+		missing := ref
+		missing.TabID, missing.PaneID = "w1:t99", "w1:p99"
+		if err := typeRecorded(ctx, h.reopen(), missing, wake); err == nil {
+			t.Error("typeRecorded reached a missing tab")
+		}
+		if sent := h.sent(); len(sent) != 0 {
+			t.Errorf("sent = %q, want nothing", sent)
+		}
+	})
+}
+
 func mustCreate(t *testing.T, h tabHost, spec herdr.TabSpec) TabRef {
 	t.Helper()
 	ref, err := h.CreateTab(context.Background(), spec)
@@ -152,7 +245,7 @@ func TestHerdrTabsContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testTabHost(t, func(t *testing.T) tabHostUnderTest {
+	newHost := func(t *testing.T) tabHostUnderTest {
 		dir := t.TempDir()
 		t.Setenv(tabsStubEnv, dir)
 		client := func(session string) *HerdrTabs {
@@ -169,15 +262,21 @@ func TestHerdrTabsContract(t *testing.T) {
 			sent: func() []string {
 				return readLines(t, filepath.Join(dir, "sent-lab"))
 			},
+			reopen: func() tabHost { return client("lab") },
 		}
-	})
+	}
+	testTabHost(t, newHost)
+	testRecordedTabs(t, newHost)
 }
 
 func TestFakeTabsContract(t *testing.T) {
-	testTabHost(t, func(t *testing.T) tabHostUnderTest {
+	newHost := func(t *testing.T) tabHostUnderTest {
 		f := newFakeTabs("lab", "bash")
-		return tabHostUnderTest{host: f, foreign: newFakeTabs("other-lab", "bash"), session: "lab", sent: f.sentLines}
-	})
+		return tabHostUnderTest{host: f, foreign: newFakeTabs("other-lab", "bash"), session: "lab", sent: f.sentLines,
+			reopen: func() tabHost { return f.reopen() }}
+	}
+	testTabHost(t, newHost)
+	testRecordedTabs(t, newHost)
 }
 
 // tabsStubEnv makes the test binary act as the Herdr executable, keeping one
@@ -226,6 +325,15 @@ func stubHerdr(dir string, args []string) int {
 			return 2
 		}
 		fmt.Printf(`{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w1:p%[1]d","tab_id":"w1:t%[1]d","workspace_id":"w1"},"tab":{"label":"x","tab_id":"w1:t%[1]d","workspace_id":"w1","pane_count":1},"type":"tab_created"}}`, k+1)
+		return 0
+	case "tab get":
+		counter, _ := os.ReadFile(filepath.Join(dir, session+"-tabs"))
+		k, _ := strconv.Atoi(string(counter))
+		var n int
+		if _, err := fmt.Sscanf(args[2], "w1:t%d", &n); err != nil || n < 2 || n > k+1 {
+			return fail("tab_not_found", "tab "+args[2]+" not found")
+		}
+		fmt.Printf(`{"id":"cli:tab:get","result":{"tab":{"agent_status":"unknown","focused":false,"label":"x","number":%d,"pane_count":1,"tab_id":%q,"workspace_id":"w1"},"type":"tab_info"}}`, n, args[2])
 		return 0
 	case "pane process-info":
 		p, ok := pane(args[3])
@@ -284,9 +392,16 @@ func readLines(t *testing.T, path string) []string {
 }
 
 // fakeTabs is the tabHost double for launcher tests: one workspace w1, tabs
-// numbered per host, a shell that is busy for busyReads reads after creation,
-// and input logged per pane.
+// numbered per terminal, a shell that is busy for busyReads reads after
+// creation, and input logged per pane. Hosts from reopen share the terminal
+// and own only the tabs they create or adopt.
 type fakeTabs struct {
+	*fakeTerminal
+	owned []TabRef
+}
+
+// fakeTerminal is the state hosts on one fake terminal share, under mu.
+type fakeTerminal struct {
 	session   string
 	shell     string
 	busyReads int
@@ -295,14 +410,17 @@ type fakeTabs struct {
 	mu      sync.Mutex
 	next    int
 	created []herdr.TabSpec
-	owned   []TabRef
+	tabs    []TabRef
 	busy    map[string]bool
 	sent    []string
 }
 
 func newFakeTabs(session, shell string) *fakeTabs {
-	return &fakeTabs{session: session, shell: shell, busy: map[string]bool{}}
+	return &fakeTabs{fakeTerminal: &fakeTerminal{session: session, shell: shell, busy: map[string]bool{}}}
 }
+
+// reopen returns a new host on f's terminal that owns no tab.
+func (f *fakeTabs) reopen() *fakeTabs { return &fakeTabs{fakeTerminal: f.fakeTerminal} }
 
 func (f *fakeTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, error) {
 	if err := ctx.Err(); err != nil {
@@ -316,8 +434,22 @@ func (f *fakeTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, e
 	f.created = append(f.created, spec)
 	f.next++
 	ref := TabRef{Session: f.session, WorkspaceID: spec.WorkspaceID, TabID: fmt.Sprintf("w1:t%d", f.next+1), PaneID: fmt.Sprintf("w1:p%d", f.next+1)}
+	f.tabs = append(f.tabs, ref)
 	f.owned = append(f.owned, ref)
 	return ref, nil
+}
+
+func (f *fakeTabs) AdoptTab(ctx context.Context, ref TabRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !slices.Contains(f.tabs, ref) {
+		return &herdr.APIError{Code: "tab_not_found", Message: "tab " + ref.TabID + " not found"}
+	}
+	f.owned = append(f.owned, ref)
+	return nil
 }
 
 // check refuses a tab this host did not create, under the lock.

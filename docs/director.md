@@ -3,6 +3,7 @@
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
 Only `director status` and the [session record](store.md#director-sessions) are built; the session supervisor (`director start`) that writes the record, and the pause, stop and handoff commands, are designed in the slice 4 plan and land later.
+A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Status
 

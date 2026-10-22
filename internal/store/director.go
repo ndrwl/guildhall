@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -320,6 +321,52 @@ func (s *Store) Wakes(after uint64, limit int) ([]Wake, bool, error) {
 		return nil, false, fmt.Errorf("store: wakes: %w", err)
 	}
 	return out, more, nil
+}
+
+// unreadTypes are the message types DirectorUnread counts by name; every other type, which any sender may
+// choose, counts as "other", so the wake line carries no sender-chosen text. The engine sends attempt-failed,
+// attempt-retried and decision (internal/interp/engine.go), changes-requested, loop-exit-rejected and stall
+// (loops.go), checks-pending, checks-passed and checks-failed (validate.go), published, merge-held,
+// merge-refused and merged (deliver.go), worker-stalled (heartbeat.go) and workspace-kept (workspace.go);
+// question and note are the documented kinds of a local message (docs/messaging.md).
+var unreadTypes = map[string]bool{
+	"attempt-failed": true, "attempt-retried": true, "changes-requested": true, "checks-failed": true,
+	"checks-passed": true, "checks-pending": true, "decision": true, "loop-exit-rejected": true,
+	"merge-held": true, "merge-refused": true, "merged": true, "published": true, "stall": true,
+	"worker-stalled": true, "workspace-kept": true, "question": true, "note": true,
+}
+
+// DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the
+// Guildhall-defined unreadTypes and "other", which counts every other type.
+// Its cost grows with the number of unread messages and repositories, not with the store.
+func (s *Store) DirectorUnread() (map[string]int, error) {
+	counts := map[string]int{}
+	err := s.view(func(tx *bolt.Tx) error {
+		prefix := inboxPrefix(Recipient{Role: RecipientDirector})
+		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
+			inbox := repoBucket(tx, string(repo), bucketInbox)
+			if inbox == nil {
+				return nil
+			}
+			c := inbox.Cursor()
+			for k, id := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, id = c.Next() {
+				var m Message
+				if err := getJSON(repoBucket(tx, string(repo), bucketMessages), id, &m); err != nil {
+					return fmt.Errorf("inbox message %q: %w", id, err)
+				}
+				if unreadTypes[m.Type] {
+					counts[m.Type]++
+				} else {
+					counts["other"]++
+				}
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: director unread: %w", err)
+	}
+	return counts, nil
 }
 
 func directorBucket(tx *bolt.Tx, name []byte) *bolt.Bucket {

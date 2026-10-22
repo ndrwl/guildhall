@@ -358,8 +358,8 @@ type TabSpec struct {
 	Env []string
 }
 
-// OwnedTab is a tab this client created. Only TabCreate makes one, so a value
-// is proof that the caller's session created that tab.
+// OwnedTab is a tab this client created. Only TabCreate and RecordedTab make
+// one, so a value is proof that the caller's session created that tab.
 type OwnedTab struct {
 	session     string
 	workspaceID string
@@ -430,6 +430,28 @@ func (c *Client) TabCreate(ctx context.Context, spec TabSpec) (OwnedTab, error) 
 		return OwnedTab{}, fmt.Errorf("herdr created tab %s in workspace %s, want %s", r.Tab.ID, r.Tab.WorkspaceID, spec.WorkspaceID)
 	}
 	return OwnedTab{session: c.session, workspaceID: spec.WorkspaceID, tabID: r.Tab.ID, paneID: r.RootPane.PaneID}, nil
+}
+
+// RecordedTab returns the OwnedTab for a tab an earlier process of the
+// caller's program created in this client's session and recorded durably,
+// such as the Director's own pane (R1.54). The caller vouches for the record;
+// RecordedTab checks only that the tab still exists in the recorded workspace,
+// so a closed tab yields an error for which IsNotFound is true and a tab id
+// now naming a tab in another workspace is refused. It sends nothing to the pane.
+func (c *Client) RecordedTab(ctx context.Context, workspaceID, tabID, paneID string) (OwnedTab, error) {
+	for kind, id := range map[string]string{"workspace": workspaceID, "tab": tabID, "pane": paneID} {
+		if err := checkID(kind, id); err != nil {
+			return OwnedTab{}, err
+		}
+	}
+	tab, err := c.TabGet(ctx, tabID)
+	if err != nil {
+		return OwnedTab{}, err
+	}
+	if tab.WorkspaceID != workspaceID {
+		return OwnedTab{}, fmt.Errorf("herdr tab %s is in workspace %s, not the recorded %s", tabID, tab.WorkspaceID, workspaceID)
+	}
+	return OwnedTab{session: c.session, workspaceID: workspaceID, tabID: tabID, paneID: paneID}, nil
 }
 
 // TabList lists the tabs of one workspace.

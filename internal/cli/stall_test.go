@@ -95,6 +95,10 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 			t.Errorf("default stall_interval: %d worker-stalled messages, want 1", got)
 		}
 	}
+	// The engine's outbox wakes the Director for the stall once, as Guildhall; with no session it queues.
+	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].SenderType != "guildhall" || ws[0].Decision != store.WakeQueued || ws[0].Reason != "no session" {
+		t.Errorf("wakes = %+v; want one queued guildhall wake", ws)
+	}
 }
 
 // stalls counts the worker-stalled messages in the Director's inbox.

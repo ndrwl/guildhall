@@ -1,0 +1,64 @@
+Red runs for the Director's wake (D5b), 2026-10-22, on 8812bc1 with the branch's tests against stub bodies.
+Each section names the command and the stub; the matching green run is the branch's go test ./...
+
+## herdr: go test ./internal/herdr -run RecordedTab, RecordedTab returning "not implemented"
+--- FAIL: TestRecordedTabChecksTheTabStillExists (0.00s)
+    herdr_test.go:455: not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/herdr	0.006s
+FAIL
+
+## adapter: go test ./internal/adapter -run 'TabsContract|ShellPanesContract', AdoptTab on every host and typeRecorded returning "not implemented"
+--- FAIL: TestHerdrTabsContract (0.12s)
+    --- FAIL: TestHerdrTabsContract/a_later_host_adopts_a_recorded_tab_and_then_operates_on_it (0.01s)
+    --- FAIL: TestHerdrTabsContract/adopt_honours_its_context (0.01s)
+    --- FAIL: TestHerdrTabsContract/typing_into_a_recorded_tab_reaches_its_running_program (0.01s)
+    --- FAIL: TestHerdrTabsContract/typing_into_a_recorded_tab_whose_shell_is_idle_sends_nothing (0.01s)
+--- FAIL: TestFakeTabsContract (0.00s)
+    --- FAIL: TestFakeTabsContract/a_later_host_adopts_a_recorded_tab_and_then_operates_on_it (0.00s)
+    --- FAIL: TestFakeTabsContract/adopt_honours_its_context (0.00s)
+    --- FAIL: TestFakeTabsContract/typing_into_a_recorded_tab_reaches_its_running_program (0.00s)
+    --- FAIL: TestFakeTabsContract/typing_into_a_recorded_tab_whose_shell_is_idle_sends_nothing (0.00s)
+--- FAIL: TestShellPanesContract (0.01s)
+    --- FAIL: TestShellPanesContract/a_later_host_adopts_a_recorded_tab_and_then_operates_on_it (0.00s)
+    --- FAIL: TestShellPanesContract/adopt_honours_its_context (0.00s)
+    --- FAIL: TestShellPanesContract/typing_into_a_recorded_tab_reaches_its_running_program (0.00s)
+    --- FAIL: TestShellPanesContract/typing_into_a_recorded_tab_whose_shell_is_idle_sends_nothing (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter	0.139s
+FAIL
+
+## messaging: go test ./internal/messaging -run Wake, Wake returning "not implemented" and WakeLine an empty line
+--- FAIL: TestWakeTypesOneLineOfCountsPerNewMessage (0.06s)
+    wake_test.go:74: Wake(q-1): not implemented
+--- FAIL: TestWakeQueuesWithTheReason (0.41s)
+        wake_test.go:126: Wake(q-1): not implemented
+        wake_test.go:126: Wake(q-1): not implemented
+        wake_test.go:126: Wake(q-1): not implemented
+        wake_test.go:126: Wake(q-1): not implemented
+        wake_test.go:126: Wake(q-1): not implemented
+        wake_test.go:126: Wake(q-1): not implemented
+        wake_test.go:126: Wake(q-1): not implemented
+--- FAIL: TestWakeWakesARecoveringSession (0.06s)
+    wake_test.go:147: Wake(n-1): not implemented
+--- FAIL: TestWakeWithNoTerminalQueues (0.07s)
+    wake_test.go:158: Wake(q-1): not implemented
+--- FAIL: TestWakeRefusesWhatIsNotAMessageToTheDirector (0.05s)
+    wake_test.go:167: wake for a missing message = not implemented, want ErrNotFound
+--- FAIL: TestWakeLine (0.00s)
+    wake_test.go:191: WakeLine(map[question:1]) = "", want "guildhall: 1 unread (question 1)"
+    wake_test.go:191: WakeLine(map[attempt-failed:1 note:4 worker-stalled:2]) = "", want "guildhall: 7 unread (attempt-failed 1, note 4, worker-stalled 2)"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/messaging	0.661s
+FAIL
+
+## cli: go test ./internal/cli -run 'Wake|WakesNo|ObservesAStalledWorker', the engine's outbox and messages send not yet waking
+--- FAIL: TestTaskStartObservesAStalledWorker (0.19s)
+    stall_test.go:89: wakes = []; want one queued guildhall wake
+--- FAIL: TestMessagesSendToTheDirectorWakesIt (0.08s)
+    wake_test.go:72: typed = [], want ["w1:p2 guildhall: 1 unread (note 1)"]
+--- FAIL: TestMessagesSendQueuesTheWakeWithoutASession (0.06s)
+    wake_test.go:97: wakes = [], typed []
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.409s
+FAIL

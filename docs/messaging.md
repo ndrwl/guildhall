@@ -13,11 +13,12 @@ Supported today, on a local store file named on the command line:
 - sending a message to the Director or to the Artisan of a running stage attempt;
 - listing a recipient's unacknowledged messages in bounded pages;
 - reading one message;
-- acknowledging a consumed message.
+- acknowledging a consumed message;
+- [waking the Director](#waking-the-director) when a message to it is stored.
 
 Not provided yet:
 
-- telling a running agent that a message arrived.
+- telling a running Artisan that a message arrived.
   A stored message is not proof that any agent has seen it;
 - finding the store from a Director's runtime context: every command takes `--store <path>`;
 - messaging another Director, another machine or anything over SSH or HTTP.
@@ -124,9 +125,42 @@ A listed or read message is its envelope plus `sequence`, its store-wide order, 
 The store has one writer at a time (see [the store](store.md#one-writer)).
 Each command holds the store only for its own operation and waits up to two seconds for another holder, so concurrent sends are serialized rather than lost; a process that keeps the store open blocks them until it closes it.
 
+## Waking the Director
+
+A message to the Director is stored first and wakes second: storing never depends on waking, and a message that wakes nobody is still in the inbox.
+After every send to `director`, by the engine's outbox (`task start`, `step done`, `step retry`) or by `messages send ... director`, the sending command decides then and there whether to wake the Director and records that decision; nothing waits in the background (R1.29).
+
+The command reads the Director's newest [session](store.md#director-sessions).
+When it is `running` or `recovering` and has a bound pane, the command types one line and Enter into that pane, which Guildhall created for the Director's session (R1.54), and records `woke`:
+
+```text
+guildhall: 3 unread (attempt-failed 1, question 2)
+```
+
+The line counts the Director's unread messages by type, in type order, and never carries message text, so no sender can type instructions into the Director's session.
+Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine sends (`attempt-failed`, `attempt-retried`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`.
+Otherwise nothing is typed and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
+
+| Reason | When |
+|---|---|
+| `no session` | No Director session has been recorded. |
+| `paused`, `stopping`, `stopped` | The newest session is in that state; a paused Director is not woken. |
+| `no pane` | The session has no bound pane: it runs in a terminal Guildhall did not create. |
+| `nothing unread` | The Director has no unread message: this one was acknowledged before the wake counted unread messages. |
+| `runtime not running` | The pane's shell is idle, so the Director's runtime has ended and the line would reach a shell prompt. |
+| `pane: <error>` | Herdr refused or failed the typing, for example a closed tab. |
+
+A message is woken for at most once: the wake records the mutation `wake:<id>`, and a retried send finds the recorded wake and types nothing new.
+The line is typed before the decision is recorded, so a send retried after a crash between the two may type it again.
+A failed wake never fails the send; the command reports the wake's failure on standard error, and `messages send` still prints the receipt as usual.
+The pane is reached through the Herdr session it was recorded in, with `herdr` found on `PATH`.
+
+Every wake records its sender type: `guildhall` for the engine and `local` for `messages send`, which cannot tell the Guildmaster from an Artisan.
+Both wake on every message; the per-sender [wake policies](#waking-a-director) below are designed, not built.
+
 ## Director messaging (designed, not built)
 
-Everything in this section is designed, not built, except the [wake record](store.md#records), which the store keeps.
+Everything in this section is designed, not built, except the [local wake](#waking-the-director) and its wake record.
 No command, flag, config key or other store record below exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [Director messaging](decisions/0049-director-messaging.md).
 It extends the local inbox above so a Director can hear from the Guildmaster and from other Directors, without giving any message more authority than the local inbox has today.
@@ -219,9 +253,7 @@ A Guildmaster `note` uses the same schema with `from` set to `guildmaster`, no `
 
 A message is stored first and wakes second: storing never depends on waking, and a message that wakes nobody is still in the inbox.
 There is no service (R1.29): the `receive` command that stores a message decides then and there whether to wake, and records that decision.
-Waking means the receiving binary types one fixed notice line into the Director's own Herdr pane through the Director's pane binding, which Director start records (planned), as [D20](decisions/0020-typing-the-launch-command-into-a.md) types a launch command, and only into a pane Guildhall created for that Director (R1.54).
-The line carries counts only, never message text, so no sender can type instructions into the Director's session.
-With no bound pane the message waits for the Director's next turn; that is not an error.
+Waking is the [local wake](#waking-the-director), which is built: one line of counts typed into the pane Guildhall created for the Director's session, with no bound pane queueing the message for the Director's next turn.
 
 Each sender type has its own wake policy in config:
 
@@ -346,7 +378,7 @@ All are new records in the receiver's or sender's existing store, keyed outside 
 |---|---|---|
 | Director message | sender, message id | The envelope, the sender type, the sequence, and an inbox entry until acknowledged once; never changes another record. |
 | Outbox entry | message id | The envelope sent, the peer, and a state `pending`, `delivered` with the receiver's receipt, or `refused` with its reason. |
-| Wake | sequence | The store record is built ([store](store.md#records)): each decision's message id, sender type, `woke` or `queued` with the reason, and time; nothing writes it yet. The budget adds the reasons `budget spent` and `never` and computes each window from the wakes' sender types and times, so it survives restarts with no change to the record. |
+| Wake | sequence | Built for the local wake: each decision's message id, sender type, `woke` or `queued` with the reason, and time ([store](store.md#records)). The budget adds the reasons `budget spent` and `never` and computes each window from the wakes' sender types and times, so it survives restarts with no change to the record. |
 | Inbox state | `director` | `open` or `closed`, with the reason, the alert decision and who changed it. |
 | Ticket | repository, ticket id | The source message's full `(sender, message id)` reference, the proposed title and repository, its decision, and a state `proposed`, `accepted` or `declined`, changed once. `accepted` records the task id later created. |
 
