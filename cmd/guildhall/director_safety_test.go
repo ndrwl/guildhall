@@ -489,8 +489,9 @@ func TestSafetyGuardRails(t *testing.T) {
 // TestSafetyCrashRecovery: task t-1's plan attempt is running when the Director's runtime is killed and then its
 // launcher; with a Guildmaster note unread, director start again renders a startup.md listing the attempt to
 // resume and the note, refuses task new until the scripted Director runs ready, and the Director resumes and
-// retries the attempt; the watcher then takes the task through the workflow, the Director answering each decision,
-// to the deliver step's merge decision. director status lists the killed launcher's attempt with resume: true.
+// retries the attempt; the watcher then takes the task through the workflow, the check answering each decision as
+// the Director would with decide answer and task start --decision, to the deliver step's merge decision. director
+// status lists the killed launcher's attempt with resume: true.
 func TestSafetyCrashRecovery(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "", "guildhall-fake: result=never\nguildhall-fake: lifetime=5m\n")
@@ -571,8 +572,9 @@ func TestSafetyCrashRecovery(t *testing.T) {
 		if c.hasTask("t-early") || !c.hasTask("t-late") {
 			t.Errorf("task new before ready recorded %v, after ready %v; want refused, then admitted", c.hasTask("t-early"), c.hasTask("t-late"))
 		}
-		// The watcher takes t-1 on through the fake-straight workflow, the Director answering each decision, to the
-		// deliver step's merge decision, its final wait.
+		// The watcher takes t-1 on through the fake-straight workflow, the check answering each decision as the
+		// Director would, with decide answer and task start --decision, to the deliver step's merge decision, its
+		// final wait.
 		answer := filepath.Join(c.dir, "answer.md")
 		if err := os.WriteFile(answer, []byte("approved\nLooks right.\n"), 0o600); err != nil {
 			t.Fatal(err)
