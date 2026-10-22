@@ -63,7 +63,8 @@
     "audit_sample": 5,
     "reference_runs": "off",
     "reference_runs_per_task": 3,
-    "judge_separate_family": true
+    "judge_separate_family": true,
+    "skill_edits_need_approval": true
   },
   "tasks": [
     {
