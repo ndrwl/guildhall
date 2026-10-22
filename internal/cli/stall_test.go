@@ -48,14 +48,25 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 	}
 	start(d.config)
 	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
-	s, err := store.Open(d.store, store.Options{ReadOnly: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	o, err := s.Ownership(key.Repository, key.TaskID, key.Step, key.Attempt)
-	_ = s.Close()
-	if err != nil {
-		t.Fatal(err)
+	// Kill the launcher only once its worker runs: on Windows the worker starts suspended and joins the
+	// launcher's Job Object before it resumes, so a launcher killed in between leaves it suspended outside any job.
+	var o store.Ownership
+	for end := time.Now().Add(time.Minute); ; time.Sleep(20 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		o, err = s.Ownership(key.Repository, key.TaskID, key.Step, key.Attempt)
+		_ = s.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.State == store.OwnerRunning && o.Containment.Worker != (store.ProcessIdentity{}) {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("plan-1 worker never ran: ownership %+v", o)
+		}
 	}
 	if err := artisantest.KillVerified(artisan.Identity(o.LauncherIdentity)); err != nil {
 		t.Fatal(err)
