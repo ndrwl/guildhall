@@ -404,23 +404,14 @@ func (c Config) stalls() *stallSender {
 	s.beats = make(chan artisan.Heartbeat, 1)
 	go func() {
 		defer close(s.done)
-		// sent is the last output of the crossing sent, failed that of the crossing whose first send failed.
-		var sent, failed time.Time
+		// sent is the last output of the crossing sent.
+		var sent time.Time
 		for h := range s.beats {
 			if h.Time.Sub(h.LastOutputAt) <= c.StallInterval || h.LastOutputAt.Equal(sent) {
 				continue
 			}
-			m := interp.StalledMessage(h.Key(), h.LastOutputAt)
-			_, err := c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, m)
-			if err == nil {
+			if _, err := c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, interp.StalledMessage(h.Key(), h.LastOutputAt)); err == nil {
 				sent = h.LastOutputAt
-			}
-			// A failure is logged once per crossing, not on every retry.
-			if err == nil || !h.LastOutputAt.Equal(failed) {
-				_ = artisan.LogStall(c.Dir(), m.ID, h.LastOutputAt, err)
-			}
-			if err != nil {
-				failed = h.LastOutputAt
 			}
 		}
 	}()

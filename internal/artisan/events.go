@@ -1,7 +1,5 @@
 package artisan
 
-import "time"
-
 type eventName uint8
 
 const (
@@ -24,7 +22,6 @@ const (
 	eventStopBeforeStart
 	eventWorkerExited
 	eventWorkerOutlivedResult
-	eventWorkerStalled
 )
 
 var eventNames = []eventName{
@@ -47,7 +44,6 @@ var eventNames = []eventName{
 	eventStopBeforeStart,
 	eventWorkerExited,
 	eventWorkerOutlivedResult,
-	eventWorkerStalled,
 }
 
 func (n eventName) String() string {
@@ -90,24 +86,8 @@ func (n eventName) String() string {
 		return "worker-exited"
 	case eventWorkerOutlivedResult:
 		return "worker-outlived-result"
-	case eventWorkerStalled:
-		return "worker-stalled"
 	}
 	panic("unknown launcher event")
-}
-
-// LogStall appends a "worker-stalled" event to EventsFile in the attempt
-// directory dir: the launcher sent the Director message id for a worker
-// silent since lastOutput, or failed to with err when err is not nil. It
-// returns the error of the write.
-func LogStall(dir, id string, lastOutput time.Time, err error) error {
-	fields := map[string]any{"message": id, "last_output_at": lastOutput.UTC()}
-	if err != nil {
-		fields["error"] = err.Error()
-	}
-	l := &Launcher{c: LauncherConfig{Dir: dir}}
-	l.event(eventWorkerStalled, fields)
-	return l.logErr
 }
 
 // LogAdvance appends an "advance" event to EventsFile in the attempt

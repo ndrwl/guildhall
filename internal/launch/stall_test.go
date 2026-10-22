@@ -2,11 +2,9 @@ package launch_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -71,33 +69,17 @@ func stalls(t *testing.T, a launch.Attempt) []store.Message {
 	return out
 }
 
-// stallEvents returns the last_output_at of each worker-stalled event in a's events.jsonl, failing on a failed send.
-func stallEvents(t *testing.T, a launch.Attempt) []time.Time {
+// stalledFor checks m is interp.StalledMessage for the last output a's heartbeat records.
+func stalledFor(t *testing.T, a launch.Attempt, m store.Message) {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(a.Dir(), artisan.EventsFile))
+	hb, err := artisan.ReadHeartbeat(a.Dir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out []time.Time
-	for line := range strings.Lines(string(b)) {
-		var e struct {
-			Event      string    `json:"event"`
-			Message    string    `json:"message"`
-			LastOutput time.Time `json:"last_output_at"`
-			Error      string    `json:"error"`
-		}
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			t.Fatal(err)
-		}
-		if e.Event != "worker-stalled" {
-			continue
-		}
-		if e.Error != "" || e.Message != interp.StalledMessage(key, e.LastOutput).ID {
-			t.Fatalf("worker-stalled event %s", line)
-		}
-		out = append(out, e.LastOutput)
+	want := interp.StalledMessage(key, hb.LastOutputAt)
+	if m.ID != want.ID || m.Type != want.Type || m.Text != want.Text || m.Repository != want.Repository || m.TaskID != want.Task {
+		t.Fatalf("stall %+v, want the engine's %+v", m, want)
 	}
-	return out
 }
 
 // speaker starts the speaker worker for a with the stall interval, its output appended to a regular file as
@@ -152,13 +134,14 @@ func waitStalls(t *testing.T, a launch.Attempt, n int, interval time.Duration) [
 }
 
 // TestLauncherSendsOneStallPerCrossing: a worker silent past the stall interval gets exactly one worker-stalled
-// message, interp.StalledMessage for its last output, however many beats follow; new output followed by another
-// crossing sends one more; each send is a worker-stalled event.
+// message, interp.StalledMessage for the last output its heartbeat records, however many beats follow; new output
+// followed by another crossing sends one more, for the new last output.
 func TestLauncherSendsOneStallPerCrossing(t *testing.T) {
 	a := newAttempt(t)
 	const interval = 400 * time.Millisecond
 	dir, finish := speaker(t, a, interval)
 	first := waitStalls(t, a, 1, interval)
+	stalledFor(t, a, first[0])
 	if err := os.WriteFile(filepath.Join(dir, "speak-1"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -166,16 +149,7 @@ func TestLauncherSendsOneStallPerCrossing(t *testing.T) {
 	if both[0].ID != first[0].ID || both[1].ID == first[0].ID {
 		t.Fatalf("stall ids %s then %s, %s; want a new id for the new crossing", first[0].ID, both[0].ID, both[1].ID)
 	}
-	outputs := stallEvents(t, a)
-	if len(outputs) != 2 || !outputs[1].After(outputs[0]) {
-		t.Fatalf("worker-stalled events at outputs %v, want two, the second later", outputs)
-	}
-	for i, m := range both {
-		want := interp.StalledMessage(key, outputs[i])
-		if m.ID != want.ID || m.Type != want.Type || m.Text != want.Text || m.Repository != want.Repository || m.TaskID != want.Task {
-			t.Errorf("stall %d = %+v, want %+v", i, m, want)
-		}
-	}
+	stalledFor(t, a, both[1])
 	if r := finish(); r.err != nil || r.r.AttemptOutcome != store.AttemptFailed {
 		t.Fatalf("Run = %+v, %v", r.r, r.err)
 	}
@@ -191,8 +165,5 @@ func TestLauncherWithoutStallIntervalSendsNone(t *testing.T) {
 	time.Sleep(time.Second)
 	if got := stalls(t, a); len(got) != 0 {
 		t.Fatalf("worker-stalled messages = %d, want 0", len(got))
-	}
-	if got := stallEvents(t, a); len(got) != 0 {
-		t.Fatalf("worker-stalled events = %v, want none", got)
 	}
 }

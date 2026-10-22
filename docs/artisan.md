@@ -259,7 +259,6 @@ Contract tests already read it, but no command reads it yet; it gains a schema w
 | `rung-emptied` | A rung is found empty, at the first check or after its wait; once per stop | `rung` |
 | `rung-timeout` | A rung's bound expires without proving the unit empty; `error` records any failure to list survivors | `rung`, `alive`, `error` |
 | `heartbeat-failed` | A heartbeat write fails | `sequence`, `error` |
-| `worker-stalled` | The launcher (`--stall-interval`) has sent, or failed to send, the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message for a heartbeat whose worker has been silent past the interval | `message`, `last_output_at`, `error` when it failed |
 | `ended` | Outcome publication has been attempted, even if it failed; check the Run error and `outcome.json` separately for success | `outcome` |
 | `advance` | The launcher's advance of the task (`--advance`) has exited or failed to start, after the outcome was recorded | `command`, `exit` when it ran, `error` when it failed |
 | `settled` | Resume settlement publishes a new outcome after the launcher is gone and the unit is proven empty; returning an existing outcome does not emit it | `outcome` |
@@ -310,7 +309,7 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 - `LauncherConfig.Beat` is called with each beat once it is written; a failed write calls nothing.
   `artisan start --stall-interval <duration>` uses it to send the Director the engine's [`worker-stalled`](interpreter.md#worker-stalled-observations) message, `interp.StalledMessage`, when a beat's `last_output_at` is older than the interval relative to its `time`: once per crossing, since the message id is derived from the attempt and `last_output_at`, and again after new output is followed by another crossing.
   The send goes through the store and then [wakes the Director](messaging.md#waking-the-director) as `guildhall`, off the supervision loop, so a slow store or pane never delays the next beat; a beat arriving while a send is in flight is checked after it, and a failed send is retried on the next beat.
-  Each send is logged as a `worker-stalled` event; an advance that later observes the same crossing replays the message and sends nothing new.
+  An advance that later observes the same crossing replays the message and sends nothing new.
   A later time than the beat is reported as the beat's time.
 - The beat is written from the launcher's supervision loop, not a separate timer, so a launcher whose loop is blocked stops beating while its process and endpoint still live.
   Beats continue during result grace and cooperative supervision, but pause while the stop ladder waits on a signal rung.
