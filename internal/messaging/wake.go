@@ -40,6 +40,11 @@ type WakeStore interface {
 	LatestDirectorSession() (store.DirectorSession, error)
 	DirectorUnread() (map[string]int, error)
 	RecordWake(w store.Wake) (store.Receipt, error)
+	// HandoffDues, FinishedTasks and RecordHandoffDue are the automatic handoff triggers' records
+	// (docs/director.md#automatic-handoff).
+	HandoffDues(session int) ([]store.HandoffDue, error)
+	FinishedTasks(session int) (int, error)
+	RecordHandoffDue(d store.HandoffDue) (store.Receipt, error)
 }
 
 // Wake is the one wake function: after a message to the Director is stored, it decides whether to wake the

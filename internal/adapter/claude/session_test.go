@@ -168,3 +168,41 @@ func TestSessionSettingsSignalEveryTurn(t *testing.T) {
 		t.Errorf("hook commands = %q, %q", claude.TurnStartCommand, claude.TurnEndCommand)
 	}
 }
+
+// TestParseStatusLine reads the used context percent from recorded status-line input, reporting none before the
+// first message and refusing input that is not a JSON object.
+func TestParseStatusLine(t *testing.T) {
+	for file, want := range map[string]struct {
+		percent int
+		ok      bool
+	}{"statusline.json": {72, true}, "statusline-fresh.json": {0, false}} {
+		b, err := os.ReadFile(filepath.Join("testdata", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p, ok, err := claude.ParseStatusLine(b); err != nil || p != want.percent || ok != want.ok {
+			t.Errorf("%s: ParseStatusLine = %d, %v, %v; want %d, %v", file, p, ok, err, want.percent, want.ok)
+		}
+	}
+	for in, want := range map[string]int{
+		`{"context_window":{"used_percentage":0}}`:     0,
+		`{"context_window":{"used_percentage":49.5}}`:  50,
+		`{"context_window":{"used_percentage":100.4}}`: 100,
+		`{"context_window":{"used_percentage":130}}`:   100,
+		`{"context_window":{"used_percentage":-2}}`:    0,
+	} {
+		if p, ok, err := claude.ParseStatusLine([]byte(in)); err != nil || !ok || p != want {
+			t.Errorf("%s: ParseStatusLine = %d, %v, %v; want %d", in, p, ok, err, want)
+		}
+	}
+	for _, in := range []string{`{}`, `{"context_window":null}`, `{"context_window":{}}`} {
+		if _, ok, err := claude.ParseStatusLine([]byte(in)); err != nil || ok {
+			t.Errorf("%s: ok %v, err %v; want no percent and no error", in, ok, err)
+		}
+	}
+	for _, in := range []string{``, `[]`, `"text"`, `{"context_window":{"used_percentage":"high"}}`} {
+		if _, _, err := claude.ParseStatusLine([]byte(in)); err == nil {
+			t.Errorf("%q: want an error", in)
+		}
+	}
+}

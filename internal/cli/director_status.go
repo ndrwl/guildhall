@@ -19,6 +19,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/reconcile"
+	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -78,6 +79,8 @@ type statusSession struct {
 	// HandoffNote and Reload are the newest handoff note and reload request, whichever session recorded them.
 	HandoffNote *store.HandoffNote    `json:"handoff_note,omitempty"`
 	Reload      *store.DirectorReload `json:"reload,omitempty"`
+	// Context is the newest context use the session's runtime reported, absent when it reported none.
+	Context *session.Context `json:"context,omitempty"`
 }
 
 // statusGuardRails is the config's guard rails, when the copy has a config, beside the attempt caps' counts.

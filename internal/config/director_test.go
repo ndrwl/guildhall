@@ -54,3 +54,43 @@ func TestInvalidDirectorTableRefused(t *testing.T) {
 		t.Errorf("steward director table: err = %v", err)
 	}
 }
+
+// TestDirectorHandoffTriggers: the three triggers parse, default to the context trigger at 70% and the others
+// off, take 0 as off and refuse values out of range.
+func TestDirectorHandoffTriggers(t *testing.T) {
+	cfg, err := Parse([]byte(director(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, err := cfg.Handoff(); err != nil || h != (Handoff{ContextPercent: DefaultHandoffContextPercent}) || DefaultHandoffContextPercent != 70 {
+		t.Fatalf("no table: Handoff = %+v, %v; want only the context trigger at 70%%", h, err)
+	}
+	cfg, err = Parse([]byte(director(t) + "\n[director]\nhandoff_after_tasks = 3\nhandoff_context_percent = 85\nhandoff_idle = \"30m\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, err := cfg.Handoff(); err != nil || h != (Handoff{AfterTasks: 3, ContextPercent: 85, Idle: 30 * time.Minute}) {
+		t.Fatalf("Handoff = %+v, %v", h, err)
+	}
+	cfg, err = Parse([]byte(director(t) + "\n[director]\nhandoff_context_percent = 0\nhandoff_idle = \"0s\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, err := cfg.Handoff(); err != nil || h != (Handoff{}) {
+		t.Fatalf("all off: Handoff = %+v, %v; want every trigger off", h, err)
+	}
+	cases := map[string]string{
+		"handoff_after_tasks = -1\n":        `director: handoff_after_tasks -1 must not be negative`,
+		"handoff_context_percent = 101\n":   `director: handoff_context_percent 101 must be between 0 and 100`,
+		"handoff_context_percent = -1\n":    `director: handoff_context_percent -1 must be between 0 and 100`,
+		"handoff_idle = \"later\"\n":        `director: handoff_idle "later" must be a duration such as "30m", or "0s" for off`,
+		"handoff_idle = \"-5m\"\n":          `director: handoff_idle "-5m" must be a duration such as "30m", or "0s" for off`,
+		"handoff_after_tasks = \"three\"\n": `handoff_after_tasks`,
+	}
+	for body, want := range cases {
+		_, err := Parse([]byte(director(t) + "\n[director]\n" + body))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want %q", body, err, want)
+		}
+	}
+}

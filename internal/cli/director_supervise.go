@@ -14,6 +14,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -317,6 +318,9 @@ type sessionWatch struct {
 	n                int
 	grace, idleAfter time.Duration
 	hook             bool
+	// handoffIdle is [director] handoff_idle, 0 for off, and pane the Director's pane the idle line is typed into.
+	handoffIdle time.Duration
+	pane        messaging.DirectorPane
 	// now is the clock; nil means wall time.
 	now func() time.Time
 	// turns receives the session endpoint's turn signals; nil without an endpoint.

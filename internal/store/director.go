@@ -94,6 +94,9 @@ type DirectorSession struct {
 	// EndReason is the reason EndDirectorSession recorded, such as "superseded" for a gone supervisor, or
 	// EndSuperseded when StartDirectorSession recorded a newer session over a session not yet stopped.
 	EndReason string `json:"end_reason,omitempty"`
+	// Handoff is the automatic handoff policy the wakes of this session read; zero turns every trigger a wake
+	// reads off.
+	Handoff HandoffPolicy `json:"handoff,omitzero"`
 }
 
 // Holds reports whether the session holds new attempts: while it is paused or stopping, and while a stop's sweep

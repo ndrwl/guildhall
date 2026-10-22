@@ -110,3 +110,18 @@ const (
 func (Adapter) SessionFiles(copyDir string) map[string][]byte {
 	return map[string][]byte{SettingsFile: Settings(copyDir)}
 }
+
+// ContextReportCommand is the status-line command of a Director session: Claude Code runs it after each
+// assistant message with the session's status as JSON on standard input.
+const ContextReportCommand = "guildhall director context-report"
+
+// ContextReport reports true: Settings registers ContextReportCommand as the session's status line.
+func (Adapter) ContextReport() bool { return true }
+
+// ParseStatusLine reads the share of the context window in use from the JSON Claude Code passes a status-line
+// command: context_window.used_percentage, rounded to the nearest whole percent and clamped to 0 to 100. It
+// reports false, with no error, when the input has no used percentage yet, such as before the first message, and
+// an error for input that is not a JSON object.
+func ParseStatusLine(data []byte) (int, bool, error) {
+	return 0, false, errors.New("claude adapter: ParseStatusLine: not implemented")
+}
