@@ -61,7 +61,7 @@ func stalls(t *testing.T, a launch.Attempt) []store.Message {
 			t.Fatal(err)
 		}
 		for _, m := range msgs {
-			if m.Type == interp.WorkerStalled {
+			if m.Type == store.MessageWorkerStalled {
 				out = append(out, m)
 			}
 		}

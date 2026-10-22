@@ -244,7 +244,7 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 		if here.Decision != "" {
 			what = here.Decision
 		}
-		return false, here, r.notify("changes-requested."+what, "changes-requested",
+		return false, here, r.notify("changes-requested."+what, store.MessageChangesRequested,
 			fmt.Sprintf("Step %s requested changes and has no loop rule; the Director decides what happens next.", s.ID))
 	}
 	fs, err := r.firings(s)
@@ -302,7 +302,7 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject, dispute strin
 	case !d.Answered:
 		return false, next, r.notifyDecision(*d, s.ID)
 	case d.Choice == "reject":
-		return false, Next{Wait: WaitDirector, Step: s.ID, Decision: id}, r.notify("loop-exit-rejected."+id, "loop-exit-rejected",
+		return false, Next{Wait: WaitDirector, Step: s.ID, Decision: id}, r.notify("loop-exit-rejected."+id, store.MessageLoopExitRejected,
 			fmt.Sprintf("The Guildmaster rejected step %s at loop exit %s; the Director decides what happens next.", s.ID, id))
 	case d.Choice != "accept":
 		return false, Next{}, fmt.Errorf("loop exit %s answered %q but the loop was not taken", id, d.Choice)
@@ -513,7 +513,7 @@ func (r *run) stall(s workflow.Step, n int) error {
 	if len(signals) == 0 {
 		return nil
 	}
-	return r.notify(fmt.Sprintf("stall.%s-%d", s.ID, n), "stall", fmt.Sprintf("Round %d of step %s requested changes again: %s. The loop continues; the Director may add context, rule on a finding or escalate.",
+	return r.notify(fmt.Sprintf("stall.%s-%d", s.ID, n), store.MessageStall, fmt.Sprintf("Round %d of step %s requested changes again: %s. The loop continues; the Director may add context, rule on a finding or escalate.",
 		n, s.ID, strings.Join(signals, "; ")))
 }
 

@@ -6,11 +6,8 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/messaging"
+	"github.com/ndrwl/guildhall/internal/store"
 )
-
-// AdvanceFailed is the type of the Director message an attempt's launcher sends when its advance of the task
-// failed twice (docs/running.md#the-watcher).
-const AdvanceFailed = "advance-failed"
 
 // maxAdvanceErrorBytes bounds the last error an advance-failed message quotes.
 const maxAdvanceErrorBytes = 1 << 10
@@ -25,7 +22,7 @@ func AdvanceFailedMessage(k artisan.AttemptKey, command, lastErr string) messagi
 	if lastErr == "" {
 		lastErr = "no error output"
 	}
-	e := directorMessage(k.Repository, k.TaskID, fmt.Sprintf("advance-failed.%s-%d", k.Step, k.Attempt), AdvanceFailed,
+	e := directorMessage(k.Repository, k.TaskID, fmt.Sprintf("advance-failed.%s-%d", k.Step, k.Attempt), store.MessageAdvanceFailed,
 		fmt.Sprintf("The launcher's %s for attempt %d of step %s failed twice, so the task has not taken the attempt; its last error: %s", command, k.Attempt, k.Step, lastErr))
 	e.Step, e.Attempt = k.Step, k.Attempt
 	return e

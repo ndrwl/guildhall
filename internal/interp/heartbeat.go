@@ -11,9 +11,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// WorkerStalled is the type of the Director message a stalled worker observation sends.
-const WorkerStalled = "worker-stalled"
-
 func (r *run) workerStalled(step string, number int) error {
 	interval := r.e.StallInterval
 	if interval <= 0 {
@@ -42,7 +39,7 @@ func (r *run) workerStalled(step string, number int) error {
 // notify derives every id, makes the later of the two a replay (docs/interpreter.md#worker-stalled-observations).
 func StalledMessage(k artisan.AttemptKey, lastOutput time.Time) messaging.Envelope {
 	output := lastOutput.UTC().Format(time.RFC3339Nano)
-	return directorMessage(k.Repository, k.TaskID, fmt.Sprintf("worker-stalled.%s-%d.%s", k.Step, k.Attempt, digest.Of([]byte(output)).Hex()), WorkerStalled,
+	return directorMessage(k.Repository, k.TaskID, fmt.Sprintf("worker-stalled.%s-%d.%s", k.Step, k.Attempt, digest.Of([]byte(output)).Hex()), store.MessageWorkerStalled,
 		fmt.Sprintf("Attempt %d of step %s has a fresh heartbeat but no output since %s.", k.Attempt, k.Step, output))
 }
 

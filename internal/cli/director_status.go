@@ -417,7 +417,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			out.Messages.Headers = append(out.Messages.Headers, messageHeader{ID: m.ID, Type: m.Type, Repository: m.Repository, TaskID: m.TaskID,
 				Step: m.Step, Attempt: m.Attempt, Sequence: m.Sequence})
 		}
-		if m.Type != interp.WorkerStalled {
+		if m.Type != store.MessageWorkerStalled {
 			others++
 			continue
 		}

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/config"
-	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -102,7 +101,7 @@ func TestRunningCapRefusesTheFifthLaunch(t *testing.T) {
 		}
 		var out []store.Message
 		for _, m := range inbox {
-			if m.Type == interp.BudgetRefused {
+			if m.Type == store.MessageBudgetRefused {
 				out = append(out, m)
 			}
 		}

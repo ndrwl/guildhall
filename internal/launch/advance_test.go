@@ -289,7 +289,7 @@ func TestRunAdvanceFailingTwiceIsToldToTheDirector(t *testing.T) {
 		t.Fatalf("Director messages %+v, want one advance-failed", msgs)
 	}
 	m := msgs[0]
-	if m.ID != "app.t-1.advance-failed.build-1" || m.Type != interp.AdvanceFailed || m.Repository != "app" || m.TaskID != "t-1" ||
+	if m.ID != "app.t-1.advance-failed.build-1" || m.Type != store.MessageAdvanceFailed || m.Repository != "app" || m.TaskID != "t-1" ||
 		!strings.Contains(m.Text, "step done") || !strings.Contains(m.Text, "advance double run 1 failed") {
 		t.Errorf("message %+v; want advance-failed for build-1 naming step done and the second run's last error", m)
 	}

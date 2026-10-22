@@ -430,25 +430,46 @@ func (s *Store) Wakes(after uint64, limit int) ([]Wake, bool, error) {
 	return out, more, nil
 }
 
-// MessageTypes is the registry of the message types Guildhall sends, stubbed for the red test.
-var MessageTypes = map[string]string{}
+// The message types Guildhall itself sends the Director, and the documented kinds of a local message.
+const (
+	MessageAdvanceFailed    = "advance-failed"
+	MessageAttemptFailed    = "attempt-failed"
+	MessageAttemptRetried   = "attempt-retried"
+	MessageBudgetRefused    = "budget-refused"
+	MessageChangesRequested = "changes-requested"
+	MessageChecksFailed     = "checks-failed"
+	MessageChecksPassed     = "checks-passed"
+	MessageChecksPending    = "checks-pending"
+	MessageDecision         = "decision"
+	MessageDirectorStage    = "director-stage"
+	MessageLoopExitRejected = "loop-exit-rejected"
+	MessageMergeHeld        = "merge-held"
+	MessageMergeRefused     = "merge-refused"
+	MessageMerged           = "merged"
+	MessagePublished        = "published"
+	MessageStall            = "stall"
+	MessageWorkerStalled    = "worker-stalled"
+	MessageWorkspaceKept    = "workspace-kept"
+	MessageQuestion         = "question"
+	MessageNote             = "note"
+)
 
-// unreadTypes are the message types DirectorUnread counts by name; every other type, which any sender may
-// choose, counts as "other", so the wake line carries no sender-chosen text. The engine sends attempt-failed,
-// attempt-retried, budget-refused and decision (internal/interp/engine.go), changes-requested, loop-exit-rejected and stall
-// (loops.go), checks-pending, checks-passed and checks-failed (validate.go), published, merge-held,
-// merge-refused and merged (deliver.go), worker-stalled (heartbeat.go), workspace-kept (workspace.go) and
-// advance-failed (advancefailed.go, sent by an attempt's launcher);
-// question and note are the documented kinds of a local message (docs/messaging.md).
-var unreadTypes = map[string]bool{
-	"advance-failed": true, "attempt-failed": true, "attempt-retried": true, "budget-refused": true, "changes-requested": true, "checks-failed": true,
-	"checks-passed": true, "checks-pending": true, "decision": true, "loop-exit-rejected": true,
-	"merge-held": true, "merge-refused": true, "merged": true, "published": true, "stall": true,
-	"worker-stalled": true, "workspace-kept": true, "question": true, "note": true,
+// MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
+// sender: "engine" for an advance (internal/interp), "launcher" for an attempt's launcher and "local" for the
+// documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
+// wake line carries no sender-chosen text. A type is added here by the change that sends it, never by a sender.
+var MessageTypes = map[string]string{
+	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
+	MessageBudgetRefused: "engine", MessageChangesRequested: "engine", MessageChecksFailed: "engine",
+	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessageDecision: "engine",
+	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
+	MessageMergeRefused: "engine", MessageMerged: "engine", MessagePublished: "engine", MessageStall: "engine",
+	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
+	MessageQuestion: "local", MessageNote: "local",
 }
 
-// DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the
-// Guildhall-defined unreadTypes and "other", which counts every other type.
+// DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the types in
+// MessageTypes and "other", which counts every other type.
 // Its cost grows with the number of unread messages and repositories, not with the store.
 func (s *Store) DirectorUnread() (map[string]int, error) {
 	counts := map[string]int{}
@@ -465,7 +486,7 @@ func (s *Store) DirectorUnread() (map[string]int, error) {
 				if err := getJSON(repoBucket(tx, string(repo), bucketMessages), id, &m); err != nil {
 					return fmt.Errorf("inbox message %q: %w", id, err)
 				}
-				if unreadTypes[m.Type] {
+				if _, ok := MessageTypes[m.Type]; ok {
 					counts[m.Type]++
 				} else {
 					counts["other"]++

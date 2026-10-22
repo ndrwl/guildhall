@@ -35,7 +35,7 @@ func budgetMessages(t *testing.T, e *env) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	for id, text := range e.messages(t) {
-		if strings.Contains(id, interp.BudgetRefused) {
+		if strings.Contains(id, store.MessageBudgetRefused) {
 			out[id] = text
 		}
 	}
@@ -70,7 +70,7 @@ func TestRunningCapRefusesALaunchUntilOneFinishes(t *testing.T) {
 				t.Fatalf("budget-refused messages = %v, want one for two refusals", msgs)
 			}
 			for id, text := range msgs {
-				if !strings.HasPrefix(id, "app.t7."+interp.BudgetRefused+".") || !strings.Contains(text, config.MaxRunningAttemptsKey) || !strings.Contains(text, "plan") || !strings.Contains(text, "guildhall task start") {
+				if !strings.HasPrefix(id, "app.t7."+store.MessageBudgetRefused+".") || !strings.Contains(text, config.MaxRunningAttemptsKey) || !strings.Contains(text, "plan") || !strings.Contains(text, "guildhall task start") {
 					t.Errorf("message %s = %q, want the task's, naming the rail, the step and task start", id, text)
 				}
 			}
