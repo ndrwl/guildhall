@@ -83,9 +83,9 @@ Herdr gives a new workspace a first tab of its own, which is left open, so on a 
 CI runs the wrapper over a terminal double whose panes run each typed line with `sh` on Linux and macOS, and over an in-process double on every platform; the [recorded Herdr responses](contracts/adapter.md) prove the Herdr client's side.
 The acceptance is this lab checklist, not CI, in an isolated named Herdr session:
 
-- zsh on WSL, Git Bash on native Windows, and PowerShell 5.1 on native Windows: `director start` creates the workspace labelled with the Director's name once and reuses it, opens the `director <name>` tab without taking focus, the typed line starts the supervisor, and the printed session carries that tab's pane;
-- a second `director start` while that session runs is refused with `director: live`;
-- after the supervisor is killed, `director start` supersedes the old session and opens a new tab;
+- zsh on WSL, Git Bash on native Windows, and PowerShell 5.1 on native Windows: `director start --tab` creates the workspace labelled with the Director's name once and reuses it, opens the `director <name>` tab without taking focus, the typed line starts the supervisor, and the printed session carries that tab's pane;
+- a second `director start --tab` while that session runs is refused with `director: live`;
+- after the supervisor is killed, `director start --tab` supersedes the old session and opens a new tab;
 - a message to the Director types its wake line into the new tab.
 
 The checklist has not been run yet; macOS stays CI-only (R1.30).
