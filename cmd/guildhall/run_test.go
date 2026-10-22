@@ -18,6 +18,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
+	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/launch/launchtest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
@@ -28,7 +30,7 @@ type binDirector struct {
 	t                      *testing.T
 	bin, store, cfg, state string
 	flags                  []string
-	attempts               []string
+	attempts               []artisan.AttemptKey
 	// repository is repository app's path, a real git repository whose remote's default branch is at base.
 	repository, base string
 }
@@ -112,26 +114,16 @@ func (d *binDirector) want(got, want string) {
 
 // launched records attempt n of step so that cleanup stops its launcher.
 func (d *binDirector) launched(step string, n int) {
-	d.attempts = append(d.attempts, step+"/"+strconv.Itoa(n))
+	d.attempts = append(d.attempts, artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n})
 }
 
-// stopAll proves every attempt's launcher stopped, so no owned process outlives the test; a launcher
-// that has just recorded its outcome may still be exiting, and stop proves it only once it is gone.
+// stopAll proves every attempt's launcher stopped by launchtest's rule, so no owned process outlives the test.
 func (d *binDirector) stopAll() {
 	d.t.Helper()
-	for _, a := range d.attempts {
-		step, n, _ := strings.Cut(a, "/")
-		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
-			out, stderr, err := d.try("", "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", n)
-			if err == nil {
-				break
-			}
-			if time.Now().After(end) {
-				d.t.Errorf("artisan stop %s: %v\n%s%s", a, err, out, stderr)
-				break
-			}
-		}
-	}
+	launchtest.StopAll(d.t, d.attempts, func(k artisan.AttemptKey) (launch.StopReport, error) {
+		return launchtest.Report(d.try("", "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", k.Repository, "--task", k.TaskID,
+			"--step", k.Step, "--attempt", strconv.Itoa(k.Attempt)))
+	})
 }
 
 // done waits for the attempt's result and takes it.

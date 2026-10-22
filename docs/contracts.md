@@ -79,6 +79,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/interp/interptest`](contracts/interp-interptest.md)
 - [`internal/interp`](contracts/interp.md)
 - [`internal/launch`](contracts/launch.md)
+- [`internal/launch/launchtest`](contracts/launch-launchtest.md)
 - [`internal/messaging/messagingtest`](contracts/messaging-messagingtest.md)
 - [`internal/messaging`](contracts/messaging.md)
 - [`internal/reconcile`](contracts/reconcile.md)

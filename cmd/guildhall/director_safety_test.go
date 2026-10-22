@@ -23,6 +23,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
+	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/launch/launchtest"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -402,13 +404,16 @@ func (c *safetyCopy) liveProcesses() []artisan.ProcessRecord {
 	return live
 }
 
-// stopAttempt stops attempt n of task's step and proves its launcher gone, as a launcher that has just recorded
-// its outcome may still be exiting.
+// stopAttempt stops attempt n of task's step and proves its launcher gone by launchtest's rule.
 func (c *safetyCopy) stopAttempt(task, step string, n int) {
 	c.t.Helper()
-	c.waitFor("artisan stop "+task+" "+step, func() bool {
-		cmd := c.command(nil, "artisan", "stop", "--copy", c.dir, "--repo", "app", "--task", task, "--step", step, "--attempt", strconv.Itoa(n))
-		return cmd.Run() == nil
+	k := artisan.AttemptKey{Repository: "app", TaskID: task, Step: step, Attempt: n}
+	launchtest.StopAll(c.t, []artisan.AttemptKey{k}, func(k artisan.AttemptKey) (launch.StopReport, error) {
+		cmd := c.command(nil, "artisan", "stop", "--copy", c.dir, "--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt))
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		return launchtest.Report(stdout.String(), stderr.String(), err)
 	})
 }
 

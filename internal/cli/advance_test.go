@@ -25,6 +25,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/launch/launchtest"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
@@ -178,62 +179,19 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 		if err := json.Unmarshal([]byte(stdout), &procs); code != 0 || err != nil {
 			out = append(out, fmt.Sprintf("artisan harness inventory %s-%d: exit %d, %v, %s %s", a.Step, a.Number, code, err, stdout, stderr))
 		}
-		// A launcher that has just recorded its outcome may still be exiting: stop proves it only once gone.
 		// Stop probes the launcher the ownership record names, which the inventory need not list (where its
-		// unit is a process group). Once it is gone stop is not retried, so a surviving worker tree is
-		// reported rather than waited out.
-		exiting := func() bool {
-			s, err := store.Open(d.store, store.Options{ReadOnly: true})
-			if err != nil {
-				return false
-			}
-			o, err := s.Ownership("app", "t-1", a.Step, a.Number)
-			_ = s.Close()
-			if err != nil || o.LauncherIdentity.PID == 0 {
-				return false
-			}
-			lv, _ := artisan.Probe(artisan.Identity(o.LauncherIdentity))
-			return lv != artisan.Gone
-		}
-		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
-			// Probed before the stop, so a launcher that exits while stop probes it gets one more stop.
-			live := exiting()
+		// unit is a process group), and the launcher outlives its released attempt while it runs the task's
+		// advance, a child it waits for, so the test binary that plays both is in use until it is gone.
+		err := launchtest.Stop(func() (launch.StopReport, error) {
 			code, stdout, stderr := d.run(t, append([]string{"artisan", "stop"}, at...)...)
-			if code == 0 {
-				break
+			var exit error
+			if code != 0 {
+				exit = fmt.Errorf("exit %d", code)
 			}
-			// A launcher that released its attempt at setup, before a worker, recorded no containment where
-			// its unit is not named (a process group), so stop cannot prove it stopped; once that launcher is
-			// gone nothing of the attempt is left.
-			var rep struct {
-				Endpoint       string
-				Classification struct{ State, Launcher string }
-			}
-			if json.Unmarshal([]byte(stdout), &rep) == nil && rep.Endpoint == "not asked: ownership released" &&
-				rep.Classification.State == "exited" && rep.Classification.Launcher == "gone" {
-				break
-			}
-			if !live || time.Now().After(end) {
-				out = append(out, fmt.Sprintf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, stdout, stderr))
-				break
-			}
-		}
-		// The recorded launcher outlives its released attempt while it runs the task's advance (--advance), a
-		// child it waits for, so the test binary that plays both is in use until that launcher is gone.
-		if s, err := store.Open(d.store, store.Options{ReadOnly: true}); err == nil {
-			o, err := s.Ownership("app", "t-1", a.Step, a.Number)
-			_ = s.Close()
-			id := artisan.Identity(o.LauncherIdentity)
-			for end := time.Now().Add(testenv.Ceiling(time.Minute)); err == nil && id.PID != 0; time.Sleep(50 * time.Millisecond) {
-				lv, perr := artisan.Probe(id)
-				if perr == nil && lv == artisan.Gone {
-					break
-				}
-				if time.Now().After(end) {
-					out = append(out, fmt.Sprintf("%s-%d: recorded launcher %d is %v (%v)", a.Step, a.Number, id.PID, lv, perr))
-					break
-				}
-			}
+			return launchtest.Report(stdout, stderr, exit)
+		})
+		if err != nil {
+			out = append(out, fmt.Sprintf("artisan stop %s-%d: %v", a.Step, a.Number, err))
 		}
 		// Not a ceiling: a case that orphans a worker waits all of it, so it stays the same on every host.
 		settle := time.Now().Add(10 * time.Second)
@@ -629,5 +587,14 @@ func (d runDirector) sweep(t *testing.T, step string, n int) {
 	t.Helper()
 	if code, out, stderr := d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", strconv.Itoa(n)); code != 0 {
 		t.Errorf("artisan resume %s-%d: exit %d, %s %s", step, n, code, out, stderr)
+	}
+}
+
+// TestCleanupBoundFollowsTheWatcher pins launchtest's mirror of the watcher advance's lock wait and artisan
+// stop's ladder wait, which bound the cleanup.
+func TestCleanupBoundFollowsTheWatcher(t *testing.T) {
+	if launchtest.LockWait != storeWait || launchtest.StopTimeout != defaultStopTimeout {
+		t.Errorf("launchtest.LockWait, StopTimeout = %v, %v; want storeWait %v and defaultStopTimeout %v",
+			launchtest.LockWait, launchtest.StopTimeout, storeWait, defaultStopTimeout)
 	}
 }
