@@ -40,3 +40,5 @@ This slice renames `artisan run` and pins the grammar; `director start` and `ste
 | `director mode` | designed | yes, outside the reserved lifecycle verbs | none |
 
 No built command clashes with the reserved verbs, so nothing else is renamed here.
+
+`director resume` and `artisan resume` share the verb with two meanings: the Director's resume lifts a [pause](../director.md#pause-and-resume) of its session, and the Artisan's settles one attempt whose launcher is gone ([decision](director-pause-stop.md)).

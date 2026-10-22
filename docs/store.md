@@ -20,7 +20,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Ruling | repository, task, outcome document, finding id | The Director's `out-of-scope`, `duplicate` or `defer` ruling on one finding of a recorded review outcome, with a non-blank reason; recorded once, `defer` only for a finding that cites no rule. Contested at most once, recording the attempt that contested it. See [Director rulings](tasks.md#director-rulings). |
 | Full-review request | repository, task, number | The Director's request that the task's next code review round be full, numbered from 1 per task; at most one is pending. Consumed once, recording the attempt it made full. See [full review](tasks.md#full-review). |
 | Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its [containment recovery description](#containment-record), its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
-| Director session | session number | One run of the Director's runtime under its supervisor: the supervisor's process identity, the Guildhall release, the `sha256:` digest of the configuration it started under, the Herdr pane Guildhall created for it if any, and a state; see [Director sessions](#director-sessions). Not per repository. |
+| Director session | session number | One run of the Director's runtime under its supervisor: the supervisor's process identity, the Guildhall release, the `sha256:` digest of the configuration it started under, the Herdr pane Guildhall created for it if any, a state, whether a stop asked it to end at once, and an end reason when one was recorded; see [Director sessions](#director-sessions). Not per repository. |
 | Wake | sequence | One wake decision for one message to the Director: the message id, the sender type, `woke` or `queued` with a one-line reason of at most 256 bytes, and the UTC time; at most one per message, written by [the Director's wake](messaging.md#waking-the-director). Not per repository. |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
@@ -90,6 +90,11 @@ Starting it records every earlier session that has not stopped as `stopped`, in 
 `paused` starts no new work while running attempts finish, and `stopping` lasts until the runtime ends; `stopped` never changes.
 The first move to `running` sets the ready time and the move to `stopped` the end time.
 A move names the state sequence it read, the receipt sequence that recorded the current state, and is refused with `ErrInvalid` when the session has moved since, so racing moves cannot overwrite each other; moving backward, staying put and moving a superseded session are refused the same way.
+
+[`director stop`](director.md#stop) records its two moves with their own methods, under the same rules.
+`RequestDirectorStop` moves a `recovering`, `running` or `paused` session to `stopping`, setting `StopNow` for `stop --now`; a `stopping` session without `StopNow` takes it, staying `stopping`, and any other repeat is refused as staying put.
+Its mutation id is `director-stop:<n>:<turn|now>:<from>`.
+`EndDirectorSession` moves a session that has not stopped to `stopped` with a non-blank one-line end reason of at most 256 bytes, such as `superseded` for a session whose supervisor is gone, with the mutation id `director-end:<n>:<from>`.
 
 ## Attempt ownership
 

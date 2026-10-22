@@ -19,3 +19,6 @@ func terminate(p *os.Process, s os.Signal) bool {
 	_ = p.Signal(syscall.SIGTERM)
 	return true
 }
+
+// endRuntime asks the runtime p to end with a termination, as a closing terminal would.
+func endRuntime(p *os.Process) { _ = p.Signal(syscall.SIGTERM) }

@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
@@ -24,7 +25,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// director runs `guildhall director status|start|ready` (docs/director.md).
+// director runs `guildhall director status|start|ready|pause|resume|stop` (docs/director.md).
 func (a *App) director(args []string) int {
 	if len(args) > 0 {
 		switch args[0] {
@@ -34,9 +35,15 @@ func (a *App) director(args []string) int {
 			return a.directorStart(args[1:])
 		case "ready":
 			return a.directorReady(args[1:])
+		case "pause":
+			return a.directorPause(args[1:])
+		case "resume":
+			return a.directorResume(args[1:])
+		case "stop":
+			return a.directorStop(args[1:])
 		}
 	}
-	return a.usageError("director: the commands are status, start and ready")
+	return a.usageError("director: the commands are status, start, ready, pause, resume and stop")
 }
 
 // fakeDirector runs the fake Director session: `guildhall fake-director --role <file> <first message>`.
@@ -281,9 +288,12 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err := c.Start(); err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err))
 	}
-	ended, err := waitSession(c, signals)
+	ended, stopped, err := a.waitSession(c, signals, storePath, n)
 	var exit *exec.ExitError
 	switch {
+	case stopped:
+		_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by director stop\n", n)
+		return 0
 	case ended != nil:
 		return a.fail(fmt.Errorf("director start: ended by %v", ended))
 	case errors.As(err, &exit):
@@ -294,20 +304,55 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	return 0
 }
 
-// waitSession waits for the started runtime c to end, passing it each termination among signals, and returns
-// the last termination passed on, if any, with c's end.
-func waitSession(c *exec.Cmd, signals <-chan os.Signal) (os.Signal, error) {
+// stopKill is how long a runtime the supervisor ended for a stop has to exit before it is killed.
+const stopKill = 10 * time.Second
+
+// waitSession waits for the started runtime c of session n to end, passing it each termination among signals,
+// and returns the last termination passed on, if any, and whether it ended the runtime for a stop, with c's end.
+// Every App.SessionPoll it reads the session from the store at storePath: once `director stop` has recorded it
+// stopping, it ends the runtime after App.StopGrace, or at once for stop --now, and kills it if it has not exited
+// stopKill later.
+func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, storePath string, n int) (os.Signal, bool, error) {
 	waited := make(chan error, 1)
 	go func() { waited <- c.Wait() }()
+	poll, grace := a.SessionPoll, a.StopGrace
+	if poll <= 0 {
+		poll = time.Second
+	}
+	if grace <= 0 {
+		grace = 60 * time.Second
+	}
+	tick := time.NewTicker(poll)
+	defer tick.Stop()
 	var ended os.Signal
+	var stopping, stopped time.Time
 	for {
 		select {
 		case s := <-signals:
 			if terminate(c.Process, s) {
 				ended = s
 			}
+		case <-tick.C:
+			if !stopped.IsZero() {
+				if time.Since(stopped) >= stopKill {
+					_ = c.Process.Kill()
+				}
+				continue
+			}
+			d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) { return s.DirectorSession(n) })
+			if err != nil || d.State != store.DirectorStopping {
+				continue
+			}
+			if stopping.IsZero() {
+				stopping = time.Now()
+			}
+			// A plain stop followed by stop --now shortens the grace.
+			if d.StopNow || time.Since(stopping) >= grace {
+				endRuntime(c.Process)
+				stopped = time.Now()
+			}
 		case err := <-waited:
-			return ended, err
+			return ended, !stopped.IsZero(), err
 		}
 	}
 }

@@ -64,6 +64,12 @@ Commands:
                  run a Director session in this terminal under its supervisor
   director ready --copy <dir>
                  say the recovering Director session is ready to start new work
+  director pause --copy <dir>
+                 hold new attempts while running ones finish
+  director resume --copy <dir>
+                 lift the hold and print what needs the Director
+  director stop [--now] --copy <dir>
+                 stop the Director session and its running attempts
   help           print this help
 `
 
@@ -108,6 +114,12 @@ type App struct {
 	Getenv func(string) string
 	// DirectorPane types wake lines into the Director's recorded pane; nil means Herdr, found on PATH as herdr.
 	DirectorPane messaging.DirectorPane
+	// SessionPoll is how often a Director session's supervisor reads its session while the runtime runs; zero
+	// means one second.
+	SessionPoll time.Duration
+	// StopGrace is how long the supervisor of a stopping session lets the runtime end by itself before ending
+	// it; zero means 60 seconds.
+	StopGrace time.Duration
 }
 
 // New returns an App wired to the real process environment.

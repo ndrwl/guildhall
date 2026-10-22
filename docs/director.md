@@ -2,7 +2,7 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-`director status`, the [session record](store.md#director-sessions), the session supervisor `director start --foreground` that writes it and `director ready` are built; the session's Herdr tab and the pause, stop, handoff and reload commands are designed in the slice 4 plan and land later.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start --foreground` that writes it, `director ready`, `director pause`, `director resume` and `director stop` are built; the session's Herdr tab and the handoff and reload commands are designed in the slice 4 plan and land later.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Start
@@ -41,6 +41,7 @@ The terminal's interrupt reaches the runtime, which handles it; the supervisor w
 On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.
 A session already stopped or superseded by a newer one is left as it is.
+While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime, records the session `stopped` and exits 0.
 A reload request that starts a new session in the same supervisor lands with handoff notes.
 
 ## Ready
@@ -54,6 +55,45 @@ A `running` session is printed unchanged, exit 0; no session, or one that is `pa
 
 While the newest session is `recovering` it starts no new work: `task new`, and `task start` of a task with no attempt yet, are refused with exit 1 naming `guildhall director ready`, and record nothing.
 Everything else is unaffected, so the Director recovers what is in flight first: `task start` of a task already under way, `step done`, `step retry`, `decide answer`, `messages` and every read.
+
+## Pause and resume
+
+```sh
+guildhall director pause [--copy <dir> | --store <file>]
+guildhall director resume [--copy <dir> | --store <file> --state <dir>]
+```
+
+`director pause` moves the newest session from `running` to `paused` and prints it as one JSON line ([decision](decisions/director-pause-stop.md)).
+A paused session starts no new attempt, while attempts already running finish:
+
+- `task start` and `step retry` print `{"wait":"paused"}` and exit 0, recording nothing.
+- `task start --decision` still feeds the Guildmaster's answer, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
+- `step done` still takes the attempt's result and opens any decision it leads to, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
+- `decide answer`, `messages`, `artisan stop` and every read are unaffected.
+
+`director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works, such as the `task start` of each held task.
+It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
+
+A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0.
+Both are exit 1 for no session, a session that is `recovering` (run `director ready`), `stopping` or `stopped`, and a session whose supervisor is gone, naming `director stop`.
+
+## Stop
+
+```sh
+guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]
+```
+
+`director stop` ends the Director session and its Artisan attempts ([decision](decisions/director-pause-stop.md)).
+It records the newest session `stopping`, then stops every running attempt in the store as [`artisan stop`](artisan.md#commands) does, and prints the session as one JSON line.
+A stopping session starts no new attempt, as a paused one does.
+The session's supervisor then ends the runtime and records the session `stopped`: after a grace period of 60 seconds in which the runtime may end by itself, or, with `--now`, at once.
+A stopping session is stopped again without changing it, and `stop --now` after a plain stop ends the runtime at once.
+Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `stopping`.
+
+A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopped` with the end reason `superseded`, and still stops its attempts.
+No session, or a session already `stopped`, is exit 1.
+
+The stop does not yet ask the Director to write a handoff note first or wait for the end of its turn; both land with handoff notes.
 
 ## Status
 
@@ -75,7 +115,7 @@ The document has these sections:
   `partial` is always `true`; `excluded` names what the feed does not inspect: `worker files`, `transcripts` and `forge state`.
   `sequence` and `committed_at` are the newest mutation committed anywhere in the store when the read began; an empty store has sequence 0.
   Live attempt state is read after the store, so it can be newer than `sequence`.
-- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, and `started_at`, `ready_at` and `ended_at` once set.
+- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, and the `end_reason` of a session [stopped](#stop) as `superseded`.
   A store with no session reports only `{"state":"no session"}`.
   The identity's liveness is not probed yet.
 - `mode`: `{"name":"standalone"}` until managed mode lands.
@@ -96,9 +136,10 @@ The document has these sections:
   4. `decision`: an open decision; `guildhall decide show --repo <r> --task <t> --decision <id>`.
   5. `messages`: one item counting the other unread messages; `guildhall messages list director`.
   6. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
+  7. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall task start --repo <r> <t>`.
 
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
-  Done and cancelled tasks contribute no `retry`, `resume` or `director` item.
+  Done and cancelled tasks contribute no `retry`, `resume`, `director` or `paused` item.
 
 Times are commit times of the store's receipts, in UTC.
 The feed reads every receipt in the store, so its cost grows with the store's mutation count, as `task timeline`'s does.
