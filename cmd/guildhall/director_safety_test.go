@@ -26,8 +26,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// The Director safety checks (docs/director.md#safety-checks) drive the built binary through `director start
-// --foreground` with a stand-in runtime playing the Director from its role prompt's script: the fake Director and
+// The Director safety checks (docs/director.md#safety-checks) drive the built binary through `director start` with a stand-in runtime playing the Director from its role prompt's script: the fake Director and
 // the Claude stub, this test binary on PATH as claude, play the same script, so every check runs on both. They
 // make no model calls. Each check waits on events with ceilings sized for a slow runner and launches few
 // processes: one build of the binary serves them all.
@@ -210,7 +209,7 @@ func (c *safetyCopy) approve() {
 	c.guildhall("Approved for the safety checks.\n", "workflow", "approve", "--repo", "app", "--words-file", "-")
 }
 
-// session is one `director start <runtime> --foreground` of the copy: the test holds its standard input open, as
+// session is one `director start <runtime>` of the copy: the test holds its standard input open, as
 // a terminal does, and collects its output.
 type session struct {
 	c      *safetyCopy
@@ -241,7 +240,7 @@ func (c *safetyCopy) start(rt string) *session {
 		c.t.Fatal(err)
 	}
 	s := &session{c: c, stdin: w, done: make(chan struct{})}
-	s.cmd = c.command(r, "director", "start", rt, "--foreground", "--copy", c.dir)
+	s.cmd = c.command(r, "director", "start", rt, "--copy", c.dir)
 	s.cmd.Stdout, s.cmd.Stderr = s, s
 	if err := s.cmd.Start(); err != nil {
 		c.t.Fatal(err)

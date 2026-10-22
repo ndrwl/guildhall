@@ -4,7 +4,7 @@ The captain asked for four scripted safety checks in CI with stand-in models: ap
 
 ## Through the binary, on both stand-ins
 
-Each check runs the built binary's `director start --foreground` as the Guildmaster would, with the role prompt scripting what the Director types.
+Each check runs the built binary's `director start` as the Guildmaster would, with the role prompt scripting what the Director types.
 The fake Director and the Claude stub play the same script through `fake.RunScript`, which `adaptertest.RunSessionContract` already holds both to, so a check that passes means the same on either runtime.
 Both runtimes run side by side within a check, and the four checks run in parallel, so the 30 s idle hold is paid once.
 
