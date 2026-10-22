@@ -1,0 +1,117 @@
+Red runs for handoff notes, director reload and the end of a turn (D11a), 2026-10-22, on 098b9af with the branch's tests against stub bodies:
+RecordHandoffNote, LatestHandoffNote, RequestDirectorReload, LatestDirectorReload and ApplyDirectorReload returning an error; session.EndpointPath, Listen and SignalTurnEnded returning an error;
+the Claude adapter's TurnEndHook false and its settings without the Stop hook; director handoff, reload and turn-ended failing as not implemented and decideEnd keeping every runtime running;
+and, in a later run on the implemented commands, DirectorView without its Handoff and Reload and the status feed without them.
+Each section names the command; the matching green run is the branch's go test ./...
+
+$ go test ./internal/store/ -run "Handoff|DirectorReload"
+--- FAIL: TestHandoffNoteIsRecordedAndReadBack (0.03s)
+    director_handoff_test.go:14: latest note of an empty store = store: LatestHandoffNote is not implemented, want ErrNotFound
+--- FAIL: TestRecordHandoffNoteRefusals (0.02s)
+    director_handoff_test.go:53: note without a session = store: RecordHandoffNote is not implemented, want ErrNotFound
+--- FAIL: TestDirectorReloadRequestsCollapseUntilApplied (0.02s)
+    director_handoff_test.go:91: latest reload of an empty store = store: LatestDirectorReload is not implemented, want ErrNotFound
+--- FAIL: TestApplyDirectorReloadRefusals (0.02s)
+    director_handoff_test.go:138: apply of no reload = store: ApplyDirectorReload is not implemented, want ErrNotFound
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.109s
+FAIL
+
+$ go test ./internal/session/
+--- FAIL: TestEndpointPath (0.00s)
+    session_test.go:100: EndpointPath = "", session: EndpointPath is not implemented
+--- FAIL: TestHookSignalsTheSupervisor (0.00s)
+    session_test.go:117: session: Listen is not implemented
+--- FAIL: TestSignalWithNoSupervisor (0.01s)
+    session_test.go:148: hook: session: SignalTurnEnded is not implemented
+    session_test.go:149: hook with no endpoint exited 1, want ErrNoSupervisor's 3
+--- FAIL: TestListenOverLeftovers (0.01s)
+    session_test.go:178: session: Listen is not implemented
+--- FAIL: TestMalformedRequestIsRefused (0.00s)
+    session_test.go:204: session: Listen is not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/session	0.021s
+FAIL
+
+$ go test ./internal/adapter/claude/ ./internal/adapter/fake/ -run "Session"
+--- FAIL: TestSessionCommand (0.00s)
+    session_test.go:51: Program, SkillsDir, TurnEndHook = "claude", ".claude/skills", false; want the Stop hook
+--- FAIL: TestSessionSettingsGolden (0.00s)
+    session_test.go:77: settings differ from testdata/session-settings.json:
+        {
+          "permissions": {
+            "allow": [
+              "Bash(guildhall)",
+              "Bash(guildhall *)",
+              "Bash(git status)",
+              "Bash(git status *)",
+              "Bash(git log)",
+              "Bash(git log *)",
+              "Bash(git diff)",
+              "Bash(git diff *)",
+              "Bash(git show)",
+              "Bash(git show *)",
+              "Bash(git rev-parse)",
+              "Bash(git rev-parse *)",
+              "Bash(git ls-files)",
+              "Bash(git ls-files *)",
+              "Bash(git branch --list)",
+              "Bash(git branch --list *)",
+              "Bash(git remote -v)"
+            ],
+            "deny": [
+              "Bash(git *--output*)",
+              "Edit(//home/g/copy/config.toml)",
+              "Edit(//home/g/copy/managed.toml)"
+            ]
+          }
+        }
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	0.188s
+ok  	github.com/ndrwl/guildhall/internal/adapter/fake	0.156s
+FAIL
+
+$ go test ./internal/cli/ -run "DirectorHandoff|DirectorReload|DirectorTurnEnded|ReloadNow|PlainReload|DecideEnd"
+--- FAIL: TestDirectorHandoffRecordsTheNote (0.04s)
+    director_handoff_test.go:88: handoff with no session: exit 1, stderr guildhall: director handoff is not implemented
+--- FAIL: TestDirectorReload (0.04s)
+    director_handoff_test.go:160: plain reload with no session: exit 1, {Sequence:0 State: Now:false RequestedAt:0001-01-01 00:00:00 +0000 UTC OldSession:0 NewSession:0 AppliedAt:0001-01-01 00:00:00 +0000 UTC}, stderr guildhall: director reload is not implemented
+--- FAIL: TestDirectorReloadNowWaitsForANoteAfterTheStage (0.06s)
+    director_handoff_test.go:198: handoff: exit 1, stderr guildhall: director handoff is not implemented
+--- FAIL: TestDirectorTurnEndedNeverExitsTwo (0.06s)
+    director_handoff_test.go:224: no session: exit 1, stderr guildhall: director turn-ended is not implemented
+    director_handoff_test.go:228: no supervisor listening: exit 1, stderr guildhall: director turn-ended is not implemented
+--- FAIL: TestReloadNowRestartsTheSessionAtTheTurnEnd (0.16s)
+    director_handoff_test.go:282: director handoff --note-file $TMPDIR/TestReloadNowRestartsTheSessionAtTheTurnEnd1346128194/003/note.md: exit 1, "", stderr guildhall: director handoff is not implemented
+--- FAIL: TestReloadNowFallsBackToTheGrace (0.16s)
+    director_handoff_test.go:317: director handoff --note-file $TMPDIR/TestReloadNowFallsBackToTheGrace3036403950/003/note.md: exit 1, "", stderr guildhall: director handoff is not implemented
+--- FAIL: TestPlainReloadWaitsForAQuietPoint (0.11s)
+    director_handoff_test.go:331: director reload: exit 1, "", stderr guildhall: director reload is not implemented
+--- FAIL: TestDecideEnd (0.00s)
+    director_handoff_test.go:380: stop --now: decideEnd = 0, want 1
+    director_handoff_test.go:380: stop at the turn end: decideEnd = 0, want 1
+    director_handoff_test.go:380: stop with no hook after the grace: decideEnd = 0, want 1
+    director_handoff_test.go:380: stop with a hook, idle, after the grace: decideEnd = 0, want 1
+    director_handoff_test.go:380: reload --now at the turn end: decideEnd = 0, want 2
+    director_handoff_test.go:380: reload --now with no hook after the grace: decideEnd = 0, want 2
+    director_handoff_test.go:380: stop wins over reload: decideEnd = 0, want 1
+    director_handoff_test.go:380: plain reload when idle: decideEnd = 0, want 2
+    director_handoff_test.go:380: plain reload when idle and paused: decideEnd = 0, want 2
+    director_handoff_test.go:380: plain reload with no hook after the grace: decideEnd = 0, want 2
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.650s
+FAIL
+
+$ go test ./internal/store/ ./internal/cli/ -run "HandoffNoteIsRecorded|ReloadRequestsCollapse|StatusNamesTheNote"
+--- FAIL: TestHandoffNoteIsRecordedAndReadBack (0.16s)
+    director_handoff_test.go:48: DirectorView handoff <nil>, reload <nil>, <nil>; want the second note and no reload
+--- FAIL: TestDirectorReloadRequestsCollapseUntilApplied (0.18s)
+    director_handoff_test.go:137: DirectorView reload <nil>, handoff <nil>, <nil>; want the new request and no note
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.355s
+--- FAIL: TestDirectorStatusNamesTheNoteAndTheReload (0.07s)
+    director_handoff_test.go:225: status handoff_note = null, want {Session:1 Sequence:5 Path:director/handoff-5.md SHA256:d47cd809b55acbb91f27f68180367d0fdf6997acb09692bd2341fc6c4407da8a RecordedAt:2026-10-22 18:30:24.837775223 +0000 UTC}
+    director_handoff_test.go:228: status reload = null, want {Sequence:6 State:requested Now:false RequestedAt:2026-10-22 18:30:24.843744879 +0000 UTC OldSession:0 NewSession:0 AppliedAt:0001-01-01 00:00:00 +0000 UTC}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.077s
+FAIL

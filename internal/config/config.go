@@ -98,7 +98,13 @@ type Director struct {
 	// Role is a slash-separated path relative to the config file's directory; empty keeps the copy's
 	// baseline/roles/director.md, else the release's.
 	Role string `toml:"role"`
+	// IdleAfter is how long a Director session with turn hooks may go without a turn signal or a wake before it
+	// counts as idle, as a Go duration; empty means DefaultIdleAfter.
+	IdleAfter string `toml:"idle_after" json:",omitempty"`
 }
+
+// DefaultIdleAfter is the [director] idle_after a config that does not set it gets.
+const DefaultIdleAfter = 5 * time.Minute
 
 // ErrUnknownProfile reports a profile name that the Director config does not declare.
 var ErrUnknownProfile = errors.New("unknown profile")
@@ -325,6 +331,11 @@ func (c *Config) validate() []string {
 		if d.Role != "" && !configRelative(d.Role) {
 			add("director: role must be a relative slash-separated path inside the config directory")
 		}
+		if d.IdleAfter != "" {
+			if _, err := parseIdleAfter(d.IdleAfter); err != nil {
+				add("director: %v", err)
+			}
+		}
 	}
 
 	seenID, seenPath := map[string]bool{}, map[string]bool{}
@@ -473,6 +484,23 @@ func checkHerdrSession(v string) error {
 		return fmt.Errorf("%s %q must be letters, digits, '-' or '_', starting with a letter or digit", HerdrSessionKey, v)
 	}
 	return nil
+}
+
+// IdleAfter returns the effective [director] idle_after as a duration: DefaultIdleAfter when it is not set.
+// A value that is not a positive Go duration is an error; Parse refuses one already.
+func (c *Config) IdleAfter() (time.Duration, error) {
+	if c.Director == nil || c.Director.IdleAfter == "" {
+		return DefaultIdleAfter, nil
+	}
+	return parseIdleAfter(c.Director.IdleAfter)
+}
+
+func parseIdleAfter(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("idle_after %q must be a positive duration such as \"5m\"", v)
+	}
+	return d, nil
 }
 
 // Profile returns the profile with this name, or an error wrapping ErrUnknownProfile.

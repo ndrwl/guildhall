@@ -15,7 +15,8 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `ListedRepository` returns a listed repository or an error wrapping `ErrRepositoryNotListed` that names the id; every command acting on a repository finds it there.
 `HerdrSession` is the effective `herdr_session` setting, `""` when unset; `Parse` refuses a managed or local value that is `default` or not a Herdr session name.
 A repository's `NoCI` is its `no_ci` setting, `false` by default.
-`Director` is the optional [`[director]` table](../configuration.md#the-director-table): an adapter that is an id when set, a config-relative role path, and none in a Steward config; it is omitted from JSON when unset, so a config without it keeps its digest.
+`Director` is the optional [`[director]` table](../configuration.md#the-director-table): an adapter that is an id when set, a config-relative role path, an `idle_after` that is a positive Go duration when set, and none in a Steward config; it is omitted from JSON when unset, as `idle_after` is, so a config without them keeps its digest.
+`IdleAfter` returns the effective `[director] idle_after`, `DefaultIdleAfter` (5 minutes) when unset.
 
 ## Tests
 
@@ -23,5 +24,5 @@ A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `stall_test.go` was written red first against a stub `StallInterval` ([red run](../evidence/stall-adapter-choice-2026-10-22-red.txt)): the default, local, zero, managed and overridden values, and refusal of values that are not nonnegative durations.
 `checks_refresh_test.go` pins the same cases for `ChecksRefresh`, and `TestDirectorConfig` the `no_ci` default and value; they were added with the implementation and were not run red.
 `herdr_session_test.go` was written red first against a stub `HerdrSession` ([red run](../evidence/director-tab-2026-10-22-red.txt)): unset, local and managed values, and refusals of `default` and malformed names.
-`director_test.go` pins the `[director]` table's parse and refusals; it was added with the implementation and was not run red.
+`director_test.go` pins the `[director]` table's parse and refusals, `idle_after` and its default among them; it was added with the implementation and was not run red.
 `guard_rails_test.go` was written red first against stub `GuardRails` and `ListedRepository` ([red run](../evidence/guard-rails-2026-10-22-red.txt)): the defaults, local, managed and overridden caps, the listed ids and merge policies, refusal of caps that are zero, negative, words, fractions or padded, and the named refusal of an unlisted repository.

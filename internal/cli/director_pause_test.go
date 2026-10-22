@@ -364,6 +364,13 @@ func supervisedCopy(t *testing.T) (string, runDirector) {
 // runtime reading a pipe that stays open, and returns its exit status once it ends.
 func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 	t.Helper()
+	done, _ := superviseTyping(t, dir, grace)
+	return done
+}
+
+// superviseTyping is supervise that also returns the pipe the runtime reads, for the test to type into.
+func superviseTyping(t *testing.T, dir string, grace time.Duration) (<-chan int, *os.File) {
+	t.Helper()
 	stdin, typing, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -381,7 +388,7 @@ func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorRunning {
-			return done
+			return done, typing
 		}
 		if time.Now().After(end) {
 			t.Fatalf("the session never became ready: %+v", sessions(t, dir))

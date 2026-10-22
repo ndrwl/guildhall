@@ -72,6 +72,9 @@ type statusSession struct {
 	EndReason string                 `json:"end_reason,omitempty"`
 	// GuardRails are the copy's guard rails and what the attempt caps count today (docs/director.md#guard-rails).
 	GuardRails statusGuardRails `json:"guard_rails"`
+	// HandoffNote and Reload are the newest handoff note and reload request, whichever session recorded them.
+	HandoffNote *store.HandoffNote    `json:"handoff_note,omitempty"`
+	Reload      *store.DirectorReload `json:"reload,omitempty"`
 }
 
 // statusGuardRails is the config's guard rails, when the copy has a config, beside the attempt caps' counts.
@@ -243,7 +246,8 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	out.Session.GuardRails = usage
 	if d := v.Session; d != nil {
 		out.Session = statusSession{GuardRails: usage, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
-			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, EndReason: d.EndReason}
+			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, EndReason: d.EndReason,
+			HandoffNote: v.Handoff, Reload: v.Reload}
 		if d.State == store.DirectorRecovering {
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",
 				Reason: fmt.Sprintf("Director session %d is recovering and starts no new work until it is ready", d.Number), Command: "guildhall director ready"})

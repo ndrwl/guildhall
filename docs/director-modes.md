@@ -96,7 +96,7 @@ The Steward never messages a Director ([Director messaging](messaging.md#who-may
 A running Director applies the new revision at its next step boundary, for new tasks only (R1.31, R1.62); an active task keeps its bound configuration.
 If no reload runs and the receiving store has no authorization for the digest, the binary records it on first load as `observed-untrusted`, raises the alert and refuses to apply it.
 Explicit Guildmaster approval records a revision authorization with source `guildmaster-approved`; only that approval or a recorded reload permits the observed revision to be applied.
-Restarting the Director's own session, including onto a new release, is `guildhall director reload`, designed in [release upgrades](releases.md#guildhall-director-reload).
+Restarting the Director's own session is `guildhall director reload`, built as [the Director](director.md#reload) describes; moving it onto a new release is designed in [release upgrades](releases.md#guildhall-director-reload).
 
 ## Lessons
 

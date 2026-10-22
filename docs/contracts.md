@@ -83,6 +83,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/messaging`](contracts/messaging.md)
 - [`internal/reconcile`](contracts/reconcile.md)
 - [`internal/render`](contracts/render.md)
+- [`internal/session`](contracts/session.md)
 - [`internal/steward/stewardtest`](contracts/steward-stewardtest.md)
 - [`internal/steward`](contracts/steward.md)
 - [`internal/store`](contracts/store.md)

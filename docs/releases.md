@@ -115,6 +115,7 @@ Steps 1 and 2 alone already make new tasks use the new release, because `task ne
 ### `guildhall director reload`
 
 `director reload` asks the running Director to restart its agent session on the current pin and settings.
+Its request, its `--now` form and the end-of-turn rule a standalone Director applies it by are built, as [the Director](director.md#reload) describes; moving onto a new release's binary lands with release pins.
 It records a `director-reload` request event and returns at once; it never interrupts a step.
 
 - The Director checks for a pending reload at each step boundary, the same boundary where it applies a new managed revision.

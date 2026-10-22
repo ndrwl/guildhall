@@ -246,10 +246,7 @@ func TestHelpNamesReadmeCommands(t *testing.T) {
 
 // pendingCommands are the commands the Director's skills name before the slice 4 slice that builds them lands.
 // Each leaves this list when the help lists it, so the skills are pinned to the command as built.
-var pendingCommands = map[string]string{
-	"director handoff": "D11",
-	"director reload":  "D11",
-}
+var pendingCommands = map[string]string{}
 
 // skillCommand finds a guildhall command a skill names in code: its words up to the first flag or placeholder.
 var skillCommand = regexp.MustCompile("(?m)(?:`|^[ \t]*)guildhall ([a-z][a-z-]*(?: [a-z][a-z-]*)*)")

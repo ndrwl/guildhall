@@ -2,7 +2,7 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop` and the standalone [guard rails](#guard-rails) are built; the handoff and reload commands are designed in the slice 4 plan and land later.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop`, `director handoff`, `director reload`, `director turn-started`, `director turn-ended` and the standalone [guard rails](#guard-rails) are built; the automatic handoff triggers are designed in the slice 4 plan and land later.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Start
@@ -35,18 +35,21 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 
 - `role.md`: the role prompt, from `[director] role` relative to the config directory, else the copy's `baseline/roles/director.md`, else the release's;
 - every release skill, byte for byte, in the runtime's skills directory, `.claude/skills/` for Claude Code;
-- the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, denies any `git` command with `--output` (which writes a file), and denies edits to the copy's `config.toml` and `managed.toml`;
-- `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest handoff note (none until handoff notes land), and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command;
+- the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and `Stop` and `StopFailure` hooks that run `guildhall director turn-ended` at the end of every turn;
+- `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command;
 - `manifest.json`: the digest of every file above.
 
-It then runs the runtime's session command as its child in that directory, with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
+It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory, with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
 For Claude Code that is `claude --append-system-prompt-file role.md --add-dir <copy> [--model <model>] "<first message>"`; `[director] effort` is not passed, since Claude Code reads effort from its own settings.
 The terminal's interrupt reaches the runtime, which handles it; the supervisor waits for the runtime to end, records the session `stopped`, and exits 0, or 1 naming the status when the runtime exited nonzero.
 On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.
 A session already stopped or superseded by a newer one is left as it is.
-While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime, records the session `stopped` and exits 0.
-A reload request that starts a new session in the same supervisor lands with handoff notes.
+While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime at the [end of the turn](#the-end-of-a-turn), records the session `stopped` and exits 0.
+When it ends the runtime for a [reload](#reload) it records the session `stopped` with the end reason `reloaded`, reads the copy's config again and starts session `<n+1>` the same way in the same terminal, which records the reload `applied` from session `<n>` to `<n+1>`.
+The config read again chooses the runtime too: unless `director start` named one, a changed `[director] adapter` takes effect, checked on `PATH` as the preflight checks it, and a runtime refused then ends the supervisor with exit 1, with session `<n>` recorded `stopped` as `reloaded` and the reload left requested.
+A `director stop` recorded while the runtime is ending for the reload wins: the session is recorded `stopped` as for a stop and the supervisor exits 0 with no new session.
+A runtime that ends by itself is recorded `stopped` and gives the terminal back, even with a reload requested; that reload, like one requested while no supervisor runs, is recorded `applied` by the next `director start`.
 
 ## Skills
 
@@ -59,7 +62,6 @@ The release ships the Director's own skills beside the stage skills, each render
 - `guildhall-handoff`: record a handoff note and reload; the Guildmaster can type `/guildhall-handoff`.
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
-The handoff and reload commands they name are designed and land later.
 
 ## The Director's tab
 
@@ -132,14 +134,60 @@ guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]
 `director stop` ends the Director session and its Artisan attempts ([decision](decisions/director-pause-stop.md)).
 It records the newest session `stopping`, then stops every running attempt in the store as [`artisan stop`](artisan.md#commands) does, and prints the session as one JSON line.
 A stopping session starts no new attempt, as a paused one does.
-The session's supervisor then ends the runtime and records the session `stopped`: after a grace period of 60 seconds in which the runtime may end by itself, or, with `--now`, at once.
+The session's supervisor then ends the runtime and records the session `stopped`: at the [end of the current turn](#the-end-of-a-turn), or, with `--now`, at once.
 A stopping session is stopped again without changing it, and `stop --now` after a plain stop ends the runtime at once.
 Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `stopping`.
 
 A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopped` with the end reason `superseded`, and still stops its attempts.
 No session, or a session already `stopped`, is exit 1.
 
-The stop does not yet ask the Director to write a handoff note first or wait for the end of its turn; both land with handoff notes.
+The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands with the automatic handoff triggers.
+
+## Handoff
+
+```sh
+guildhall director handoff --note-file <path|-> [--copy <dir> | --store <file> --state <dir>]
+```
+
+`director handoff` records a handoff note: what the next session needs to carry on, written by the Director before its session ends ([decision](decisions/director-handoff-reload.md)).
+The note is read from the file, or from standard input for `-`, with the rules of a [decision answer](decisions-cli.md#answers): a leading UTF-8 byte order mark is dropped, CRLF line endings become LF and UTF-16 is refused.
+It must not be blank and is at most 64 KiB after that.
+The note is a document, not a store record (R1.13): it is written to `<state>/documents/director/handoff-<seq>.md`, and the store records a [handoff note](store.md#handoff-notes) naming the newest session, the path relative to the document directory and the note's sha256.
+It prints the record as one JSON line.
+No session, or a newest session that is `stopped`, is exit 1 and records nothing; recording the same note twice in a row in the same session prints the first record, and recording it again after another note records it anew as the newest.
+Each new session's `startup.md` names the newest note, and the [status feed](#status)'s session section carries it as `handoff_note`.
+
+## Reload
+
+```sh
+guildhall director reload [--now] [--copy <dir> | --store <file> --state <dir>]
+```
+
+`director reload` asks the session supervisor to end the runtime and start a new session, on the copy's current settings, as [release upgrades](releases.md#guildhall-director-reload) design.
+It records a `director-reload` request and prints it as one JSON line; requests made before one is applied collapse into it, and `--now` turns a pending plain request into a `--now` one.
+The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake typed into the Director's pane, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
+`--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the handoff: write the note, then reload.
+`--now` is refused with exit 1 unless the newest handoff note was recorded by the newest session, which is not `stopped`, and, while a Director stage attempt is running, unless the note was recorded after that attempt started, so a reload never drops an open grill.
+The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers.
+
+## The end of a turn
+
+A stop or a reload `--now` ends the runtime at the end of the Director's current turn, not in the middle of it.
+A runtime with turn hooks says when a turn starts and ends: Claude Code's `UserPromptSubmit` hook runs `guildhall director turn-started` and its `Stop` and `StopFailure` hooks `guildhall director turn-ended`, the second for a turn that ends in an API error, each of which finds the newest session from the copy in `GUILDHALL_COPY` and signals its supervisor over the session endpoint, an AF_UNIX socket at `supervisor.sock` in the session directory, bound as an [Artisan's endpoint](artisan.md#control-endpoint) is, on Windows as on Unix.
+Each is exit 0 once the supervisor has answered and exit 1 otherwise, including for a usage error, because a `Stop` hook's exit 2 tells Claude Code to keep going and a `UserPromptSubmit` hook's exit 2 blocks the prompt.
+The Director is idle while the newest of these signals is a turn end and no wake has typed into its pane since.
+A turn the captain interrupts with Esc runs no hook at its end, so a runtime with hooks also counts as idle once no turn signal and no wake has arrived for [`[director] idle_after`](configuration.md#the-director-table), 5 minutes unless set; a turn that runs that long without a signal counts as idle too.
+The supervisor decides at each signal and about once a second:
+
+- `stop --now` ends the runtime at once;
+- a stop or a reload `--now` ends it at the next turn end, or once 60 seconds have passed, when the runtime has no hook or the Director is idle;
+- a plain reload ends it at a quiet point, or once 60 seconds have passed with no Director stage running when the runtime has no hook;
+- a stop wins over a reload.
+
+`director stop --now` is the escape when the runtime must end before then: it ends the runtime at once, mid-turn if need be.
+
+The fake runtime has no hooks, so its sessions wait out the 60 seconds unless their script runs `turn-started` and `turn-ended` itself; without a turn-start hook a turn the captain starts is not seen, so once a turn has ended the Director counts as idle until a wake types into its pane.
+A session directory whose socket path would pass the platform's AF_UNIX limit gets no endpoint; the supervisor says so when it starts and waits out the 60 seconds as for a runtime without a hook.
 
 ## Guard rails
 

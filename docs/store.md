@@ -21,6 +21,8 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Full-review request | repository, task, number | The Director's request that the task's next code review round be full, numbered from 1 per task; at most one is pending. Consumed once, recording the attempt it made full. See [full review](tasks.md#full-review). |
 | Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its [containment recovery description](#containment-record), its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
 | Director session | session number | One run of the Director's runtime under its supervisor: the supervisor's process identity, the Guildhall release, the `sha256:` digest of the configuration it started under, the Herdr pane Guildhall created for it if any, a state, whether a stop asked it to end at once, and an end reason when one was recorded; see [Director sessions](#director-sessions). Not per repository. |
+| Handoff note | sequence | One handoff note the Director recorded for its next session: the session that recorded it, the path of the note's document, `director/handoff-<sequence>.md` relative to the document directory, its sha256 and the UTC time; see [handoff notes](#handoff-notes). Not per repository. |
+| Reload request | sequence | One `director reload` request: `requested`, with whether it is `--now`, or `applied`, with the old and new session numbers and the UTC times; see [reload requests](#reload-requests). Not per repository. |
 | Wake | sequence | One wake decision for one message to the Director: the message id, the sender type, `woke` or `queued` with a one-line reason of at most 256 bytes, and the UTC time; at most one per message, written by [the Director's wake](messaging.md#waking-the-director). Not per repository. |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
@@ -107,6 +109,20 @@ A move names the state sequence it read, the receipt sequence that recorded the 
 `RequestDirectorStop` moves a `recovering`, `running` or `paused` session to `stopping`, setting `StopNow` for `stop --now`; a `stopping` session without `StopNow` takes it, staying `stopping`, and any other repeat is refused as staying put.
 Its mutation id is `director-stop:<n>:<turn|now>:<from>`.
 `EndDirectorSession` moves a session that has not stopped to `stopped` with a non-blank one-line end reason of at most 256 bytes, such as `superseded` for a session whose supervisor is gone, with the mutation id `director-end:<n>:<from>`.
+
+### Handoff notes
+
+[`director handoff`](director.md#handoff) records a note with `RecordHandoffNote`, naming the newest session and the note's sha256, under the mutation id `handoff:<n>:<sha256>:<after>`, where `after` is the sequence of the newest note before it or 0, so the same note recorded twice in a row in one session is one record, and a note recorded again after another is recorded anew as the newest.
+The note itself is a document file, not a store blob (R1.13): the store chooses its path, `director/handoff-<sequence>.md`, from the receipt sequence and has the caller write the file before the record commits, so a recorded note's file was written first and a failed write records nothing.
+A session that is not the newest, or is `stopped`, is refused with `ErrInvalid`.
+`LatestHandoffNote` returns the newest note, and `DirectorView.Handoff` the same in the view's transaction.
+
+### Reload requests
+
+[`director reload`](director.md#reload) records a request with `RequestDirectorReload`; at most one is `requested` at a time.
+A request made while one is requested returns it, recording nothing, except that `--now` sets the pending request's `Now` under the mutation id `director-reload-now:<sequence>`; a new request has the mutation id `director-reload:<after>:<turn|now>`, where `<after>` is the sequence of the newest reload, so concurrent identical requests replay into one.
+The session that applies it records `ApplyDirectorReload` with the old and new session numbers under `director-reload-applied:<sequence>`; an applied request never changes again.
+`LatestDirectorReload` returns the newest request, either state, and `DirectorView.Reload` the same in the view's transaction.
 
 ## Attempt ownership
 
