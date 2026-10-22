@@ -18,3 +18,4 @@ Seven refused prompts in the validation test pass against the old fake as well, 
 `director_test.go` runs `adaptertest.RunSessionContract` against the fake Director as a real child process and pins its command and `RunScript`'s refusals; the fake Director was written before these tests, which passed on first run.
 `TestRunOutputDirective` was written red first (the directive was unknown): the `output` directive writes its file before the result and lists it, and paths that are absolute, escaping, empty, backslashed or without text are refused before anything is written.
 `TestRunReportsFixedUsage` was written red first ([red run](../evidence/attempt-spend-2026-10-22-red.txt)): a succeeded, failed, result-less and failing-exit worker each write `ReportedUsage`, and an interrupted one writes no usage file.
+`TestRunWritesResultDespiteUsageFailure` was added when review found a usage write failure stopping the result.
