@@ -283,7 +283,8 @@ type firing struct {
 }
 
 // firings returns the blocking results of step s in round order: its recorded outcomes that are
-// Blocking, or its decisions answered changes_requested. An outcome that cannot be read is an error.
+// Blocking, its decisions answered changes_requested, or for validate its failed results. An outcome or
+// result that cannot be read is an error.
 func (h *history) firings(s workflow.Step) ([]firing, error) {
 	var out []firing
 	if s.Actor() == workflow.GuildmasterActor {
@@ -294,6 +295,9 @@ func (h *history) firings(s workflow.Step) ([]firing, error) {
 			}
 		}
 		return out, nil
+	}
+	if s.Type == "validate" {
+		return h.failedValidations(s)
 	}
 	attempts := slices.Clone(h.attempts)
 	slices.SortFunc(attempts, func(a, b store.StageAttempt) int { return a.Number - b.Number })
@@ -310,6 +314,30 @@ func (h *history) firings(s workflow.Step) ([]firing, error) {
 			out = append(out, firing{path: d.Path, sha256: d.SHA256, round: a.Number})
 		}
 	}
+	return out, nil
+}
+
+// failedValidations returns the failed results of validate step s, <step>-<n>-result, in round order.
+func (h *history) failedValidations(s workflow.Step) ([]firing, error) {
+	var out []firing
+	for i, p := range h.docPlaces {
+		if !p.ok || p.step != s.ID || p.exit || p.part != "result" || p.index != 0 {
+			continue
+		}
+		d := h.documents[i]
+		data, err := h.read(d)
+		if err != nil {
+			return nil, err
+		}
+		v, err := parseValidation(d.Name, data)
+		if err != nil {
+			return nil, err
+		}
+		if v.Verdict == validationFailed {
+			out = append(out, firing{path: d.Path, sha256: d.SHA256, round: p.round})
+		}
+	}
+	slices.SortFunc(out, func(a, b firing) int { return a.round - b.round })
 	return out, nil
 }
 

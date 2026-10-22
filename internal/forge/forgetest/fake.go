@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
@@ -19,14 +20,18 @@ type Fake struct {
 	branches map[string]map[string]string
 	bases    map[string]string
 	prs      map[string][]forge.PullRequest
-	refuse   string
+	// pushed holds the heads ever pushed to each remote, and checks what each remote reports for a head.
+	pushed map[string]map[string]bool
+	checks map[string]map[string][]forge.Check
+	refuse string
 	// publishes and merges count calls.
 	publishes, merges int
 }
 
 // NewFake returns a forge with no repositories.
 func NewFake() *Fake {
-	return &Fake{commits: map[string]map[string]bool{}, branches: map[string]map[string]string{}, bases: map[string]string{}, prs: map[string][]forge.PullRequest{}}
+	return &Fake{commits: map[string]map[string]bool{}, branches: map[string]map[string]string{}, bases: map[string]string{}, prs: map[string][]forge.PullRequest{},
+		pushed: map[string]map[string]bool{}, checks: map[string]map[string][]forge.Check{}}
 }
 
 // AddCommit makes head a commit of repository.
@@ -52,6 +57,10 @@ func (f *Fake) setBranch(remote, name, head string) {
 		f.bases[remote] = name
 	}
 	f.branches[remote][name] = head
+	if f.pushed[remote] == nil {
+		f.pushed[remote] = map[string]bool{}
+	}
+	f.pushed[remote][head] = true
 }
 
 // Branch returns the commit a branch of remote is at, or "".
@@ -110,6 +119,31 @@ func (f *Fake) Publish(ctx context.Context, c forge.Change) (forge.PullRequest, 
 	return pr, nil
 }
 
+// SetChecks makes checks the checks remote reports for head, replacing any it reported.
+func (f *Fake) SetChecks(remote, head string, checks ...forge.Check) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.checks[remote] == nil {
+		f.checks[remote] = map[string][]forge.Check{}
+	}
+	f.checks[remote][head] = slices.Clone(checks)
+}
+
+// Checks implements forge.GitHub.Checks's contract: a head is held by the remote once a branch was set to it.
+func (f *Fake) Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	if !f.pushed[c.Remote][c.Head] {
+		return nil, fmt.Errorf("%w: %s is not on %s", forge.ErrUnknownHead, c.Head, c.Remote)
+	}
+	out := append([]forge.Check{}, f.checks[c.Remote][c.Head]...)
+	slices.SortStableFunc(out, forge.CompareChecks)
+	return out, nil
+}
+
 // Merge implements forge.GitHub.Merge's contract.
 func (f *Fake) Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, error) {
 	f.mu.Lock()
@@ -145,8 +179,9 @@ func NewFakeHarness(t *testing.T) Harness {
 	const remote = "https://github.com/acme/widgets.git"
 	h := Harness{Forge: f, Repository: "/repo", Remote: remote, Base: "main",
 		BaseHead: repeat('a'), Heads: [3]string{repeat('b'), repeat('c'), repeat('d')},
-		Branch: func(_ *testing.T, name string) string { return f.Branch(remote, name) },
-		Refuse: func(_ *testing.T, reason string) { f.Refuse(reason) },
+		Branch:    func(_ *testing.T, name string) string { return f.Branch(remote, name) },
+		Refuse:    func(_ *testing.T, reason string) { f.Refuse(reason) },
+		SetChecks: func(_ *testing.T, head string, checks []forge.Check) { f.SetChecks(remote, head, checks...) },
 	}
 	f.SetBranch(h.Remote, h.Base, h.BaseHead)
 	for _, c := range append([]string{h.BaseHead}, h.Heads[:]...) {

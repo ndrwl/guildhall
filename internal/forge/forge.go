@@ -1,6 +1,6 @@
 // Package forge is Guildhall's boundary to the host of a repository's pull requests: pushing a task's head
-// to its branch, opening or updating its pull request and merging it under the repository's merge policy
-// (docs/contracts/forge.md).
+// to its branch, opening or updating its pull request, reading the checks of a pushed head and merging it under
+// the repository's merge policy (docs/contracts/forge.md).
 //
 // Guildhall prescribes only these edges. It pushes only a task branch, never the base; it merges only the
 // head the Guildmaster's merge decision was bound to, with a squash merge; and it never bypasses the forge's
@@ -10,6 +10,7 @@
 package forge
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"strings"
@@ -93,7 +94,8 @@ type PullRequest struct {
 var (
 	// ErrInvalid reports a change or merge that is malformed, or that names the base branch as the task branch.
 	ErrInvalid = errors.New("invalid forge request")
-	// ErrUnknownHead reports a head that is not a commit of the repository; nothing is pushed.
+	// ErrUnknownHead reports a head that is not a commit of the repository, so nothing is pushed, or, reading
+	// checks, a head the remote does not hold.
 	ErrUnknownHead = errors.New("head is not a commit of the repository")
 	// ErrRefused reports a merge the forge refused, such as failing or pending required checks, a branch
 	// behind its base, branch protection, a pull request no longer at the approved head, or a closed one.
@@ -121,4 +123,48 @@ func ValidBranch(name string) bool {
 		}
 	}
 	return true
+}
+
+// Commit names one pushed head whose checks are read.
+type Commit struct {
+	// Repository and Remote are as in Change.
+	Repository, Remote string
+	// Head is the full commit id whose checks are read.
+	Head string
+}
+
+// Validate reports a commit missing a field or naming an invalid head, as ErrInvalid.
+func (c Commit) Validate() error {
+	switch {
+	case c.Repository == "" || c.Remote == "":
+		return fmt.Errorf("%w: a commit names its repository and remote", ErrInvalid)
+	case !digest.ValidHead(c.Head):
+		return fmt.Errorf("%w: head %q is not a full commit id", ErrInvalid, c.Head)
+	}
+	return nil
+}
+
+// CheckState is where one check of a head stands.
+type CheckState string
+
+const (
+	// CheckPending: the check is queued or running, or a status is expected but not yet reported.
+	CheckPending CheckState = "pending"
+	// CheckPassed: the check succeeded, or finished neutral or skipped.
+	CheckPassed CheckState = "passed"
+	// CheckFailed: the check finished any other way, such as failed, timed out, cancelled or needing action.
+	CheckFailed CheckState = "failed"
+)
+
+// Check is one check or commit status the forge reports for a head.
+type Check struct {
+	Name  string     `json:"name"`
+	State CheckState `json:"state"`
+	// URL links to the check's details, when the forge gives one.
+	URL string `json:"url,omitempty"`
+}
+
+// CompareChecks orders checks by name and then URL, the order Checks returns them in.
+func CompareChecks(a, b Check) int {
+	return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.URL, b.URL))
 }

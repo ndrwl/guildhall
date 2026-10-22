@@ -1,0 +1,91 @@
+# validate stage, forge Checks red run against stubs returning nil, nil (2026-10-22, 2f5570f + working tree)
+$ go test ./internal/forge/...
+--- FAIL: TestForgeContract (4.70s)
+    --- FAIL: TestForgeContract/fake (0.00s)
+        --- FAIL: TestForgeContract/fake/reports_every_check_of_the_head_sorted_by_name (0.00s)
+            forgetest.go:177: Publish(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) = {Number:1 URL:https://forge.invalid/1 Branch:guildhall/t7 Head:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb State:open MergeCommit:}
+            forgetest.go:188: Checks(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) = []
+            forgetest.go:189: Checks = [], want [{Name:build State:failed URL:https://ci.invalid/build} {Name:lint State:passed URL:} {Name:test State:pending URL:https://ci.invalid/test}]
+        --- FAIL: TestForgeContract/fake/reads_the_checks_of_the_head_asked_for,_not_of_the_pull_request (0.00s)
+            forgetest.go:198: Publish(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) = {Number:1 URL:https://forge.invalid/1 Branch:guildhall/t7 Head:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb State:open MergeCommit:}
+            forgetest.go:200: Publish(cccccccccccccccccccccccccccccccccccccccc) = {Number:1 URL:https://forge.invalid/1 Branch:guildhall/t7 Head:cccccccccccccccccccccccccccccccccccccccc State:open MergeCommit:}
+            forgetest.go:202: Checks(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) = []
+            forgetest.go:203: Checks of the earlier head = [], want its failure
+            forgetest.go:205: Checks(cccccccccccccccccccccccccccccccccccccccc) = []
+            forgetest.go:206: Checks of the published head = [], want its pass
+        --- FAIL: TestForgeContract/fake/refuses_a_head_the_remote_does_not_hold_and_an_invalid_commit (0.00s)
+            forgetest.go:212: Publish(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) = {Number:1 URL:https://forge.invalid/1 Branch:guildhall/t7 Head:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb State:open MergeCommit:}
+            forgetest.go:214: Checks of an unpushed head = <nil>, want ErrUnknownHead
+            forgetest.go:218: Checks({Repository:/repo Remote:https://github.com/acme/widgets.git Head:HEAD}) = <nil>, want ErrInvalid
+            forgetest.go:218: Checks({Repository:/repo Remote: Head:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}) = <nil>, want ErrInvalid
+            forgetest.go:218: Checks({Repository: Remote:https://github.com/acme/widgets.git Head:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}) = <nil>, want ErrInvalid
+    --- FAIL: TestForgeContract/github (4.70s)
+        --- FAIL: TestForgeContract/github/reports_every_check_of_the_head_sorted_by_name (0.46s)
+            forgetest.go:177: Publish(cf71a1f9f0531d82b98f0e0c0b46a2d6e92651d6) = {Number:1 URL:https://github.com/acme/widgets/pull/1 Branch:guildhall/t7 Head:cf71a1f9f0531d82b98f0e0c0b46a2d6e92651d6 State:open MergeCommit:}
+            forgetest.go:188: Checks(cf71a1f9f0531d82b98f0e0c0b46a2d6e92651d6) = []
+            forgetest.go:189: Checks = [], want [{Name:build State:failed URL:https://ci.invalid/build} {Name:lint State:passed URL:} {Name:test State:pending URL:https://ci.invalid/test}]
+        --- FAIL: TestForgeContract/github/reads_the_checks_of_the_head_asked_for,_not_of_the_pull_request (0.50s)
+            forgetest.go:198: Publish(e6cb16700e61875a6b6dc25db706d3a4ee56ca63) = {Number:1 URL:https://github.com/acme/widgets/pull/1 Branch:guildhall/t7 Head:e6cb16700e61875a6b6dc25db706d3a4ee56ca63 State:open MergeCommit:}
+            forgetest.go:200: Publish(31e1cd39c84dc13f4c0ca9767a3eb620297f5623) = {Number:1 URL:https://github.com/acme/widgets/pull/1 Branch:guildhall/t7 Head:31e1cd39c84dc13f4c0ca9767a3eb620297f5623 State:open MergeCommit:}
+            forgetest.go:202: Checks(e6cb16700e61875a6b6dc25db706d3a4ee56ca63) = []
+            forgetest.go:203: Checks of the earlier head = [], want its failure
+            forgetest.go:205: Checks(31e1cd39c84dc13f4c0ca9767a3eb620297f5623) = []
+            forgetest.go:206: Checks of the published head = [], want its pass
+        --- FAIL: TestForgeContract/github/refuses_a_head_the_remote_does_not_hold_and_an_invalid_commit (0.44s)
+            forgetest.go:212: Publish(e6cb16700e61875a6b6dc25db706d3a4ee56ca63) = {Number:1 URL:https://github.com/acme/widgets/pull/1 Branch:guildhall/t7 Head:e6cb16700e61875a6b6dc25db706d3a4ee56ca63 State:open MergeCommit:}
+            forgetest.go:214: Checks of an unpushed head = <nil>, want ErrUnknownHead
+            forgetest.go:218: Checks({Repository:/tmp/fm-guildhall-validate-stage/gotmp/TestForgeContractgithubrefuses_a_head_the_remote_does_not_hold784846272/001/work Remote:https://github.com/acme/widgets.git Head:HEAD}) = <nil>, want ErrInvalid
+            forgetest.go:218: Checks({Repository:/tmp/fm-guildhall-validate-stage/gotmp/TestForgeContractgithubrefuses_a_head_the_remote_does_not_hold784846272/001/work Remote: Head:e6cb16700e61875a6b6dc25db706d3a4ee56ca63}) = <nil>, want ErrInvalid
+            forgetest.go:218: Checks({Repository: Remote:https://github.com/acme/widgets.git Head:e6cb16700e61875a6b6dc25db706d3a4ee56ca63}) = <nil>, want ErrInvalid
+--- FAIL: TestGitHubArguments (0.49s)
+    forge_test.go:178: gh ["repo" "view" "--repo" "github.com/acme/widgets" "--json" "defaultBranchRef"]
+    forge_test.go:178: gh ["pr" "list" "--repo" "github.com/acme/widgets" "--head" "guildhall/t7" "--state" "open" "--json" "number,url,state,headRefName,headRefOid,mergeCommit"]
+    forge_test.go:178: gh ["pr" "create" "--repo" "github.com/acme/widgets" "--head" "guildhall/t7" "--title" "Task t7" "--body" "Body text"]
+    forge_test.go:178: gh ["pr" "view" "1" "--repo" "github.com/acme/widgets" "--json" "number,url,state,headRefName,headRefOid,mergeCommit"]
+    forge_test.go:178: gh ["pr" "merge" "1" "--repo" "github.com/acme/widgets" "--squash" "--match-head-commit" "3fbdc9b411287816c17bd7fbe7c4a8c3803e8f69"]
+    forge_test.go:178: gh ["pr" "view" "1" "--repo" "github.com/acme/widgets" "--json" "number,url,state,headRefName,headRefOid,mergeCommit"]
+    forge_test.go:200: no api graphql call reads the checks: [[repo view --repo github.com/acme/widgets --json defaultBranchRef] [pr list --repo github.com/acme/widgets --head guildhall/t7 --state open --json number,url,state,headRefName,headRefOid,mergeCommit] [pr create --repo github.com/acme/widgets --head guildhall/t7 --title Task t7 --body Body text] [pr view 1 --repo github.com/acme/widgets --json number,url,state,headRefName,headRefOid,mergeCommit] [pr merge 1 --repo github.com/acme/widgets --squash --match-head-commit 3fbdc9b411287816c17bd7fbe7c4a8c3803e8f69] [pr view 1 --repo github.com/acme/widgets --json number,url,state,headRefName,headRefOid,mergeCommit]]
+--- FAIL: TestGitHubCheckStates (0.49s)
+    forge_test.go:240: Checks = [], want 19 checks sorted by name
+    forge_test.go:255: Checks with map[__typename:CheckRun conclusion:SOMETHING_NEW detailsUrl:https://ci.invalid/new name:new status:COMPLETED] = [], <nil>, want a plain error
+    forge_test.go:255: Checks with map[__typename:CheckRun conclusion:<nil> detailsUrl:https://ci.invalid/new name:new status:LATER] = [], <nil>, want a plain error
+    forge_test.go:255: Checks with map[__typename:StatusContext context:new state:LATER targetUrl:<nil>] = [], <nil>, want a plain error
+    forge_test.go:255: Checks with map[__typename:Other] = [], <nil>, want a plain error
+    forge_test.go:264: Checks with another page = [], want an error
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/forge	7.394s
+FAIL
+
+# interp validate red run against the engine that refused validate (2f5570f + working tree)
+$ go test ./internal/interp/ -run "Validate|DefaultWorkflow"
+    validate_test.go:104: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+    validate_test.go:104: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+--- FAIL: TestValidateWaitsForChecks (0.25s)
+    --- FAIL: TestValidateWaitsForChecks/double (0.05s)
+    --- FAIL: TestValidateWaitsForChecks/store (0.20s)
+    validate_test.go:160: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+    validate_test.go:160: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+--- FAIL: TestValidateFailedLoopsToBuild (0.26s)
+    --- FAIL: TestValidateFailedLoopsToBuild/double (0.05s)
+    --- FAIL: TestValidateFailedLoopsToBuild/store (0.21s)
+    validate_test.go:202: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+    validate_test.go:202: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+--- FAIL: TestValidateLoopExit (0.10s)
+    --- FAIL: TestValidateLoopExit/continue (0.06s)
+    --- FAIL: TestValidateLoopExit/reject (0.04s)
+    validate_test.go:238: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+--- FAIL: TestValidateFailedSameHead (0.04s)
+    validate_test.go:256: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+--- FAIL: TestValidateWithoutLoopRule (0.05s)
+    validate_test.go:299: validate with an unreachable forge = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine, want the forge's error
+--- FAIL: TestValidateRefusals (0.09s)
+    --- PASS: TestValidateRefusals/unpublished_head (0.04s)
+    --- FAIL: TestValidateRefusals/forge (0.05s)
+    validate_test.go:383: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+    validate_test.go:383: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) = interp: app/t7 step validate: not supported by the engine: validate steps run by the engine
+--- FAIL: TestDefaultWorkflowDelivers (0.36s)
+    --- FAIL: TestDefaultWorkflowDelivers/double (0.07s)
+    --- FAIL: TestDefaultWorkflowDelivers/store (0.29s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	1.159s
+FAIL

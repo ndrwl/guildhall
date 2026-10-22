@@ -73,7 +73,7 @@ An attempt whose launcher died is first settled with [`artisan resume`](artisan.
 
 ## Output and exit status
 
-All three print one JSON line, what the task waits for: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`) or, once the merge landed, `{"wait":"done","step":"deliver"}`.
+All three print one JSON line, what the task waits for: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending, which a later `task start` reads again, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
 
 | Exit status | Meaning |
 |---|---|
