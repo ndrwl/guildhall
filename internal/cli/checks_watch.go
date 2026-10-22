@@ -115,8 +115,8 @@ func checksWaiting(path, state string) func() ([]taskRef, error) {
 	}
 }
 
-// watchChecks is session n's checks watcher: every checks_refresh of the session's config, and at least every
-// checksWatchFloor, it advances each task waiting for checks as `task start` does, over the copy's store, config
+// watchChecks is session n's checks watcher: every checks_refresh of the session's config, but never more often
+// than every checksWatchFloor, it advances each task waiting for checks as `task start` does, over the copy's store, config
 // and state, with the advance's output and each failure appended to checks.log in the session directory dir.
 func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
 	every, err := p.cfg.ChecksRefresh()

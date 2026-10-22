@@ -391,7 +391,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
 			case interp.WaitChecks:
 				checks = append(checks, needsMeItem{Kind: checksKind, Repository: t.Repository, TaskID: t.ID, Step: waits.Step,
-					Reason:  fmt.Sprintf("step %s waits for the checks of its published head; the session supervisor reads them again every checks_refresh, at most every 30 seconds, and wakes you when they finish", waits.Step),
+					Reason:  fmt.Sprintf("step %s waits for the checks of its published head; the session supervisor reads them again every checks_refresh, never more often than every 30 seconds, and wakes you when they finish", waits.Step),
 					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
 			}
 		}
