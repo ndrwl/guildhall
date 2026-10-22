@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/launch"
@@ -170,8 +171,9 @@ func (a *App) directorStop(args []string) int {
 	return 1
 }
 
-// stopAttempts stops every attempt in the store with no outcome as `artisan stop` does, reporting each that is not
-// proven stopped on stderr, and reports whether all were.
+// stopAttempts stops every attempt in the store with no outcome, reporting each that is not proven stopped on
+// stderr, and reports whether all were. An attempt with an owner is stopped as `artisan stop` stops it; one nothing
+// owns, a Director stage or an Artisan attempt recorded and not yet launched, is stopped by stopUnowned.
 func (a *App) stopAttempts(path, state string) bool {
 	state, err := filepath.Abs(state)
 	if err != nil {
@@ -190,7 +192,7 @@ func (a *App) stopAttempts(path, state string) bool {
 		}
 		key := artisan.AttemptKey{Repository: at.Repository, TaskID: at.TaskID, Step: at.Step, Attempt: at.Number}
 		ctx, cancel := context.WithTimeout(context.Background(), defaultStopTimeout)
-		_, err := launch.Stop(ctx, launch.Attempt{Store: path, StateDir: state, Key: key})
+		err := stopAttempt(ctx, launch.Attempt{Store: path, StateDir: state, Key: key})
 		cancel()
 		if err != nil {
 			a.notef("guildhall: director stop: attempt %s: %v\n", key, err)
@@ -198,6 +200,63 @@ func (a *App) stopAttempts(path, state string) bool {
 		}
 	}
 	return ok
+}
+
+// stopAttempt stops one attempt for director stop: through its owner when it has an unreleased ownership record,
+// otherwise with stopUnowned, falling back to the owner when one took it meanwhile.
+func stopAttempt(ctx context.Context, at launch.Attempt) error {
+	o, err := withStore(at.Store, true, func(s *store.Store) (*store.Ownership, error) {
+		o, err := s.Ownership(at.Key.Repository, at.Key.TaskID, at.Key.Step, at.Key.Attempt)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+		return &o, err
+	})
+	if err != nil {
+		return err
+	}
+	if o == nil || o.State == store.OwnerReleased {
+		if err := stopUnowned(ctx, at); !errors.Is(err, store.ErrOwned) {
+			return err
+		}
+	}
+	_, err = launch.Stop(ctx, at)
+	return err
+}
+
+// stopUnowned records an attempt nothing owns stopped, under its task's lock: an advance holds that lock from
+// recording an attempt until it has launched it, or handed it to the Director, and step finish holds it to publish
+// a Director stage's result, so neither is part way through. An attempt finished meanwhile, or whose result step
+// finish already published, which its advance takes, is left as it is; one a launcher took meanwhile is refused
+// with store.ErrOwned, for its owner to stop (docs/director.md#stop).
+func stopUnowned(ctx context.Context, at launch.Attempt) error {
+	k := at.Key
+	taskDir := filepath.Join(at.StateDir, k.Repository, k.TaskID)
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		return err
+	}
+	if testHookStopWaitsForTask != nil {
+		testHookStopWaitsForTask()
+	}
+	release, err := artisan.LockAttempt(ctx, taskDir)
+	if err != nil {
+		return fmt.Errorf("lock task %s/%s: %w", k.Repository, k.TaskID, err)
+	}
+	defer release()
+	attempts, err := withStore(at.Store, true, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts(k.Repository, k.TaskID) })
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(attempts, func(a store.StageAttempt) bool { return a.Step == k.Step && a.Number == k.Attempt && a.Outcome != "" }) {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(k.Dir(at.StateDir), artisan.ResultFile)); err == nil {
+		return nil
+	}
+	_, err = withStore(at.Store, false, func(s *store.Store) (store.Receipt, error) {
+		return s.StopUnownedAttempt(fmt.Sprintf("director-stop:%s:%s:%s", k.Repository, k.TaskID, k.AttemptID()), k.Repository, k.TaskID, k.Step, k.Attempt)
+	})
+	return err
 }
 
 // held reports whether the newest Director session holds new attempts: it does while paused or stopping.
@@ -220,3 +279,7 @@ func heldNow(path string) (bool, error) {
 
 // pausedWait is what `task start` and `step retry` print when the Director holds new attempts.
 const pausedWait = `{"wait":"paused"}`
+
+// testHookStopWaitsForTask, when set, is called as director stop starts waiting for a task's lock to stop an attempt
+// nothing owns.
+var testHookStopWaitsForTask func()

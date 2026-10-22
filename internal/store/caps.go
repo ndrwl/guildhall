@@ -22,9 +22,15 @@ const (
 	CapDaily Cap = "daily"
 )
 
+// ErrDirectorHeld reports a start refused, writing nothing, because the newest Director session holds new attempts:
+// it is paused or stopping (AttemptCaps.Hold).
+var ErrDirectorHeld = errors.New("the Director holds new attempts")
+
 // AttemptCaps bounds StartCappedAttempt across the whole store; a zero or negative field is no cap.
+// Hold refuses every new attempt with ErrDirectorHeld while the newest Director session is paused or stopping.
 type AttemptCaps struct {
 	MaxRunning, MaxPerDay int
+	Hold                  bool
 }
 
 // CapRefusal is the error a capped start returns at a cap: Count is what the cap counted, which has reached
@@ -107,17 +113,29 @@ func attemptUsage(tx *bolt.Tx, now time.Time) (AttemptUsage, error) {
 	return u, err
 }
 
-// StartCappedAttempt is StartAttempt refused, writing nothing, with a *CapRefusal when caps.MaxRunning attempts
-// are already running or caps.MaxPerDay were already started today (AttemptUsage). The count and the start are
-// one mutation under the store's single-writer lock, so concurrent starts never exceed a cap. The caps are not
-// part of the request: a replayed mutation id returns its original receipt whatever the caps are now, so an
-// attempt already recorded is never refused. StartAttempt is StartCappedAttempt with no caps.
+// StartCappedAttempt is StartAttempt refused, writing nothing, with ErrDirectorHeld when caps.Hold is set and the
+// newest Director session is paused or stopping, or else with a *CapRefusal when caps.MaxRunning attempts are
+// already running or caps.MaxPerDay were already started today (AttemptUsage). The hold, the count and the start
+// are one mutation under the store's single-writer lock, so concurrent starts never exceed a cap and no start
+// commits after a pause or stop has: a start either commits before the session move, and is seen by whatever reads
+// the store after it, or is refused. The caps are not part of the request: a replayed mutation id returns its
+// original receipt whatever the caps and the session are now, so an attempt already recorded is never refused.
+// StartAttempt is StartCappedAttempt with no caps.
 func (s *Store) StartCappedAttempt(mutationID, repository, taskID, step string, caps AttemptCaps) (Receipt, error) {
 	if err := validateIDs(repository, taskID, step); err != nil {
 		return Receipt{}, err
 	}
 	req := StageAttempt{Repository: repository, TaskID: taskID, Step: step}
 	return s.mutate(mutationID, "start-attempt", req, func(tx *bolt.Tx, r *Receipt) error {
+		if caps.Hold {
+			switch d, err := latestSession(tx); {
+			case errors.Is(err, ErrNotFound):
+			case err != nil:
+				return err
+			case d.State == DirectorPaused || d.State == DirectorStopping:
+				return fmt.Errorf("%w: session %d is %s", ErrDirectorHeld, d.Number, d.State)
+			}
+		}
 		if caps.MaxRunning > 0 || caps.MaxPerDay > 0 {
 			if _, err := openTask(tx, repository, taskID); err != nil {
 				return err

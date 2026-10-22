@@ -206,13 +206,17 @@ type Engine struct {
 	// holds it: the advance records, renders and launches nothing for it and returns WaitPaused for the step, and a
 	// later advance once Hold answers false starts it. An error fails the advance. Results, decisions and messages
 	// are never held, nor is the relaunch of an attempt already recorded. `task start`, `step done` and `step retry`
-	// hold while the Director's session is paused or stopping (docs/director.md#pause-and-resume).
+	// hold while the Director's session is paused or stopping (docs/director.md#pause-and-resume). Hold is an early
+	// read that spares a held advance its preparation; the hold that decides is Caps.Hold, read in the start's own
+	// record, so a pause or stop that commits after Hold answered still holds the attempt.
 	Hold func() (bool, error)
 	// Caps are the attempt caps every new attempt starts under (Records.StartCappedAttempt); zero fields are no cap.
 	// An advance whose next attempt is refused at a cap records and launches nothing, sends the Director one
 	// BudgetRefused message per task and UTC day, and returns an error wrapping store.ErrAttemptCap that names the
 	// guard rail's setting; advancing the task again once capacity returns starts it (docs/director.md#guard-rails).
-	// `task start`, `step done` and `step retry` set them from the config's guard rails.
+	// `task start`, `step done` and `step retry` set them from the config's guard rails. With Caps.Hold, a start the
+	// records refuse with store.ErrDirectorHeld records and launches nothing and the advance waits paused, as Hold
+	// holds it; those commands set it with Hold.
 	Caps store.AttemptCaps
 }
 
@@ -565,6 +569,9 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	}
 	inputs = r.boundInputs(b)
 	rc, err := r.e.Records.StartCappedAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID, r.e.Caps)
+	if errors.Is(err, store.ErrDirectorHeld) {
+		return Next{Wait: WaitPaused, Step: s.ID}, nil
+	}
 	if refusal, ok := errors.AsType[*store.CapRefusal](err); ok {
 		return Next{}, r.budgetRefused(s, n, refusal, err)
 	}

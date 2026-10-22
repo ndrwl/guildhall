@@ -78,3 +78,41 @@ func TestHoldErrorFailsTheAdvance(t *testing.T) {
 		t.Fatalf("attempts = %+v", got)
 	}
 }
+
+// pauseBeforeStart is Records with the Director paused just before each capped start reaches the records, after
+// the advance's own Hold read: the interleaving of a pause committing between that read and the start.
+type pauseBeforeStart struct {
+	interp.Records
+	pause func() error
+}
+
+func (p pauseBeforeStart) StartCappedAttempt(m, repo, task, step string, caps store.AttemptCaps) (store.Receipt, error) {
+	if err := p.pause(); err != nil {
+		return store.Receipt{}, err
+	}
+	return p.Records.StartCappedAttempt(m, repo, task, step, caps)
+}
+
+// TestPauseBetweenHoldAndStartHoldsTheAttempt pauses the Director after the advance read Hold as not held and before
+// its start reaches the records: the start's own hold (Caps.Hold) refuses it, so the advance records and launches
+// nothing and waits paused (docs/director.md#pause-and-resume).
+func TestPauseBetweenHoldAndStartHoldsTheAttempt(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e := newEnv(t, b)
+			e.eng.Hold = func() (bool, error) { return false, nil }
+			e.eng.Caps.Hold = true
+			e.eng.Records = pauseBeforeStart{e.eng.Records, e.h.PauseDirector}
+			next := e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			if want := (interp.Next{Wait: interp.WaitPaused, Step: "plan"}); next != want {
+				t.Errorf("advance paused at the start = %+v, want %+v", next, want)
+			}
+			if got := e.attempts(t); len(got) != 0 {
+				t.Errorf("an attempt was recorded after the pause: %+v", got)
+			}
+			if got := e.script.Launched(); len(got) != 0 {
+				t.Errorf("an attempt was launched after the pause: %+v", got)
+			}
+		})
+	}
+}

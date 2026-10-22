@@ -363,7 +363,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Base:    func(string) (string, error) { return git.Program{}.Base(ctx, r.Path, interp.TaskBranch(ev.Task)) },
 		Rebases: git.Program{},
 		Hold:    func() (bool, error) { return withStore(f.store, true, held) },
-		Caps:    store.AttemptCaps{MaxRunning: rails.MaxRunningAttempts, MaxPerDay: rails.MaxAttemptsPerDay},
+		Caps:    store.AttemptCaps{MaxRunning: rails.MaxRunningAttempts, MaxPerDay: rails.MaxAttemptsPerDay, Hold: true},
 	}
 	n, err := e.Advance(ctx, ev)
 	if err != nil {

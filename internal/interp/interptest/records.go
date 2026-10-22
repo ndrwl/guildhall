@@ -31,6 +31,8 @@ type Records struct {
 	decisions []store.Decision
 	rulings   []store.Ruling
 	full      []store.FullReview
+	// held is the Director's hold PauseDirector sets.
+	held bool
 }
 
 type receipt struct {
@@ -286,10 +288,42 @@ func (r *Records) startAttempt(rc *store.Receipt, repository, taskID, step strin
 	return nil
 }
 
+// PauseDirector holds new attempts as a paused Director session does: a later StartCappedAttempt with
+// AttemptCaps.Hold is refused with store.ErrDirectorHeld.
+func (r *Records) PauseDirector() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.held = true
+	return nil
+}
+
+// PauseStoreDirector records a paused Director session in s, a new session after the newest, as
+// RecordsHarness.PauseDirector does for a store.
+func PauseStoreDirector(s *store.Store) error {
+	n := 1
+	if d, err := s.LatestDirectorSession(); err == nil {
+		n = d.Number + 1
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	rc, err := s.StartDirectorSession(store.DirectorSession{Number: n, State: store.DirectorRecovering,
+		Identity: store.ProcessIdentity{PID: 1, Token: "interptest"}, Release: "interptest", ConfigDigest: "sha256:" + strings.Repeat("c", 64)})
+	if err == nil {
+		rc, err = s.SetDirectorState(n, store.DirectorRunning, rc.Sequence)
+	}
+	if err == nil {
+		_, err = s.SetDirectorState(n, store.DirectorPaused, rc.Sequence)
+	}
+	return err
+}
+
 // StartCappedAttempt implements interp.Records, counting the day by Now.
 func (r *Records) StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error) {
 	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
 	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error {
+		if caps.Hold && r.held {
+			return fmt.Errorf("%w: the double is paused", store.ErrDirectorHeld)
+		}
 		if _, ok := r.tasks[[2]string{repository, taskID}]; ok && (caps.MaxRunning > 0 || caps.MaxPerDay > 0) {
 			y, m, d := r.now().Date()
 			day := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
@@ -427,6 +461,8 @@ type RecordsHarness struct {
 	AnswerDecision    func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
 	RuleFinding       func(mutationID string, r store.Ruling) (store.Receipt, error)
 	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
+	// PauseDirector pauses the Director, so a start with AttemptCaps.Hold is refused with store.ErrDirectorHeld.
+	PauseDirector func() error
 	// Writers and Operations size the concurrent case, defaulting to 4 writers of 30 operations each;
 	// an implementation that opens the store per operation across processes sets the writers production has.
 	Writers, Operations int
@@ -436,7 +472,7 @@ type RecordsHarness struct {
 func NewRecordsHarness(*testing.T) RecordsHarness {
 	r := NewRecords()
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview}
+		RequestFullReview: r.RequestFullReview, PauseDirector: r.PauseDirector}
 }
 
 // RunRecordsContract runs the interp.Records contract against fresh harnesses from newHarness.
@@ -586,6 +622,28 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		refusal, ok = errors.AsType[*store.CapRefusal](err)
 		if time.Now().UTC().Truncate(24*time.Hour).Equal(day) && (!ok || refusal.Cap != store.CapDaily || refusal.Count != 3 || refusal.Limit != 3) {
 			t.Fatalf("start past the daily cap = %v, want a daily cap refusal at 3 of 3", err)
+		}
+	})
+
+	t.Run("holds a start while the Director is paused", func(t *testing.T) {
+		h := setup(t)
+		hold := store.AttemptCaps{Hold: true}
+		if _, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", hold); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.PauseDirector(); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", hold)
+		want(t, "start while paused", err, store.ErrDirectorHeld)
+		if got, _ := h.Records.Attempts("app", "t7"); len(got) != 1 {
+			t.Fatalf("a held start recorded an attempt: %+v", got)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", hold); err != nil || r.Attempt != 1 {
+			t.Errorf("replayed start while paused = %+v, %v; want its receipt", r, err)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", store.AttemptCaps{}); err != nil || r.Attempt != 1 {
+			t.Errorf("start without Hold while paused = %+v, %v; want it admitted", r, err)
 		}
 	})
 
