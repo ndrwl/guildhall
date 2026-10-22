@@ -27,7 +27,8 @@ type taskRef struct{ repo, task string }
 // reporting each failure with report; the advance itself sends the Director what changed, and its messages wake
 // the Director only for what is new. tick starts a round when none is running and every has passed since the last
 // round ended, by now, so each read a round makes is at least every old by the next and the checks are read once
-// per every, the config's checks_refresh; the first tick starts one at once. A failed advance is tried again in the next round. wait waits for a running round to end.
+// per every, the config's checks_refresh; the first tick starts one at once. A failed advance is tried again in
+// the next round. wait waits for a running round to end.
 type checksWatch struct {
 	every   time.Duration
 	waiting func() ([]taskRef, error)
