@@ -1,0 +1,643 @@
+package main
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/git/gittest"
+	"github.com/ndrwl/guildhall/internal/store"
+)
+
+// The Director safety checks (docs/director.md#safety-checks) drive the built binary through `director start
+// --foreground` with a stand-in runtime playing the Director from its role prompt's script: the fake Director and
+// the Claude stub, this test binary on PATH as claude, play the same script, so every check runs on both. They
+// make no model calls. Each check waits on events with ceilings sized for a slow runner and launches few
+// processes: one build of the binary serves them all.
+
+// ceiling bounds every wait for something the binary does.
+const ceiling = 3 * time.Minute
+
+// safetyRuntimes are the session runtimes every check runs on.
+var safetyRuntimes = []string{"fake", "claude"}
+
+var (
+	toolsOnce sync.Once
+	toolsDir  string
+	toolsErr  error
+)
+
+func TestMain(m *testing.M) {
+	claudetest.RunIfStub()
+	code := m.Run()
+	if toolsDir != "" {
+		_ = os.RemoveAll(toolsDir)
+	}
+	os.Exit(code)
+}
+
+// sessionPath is a PATH holding the built binary as guildhall and this test binary as claude, the stub, ahead of
+// the inherited PATH; the binary is built once for every check.
+func sessionPath(t *testing.T) string {
+	t.Helper()
+	toolsOnce.Do(func() {
+		gobin, err := exec.LookPath("go")
+		if err != nil {
+			toolsErr = err
+			return
+		}
+		if toolsDir, toolsErr = os.MkdirTemp("", "gt"); toolsErr != nil {
+			return
+		}
+		exe := ""
+		if runtime.GOOS == "windows" {
+			exe = ".exe"
+		}
+		if out, err := exec.Command(gobin, "build", "-o", filepath.Join(toolsDir, "guildhall"+exe), ".").CombinedOutput(); err != nil {
+			toolsErr = fmt.Errorf("go build: %w\n%s", err, out)
+			return
+		}
+		self, err := os.Executable()
+		if err != nil {
+			toolsErr = err
+			return
+		}
+		stub := filepath.Join(toolsDir, claude.Program+exe)
+		if err := os.Link(self, stub); err != nil {
+			b, rerr := os.ReadFile(self)
+			if rerr != nil {
+				toolsErr = rerr
+				return
+			}
+			toolsErr = os.WriteFile(stub, b, 0o755)
+		}
+	})
+	if toolsErr != nil {
+		t.Fatal(toolsErr)
+	}
+	return toolsDir + string(os.PathListSeparator) + os.Getenv("PATH")
+}
+
+// safetyCopy is one check's Director copy: internal/cli/testdata/run pointed at a real repository and remote,
+// local settings added under [local], an empty store, and the plan and build stages' fake Artisans recording
+// their processes in the copy's inventory directory, with plan's extra directives.
+type safetyCopy struct {
+	t                *testing.T
+	dir, path, turns string
+	inventory        string
+}
+
+func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
+	t.Helper()
+	path := sessionPath(t)
+	// Short, for the launchers' endpoint sockets under state/.
+	dir, err := os.MkdirTemp("", "gs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "internal", "cli", "testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	repository, remote, _ := gittest.Repository(t)
+	c := &safetyCopy{t: t, dir: dir, path: path, turns: filepath.Join(dir, "turns.log"), inventory: filepath.Join(dir, "inventory")}
+	c.edit("config.toml", func(b string) string {
+		b = strings.Replace(b, `path = "/srv/app"`, "path = '"+repository+"'", 1)
+		b = strings.Replace(b, `remote = "git@github.com:example/app.git"`, "remote = '"+remote+"'", 1)
+		return strings.Replace(b, "[local]\n", "[local]\n"+local, 1)
+	})
+	c.setPlan(plan)
+	c.edit(filepath.Join("baseline", "stages", "build.md"), func(b string) string {
+		return b + "guildhall-fake: inventory=" + c.inventory + "\n"
+	})
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if live, turns := c.liveProcesses(), c.turnLines(); len(live) != 0 || len(turns) != 0 {
+		t.Fatalf("before the check: owned processes %v, stand-in turns %q", live, turns)
+	}
+	t.Log("stand-in turns 0, owned processes 0")
+	return c
+}
+
+func (c *safetyCopy) edit(name string, fn func(string) string) {
+	c.t.Helper()
+	p := filepath.Join(c.dir, name)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(fn(string(b))), 0o600); err != nil {
+		c.t.Fatal(err)
+	}
+}
+
+// setPlan makes the plan stage's prompt the shipped one with the inventory directive and the directives in extra.
+func (c *safetyCopy) setPlan(extra string) {
+	c.t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "cli", "testdata", "run", "baseline", "stages", "plan.md"))
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(c.dir, "baseline", "stages", "plan.md"), append(b, "guildhall-fake: inventory="+c.inventory+"\n"+extra...), 0o600); err != nil {
+		c.t.Fatal(err)
+	}
+}
+
+// script makes the copy's Director role prompt play steps on both stand-ins.
+func (c *safetyCopy) script(steps ...string) {
+	c.t.Helper()
+	var b strings.Builder
+	b.WriteString("# Director\n\n")
+	for _, prefix := range []string{fake.SessionDirective, claudetest.Directive} {
+		for _, s := range steps {
+			b.WriteString(prefix + " " + s + "\n")
+		}
+	}
+	p := filepath.Join(c.dir, "baseline", "roles", "director.md")
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		c.t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(b.String()), 0o600); err != nil {
+		c.t.Fatal(err)
+	}
+}
+
+func (c *safetyCopy) command(stdin io.Reader, args ...string) *exec.Cmd {
+	cmd := exec.Command(filepath.Join(strings.SplitN(c.path, string(os.PathListSeparator), 2)[0], "guildhall"), args...)
+	cmd.Env = append(os.Environ(), "PATH="+c.path, fake.TurnLogEnv+"="+c.turns)
+	cmd.Stdin = stdin
+	return cmd
+}
+
+// guildhall runs the binary as the Guildmaster would, in the copy, and fails the check unless it exits 0.
+func (c *safetyCopy) guildhall(stdin string, args ...string) string {
+	c.t.Helper()
+	cmd := c.command(strings.NewReader(stdin), args...)
+	cmd.Env = append(cmd.Env, "GUILDHALL_COPY="+c.dir)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		c.t.Fatalf("guildhall %s: %v\nstdout %s\nstderr %s", strings.Join(args, " "), err, stdout.String(), stderr.String())
+	}
+	return stdout.String()
+}
+
+// approve approves the copy's workflow for app, which has no validate step and so is below the review floor.
+func (c *safetyCopy) approve() {
+	c.t.Helper()
+	c.guildhall("Approved for the safety checks.\n", "workflow", "approve", "--repo", "app", "--words-file", "-")
+}
+
+// session is one `director start <runtime> --foreground` of the copy: the test holds its standard input open, as
+// a terminal does, and collects its output.
+type session struct {
+	c      *safetyCopy
+	cmd    *exec.Cmd
+	stdin  *os.File
+	done   chan struct{}
+	err    error
+	mu     sync.Mutex
+	output bytes.Buffer
+}
+
+func (s *session) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.output.Write(p)
+}
+
+func (s *session) text() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.output.String()
+}
+
+func (c *safetyCopy) start(rt string) *session {
+	c.t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	s := &session{c: c, stdin: w, done: make(chan struct{})}
+	s.cmd = c.command(r, "director", "start", rt, "--foreground", "--copy", c.dir)
+	s.cmd.Stdout, s.cmd.Stderr = s, s
+	if err := s.cmd.Start(); err != nil {
+		c.t.Fatal(err)
+	}
+	_ = r.Close()
+	go func() {
+		s.err = s.cmd.Wait()
+		close(s.done)
+	}()
+	c.t.Cleanup(func() {
+		_ = s.stdin.Close()
+		select {
+		case <-s.done:
+		case <-time.After(ceiling):
+			_ = s.cmd.Process.Kill()
+			c.t.Errorf("director start did not end:\n%s", s.text())
+		}
+	})
+	return s
+}
+
+// end closes the session's input and waits for the supervisor to exit, returning its exit status.
+func (s *session) end() int {
+	s.c.t.Helper()
+	_ = s.stdin.Close()
+	select {
+	case <-s.done:
+	case <-time.After(ceiling):
+		s.c.t.Fatalf("director start did not end:\n%s", s.text())
+	}
+	s.c.t.Logf("session output:\n%s", s.text())
+	return s.cmd.ProcessState.ExitCode()
+}
+
+// turnLines are the turns the stand-in runtimes recorded in the copy, one "<pid> <kind>" line each.
+func (c *safetyCopy) turnLines() []string {
+	c.t.Helper()
+	b, err := os.ReadFile(c.turns)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSpace(string(b)), "\n")
+}
+
+// waitFor polls cond until it holds, failing the check with what after the ceiling.
+func (c *safetyCopy) waitFor(what string, cond func() bool) {
+	c.t.Helper()
+	for end := time.Now().Add(ceiling); !cond(); time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(end) {
+			c.t.Fatalf("%s: not within %s", what, ceiling)
+		}
+	}
+}
+
+// read runs fn over the copy's store opened read-only, retrying while a writer holds it.
+func read[T any](c *safetyCopy, fn func(*store.Store) (T, error)) T {
+	c.t.Helper()
+	var last error
+	for end := time.Now().Add(ceiling); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		s, err := store.Open(filepath.Join(c.dir, "director.store"), store.Options{ReadOnly: true})
+		if err != nil {
+			last = err
+			continue
+		}
+		v, err := fn(s)
+		_ = s.Close()
+		if err == nil {
+			return v
+		}
+		last = err
+		if !errors.Is(err, store.ErrNotFound) {
+			break
+		}
+	}
+	c.t.Fatalf("read the store: %v", last)
+	var zero T
+	return zero
+}
+
+// has reports whether fn finds its record, an absent one being ErrNotFound.
+func has(c *safetyCopy, fn func(*store.Store) error) bool {
+	c.t.Helper()
+	return read(c, func(s *store.Store) (bool, error) {
+		err := fn(s)
+		if errors.Is(err, store.ErrNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	})
+}
+
+func (c *safetyCopy) hasTask(id string) bool {
+	return has(c, func(s *store.Store) error { _, err := s.Task("app", id); return err })
+}
+
+func (c *safetyCopy) hasDecision(id string) bool {
+	return read(c, func(s *store.Store) (bool, error) {
+		ds, err := s.Decisions("app", "t-1")
+		return slices.ContainsFunc(ds, func(d store.Decision) bool { return d.ID == id }), err
+	})
+}
+
+func (c *safetyCopy) attempts(task string) []store.StageAttempt {
+	return read(c, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts("app", task) })
+}
+
+func (c *safetyCopy) inbox() []store.Message {
+	return read(c, func(s *store.Store) ([]store.Message, error) {
+		m, _, err := s.Inbox(store.Recipient{Role: store.RecipientDirector}, 0, 100)
+		return m, err
+	})
+}
+
+func (c *safetyCopy) latestSession() store.DirectorSession {
+	return read(c, func(s *store.Store) (store.DirectorSession, error) { return s.LatestDirectorSession() })
+}
+
+// liveProcesses are the inventory's fake Artisan processes still alive.
+func (c *safetyCopy) liveProcesses() []artisan.ProcessRecord {
+	c.t.Helper()
+	entries, err := artisantest.Inventory(c.inventory)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	var live []artisan.ProcessRecord
+	for _, e := range entries {
+		if lv, _ := artisan.Probe(e.Identity); lv == artisan.Alive {
+			live = append(live, e)
+		}
+	}
+	return live
+}
+
+// stopAttempt stops attempt n of task's step and proves its launcher gone, as a launcher that has just recorded
+// its outcome may still be exiting.
+func (c *safetyCopy) stopAttempt(task, step string, n int) {
+	c.t.Helper()
+	c.waitFor("artisan stop "+task+" "+step, func() bool {
+		cmd := c.command(nil, "artisan", "stop", "--copy", c.dir, "--repo", "app", "--task", task, "--step", step, "--attempt", strconv.Itoa(n))
+		return cmd.Run() == nil
+	})
+}
+
+// finish proves no fake Artisan process outlives the check and records the counts the check ends with.
+func (c *safetyCopy) finish(wantTurns int) {
+	c.t.Helper()
+	c.waitFor("every owned process gone", func() bool { return len(c.liveProcesses()) == 0 })
+	entries, _ := artisantest.Inventory(c.inventory)
+	turns := c.turnLines()
+	c.t.Logf("stand-in turns %d, owned processes recorded %d, alive 0", len(turns), len(entries))
+	if len(turns) != wantTurns {
+		c.t.Errorf("the stand-in took %d turns %q, want %d", len(turns), turns, wantTurns)
+	}
+}
+
+// eachRuntime runs check on every session runtime, side by side.
+func eachRuntime(t *testing.T, check func(t *testing.T, rt string)) {
+	t.Parallel()
+	for _, rt := range safetyRuntimes {
+		t.Run(rt, func(t *testing.T) {
+			t.Parallel()
+			check(t, rt)
+		})
+	}
+}
+
+// TestSafetyApproval: the scripted Director's task new on a workflow below the review floor is refused, then it
+// approves the workflow with words and the same task new succeeds.
+func TestSafetyApproval(t *testing.T) {
+	eachRuntime(t, func(t *testing.T, rt string) {
+		c := newSafetyCopy(t, "", "")
+		words := filepath.Join(c.dir, "words.md")
+		if err := os.WriteFile(words, []byte("Approved: the fake stages are what this check runs.\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c.script(
+			"guildhall director ready",
+			"guildhall task new --repo app --title Sort t-1",
+			"guildhall workflow approve --repo app --words-file "+words,
+			"guildhall task new --repo app --title Sort t-1",
+			"/exit")
+		s := c.start(rt)
+		if code := s.end(); code != 0 {
+			t.Fatalf("director start exited %d", code)
+		}
+		out := s.text()
+		if n := strings.Count(out, "session script: guildhall task new"); n != 1 || !strings.Contains(out, "below the review floor") {
+			t.Errorf("want one refused task new naming the review floor, got %d refusals:\n%s", n, out)
+		}
+		if !c.hasTask("t-1") {
+			t.Error("the approved task new recorded no task")
+		}
+		c.finish(1)
+	})
+}
+
+// TestSafetyGuardRails: with max_running_attempts 1, the scripted Director's task new for an unlisted repository
+// is refused, its second task's start is refused while the first runs and admitted once that attempt is stopped.
+func TestSafetyGuardRails(t *testing.T) {
+	eachRuntime(t, func(t *testing.T, rt string) {
+		c := newSafetyCopy(t, "max_running_attempts = \"1\"\n", "guildhall-fake: result=never\nguildhall-fake: lifetime=5m\n")
+		c.approve()
+		c.script(
+			"guildhall director ready",
+			"guildhall task new --repo other --title Elsewhere t-9",
+			"guildhall task new --repo app --title One t-1",
+			"guildhall task new --repo app --title Two t-2",
+			"guildhall task start --repo app t-1",
+			"guildhall task start --repo app t-2",
+			"guildhall artisan stop --repo app --task t-1 --step plan --attempt 1",
+			"guildhall task start --repo app t-2",
+			"/exit")
+		s := c.start(rt)
+		code := s.end()
+		c.stopAttempt("t-1", "plan", 1)
+		if len(c.attempts("t-2")) > 0 {
+			c.stopAttempt("t-2", "plan", 1)
+		}
+		if code != 0 {
+			t.Fatalf("director start exited %d", code)
+		}
+		out := s.text()
+		if !strings.Contains(out, `guard rail repositories: the config does not list repository "other"`) {
+			t.Errorf("the unlisted repository was not refused by its guard rail:\n%s", out)
+		}
+		if n := strings.Count(out, "guard rail max_running_attempts"); n != 1 {
+			t.Errorf("the running cap refused %d launches, want 1:\n%s", n, out)
+		}
+		if has(c, func(s *store.Store) error { _, err := s.Task("other", "t-9"); return err }) {
+			t.Error("the unlisted repository's task was recorded")
+		}
+		if got := c.attempts("t-2"); len(got) != 1 || got[0].Step != "plan" {
+			t.Errorf("t-2 attempts %+v, want plan admitted once t-1's attempt stopped", got)
+		}
+		if !slices.ContainsFunc(c.inbox(), func(m store.Message) bool { return m.Type == "budget-refused" && m.TaskID == "t-2" }) {
+			t.Error("the Director was not told of the refused launch")
+		}
+		c.finish(1)
+	})
+}
+
+// TestSafetyCrashRecovery: task t-1's plan attempt is running when the Director's runtime is killed and then its
+// launcher; with a Guildmaster note unread, director start again renders a startup.md listing the attempt to
+// resume and the note, refuses task new until the scripted Director runs ready, and the Director resumes and
+// retries the attempt, which the launcher's watcher takes on to the next decision.
+func TestSafetyCrashRecovery(t *testing.T) {
+	eachRuntime(t, func(t *testing.T, rt string) {
+		c := newSafetyCopy(t, "", "guildhall-fake: result=never\nguildhall-fake: lifetime=5m\n")
+		c.approve()
+		c.guildhall("", "task", "new", "--repo", "app", "--title", "Sort", "t-1")
+		c.script("guildhall director ready", "guildhall task start --repo app t-1")
+		first := c.start(rt)
+		var launcher store.ProcessIdentity
+		c.waitFor("plan attempt 1 running", func() bool {
+			own := read(c, func(s *store.Store) (store.Ownership, error) {
+				own, err := s.Ownership("app", "t-1", "plan", 1)
+				if errors.Is(err, store.ErrNotFound) {
+					return own, nil
+				}
+				return own, err
+			})
+			launcher = own.LauncherIdentity
+			return own.State == store.OwnerRunning
+		})
+		// The crash: the runtime first, then the attempt's launcher.
+		turns := c.turnLines()
+		if len(turns) != 1 {
+			t.Fatalf("turns before the crash %q, want the first message's", turns)
+		}
+		pid, _, _ := strings.Cut(turns[0], " ")
+		kill(t, pid)
+		if code := first.end(); code == 0 {
+			t.Error("director start exited 0 after its runtime was killed")
+		}
+		if d := c.latestSession(); d.Number != 1 || d.State != store.DirectorStopped {
+			t.Errorf("session after the crash %+v, want 1 stopped", d)
+		}
+		kill(t, strconv.Itoa(launcher.PID))
+		c.waitFor("the launcher gone", func() bool {
+			lv, _ := artisan.Probe(artisan.Identity(launcher))
+			return lv != artisan.Alive
+		})
+		c.guildhall(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Check on t-1."}`,
+			"messages", "send", "director", "-")
+
+		c.setPlan("")
+		c.script(
+			"guildhall task new --repo app --title Early t-early",
+			"guildhall director ready",
+			"guildhall artisan resume --repo app --task t-1 --step plan --attempt 1",
+			"guildhall step retry --repo app --task t-1 --step plan --attempt 1 --reason relaunch-after-the-crash",
+			"guildhall task new --repo app --title Late t-late",
+			"/exit")
+		second := c.start(rt)
+		if code := second.end(); code != 0 {
+			t.Fatalf("second director start exited %d", code)
+		}
+		startup, err := os.ReadFile(filepath.Join(c.dir, "director", "session-2", "startup.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"run `guildhall artisan resume --repo app --task t-1 --step plan --attempt 1`", "1 unread Director message"} {
+			if !strings.Contains(string(startup), want) {
+				t.Errorf("startup.md does not name %q:\n%s", want, startup)
+			}
+		}
+		if c.hasTask("t-early") || !c.hasTask("t-late") {
+			t.Errorf("task new before ready recorded %v, after ready %v; want refused, then admitted", c.hasTask("t-early"), c.hasTask("t-late"))
+		}
+		c.waitFor("decision accept-1 opened by the watcher", func() bool {
+			return c.hasDecision("accept-1")
+		})
+		var got []string
+		for _, a := range c.attempts("t-1") {
+			got = append(got, fmt.Sprintf("%s-%d %s", a.Step, a.Number, a.Outcome))
+		}
+		if want := []string{"plan-1 failed", "plan-2 succeeded"}; !slices.Equal(got, want) {
+			t.Errorf("t-1 attempts %q, want %q", got, want)
+		}
+		c.stopAttempt("t-1", "plan", 2)
+		c.finish(2)
+	})
+}
+
+// TestSafetyZeroIdleTurns: with one open decision and nothing else, a ready Director takes no turn and is sent no
+// wake over a 30 s hold; a Guildmaster note then records exactly one wake, which a foreground session with no pane
+// queues (docs/director.md#safety-checks).
+func TestSafetyZeroIdleTurns(t *testing.T) {
+	eachRuntime(t, func(t *testing.T, rt string) {
+		c := newSafetyCopy(t, "", "")
+		c.approve()
+		c.guildhall("", "task", "new", "--repo", "app", "--title", "Sort", "t-1")
+		c.guildhall("", "task", "start", "--repo", "app", "t-1")
+		c.waitFor("decision accept-1 opened by the watcher", func() bool {
+			return c.hasDecision("accept-1")
+		})
+		c.stopAttempt("t-1", "plan", 1)
+		for _, m := range c.inbox() {
+			c.guildhall("", "messages", "ack", "director", m.ID)
+		}
+		c.script("guildhall director ready")
+		s := c.start(rt)
+		c.waitFor("the session ready", func() bool { return c.latestSession().State == store.DirectorRunning })
+		wakes := func() []store.Wake {
+			return read(c, func(s *store.Store) ([]store.Wake, error) {
+				w, _, err := s.Wakes(0, store.MaxInboxLimit)
+				return w, err
+			})
+		}
+		before := wakes()
+
+		time.Sleep(30 * time.Second)
+		if got := c.turnLines(); len(got) != 1 {
+			t.Errorf("turns over the idle hold %q, want only the first message's", got)
+		}
+		if got := wakes(); len(got) != len(before) {
+			t.Errorf("wakes over the idle hold %+v, want none", got[len(before):])
+		}
+
+		c.guildhall(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Take t-2 next."}`,
+			"messages", "send", "director", "-")
+		var got []store.Wake
+		for _, w := range wakes() {
+			if w.MessageID == "n-1" {
+				got = append(got, w)
+			}
+		}
+		// A foreground session binds no pane yet, so the one wake is recorded queued and types nothing; the note
+		// waits for the Director's next turn.
+		if len(got) != 1 || got[0].Decision != store.WakeQueued || got[0].Reason != "no pane" {
+			t.Errorf("wakes for the note %+v, want exactly one, queued for no pane", got)
+		}
+		if got := c.turnLines(); len(got) != 1 {
+			t.Errorf("turns after the note %q, want only the first message's", got)
+		}
+		if code := s.end(); code != 0 {
+			t.Fatalf("director start exited %d", code)
+		}
+		c.finish(1)
+	})
+}
+
+// kill kills the process pid outright.
+func kill(t *testing.T, pid string) {
+	t.Helper()
+	n, err := strconv.Atoi(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := os.FindProcess(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+}

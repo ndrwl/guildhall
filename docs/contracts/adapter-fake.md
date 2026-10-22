@@ -7,6 +7,7 @@ The test-only fake runtime: no optional capabilities, bounded prompt directives 
 
 The fake Director session: `Adapter.Session` is `guildhall fake-director --role <role> <first message>` in the session directory with the session environment, needing no program on `PATH`, skills under `skills` and no session files; `DirectorMain` plays the role prompt's `fake-director:` lines with `RunScript`.
 `RunScript` is the scripted session both session doubles share: `guildhall <args>` runs guildhall from `PATH` and goes on past a failure, `/exit` ends with 0 and `exit <n>` with n; an unknown step is exit 2 before anything runs; with no ending step it reads its input until a `/exit` line or the end.
+With `TurnLogEnv` naming a file, it appends one line to it per turn, `<pid> start` for its first message and `<pid> input` for each non-blank line typed to it but the ending `/exit`, the count a test reads as the session's model calls.
 
 ## Tests
 
@@ -15,4 +16,5 @@ The fake Director session: `Adapter.Session` is `guildhall fake-director --role 
 Seven refused prompts in the validation test pass against the old fake as well, which refused every unknown key.
 `TestStopContractFakeArtisan` in `internal/launch` runs the stop contract with the fake as the worker.
 `director_test.go` runs `adaptertest.RunSessionContract` against the fake Director as a real child process and pins its command and `RunScript`'s refusals; the fake Director was written before these tests, which passed on first run.
+`TestRunScriptCountsTurns` was written red first ([red run](../evidence/director-safety-checks-2026-10-22.txt)) with `TurnLogEnv` declared and no turn recorded: the start and the typed line are recorded with the process ID, a blank line and the ending `/exit` are not, and without the variable nothing is.
 `TestRunOutputDirective` was written red first (the directive was unknown): the `output` directive writes its file before the result and lists it, and paths that are absolute, escaping, empty, backslashed or without text are refused before anything is written.

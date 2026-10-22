@@ -127,6 +127,22 @@ It also sends the Director a `budget-refused` message, once per task and UTC day
 The count and the start are one store write, so two advances never both take the last place, and an attempt already recorded is always launched again after a crash.
 Nothing starts the refused attempt by itself: once an attempt finishes or the day turns, the Director runs `guildhall task start` for the task again, or `step retry` again for a refused retry.
 
+## Safety checks
+
+Four checks in `cmd/guildhall` drive the built binary through `director start --foreground` with a stand-in runtime playing the Director from its role prompt's script, on every CI runner and with no model calls ([decision](decisions/director-safety-checks.md)).
+The fake Director and the Claude stub play the same script, so each check runs on both.
+Each check counts the stand-in's turns, one for its first message and one for each line typed to it, and the fake Artisans' recorded processes, before and after, and ends only when every one of those processes is gone.
+
+- Approval: the Director's `task new` on a workflow below the review floor is refused; it approves the workflow with words, and the same `task new` succeeds.
+- Guard rails: with `max_running_attempts = "1"`, a `task new` for an unlisted repository is refused, a second task's start is refused while the first runs, the Director is told once with `budget-refused`, and the start is admitted once the first attempt is stopped.
+- Crash recovery: with a task's attempt running, the Director's runtime is killed, then the attempt's launcher, and the Guildmaster sends a note.
+  `director start` again renders a `startup.md` that names the attempt to resume and the unread message, `task new` is refused until the Director runs `director ready`, and the Director resumes and retries the attempt, which the launcher's watcher takes on to the next decision.
+- Zero idle turns: with one open decision and nothing else, a ready Director takes no turn and is sent no wake over a 30 s hold.
+  A Guildmaster note then records exactly one wake.
+  A foreground session binds no pane, so that wake is queued and types nothing; the check that the wake types one line, which the runtime takes as one turn, comes with the Director's Herdr tab.
+
+A managed copy's guard rails, a Director-edited `managed.toml` refused with an alert, are checked when managed mode lands.
+
 ## Status
 
 ```sh

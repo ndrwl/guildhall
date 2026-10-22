@@ -20,6 +20,10 @@ const DirectorSubcommand = "fake-director"
 // SessionDirective starts a role prompt line that scripts the fake Director session.
 const SessionDirective = "fake-director:"
 
+// TurnLogEnv names a file a scripted session appends one line to for each turn it takes, the count a test reads
+// as the session's model calls (RunScript).
+const TurnLogEnv = "GUILDHALL_SESSION_TURNS"
+
 // SkillsDir is where a fake Director session's skills are rendered, relative to the session directory.
 func (Adapter) SkillsDir() string { return "skills" }
 
@@ -69,12 +73,31 @@ func DirectorMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 //
 // Any other step is refused with status 2 before anything runs. With no ending step the session then reads
 // stdin, a typed /exit line or the end of input ending it with status 0.
+//
+// With TurnLogEnv naming a file, the session appends "<pid> start" to it before its first step, the turn its
+// first message starts, and "<pid> input" for each non-blank line it reads but the ending /exit, as a runtime
+// takes a model turn for each line typed to it.
 func RunScript(prefix, text string, stdin io.Reader, stdout, stderr io.Writer) int {
 	steps, err := parseScript(prefix, text)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "session script: %v\n", err)
 		return 2
 	}
+	turn := func(kind string) {
+		log := os.Getenv(TurnLogEnv)
+		if log == "" {
+			return
+		}
+		f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, err = fmt.Fprintf(f, "%d %s\n", os.Getpid(), kind)
+			err = errors.Join(err, f.Close())
+		}
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "session script: turn log: %v\n", err)
+		}
+	}
+	turn("start")
 	for _, s := range steps {
 		switch s[0] {
 		case "/exit":
@@ -99,8 +122,12 @@ func RunScript(prefix, text string, stdin io.Reader, stdout, stderr io.Writer) i
 	}
 	sc := bufio.NewScanner(stdin)
 	for sc.Scan() {
-		if strings.TrimSpace(sc.Text()) == "/exit" {
-			break
+		switch strings.TrimSpace(sc.Text()) {
+		case "/exit":
+			return 0
+		case "":
+		default:
+			turn("input")
 		}
 	}
 	return 0

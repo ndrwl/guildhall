@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -56,5 +57,32 @@ func TestRunScriptRefusesUnknownSteps(t *testing.T) {
 		if code := RunScript(SessionDirective, script("guildhall director ready", bad), nil, &stderr, &stderr); code != 2 {
 			t.Errorf("%q: exit %d, want 2 (%s)", bad, code, stderr.String())
 		}
+	}
+}
+
+// TestRunScriptCountsTurns: with TurnLogEnv naming a file, the session records one turn for its first message and
+// one for each non-blank line typed to it, the /exit that ends it excepted, each with its process ID; without it, nothing.
+func TestRunScriptCountsTurns(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "turns")
+	t.Setenv(TurnLogEnv, log)
+	var out strings.Builder
+	if code := RunScript(SessionDirective, "", strings.NewReader("guildhall: 1 unread (note 1)\n\n/exit\nafter\n"), &out, &out); code != 0 {
+		t.Fatalf("exit %d: %s", code, out.String())
+	}
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := strconv.Itoa(os.Getpid())
+	if want := pid + " start\n" + pid + " input\n"; string(b) != want {
+		t.Errorf("turn log %q, want %q", b, want)
+	}
+
+	t.Setenv(TurnLogEnv, "")
+	if code := RunScript(SessionDirective, "", strings.NewReader("hello\n"), &out, &out); code != 0 {
+		t.Fatalf("exit %d: %s", code, out.String())
+	}
+	if after, _ := os.ReadFile(log); string(after) != string(b) {
+		t.Errorf("a session without %s recorded turns: %q", TurnLogEnv, after)
 	}
 }
