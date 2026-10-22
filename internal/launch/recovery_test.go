@@ -54,10 +54,12 @@ func recordOwner(t *testing.T, a launch.Attempt, id artisan.Identity, c store.Co
 }
 
 func TestRunRecoveryRequiresRecordedEmptyContainment(t *testing.T) {
+	// One exited owner serves every case: it is gone, and each case records it in its own store.
+	id, exited := exitedOwner(t)
 	for _, recorded := range []bool{false, true} {
 		t.Run(fmt.Sprint(recorded), func(t *testing.T) {
 			a := newAttempt(t)
-			id, c := exitedOwner(t)
+			c := exited
 			if !recorded {
 				c = store.Containment{}
 			}
@@ -86,11 +88,13 @@ func TestRunRecoveryRequiresRecordedEmptyContainment(t *testing.T) {
 }
 
 func TestStopTerminalDecisionRequiresTerminationProof(t *testing.T) {
+	// One exited owner serves every case: it is gone, and each case records it in its own store.
+	gone, exited := exitedOwner(t)
 	for _, decision := range []string{"cancelled", "finished", "failed"} {
 		for _, proof := range []string{"live", "missing", "survivors", "empty"} {
 			t.Run(decision+"/"+proof, func(t *testing.T) {
 				a := newAttempt(t)
-				id, c := exitedOwner(t)
+				id, c := gone, exited
 				if proof == "live" {
 					var err error
 					id, err = artisan.Self()
