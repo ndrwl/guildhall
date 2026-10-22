@@ -16,8 +16,9 @@ The merge rule is the repository's `merge_policy`, which `deliver` already enfor
 ## Attempt caps
 
 `max_running_attempts` (default 4) and `max_attempts_per_day` (default 40) are per Director, across every repository.
-They meter attempts, not tokens or cost, because no adapter reports cost to the binary yet.
-Logging or estimating each attempt's token use and cost, which the Guildmaster asked for alongside the caps, is a follow-up and is not built here: the Claude adapter would have to report usage from its print mode first, which changes the worker's output.
+They meter attempts, not tokens or cost.
+Each attempt's token use and cost, which the Guildmaster asked for alongside the caps, is now recorded and shown beside them ([attempt spend](attempt-spend.md)): the Claude adapter's tokens are measured and its cost is Claude Code's estimate, and a runtime that reports nothing is recorded as unknown.
+A token or cost budget is a follow-up.
 
 - The count and the start are one store mutation, `store.StartCappedAttempt`, under the store's single-writer lock, so two advances in different processes can never both take the last slot.
   A check before the start would have left that race open.

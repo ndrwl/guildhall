@@ -112,7 +112,9 @@ func TestDirectorView(t *testing.T) {
 		t.Fatalf("receipts end %+v, want the acknowledgement last", v.Receipts)
 	}
 	day := time.Date(testTime.Year(), testTime.Month(), testTime.Day(), 0, 0, 0, 0, time.UTC)
-	if want := (AttemptUsage{Running: 2, Today: 3, Day: day}); v.Usage != want {
-		t.Errorf("Usage = %+v, want %+v: two attempts running, three started today", v.Usage, want)
+	// The one finished attempt reported no spend, so the day's spend counts it as unknown.
+	spend := SpendTotal{Attempts: 1, TokensUnknown: 1, CostUnknown: 1, Tokens: SpendUnknown, Cost: SpendUnknown}
+	if want := (AttemptUsage{Running: 2, Today: 3, Day: day, Spend: spend}); v.Usage != want {
+		t.Errorf("Usage = %+v, want %+v: two attempts running, three started today, one finished", v.Usage, want)
 	}
 }

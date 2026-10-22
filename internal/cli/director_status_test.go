@@ -44,6 +44,7 @@ func exitedLauncher(t *testing.T) store.ProcessIdentity {
 // directory remains, as the reconcile fixtures leave it. lib/t-1 sends a question; app/t-2 has an unread
 // worker-stalled message and an acknowledged note. app/t-7's plan attempt succeeded with its result file and app/t-8's
 // was stopped, while each task's next.json still waits on that attempt, as a watcher whose advance failed leaves them.
+// app/t-3's plan attempt reported a measured and estimated spend and its build attempt an unknown one.
 func statusCopy(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -128,6 +129,13 @@ func statusCopy(t *testing.T) string {
 		func() (store.Receipt, error) { return s.StartAttempt("i-30", "app", "t-8", "plan") },
 		func() (store.Receipt, error) {
 			return s.FinishAttempt("i-31", "app", "t-8", "plan", 1, store.AttemptStopped)
+		},
+		func() (store.Receipt, error) {
+			return s.RecordAttemptSpend("i-32", "app", "t-3", "plan", 1, store.Spend{Tokens: store.SpendMeasured, InputTokens: 1000, OutputTokens: 200,
+				CacheCreationInputTokens: 300, CacheReadInputTokens: 400, Cost: store.SpendEstimated, CostUSD: 0.5})
+		},
+		func() (store.Receipt, error) {
+			return s.RecordAttemptSpend("i-33", "app", "t-3", "build", 1, store.UnknownSpend)
 		},
 	}
 	for _, step := range steps {
@@ -226,6 +234,44 @@ owner_machine = "workstation"
 	}
 }
 
+// TestDirectorStatusShowsSpend: each task sums its finished attempts' spend, an attempt without a known number
+// counted as unknown, and the guard rails sum the spend of the attempts started today beside the caps.
+func TestDirectorStatusShowsSpend(t *testing.T) {
+	dir := statusCopy(t)
+	code, out, stderr := directorCmd(t, nil, "status", "--copy", dir, "--json")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	var st directorStatus
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		t.Fatal(err)
+	}
+	spend := map[string]store.SpendTotal{}
+	for _, task := range st.Tasks {
+		spend[task.Repository+"/"+task.ID] = task.Spend
+	}
+	t3 := store.SpendTotal{Attempts: 2, TokensUnknown: 1, CostUnknown: 1, Tokens: store.SpendMeasured, InputTokens: 1000, OutputTokens: 200,
+		CacheCreationInputTokens: 300, CacheReadInputTokens: 400, Cost: store.SpendEstimated, CostUSD: 0.5}
+	if got := spend["app/t-3"]; got != t3 {
+		t.Errorf("app/t-3 spend = %+v, want %+v", got, t3)
+	}
+	// A running attempt is not counted; a finished one without a record is unknown.
+	if got := spend["app/t-2"]; got != store.NoSpend {
+		t.Errorf("app/t-2 spend = %+v, want no attempts", got)
+	}
+	if got, want := spend["app/t-5"], (store.SpendTotal{Attempts: 1, TokensUnknown: 1, CostUnknown: 1, Tokens: store.SpendUnknown, Cost: store.SpendUnknown}); got != want {
+		t.Errorf("app/t-5 spend = %+v, want %+v", got, want)
+	}
+	// Every attempt in the fixture started today: of the six finished (t-3 twice, t-4, t-5, t-7 and t-8) only
+	// t-3's plan attempt reported its spend, so five are unknown.
+	today := st.Session.GuardRails.SpendToday
+	want := t3
+	want.Attempts, want.TokensUnknown, want.CostUnknown = 6, 5, 5
+	if today != want {
+		t.Errorf("spend_today = %+v, want %+v", today, want)
+	}
+}
+
 func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 	dir := t.TempDir()
 	if app, _, stderr := newTestApp(nil, nil); app.Run([]string{"store", "init", filepath.Join(dir, "director.store")}) != 0 {
@@ -236,7 +282,9 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
 	}
 	want := `{"as_of":{"partial":true,"excluded":["worker files","transcripts","forge state"],"sequence":0,"committed_at":"0001-01-01T00:00:00Z"},` +
-		`"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22"}},"mode":{"name":"standalone"},"tasks":[],"decisions":[],` +
+		`"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22",` +
+		`"spend_today":{"attempts":0,"tokens_unknown":0,"cost_unknown":0,"tokens":"unknown","input_tokens":0,"output_tokens":0,` +
+		`"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost":"unknown","cost_usd":0}}},"mode":{"name":"standalone"},"tasks":[],"decisions":[],` +
 		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[]}` + "\n"
 	if out != want {
 		t.Fatalf("empty copy:\n got %s\nwant %s", out, want)

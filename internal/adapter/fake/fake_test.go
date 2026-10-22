@@ -247,3 +247,26 @@ func TestRunOutputDirective(t *testing.T) {
 		}
 	}
 }
+
+// TestRunReportsFixedUsage: a worker whose work ends writes ReportedUsage beside its result, with a result or
+// not; one stopped without a result writes none, so its usage is unknown.
+func TestRunReportsFixedUsage(t *testing.T) {
+	for _, prompt := range []string{"Do it.\n", "guildhall-fake: outcome=failed\n", "guildhall-fake: fault=no-result\n", "guildhall-fake: fault=exit-error\n"} {
+		args := setup(t, prompt)
+		_, _ = run(t, args)
+		if got, err := adapter.ReadUsage(args.ResultFile); err != nil || got != ReportedUsage {
+			t.Errorf("%q: usage = %+v, %v; want %+v", prompt, got, err, ReportedUsage)
+		}
+	}
+	args := setup(t, "guildhall-fake: delay=1m\n")
+	err := Run(context.Background(), args, &bytes.Buffer{}, func(context.Context, time.Duration) error { return context.Canceled })
+	if err == nil {
+		t.Fatal("an interrupted delay succeeded")
+	}
+	if _, err := os.Stat(adapter.UsageFile(args.ResultFile)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("an interrupted worker wrote a usage file: %v", err)
+	}
+	if err := ReportedUsage.Validate(); err != nil {
+		t.Errorf("ReportedUsage is invalid: %v", err)
+	}
+}

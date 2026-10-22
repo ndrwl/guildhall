@@ -6,8 +6,8 @@
       "transcripts",
       "forge state"
     ],
-    "sequence": 31,
-    "committed_at": "2026-10-22T09:32:00Z"
+    "sequence": 33,
+    "committed_at": "2026-10-22T09:34:00Z"
   },
   "session": {
     "state": "running",
@@ -38,7 +38,19 @@
       "max_attempts_per_day": 40,
       "running_attempts": 2,
       "attempts_today": 8,
-      "day": "2026-10-22"
+      "day": "2026-10-22",
+      "spend_today": {
+        "attempts": 6,
+        "tokens_unknown": 5,
+        "cost_unknown": 5,
+        "tokens": "measured",
+        "input_tokens": 1000,
+        "output_tokens": 200,
+        "cache_creation_input_tokens": 300,
+        "cache_read_input_tokens": 400,
+        "cost": "estimated",
+        "cost_usd": 0.5
+      }
     }
   },
   "mode": {
@@ -54,7 +66,19 @@
         "name": "default",
         "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
       },
-      "steps": []
+      "steps": [],
+      "spend": {
+        "attempts": 0,
+        "tokens_unknown": 0,
+        "cost_unknown": 0,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     },
     {
       "repository": "app",
@@ -74,7 +98,19 @@
             "reason": "no attempt directory and no ownership record"
           }
         }
-      ]
+      ],
+      "spend": {
+        "attempts": 0,
+        "tokens_unknown": 0,
+        "cost_unknown": 0,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     },
     {
       "repository": "app",
@@ -101,7 +137,19 @@
           "attempt": 1,
           "outcome": "failed"
         }
-      ]
+      ],
+      "spend": {
+        "attempts": 2,
+        "tokens_unknown": 1,
+        "cost_unknown": 1,
+        "tokens": "measured",
+        "input_tokens": 1000,
+        "output_tokens": 200,
+        "cache_creation_input_tokens": 300,
+        "cache_read_input_tokens": 400,
+        "cost": "estimated",
+        "cost_usd": 0.5
+      }
     },
     {
       "repository": "app",
@@ -123,7 +171,19 @@
           "attempt": 1,
           "outcome": "succeeded"
         }
-      ]
+      ],
+      "spend": {
+        "attempts": 1,
+        "tokens_unknown": 1,
+        "cost_unknown": 1,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     },
     {
       "repository": "app",
@@ -140,7 +200,19 @@
           "attempt": 1,
           "outcome": "stopped"
         }
-      ]
+      ],
+      "spend": {
+        "attempts": 1,
+        "tokens_unknown": 1,
+        "cost_unknown": 1,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     },
     {
       "repository": "app",
@@ -160,7 +232,19 @@
             "reason": "launcher identity gone; no containment recorded"
           }
         }
-      ]
+      ],
+      "spend": {
+        "attempts": 0,
+        "tokens_unknown": 0,
+        "cost_unknown": 0,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     },
     {
       "repository": "app",
@@ -182,7 +266,19 @@
           "attempt": 1,
           "outcome": "succeeded"
         }
-      ]
+      ],
+      "spend": {
+        "attempts": 1,
+        "tokens_unknown": 1,
+        "cost_unknown": 1,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     },
     {
       "repository": "app",
@@ -204,7 +300,19 @@
           "attempt": 1,
           "outcome": "stopped"
         }
-      ]
+      ],
+      "spend": {
+        "attempts": 1,
+        "tokens_unknown": 1,
+        "cost_unknown": 1,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     },
     {
       "repository": "lib",
@@ -215,7 +323,19 @@
         "name": "default",
         "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
       },
-      "steps": []
+      "steps": [],
+      "spend": {
+        "attempts": 0,
+        "tokens_unknown": 0,
+        "cost_unknown": 0,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
     }
   ],
   "decisions": [
@@ -262,26 +382,6 @@
     ]
   },
   "recent": [
-    {
-      "mutation_id": "i-10",
-      "operation": "finish-attempt",
-      "repository": "app",
-      "task_id": "t-3",
-      "attempt": 1,
-      "record": "attempt/plan/1",
-      "sequence": 10,
-      "committed_at": "2026-10-22T09:09:00Z"
-    },
-    {
-      "mutation_id": "i-11",
-      "operation": "start-attempt",
-      "repository": "app",
-      "task_id": "t-3",
-      "attempt": 1,
-      "record": "attempt/build/1",
-      "sequence": 11,
-      "committed_at": "2026-10-22T09:10:00Z"
-    },
     {
       "mutation_id": "i-12",
       "operation": "finish-attempt",
@@ -454,6 +554,26 @@
       "record": "attempt/plan/1",
       "sequence": 31,
       "committed_at": "2026-10-22T09:32:00Z"
+    },
+    {
+      "mutation_id": "i-32",
+      "operation": "record-attempt-spend",
+      "repository": "app",
+      "task_id": "t-3",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 32,
+      "committed_at": "2026-10-22T09:33:00Z"
+    },
+    {
+      "mutation_id": "i-33",
+      "operation": "record-attempt-spend",
+      "repository": "app",
+      "task_id": "t-3",
+      "attempt": 1,
+      "record": "attempt/build/1",
+      "sequence": 33,
+      "committed_at": "2026-10-22T09:34:00Z"
     }
   ],
   "needs_me": [

@@ -143,6 +143,9 @@ func TestResumeSweepsAndSettlesAnExitedOwner(t *testing.T) {
 			if err := adapter.WriteResult(a.Files().ResultFile, adapter.Result{Identity: a.Identity(), Status: adapter.StatusSucceeded, Summary: "done"}); err != nil {
 				t.Fatal(err)
 			}
+			if err := adapter.WriteUsage(a.Files().ResultFile, reported); err != nil {
+				t.Fatal(err)
+			}
 		}, artisan.Finished, store.AttemptSucceeded},
 		{"surviving tree with the marker", artisantest.Worker{Grandchildren: 1}, func(t *testing.T, a launch.Attempt) {
 			if err := a.Files().Mark(); err != nil {
@@ -197,6 +200,14 @@ func TestResumeSweepsAndSettlesAnExitedOwner(t *testing.T) {
 			}
 			if got := storedOutcome(t, a); got != tc.outcome {
 				t.Errorf("store outcome %q, want %q", got, tc.outcome)
+			}
+			// The settled attempt's spend is what its worker reported, or unknown when it reported none.
+			wantSpend := store.UnknownSpend
+			if tc.outcome == store.AttemptSucceeded {
+				wantSpend = spent
+			}
+			if got := storedSpend(t, a); got == nil || *got != wantSpend {
+				t.Errorf("stored spend %+v, want %+v", got, wantSpend)
 			}
 			if o := ownership(t, a); o.State != store.OwnerReleased {
 				t.Errorf("ownership %+v not released", o)

@@ -47,11 +47,13 @@ func (e *CapRefusal) Unwrap() error { return ErrAttemptCap }
 // AttemptUsage is what the attempt caps count, read at one instant: Running is every stage attempt started and
 // not finished, in any repository, which includes every attempt with an unreleased ownership record; Today is
 // every attempt started (a start-attempt or start-owned-attempt receipt) since Day, the start of the current UTC
-// day by the store's clock (Options.Now).
+// day by the store's clock (Options.Now). Spend sums the spend of the attempts started since Day
+// (SpendTotal.AddAttempt).
 type AttemptUsage struct {
-	Running int       `json:"running"`
-	Today   int       `json:"today"`
-	Day     time.Time `json:"day"`
+	Running int        `json:"running"`
+	Today   int        `json:"today"`
+	Day     time.Time  `json:"day"`
+	Spend   SpendTotal `json:"spend"`
 }
 
 // AttemptUsage reads what the caps count without writing. Like DirectorView it scans every receipt.
@@ -70,8 +72,24 @@ func (s *Store) AttemptUsage() (AttemptUsage, error) {
 
 func attemptUsage(tx *bolt.Tx, now time.Time) (AttemptUsage, error) {
 	y, m, d := now.UTC().Date()
-	u := AttemptUsage{Day: time.Date(y, m, d, 0, 0, 0, 0, time.UTC)}
-	err := tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
+	u := AttemptUsage{Day: time.Date(y, m, d, 0, 0, 0, 0, time.UTC), Spend: NoSpend}
+	// startedToday holds each attempt started today by its repository, task and record name.
+	startedToday := map[[3]string]bool{}
+	err := tx.Bucket(bucketReceipts).ForEach(func(k, raw []byte) error {
+		var r Receipt
+		if err := json.Unmarshal(raw, &r); err != nil {
+			return fmt.Errorf("receipt %q: %w", k, err)
+		}
+		if (r.Operation == "start-attempt" || r.Operation == "start-owned-attempt") && !r.CommittedAt.Before(u.Day) {
+			u.Today++
+			startedToday[[3]string{r.Repository, r.TaskID, r.Record}] = true
+		}
+		return nil
+	})
+	if err != nil {
+		return AttemptUsage{}, err
+	}
+	err = tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
 		var attempts []StageAttempt
 		if err := scan(repoBucket(tx, string(repo), bucketAttempts), nil, &attempts); err != nil {
 			return err
@@ -80,19 +98,9 @@ func attemptUsage(tx *bolt.Tx, now time.Time) (AttemptUsage, error) {
 			if a.Outcome == "" {
 				u.Running++
 			}
-		}
-		return nil
-	})
-	if err != nil {
-		return AttemptUsage{}, err
-	}
-	err = tx.Bucket(bucketReceipts).ForEach(func(k, raw []byte) error {
-		var r Receipt
-		if err := json.Unmarshal(raw, &r); err != nil {
-			return fmt.Errorf("receipt %q: %w", k, err)
-		}
-		if (r.Operation == "start-attempt" || r.Operation == "start-owned-attempt") && !r.CommittedAt.Before(u.Day) {
-			u.Today++
+			if startedToday[[3]string{a.Repository, a.TaskID, attemptRecord(a.Step, a.Number)}] {
+				u.Spend.AddAttempt(a)
+			}
 		}
 		return nil
 	})

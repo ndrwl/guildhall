@@ -162,6 +162,19 @@ func (f Files) Marked() (bool, error) { return adapter.Cancelled(f.ResultFile, f
 // nothing.
 func (f Files) Mark() error { return adapter.MarkCancelled(f.ResultFile, f.Identity) }
 
+// spend is what the attempt's adapter reported it spent in its usage file beside the result
+// (adapter.ReadUsage), as the store records it: unknown when it reported nothing or its report cannot be read,
+// never a guess.
+func (a Attempt) spend() store.Spend {
+	u, err := adapter.ReadUsage(a.Files().ResultFile)
+	if err != nil {
+		return store.UnknownSpend
+	}
+	return store.Spend{Tokens: store.Measure(u.Tokens), InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+		CacheCreationInputTokens: u.CacheCreationInputTokens, CacheReadInputTokens: u.CacheReadInputTokens,
+		Cost: store.Measure(u.Cost), CostUSD: u.CostUSD}
+}
+
 // attemptOutcome is the one translation of how an attempt ended into the
 // store's outcome: cancelled is stopped, failed is failed, and finished is the
 // result's status, succeeded or failed. A finished outcome without a result,
@@ -288,7 +301,9 @@ func Run(ctx context.Context, c Config) (Report, error) {
 		return rep, fmt.Errorf("launch: take ownership of %s: %w", k, err)
 	}
 	finish := func(outcome store.AttemptOutcome, runErr error) (Report, error) {
+		var spendErr error
 		err := a.write(func(s *store.Store) error {
+			_, spendErr = s.RecordAttemptSpend(mutation("spend"), k.Repository, k.TaskID, k.Step, k.Attempt, a.spend())
 			_, err := s.FinishAttempt(mutation("finish"), k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
 			return err
 		})
@@ -296,7 +311,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 			rep.AttemptOutcome = outcome
 			c.advance(rep)
 		}
-		return rep, errors.Join(runErr, err)
+		return rep, errors.Join(runErr, err, spendErr)
 	}
 	ep, err := artisan.Listen(path, k, self, a.launcher, l)
 	if err != nil {

@@ -76,6 +76,8 @@ type StageAttempt struct {
 	// Number counts attempts of this step for this task, starting at 1.
 	Number  int            `json:"number"`
 	Outcome AttemptOutcome `json:"outcome,omitempty"`
+	// Spend is what the attempt's runtime reported it spent (RecordAttemptSpend); nil until recorded.
+	Spend *Spend `json:"spend,omitempty"`
 }
 
 // DocumentRef points at a durable document file for a task (R1.13).
@@ -291,14 +293,7 @@ func (s *Store) FinishAttempt(mutationID, repository, taskID, step string, numbe
 }
 
 func finishReceipt(tx *bolt.Tx, requestDigest string) (Receipt, bool) {
-	c := tx.Bucket(bucketReceipts).Cursor()
-	for k, v := c.First(); k != nil; k, v = c.Next() {
-		var r Receipt
-		if json.Unmarshal(v, &r) == nil && r.Operation == "finish-attempt" && r.RequestDigest == requestDigest {
-			return r, true
-		}
-	}
-	return Receipt{}, false
+	return earlierReceipt(tx, "finish-attempt", requestDigest)
 }
 
 // PutDocument records a document reference. A reference never changes once recorded.

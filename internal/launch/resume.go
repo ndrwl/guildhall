@@ -194,15 +194,17 @@ func (a Attempt) settle(ctx context.Context, o store.Ownership, rep *ResumeRepor
 		return err
 	}
 	k := a.Key
-	mutation := "resume-finish:" + attemptTag(k, artisan.Identity(o.LauncherIdentity))
+	tag := attemptTag(k, artisan.Identity(o.LauncherIdentity))
+	var spendErr error
 	if err := a.write(func(s *store.Store) error {
-		_, err := s.FinishAttempt(mutation, k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
+		_, spendErr = s.RecordAttemptSpend("resume-spend:"+tag, k.Repository, k.TaskID, k.Step, k.Attempt, a.spend())
+		_, err := s.FinishAttempt("resume-finish:"+tag, k.Repository, k.TaskID, k.Step, k.Attempt, outcome)
 		return err
 	}); err != nil {
-		return err
+		return errors.Join(err, spendErr)
 	}
 	rep.AttemptOutcome = outcome
-	return nil
+	return spendErr
 }
 
 // ResumeCommand is the program name ResumeArgv starts with: Herdr refuses a

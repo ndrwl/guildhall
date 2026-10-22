@@ -73,6 +73,26 @@ func ownership(t *testing.T, a launch.Attempt) store.Ownership {
 	return o
 }
 
+// storedSpend is the spend recorded on attempt app/t-1/build/1, nil when none is.
+func storedSpend(t *testing.T, a launch.Attempt) *store.Spend {
+	t.Helper()
+	var sp *store.Spend
+	withStore(t, a, func(s *store.Store) {
+		as, err := s.Attempts("app", "t-1")
+		if err != nil || len(as) != 1 {
+			t.Fatalf("attempts %+v, %v", as, err)
+		}
+		sp = as[0].Spend
+	})
+	return sp
+}
+
+// reported is the usage a worker reports in the launch tests, and spent the spend it is recorded as.
+var (
+	reported = adapter.Usage{Tokens: adapter.Measured, InputTokens: 7, OutputTokens: 8, CacheCreationInputTokens: 9, CacheReadInputTokens: 10, Cost: adapter.Estimated, CostUSD: 0.25}
+	spent    = store.Spend{Tokens: store.SpendMeasured, InputTokens: 7, OutputTokens: 8, CacheCreationInputTokens: 9, CacheReadInputTokens: 10, Cost: store.SpendEstimated, CostUSD: 0.25}
+)
+
 func storedOutcome(t *testing.T, a launch.Attempt) store.AttemptOutcome {
 	t.Helper()
 	var out store.AttemptOutcome
@@ -160,6 +180,15 @@ func TestRunFinishesAndRecordsTheAttempt(t *testing.T) {
 	for _, status := range []adapter.Status{adapter.StatusSucceeded, adapter.StatusFailed} {
 		t.Run(string(status), func(t *testing.T) {
 			a := newAttempt(t)
+			// The succeeded worker reports its usage, as an adapter writes it beside the result; the failed one
+			// reports none.
+			want := store.UnknownSpend
+			if status == adapter.StatusSucceeded {
+				if err := adapter.WriteUsage(a.Files().ResultFile, reported); err != nil {
+					t.Fatal(err)
+				}
+				want = spent
+			}
 			cmd, _ := worker(t, a, artisantest.Worker{Grandchildren: 1, Result: a.Files().ResultFile, ResultBody: resultBody(t, a.Identity(), status), ResultAfter: 300 * time.Millisecond})
 			done, cancel := start(a, cmd)
 			defer cancel()
@@ -169,6 +198,9 @@ func TestRunFinishesAndRecordsTheAttempt(t *testing.T) {
 			}
 			if want := store.AttemptOutcome(status); r.r.AttemptOutcome != want || storedOutcome(t, a) != want {
 				t.Errorf("attempt outcome %q, stored %q; want %q", r.r.AttemptOutcome, storedOutcome(t, a), want)
+			}
+			if got := storedSpend(t, a); got == nil || *got != want {
+				t.Errorf("stored spend %+v; want %+v", got, want)
 			}
 			o := ownership(t, a)
 			self, _ := artisan.Self()
@@ -192,12 +224,19 @@ func TestRunFinishesAndRecordsTheAttempt(t *testing.T) {
 
 func TestRunWorkerExitingWithoutResultFails(t *testing.T) {
 	a := newAttempt(t)
+	if err := os.WriteFile(adapter.UsageFile(a.Files().ResultFile), []byte(`{"schema":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cmd, _ := worker(t, a, artisantest.Worker{Lifetime: 200 * time.Millisecond})
 	done, cancel := start(a, cmd)
 	defer cancel()
 	r := wait(t, done)
 	if r.err != nil || r.r.Outcome.State != artisan.Failed || r.r.AttemptOutcome != store.AttemptFailed || storedOutcome(t, a) != store.AttemptFailed {
 		t.Errorf("Run() = %+v, %v; want failed and recorded", r.r, r.err)
+	}
+	// A malformed usage file is recorded as unknown, never trusted.
+	if got := storedSpend(t, a); got == nil || *got != store.UnknownSpend {
+		t.Errorf("stored spend %+v; want unknown", got)
 	}
 }
 

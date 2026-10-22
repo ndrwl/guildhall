@@ -83,6 +83,8 @@ type statusGuardRails struct {
 	AttemptsToday   int    `json:"attempts_today"`
 	// Day is the UTC day AttemptsToday counts.
 	Day string `json:"day"`
+	// SpendToday sums what the attempts started on Day reported they spent (docs/director.md#spend).
+	SpendToday store.SpendTotal `json:"spend_today"`
 }
 
 // statusMode is the copy's mode; standalone until managed mode exists.
@@ -99,6 +101,8 @@ type statusTask struct {
 	Next       json.RawMessage   `json:"next,omitempty"`
 	NextError  string            `json:"next_error,omitempty"`
 	Steps      []statusStep      `json:"steps"`
+	// Spend sums what the task's finished attempts reported they spent (docs/director.md#spend).
+	Spend store.SpendTotal `json:"spend"`
 }
 
 // statusStep is a step's latest attempt: its outcome, or while it runs its live classification.
@@ -235,7 +239,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		NeedsMe:   []needsMeItem{},
 	}
 
-	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly)}
+	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly), SpendToday: v.Usage.Spend}
 	out.Session.GuardRails = usage
 	if d := v.Session; d != nil {
 		out.Session = statusSession{GuardRails: usage, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
@@ -266,14 +270,23 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	for i, o := range v.Owners {
 		owners[artisan.AttemptKey{Repository: o.Repository, TaskID: o.TaskID, Step: o.Step, Attempt: o.Attempt}] = &v.Owners[i]
 	}
-	latest := map[string]store.StageAttempt{}
+	latest, spend := map[string]store.StageAttempt{}, map[string]store.SpendTotal{}
 	for _, at := range v.Attempts {
 		latest[at.Repository+"/"+at.TaskID+"/"+at.Step] = at // attempts come in number order
+		task, ok := spend[at.Repository+"/"+at.TaskID]
+		if !ok {
+			task = store.NoSpend
+		}
+		task.AddAttempt(at)
+		spend[at.Repository+"/"+at.TaskID] = task
 	}
 
 	var advance, retry, resume, wait, held []needsMeItem
 	for _, t := range v.Tasks {
-		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}}
+		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}, Spend: store.NoSpend}
+		if total, ok := spend[t.Repository+"/"+t.ID]; ok {
+			st.Spend = total
+		}
 		st.Next, st.NextError = readNext(filepath.Join(stateDir, t.Repository, t.ID, "next.json"))
 		prefix := t.Repository + "/" + t.ID + "/"
 		var steps []string

@@ -64,6 +64,31 @@ The marker remains even if termination fails, but that failure is explicitly rep
 Do not remove the marker to retry: use a new attempt and result path.
 This is attempt-local cancellation evidence, not task completion or a separate task store.
 
+## Usage file
+
+An adapter that can report what an attempt spent writes a usage file, `usage.json`, beside the result file, before it publishes any result ([decision](decisions/attempt-spend.md)):
+
+```json
+{
+  "schema": "guildhall.attempt-usage/1",
+  "tokens": "measured",
+  "input_tokens": 1200,
+  "output_tokens": 340,
+  "cache_creation_input_tokens": 5000,
+  "cache_read_input_tokens": 18000,
+  "cost": "estimated",
+  "cost_usd": 0.0421
+}
+```
+
+`tokens` says where the four token counts came from and `cost` where `cost_usd`, in US dollars, came from: `measured` is the runtime's own count, `estimated` is computed, such as a cost priced from token counts, and `unknown` was not reported and has zero numbers.
+Every number is finite and not negative.
+Guildhall rejects a file with another schema or a newer version, an unknown field, more than 4 KiB, or a number an `unknown` measure gives.
+
+A runtime that cannot report usage writes no file, and the attempt's spend is `unknown`; a file Guildhall rejects is recorded as `unknown` too, never trusted.
+The launcher records the file on the attempt's store record when the attempt ends, whether it finished, failed or was stopped ([spend](director.md#spend)).
+The usage file is the adapter's, like the result: the model never writes it.
+
 ## Fake adapter
 
 The fake adapter is a test-only runtime with no optional capabilities.
@@ -91,30 +116,35 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 
 Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.
 
+Once its work ends, before any result and whatever the fault, the worker writes a [usage file](#usage-file) with fixed numbers, `fake.ReportedUsage`: measured tokens and an estimated cost, so tests of what Guildhall records are deterministic.
+Work ended by an interrupt or the cancel marker writes none.
+
 ## Claude adapter
 
 The Claude adapter runs one attempt as a non-interactive Claude Code session, with no optional capabilities.
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
-claude --print <instruction> --permission-mode acceptEdits --add-dir <model directory>
+claude --print <instruction> --output-format json --permission-mode acceptEdits --add-dir <model directory>
 ```
 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
 - The instruction names the prompt copy and a draft result file, `model/result.json`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
 - `acceptEdits` lets Claude edit files in the working directory and the model directory; every other tool that needs permission, such as shell commands, is denied, because a print-mode session has no one to ask.
-- Claude gets no standard input; its output goes to the wrapper's.
+- Claude gets no standard input; with `--output-format json` it prints one result message as it exits, which the wrapper reads, and its error output goes to the wrapper's.
 
 The wrapper keeps the result protocol, not the model:
 
 - it refuses to start, starting nothing, when the result file exists or the attempt is cancelled, and a prompt inside the model directory is refused, since replacing the directory removes any stale draft;
 - once Claude exits it publishes the draft's bytes at the result file by a hard link, never replacing a result; it does not validate them, so a malformed or misidentified draft is rejected by the reader like any other result, and no draft means no result;
 - the cancel marker, an interrupt or the end of its context asks Claude to stop (an interrupt on Unix, termination on Windows), kills it after 10 seconds, and publishes nothing; so the owned launcher's stop ends at rung 1;
-- Claude's exit status does not decide completion: a failing exit after a published draft is still reported.
+- Claude's exit status does not decide completion: a failing exit after a published draft is still reported;
+- once Claude exits, before publishing, it writes the [usage file](#usage-file) from the result message: its `usage` input, output, cache creation and cache read tokens are `measured`, and its `total_cost_usd`, Claude Code's price for those tokens, is an `estimated` cost; what the message lacks is `unknown`, and output that is not one JSON object gives an unknown usage; it then writes the message's `result` text to its own output, as print mode printed it, or the output unchanged when it is not a result message.
+  A stopped session prints no result message and writes no usage file, so its spend is unknown.
 
 This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort.
-Transcripts, cost, session resume and the Herdr tab mode are later work.
+Transcripts, session resume and the Herdr tab mode are later work.
 
 The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills and whose `.claude/settings.json` lets Bash run `guildhall` and read-only `git`, denies any `git` command with `--output`, and denies edits to the copy's `config.toml` and `managed.toml`.
 
@@ -124,7 +154,7 @@ Every runtime adapter passes one shared suite, `adaptertest.RunConformance`, bef
 The suite makes no model calls; a runtime proves each behaviour through prompts it understands.
 
 The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the mapping `launch.Process` starts attempts from.
-The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names and plays the behaviour a `claude-stub:` prompt line asks for, with no model call.
+The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names, plays the behaviour a `claude-stub:` prompt line asks for and prints a result message with fixed usage, with no model call.
 Inside a test binary the interpreter's adapter guard admits `claude` only while `claude` on `PATH` is the stub `claudetest.Install` names in `GUILDHALL_TEST_CLAUDE_STUB`, so `task start` runs a profile naming `claude` over the stub and never a real Claude Code.
 `TestLiveClaude` runs one real session instead when `GUILDHALL_CLAUDE_LIVE=1` is set; CI never sets it:
 
