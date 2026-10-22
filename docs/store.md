@@ -12,7 +12,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Record | Key | Contract |
 |---|---|---|
 | Task | repository, task id | Title, the workflow revision (name and `sha256:` digest), the `sha256:` digest of the configuration it was accepted under, and the tasks it depends on. The revisions never change after creation (R1.62). State starts `open` and moves once to `done` or `cancelled`. Dependencies must already exist, in any repository of the same Director. |
-| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`, once; the [first finish stands](#attempts). A step cannot start a new attempt while one is running, and a task that is not open cannot start one. |
+| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`, once; the [first finish stands](#attempts). A step cannot start a new attempt while one is running, and a task that is not open cannot start one. Optionally its `spend`, recorded once ([attempts](#attempts)). |
 | Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. A review outcome's reference also projects its findings and dispositions (`review`), so inspection never opens the file; finding ids must be valid ids with non-blank summaries and disposition states `resolved`, `still-open` or `withdrawn`. |
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Workflow approval | workflow digest | The Guildmaster's approval of one exact workflow revision for this Director: the workflow name, its `sha256:` digest, the approval words exactly as given and the UTC time it was recorded. Recorded once per digest; see [workflow-edit authority](configuration.md#workflow-edit-authority). Not per repository and never changes a task. |
@@ -70,6 +70,12 @@ Several writers finish attempts, each under its own mutation id: the launcher wh
 `StartCappedAttempt` is `StartAttempt` under the Director's [attempt caps](director.md#guard-rails): in the same mutation it counts the attempts started and not finished in every repository, and the `start-attempt` and `start-owned-attempt` receipts committed since the start of the current UTC day by the store's clock, and refuses with a `*CapRefusal`, wrapping `ErrAttemptCap`, at either cap, writing nothing.
 The caps are not part of the request, so a replay returns its receipt whatever they are now.
 `AttemptUsage`, and `DirectorView`'s `Usage`, read the same counts without writing; like the view they scan every receipt.
+
+`RecordAttemptSpend` records what an attempt's runtime reported it spent ([spend](director.md#spend)), on a running or finished attempt: tokens and a cost in US dollars, each `measured`, `estimated` or `unknown`, where an unknown number must be zero and every number finite and not negative, or the record is refused with `ErrInvalid`.
+The first record stands, as the first finish does: an equal spend under another mutation id returns the first record's receipt and writes nothing, and a different one is refused with `ErrInvalid`.
+The launcher records it under `launch-spend:<tag>` just before its finish, and `artisan resume` under `resume-spend:<tag>`.
+`SpendTotal.AddAttempt` is the one rule for sums: a finished attempt without a recorded spend counts as unknown, and a running one without one is not counted.
+`AttemptUsage.Spend` sums the attempts whose `start-attempt` or `start-owned-attempt` receipt was committed that UTC day.
 
 ## One writer
 

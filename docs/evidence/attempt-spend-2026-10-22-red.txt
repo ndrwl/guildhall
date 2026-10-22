@@ -1,0 +1,86 @@
+# Red run for per-attempt spend, against stub bodies (adapter.Validate/WriteUsage/ReadUsage, claude.ParseUsage,
+# store.RecordAttemptSpend/SpendTotal.AddAttempt, no launcher recording, unfilled status fields), on Linux, 2026-10-22.
+# go test ./internal/adapter/ ./internal/adapter/fake ./internal/adapter/claude ./internal/store ./internal/launch ./internal/cli -run '<the tests below>'
+# Long lines are cut at 300 characters.
+
+--- FAIL: TestUsageRoundTrips (0.00s)
+    usage_test.go:25: WriteUsage({Tokens:measured InputTokens:120 OutputTokens:45 CacheCreationInputTokens:300 CacheReadInputTokens:2000 Cost:estimated CostUSD:0.0125}) = not implemented
+--- FAIL: TestMissingUsageIsUnknown (0.00s)
+    usage_test.go:41: ReadUsage without a file = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want UnknownUsage
+--- FAIL: TestUsageValidateRefusesGuesses (0.01s)
+    usage_test.go:68: Validate({Tokens:measured InputTokens:120 OutputTokens:45 CacheCreationInputTokens:300 CacheReadInputTokens:2000 Cost:estimated CostUSD:0.0125}) = not implemented
+    usage_test.go:68: Validate({Tokens:unknown InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost:unknown CostUSD:0}) = not implemented
+--- FAIL: TestReadUsageRefusesMalformed (0.01s)
+    usage_test.go:87: not json: ReadUsage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want ErrMalformedUsage
+    usage_test.go:87: no schema: ReadUsage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want ErrMalformedUsage
+    usage_test.go:87: newer version: ReadUsage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want ErrMalformedUsage
+    usage_test.go:87: unknown field: ReadUsage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want ErrMalformedUsage
+    usage_test.go:87: guessed tokens: ReadUsage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want ErrMalformedUsage
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter	0.051s
+--- FAIL: TestRunReportsFixedUsage (0.04s)
+    fake_test.go:258: "Do it.\n": usage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:100 OutputTokens:20 CacheCreationInputTokens:300 CacheReadInputTokens:4000 Cost:estimated CostUSD:0.0
+    fake_test.go:258: "guildhall-fake: outcome=failed\n": usage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:100 OutputTokens:20 CacheCreationInputTokens:300 CacheReadInputTokens:4000 Co
+    fake_test.go:258: "guildhall-fake: fault=no-result\n": usage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:100 OutputTokens:20 CacheCreationInputTokens:300 CacheReadInputTokens:4000 C
+    fake_test.go:258: "guildhall-fake: fault=exit-error\n": usage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:100 OutputTokens:20 CacheCreationInputTokens:300 CacheReadInputTokens:4000 
+    fake_test.go:270: ReportedUsage is invalid: not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	0.045s
+--- FAIL: TestClaudeArgs (0.00s)
+    claude_test.go:206: ClaudeArgs = ["--print" "You are a Guildhall Artisan working on task task-1, attempt attempt-1, in the current directory.\nRead the prompt file below and follow it; the inputs and skills directories it names are beside it.\n\nPrompt file: /tmp/fm-guildhall-d12b-token-cost/got
+--- FAIL: TestParseUsage (0.00s)
+    claude_test.go:335: ParseUsage(stub output) = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:1200 OutputTokens:340 CacheCreationInputTokens:5000 CacheReadInputTokens:18000 Cost:estimated
+--- FAIL: TestRunWritesUsage (0.04s)
+        claude_test.go:377: usage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:1200 OutputTokens:340 CacheCreationInputTokens:5000 CacheReadInputTokens:18000 Cost:estimated CostUSD:0.042
+        claude_test.go:380: stdout = ""; want the session's result text
+        claude_test.go:377: usage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:1200 OutputTokens:340 CacheCreationInputTokens:5000 CacheReadInputTokens:18000 Cost:estimated CostUSD:0.042
+        claude_test.go:380: stdout = ""; want the session's result text
+        claude_test.go:377: usage = {Tokens: InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost: CostUSD:0}, not implemented; want {Tokens:measured InputTokens:1200 OutputTokens:340 CacheCreationInputTokens:5000 CacheReadInputTokens:18000 Cost:estimated CostUSD:0.042
+        claude_test.go:380: stdout = ""; want the session's result text
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	0.048s
+--- FAIL: TestRecordAttemptSpendFirstRecordStands (0.07s)
+    spend_test.go:22: RecordAttemptSpend = {MutationID: Operation: RequestDigest: Repository: TaskID: Attempt:0 Record: Sequence:0 CommittedAt:0001-01-01 00:00:00 +0000 UTC}, not implemented
+--- FAIL: TestRecordAttemptSpendRefuses (0.09s)
+    spend_test.go:81: not a number: RecordAttemptSpend = not implemented, want ErrInvalid
+    spend_test.go:81: no measures: RecordAttemptSpend = not implemented, want ErrInvalid
+    spend_test.go:81: guessed tokens: RecordAttemptSpend = not implemented, want ErrInvalid
+    spend_test.go:81: guessed cost: RecordAttemptSpend = not implemented, want ErrInvalid
+    spend_test.go:81: negative tokens: RecordAttemptSpend = not implemented, want ErrInvalid
+    spend_test.go:81: negative cost: RecordAttemptSpend = not implemented, want ErrInvalid
+    spend_test.go:81: other measure: RecordAttemptSpend = not implemented, want ErrInvalid
+--- FAIL: TestSpendTotal (0.00s)
+    spend_test.go:106: cost = 0, want 1.0421
+    spend_test.go:110: total = {Attempts:0 TokensUnknown:0 CostUnknown:0 Tokens:unknown InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost:unknown CostUSD:1.0421}
+    spend_test.go:115: unknown total = {Attempts:0 TokensUnknown:0 CostUnknown:0 Tokens:unknown InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost:unknown CostUSD:0}, want {Attempts:1 TokensUnknown:1 CostUnknown:1 Tokens:unknown InputTokens:0 OutputTokens:0 CacheCrea
+--- FAIL: TestAttemptUsageSumsTodaysSpend (0.09s)
+    spend_test.go:129: not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.273s
+--- FAIL: TestRunFinishesAndRecordsTheAttempt (0.59s)
+        launch_test.go:188: not implemented
+        launch_test.go:203: stored spend <nil>; want {Tokens:unknown InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost:unknown CostUSD:0}
+--- FAIL: TestRunWorkerExitingWithoutResultFails (0.30s)
+    launch_test.go:239: stored spend <nil>; want unknown
+--- FAIL: TestResumeSweepsAndSettlesAnExitedOwner (1.02s)
+        resume_test.go:210: stored spend <nil>, want {Tokens:unknown InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost:unknown CostUSD:0}
+        resume_test.go:147: not implemented
+        resume_test.go:210: stored spend <nil>, want {Tokens:unknown InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost:unknown CostUSD:0}
+        resume_test.go:210: stored spend <nil>, want {Tokens:unknown InputTokens:0 OutputTokens:0 CacheCreationInputTokens:0 CacheReadInputTokens:0 Cost:unknown CostUSD:0}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	1.926s
+--- FAIL: TestTaskStartAndStepDone (60.24s)
+    advance_test.go:278: plan-1 spend was not recorded within a minute; launcher log:
+--- FAIL: TestTaskStartLaunchesClaude (60.19s)
+    advance_test.go:460: result of plan-1: no artisan result yet: context deadline exceeded
+--- FAIL: TestDirectorStatusGolden (0.27s)
+    director_status_test.go:180: not implemented
+--- FAIL: TestDirectorStatusShowsSpend (0.26s)
+    director_status_test.go:240: not implemented
+--- FAIL: TestDirectorStatusOfAnEmptyCopy (0.02s)
+    director_status_test.go:290: empty copy:
+--- FAIL: TestDirectorStatusWaitsForTheWriter (0.27s)
+    director_status_test.go:298: not implemented
+--- FAIL: TestDirectorStatusNext (0.27s)
+    director_status_test.go:326: not implemented
+

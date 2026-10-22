@@ -17,6 +17,7 @@ import (
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
@@ -270,6 +271,13 @@ func TestTaskStartAndStepDone(t *testing.T) {
 		t.Errorf("attempts after two starts = %+v", got)
 	}
 	d.waitResult(t, "plan", 1)
+	// The fake reports fixed usage, which its launcher records on the attempt.
+	u := fake.ReportedUsage
+	want := store.Spend{Tokens: store.SpendMeasured, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+		CacheCreationInputTokens: u.CacheCreationInputTokens, CacheReadInputTokens: u.CacheReadInputTokens, Cost: store.SpendEstimated, CostUSD: u.CostUSD}
+	if a := d.waitSpend(t, "plan", 1); *a.Spend != want {
+		t.Errorf("plan-1 spend = %+v, want the fake's %+v", *a.Spend, want)
+	}
 	done := append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
 	code, out, stderr = d.run(t, done...)
 	if code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
@@ -454,6 +462,32 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 	if err != nil || r.Summary != claudetest.Summary {
 		t.Errorf("plan-1 result %+v, %v; want the stub Claude's", r, err)
 	}
+	// The launcher records the usage the stub's JSON output reported on the attempt.
+	u := claudetest.Usage
+	want := store.Spend{Tokens: store.SpendMeasured, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+		CacheCreationInputTokens: u.CacheCreationInputTokens, CacheReadInputTokens: u.CacheReadInputTokens, Cost: store.SpendEstimated, CostUSD: u.CostUSD}
+	if a := d.waitSpend(t, "plan", 1); *a.Spend != want {
+		t.Errorf("plan-1 spend = %+v, want the stub's %+v", *a.Spend, want)
+	}
+}
+
+// waitSpend waits for the attempt's launcher to record its spend and returns the attempt.
+func (d runDirector) waitSpend(t *testing.T, step string, n int) store.StageAttempt {
+	t.Helper()
+	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			continue
+		}
+		as, err := s.Attempts("app", "t-1")
+		_ = s.Close()
+		if i := slices.IndexFunc(as, func(a store.StageAttempt) bool { return a.Step == step && a.Number == n && a.Spend != nil }); err == nil && i >= 0 {
+			return as[i]
+		}
+	}
+	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}.Dir(d.state), launch.LogFile))
+	t.Fatalf("%s-%d spend was not recorded within a minute; launcher log:\n%s", step, n, log)
+	return store.StageAttempt{}
 }
 
 func TestStepDoneRefusesAResultItDoesNotTake(t *testing.T) {

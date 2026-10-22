@@ -276,8 +276,16 @@ func Sleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// ReportedUsage is the usage the fake reports for every attempt whose work ends, result or not: fixed numbers, so
+// tests of what Guildhall records are deterministic. Its tokens are marked measured and its cost estimated, as the
+// Claude adapter reports them.
+var ReportedUsage = adapter.Usage{Tokens: adapter.Measured, InputTokens: 100, OutputTokens: 20, CacheCreationInputTokens: 300, CacheReadInputTokens: 4000, Cost: adapter.Estimated, CostUSD: 0.01}
+
 // Run is the fake Artisan: it reads the prompt, applies its directives, and
 // writes the result file. Progress lines go to out so a Herdr tab shows them.
+// Once its work ends, before any result, it writes ReportedUsage as the
+// attempt's usage file (adapter.WriteUsage); work ended by an interrupt or the
+// cancel marker reports none.
 //
 // Run handles interrupts itself: one ends the work without a result unless
 // the prompt says ignore-interrupt. Unless it says ignore-cancel, the
@@ -348,6 +356,11 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 			say("cancel marker present; stopping without a result")
 			return nil
 		}
+	}
+	if err := adapter.WriteUsage(a.ResultFile, ReportedUsage); err != nil {
+		say("usage not reported: %v", err)
+	} else {
+		say("reported usage in %s", adapter.UsageFile(a.ResultFile))
 	}
 	if d.result != resultDelay || d.delay > d.lifetime {
 		say("lifetime %s over without a result", d.lifetime)

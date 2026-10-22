@@ -201,7 +201,7 @@ func TestClaudeArgs(t *testing.T) {
 	a := args(spec)
 	got := claude.ClaudeArgs(a)
 	model := filepath.Join(filepath.Dir(spec.ResultFile), artisan.ModelDir)
-	want := []string{"--print", claude.Instruction(a), "--permission-mode", claude.PermissionMode, "--add-dir", model}
+	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--permission-mode", claude.PermissionMode, "--add-dir", model}
 	if !slices.Equal(got, want) {
 		t.Errorf("ClaudeArgs = %q, want %q", got, want)
 	}
@@ -325,6 +325,90 @@ func TestRunDraftHandling(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestParseUsage: Claude Code's result message gives measured tokens and an estimated cost; whatever it does not
+// report is unknown, never a guess.
+func TestParseUsage(t *testing.T) {
+	got, err := claude.ParseUsage(claudetest.Output())
+	if err != nil || got != claudetest.Usage {
+		t.Fatalf("ParseUsage(stub output) = %+v, %v; want %+v", got, err, claudetest.Usage)
+	}
+	if got.Tokens != adapter.Measured || got.Cost != adapter.Estimated {
+		t.Errorf("stub usage is %s tokens and %s cost; want measured tokens and an estimated cost", got.Tokens, got.Cost)
+	}
+	noCost := `{"type":"result","result":"done","usage":{"input_tokens":3,"output_tokens":4,"cache_creation_input_tokens":5,"cache_read_input_tokens":6}}`
+	want := adapter.Usage{Tokens: adapter.Measured, InputTokens: 3, OutputTokens: 4, CacheCreationInputTokens: 5, CacheReadInputTokens: 6, Cost: adapter.Unknown}
+	if got, err := claude.ParseUsage([]byte(noCost)); err != nil || got != want {
+		t.Errorf("ParseUsage without a cost = %+v, %v; want %+v", got, err, want)
+	}
+	noUsage := `{"type":"result","result":"done","total_cost_usd":0.5}`
+	want = adapter.Usage{Tokens: adapter.Unknown, Cost: adapter.Estimated, CostUSD: 0.5}
+	if got, err := claude.ParseUsage([]byte(noUsage)); err != nil || got != want {
+		t.Errorf("ParseUsage without usage = %+v, %v; want %+v", got, err, want)
+	}
+	for name, out := range map[string]string{
+		"text output":    "I did the task.\n",
+		"empty":          "",
+		"two objects":    `{"type":"result"} {"type":"result"}`,
+		"negative count": `{"type":"result","usage":{"input_tokens":-1,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}`,
+		"negative cost":  `{"type":"result","total_cost_usd":-1}`,
+	} {
+		if got, err := claude.ParseUsage([]byte(out)); err == nil {
+			t.Errorf("%s: ParseUsage = %+v; want an error", name, got)
+		}
+	}
+}
+
+// TestRunWritesUsage: once Claude exits the wrapper writes the usage its output reports beside the result, a
+// draft or not, and passes the session's result text through; a stopped session writes none, so its usage is
+// unknown.
+func TestRunWritesUsage(t *testing.T) {
+	claudetest.Install(t)
+	for _, b := range []adaptertest.Behaviour{adaptertest.Succeed, adaptertest.Fail, adaptertest.NoResult} {
+		t.Run(string(b), func(t *testing.T) {
+			spec := testSpec(t)
+			if err := os.WriteFile(spec.PromptFile, []byte(claudetest.Prompt(b)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			_ = claude.Run(context.Background(), args(spec), &stdout, &bytes.Buffer{})
+			if got, err := adapter.ReadUsage(spec.ResultFile); err != nil || got != claudetest.Usage {
+				t.Errorf("usage = %+v, %v; want %+v", got, err, claudetest.Usage)
+			}
+			if !strings.Contains(stdout.String(), claudetest.Summary) {
+				t.Errorf("stdout = %q; want the session's result text", stdout.String())
+			}
+		})
+	}
+	t.Run("stopped", func(t *testing.T) {
+		spec := testSpec(t)
+		if err := os.WriteFile(spec.PromptFile, []byte(claudetest.Prompt(adaptertest.Hang)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_ = claude.Run(ctx, args(spec), &bytes.Buffer{}, &bytes.Buffer{})
+		if _, err := os.Stat(adapter.UsageFile(spec.ResultFile)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("a stopped session wrote a usage file: %v", err)
+		}
+	})
+}
+
+// TestRunPublishesDespiteUsageFailure: a usage file that cannot be written is an error, but the draft is still
+// published.
+func TestRunPublishesDespiteUsageFailure(t *testing.T) {
+	claudetest.Install(t)
+	spec := interptest.AdapterSpec(t, interp.FakeAdapter, "Do the task.\n")
+	if err := os.Mkdir(adapter.UsageFile(spec.ResultFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Error("Run succeeded although the usage file could not be written")
+	}
+	if r, err := adapter.ReadResult(spec.ResultFile, spec.Identity); err != nil || r.Status != adapter.StatusSucceeded {
+		t.Errorf("ReadResult = %+v, %v; want the published draft", r, err)
+	}
 }
 
 // TestRunStopsOnContext: ending ctx stops Claude and publishes nothing.

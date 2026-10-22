@@ -11,13 +11,15 @@
 // file exists or the attempt is cancelled, never replaces a result, honours
 // the cancel marker by stopping Claude and publishing nothing, and publishes
 // the draft's bytes unvalidated, so a malformed or misidentified draft is
-// rejected by the reader as any other result is.
+// rejected by the reader as any other result is. It also writes the attempt's
+// usage file (adapter.WriteUsage) from Claude Code's JSON output.
 //
 // It declares no optional capabilities (R1.24): no pre-assigned session or
 // resume, no background session, hooks, structured output or remote control.
 package claude
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -49,6 +51,13 @@ const Program = "claude"
 // every other tool needing permission is denied, since a non-interactive
 // session has no one to ask.
 const PermissionMode = "acceptEdits"
+
+// OutputFormat is Claude Code's print-mode output format the wrapper asks for: one JSON object, the session's
+// result message, which carries the session's token usage and Claude Code's cost estimate (ParseUsage).
+const OutputFormat = "json"
+
+// maxOutputBytes bounds the print-mode output the wrapper keeps to read usage from.
+const maxOutputBytes = 4 << 20
 
 // StopGrace is how long the wrapper waits for Claude to exit after asking it
 // to stop before killing it.
@@ -186,10 +195,59 @@ func Instruction(a Args) string {
 }
 
 // ClaudeArgs are the arguments after the program for attempt a: print mode
-// with Instruction as the prompt, PermissionMode, and only the model
-// directory added for tool access.
+// with Instruction as the prompt, OutputFormat, PermissionMode, and only the
+// model directory added for tool access.
 func ClaudeArgs(a Args) []string {
-	return []string{"--print", Instruction(a), "--permission-mode", PermissionMode, "--add-dir", ModelDir(a.ResultFile)}
+	return []string{"--print", Instruction(a), "--output-format", OutputFormat, "--permission-mode", PermissionMode, "--add-dir", ModelDir(a.ResultFile)}
+}
+
+// ParseUsage reads the usage Claude Code reports in its print-mode JSON output, the session's result message:
+// its usage object's input, output, cache creation and cache read tokens are measured, and its total_cost_usd,
+// which Claude Code prices from those tokens, is an estimate. A message without a usage object has unknown
+// tokens, and one without total_cost_usd an unknown cost. Output that is not one JSON object is an error.
+func ParseUsage(output []byte) (adapter.Usage, error) {
+	msg, err := parseResultMessage(output)
+	if err != nil {
+		return adapter.Usage{}, err
+	}
+	u := adapter.UnknownUsage
+	if msg.Usage != nil {
+		u.Tokens = adapter.Measured
+		u.InputTokens, u.OutputTokens = msg.Usage.InputTokens, msg.Usage.OutputTokens
+		u.CacheCreationInputTokens, u.CacheReadInputTokens = msg.Usage.CacheCreationInputTokens, msg.Usage.CacheReadInputTokens
+	}
+	if msg.TotalCostUSD != nil {
+		u.Cost, u.CostUSD = adapter.Estimated, *msg.TotalCostUSD
+	}
+	if err := u.Validate(); err != nil {
+		return adapter.Usage{}, fmt.Errorf("claude result message: %w", err)
+	}
+	return u, nil
+}
+
+// resultMessage is the part of Claude Code's print-mode JSON result message the wrapper reads.
+type resultMessage struct {
+	Result       *string  `json:"result"`
+	TotalCostUSD *float64 `json:"total_cost_usd"`
+	Usage        *struct {
+		InputTokens              int64 `json:"input_tokens"`
+		OutputTokens             int64 `json:"output_tokens"`
+		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+	} `json:"usage"`
+}
+
+// parseResultMessage decodes output as exactly one JSON object.
+func parseResultMessage(output []byte) (resultMessage, error) {
+	dec := json.NewDecoder(bytes.NewReader(output))
+	var msg resultMessage
+	if err := dec.Decode(&msg); err != nil {
+		return resultMessage{}, fmt.Errorf("claude output is not a JSON result message: %w", err)
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return resultMessage{}, errors.New("claude output has more than one JSON value")
+	}
+	return msg, nil
 }
 
 // Main runs `guildhall claude-artisan` with args, the arguments after the
@@ -225,8 +283,13 @@ var errMarked = errors.New("cancel marker present")
 // killing it after StopGrace, and publishes nothing; the marker is not an
 // error. Once Claude exits, the draft's bytes are published at the result
 // file, never replacing one, unless the attempt was cancelled meanwhile; no
-// draft is ErrNoDraft. Claude's exit status does not decide completion: a
-// failing exit after a draft is published is still returned as an error.
+// draft is ErrNoDraft. Before publishing, Run writes the usage Claude's JSON
+// output reports (ParseUsage) as the attempt's usage file, unknown when the
+// output reports none, and passes the session's result text to stdout; a
+// stopped session writes no usage file. A failure to write the usage file
+// does not stop the draft being published; it is returned as an error after.
+// Claude's exit status does not decide completion: a failing exit after a
+// draft is published is still returned as an error.
 func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	if marked, err := adapter.Cancelled(a.ResultFile, a.Identity); err != nil || marked {
 		return errors.Join(err, cancelledErr(marked))
@@ -252,7 +315,8 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	ctx, cancel := watchMarker(ctx, a)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, ClaudeArgs(a)...)
-	cmd.Stdout, cmd.Stderr = stdout, stderr
+	output := &limitedBuffer{limit: maxOutputBytes}
+	cmd.Stdout, cmd.Stderr = output, stderr
 	cmd.Cancel = func() error { return stop(cmd.Process) }
 	cmd.WaitDelay = StopGrace
 	runErr := cmd.Run()
@@ -263,11 +327,55 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 		}
 		return fmt.Errorf("claude adapter: stopped without a result: %w", context.Cause(ctx))
 	}
+	var usageErr error
+	if err := report(a, output, stdout, stderr); err != nil {
+		usageErr = fmt.Errorf("claude adapter: usage: %w", err)
+	}
 	if err := publish(DraftFile(a.ResultFile), a); err != nil {
-		return errors.Join(err, runErr)
+		return errors.Join(err, runErr, usageErr)
 	}
 	if runErr != nil {
-		return fmt.Errorf("claude adapter: Claude exited after writing its result: %w", runErr)
+		return errors.Join(fmt.Errorf("claude adapter: Claude exited after writing its result: %w", runErr), usageErr)
+	}
+	return usageErr
+}
+
+// report writes the usage Claude's output reports as a's usage file, unknown when the output reports none, and
+// passes the session's result text to stdout, or the output itself when it is not a result message.
+func report(a Args, output *limitedBuffer, stdout, stderr io.Writer) error {
+	u, err := ParseUsage(output.buf.Bytes())
+	if err != nil || output.truncated {
+		_, _ = fmt.Fprintf(stderr, "guildhall: %s: usage unknown: %v\n", Subcommand, errors.Join(err, output.err()))
+		u = adapter.UnknownUsage
+	}
+	if msg, err := parseResultMessage(output.buf.Bytes()); err == nil && msg.Result != nil {
+		_, _ = fmt.Fprintln(stdout, *msg.Result)
+	} else {
+		_, _ = stdout.Write(output.buf.Bytes())
+	}
+	return adapter.WriteUsage(a.ResultFile, u)
+}
+
+// limitedBuffer keeps the first limit bytes written to it and discards the rest, so a runaway output neither
+// grows without bound nor blocks Claude.
+type limitedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if room := b.limit - b.buf.Len(); room < len(p) {
+		b.truncated = true
+		b.buf.Write(p[:max(room, 0)])
+		return len(p), nil
+	}
+	return b.buf.Write(p)
+}
+
+func (b *limitedBuffer) err() error {
+	if b.truncated {
+		return fmt.Errorf("output longer than %d bytes", b.limit)
 	}
 	return nil
 }

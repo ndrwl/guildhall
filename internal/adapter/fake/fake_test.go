@@ -247,3 +247,40 @@ func TestRunOutputDirective(t *testing.T) {
 		}
 	}
 }
+
+// TestRunWritesResultDespiteUsageFailure: a usage file that cannot be written does not stop the result.
+func TestRunWritesResultDespiteUsageFailure(t *testing.T) {
+	args := setup(t, "Do it.\n")
+	if err := os.Mkdir(adapter.UsageFile(args.ResultFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, args); err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+	if r, err := adapter.ReadResult(args.ResultFile, args.Identity); err != nil || r.Status != adapter.StatusSucceeded {
+		t.Errorf("ReadResult = %+v, %v; want a succeeded result", r, err)
+	}
+}
+
+// TestRunReportsFixedUsage: a worker whose work ends writes ReportedUsage beside its result, with a result or
+// not; one stopped without a result writes none, so its usage is unknown.
+func TestRunReportsFixedUsage(t *testing.T) {
+	for _, prompt := range []string{"Do it.\n", "guildhall-fake: outcome=failed\n", "guildhall-fake: fault=no-result\n", "guildhall-fake: fault=exit-error\n"} {
+		args := setup(t, prompt)
+		_, _ = run(t, args)
+		if got, err := adapter.ReadUsage(args.ResultFile); err != nil || got != ReportedUsage {
+			t.Errorf("%q: usage = %+v, %v; want %+v", prompt, got, err, ReportedUsage)
+		}
+	}
+	args := setup(t, "guildhall-fake: delay=1m\n")
+	err := Run(context.Background(), args, &bytes.Buffer{}, func(context.Context, time.Duration) error { return context.Canceled })
+	if err == nil {
+		t.Fatal("an interrupted delay succeeded")
+	}
+	if _, err := os.Stat(adapter.UsageFile(args.ResultFile)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("an interrupted worker wrote a usage file: %v", err)
+	}
+	if err := ReportedUsage.Validate(); err != nil {
+		t.Errorf("ReportedUsage is invalid: %v", err)
+	}
+}

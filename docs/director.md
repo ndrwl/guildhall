@@ -152,13 +152,27 @@ In a standalone copy they are the copy's own config, which the Guildmaster edits
 - Merge rule: each repository's `merge_policy`, which [deliver](interpreter.md#publish-and-deliver) enforces.
 - Attempt caps: [`max_running_attempts`](configuration.md#settings), default 4, and `max_attempts_per_day`, default 40, across all the Director's repositories.
   An attempt runs from its start to its finish, and a day is a UTC day.
-  The caps count attempts, not tokens or cost, since no runtime reports cost to Guildhall yet.
-  Logging or estimating each attempt's token use and cost is a follow-up and is not built.
+  The caps count attempts, not tokens or cost: each attempt's [spend](#spend) is recorded and shown beside them, but no budget refuses an attempt by its tokens or cost yet.
 
 An advance whose next attempt would pass a cap, from `task start`, `step done`, `step finish`, `step retry` or a launcher's own advance, records and launches nothing and exits 1 naming the rail, such as `guard rail max_running_attempts: ... 4 attempts are running, the cap is 4`.
 It also sends the Director a `budget-refused` message, once per task and UTC day.
 The count and the start are one store write, so two advances never both take the last place, and an attempt already recorded is always launched again after a crash.
 Nothing starts the refused attempt by itself: once an attempt finishes or the day turns, the Director runs `guildhall task start` for the task again, or `step retry` again for a refused retry.
+
+## Spend
+
+Each owned attempt's store record holds what its runtime reported it spent ([decision](decisions/attempt-spend.md)): input, output, cache creation and cache read tokens and a cost in US dollars, each marked `measured`, `estimated` or `unknown`, from the attempt's [usage file](adapters.md#usage-file).
+The launcher records it when the attempt ends, and `artisan resume` when it settles an exited launcher's attempt.
+
+What is measured:
+
+- The [Claude adapter](adapters.md#claude-adapter): tokens are measured, the counts Claude Code reports for the session; the cost is estimated, Claude Code's own price for those tokens, not a bill.
+  A Claude session that was stopped reports nothing, so its spend is unknown though it spent tokens.
+- The [fake adapter](adapters.md#fake-adapter) reports fixed numbers for tests.
+- A runtime that reports nothing, a usage file Guildhall rejects, and a [Director stage](interpreter.md#director-stages), which the Director runs in its own session, are unknown: zero numbers marked `unknown`, never a guess.
+- The Director's own session is not metered.
+
+[`director status`](#status) sums the spend per task and per UTC day, each total counting the attempts whose tokens or cost are unknown instead of adding a guess.
 
 ## Status
 
@@ -182,7 +196,7 @@ The document has these sections:
   Live attempt state is read after the store, so it can be newer than `sequence`.
 - `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, and the `end_reason` of a session [stopped](#stop) as `superseded`.
   A store with no session reports only its `state`, `"no session"`, and `guard_rails`.
-  `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_policies`, `max_running_attempts` and `max_attempts_per_day`, when the copy has a config, and always `running_attempts`, `attempts_today` and the UTC `day` they count, read in the same store transaction.
+  `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_policies`, `max_running_attempts` and `max_attempts_per_day`, when the copy has a config, and always `running_attempts`, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
   A config that exists but cannot be read gives `config_error` in place of the rails.
   The identity's liveness is not probed yet.
 - `mode`: `{"name":"standalone"}` until managed mode lands.
@@ -192,6 +206,7 @@ The document has these sections:
     Every `task start`, `step done`, `step finish` and `step retry`, typed or run by the [watcher](running.md#the-watcher), writes it, so it is absent only for a task never advanced.
   - `steps`: for each step with an attempt, in the order the steps first started, its latest `attempt` with its `outcome`, or, while it runs, `live`: the classification `state` and `reason` from `reconcile.Classify`.
     A running attempt with neither an ownership record nor an attempt directory is `absent`, as `artisan status` reports it.
+  - `spend`: the [spend total](#spend-totals) of the task's attempts.
 - `decisions`: every open decision in repository, task and id order, with its `kind`, `subject`, `options`, `question` and `opened_at`, the commit time of its opening.
 - `messages`: the Director's `unread` count, the count `by_type`, and the `headers` of at most the 20 oldest unread messages (`id`, `type`, `repository`, `task_id`, `step` and `attempt` when given, `sequence`).
 - `recent`: the last 20 receipts of any task across repositories, in commit order, each with its operation, mutation id, sequence, commit time and record name, so records such as delivery's `publish-<k>-pr` documents and its `merged`, `merge-refused` and `workspace-kept` messages appear without a change to the feed.
@@ -211,3 +226,9 @@ The document has these sections:
 
 Times are commit times of the store's receipts, in UTC.
 The feed reads every receipt in the store, so its cost grows with the store's mutation count, as `task timeline`'s does.
+
+### Spend totals
+
+A spend total sums the [spend](#spend) of every finished attempt, and of a running one that has recorded its spend: `attempts` counts them, `tokens_unknown` and `cost_unknown` count those whose tokens or cost are unknown, which add nothing, and `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` and `cost_usd` are the sums.
+`tokens` and `cost` are the sums' measures: `unknown` when no attempt's number is known, `estimated` when any summed number is, otherwise `measured`.
+A task or day with no such attempt has `attempts` 0 and both measures `unknown`.

@@ -34,6 +34,26 @@ const Directive = "claude-stub:"
 // Summary is the summary of every result the stub writes.
 const Summary = "The stub did the task."
 
+// Usage is the usage every print-mode stub session reports in its JSON output (Output): fixed numbers, so tests
+// of what the wrapper records are deterministic.
+var Usage = adapter.Usage{Tokens: adapter.Measured, InputTokens: 1200, OutputTokens: 340, CacheCreationInputTokens: 5000, CacheReadInputTokens: 18000, Cost: adapter.Estimated, CostUSD: 0.0421}
+
+// Output is the print-mode JSON output the stub writes on standard output when it exits, shaped as Claude Code's
+// result message, reporting Usage.
+func Output() []byte {
+	data, _ := json.Marshal(map[string]any{
+		"type": "result", "subtype": "success", "is_error": false, "num_turns": 3,
+		"result": Summary, "session_id": "00000000-0000-0000-0000-000000000000",
+		"total_cost_usd": Usage.CostUSD,
+		"usage": map[string]any{
+			"input_tokens": Usage.InputTokens, "output_tokens": Usage.OutputTokens,
+			"cache_creation_input_tokens": Usage.CacheCreationInputTokens, "cache_read_input_tokens": Usage.CacheReadInputTokens,
+			"service_tier": "standard",
+		},
+	})
+	return append(data, '\n')
+}
+
 // HangLimit bounds how long a hanging stub works when nothing stops it.
 const HangLimit = 2 * time.Minute
 
@@ -135,6 +155,9 @@ func stub(args []string) error {
 	if i < 0 || i+1 >= len(flags) || flags[i+1] != claude.PermissionMode {
 		return fmt.Errorf("want --permission-mode %s, got %q", claude.PermissionMode, flags)
 	}
+	if i := slices.Index(flags, "--output-format"); i < 0 || i+1 >= len(flags) || flags[i+1] != claude.OutputFormat {
+		return fmt.Errorf("want --output-format %s, got %q", claude.OutputFormat, flags)
+	}
 	var promptFile, draft string
 	sc := bufio.NewScanner(strings.NewReader(instruction))
 	for sc.Scan() {
@@ -168,6 +191,10 @@ func stub(args []string) error {
 		if v, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), Directive); ok {
 			b = adaptertest.Behaviour(strings.TrimSpace(v))
 		}
+	}
+	if b != adaptertest.Hang {
+		// Claude Code prints its result message as it exits, whatever the session did.
+		defer func() { _, _ = os.Stdout.Write(Output()) }()
 	}
 	result := map[string]any{
 		"schema": adapter.ResultSchema, "version": adapter.ResultVersion,
