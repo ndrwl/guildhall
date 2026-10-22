@@ -2,7 +2,7 @@
 
 Each Director copy keeps its durable records in one store file owned by Guildhall (R1.17).
 `internal/store` implements it as a single bbolt database.
-The store supports the [local messaging commands](messaging.md), the [decision commands](decisions-cli.md), and the [owned Artisan commands](artisan.md#commands) and [`task start` and `step done`](running.md), which launch and reconcile attempts from its ownership records; nothing schedules or merges work from it yet.
+The store supports the [local messaging commands](messaging.md), the [decision commands](decisions-cli.md), and the [owned Artisan commands](artisan.md#commands) and [`task start`, `step done` and `step retry`](running.md), which launch and reconcile attempts from its ownership records; nothing schedules or merges work from it yet.
 
 ## Records
 
