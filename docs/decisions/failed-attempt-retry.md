@@ -10,6 +10,8 @@ Refusals use the engine's `ErrEvent`, as every event that does not match the rec
 
 The reason, when given, is sent as Director message `<repo>.<task>.attempt-retried.<step>-<n>` only after the next attempt is recorded, under an id derived from the retried attempt.
 A retry refused before then sends nothing, so the Director can repeat it with another reason.
+`step retry` refuses a step whose adapter [`runtimes.Names`](../contracts/adapter-runtimes.md) does not list before the engine records anything.
+The engine records the next attempt before launching it, so a launch refusal would otherwise leave that attempt and its reason stored, and a later retry with another reason would be ignored as a replay.
 A crash between the two is recovered by replaying the retry, which resends the reason under the same id; a replay with a different reason conflicts with the message already sent and is ignored.
 It is optional because a retry after a killed launcher needs no explanation, and a required one would be filled with noise.
 

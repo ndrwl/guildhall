@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
@@ -200,6 +202,11 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("repository %s: %w", f.repo, err)
 	}
+	if ev.Kind == interp.AttemptRetried {
+		if err := retryAdapter(cfg, def, ev.Step); err != nil {
+			return interp.Next{}, fmt.Errorf("step retry: %w", err)
+		}
+	}
 	state, err := filepath.Abs(f.state)
 	if err != nil {
 		return interp.Next{}, err
@@ -244,10 +251,35 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Prompter: baselinePrompter(cfg, cfgDir, skills),
 		Outbox:   storeRecords(f.store),
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
-		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
+		Config:   cfg, DefaultAdapter: defaultAdapter, StandardsRevision: standards,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, Forge: fg,
 	}
 	return e.Advance(context.Background(), ev)
+}
+
+// defaultAdapter runs an Artisan step without a profile.
+const defaultAdapter = interp.FakeAdapter
+
+// retryAdapter refuses a retry of step when the launcher does not run its adapter. The engine records the next
+// attempt before launching it, so without this a launch refusal would leave that attempt and the retry's reason
+// recorded; an unknown step or profile is left to the engine, which refuses it before recording anything.
+func retryAdapter(cfg *config.Config, def *workflow.Definition, step string) error {
+	i := slices.IndexFunc(def.Steps, func(s workflow.Step) bool { return s.ID == step })
+	if i < 0 || def.Steps[i].Actor() != workflow.ArtisanActor {
+		return nil
+	}
+	name := defaultAdapter
+	if p := def.Steps[i].Profile(); p != "" {
+		profile, err := cfg.Profile(p)
+		if err != nil {
+			return nil
+		}
+		name = profile.Adapter
+	}
+	if !slices.Contains(runtimes.Names(), name) {
+		return fmt.Errorf("adapter %q: the adapters are %s", name, strings.Join(runtimes.Names(), ", "))
+	}
+	return nil
 }
 
 // baselinePrompter renders from baseline/ beside the config file and the release skills root (docs/running.md).

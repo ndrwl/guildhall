@@ -217,22 +217,7 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 // attempt 2 with its reason recorded; repeating the retry changes nothing.
 func TestRetryAfterAKilledLauncher(t *testing.T) {
 	// The plan attempts never publish a result, so the launcher is still running when it is killed.
-	dir := t.TempDir()
-	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "internal", "cli", "testdata", "run"))); err != nil {
-		t.Fatal(err)
-	}
-	plan := filepath.Join(dir, "baseline", "stages", "plan.md")
-	f, err := os.OpenFile(plan, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("guildhall-fake: result=never\nguildhall-fake: lifetime=60s\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-	d := newBinDirector(t, filepath.Join(dir, "config.toml"))
+	d := newBinDirector(t, filepath.Join(neverPlanned(t), "config.toml"))
 	d.newTask()
 	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
 	d.launched("plan", 1)
@@ -311,5 +296,76 @@ func TestRetryAfterAKilledLauncher(t *testing.T) {
 	}
 	if !slices.Equal(order, exp) {
 		t.Errorf("timeline events:\n%q\nwant\n%q", order, exp)
+	}
+}
+
+// neverPlanned copies internal/cli/testdata/run to a temporary directory, which it returns, with the plan stage's
+// fake Artisan set never to publish a result, so its launcher runs until it is stopped.
+func neverPlanned(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "internal", "cli", "testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(dir, "baseline", "stages", "plan.md")
+	f, err := os.OpenFile(plan, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("guildhall-fake: result=never\nguildhall-fake: lifetime=60s\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestRetryWithAnUnknownAdapterRecordsNothing pins T1 through the binary, where interp.CheckAdapter allows any
+// name: a retry whose profile names an adapter the launcher does not run is refused before attempt 2 or its
+// reason is recorded, so once the profile is fixed a retry with another reason starts attempt 2 and stores that
+// reason.
+func TestRetryWithAnUnknownAdapterRecordsNothing(t *testing.T) {
+	dir := neverPlanned(t)
+	cfg := filepath.Join(dir, "claude.toml")
+	profile := func(adapter string) {
+		t.Helper()
+		b, err := os.ReadFile(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := bytes.Index(b, []byte("[profile.planner]"))
+		if err := os.WriteFile(cfg, append(b[:i:i], "[profile.planner]\nadapter = \""+adapter+"\"\n"...), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	profile("fake")
+	d := newBinDirector(t, cfg)
+	d.newTask()
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
+	d.launched("plan", 1)
+	d.run("", "artisan", "stop", "--store", d.store, "--state", d.state, "--repository", "app", "--task", "t-1", "--step", "plan", "--attempt", "1")
+
+	profile("nosuch")
+	retry := append(append([]string{"step", "retry"}, d.flags...), "--task", "t-1", "--step", "plan", "--attempt", "1")
+	if out, stderr, err := d.try("", append(retry, "--reason", "Reason A")...); err == nil || !strings.Contains(stderr, `adapter "nosuch"`) {
+		t.Fatalf("retry with adapter nosuch: %v\nstdout %s\nstderr %s", err, out, stderr)
+	}
+	reason := []string{"messages", "read", "--store", d.store, "app.t-1.attempt-retried.plan-1"}
+	if out, _, err := d.try("", reason...); err == nil {
+		t.Fatalf("the refused retry stored its reason: %s", out)
+	}
+
+	profile("fake")
+	d.want(d.run("", append(retry, "--reason", "Reason B")...), `{"wait":"attempt","step":"plan","attempt":2}`)
+	d.launched("plan", 2)
+	var msg struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(d.run("", reason...)), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Text != "Reason B" {
+		t.Errorf("retry reason %q, want %q", msg.Text, "Reason B")
 	}
 }
