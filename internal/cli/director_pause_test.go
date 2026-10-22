@@ -382,12 +382,13 @@ func superviseTyping(t *testing.T, dir string, grace time.Duration) (<-chan int,
 // superviseWith is supervise with the App configured by configure, when it is set, and args after the copy.
 func superviseWith(t *testing.T, dir string, grace time.Duration, configure func(*App), args ...string) <-chan int {
 	t.Helper()
-	done, _ := superviseConfigured(t, dir, grace, configure)
+	done, _ := superviseConfigured(t, dir, grace, configure, args...)
 	return done
 }
 
-// superviseConfigured is superviseTyping with the App configured by configure, when it is set.
-func superviseConfigured(t *testing.T, dir string, grace time.Duration, configure func(*App)) (<-chan int, *os.File) {
+// superviseConfigured is superviseTyping with the App configured by configure, when it is set, and args after the
+// copy.
+func superviseConfigured(t *testing.T, dir string, grace time.Duration, configure func(*App), args ...string) (<-chan int, *os.File) {
 	t.Helper()
 	stdin, typing, err := os.Pipe()
 	if err != nil {
