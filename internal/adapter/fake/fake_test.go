@@ -248,6 +248,20 @@ func TestRunOutputDirective(t *testing.T) {
 	}
 }
 
+// TestRunWritesResultDespiteUsageFailure: a usage file that cannot be written does not stop the result.
+func TestRunWritesResultDespiteUsageFailure(t *testing.T) {
+	args := setup(t, "Do it.\n")
+	if err := os.Mkdir(adapter.UsageFile(args.ResultFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, args); err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+	if r, err := adapter.ReadResult(args.ResultFile, args.Identity); err != nil || r.Status != adapter.StatusSucceeded {
+		t.Errorf("ReadResult = %+v, %v; want a succeeded result", r, err)
+	}
+}
+
 // TestRunReportsFixedUsage: a worker whose work ends writes ReportedUsage beside its result, with a result or
 // not; one stopped without a result writes none, so its usage is unknown.
 func TestRunReportsFixedUsage(t *testing.T) {

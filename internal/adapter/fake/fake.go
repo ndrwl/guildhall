@@ -358,9 +358,10 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 		}
 	}
 	if err := adapter.WriteUsage(a.ResultFile, ReportedUsage); err != nil {
-		return err
+		say("usage not reported: %v", err)
+	} else {
+		say("reported usage in %s", adapter.UsageFile(a.ResultFile))
 	}
-	say("reported usage in %s", adapter.UsageFile(a.ResultFile))
 	if d.result != resultDelay || d.delay > d.lifetime {
 		say("lifetime %s over without a result", d.lifetime)
 		return nil

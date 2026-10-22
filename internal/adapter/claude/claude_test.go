@@ -395,6 +395,22 @@ func TestRunWritesUsage(t *testing.T) {
 	})
 }
 
+// TestRunPublishesDespiteUsageFailure: a usage file that cannot be written is an error, but the draft is still
+// published.
+func TestRunPublishesDespiteUsageFailure(t *testing.T) {
+	claudetest.Install(t)
+	spec := interptest.AdapterSpec(t, interp.FakeAdapter, "Do the task.\n")
+	if err := os.Mkdir(adapter.UsageFile(spec.ResultFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Error("Run succeeded although the usage file could not be written")
+	}
+	if r, err := adapter.ReadResult(spec.ResultFile, spec.Identity); err != nil || r.Status != adapter.StatusSucceeded {
+		t.Errorf("ReadResult = %+v, %v; want the published draft", r, err)
+	}
+}
+
 // TestRunStopsOnContext: ending ctx stops Claude and publishes nothing.
 func TestRunStopsOnContext(t *testing.T) {
 	claudetest.Install(t)

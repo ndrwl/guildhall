@@ -286,9 +286,10 @@ var errMarked = errors.New("cancel marker present")
 // draft is ErrNoDraft. Before publishing, Run writes the usage Claude's JSON
 // output reports (ParseUsage) as the attempt's usage file, unknown when the
 // output reports none, and passes the session's result text to stdout; a
-// stopped session writes no usage file. Claude's exit status does not decide
-// completion: a failing exit after a draft is published is still returned as
-// an error.
+// stopped session writes no usage file. A failure to write the usage file
+// does not stop the draft being published; it is returned as an error after.
+// Claude's exit status does not decide completion: a failing exit after a
+// draft is published is still returned as an error.
 func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	if marked, err := adapter.Cancelled(a.ResultFile, a.Identity); err != nil || marked {
 		return errors.Join(err, cancelledErr(marked))
@@ -326,30 +327,31 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 		}
 		return fmt.Errorf("claude adapter: stopped without a result: %w", context.Cause(ctx))
 	}
+	var usageErr error
 	if err := report(a, output, stdout, stderr); err != nil {
-		return fmt.Errorf("claude adapter: usage: %w", err)
+		usageErr = fmt.Errorf("claude adapter: usage: %w", err)
 	}
 	if err := publish(DraftFile(a.ResultFile), a); err != nil {
-		return errors.Join(err, runErr)
+		return errors.Join(err, runErr, usageErr)
 	}
 	if runErr != nil {
-		return fmt.Errorf("claude adapter: Claude exited after writing its result: %w", runErr)
+		return errors.Join(fmt.Errorf("claude adapter: Claude exited after writing its result: %w", runErr), usageErr)
 	}
-	return nil
+	return usageErr
 }
 
 // report writes the usage Claude's output reports as a's usage file, unknown when the output reports none, and
 // passes the session's result text to stdout, or the output itself when it is not a result message.
 func report(a Args, output *limitedBuffer, stdout, stderr io.Writer) error {
-	u, err := ParseUsage(output.Bytes())
+	u, err := ParseUsage(output.buf.Bytes())
 	if err != nil || output.truncated {
 		_, _ = fmt.Fprintf(stderr, "guildhall: %s: usage unknown: %v\n", Subcommand, errors.Join(err, output.err()))
 		u = adapter.UnknownUsage
 	}
-	if msg, err := parseResultMessage(output.Bytes()); err == nil && msg.Result != nil {
+	if msg, err := parseResultMessage(output.buf.Bytes()); err == nil && msg.Result != nil {
 		_, _ = fmt.Fprintln(stdout, *msg.Result)
 	} else {
-		_, _ = stdout.Write(output.Bytes())
+		_, _ = stdout.Write(output.buf.Bytes())
 	}
 	return adapter.WriteUsage(a.ResultFile, u)
 }
@@ -357,18 +359,18 @@ func report(a Args, output *limitedBuffer, stdout, stderr io.Writer) error {
 // limitedBuffer keeps the first limit bytes written to it and discards the rest, so a runaway output neither
 // grows without bound nor blocks Claude.
 type limitedBuffer struct {
-	bytes.Buffer
+	buf       bytes.Buffer
 	limit     int
 	truncated bool
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if room := b.limit - b.Len(); room < len(p) {
+	if room := b.limit - b.buf.Len(); room < len(p) {
 		b.truncated = true
-		b.Buffer.Write(p[:max(room, 0)])
+		b.buf.Write(p[:max(room, 0)])
 		return len(p), nil
 	}
-	return b.Buffer.Write(p)
+	return b.buf.Write(p)
 }
 
 func (b *limitedBuffer) err() error {
