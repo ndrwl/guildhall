@@ -96,6 +96,43 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 	}
 }
 
+// Separate stores can both have session 1 in the same supervisor process. Their
+// recorded units must remain independently startable and stoppable.
+func TestRuntimeUnitsAreIsolatedAcrossStores(t *testing.T) {
+	var units []runtimeUnit
+	var trees [][]artisan.Identity
+	var records []store.DirectorSession
+	for range 2 {
+		path := emptyStore(t)
+		recordSession(t, path, false, store.DirectorRunning)
+		inv := t.TempDir()
+		u, err := startRuntime(artisantest.Command(inv, artisantest.Worker{Grandchildren: 1}), 1, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = u.Close() })
+		units = append(units, u)
+		trees = append(trees, runtimeTree(t, inv))
+		rec, _ := latestSession(t, path)
+		records = append(records, rec)
+	}
+	if records[0].Runtime.Name != "" && records[0].Runtime.Name == records[1].Runtime.Name {
+		t.Fatalf("separate stores recorded the same runtime unit: %+v", records)
+	}
+	if err := units[0].Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := empty(units[0], 10*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	assertGone(t, "after ending only the first runtime", trees[0]...)
+	for _, id := range trees[1] {
+		if lv, err := artisan.Probe(id); err != nil || lv != artisan.Alive {
+			t.Errorf("second runtime process %d = %v, %v; want alive", id.PID, lv, err)
+		}
+	}
+}
+
 // survivingUnit is a runtime unit whose runtime has exited and whose one other member never ends.
 type survivingUnit struct{ exited chan struct{} }
 

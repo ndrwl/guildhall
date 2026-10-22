@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -291,7 +292,8 @@ type runtimeUnit interface {
 // session n in the store at storePath, so a director stop can sweep it once the supervisor is gone; a failed record
 // ends the runtime with its unit.
 func startRuntime(c *exec.Cmd, n int, storePath string) (runtimeUnit, error) {
-	u, err := artisan.NewSessionUnit(fmt.Sprintf("director-%d-session-%d", os.Getpid(), n))
+	// Session numbers are store-local; one supervisor process can serve multiple stores.
+	u, err := artisan.NewSessionUnit(fmt.Sprintf("director-%d-session-%d-%s", os.Getpid(), n, rand.Text()))
 	if err != nil {
 		return nil, err
 	}
