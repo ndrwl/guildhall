@@ -10,7 +10,7 @@ The automatic triggers (`handoff_after_tasks`, `handoff_context_percent`, `hando
   `director handoff --note-file <path|->` writes the note to `<state>/documents/director/handoff-<seq>.md` and records a `HandoffNote` with the session, path and sha256, as R1.13 asks of grilling answers and design documents.
   The store chooses the path from the receipt sequence and has the caller write the file inside the recording mutation, before it commits, so a recorded note always has its file and a failed write records nothing.
   The note is read with the decision-answer rules (BOM dropped, CRLF to LF, UTF-16 refused) and is at most 64 KiB.
-  Its mutation id carries the session and the digest, so a repeated `handoff` of the same note is one record.
+  Its mutation id carries the session, the digest and the newest note before it, so the same note handed off twice in a row is one record, and a note handed off again after another becomes the newest anew.
 - **Reload requests collapse.**
   At most one request is `requested`; repeating it returns it unchanged and `--now` upgrades it in place, so a Director that types `reload` twice, or the Steward and the Guildmaster both asking, restart the session once.
   The session that applies it records `applied` with the old and new session numbers; the old session is recorded `stopped` with the end reason `reloaded`.
