@@ -13,6 +13,7 @@ Defender was already off and no test leaked a process.
   `TestOpenSyncsEveryCommitByDefault` keeps the synced path pinned, and `cmd/guildhall`'s built binary runs synced end to end.
 - **Wait ceilings scale on CI; behaviour does not.**
   `testenv.Ceiling(d)` is `d` times 5 when `CI` is set, so a slow runner makes a test slow rather than red, and a local failure still comes promptly.
+  The scaled ceiling stops at the larger of `d` and two minutes: unbounded, `cmd/guildhall`'s minute-long waits grew to five and ten minutes, and a macOS run whose attempt would not stop hit `go test`'s ten-minute package timeout, which lost the test's messages.
   It wraps every fixed ceiling of 5 s or more in the tests and the store lock waits of the tests' own opens, and the test children that share `internal/launch`'s `deadline` inherit the same scale.
   It is not applied to graces a test waits out on purpose or to durations the code observes, such as stop-ladder rungs or stall intervals.
   The production lock wait, `store.DefaultLockTimeout`, is unchanged.

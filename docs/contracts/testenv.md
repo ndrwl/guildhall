@@ -16,7 +16,8 @@ The skips that use it:
 
 The [CI workflow's matrix](../../.github/workflows/ci.yml) owns the required capabilities for each runner.
 
-`Ceiling(d)` scales the longest a test waits for an event before it fails: `d` times `CISlowdown` (5) when `CI` is set to anything but empty, as on every hosted runner, and `d` unchanged otherwise ([windows-ci-speed](../decisions/windows-ci-speed.md)).
+`Ceiling(d)` scales the longest a test waits for an event before it fails: `d` times `CISlowdown` (5), but no more than the larger of `d` and `CIMaxCeiling` (2 minutes), when `CI` is set to anything but empty, as on every hosted runner, and `d` unchanged otherwise ([windows-ci-speed](../decisions/windows-ci-speed.md)).
+The cap keeps a stuck wait failing with its message inside `go test`'s ten-minute package timeout, which otherwise stops the package and loses the test's messages.
 A wait that ends on its event costs nothing extra, so a slow runner makes a test slow, not red, while a local run still fails promptly.
 It is for ceilings only: a grace a test waits out on purpose, such as `internal/cli`'s `leftovers` settle for a worker it expects to survive, or a duration the code under test observes, such as a stop ladder's rungs or a stall interval, stays unscaled.
 Test-binary children inherit `CI` and so the same ceilings.
@@ -24,5 +25,5 @@ Test-binary children inherit `CI` and so the same ceilings.
 ## Tests
 
 `testenv_test.go` was written red first against a stub that always skipped: the skip and failure table over a recording `T`, `Required`'s parsing and refusal, and `TestCIRequirementsAreKnown`, which checks the running job's own `GUILDHALL_CI_REQUIRE` on every runner.
-`ceiling_test.go`'s `TestCeiling` was written red first against a `Ceiling` returning `d` unchanged ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): unset keeps the ceiling, and `true` and any other value scale it.
+`ceiling_test.go`'s `TestCeiling` was written red first against a `Ceiling` returning `d` unchanged ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): unset keeps the ceiling, and `true` and any other value scale it; the cap cases were added after a macOS run where `cmd/guildhall`'s scaled minute ceilings outlasted the package timeout.
 The converted call sites keep their tests unchanged; run with every name required on a Linux host without `ksh` or PowerShell, each fails naming the missing tool or platform.
