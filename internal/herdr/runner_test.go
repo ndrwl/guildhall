@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -20,12 +22,13 @@ import (
 // passes against the double means the same against the real transport.
 
 // program is what the program under test does: write stdout and stderr, then
-// exit with exit, or hang until stopped; echo replaces stdout with the
-// arguments and selected environment the program received.
+// exit with exit, or hang until stopped; orphan hangs too, after starting a
+// child that keeps its stdout and stderr open and outlives it; echo replaces
+// stdout with the arguments and selected environment the program received.
 type program struct {
 	stdout, stderr string
 	exit           int
-	hang           bool
+	hang, orphan   bool
 	echo           []string
 	missing        bool
 }
@@ -100,41 +103,51 @@ func testRunner(t *testing.T, newRunner func(t *testing.T) runnerUnderTest) {
 			t.Error("run of a missing program succeeded")
 		}
 	})
-	t.Run("cancellation stops a hung program and reports the context error", func(t *testing.T) {
-		r := newRunner(t)
-		argv := r.install(t, "hang", program{hang: true})
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		type ret struct {
-			exit int
-			err  error
-		}
-		done := make(chan ret, 1)
-		go func() {
-			_, _, exit, err := r.run(ctx, argv, minimalEnv())
-			done <- ret{exit, err}
-		}()
-		deadline := time.Now().Add(30 * time.Second)
-		for !r.started() {
-			if time.Now().After(deadline) {
-				t.Fatal("hung program did not start within 30s")
+	for _, c := range []struct {
+		name string
+		p    program
+	}{
+		{"cancellation stops a hung program and reports the context error", program{hang: true}},
+		// Its child holding the pipes must not hold the call past the context (F36): the run's pipes close
+		// WaitDelay after the program is stopped. The bound is far inside the child's lifetime.
+		{"cancellation returns although the program's child holds its pipes", program{orphan: true}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRunner(t)
+			argv := r.install(t, "hang", c.p)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			type ret struct {
+				exit int
+				err  error
 			}
+			done := make(chan ret, 1)
+			go func() {
+				_, _, exit, err := r.run(ctx, argv, minimalEnv())
+				done <- ret{exit, err}
+			}()
+			deadline := time.Now().Add(30 * time.Second)
+			for !r.started() {
+				if time.Now().After(deadline) {
+					t.Fatal("hung program did not start within 30s")
+				}
+				select {
+				case got := <-done:
+					t.Fatalf("run returned before cancellation: exit %d, %v", got.exit, got.err)
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			cancel()
 			select {
 			case got := <-done:
-				t.Fatalf("run returned before cancellation: exit %d, %v", got.exit, got.err)
-			case <-time.After(10 * time.Millisecond):
+				if !errors.Is(got.err, context.Canceled) {
+					t.Errorf("run after cancellation = exit %d, %v; want an error matching context.Canceled", got.exit, got.err)
+				}
+			case <-time.After(time.Minute):
+				t.Fatal("run did not return within a minute of cancellation")
 			}
-		}
-		cancel()
-		select {
-		case got := <-done:
-			if !errors.Is(got.err, context.Canceled) {
-				t.Errorf("run after cancellation = exit %d, %v; want an error matching context.Canceled", got.exit, got.err)
-			}
-		case <-time.After(10 * time.Second):
-			t.Fatal("run did not return within 10s of cancellation")
-		}
-	})
+		})
+	}
 }
 
 // minimalEnv is the environment a program needs to start on every platform.
@@ -161,7 +174,15 @@ func TestExecRunnerContract(t *testing.T) {
 				if p.missing {
 					return []string{self + "-missing-" + name}
 				}
-				spec, err := json.Marshal(map[string]any{"Stdout": p.stdout, "Stderr": p.stderr, "Exit": p.exit, "Hang": p.hang, "Echo": p.echo})
+				var linger string
+				if p.orphan {
+					// The child lingers while this file exists, so it ends with the test's temporary directory.
+					linger = filepath.Join(t.TempDir(), "linger")
+					if err := os.WriteFile(linger, nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				spec, err := json.Marshal(map[string]any{"Stdout": p.stdout, "Stderr": p.stderr, "Exit": p.exit, "Hang": p.hang || p.orphan, "Echo": p.echo, "Orphan": linger})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -183,7 +204,7 @@ func TestFakeRunnerContract(t *testing.T) {
 		return runnerUnderTest{
 			run: f.run,
 			install: func(t *testing.T, name string, p program) []string {
-				f.responses["probe "+name] = response{stdout: p.stdout, stderr: p.stderr, exit: p.exit, hang: p.hang, echo: p.echo, startErr: p.missing}
+				f.responses["probe "+name] = response{stdout: p.stdout, stderr: p.stderr, exit: p.exit, hang: p.hang || p.orphan, echo: p.echo, startErr: p.missing}
 				return []string{"herdr", "probe", name}
 			},
 			started: f.hanging,
@@ -202,10 +223,30 @@ func TestRunnerProbeHelper(t *testing.T) {
 		Exit           int
 		Hang           bool
 		Echo           []string
+		// Orphan, when set, starts a child with this program's stdout and stderr that lingers while the file
+		// Orphan names exists, at most five minutes; Linger is that child's own spec.
+		Orphan, Linger string
 	}
 	if err := json.Unmarshal([]byte(os.Args[at+2]), &p); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
+	}
+	if p.Linger != "" {
+		for end := time.Now().Add(5 * time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+			if _, err := os.Stat(p.Linger); err != nil {
+				break
+			}
+		}
+		os.Exit(0)
+	}
+	if p.Orphan != "" {
+		spec, _ := json.Marshal(map[string]string{"Linger": p.Orphan})
+		child := exec.Command(os.Args[0], "-test.run=^TestRunnerProbeHelper$", "--", "runner-probe", string(spec), os.Args[at+3])
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
 	}
 	if p.Echo != nil {
 		got := echoed{Args: os.Args[at+4:], Env: map[string]string{}}

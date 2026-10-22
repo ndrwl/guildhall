@@ -271,7 +271,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		latest[at.Repository+"/"+at.TaskID+"/"+at.Step] = at // attempts come in number order
 	}
 
-	var retry, resume, wait, held []needsMeItem
+	var advance, retry, resume, wait, held []needsMeItem
 	for _, t := range v.Tasks {
 		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}}
 		st.Next, st.NextError = readNext(filepath.Join(stateDir, t.Repository, t.ID, "next.json"))
@@ -289,14 +289,22 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			return strings.Compare(a, b)
 		})
 		open := t.State == store.TaskOpen
+		var waits struct {
+			Wait    interp.Wait
+			Step    string
+			Attempt int
+		}
+		if st.Next != nil {
+			_ = json.Unmarshal(st.Next, &waits)
+		}
 		for _, step := range steps {
 			at := latest[prefix+step]
 			ss := statusStep{Step: at.Step, Attempt: at.Number, Outcome: at.Outcome}
 			item := needsMeItem{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number}
 			flags := fmt.Sprintf("--repo %s --task %s --step %s --attempt %d", t.Repository, t.ID, at.Step, at.Number)
+			key := artisan.AttemptKey{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number}
 			switch at.Outcome {
 			case "":
-				key := artisan.AttemptKey{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number}
 				c := launch.Classify(ctx, launch.Attempt{Store: path, StateDir: stateDir, Key: key}, owners[key])
 				ss.Live = &statusLive{State: c.State, Reason: c.Reason}
 				if open && (c.State == reconcile.Stuck || c.State == reconcile.Exited || c.State == reconcile.Unknown) {
@@ -305,15 +313,25 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 				}
 			case store.AttemptFailed, store.AttemptStopped:
 				if open {
-					item.Kind, item.Retryable, item.Reason, item.Command = "retry", true, fmt.Sprintf("attempt %d of %s %s", at.Number, at.Step, at.Outcome), "guildhall step retry "+flags
-					retry = append(retry, item)
+					it := item
+					it.Kind, it.Retryable, it.Reason, it.Command = "retry", true, fmt.Sprintf("attempt %d of %s %s", at.Number, at.Step, at.Outcome), "guildhall step retry "+flags
+					retry = append(retry, it)
 				}
+			}
+			// A finished attempt the task's last advance still waits on was not taken, as when its watcher's advance failed.
+			if open && at.Outcome != "" && waits.Wait == interp.WaitAttempt && waits.Step == at.Step && waits.Attempt == at.Number {
+				item.Kind, item.Reason = "advance", fmt.Sprintf("attempt %d of %s %s and the task's last advance still waits on it", at.Number, at.Step, at.Outcome)
+				item.Command = fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)
+				result := filepath.Join(key.Dir(stateDir), artisan.ResultFile)
+				if _, err := os.Stat(result); err == nil && at.Outcome == store.AttemptSucceeded {
+					item.Command = "guildhall step done " + flags + " --result " + result
+				}
+				advance = append(advance, item)
 			}
 			st.Steps = append(st.Steps, ss)
 		}
-		if open && st.Next != nil {
-			var n struct{ Wait interp.Wait }
-			switch _ = json.Unmarshal(st.Next, &n); n.Wait {
+		if open {
+			switch waits.Wait {
 			case interp.WaitDirector:
 				wait = append(wait, needsMeItem{Kind: "director", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance waits for the Director",
 					Command: fmt.Sprintf("guildhall task timeline --repo %s --json %s", t.Repository, t.ID)})
@@ -354,7 +372,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	slices.SortStableFunc(stalled, func(a, b needsMeItem) int {
 		return strings.Compare(a.Repository+"/"+a.TaskID, b.Repository+"/"+b.TaskID)
 	})
-	out.NeedsMe = slices.Concat(out.NeedsMe, retry, resume, stalled, decisions)
+	out.NeedsMe = slices.Concat(out.NeedsMe, advance, retry, resume, stalled, decisions)
 	if others > 0 {
 		plural := map[bool]string{true: "s"}[others > 1]
 		out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "messages", Count: others, Reason: fmt.Sprintf("%d unread Director message%s", others, plural),

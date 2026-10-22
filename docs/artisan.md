@@ -260,7 +260,7 @@ Contract tests already read it, but no command reads it yet; it gains a schema w
 | `rung-timeout` | A rung's bound expires without proving the unit empty; `error` records any failure to list survivors | `rung`, `alive`, `error` |
 | `heartbeat-failed` | A heartbeat write fails | `sequence`, `error` |
 | `ended` | Outcome publication has been attempted, even if it failed; check the Run error and `outcome.json` separately for success | `outcome` |
-| `advance` | The launcher's advance of the task (`--advance`) has exited or failed to start, after the outcome was recorded | `command`, `exit` when it ran, `error` when it failed |
+| `advance` | A run of the launcher's advance of the task (`--advance`) has exited or failed to start, after the outcome was recorded; a failed advance logs two | `command`, `exit` when it ran, `error` when it failed |
 | `settled` | Resume settlement publishes a new outcome after the launcher is gone and the unit is proven empty; returning an existing outcome does not emit it | `outcome` |
 
 `rung-emptied` is written once for the rung that ends the stop: rung 1 can be found empty before the ladder's first check, during its wait or during cooperative supervision, and each of those paths returns after writing it.
@@ -379,7 +379,7 @@ Refusing an already-decided attempt preserves its ownership record and containme
 3. it starts the worker in the attempt's containment unit and records the containment in `containment.json` and, with the worker identity, in the ownership record, with state `running`;
 4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; a positive `--timeout` requests the stop ladder when it expires (zero, the default, imposes no limit), as do the endpoint's `stop` and SIGTERM or SIGHUP;
 5. it records the store outcome with `FinishAttempt`, which releases the ownership;
-6. with `--advance`, it then advances the task over the copy as its [watcher](running.md#the-watcher): `step done` after a finished attempt with a valid result, otherwise `task start`, with the output appended to `launcher.log` and an `advance` event in `events.jsonl`; a failed advance is only logged.
+6. with `--advance`, it then advances the task over the copy as its [watcher](running.md#the-watcher): `step done` after a finished attempt with a valid result, otherwise `task start`, with the output appended to `launcher.log` and an `advance` event in `events.jsonl` for each run; a failed advance is run once more and, failing again, [told to the Director](running.md#the-watcher) as `advance-failed`, and never changes the outcome.
    `--advance` needs a copy, `--copy` or `GUILDHALL_COPY`, and is a usage error without one; `launch.Process` passes `--copy <dir> --advance` only when the engine runs from a copy.
 
 With a positive `--stall-interval` (zero, the default, observes nothing), the launcher also sends the Director `worker-stalled` from its heartbeat when the worker has been silent past the interval ([heartbeat](#heartbeat)); `launch.Process` passes the engine's `stall_interval` when it is positive.

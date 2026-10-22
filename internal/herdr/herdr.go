@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // MinVersion is the oldest Herdr release whose client and server this package
@@ -87,9 +88,14 @@ func New(opts Options) (*Client, error) {
 // Session returns the session this client targets.
 func (c *Client) Session() string { return c.session }
 
+// runWaitDelay is how long a run whose context ended waits for its output pipes, which a child of the stopped
+// program may hold, before they are closed, so a call ends within this of its context.
+const runWaitDelay = 5 * time.Second
+
 func execRun(ctx context.Context, argv, env []string) ([]byte, []byte, int, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = env
+	cmd.WaitDelay = runWaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()

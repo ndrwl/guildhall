@@ -36,6 +36,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `decision` | A decision opened for the Guildmaster: read it with `guildhall decide show`, put it to them in plain English and record their reply as `guildhall-director-tasks` says. |
 | `director-stage` | A stage that is yours to run, such as a grill: run it with `guildhall-director-stage`. |
 | `attempt-failed` | An attempt failed or was stopped: read why with `guildhall task timeline`, then retry it with `guildhall step retry` and a reason, or tell the Guildmaster when retrying will not help. |
+| `advance-failed` | An attempt finished but its launcher could not advance the task: run the command its `advance` item in `needs_me` names, `guildhall step done` or `guildhall task start`. |
 | `worker-stalled` | An Artisan has written no output for a while: check it with `guildhall artisan status`, and stop it with `guildhall artisan stop` only when it is truly stuck. |
 | `question` | An Artisan asks you something: answer from what you know, or ask the Guildmaster when the answer is theirs, then reply with `guildhall messages send` to its attempt. |
 | `published` | A pull request opened or moved: tell the Guildmaster its URL when they are following that task. |

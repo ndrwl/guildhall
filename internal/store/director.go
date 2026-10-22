@@ -395,10 +395,11 @@ func (s *Store) Wakes(after uint64, limit int) ([]Wake, bool, error) {
 // choose, counts as "other", so the wake line carries no sender-chosen text. The engine sends attempt-failed,
 // attempt-retried, budget-refused and decision (internal/interp/engine.go), changes-requested, loop-exit-rejected and stall
 // (loops.go), checks-pending, checks-passed and checks-failed (validate.go), published, merge-held,
-// merge-refused and merged (deliver.go), worker-stalled (heartbeat.go) and workspace-kept (workspace.go);
+// merge-refused and merged (deliver.go), worker-stalled (heartbeat.go), workspace-kept (workspace.go) and
+// advance-failed (advancefailed.go, sent by an attempt's launcher);
 // question and note are the documented kinds of a local message (docs/messaging.md).
 var unreadTypes = map[string]bool{
-	"attempt-failed": true, "attempt-retried": true, "budget-refused": true, "changes-requested": true, "checks-failed": true,
+	"advance-failed": true, "attempt-failed": true, "attempt-retried": true, "budget-refused": true, "changes-requested": true, "checks-failed": true,
 	"checks-passed": true, "checks-pending": true, "decision": true, "loop-exit-rejected": true,
 	"merge-held": true, "merge-refused": true, "merged": true, "published": true, "stall": true,
 	"worker-stalled": true, "workspace-kept": true, "question": true, "note": true,

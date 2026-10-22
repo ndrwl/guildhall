@@ -42,7 +42,8 @@ func exitedLauncher(t *testing.T) store.ProcessIdentity {
 // app task in each state: t-1 unstarted, t-2 running with no owner, t-3 failed latest with a next.json waiting
 // for the Director, t-4 with an open decision, t-5 done, and t-6 running under a killed launcher whose attempt
 // directory remains, as the reconcile fixtures leave it. lib/t-1 sends a question; app/t-2 has an unread
-// worker-stalled message and an acknowledged note.
+// worker-stalled message and an acknowledged note. app/t-7's plan attempt succeeded with its result file and app/t-8's
+// was stopped, while each task's next.json still waits on that attempt, as a watcher whose advance failed leaves them.
 func statusCopy(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -118,6 +119,16 @@ func statusCopy(t *testing.T) string {
 				Pane: store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"}})
 		},
 		func() (store.Receipt, error) { return s.SetDirectorState(1, store.DirectorRunning, 24) },
+		func() (store.Receipt, error) { return s.CreateTask("i-26", task("app", "t-7", "Result not taken")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-27", "app", "t-7", "plan") },
+		func() (store.Receipt, error) {
+			return s.FinishAttempt("i-28", "app", "t-7", "plan", 1, store.AttemptSucceeded)
+		},
+		func() (store.Receipt, error) { return s.CreateTask("i-29", task("app", "t-8", "Stop not taken")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-30", "app", "t-8", "plan") },
+		func() (store.Receipt, error) {
+			return s.FinishAttempt("i-31", "app", "t-8", "plan", 1, store.AttemptStopped)
+		},
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
@@ -137,6 +148,13 @@ func statusCopy(t *testing.T) string {
 	}
 	writeFile(t, filepath.Join(state, "app", "t-3", "next.json"), `{"wait":"director","step":"build","attempt":1}`+"\n")
 	writeFile(t, filepath.Join(state, "app", "t-4", "next.json"), `{"wait":"decision","step":"plan","decision":"accept-plan"}`+"\n")
+	for _, task := range []string{"t-7", "t-8"} {
+		if err := os.MkdirAll(artisan.AttemptKey{Repository: "app", TaskID: task, Step: "plan", Attempt: 1}.Dir(state), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(state, "app", task, "next.json"), `{"wait":"attempt","step":"plan","attempt":1}`+"\n")
+	}
+	writeFile(t, filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-7", Step: "plan", Attempt: 1}.Dir(state), artisan.ResultFile), "{}\n")
 	return dir
 }
 
@@ -185,7 +203,12 @@ owner_machine = "workstation"
 	if strings.Count(out, "\n") != 1 || !strings.HasSuffix(out, "\n") {
 		t.Fatalf("status prints one JSON line: %q", out)
 	}
-	checkIndentedGolden(t, "director-status.json", out)
+	// The step done command names the result file under the copy, written in the golden as $COPY/....
+	result, err := json.Marshal(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-7", Step: "plan", Attempt: 1}.Dir(filepath.Join(dir, "state")), artisan.ResultFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkIndentedGolden(t, "director-status.json", strings.Replace(out, strings.Trim(string(result), `"`), "$COPY/state/app/t-7/plan-1/result.json", 1))
 	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("status changed the store (%v)", err)
 	}

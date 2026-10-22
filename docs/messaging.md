@@ -129,7 +129,9 @@ Each command holds the store only for its own operation and waits up to two seco
 ## Waking the Director
 
 A message to the Director is stored first and wakes second: storing never depends on waking, and a message that wakes nobody is still in the inbox.
-After every send to `director`, by the engine's outbox (`task start`, `step done`, `step retry`), by an attempt's launcher sending [`worker-stalled`](artisan.md#heartbeat) or by `messages send ... director`, the sending command decides then and there whether to wake the Director and records that decision; nothing waits in the background (R1.29).
+After every send to `director`, by the engine's outbox (`task start`, `step done`, `step retry`), by an attempt's launcher sending [`worker-stalled`](artisan.md#heartbeat) or [`advance-failed`](running.md#the-watcher) or by `messages send ... director`, the sending command decides whether to wake the Director and records that decision; nothing waits in the background (R1.29).
+An advance records its sends under the task lock and wakes for them, one wake per message in send order, after releasing the lock, whether or not the advance succeeded, so the lock is held for records and launches only; the others wake straight after the send.
+Each wake is bounded by ten seconds, and each `herdr` call within it ends with its context ([herdr](contracts/herdr.md)), so a slow or hung pane holds neither the task nor the sender past that bound; a wake past it is recorded `queued` with the pane's error.
 
 The command reads the Director's newest [session](store.md#director-sessions).
 When it is `running` or `recovering` and has a bound pane, the command types one line and Enter into that pane, which Guildhall created for the Director's session (R1.54), and records `woke`:
@@ -139,7 +141,7 @@ guildhall: 3 unread (attempt-failed 1, question 2)
 ```
 
 The line counts the Director's unread messages by type, in type order, and never carries message text, so no sender can type instructions into the Director's session.
-Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine sends (`attempt-failed`, `attempt-retried`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`.
+Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`.
 Otherwise nothing is typed and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
 
 | Reason | When |

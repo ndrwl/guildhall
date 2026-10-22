@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -23,13 +25,14 @@ import (
 
 // advanceEnv makes the test binary play `guildhall step done` and `guildhall task start` for Run's advance:
 // it appends what it saw (advanceSeen) to the record file the JSON advanceDouble in the variable names, prints a
-// line on each output and exits with the double's code. With Until set it first waits up to 30 seconds, as long
+// line on each output and exits with the double's code for its run: the n-th run (from 0) exits Exits[n], and a run
+// past the list exits with its last code, or 0 for none. With Until set it first waits up to 30 seconds, as long
 // as the real command waits for the task lock, for that file to exist.
 const advanceEnv = "GUILDHALL_LAUNCH_TEST_ADVANCE"
 
 type advanceDouble struct {
 	Record, Dir, Store, Until string
-	Exit                      int
+	Exits                     []int
 }
 
 // advanceSeen is one advance child's view: its arguments, the attempt's outcome.json state, and the store's
@@ -77,6 +80,8 @@ func mainIfAdvance() {
 		_ = s.Close()
 	}
 	b, _ := json.Marshal(seen)
+	prior, _ := os.ReadFile(d.Record)
+	run := strings.Count(string(prior), "\n")
 	f, err := os.OpenFile(d.Record, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		os.Exit(1)
@@ -84,16 +89,19 @@ func mainIfAdvance() {
 	_, _ = f.Write(append(b, '\n'))
 	_ = f.Close()
 	_, _ = os.Stdout.WriteString("advance double stdout\n")
-	_, _ = os.Stderr.WriteString("advance double stderr\n")
-	os.Exit(d.Exit)
+	_, _ = fmt.Fprintf(os.Stderr, "advance double stderr\nadvance double run %d failed\n", run)
+	if len(d.Exits) == 0 {
+		os.Exit(0)
+	}
+	os.Exit(d.Exits[min(run, len(d.Exits)-1)])
 }
 
-// advanced sets the advance double for a over a new record file, exiting with exit, and returns the record file
-// and the Advance argv: the test binary with a copy option.
-func advanced(t *testing.T, a launch.Attempt, exit int) (string, []string) {
+// advanced sets the advance double for a over a new record file, its runs exiting with exits, and returns the
+// record file and the Advance argv: the test binary with a copy option.
+func advanced(t *testing.T, a launch.Attempt, exits ...int) (string, []string) {
 	t.Helper()
 	record := filepath.Join(t.TempDir(), "advances.jsonl")
-	b, err := json.Marshal(advanceDouble{Record: record, Dir: a.Dir(), Store: a.Store, Exit: exit})
+	b, err := json.Marshal(advanceDouble{Record: record, Dir: a.Dir(), Store: a.Store, Exits: exits})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,10 +157,16 @@ func advanceEvents(t *testing.T, a launch.Attempt) []map[string]any {
 }
 
 func startAdvancing(a launch.Attempt, cmd adapter.Command, advance []string) (<-chan ran, context.CancelFunc) {
+	return startAdvancingTo(a, cmd, advance, nil)
+}
+
+// startAdvancingTo is startAdvancing with the launcher's outbox.
+func startAdvancingTo(a launch.Attempt, cmd adapter.Command, advance []string, outbox interp.Outbox) (<-chan ran, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan ran, 1)
 	go func() {
-		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Advance: advance, Ladder: fastLadder, ResultGrace: time.Second, HeartbeatInterval: 100 * time.Millisecond})
+		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Advance: advance, Ladder: fastLadder, ResultGrace: time.Second, HeartbeatInterval: 100 * time.Millisecond,
+			Outbox: outbox})
 		done <- ran{r, err}
 	}()
 	return done, cancel
@@ -238,13 +252,15 @@ func TestRunAdvancesACancelledAttemptOnlyAfterItsDecision(t *testing.T) {
 	checkOneAdvance(t, a, record, taskStart, artisan.Cancelled, store.AttemptStopped)
 }
 
-// TestRunAdvanceFailureLeavesTheOutcome: an advance that fails is logged, with its exit status in the event and
-// its output in the launcher log, and changes neither Run's result nor the recorded, released attempt.
-func TestRunAdvanceFailureLeavesTheOutcome(t *testing.T) {
+// TestRunAdvanceFailingTwiceIsToldToTheDirector (F35): an advance that fails is run once more, and when that run
+// fails too the launcher sends the Director one advance-failed message naming the command and its last error,
+// through its outbox with no task lock; both runs are logged, with their exit status in the events and their output
+// in the launcher log, and neither changes Run's result nor the recorded, released attempt.
+func TestRunAdvanceFailingTwiceIsToldToTheDirector(t *testing.T) {
 	a := newAttempt(t)
 	record, advance := advanced(t, a, 3)
 	cmd, _ := worker(t, a, artisantest.Worker{Result: a.Files().ResultFile, ResultBody: resultBody(t, a.Identity(), adapter.StatusSucceeded), ResultAfter: 200 * time.Millisecond})
-	done, cancel := startAdvancing(a, cmd, advance)
+	done, cancel := startAdvancingTo(a, cmd, advance, storeOutbox(a.Store))
 	defer cancel()
 	r := wait(t, done)
 	if r.err != nil || r.r.AttemptOutcome != store.AttemptSucceeded || storedOutcome(t, a) != store.AttemptSucceeded {
@@ -253,10 +269,65 @@ func TestRunAdvanceFailureLeavesTheOutcome(t *testing.T) {
 	if o := ownership(t, a); o.State != store.OwnerReleased {
 		t.Errorf("ownership %+v, want released", o)
 	}
-	checkOneAdvance(t, a, record, append(slices.Clone(stepDone), "--result", a.Files().ResultFile), artisan.Finished, store.AttemptSucceeded)
-	if ev := advanceEvents(t, a); len(ev) != 1 || ev[0]["exit"] != float64(3) || ev[0]["error"] == "" || ev[0]["error"] == nil {
-		t.Errorf("advance events %v, want exit 3 and the error", ev)
+	argv := append(slices.Clone(stepDone), "--result", a.Files().ResultFile)
+	got := advances(t, record)
+	if len(got) != 2 || !slices.Equal(got[0].Argv, argv) || !slices.Equal(got[1].Argv, argv) {
+		t.Fatalf("advances %+v, want two of %q", got, argv)
 	}
+	ev := advanceEvents(t, a)
+	if len(ev) != 2 {
+		t.Fatalf("advance events %v, want two", ev)
+	}
+	for _, e := range ev {
+		if e["command"] != "step done" || e["exit"] != float64(3) || e["error"] == "" || e["error"] == nil {
+			t.Errorf("advance event %v, want step done, exit 3 and the error", e)
+		}
+	}
+	msgs := inbox(t, a)
+	if len(msgs) != 1 {
+		t.Fatalf("Director messages %+v, want one advance-failed", msgs)
+	}
+	m := msgs[0]
+	if m.ID != "app.t-1.advance-failed.build-1" || m.Type != interp.AdvanceFailed || m.Repository != "app" || m.TaskID != "t-1" ||
+		!strings.Contains(m.Text, "step done") || !strings.Contains(m.Text, "advance double run 1 failed") {
+		t.Errorf("message %+v; want advance-failed for build-1 naming step done and the second run's last error", m)
+	}
+}
+
+// TestRunAdvanceRetriedOnceSendsNothing: an advance that fails once and then succeeds is run twice, and the Director
+// is sent nothing.
+func TestRunAdvanceRetriedOnceSendsNothing(t *testing.T) {
+	a := newAttempt(t)
+	record, advance := advanced(t, a, 1, 0)
+	cmd, _ := worker(t, a, artisantest.Worker{Lifetime: 200 * time.Millisecond})
+	done, cancel := startAdvancingTo(a, cmd, advance, storeOutbox(a.Store))
+	defer cancel()
+	if r := wait(t, done); r.err != nil || r.r.AttemptOutcome != store.AttemptFailed {
+		t.Fatalf("Run() = %+v, %v", r.r, r.err)
+	}
+	if got := advances(t, record); len(got) != 2 || !slices.Equal(got[1].Argv, taskStart) {
+		t.Errorf("advances %+v, want two of %q", got, taskStart)
+	}
+	if ev := advanceEvents(t, a); len(ev) != 2 || ev[0]["exit"] != float64(1) || ev[1]["exit"] != float64(0) {
+		t.Errorf("advance events %v, want exit 1 then 0", ev)
+	}
+	if msgs := inbox(t, a); len(msgs) != 0 {
+		t.Errorf("Director messages %+v, want none", msgs)
+	}
+}
+
+// inbox returns the Director's unread messages in a's store.
+func inbox(t *testing.T, a launch.Attempt) []store.Message {
+	t.Helper()
+	var out []store.Message
+	withStore(t, a, func(s *store.Store) {
+		msgs, _, err := s.Inbox(store.Recipient{Role: store.RecipientDirector}, 0, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = msgs
+	})
+	return out
 }
 
 // TestRunWithoutAdvanceRunsNone: a nil Advance, as `artisan start` run by hand without --advance, runs nothing.

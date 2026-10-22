@@ -24,6 +24,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -35,8 +36,9 @@ type runDirector struct {
 	forge interp.Forge
 	// workspaces is the App's workspaces: the double, with app's remote's default branch set.
 	workspaces *gittest.Workspaces
-	// panes, when set, is the App's Director pane.
+	// panes, when set, is the App's Director pane; otherwise pane, when set, is.
 	panes *typedPanes
+	pane  messaging.DirectorPane
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -111,6 +113,8 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	}
 	if d.panes != nil {
 		app.DirectorPane = d.panes
+	} else if d.pane != nil {
+		app.DirectorPane = d.pane
 	}
 	code := app.Run(args)
 	return code, stdout.String(), stderr.String()

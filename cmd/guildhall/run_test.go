@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -356,6 +357,77 @@ func TestTheWatcherTellsTheDirectorOfAKilledWorker(t *testing.T) {
 		t.Errorf("message %+v, want attempt-failed for plan-1", msg)
 	}
 	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"director","step":"plan","attempt":1}`)
+}
+
+// TestTheWatcherTellsTheDirectorOfAFailedAdvance (F35): from a copy, the test holds task app/t-1's lock while the
+// plan attempt ends and past both of its launcher's advances, each waiting the task lock's wait; the launcher then
+// sends the Director advance-failed, director status lists the attempt nobody took as an advance item first, and once
+// the lock is released task start takes the attempt and opens the accept decision.
+func TestTheWatcherTellsTheDirectorOfAFailedAdvance(t *testing.T) {
+	dir := runCopy(t)
+	plan := filepath.Join(dir, "baseline", "stages", "plan.md")
+	f, err := os.OpenFile(plan, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The delay lets the test take the task lock before the attempt ends and its launcher advances.
+	if _, err := f.WriteString("guildhall-fake: delay=5s\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d := newBinCopy(t, dir)
+	d.newTask()
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
+	d.launched("plan", 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	release, err := artisan.LockAttempt(ctx, filepath.Join(d.state, "app", "t-1"))
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	unlock := func() { once.Do(release) }
+	defer unlock()
+
+	read := []string{"messages", "read", "--store", d.store, "app.t-1.advance-failed.plan-1"}
+	var msg struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	for end := time.Now().Add(5 * time.Minute); ; time.Sleep(200 * time.Millisecond) {
+		out, stderr, err := d.try("", read...)
+		if err == nil {
+			if err := json.Unmarshal([]byte(out), &msg); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+		if time.Now().After(end) {
+			log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), "launcher.log"))
+			t.Fatalf("no advance-failed message: %v\n%s%s\nlauncher log:\n%s", err, out, stderr, log)
+		}
+	}
+	if msg.Type != "advance-failed" || !strings.Contains(msg.Text, "step done") || !strings.Contains(msg.Text, "lock task app/t-1") {
+		t.Errorf("message %+v, want advance-failed naming step done and the lock error", msg)
+	}
+	var status struct {
+		NeedsMe []struct {
+			Kind, TaskID, Step, Command string
+			Attempt                     int
+		} `json:"needs_me"`
+	}
+	if err := json.Unmarshal([]byte(d.run("", "director", "status", "--copy", d.flags[1], "--json")), &status); err != nil {
+		t.Fatal(err)
+	}
+	if len(status.NeedsMe) == 0 || status.NeedsMe[0].Kind != "advance" || status.NeedsMe[0].Step != "plan" || status.NeedsMe[0].Attempt != 1 ||
+		!strings.HasPrefix(status.NeedsMe[0].Command, "guildhall step done --repo app --task t-1 --step plan --attempt 1 --result ") {
+		t.Errorf("needs_me %+v, want first the plan attempt's advance with its step done", status.NeedsMe)
+	}
+
+	unlock()
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"decision","step":"accept","decision":"accept-1"}`)
 }
 
 // TestRetryAfterAKilledLauncher is F27 through the binary: the plan attempt's launcher is killed outright,

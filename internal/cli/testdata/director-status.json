@@ -6,8 +6,8 @@
       "transcripts",
       "forge state"
     ],
-    "sequence": 25,
-    "committed_at": "2026-10-22T09:26:00Z"
+    "sequence": 31,
+    "committed_at": "2026-10-22T09:32:00Z"
   },
   "session": {
     "state": "running",
@@ -37,7 +37,7 @@
       "max_running_attempts": 3,
       "max_attempts_per_day": 40,
       "running_attempts": 2,
-      "attempts_today": 6,
+      "attempts_today": 8,
       "day": "2026-10-22"
     }
   },
@@ -163,6 +163,50 @@
       ]
     },
     {
+      "repository": "app",
+      "id": "t-7",
+      "title": "Result not taken",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+      },
+      "next": {
+        "wait": "attempt",
+        "step": "plan",
+        "attempt": 1
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "outcome": "succeeded"
+        }
+      ]
+    },
+    {
+      "repository": "app",
+      "id": "t-8",
+      "title": "Stop not taken",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+      },
+      "next": {
+        "wait": "attempt",
+        "step": "plan",
+        "attempt": 1
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "outcome": "stopped"
+        }
+      ]
+    },
+    {
       "repository": "lib",
       "id": "t-1",
       "title": "Other repository",
@@ -218,62 +262,6 @@
     ]
   },
   "recent": [
-    {
-      "mutation_id": "i-4",
-      "operation": "create-task",
-      "repository": "app",
-      "task_id": "t-4",
-      "record": "task",
-      "sequence": 4,
-      "committed_at": "2026-10-22T09:03:00Z"
-    },
-    {
-      "mutation_id": "i-5",
-      "operation": "create-task",
-      "repository": "app",
-      "task_id": "t-5",
-      "record": "task",
-      "sequence": 5,
-      "committed_at": "2026-10-22T09:04:00Z"
-    },
-    {
-      "mutation_id": "i-6",
-      "operation": "create-task",
-      "repository": "app",
-      "task_id": "t-6",
-      "record": "task",
-      "sequence": 6,
-      "committed_at": "2026-10-22T09:05:00Z"
-    },
-    {
-      "mutation_id": "i-7",
-      "operation": "create-task",
-      "repository": "lib",
-      "task_id": "t-1",
-      "record": "task",
-      "sequence": 7,
-      "committed_at": "2026-10-22T09:06:00Z"
-    },
-    {
-      "mutation_id": "i-8",
-      "operation": "start-attempt",
-      "repository": "app",
-      "task_id": "t-2",
-      "attempt": 1,
-      "record": "attempt/plan/1",
-      "sequence": 8,
-      "committed_at": "2026-10-22T09:07:00Z"
-    },
-    {
-      "mutation_id": "i-9",
-      "operation": "start-attempt",
-      "repository": "app",
-      "task_id": "t-3",
-      "attempt": 1,
-      "record": "attempt/plan/1",
-      "sequence": 9,
-      "committed_at": "2026-10-22T09:08:00Z"
-    },
     {
       "mutation_id": "i-10",
       "operation": "finish-attempt",
@@ -408,9 +396,85 @@
       "record": "message/q-1",
       "sequence": 23,
       "committed_at": "2026-10-22T09:22:00Z"
+    },
+    {
+      "mutation_id": "i-26",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-7",
+      "record": "task",
+      "sequence": 26,
+      "committed_at": "2026-10-22T09:27:00Z"
+    },
+    {
+      "mutation_id": "i-27",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-7",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 27,
+      "committed_at": "2026-10-22T09:28:00Z"
+    },
+    {
+      "mutation_id": "i-28",
+      "operation": "finish-attempt",
+      "repository": "app",
+      "task_id": "t-7",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 28,
+      "committed_at": "2026-10-22T09:29:00Z"
+    },
+    {
+      "mutation_id": "i-29",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-8",
+      "record": "task",
+      "sequence": 29,
+      "committed_at": "2026-10-22T09:30:00Z"
+    },
+    {
+      "mutation_id": "i-30",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-8",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 30,
+      "committed_at": "2026-10-22T09:31:00Z"
+    },
+    {
+      "mutation_id": "i-31",
+      "operation": "finish-attempt",
+      "repository": "app",
+      "task_id": "t-8",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 31,
+      "committed_at": "2026-10-22T09:32:00Z"
     }
   ],
   "needs_me": [
+    {
+      "kind": "advance",
+      "repository": "app",
+      "task_id": "t-7",
+      "step": "plan",
+      "attempt": 1,
+      "reason": "attempt 1 of plan succeeded and the task's last advance still waits on it",
+      "command": "guildhall step done --repo app --task t-7 --step plan --attempt 1 --result $COPY/state/app/t-7/plan-1/result.json"
+    },
+    {
+      "kind": "advance",
+      "repository": "app",
+      "task_id": "t-8",
+      "step": "plan",
+      "attempt": 1,
+      "reason": "attempt 1 of plan stopped and the task's last advance still waits on it",
+      "command": "guildhall task start --repo app t-8"
+    },
     {
       "kind": "retry",
       "repository": "app",
@@ -420,6 +484,16 @@
       "retryable": true,
       "reason": "attempt 1 of build failed",
       "command": "guildhall step retry --repo app --task t-3 --step build --attempt 1"
+    },
+    {
+      "kind": "retry",
+      "repository": "app",
+      "task_id": "t-8",
+      "step": "plan",
+      "attempt": 1,
+      "retryable": true,
+      "reason": "attempt 1 of plan stopped",
+      "command": "guildhall step retry --repo app --task t-8 --step plan --attempt 1"
     },
     {
       "kind": "resume",

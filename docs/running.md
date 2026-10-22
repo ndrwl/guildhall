@@ -60,7 +60,10 @@ Once the launcher has published the attempt's outcome, recorded its store outcom
 | Anything else: failed without a result, stopped, or failed at setup | `guildhall task start --copy <dir> --repo <repo> <task>`, which sends the Director `attempt-failed` |
 
 The advance's output is appended to the attempt's `launcher.log` and an `advance` event with its exit status to its `events.jsonl` ([events](artisan.md#events)).
-A failed advance changes neither the attempt's outcome nor the launcher's exit status: both commands are idempotent, so the Director's next `task start` repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).
+An advance that exits unsuccessfully, such as one that waited 30 seconds for a task lock another advance held, is run once more, which waits the lock wait again.
+When that run fails too, the launcher sends the Director `<repo>.<task>.advance-failed.<step>-<n>`, type `advance-failed`, naming the command and its last line of error output; the send goes through the store with no task lock, and the Director is [woken](messaging.md#waking-the-director) for it as for any other send.
+[`director status`](director.md#status) lists the attempt nobody took as an `advance` item until an advance takes it.
+A failed advance changes neither the attempt's outcome nor the launcher's exit status: both commands are idempotent, so the Director's next `task start`, or the `step done` the status item names, repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).
 An attempt [`artisan resume`](artisan.md#resume) settles after its launcher died is not advanced; the Director's `task start` after the resume is.
 
 ## `task start`

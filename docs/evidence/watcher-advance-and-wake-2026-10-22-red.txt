@@ -1,0 +1,53 @@
+# F35 and F36 (sustainability review 11), red runs against d0b5dd4 with each test added and its implementation not yet written, go1.27.2 linux/amd64
+$ go test ./internal/herdr -run TestExecRunnerContract -count=1   # before WaitDelay
+    --- FAIL: TestExecRunnerContract/cancellation_returns_although_the_program's_child_holds_its_pipes (60.07s)
+        runner_test.go:147: run did not return within a minute of cancellation
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/herdr	60.143s
+FAIL
+
+$ go test ./internal/cli -run TestTheAdvanceWakesOutsideTheTaskLock -count=1   # before the deferred wake
+--- FAIL: TestTheAdvanceWakesOutsideTheTaskLock (30.13s)
+    wake_test.go:160: a second task start while the first one's wake types: exit 1, "", stderr guildhall: lock task app/t-1: context deadline exceeded
+        ; want it to proceed
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	30.154s
+FAIL
+
+$ go test ./internal/launch -run TestRunAdvance -count=1   # before the retry and the advance-failed send
+--- FAIL: TestRunAdvanceFailingTwiceIsToldToTheDirector (0.30s)
+    advance_test.go:275: advances [{Argv:[step done --copy /the/copy --repo app --task t-1 --step build --attempt 1 --result /tmp/ln1504674665/app/t-1/build-1/result.json] Decided:finished Outcome:succeeded Owner:released ObservedErrs:[] Unblocked:false}], want two of ["step" "done" "--copy" "/the/copy" "--repo" "app" "--task" "t-1" "--step" "build" "--attempt" "1" "--result" "/tmp/ln1504674665/app/t-1/build-1/result.json"]
+--- FAIL: TestRunAdvanceRetriedOnceSendsNothing (0.28s)
+    advance_test.go:309: advances [{Argv:[task start --copy /the/copy --repo app t-1] Decided:failed Outcome:failed Owner:released ObservedErrs:[] Unblocked:false}], want two of ["task" "start" "--copy" "/the/copy" "--repo" "app" "t-1"]
+    advance_test.go:312: advance events [map[at:2026-10-22T18:46:24.155479076Z command:task start error:exit status 1 event:advance exit:1]], want exit 1 then 0
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	1.696s
+FAIL
+
+$ go test ./internal/store -run TestDirectorUnreadCountsByType -count=1   # before advance-failed joined the counted types
+    director_test.go:322: unread = map[attempt-failed:1 budget-refused:1 other:2 question:1 workspace-kept:1], <nil>
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.117s
+FAIL
+
+$ go test ./internal/cli -run TestDirectorStatusGolden -count=1   # before the advance item (golden diff abridged to its first line)
+--- FAIL: TestDirectorStatusGolden (0.29s)
+    director_status_test.go:211: director-status.json mismatch:
+(the got side has no "kind": "advance" item; the want side lists app/t-7 step done and app/t-8 task start before retry)
+FAIL
+
+$ go test ./cmd/guildhall -run TestTheWatcherTellsTheDirectorOfAFailedAdvance -count=1   # before the retry, the send and the status item
+--- FAIL: TestTheWatcherTellsTheDirectorOfAFailedAdvance (301.55s)
+    run_test.go:409: no advance-failed message: exit status 1
+        guildhall: messages read: messaging: store: record not found: message "app.t-1.advance-failed.plan-1"
+        
+        launcher log:
+        fake artisan: task t-1 attempt plan-1
+        fake artisan: read prompt /tmp/gk1021323612/state/app/t-1/plan-1/prompt/prompt.md (375 bytes)
+        fake artisan: working for 5s
+        fake artisan: wrote succeeded result to /tmp/gk1021323612/state/app/t-1/plan-1/result.json
+        guildhall: lock task app/t-1: context deadline exceeded
+        {"attempt":"app/t-1/plan/1","outcome":{"schema":"guildhall.attempt-outcome/1","state":"finished","detail":"result accepted"},"attempt_outcome":"succeeded","result":{"task_id":"t-1","attempt_id":"plan-1","status":"succeeded","summary":"fake artisan read 375 bytes of prompt, sha256 51abab0df39fe127e035429d869821273c3e9921f8974b939f09b0bcc3bdffac","outputs":[{"path":"spec.md"}]}}
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	301.555s
+FAIL

@@ -18,6 +18,7 @@ The binary refuses `guildhall task new`, and `guildhall task start` of a task wi
 3. Run `guildhall director status --json` for the current snapshot, since `startup.md` is a copy taken when the session started.
 4. Work the `needs_me` items in order, one at a time, with the command each names and the skill below that covers it:
    - `recovering`: this session; it is the last thing you do, in step 6.
+   - `advance`: a finished attempt whose launcher could not hand it on; run the `guildhall step done` or `guildhall task start` the item names.
    - `retry`: a failed or stopped attempt; decide whether to retry it with `guildhall-director-tasks`.
    - `resume`: a running attempt whose launcher is stuck, exited or unknown; run `guildhall artisan resume` with the flags the item names.
    - `stalled`, `decision`, `messages` and `director`: handle them with `guildhall-director-inbox`.
