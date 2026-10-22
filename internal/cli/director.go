@@ -271,21 +271,33 @@ func openHerdrTabs(ctx context.Context, session string) (adapter.TabHost, string
 // errDirectorLive refuses a start while the newest session's supervisor is alive.
 var errDirectorLive = errors.New("director: live")
 
-// checkSupersede returns the newest session's number, 0 when there is none, refusing with errDirectorLive while
-// that session is not stopped and its supervisor is alive or cannot be shown gone. A session whose supervisor is
-// gone is superseded when the next one is recorded.
+// errStopSweeping refuses a start while the newest session's stop has not finished stopping its attempts.
+var errStopSweeping = errors.New("director: stop sweeping")
+
+// checkSupersede returns the newest session's number, 0 when there is none, refusing with errStopSweeping while
+// that session's stop has not finished its sweep, it is sweeping or stopping with its supervisor gone, and with
+// errDirectorLive while it is not stopped and its supervisor is alive or cannot be shown gone. A session whose
+// supervisor is gone is superseded when the next one is recorded.
 func checkSupersede(s *store.Store) (int, error) {
 	d, err := s.LatestDirectorSession()
+	sweeping := func() error {
+		return fmt.Errorf("%w: session %d's stop has not finished stopping its attempts; wait for director stop to finish, or run guildhall director stop to finish it", errStopSweeping, d.Number)
+	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return 0, nil
 	case err != nil:
 		return 0, err
+	case d.Sweeping:
+		return 0, sweeping()
 	case d.State == store.DirectorStopped:
 		return d.Number, nil
 	}
 	switch live, err := artisan.Probe(artisan.Identity(d.Identity)); live {
 	case artisan.Gone:
+		if d.State == store.DirectorStopping {
+			return 0, sweeping()
+		}
 		return d.Number, nil
 	case artisan.Alive:
 		return 0, fmt.Errorf("%w: session %d is %s under its supervisor, pid %d", errDirectorLive, d.Number, d.State, d.Identity.PID)

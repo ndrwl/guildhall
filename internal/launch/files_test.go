@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 	}
 	mainIfAdvance()
 	mainIfSpeaker()
+	launch.MainIfDetacher()
 	if path := os.Getenv(argvEnv); path != "" {
 		recordArgv(path)
 	}

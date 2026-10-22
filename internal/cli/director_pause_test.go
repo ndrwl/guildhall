@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -298,7 +299,7 @@ func TestDecisionAnsweredWhilePausedIsFed(t *testing.T) {
 }
 
 // TestHeldWhilePausedOrStopping: the advance's hold holds new attempts only while the newest session is paused
-// or stopping.
+// or stopping, or stopped before its stop's sweep finished.
 func TestHeldWhilePausedOrStopping(t *testing.T) {
 	for _, c := range []struct {
 		path []store.DirectorState
@@ -309,6 +310,7 @@ func TestHeldWhilePausedOrStopping(t *testing.T) {
 		{[]store.DirectorState{store.DirectorRunning, store.DirectorPaused}, true},
 		{[]store.DirectorState{store.DirectorRunning, store.DirectorStopping}, true},
 		{[]store.DirectorState{store.DirectorStopped}, false},
+		{[]store.DirectorState{store.DirectorRunning, store.DirectorStopping, store.DirectorStopped}, true},
 	} {
 		path := emptyStore(t)
 		recordSession(t, path, false, c.path...)
@@ -376,23 +378,47 @@ func superviseTyping(t *testing.T, dir string, grace time.Duration) (<-chan int,
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stdin.Close(); _ = typing.Close() })
-	app, _, _ := newTestApp(nil, nil)
-	app.Executable = os.Executable
-	app.LookPath = exec.LookPath
-	app.InstallSkills = skills.Install
-	app.InstallBaseline = baseline.Install
-	app.Stdin = stdin
+	app, _, _ := supervisorApp(stdin, grace)
 	app.Stdout, app.Stderr = io.Discard, io.Discard
-	app.SessionPoll, app.StopGrace = 100*time.Millisecond, grace
+	before := len(sessions(t, dir))
 	done := make(chan int, 1)
 	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
-		if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorRunning {
+		if got := sessions(t, dir); len(got) == before+1 && got[before].State == store.DirectorRunning {
 			return done, typing
 		}
 		if time.Now().After(end) {
 			t.Fatalf("the session never became ready: %+v", sessions(t, dir))
 		}
+	}
+}
+
+// supervisorApp is the App supervise runs `director start` in, reading stdin, with grace as its stop grace.
+func supervisorApp(stdin *os.File, grace time.Duration) (*App, *bytes.Buffer, *bytes.Buffer) {
+	app, stdout, stderr := newTestApp(nil, nil)
+	app.Executable = os.Executable
+	app.LookPath = exec.LookPath
+	app.InstallSkills = skills.Install
+	app.InstallBaseline = baseline.Install
+	if stdin != nil {
+		app.Stdin = stdin
+	}
+	app.SessionPoll, app.StopGrace = 100*time.Millisecond, grace
+	return app, stdout, stderr
+}
+
+// startRefused runs `director start` over dir and checks it is refused while a stop's sweep is unfinished,
+// recording no session.
+func startRefused(t *testing.T, dir string) {
+	t.Helper()
+	before := sessions(t, dir)
+	app, stdout, stderr := supervisorApp(nil, time.Hour)
+	if code := app.Run([]string{"director", "start", "--copy", dir}); code != 1 || !strings.Contains(stderr.String(), "director: stop sweeping") ||
+		!strings.Contains(stderr.String(), "guildhall director stop") {
+		t.Errorf("director start during the stop's sweep: exit %d, stdout %s, stderr %s; want it refused", code, stdout, stderr)
+	}
+	if after := sessions(t, dir); len(after) != len(before) {
+		t.Errorf("the refused start recorded sessions %+v", after)
 	}
 }
 
@@ -433,7 +459,7 @@ func TestDirectorStopEndsTheSessionAndItsAttempts(t *testing.T) {
 	}
 	code, out, stderr := d.run(t, "director", "stop", "--copy", dir)
 	var printed store.DirectorSession
-	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopping || printed.StopNow {
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopping && printed.State != store.DirectorStopped || printed.StopNow || printed.Sweeping {
 		t.Fatalf("director stop: exit %d, %q (%v), stderr %s", code, out, err, stderr)
 	}
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {

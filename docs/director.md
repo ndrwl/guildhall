@@ -29,6 +29,7 @@ A failed check is exit 1 with nothing recorded and nothing written in the copy, 
 
 A start is refused with exit 1, naming `director: live` and recording nothing, while the newest session is not `stopped` and its supervisor's recorded identity names a live process, or cannot be shown gone.
 A session whose supervisor is gone, such as one whose machine restarted, is superseded instead.
+A start is refused with exit 1 the same way, naming `director: stop sweeping`, while the newest session's [stop](#stop) has not finished stopping its attempts: the session is `sweeping`, or `stopping` with its supervisor gone; wait for `director stop` to finish, or run it again to finish the sweep.
 
 Then it records session `<n>`, one more than the newest, as `recovering` with its own process identity, release and config digest, which records an earlier session still recorded live as `stopped` with the end reason `superseded`.
 `--herdr-session`, `--herdr-workspace`, `--herdr-tab` and `--herdr-pane`, given all together and never with `--tab`, are the pane binding the [tab wrapper](#the-directors-tab) passes; the session records them, and a [wake](messaging.md#waking-the-director) types into that pane.
@@ -40,10 +41,10 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command;
 - `manifest.json`: the digest of every file above.
 
-It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory, with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
+It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory, inside a containment unit of its own ([runtime containment](decisions/director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
 For Claude Code that is `claude --append-system-prompt-file role.md --add-dir <copy> [--model <model>] "<first message>"`; `[director] effort` is not passed, since Claude Code reads effort from its own settings.
 The terminal's interrupt reaches the runtime, which handles it; the supervisor waits for the runtime to end, records the session `stopped`, and exits 0, or 1 naming the status when the runtime exited nonzero.
-On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
+On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime's unit as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.
 A session already stopped or superseded by a newer one is left as it is.
 While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime at the [end of the turn](#the-end-of-a-turn), records the session `stopped` and exits 0.
@@ -51,6 +52,8 @@ When it ends the runtime for a [reload](#reload) it records the session `stopped
 The config read again chooses the runtime too: unless `director start` named one, a changed `[director] adapter` takes effect, checked on `PATH` as the preflight checks it, and a runtime refused then ends the supervisor with exit 1, with session `<n>` recorded `stopped` as `reloaded` and the reload left requested.
 A `director stop` recorded while the runtime is ending for the reload wins: the session is recorded `stopped` as for a stop and the supervisor exits 0 with no new session.
 A runtime that ends by itself is recorded `stopped` and gives the terminal back, even with a reload requested; that reload, like one requested while no supervisor runs, is recorded `applied` by the next `director start`.
+However the runtime ends, the supervisor kills whatever it left running in its unit and records the session `stopped` only once the unit is empty; a unit not proven empty within 10 seconds of the runtime's end makes the exit 1, naming the survivors.
+On Linux the runtime is also killed if the supervisor dies.
 
 ## Skills
 
@@ -114,7 +117,8 @@ guildhall director resume [--copy <dir> | --store <file> --state <dir>]
 ```
 
 `director pause` moves the newest session from `running` to `paused` and prints it as one JSON line ([decision](decisions/director-pause-stop.md)).
-A paused session starts no new attempt, while attempts already running finish:
+A paused session starts no new attempt, while attempts already running finish.
+The hold is read in the same store transaction that records a new attempt, so an advance that started before the pause and records its attempt after it is held too:
 
 - `task start` and `step retry` print `{"wait":"paused"}` and exit 0, recording nothing.
 - `task start --decision` still feeds the Guildmaster's answer, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
@@ -134,14 +138,18 @@ guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]
 ```
 
 `director stop` ends the Director session and its Artisan attempts ([decision](decisions/director-pause-stop.md)).
-It records the newest session `stopping`, then stops every running attempt in the store as [`artisan stop`](artisan.md#commands) does, and prints the session as one JSON line.
-A stopping session starts no new attempt, as a paused one does.
+It records the newest session `stopping` and `sweeping`, then stops every running attempt in the store, records the sweep finished, and prints the session as one JSON line.
+A stopping session starts no new attempt, as a paused one does, and neither does a session whose stop is still `sweeping`, even once its supervisor has recorded it `stopped`, so every attempt recorded before the stop is one the stop sees.
+Once the sweep is finished the hold lifts, and a `task start` by the Guildmaster with no Director running works again; until then [`director start`](#start) is refused, so no new session lifts the hold either.
+An attempt with an owning launcher is stopped as [`artisan stop`](artisan.md#commands) does.
+An attempt nothing owns, a [Director stage](interpreter.md#director-stages) such as the grill or an Artisan attempt an advance recorded but has not launched, is recorded `stopped` under its task's lock, after any advance or `step finish` in progress on the task, so it no longer counts against the [attempt caps](#guard-rails), [`needs_me`](#status) lists it to retry, a later `step finish` of it is refused and no launcher can take it.
+A Director stage whose result `step finish` already published has finished its work and is left for its advance to take.
 The session's supervisor then ends the runtime and records the session `stopped`: at the [end of the current turn](#the-end-of-a-turn), or, with `--now`, at once.
 A stopping session is stopped again without changing it, and `stop --now` after a plain stop ends the runtime at once.
-Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `stopping`.
+Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `sweeping`, holding new attempts, and running `stop` again, even over a session since recorded `stopped`, finishes the sweep.
 
-A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopped` with the end reason `superseded`, and still stops its attempts.
-No session, or a session already `stopped`, is exit 1.
+A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopping`, stops its attempts and then records it `stopped` with the end reason `superseded`.
+No session, or a session already `stopped` whose stop has finished its sweep, is exit 1.
 
 The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands with the automatic handoff triggers.
 
@@ -262,7 +270,7 @@ The document has these sections:
   `partial` is always `true`; `excluded` names what the feed does not inspect: `worker files`, `transcripts` and `forge state`.
   `sequence` and `committed_at` are the newest mutation committed anywhere in the store when the read began; an empty store has sequence 0.
   Live attempt state is read after the store, so it can be newer than `sequence`.
-- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, and the `end_reason` of a session [stopped](#stop) as `superseded`.
+- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, `sweeping` while a [stop](#stop) has not finished stopping its attempts, and the `end_reason` of a session [stopped](#stop) as `superseded`.
   A store with no session reports only its `state`, `"no session"`, and `guard_rails`.
   `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_policies`, `max_running_attempts` and `max_attempts_per_day`, when the copy has a config, and always `running_attempts`, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
   A config that exists but cannot be read gives `config_error` in place of the rails.

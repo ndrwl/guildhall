@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/launch"
@@ -53,8 +54,8 @@ func (a *App) sessionArgs(name string, args []string, withState bool, register f
 	return *path, *state, -1
 }
 
-// liveSession reads the newest session for pause, resume and stop, refusing no session and a stopped one, and
-// reports whether its supervisor's identity is proven gone.
+// liveSession reads the newest session for pause, resume and stop, refusing no session and a stopped one whose
+// stop has swept its attempts, and reports whether its supervisor's identity is proven gone.
 func liveSession(s *store.Store) (store.DirectorSession, bool, error) {
 	d, err := s.LatestDirectorSession()
 	switch {
@@ -62,7 +63,7 @@ func liveSession(s *store.Store) (store.DirectorSession, bool, error) {
 		return d, false, errors.New("no Director session; start one with guildhall director start")
 	case err != nil:
 		return d, false, err
-	case d.State == store.DirectorStopped:
+	case d.State == store.DirectorStopped && !d.Sweeping:
 		return d, false, fmt.Errorf("the Director session %d is stopped", d.Number)
 	}
 	lv, err := artisan.Probe(artisan.Identity(d.Identity))
@@ -135,8 +136,9 @@ func (a *App) directorResume(args []string) int {
 }
 
 // directorStop runs `guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]`: the newest
-// session is recorded stopping, or stopped as superseded when its supervisor is gone, every running attempt is
-// stopped, and the session is printed (docs/director.md#stop).
+// session is recorded stopping, holding new attempts, every running attempt is stopped and, once all are, the hold
+// is lifted, a session whose supervisor is gone is recorded stopped as superseded, and the session is printed
+// (docs/director.md#stop). A stop whose sweep did not finish is finished by running it again.
 func (a *App) directorStop(args []string) int {
 	var now bool
 	path, state, code := a.sessionArgs("director stop", args, true, func(fl *flag.FlagSet) {
@@ -145,15 +147,16 @@ func (a *App) directorStop(args []string) int {
 	if code >= 0 {
 		return code
 	}
+	var gone bool
 	d, err := withStore(path, false, func(s *store.Store) (store.DirectorSession, error) {
-		d, gone, err := liveSession(s)
+		d, g, err := liveSession(s)
+		gone = g
 		switch {
 		case err != nil:
 			return d, err
-		case gone:
-			_, err = s.EndDirectorSession(d.Number, "superseded", d.StateSequence)
-		case d.State != store.DirectorStopping || now && !d.StopNow:
-			_, err = s.RequestDirectorStop(d.Number, now, d.StateSequence)
+		case d.State == store.DirectorStopped:
+		case d.State != store.DirectorStopping || now && !d.StopNow && !gone:
+			_, err = s.RequestDirectorStop(d.Number, now && !gone, d.StateSequence)
 		}
 		if err != nil {
 			return d, err
@@ -164,14 +167,46 @@ func (a *App) directorStop(args []string) int {
 		return a.fail(fmt.Errorf("director stop: %w", err))
 	}
 	stopped := a.stopAttempts(path, state)
+	if stopped {
+		if d, err = withStore(path, false, func(s *store.Store) (store.DirectorSession, error) { return finishStop(s, d.Number, gone) }); err != nil {
+			return a.fail(fmt.Errorf("director stop: finish: %w", err))
+		}
+	}
 	if code := a.printJSON(d); code != 0 || stopped {
 		return code
 	}
 	return 1
 }
 
-// stopAttempts stops every attempt in the store with no outcome as `artisan stop` does, reporting each that is not
-// proven stopped on stderr, and reports whether all were.
+// finishStop lifts the hold of session n once director stop has swept its attempts, first recording it stopped as
+// superseded when its supervisor is gone, and returns it. A session a newer one has superseded is left as it is.
+func finishStop(s *store.Store, n int, gone bool) (store.DirectorSession, error) {
+	d, err := s.LatestDirectorSession()
+	if err != nil {
+		return d, err
+	}
+	if d.Number != n {
+		return s.DirectorSession(n)
+	}
+	if gone && d.State != store.DirectorStopped {
+		if _, err := s.EndDirectorSession(n, store.EndSuperseded, d.StateSequence); err != nil {
+			return d, err
+		}
+		if d, err = s.DirectorSession(n); err != nil {
+			return d, err
+		}
+	}
+	if d.Sweeping {
+		if _, err := s.FinishDirectorStop(n, d.StateSequence); err != nil {
+			return d, err
+		}
+	}
+	return s.DirectorSession(n)
+}
+
+// stopAttempts stops every attempt in the store with no outcome, reporting each that is not proven stopped on
+// stderr, and reports whether all were. An attempt with an owner is stopped as `artisan stop` stops it; one nothing
+// owns, a Director stage or an Artisan attempt recorded and not yet launched, is stopped by stopUnowned.
 func (a *App) stopAttempts(path, state string) bool {
 	state, err := filepath.Abs(state)
 	if err != nil {
@@ -190,7 +225,7 @@ func (a *App) stopAttempts(path, state string) bool {
 		}
 		key := artisan.AttemptKey{Repository: at.Repository, TaskID: at.TaskID, Step: at.Step, Attempt: at.Number}
 		ctx, cancel := context.WithTimeout(context.Background(), defaultStopTimeout)
-		_, err := launch.Stop(ctx, launch.Attempt{Store: path, StateDir: state, Key: key})
+		err := stopAttempt(ctx, launch.Attempt{Store: path, StateDir: state, Key: key})
 		cancel()
 		if err != nil {
 			a.notef("guildhall: director stop: attempt %s: %v\n", key, err)
@@ -200,13 +235,70 @@ func (a *App) stopAttempts(path, state string) bool {
 	return ok
 }
 
-// held reports whether the newest Director session holds new attempts: it does while paused or stopping.
+// stopAttempt stops one attempt for director stop: through its owner when it has an unreleased ownership record,
+// otherwise with stopUnowned, falling back to the owner when one took it meanwhile.
+func stopAttempt(ctx context.Context, at launch.Attempt) error {
+	o, err := withStore(at.Store, true, func(s *store.Store) (*store.Ownership, error) {
+		o, err := s.Ownership(at.Key.Repository, at.Key.TaskID, at.Key.Step, at.Key.Attempt)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+		return &o, err
+	})
+	if err != nil {
+		return err
+	}
+	if o == nil || o.State == store.OwnerReleased {
+		if err := stopUnowned(ctx, at); !errors.Is(err, store.ErrOwned) {
+			return err
+		}
+	}
+	_, err = launch.Stop(ctx, at)
+	return err
+}
+
+// stopUnowned records an attempt nothing owns stopped, under its task's lock: an advance holds that lock from
+// recording an attempt until it has launched it, or handed it to the Director, and step finish holds it to publish
+// a Director stage's result, so neither is part way through. An attempt finished meanwhile, or whose result step
+// finish already published, which its advance takes, is left as it is; one a launcher took meanwhile is refused
+// with store.ErrOwned, for its owner to stop (docs/director.md#stop).
+func stopUnowned(ctx context.Context, at launch.Attempt) error {
+	k := at.Key
+	taskDir := filepath.Join(at.StateDir, k.Repository, k.TaskID)
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		return err
+	}
+	if testHookStopWaitsForTask != nil {
+		testHookStopWaitsForTask()
+	}
+	release, err := artisan.LockAttempt(ctx, taskDir)
+	if err != nil {
+		return fmt.Errorf("lock task %s/%s: %w", k.Repository, k.TaskID, err)
+	}
+	defer release()
+	attempts, err := withStore(at.Store, true, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts(k.Repository, k.TaskID) })
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(attempts, func(a store.StageAttempt) bool { return a.Step == k.Step && a.Number == k.Attempt && a.Outcome != "" }) {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(k.Dir(at.StateDir), artisan.ResultFile)); err == nil {
+		return nil
+	}
+	_, err = withStore(at.Store, false, func(s *store.Store) (store.Receipt, error) {
+		return s.StopUnownedAttempt(fmt.Sprintf("director-stop:%s:%s:%s", k.Repository, k.TaskID, k.AttemptID()), k.Repository, k.TaskID, k.Step, k.Attempt)
+	})
+	return err
+}
+
+// held reports whether the newest Director session holds new attempts (store.DirectorSession.Holds).
 func held(s *store.Store) (bool, error) {
 	d, err := s.LatestDirectorSession()
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
 	}
-	return d.State == store.DirectorPaused || d.State == store.DirectorStopping, err
+	return d.Holds(), err
 }
 
 // heldNow is held over the store file at path, opened read-only; a missing store holds nothing, and is left to the
@@ -220,3 +312,7 @@ func heldNow(path string) (bool, error) {
 
 // pausedWait is what `task start` and `step retry` print when the Director holds new attempts.
 const pausedWait = `{"wait":"paused"}`
+
+// testHookStopWaitsForTask, when set, is called as director stop starts waiting for a task's lock to stop an attempt
+// nothing owns.
+var testHookStopWaitsForTask func()

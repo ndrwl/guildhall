@@ -71,6 +71,7 @@ type statusSession struct {
 	ReadyAt   time.Time              `json:"ready_at,omitzero"`
 	EndedAt   time.Time              `json:"ended_at,omitzero"`
 	StopNow   bool                   `json:"stop_now,omitempty"`
+	Sweeping  bool                   `json:"sweeping,omitempty"`
 	EndReason string                 `json:"end_reason,omitempty"`
 	// GuardRails are the copy's guard rails and what the attempt caps count today (docs/director.md#guard-rails).
 	GuardRails statusGuardRails `json:"guard_rails"`
@@ -252,7 +253,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	out.Session.GuardRails = usage
 	if d := v.Session; d != nil {
 		out.Session = statusSession{GuardRails: usage, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
-			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, EndReason: d.EndReason,
+			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
 			HandoffNote: v.Handoff, Reload: v.Reload}
 		if d.State == store.DirectorRecovering {
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",

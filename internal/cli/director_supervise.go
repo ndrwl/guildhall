@@ -217,7 +217,8 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
 	// way the supervisor outlives the runtime to record the end.
-	if err := c.Start(); err != nil {
+	u, err := startRuntime(c, n)
+	if err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
 	}
 	idleAfter, err := p.cfg.IdleAfter()
@@ -229,9 +230,11 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if ep != nil {
 		w.turns = ep.Turns()
 	}
-	ended, ending, err := a.waitSession(c, signals, &w)
+	ended, ending, err := a.waitSession(u, c, signals, &w)
 	var exit *exec.ExitError
 	switch {
+	case errors.Is(err, errRuntimeOutlived):
+		return a.fail(fmt.Errorf("director start: %w", err)), false
 	case ending == endForStop:
 		_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by director stop\n", n)
 		return 0, false
@@ -247,8 +250,59 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	return 0, false
 }
 
-// stopKill is how long a runtime the supervisor ended has to exit before it is killed.
+// stopKill is how long a runtime the supervisor ended has to exit before it is killed, and how long the runtime's
+// unit has to empty after the runtime's end.
 const stopKill = 10 * time.Second
+
+// runtimeUnit is the containment a session's runtime runs in, the operations of artisan.Unit the supervisor uses.
+type runtimeUnit interface {
+	Members() ([]artisan.Identity, error)
+	Terminate() error
+	Kill() error
+	Exited() <-chan struct{}
+	Close() error
+}
+
+// startRuntime starts c, the runtime of session n, in a unit of its own (artisan.NewSessionUnit), so the
+// supervisor can end every process the runtime starts, such as its shell and tool children, with it, except the
+// attempts' launchers, which leave it (artisan.SessionEnv).
+func startRuntime(c *exec.Cmd, n int) (runtimeUnit, error) {
+	u, err := artisan.NewSessionUnit(fmt.Sprintf("director-%d-session-%d", os.Getpid(), n))
+	if err != nil {
+		return nil, err
+	}
+	if c.Env == nil {
+		c.Env = os.Environ()
+	}
+	// The attempts' launchers the runtime starts leave the unit, under their own ownership and stop.
+	c.Env = append(c.Env, artisan.SessionEnv(u)...)
+	if _, err := u.Start(c); err != nil {
+		return nil, errors.Join(err, u.Close())
+	}
+	return u, nil
+}
+
+// errRuntimeOutlived is waitSession's error when the runtime's unit is not proven empty and released after the
+// runtime's end: the session's processes may still run, whatever ended the runtime.
+var errRuntimeOutlived = errors.New("the runtime's unit is not proven empty")
+
+// empty kills whatever is left in the unit u of a runtime that has exited and waits until it is empty, reading its
+// members every poll, for at most stopKill.
+func empty(u runtimeUnit, poll time.Duration) error {
+	for end := time.Now().Add(stopKill); ; time.Sleep(poll) {
+		left, err := u.Members()
+		if err == nil && len(left) == 0 {
+			return nil
+		}
+		if time.Now().After(end) {
+			if err != nil {
+				return fmt.Errorf("the runtime's processes: %w", err)
+			}
+			return fmt.Errorf("%d of the runtime's processes outlived it, the first %d", len(left), left[0].PID)
+		}
+		_ = u.Kill()
+	}
+}
 
 func (a *App) stopGrace() time.Duration {
 	if a.StopGrace <= 0 {
@@ -277,13 +331,13 @@ type sessionWatch struct {
 	turned                bool
 }
 
-// waitSession waits for the started runtime c to end, passing it each termination among signals, and returns the
-// last termination passed on, if any, why the supervisor ended the runtime, if it did, and c's end.
-// Every App.SessionPoll, and at each turn signal, it decides with decideEnd whether to end the runtime;
-// once it has, it kills the runtime if it has not exited stopKill later.
-func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch) (os.Signal, endAction, error) {
-	waited := make(chan error, 1)
-	go func() { waited <- c.Wait() }()
+// waitSession waits for the started runtime c, in unit u, to end, passing its unit each termination among signals,
+// and returns the last termination passed on, if any, why the supervisor ended the runtime, if it did, and c's end.
+// Every App.SessionPoll, and at each turn signal, it decides with decideEnd whether to end the runtime's unit;
+// once it has, it kills the unit if the runtime has not exited stopKill later. However the runtime ends, it returns
+// only once the unit is empty: whatever the runtime left running is killed, and a unit not proven empty stopKill
+// after the runtime's end is an error.
+func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch) (os.Signal, endAction, error) {
 	poll := a.SessionPoll
 	if poll <= 0 {
 		poll = time.Second
@@ -295,26 +349,32 @@ func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch
 	decide := func(turn session.Turn) {
 		if ending != keepRunning {
 			if time.Since(endedAt) >= stopKill {
-				_ = c.Process.Kill()
+				_ = u.Kill()
 			}
 			return
 		}
 		if ending = w.decide(turn); ending != keepRunning {
-			endRuntime(c.Process)
+			endRuntime(u)
 			endedAt = time.Now()
 		}
 	}
 	for {
 		select {
 		case s := <-signals:
-			if terminate(c.Process, s) {
+			if terminate(u, s) {
 				ended = s
 			}
 		case t := <-w.turns:
 			decide(t)
 		case <-tick.C:
 			decide("")
-		case err := <-waited:
+		case <-u.Exited():
+			err := errors.Join(empty(u, poll), u.Close())
+			if err != nil {
+				err = fmt.Errorf("%w: %w", errRuntimeOutlived, err)
+			} else if ps := c.ProcessState; ps != nil && !ps.Success() {
+				err = &exec.ExitError{ProcessState: ps}
+			}
 			return ended, ending, err
 		}
 	}

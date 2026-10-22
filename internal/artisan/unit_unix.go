@@ -39,6 +39,9 @@ func newGroupUnit(c Containment) *groupUnit {
 
 func (u *groupUnit) Containment() Containment { return u.containment }
 
+// newSessionUnit is newUnit: a worker whose stdin is the caller's terminal already becomes its foreground group.
+func newSessionUnit(name string) (Unit, error) { return newUnit(name) }
+
 // containedGroup lists the live members of the process group worker led.
 // A group id is not reused while the group has members, so a live process at
 // it that is not worker means the group is gone.

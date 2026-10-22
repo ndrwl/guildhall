@@ -18,6 +18,8 @@ var (
 	ErrOwnerLive = errors.New("attempt is owned by a live launcher")
 	// ErrOwnerUnknown refuses taking an attempt whose recorded launcher cannot be proven exited.
 	ErrOwnerUnknown = errors.New("attempt owner cannot be proven exited")
+	// ErrOwned refuses StopUnownedAttempt for an attempt with an unreleased ownership record: its owner stops it.
+	ErrOwned = errors.New("attempt has an unreleased owner")
 )
 
 // OwnershipState is where an owning launcher is in its attempt.
@@ -259,6 +261,46 @@ func (s *Store) TakeOwnership(mutationID string, o Ownership, probe OwnerProbe) 
 			}
 		}
 		return putOwnership(tx, o)
+	})
+}
+
+// StopUnownedAttempt records attempt number of step stopped when nothing owns it: it has no ownership record, or
+// only a released one. The check and the outcome are one mutation under the store's single-writer lock, so a
+// TakeOwnership that commits first refuses this with ErrOwned, and one that commits after it is refused because the
+// attempt has finished; a launcher therefore never runs an attempt this stopped. An attempt that already finished,
+// with any outcome, is refused with ErrInvalid as FinishAttempt refuses it, and a missing one with ErrNotFound; a
+// refusal writes nothing. The outcome is stopped, as FinishAttempt records it, so the attempt no longer counts as
+// running (AttemptUsage) and is retried like any stopped attempt. The receipt is a finish-attempt receipt with
+// FinishAttempt's request for a stopped outcome, so a later FinishAttempt of the same stop stands as one would after
+// FinishAttempt. Replaying returns the original receipt.
+func (s *Store) StopUnownedAttempt(mutationID, repository, taskID, step string, number int) (Receipt, error) {
+	if err := validateIDs(repository, taskID, step); err != nil {
+		return Receipt{}, err
+	}
+	if number < 1 {
+		return Receipt{}, invalid("attempt number %d must be positive", number)
+	}
+	req := StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: number, Outcome: AttemptStopped}
+	return s.mutate(mutationID, "finish-attempt", req, func(tx *bolt.Tx, r *Receipt) error {
+		r.Repository, r.TaskID, r.Attempt, r.Record = repository, taskID, number, attemptRecord(step, number)
+		attempts := repoBucket(tx, repository, bucketAttempts)
+		key := attemptKey(taskID, step, number)
+		var a StageAttempt
+		if err := getJSON(attempts, key, &a); err != nil {
+			return fmt.Errorf("attempt %d of %s/%s step %q: %w", number, repository, taskID, step, err)
+		}
+		if a.Outcome != "" {
+			return invalid("attempt %d of step %q already finished: %s", number, step, a.Outcome)
+		}
+		switch o, err := getOwnership(tx, repository, taskID, step, number); {
+		case errors.Is(err, ErrNotFound):
+		case err != nil:
+			return err
+		case o.State != OwnerReleased:
+			return fmt.Errorf("%w: attempt %d of step %q is owned by launcher %d", ErrOwned, number, step, o.LauncherIdentity.PID)
+		}
+		a.Outcome = AttemptStopped
+		return putJSON(attempts, key, a)
 	})
 }
 

@@ -1,0 +1,86 @@
+Red runs for holding admission, stopping unowned attempts and containing the Director's runtime (cross-review X2, X3, X4), 2026-10-22, on fe17d12 with the branch's tests against stubs:
+StartCappedAttempt ignoring AttemptCaps.Hold and StopUnownedAttempt returning errors.ErrUnsupported; the interp double and PauseStoreDirector doing nothing and an engine that did not map store.ErrDirectorHeld; director stop's sweep as on main (launch.Stop for every attempt); and startRuntime and waitSession keeping main's single-process runtime.
+Each section names the command; the matching green run is the branch's go test ./...
+
+$ go test ./internal/store -run "TestHeldStart|TestStopUnowned"
+--- FAIL: TestHeldStartRefusesInTheStartTransaction (0.48s)
+    --- FAIL: TestHeldStartRefusesInTheStartTransaction/paused (0.09s)
+        admission_test.go:55: held start = <nil>, want ErrDirectorHeld
+    --- FAIL: TestHeldStartRefusesInTheStartTransaction/stopping (0.08s)
+        admission_test.go:55: held start = <nil>, want ErrDirectorHeld
+--- FAIL: TestHeldStartIsAdmittedAfterResume (0.08s)
+    admission_test.go:81: paused start = <nil>
+--- FAIL: TestHeldStartAndPauseNeverInterleave (0.89s)
+--- FAIL: TestStopUnownedAttempt (0.17s)
+    --- FAIL: TestStopUnownedAttempt/unowned (0.04s)
+        admission_test.go:158: unsupported operation
+    --- FAIL: TestStopUnownedAttempt/owned (0.04s)
+        admission_test.go:179: stop of an owned attempt = unsupported operation, want ErrOwned
+    --- FAIL: TestStopUnownedAttempt/released (0.05s)
+        admission_test.go:195: stop of a finished attempt = unsupported operation, want ErrInvalid
+    --- FAIL: TestStopUnownedAttempt/missing (0.04s)
+        admission_test.go:205: stop of a missing attempt = unsupported operation, want ErrNotFound
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	1.627s
+FAIL
+    (one line per start committed after the pause, 40 in all)
+
+$ go test ./internal/interp/... ./internal/cli -run "Hold|RecordsContract"
+--- FAIL: TestRecordsContract (3.57s)
+    --- FAIL: TestRecordsContract/store (3.56s)
+        --- FAIL: TestRecordsContract/store/holds_a_start_while_the_Director_is_paused (0.05s)
+            records.go:618: start while paused = <nil>, want the Director holds new attempts
+            records.go:620: a held start recorded an attempt: [{Repository:app TaskID:t7 Step:build Number:1 Outcome: Spend:<nil>} {Repository:app TaskID:t7 Step:plan Number:1 Outcome: Spend:<nil>}]
+    --- FAIL: TestRecordsContract/double (0.01s)
+        --- FAIL: TestRecordsContract/double/holds_a_start_while_the_Director_is_paused (0.00s)
+            records.go:618: start while paused = <nil>, want the Director holds new attempts
+            records.go:620: a held start recorded an attempt: [{Repository:app TaskID:t7 Step:build Number:1 Outcome: Spend:<nil>} {Repository:app TaskID:t7 Step:plan Number:1 Outcome: Spend:<nil>}]
+--- FAIL: TestPauseBetweenHoldAndStartHoldsTheAttempt (0.06s)
+    --- FAIL: TestPauseBetweenHoldAndStartHoldsTheAttempt/double (0.01s)
+        script.go:196: mock agent: script exhausted: unexpected launch of step "plan" attempt 1
+        hold_test.go:106: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step plan: launch attempt 1: mock agent: script exhausted: unexpected launch of step "plan" attempt 1
+    --- FAIL: TestPauseBetweenHoldAndStartHoldsTheAttempt/store (0.05s)
+        script.go:196: mock agent: script exhausted: unexpected launch of step "plan" attempt 1
+        hold_test.go:106: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: app/t7 step plan: launch attempt 1: mock agent: script exhausted: unexpected launch of step "plan" attempt 1
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	3.792s
+ok  	github.com/ndrwl/guildhall/internal/interp/interptest	(cached) [no tests to run]
+--- FAIL: TestStoreRecordsContract (2.12s)
+    --- FAIL: TestStoreRecordsContract/holds_a_start_while_the_Director_is_paused (0.07s)
+        records.go:618: start while paused = <nil>, want the Director holds new attempts
+        records.go:620: a held start recorded an attempt: [{Repository:app TaskID:t7 Step:build Number:1 Outcome: Spend:<nil>} {Repository:app TaskID:t7 Step:plan Number:1 Outcome: Spend:<nil>}]
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	2.131s
+FAIL
+
+$ go test ./internal/cli -run TestDirectorStop
+--- FAIL: TestDirectorStopStopsADirectorStage (0.13s)
+    director_stop_test.go:47: attempts after director stop = [{Repository:app TaskID:t-1 Step:grill Number:1 Outcome: Spend:<nil>}]; want grill-1 stopped
+--- FAIL: TestDirectorStopStopsAnUnlaunchedAttempt (0.08s)
+    director_stop_test.go:103: attempts after director stop = [{Repository:app TaskID:t-1 Step:plan Number:1 Outcome: Spend:<nil>}]; want plan-1 stopped
+--- FAIL: TestDirectorStopWaitsForAnInFlightAdvance (0.08s)
+    director_stop_test.go:159: director stop ended without waiting for the task: exit 0, {"number":1,"state":"stopping","identity":{"pid":966567,"token":"c7658af8-7e27-4243-9d17-45a5a885c5d1:31897885"},"release":"test","config_digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","started_at":"2026-10-22T20:58:16.302300092Z","ready_at":"2026-10-22T20:58:16.310696837Z","state_sequence":6}
+         ; attempts [{Repository:app TaskID:t-1 Step:plan Number:1 Outcome: Spend:<nil>}]
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	1.027s
+FAIL
+
+$ go test ./internal/cli -run TestSessionEndEmptiesTheRuntimesUnit
+--- FAIL: TestSessionEndEmptiesTheRuntimesUnit (0.16s)
+    --- FAIL: TestSessionEndEmptiesTheRuntimesUnit/stopped_while_its_child_runs (0.09s)
+        director_runtime_test.go:68: waitSession: stopped true, signal: terminated
+        director_runtime_test.go:77: process 1150120 of the runtime's tree is alive (<nil>) after the session ended
+    --- FAIL: TestSessionEndEmptiesTheRuntimesUnit/exits_before_its_child (0.07s)
+        director_runtime_test.go:68: waitSession: stopped false, <nil>
+        director_runtime_test.go:77: process 1150139 of the runtime's tree is alive (<nil>) after the session ended
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.162s
+FAIL
+
+$ go test ./internal/launch -run TestDetachedLauncherLeavesTheSessionUnit (startDetached as on main: a new session only; Linux with a delegated cgroup v2)
+--- FAIL: TestDetachedLauncherLeavesTheSessionUnit (0.05s)
+    detach_test.go:68: the detached process 1311310 is a member of the session unit {Kind:cgroup Name:/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/fm-guildhall-xr-stop-204d9eafb85869d8.scope/guildhall-detach-PON3LMC5 Reason:cgroup v2 delegated by the systemd user manager at /user.slice/user-1000.slice/user@1000.service/app.slice/fm-guildhall-xr-stop-204d9eafb85869d8.scope (WSL)}
+    detach_test.go:82: the detached process is gone (<nil>) after the session unit ended
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	0.052s
+FAIL

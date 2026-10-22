@@ -10,15 +10,15 @@ import (
 // sessionSignals are the signals a Director session's supervisor handles rather than dying of.
 var sessionSignals = []os.Signal{os.Interrupt, syscall.SIGHUP, syscall.SIGTERM}
 
-// terminate passes a hangup or termination s on to the runtime p as a termination and reports whether it did;
-// an interrupt has already reached the runtime from the terminal.
-func terminate(p *os.Process, s os.Signal) bool {
+// terminate passes a hangup or termination s on to the runtime's unit u as a termination and reports whether it
+// did; an interrupt has already reached the runtime from the terminal.
+func terminate(u runtimeUnit, s os.Signal) bool {
 	if s == os.Interrupt {
 		return false
 	}
-	_ = p.Signal(syscall.SIGTERM)
+	_ = u.Terminate()
 	return true
 }
 
-// endRuntime asks the runtime p to end with a termination, as a closing terminal would.
-func endRuntime(p *os.Process) { _ = p.Signal(syscall.SIGTERM) }
+// endRuntime asks every process in the runtime's unit u to end with a termination, as a closing terminal would.
+func endRuntime(u runtimeUnit) { _ = u.Terminate() }
