@@ -29,11 +29,17 @@ func newRunDirector(t *testing.T) runDirector {
 // newRunDirectorWith is newRunDirector with the config file name in testdata/run.
 func newRunDirectorWith(t *testing.T, config string) runDirector {
 	t.Helper()
-	t.Setenv(roleEnv, "guildhall")
 	cfg, err := filepath.Abs(filepath.Join("testdata", "run", config))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return newRunDirectorAt(t, cfg)
+}
+
+// newRunDirectorAt is newRunDirector over the absolute config file cfg, with its baseline and workflows beside it.
+func newRunDirectorAt(t *testing.T, cfg string) runDirector {
+	t.Helper()
+	t.Setenv(roleEnv, "guildhall")
 	state, err := os.MkdirTemp("", "gr")
 	if err != nil {
 		t.Fatal(err)

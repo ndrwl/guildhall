@@ -35,7 +35,7 @@ type Launcher interface {
 }
 
 // Spec is what the interpreter gives a Launcher for one attempt: the rendered prompt and where its result goes.
-// AdapterSpec is the reference mapping onto adapter.Spec that the adapter conformance suite uses; production launch builds its own spec today.
+// AdapterSpec is the mapping onto adapter.Spec that both the adapter conformance suite and launch.Process use.
 type Spec struct {
 	// Identity is the attempt identity the result file must name.
 	Identity adapter.Identity
@@ -75,10 +75,10 @@ func (s Spec) Validate() error {
 	return nil
 }
 
-// AdapterSpec returns the reference adapter.Spec for s that the adapter conformance suite runs runtimes
-// on: the same identity, working directory, prompt file and result file, and no extra environment.
-// Production launch does not call it today; launch.Process and the artisan command build their own spec. The adapter name and manifest stay
-// with the launcher, which chooses the runtime and has already checked the prompt against its manifest.
+// AdapterSpec returns the adapter.Spec for s that the adapter conformance suite runs runtimes on and
+// launch.Process starts the attempt from: the same identity, working directory, prompt file and result
+// file, and no extra environment. The adapter name and manifest stay with the launcher, which passes
+// the name to the runtime's owner and has already checked the prompt against its manifest.
 // A spec Validate accepts maps to one adapter.Spec.Validate accepts.
 func (s Spec) AdapterSpec() adapter.Spec {
 	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile}
@@ -97,11 +97,11 @@ const (
 	// MockAdapter is the scripted in-process double, interptest.Script.
 	MockAdapter = "mock"
 	// FakeAdapter is the fake Artisan subcommand, package adapter/fake.
-	FakeAdapter = "fake"
+	FakeAdapter = adapter.FakeName
 )
 
 // ClaudeAdapter is the Claude Code adapter, package adapter/claude, which runs the `claude` program.
-const ClaudeAdapter = "claude"
+const ClaudeAdapter = adapter.ClaudeName
 
 // ClaudeStubEnv names, inside a test binary, the absolute path of the stub Claude Code a test
 // installed (claudetest.Install); CheckAdapter allows ClaudeAdapter only while `claude` on PATH is it.

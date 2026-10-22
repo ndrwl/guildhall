@@ -6,6 +6,8 @@ name = "tools"
 # Owned by this Director; may replace managed keys marked overridable.
 [local]
 review_instructions = "Cite the accepted requirement for every finding and check Windows paths."
+# How long a worker may stay silent before the Director hears it stalled; "0s" turns that off.
+stall_interval = "15m"
 
 # Artisan profiles that workflow steps name with "profile"; no credentials.
 [profile.builder]

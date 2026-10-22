@@ -121,7 +121,7 @@ Transcripts, cost, session resume and the Herdr tab mode are later work.
 Every runtime adapter passes one shared suite, `adaptertest.RunConformance`, before Guildhall launches it: it declares exactly its capabilities, refuses an invalid spec without a command, runs in the spec's working directory and environment, completes only from a valid result file for its identity, never completes without a result, on a malformed result or on a result for another attempt, leaves no result when stopped, and never replaces an existing result.
 The suite makes no model calls; a runtime proves each behaviour through prompts it understands.
 
-The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the reference mapping the suite uses; production launch builds its own spec today.
+The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the mapping `launch.Process` starts attempts from.
 The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names and plays the behaviour a `claude-stub:` prompt line asks for, with no model call.
 Inside a test binary the interpreter's adapter guard admits `claude` only while `claude` on `PATH` is the stub `claudetest.Install` names in `GUILDHALL_TEST_CLAUDE_STUB`, so `task start` runs a profile naming `claude` over the stub and never a real Claude Code.
 `TestLiveClaude` runs one real session instead when `GUILDHALL_CLAUDE_LIVE=1` is set; CI never sets it:
@@ -134,6 +134,12 @@ CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keep
 ## Running an attempt
 
 Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher with the fake or the [Claude adapter](#claude-adapter); see [Artisan commands](artisan.md#commands).
+
+Package `internal/adapter/runtimes` is the one owner of the runtimes Guildhall can launch: `runtimes.Lookup` returns the runtime by the name `artisan start --adapter` and a profile's `adapter` use, `fake` or `claude`, and `runtimes.Names` lists them.
+`artisan start` refuses any other name with a usage error that names it and lists them, in both modes.
+`launch.Process` passes the engine's adapter name through unchanged, so an unknown name is refused by the `artisan start` process it starts and reported as that process exiting before it owns the attempt, with its log, as every other startup failure is.
+The names are spelled once, as `adapter.FakeName` and `adapter.ClaudeName` in the leaf package every party imports; the lookup is keyed by them and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to them.
+A new runtime is added to that package and nowhere else; the interpreter's test-binary guard, `interp.CheckAdapter`, stays in the interpreter.
 
 `guildhall artisan start --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
 

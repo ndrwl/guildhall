@@ -207,6 +207,22 @@ func TestArtisanOwnedCommandUsage(t *testing.T) {
 	}
 }
 
+// TestArtisanStartRefusesAnUnknownAdapterByName: artisan start looks --adapter up in package runtimes,
+// the one owner of the names, and refuses one it does not hold by name with the list, owned or in a tab.
+func TestArtisanStartRefusesAnUnknownAdapterByName(t *testing.T) {
+	o := newOwnedAttempt(t, "x")
+	for _, args := range [][]string{
+		o.args("start", "--adapter", "codex"),
+		{"artisan", "start", "--adapter", "codex", "--task", "t-1", "--attempt", "a-1", "--prompt", o.prompt,
+			"--result", filepath.Join(o.workdir, "r.json"), "--workdir", o.workdir, "--herdr-session", "lab", "--herdr-workspace", "w1"},
+	} {
+		app, _, stderr := newArtisanApp(t)
+		if code := app.Run(args); code != 2 || !strings.Contains(stderr.String(), `"codex"`) || !strings.Contains(stderr.String(), "claude, fake") {
+			t.Errorf("%q: exit %d, stderr %q; want 2 naming \"codex\" and listing claude, fake", args, code, stderr)
+		}
+	}
+}
+
 func TestArtisanStopWithoutAnOwner(t *testing.T) {
 	o := newOwnedAttempt(t, "x")
 	code, stdout, stderr := guildhall(t, "", o.args("stop")...)

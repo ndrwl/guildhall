@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -48,6 +49,12 @@ const (
 
 // DefaultWorkflow is the workflow a repository runs when it names none.
 const DefaultWorkflow = "default"
+
+// StallIntervalKey is the setting that sets the interpreter's worker-stalled interval (docs/configuration.md#settings).
+const StallIntervalKey = "stall_interval"
+
+// DefaultStallInterval is the stall interval of a config that does not set StallIntervalKey.
+const DefaultStallInterval = 15 * time.Minute
 
 // Config is one copy's parsed configuration.
 type Config struct {
@@ -219,6 +226,17 @@ func (c *Config) validate() []string {
 		}
 	}
 
+	if m, ok := c.Managed[StallIntervalKey]; ok {
+		if _, err := parseStallInterval(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[StallIntervalKey]; ok {
+		if _, err := parseStallInterval(v); err != nil {
+			add("local %v", err)
+		}
+	}
+
 	for _, name := range slices.Sorted(maps.Keys(c.Profiles)) {
 		p := c.Profiles[name]
 		if !workflow.ValidID(name) {
@@ -319,6 +337,25 @@ func (c *Config) Setting(key string) (string, bool) {
 		return v, true
 	}
 	return m.Value, managed
+}
+
+// StallInterval returns the effective StallIntervalKey setting as a duration: DefaultStallInterval when
+// it is not set, and zero, which disables worker-stalled observations, for "0s".
+// A value that is not a nonnegative Go duration is an error; Parse refuses one already.
+func (c *Config) StallInterval() (time.Duration, error) {
+	v, ok := c.Setting(StallIntervalKey)
+	if !ok {
+		return DefaultStallInterval, nil
+	}
+	return parseStallInterval(v)
+}
+
+func parseStallInterval(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"15m\", or \"0s\" to disable", StallIntervalKey, v)
+	}
+	return d, nil
 }
 
 // Profile returns the profile with this name, or an error wrapping ErrUnknownProfile.

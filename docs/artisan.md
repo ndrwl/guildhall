@@ -356,7 +356,7 @@ The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interp
 `model` in the attempt directory is the only part a model-run Artisan may write, holding the copy of its prompt and its draft result, which its wrapper publishes as `result.json`; the result, its cancel marker, `outcome.json`, the lock, the events file and `launcher.log` are never in it.
 They are the composition package `internal/launch`, whose [doc comments](../internal/launch/launch.go) own the API contract.
 
-With those identity flags, `artisan start --adapter fake|claude --prompt <file> --workdir <dir>` runs an attempt the store already records as running; it does not create or begin a store attempt.
+With those identity flags, `artisan start --adapter fake|claude --prompt <file> --workdir <dir>` (the names [`runtimes`](adapters.md#running-an-attempt) holds) runs an attempt the store already records as running; it does not create or begin a store attempt.
 
 Before taking ownership, it validates the command and endpoint path, creates the attempt directory and containment unit, and constructs the launcher.
 It then acquires the attempt lock, waiting at most five seconds or until the caller's context ends, and holds it across the `outcome.json` check and ownership acquisition.

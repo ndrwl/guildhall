@@ -1,0 +1,47 @@
+# Red run at 5b2d221 plus the contract stubs and tests of this change, 2026-10-21T23:38Z, linux/amd64
+$ go test ./internal/config -run StallInterval -count=1
+--- FAIL: TestStallInterval (0.01s)
+    --- FAIL: TestStallInterval/unset_is_the_default (0.00s)
+        stall_test.go:29: StallInterval() = 0s, not implemented; want 15m0s
+    --- FAIL: TestStallInterval/a_local_duration (0.00s)
+        stall_test.go:29: StallInterval() = 0s, not implemented; want 1m30s
+    --- FAIL: TestStallInterval/zero_disables (0.00s)
+        stall_test.go:29: StallInterval() = 0s, not implemented; want 0s
+    --- FAIL: TestStallInterval/a_managed_duration (0.00s)
+        stall_test.go:29: StallInterval() = 0s, not implemented; want 1h0m0s
+    --- FAIL: TestStallInterval/an_overridable_managed_duration_replaced_locally (0.00s)
+        stall_test.go:29: StallInterval() = 0s, not implemented; want 2m0s
+--- FAIL: TestStallIntervalRefusesAnInvalidDuration (0.00s)
+    stall_test.go:47: "[local]\nstall_interval = \"soon\"": Parse error <nil>, want one naming stall_interval
+    stall_test.go:47: "[local]\nstall_interval = \"-1m\"": Parse error <nil>, want one naming stall_interval
+    stall_test.go:47: "[local]\nstall_interval = \"15\"": Parse error <nil>, want one naming stall_interval
+    stall_test.go:47: "[managed.stall_interval]\nvalue = \"later\"\n[local]": Parse error <nil>, want one naming stall_interval
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.016s
+FAIL
+$ go test ./internal/cli -run 'TestTaskStartObservesAStalledWorker|TestArtisanStartRefusesAnUnknownAdapterByName' -count=1
+--- FAIL: TestArtisanStartRefusesAnUnknownAdapterByName (0.06s)
+    artisan_owned_test.go:221: ["artisan" "start" "--store" "<tmp>/TestArtisanStartRefusesAnUnknownAdapterByName/002/guildhall.store" "--state" "<state>" "--repository" "app" "--task" "t-1" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "<tmp>/TestArtisanStartRefusesAnUnknownAdapterByName/001/prompt.md" "--workdir" "<tmp>/TestArtisanStartRefusesAnUnknownAdapterByName/001" "--adapter" "codex"]: exit 2, stderr "guildhall: artisan start: --adapter \"codex\": the adapters are fake and claude\n\nUsage: …(command list elided)"; want 2 naming "codex" and listing claude, fake
+    artisan_owned_test.go:221: ["artisan" "start" "--adapter" "codex" "--task" "t-1" "--attempt" "a-1" "--prompt" "<tmp>/TestArtisanStartRefusesAnUnknownAdapterByName/001/prompt.md" "--result" "<tmp>/TestArtisanStartRefusesAnUnknownAdapterByName/001/r.json" "--workdir" "<tmp>/TestArtisanStartRefusesAnUnknownAdapterByName/001" "--herdr-session" "lab" "--herdr-workspace" "w1"]: exit 2, stderr "guildhall: artisan start: --adapter \"codex\": the adapters are fake and claude\n\nUsage: …(command list elided)"; want 2 naming "codex" and listing claude, fake
+--- FAIL: TestTaskStartObservesAStalledWorker (0.16s)
+    stall_test.go:84: default stall_interval: 0 worker-stalled messages, want 1
+    stall_test.go:84: default stall_interval: 0 worker-stalled messages, want 1
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.233s
+FAIL
+$ go test ./internal/adapter/runtimes -count=1
+--- FAIL: TestLookupConstructsEachRuntime (0.00s)
+    runtimes_test.go:18: Names() = [], want ["claude" "fake"]
+--- FAIL: TestLookupRefusesAnUnknownName (0.00s)
+    runtimes_test.go:50: Lookup("") error "unknown runtime adapter" does not name it and list claude, fake
+    runtimes_test.go:50: Lookup("codex") error "unknown runtime adapter" does not name it and list claude, fake
+    runtimes_test.go:50: Lookup("mock") error "unknown runtime adapter" does not name it and list claude, fake
+    runtimes_test.go:50: Lookup("Fake") error "unknown runtime adapter" does not name it and list claude, fake
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/runtimes	0.004s
+FAIL
+$ go test ./internal/launch -run TestProcessStartsArtisanStartOnTheAdapterSpec -count=1 -v
+=== RUN   TestProcessStartsArtisanStartOnTheAdapterSpec
+--- PASS: TestProcessStartsArtisanStartOnTheAdapterSpec (0.06s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/launch	0.062s
