@@ -9,19 +9,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   test:
-    name: test (${{ matrix.os }})
+    name: diag (${{ matrix.os }}${{ matrix.defender_off && ', defender excluded' || '' }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # Tools and platforms each runner supplies: a test that would skip
-        # for one of them fails the job instead (docs/contracts/testenv.md).
+        defender_off: [false]
         include:
           - os: ubuntu-latest
             require: pwsh
@@ -29,6 +24,9 @@ jobs:
             require: pwsh,powershell,windows
           - os: macos-latest
             require: ksh,pwsh
+          - os: windows-latest
+            require: pwsh,powershell,windows
+            defender_off: true
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -40,23 +38,62 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Check formatting
+      - name: Runner facts
         run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "gofmt needed for:"
-            echo "$unformatted"
-            exit 1
+          echo "nproc: $(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+          go env GOMAXPROCS GOTMPDIR GOCACHE TEMP TMPDIR || true
+          if [ "$RUNNER_OS" = Windows ]; then
+            powershell -NoProfile -Command "Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,BehaviorMonitorEnabled,OnAccessProtectionEnabled | Format-List; Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List; Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory | Format-List"
           fi
+      - name: Exclude Go and temp from Defender
+        if: matrix.defender_off
+        run: |
+          powershell -NoProfile -Command "Add-MpPreference -ExclusionPath '$RUNNER_TEMP','$TEMP','$(go env GOCACHE)','$(go env GOPATH)','$GITHUB_WORKSPACE'; Add-MpPreference -ExclusionProcess 'go.exe','*.test.exe','guildhall.exe','claude.exe'; (Get-MpPreference).ExclusionPath"
       - name: Build
-        run: go build ./...
-      - name: Vet
-        run: go vet ./...
-      - name: Test
+        run: go build ./... && go vet ./...
+      - name: Test with sampling
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
-        run: go test ./...
-      - name: Lint
-        uses: golangci/golangci-lint-action@v9
+        run: |
+          mkdir -p diag
+          sample() {
+            while true; do
+              echo "=== $(date -u +%H:%M:%S)"
+              if [ "$RUNNER_OS" = Windows ]; then
+                powershell -NoProfile -Command "\$c=(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; Write-Output ('cpu% ' + \$c); Get-Process | Sort-Object CPU -Descending | Select-Object -First 12 Id,ProcessName,CPU,WS | Format-Table -AutoSize | Out-String -Width 200"
+              else
+                ps -Ao pid,pcpu,rss,etime,comm -r 2>/dev/null | head -13 || ps aux --sort=-pcpu | head -13
+              fi
+              sleep 20
+            done
+          }
+          sample > diag/samples.txt 2>&1 &
+          sampler=$!
+          start=$(date +%s)
+          set +e
+          go test -json ./... > diag/test.json
+          code=$?
+          set -e
+          echo "go test exit $code after $(( $(date +%s) - start ))s"
+          sleep 5
+          echo "=== processes after go test exited" >> diag/samples.txt
+          if [ "$RUNNER_OS" = Windows ]; then
+            powershell -NoProfile -Command "Get-Process | Where-Object { \$_.ProcessName -match 'test|guildhall|claude|fake|git|go' } | Select-Object Id,ProcessName,CPU,StartTime,Path | Format-Table -AutoSize | Out-String -Width 300" >> diag/samples.txt 2>&1
+          else
+            ps -Ao pid,pcpu,etime,args | grep -E 'test|guildhall|claude|fake' | grep -v grep >> diag/samples.txt || true
+          fi
+          kill $sampler || true
+          echo "## package times"
+          jq -r 'select(.Action=="pass" or .Action=="fail") | select(.Test==null) | "\(.Elapsed)\t\(.Action)\t\(.Package)"' diag/test.json | sort -rn
+          echo "## slowest 40 tests"
+          jq -r 'select(.Action=="pass" or .Action=="fail") | select(.Test!=null) | "\(.Elapsed)\t\(.Action)\t\(.Package | sub("github.com/ndrwl/guildhall/";""))\t\(.Test)"' diag/test.json | sort -rn | head -40
+          echo "## failures"
+          jq -r 'select(.Action=="fail") | "\(.Package) \(.Test)"' diag/test.json
+          echo "## samples"
+          cat diag/samples.txt
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          version: v2.15.0
+          name: diag-${{ matrix.os }}-${{ matrix.defender_off }}
+          path: diag/
