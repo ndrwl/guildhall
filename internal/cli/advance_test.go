@@ -2,8 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -89,32 +92,78 @@ func (d runDirector) waitResult(t *testing.T, step string, n int) {
 	}
 }
 
-// stopAll proves every attempt's launcher stopped, so no process outlives the test.
+// stopAll fails the test for every leftover, so no process outlives the test.
 func (d runDirector) stopAll(t *testing.T) {
+	t.Helper()
+	for _, l := range d.leftovers(t, "") {
+		t.Error(l)
+	}
+}
+
+// leftovers proves every attempt's launcher stopped with artisan stop and its
+// worker tree empty, and describes each process or attempt it could not prove
+// so. The processes come from artisan harness inventory, with the fake's
+// inventory directory inv when it is not empty, taken before the stop, since
+// stop may settle the attempt and its record then names no worker; each must
+// probe gone within a few seconds afterwards, well inside the orphaning fake's
+// lifetime, so a process still exiting is not a leftover and an orphan is.
+func (d runDirector) leftovers(t *testing.T, inv string) []string {
 	t.Helper()
 	s, err := store.Open(d.store, store.Options{ReadOnly: true})
 	if err != nil {
-		t.Error(err)
-		return
+		return []string{err.Error()}
 	}
 	attempts, err := s.Attempts("app", "t-1")
 	_ = s.Close()
+	var out []string
 	if err != nil {
-		t.Error(err)
+		out = append(out, err.Error())
 	}
 	for _, a := range attempts {
+		at := []string{"--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number)}
+		var procs []harnessProcess
+		args := append([]string{"artisan", "harness", "inventory", "--lab"}, at...)
+		if inv != "" {
+			args = append(args, "--inventory", inv)
+		}
+		code, stdout, stderr := d.run(t, args...)
+		if err := json.Unmarshal([]byte(stdout), &procs); code != 0 || err != nil {
+			out = append(out, fmt.Sprintf("artisan harness inventory %s-%d: exit %d, %v, %s %s", a.Step, a.Number, code, err, stdout, stderr))
+		}
 		// A launcher that has just recorded its outcome may still be exiting: stop proves it only once gone.
+		// Once it is gone stop is not retried, so a surviving worker tree is reported rather than waited out.
+		exiting := func() bool {
+			i := slices.IndexFunc(procs, func(p harnessProcess) bool { return p.Role == "launcher" })
+			if i < 0 {
+				return false
+			}
+			lv, _ := artisan.Probe(artisan.Identity{PID: procs[i].PID, Token: procs[i].Token})
+			return lv != artisan.Gone
+		}
 		for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
-			code, out, stderr := d.run(t, "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number))
+			code, stdout, stderr := d.run(t, append([]string{"artisan", "stop"}, at...)...)
 			if code == 0 {
 				break
 			}
-			if time.Now().After(end) {
-				t.Errorf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, out, stderr)
+			if !exiting() || time.Now().After(end) {
+				out = append(out, fmt.Sprintf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, stdout, stderr))
 				break
 			}
 		}
+		settle := time.Now().Add(10 * time.Second)
+		for _, p := range procs {
+			id := artisan.Identity{PID: p.PID, Token: p.Token}
+			lv, err := artisan.Probe(id)
+			for err == nil && lv != artisan.Gone && time.Now().Before(settle) {
+				time.Sleep(50 * time.Millisecond)
+				lv, err = artisan.Probe(id)
+			}
+			if err != nil || lv != artisan.Gone {
+				out = append(out, fmt.Sprintf("%s-%d: %s %d is %v (%v)", a.Step, a.Number, p.Role, p.PID, lv, err))
+			}
+		}
 	}
+	return out
 }
 
 func (d runDirector) attempts(t *testing.T) []store.StageAttempt {
@@ -303,5 +352,13 @@ func TestTaskDelivers(t *testing.T) {
 	}
 	if prs := f.PullRequests(remote); prs[0].State != forge.Merged {
 		t.Errorf("pull request = %+v, want merged", prs[0])
+	}
+}
+
+// sweep runs artisan resume over an attempt whose launcher is gone and fails the test unless it succeeds.
+func (d runDirector) sweep(t *testing.T, step string, n int) {
+	t.Helper()
+	if code, out, stderr := d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", strconv.Itoa(n)); code != 0 {
+		t.Errorf("artisan resume %s-%d: exit %d, %s %s", step, n, code, out, stderr)
 	}
 }

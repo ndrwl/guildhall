@@ -26,7 +26,7 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(plan, append(guide, "guildhall-fake: result=never\nguildhall-fake: lifetime=2m\n"...), 0o600); err != nil {
+	if err := os.WriteFile(plan, append(guide, "guildhall-fake: result=never\nguildhall-fake: lifetime=1m\n"...), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := os.ReadFile(filepath.Join(dir, "config.toml"))
@@ -61,8 +61,8 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		// Sweep the orphaned worker so the cleanup's stop proves the attempt not running.
-		_, _, _ = d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1")
+		// Sweep the orphaned worker so the cleanup proves the attempt not running and its worker tree empty.
+		d.sweep(t, "plan", 1)
 	})
 	hb, err := artisan.ReadHeartbeat(key.Dir(d.state))
 	if err != nil {
