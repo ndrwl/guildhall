@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/git"
+	"github.com/ndrwl/guildhall/internal/git/gittest"
 )
 
 // TestBaseProgram: a task's base is where its branch left the remote's default branch as worktree custody last
@@ -14,6 +15,7 @@ import (
 func TestBaseProgram(t *testing.T) {
 	ctx := context.Background()
 	global := isolate(t)
+	repositories := gittest.Repositories(t)
 	ensure := func(t *testing.T, w git.Workspace) {
 		t.Helper()
 		if err := (git.Program{}).Ensure(ctx, w); err != nil {
@@ -38,7 +40,7 @@ func TestBaseProgram(t *testing.T) {
 		return commit
 	}
 	t.Run("a new workspace is based on the default branch it started at", func(t *testing.T) {
-		w, start := arrangeWorkspace(t)
+		w, start := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		repo{t, w.Dir, global}.commit("attempt", map[string]string{"c.txt": "c\n"})
 		if got := base(t, w); got != start {
@@ -46,7 +48,7 @@ func TestBaseProgram(t *testing.T) {
 		}
 	})
 	t.Run("the base moves when the branch is rebased onto the fetched default branch", func(t *testing.T) {
-		w, start := arrangeWorkspace(t)
+		w, start := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		repo{t, w.Dir, global}.commit("attempt", map[string]string{"c.txt": "c\n"})
 		moved := moveRemote(t, w)
@@ -67,7 +69,7 @@ func TestBaseProgram(t *testing.T) {
 		}
 	})
 	t.Run("a reused workspace whose remote is unreachable is still reused", func(t *testing.T) {
-		w, start := arrangeWorkspace(t)
+		w, start := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		w.Remote = filepath.Join(t.TempDir(), "missing.git")
 		ensure(t, w)
@@ -76,7 +78,7 @@ func TestBaseProgram(t *testing.T) {
 		}
 	})
 	t.Run("no base without a workspace or after retirement", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		if got, err := (git.Program{}).Base(ctx, w.Repository, w.Branch); err == nil {
 			t.Errorf("Base before Ensure = %s, want an error", got)
 		}
@@ -93,7 +95,7 @@ func TestBaseProgram(t *testing.T) {
 		}
 	})
 	t.Run("refuses an invalid branch", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		for _, branch := range []string{"", "-x", "a..b"} {
 			if got, err := (git.Program{}).Base(ctx, w.Repository, branch); err == nil {

@@ -490,7 +490,7 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 // waitSpend waits for the attempt's launcher to record its spend and returns the attempt.
 func (d runDirector) waitSpend(t *testing.T, step string, n int) store.StageAttempt {
 	t.Helper()
-	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err != nil {
 			continue
@@ -502,7 +502,7 @@ func (d runDirector) waitSpend(t *testing.T, step string, n int) store.StageAtte
 		}
 	}
 	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}.Dir(d.state), launch.LogFile))
-	t.Fatalf("%s-%d spend was not recorded within a minute; launcher log:\n%s", step, n, log)
+	t.Fatalf("%s-%d spend was not recorded within %v; launcher log:\n%s", step, n, testenv.Ceiling(time.Minute), log)
 	return store.StageAttempt{}
 }
 
