@@ -35,7 +35,7 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 
 - `role.md`: the role prompt, from `[director] role` relative to the config directory, else the copy's `baseline/roles/director.md`, else the release's;
 - every release skill, byte for byte, in the runtime's skills directory, `.claude/skills/` for Claude Code;
-- the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and a `Stop` hook that runs `guildhall director turn-ended` at the end of every turn;
+- the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and `Stop` and `StopFailure` hooks that run `guildhall director turn-ended` at the end of every turn;
 - `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command;
 - `manifest.json`: the digest of every file above.
 
@@ -164,7 +164,7 @@ guildhall director reload [--now] [--copy <dir> | --store <file> --state <dir>]
 
 `director reload` asks the session supervisor to end the runtime and start a new session, on the copy's current settings, as [release upgrades](releases.md#guildhall-director-reload) design.
 It records a `director-reload` request and prints it as one JSON line; requests made before one is applied collapse into it, and `--now` turns a pending plain request into a `--now` one.
-The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake typed into the Director's pane, so a reload asked for during a turn the captain started waits for that turn to end.
+The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake typed into the Director's pane, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
 `--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the handoff: write the note, then reload.
 `--now` is refused with exit 1 unless the newest handoff note was recorded by the newest session, which is not `stopped`, and, while a Director stage attempt is running, unless the note was recorded after that attempt started, so a reload never drops an open grill.
 The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers.
