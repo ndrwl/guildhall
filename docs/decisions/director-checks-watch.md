@@ -9,7 +9,7 @@ The captain's goal is a Director that spends no model turns while idle, and supp
 
 - **The session supervisor owns the checks continuation.**
   While the runtime runs, `director start`'s supervisor already reads its session about once a second; on the same tick it runs a checks watcher.
-  Every `checks_refresh`, but at most every 30 seconds so a `"0s"` refresh does not read the forge at every tick, it lists the open tasks whose `next.json` waits `checks` and advances each in turn as `task start` does, in its own process, with no model turn.
+  Every `checks_refresh`, but never more often than every 30 seconds so a `"0s"` refresh does not read the forge at every tick, it lists the open tasks whose `next.json` waits `checks` and advances each in turn as `task start` does, in its own process, with no model turn.
   The advance reads the forge under the engine's existing pacing and sends what changed; its `checks-pending` message is head-derived, so a re-read of still-pending checks sends and wakes nothing new, and passed or failed checks send `checks-passed` or `checks-failed`, which wake the Director as any send does.
   The supervisor is not a service: it lives exactly as long as the Director's session (R1.29).
 - **One round at a time, failures retried.**
