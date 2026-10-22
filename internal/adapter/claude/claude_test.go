@@ -542,7 +542,7 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	git("init", "-q")
-	if err := os.WriteFile(filepath.Join(spec.WorkDir, "check.sh"), []byte("echo 'checks passed'\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(spec.WorkDir, "check.sh"), []byte(": > .git/guildhall-checked\necho 'checks passed'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	git("add", "check.sh")
@@ -568,5 +568,11 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 		t.Errorf("result %s, head %s from base %s; want a new commit. Wrapper output:\n%s", r.Status, head, base, stderr.String())
 	} else if files := git("diff", "--name-only", base, "HEAD"); files != "hello.txt" {
 		t.Errorf("commit changed %q; want only hello.txt", files)
+	}
+	if _, err := os.Stat(filepath.Join(spec.WorkDir, ".git", "guildhall-checked")); err != nil {
+		t.Errorf("check.sh did not run: %v. Wrapper output:\n%s", err, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "Claude was denied") {
+		t.Errorf("a tool use was denied. Wrapper output:\n%s", stderr.String())
 	}
 }

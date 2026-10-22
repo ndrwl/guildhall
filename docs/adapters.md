@@ -161,7 +161,7 @@ So the dependency is never silent:
 - [`director start`](director.md#start)'s preflight prints an `artisans` line naming each profile that runs the claude adapter and this dependency; it refuses nothing, because Guildhall cannot see every settings file Claude Code reads;
 - the wrapper names each denied tool use in the attempt's launcher log, as above.
 
-A live run, `TestLiveClaudeBuildPermissions`, asks a real session in a git repository to run a check command Claude Code does not allow as read-only, `sh check.sh`, and then commit; it fails unless the commit is made, and names any denial.
+A live run, `TestLiveClaudeBuildPermissions`, asks a real session in a git repository to run a check command Claude Code does not allow as read-only, `sh check.sh`, and then commit; it fails unless the check ran and the commit was made, and on any denied tool use.
 It shows that the machine's settings allow a non-read-only check and a commit, not that every repository's own checks are allowed:
 
 ```sh
