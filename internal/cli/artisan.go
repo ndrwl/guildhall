@@ -101,8 +101,8 @@ func (f *attemptFlags) register(fl *flag.FlagSet) {
 	fl.StringVar(&f.attempt, "attempt", "", "attempt number")
 }
 
-// parse fills the paths from the copy, if one is selected, and returns the attempt the flags name.
-func (f attemptFlags) parse(getenv func(string) string) (launch.Attempt, error) {
+// parse fills the paths from the copy, if one is selected, leaving it in f.copy, and returns the attempt the flags name.
+func (f *attemptFlags) parse(getenv func(string) string) (launch.Attempt, error) {
 	if err := f.copy.apply(getenv, &f.store, nil, &f.state); err != nil {
 		return launch.Attempt{}, err
 	}
@@ -189,7 +189,7 @@ func (a *App) artisanStart(args []string) int {
 		session, workspace, label            string
 		herdrExec                            stringList
 		timeout                              time.Duration
-		stopOnTimeout                        bool
+		stopOnTimeout, advance               bool
 		id                                   adapter.Identity
 		owned                                attemptFlags
 	)
@@ -203,6 +203,7 @@ func (a *App) artisanStart(args []string) int {
 	fl.StringVar(&workspace, "herdr-workspace", "", "Herdr workspace id for the tab")
 	fl.Var(&herdrExec, "herdr-exec", "Herdr program, then leading arguments (repeat per word)")
 	fl.StringVar(&label, "tab-label", "", "tab label")
+	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
 	fl.BoolVar(&stopOnTimeout, "stop-on-timeout", false, "stop the owned Windows worker, or request Ctrl+C on other platforms, when the wait times out")
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan start: " + err.Error())
@@ -225,12 +226,27 @@ func (a *App) artisanStart(args []string) int {
 		if err != nil || prompt == "" || workdir == "" {
 			return a.usageError(fmt.Sprintf("artisan start: --prompt and --workdir are required: %v", err))
 		}
+		if advance && owned.copy.dir == "" {
+			return a.usageError("artisan start: --advance advances the task over a copy, so it needs --copy or " + copyEnvVar)
+		}
 		if _, err := os.Stat(at.Store); errors.Is(err, fs.ErrNotExist) {
 			return a.fail(fmt.Errorf("artisan start: %w", noStore(at.Store)))
 		}
-		return a.runOwned(at, adapterName, prompt, workdir, timeout)
-	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "":
-		return a.usageError("artisan start: --store, --state, --repo, --step and --copy do not apply in a Herdr tab")
+		var advanceArgv []string
+		if advance {
+			exe, err := a.Executable()
+			if err != nil {
+				return a.fail(err)
+			}
+			dir, err := filepath.Abs(owned.copy.dir)
+			if err != nil {
+				return a.fail(err)
+			}
+			advanceArgv = []string{exe, "--copy", dir}
+		}
+		return a.runOwned(at, adapterName, prompt, workdir, timeout, advanceArgv)
+	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance:
+		return a.usageError("artisan start: --store, --state, --repo, --step, --copy and --advance do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):
@@ -281,8 +297,9 @@ func (a *App) artisanStart(args []string) int {
 // runOwned runs attempt at as its launcher (launch.Run): the named adapter's
 // Artisan runs in a containment unit with this process's terminal, its output on
 // stderr so stdout carries only the report, and the exit code is the store
-// outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error.
-func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, timeout time.Duration) int {
+// outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error. A non-nil
+// advance is launch.Config.Advance, the task's advance once the attempt is recorded.
+func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, timeout time.Duration, advance []string) int {
 	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile}
 	for _, p := range []struct {
 		dst *string
@@ -307,7 +324,7 @@ func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, t
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, artisan.StopSignals...)
 	defer signal.Stop(signals)
-	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals})
+	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals, Advance: advance})
 	if rep.Outcome.State != "" {
 		if code := a.printJSON(rep); code != 0 {
 			return code

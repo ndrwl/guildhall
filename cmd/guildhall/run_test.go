@@ -235,6 +235,129 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 	}
 }
 
+// newBinCopy is newBinDirector over a Director copy holding the config directory cfgDir's files, its
+// director.store and state/, with the director flags --copy and --repo.
+func newBinCopy(t *testing.T, cfgDir string) *binDirector {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "gk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := os.CopyFS(dir, os.DirFS(cfgDir)); err != nil {
+		t.Fatal(err)
+	}
+	d := newBinDirector(t, filepath.Join(dir, "config.toml"))
+	d.store, d.state = filepath.Join(dir, "director.store"), filepath.Join(dir, "state")
+	d.flags = []string{"--copy", dir, "--repo", "app"}
+	d.run("", "store", "init", d.store)
+	return d
+}
+
+// waitDecision waits until the store records decision id of task app/t-1, as the watcher's advance opens it.
+func (d *binDirector) waitDecision(id string) {
+	d.t.Helper()
+	for end := time.Now().Add(2 * time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			continue
+		}
+		ds, err := s.Decisions("app", "t-1")
+		_ = s.Close()
+		if err == nil && slices.ContainsFunc(ds, func(d store.Decision) bool { return d.ID == id }) {
+			return
+		}
+	}
+	d.t.Fatalf("decision %s was not opened within two minutes", id)
+}
+
+// TestTaskRunsEndToEndWithTheWatcher is TestTaskRunsEndToEnd from a Director copy with no step done typed: each
+// attempt's launcher, the per-task watcher (D3), takes its own result and opens the next decision.
+func TestTaskRunsEndToEndWithTheWatcher(t *testing.T) {
+	d := newBinCopy(t, filepath.Join("..", "..", "internal", "cli", "testdata", "run"))
+	d.newTask()
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
+	d.launched("plan", 1)
+	d.waitDecision("accept-1")
+	d.want(d.answer("accept-1"), `{"wait":"attempt","step":"build","attempt":1}`)
+	d.launched("build", 1)
+	d.waitDecision("sign-off-1")
+	d.want(d.answer("sign-off-1"), `{"wait":"decision","step":"deliver","decision":"deliver-1"}`)
+
+	d.stopAll()
+	var tl struct {
+		Attempts []struct {
+			Step    string `json:"step"`
+			Number  int    `json:"number"`
+			Outcome string `json:"outcome"`
+		} `json:"attempts"`
+	}
+	if err := json.Unmarshal([]byte(d.run("", "task", "timeline", "--store", d.store, "--repo", "app", "t-1", "--json")), &tl); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, a := range tl.Attempts {
+		got = append(got, a.Step+"-"+strconv.Itoa(a.Number)+" "+a.Outcome)
+	}
+	if exp := []string{"plan-1 succeeded", "build-1 succeeded"}; !slices.Equal(got, exp) {
+		t.Errorf("timeline attempts %q, want %q", got, exp)
+	}
+}
+
+// TestTheWatcherTellsTheDirectorOfAKilledWorker: from a copy, killing the plan attempt's worker fails the
+// attempt, and its launcher's advance sends the Director attempt-failed with nobody typing task start.
+func TestTheWatcherTellsTheDirectorOfAKilledWorker(t *testing.T) {
+	d := newBinCopy(t, neverPlanned(t))
+	d.newTask()
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
+	d.launched("plan", 1)
+
+	var worker int
+	for end := time.Now().Add(time.Minute); worker == 0; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the plan attempt's launcher did not record its worker")
+		}
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			continue
+		}
+		own, err := s.Ownership("app", "t-1", "plan", 1)
+		_ = s.Close()
+		if err == nil && own.State == store.OwnerRunning {
+			worker = own.Containment.Worker.PID
+		}
+	}
+	p, err := os.FindProcess(worker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	read := []string{"messages", "read", "--store", d.store, "app.t-1.attempt-failed.plan-1"}
+	var msg struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	for end := time.Now().Add(time.Minute); ; time.Sleep(100 * time.Millisecond) {
+		out, stderr, err := d.try("", read...)
+		if err == nil {
+			if err := json.Unmarshal([]byte(out), &msg); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+		if time.Now().After(end) {
+			log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), "launcher.log"))
+			t.Fatalf("no attempt-failed message: %v\n%s%s\nlauncher log:\n%s", err, out, stderr, log)
+		}
+	}
+	if msg.Type != "attempt-failed" || !strings.Contains(msg.Text, "Attempt 1 of step plan failed") {
+		t.Errorf("message %+v, want attempt-failed for plan-1", msg)
+	}
+	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"director","step":"plan","attempt":1}`)
+}
+
 // TestRetryAfterAKilledLauncher is F27 through the binary: the plan attempt's launcher is killed outright,
 // artisan resume settles the attempt failed, task start waits for the Director, and step retry starts
 // attempt 2 with its reason recorded; repeating the retry changes nothing.

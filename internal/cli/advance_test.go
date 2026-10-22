@@ -23,6 +23,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -181,9 +182,37 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			if code == 0 {
 				break
 			}
+			// A launcher that released its attempt at setup, before a worker, recorded no containment where
+			// its unit is not named (a process group), so stop cannot prove it stopped; once that launcher is
+			// gone nothing of the attempt is left.
+			var rep struct {
+				Endpoint       string
+				Classification struct{ State, Launcher string }
+			}
+			if json.Unmarshal([]byte(stdout), &rep) == nil && rep.Endpoint == "not asked: ownership released" &&
+				rep.Classification.State == "exited" && rep.Classification.Launcher == "gone" {
+				break
+			}
 			if !exiting() || time.Now().After(end) {
 				out = append(out, fmt.Sprintf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, stdout, stderr))
 				break
+			}
+		}
+		// The recorded launcher outlives its released attempt while it runs the task's advance (--advance), a
+		// child it waits for, so the test binary that plays both is in use until that launcher is gone.
+		if s, err := store.Open(d.store, store.Options{ReadOnly: true}); err == nil {
+			o, err := s.Ownership("app", "t-1", a.Step, a.Number)
+			_ = s.Close()
+			id := artisan.Identity(o.LauncherIdentity)
+			for end := time.Now().Add(time.Minute); err == nil && id.PID != 0; time.Sleep(50 * time.Millisecond) {
+				lv, perr := artisan.Probe(id)
+				if perr == nil && lv == artisan.Gone {
+					break
+				}
+				if time.Now().After(end) {
+					out = append(out, fmt.Sprintf("%s-%d: recorded launcher %d is %v (%v)", a.Step, a.Number, id.PID, lv, perr))
+					break
+				}
 			}
 		}
 		settle := time.Now().Add(10 * time.Second)
@@ -243,6 +272,138 @@ func TestTaskStartAndStepDone(t *testing.T) {
 	// The answer alone advances nothing; start with the decision does.
 	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...); code != 1 || !strings.Contains(stderr, "not answered") {
 		t.Errorf("start on an unanswered decision: exit %d, stderr %s", code, stderr)
+	}
+}
+
+// newRunCopy is newRunDirector over a Director copy holding testdata/run's config, baseline and workflows, its
+// director.store and a short state directory, returned with the copy.
+func newRunCopy(t *testing.T) (runDirector, string) {
+	t.Helper()
+	t.Setenv(roleEnv, "guildhall")
+	dir, err := os.MkdirTemp("", "gc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	d := runDirector{store: filepath.Join(dir, "director.store"), config: filepath.Join(dir, "config.toml"), state: filepath.Join(dir, "state")}
+	// A launcher's advance runs as guildhall, with real git workspaces, so app is a real repository and remote.
+	repository, remote, _ := gittest.Repository(t)
+	b, err := os.ReadFile(d.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = bytes.Replace(b, []byte(`path = "/srv/app"`), []byte("path = '"+repository+"'"), 1)
+	b = bytes.Replace(b, []byte(`remote = "git@github.com:example/app.git"`), []byte("remote = '"+remote+"'"), 1)
+	if err := os.WriteFile(d.config, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(d.store, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		d.stopAll(t)
+		_ = os.RemoveAll(dir)
+	})
+	approveRepo(t, d.store, d.config, "app")
+	newTask(t, d.store, d.config, "app", "Sort the task list", "t-1")
+	return d, dir
+}
+
+// waitDecision waits for the store to record decision id of task app/t-1.
+func (d runDirector) waitDecision(t *testing.T, id string) {
+	t.Helper()
+	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			continue
+		}
+		ds, err := s.Decisions("app", "t-1")
+		_ = s.Close()
+		if err == nil && slices.ContainsFunc(ds, func(d store.Decision) bool { return d.ID == id }) {
+			return
+		}
+	}
+	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), launch.LogFile))
+	t.Fatalf("decision %s was not opened within a minute; plan-1 launcher log:\n%s", id, log)
+}
+
+// TestTaskStartAndStepDoneByTheWatcher is TestTaskStartAndStepDone from a copy (D3): task start launches the plan
+// attempt with --advance, and the attempt's launcher, once it records the result, runs step done itself, so the
+// task reaches the accept-1 decision without step done typed by hand.
+func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {
+	d, dir := newRunCopy(t)
+	code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1")
+	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitDecision(t, "accept-1")
+	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1"); code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
+		t.Errorf("task start after the launcher's advance: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	if got := d.attempts(t); len(got) != 1 || got[0].Outcome != store.AttemptSucceeded {
+		t.Errorf("attempts %+v, want plan-1 succeeded", got)
+	} // Each advance leaves what the task waits for beside its task lock, for director status.
+	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "next.json")); err != nil || string(b) != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
+		t.Errorf("next.json = %q, %v", b, err)
+	}
+}
+
+// TestTheWatcherReportsASetupFailure: from a copy, a plan attempt whose launcher cannot listen on its endpoint
+// fails at setup; task start returns that error at once rather than waiting out the launcher, so the launcher's
+// task start takes the task lock and sends the Director attempt-failed.
+func TestTheWatcherReportsASetupFailure(t *testing.T) {
+	d, dir := newRunCopy(t)
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	path, err := artisan.EndpointPath(d.state, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	begun := time.Now()
+	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1"); code == 0 || !strings.Contains(stderr, "plan") {
+		t.Fatalf("task start over a setup failure: exit %d, %q, stderr %s; want the launch error", code, out, stderr)
+	}
+	if took := time.Since(begun); took > 10*time.Second {
+		t.Errorf("task start took %v to report the setup failure; want no wait for the launcher's advance", took)
+	}
+	var msg store.Message
+	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err == nil {
+			msg, err = s.Message("app.t-1.attempt-failed.plan-1")
+			_ = s.Close()
+		}
+		if err == nil {
+			break
+		}
+		if time.Now().After(end) {
+			log, _ := os.ReadFile(filepath.Join(k.Dir(d.state), launch.LogFile))
+			t.Fatalf("no attempt-failed message within a minute: %v; plan-1 launcher log:\n%s", err, log)
+		}
+	}
+	if msg.Type != "attempt-failed" {
+		t.Errorf("message %+v, want attempt-failed", msg)
+	}
+	if got := d.attempts(t); len(got) != 1 || got[0].Outcome != store.AttemptFailed {
+		t.Errorf("attempts %+v, want plan-1 failed", got)
+	}
+}
+
+// TestArtisanStartAdvanceNeedsACopy: --advance advances over a copy, so without one it is a usage error.
+func TestArtisanStartAdvanceNeedsACopy(t *testing.T) {
+	d := runDirector{store: "s", config: "c", state: "st"}
+	args := []string{"artisan", "start", "--store", "s", "--state", "st", "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1",
+		"--adapter", "fake", "--prompt", "p", "--workdir", "w", "--advance"}
+	if code, out, stderr := d.run(t, args...); code != 2 || out != "" || !strings.Contains(stderr, "--advance") {
+		t.Errorf("artisan start --advance without a copy: exit %d, %q, stderr %s; want 2 naming --advance", code, out, stderr)
 	}
 }
 

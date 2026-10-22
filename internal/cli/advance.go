@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/git"
@@ -172,7 +174,7 @@ func (a *App) advanced(n interp.Next, err error) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	return a.printJSON(next{Wait: n.Wait, Step: n.Step, Attempt: n.Attempt, Decision: n.Decision})
+	return a.printJSON(nextOf(n))
 }
 
 // parseInterspersed parses flags given before or after positional arguments.
@@ -228,6 +230,12 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, err
 	}
+	copyDir := f.copy.dir
+	if copyDir != "" {
+		if copyDir, err = filepath.Abs(copyDir); err != nil {
+			return interp.Next{}, err
+		}
+	}
 	if a.InstallSkills == nil || a.InstallBaseline == nil {
 		return interp.Next{}, errors.New("release skills and baseline installers are not configured")
 	}
@@ -269,7 +277,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	}
 	e := &interp.Engine{
 		Records:  storeRecords(f.store),
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state},
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   wakingOutbox{storeRecords(f.store), a.directorPane(), a.Stderr},
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
@@ -281,7 +289,23 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	context.AfterFunc(ctx, stop)
-	return e.Advance(ctx, ev)
+	n, err := e.Advance(ctx, ev)
+	if err != nil {
+		return n, err
+	}
+	// Where the task now stands, for director status, written while the task lock is still held.
+	b, err := json.Marshal(nextOf(n))
+	if err != nil {
+		return n, err
+	}
+	return n, atomicfile.Write(filepath.Join(taskDir, nextFile), append(b, '\n'))
+}
+
+// nextFile is what the task's last advance left it waiting for, beside its task lock (docs/running.md).
+const nextFile = "next.json"
+
+func nextOf(n interp.Next) next {
+	return next{Wait: n.Wait, Step: n.Step, Attempt: n.Attempt, Decision: n.Decision}
 }
 
 // baselinePrompter renders from baseline/ beside the config file, falling back file by file to the installed

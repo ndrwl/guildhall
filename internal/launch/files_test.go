@@ -24,6 +24,7 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == fake.Subcommand {
 		os.Exit(fake.Main(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	mainIfAdvance()
 	if path := os.Getenv(argvEnv); path != "" {
 		recordArgv(path)
 	}

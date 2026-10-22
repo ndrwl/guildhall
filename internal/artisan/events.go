@@ -3,7 +3,8 @@ package artisan
 type eventName uint8
 
 const (
-	eventCancelMarker eventName = iota
+	eventAdvance eventName = iota
+	eventCancelMarker
 	eventDecideFailed
 	eventEnded
 	eventHeartbeatFailed
@@ -24,6 +25,7 @@ const (
 )
 
 var eventNames = []eventName{
+	eventAdvance,
 	eventCancelMarker,
 	eventDecideFailed,
 	eventEnded,
@@ -46,6 +48,8 @@ var eventNames = []eventName{
 
 func (n eventName) String() string {
 	switch n {
+	case eventAdvance:
+		return "advance"
 	case eventCancelMarker:
 		return "cancel-marker"
 	case eventDecideFailed:
@@ -84,4 +88,22 @@ func (n eventName) String() string {
 		return "worker-outlived-result"
 	}
 	panic("unknown launcher event")
+}
+
+// LogAdvance appends an "advance" event to EventsFile in the attempt
+// directory dir: the launcher's advance of the attempt's task ran command,
+// such as "step done", which exited with exit, or did not start when exit is
+// negative, and failed with err when err is not nil. It returns the error of
+// the write.
+func LogAdvance(dir, command string, exit int, err error) error {
+	fields := map[string]any{"command": command}
+	if exit >= 0 {
+		fields["exit"] = exit
+	}
+	if err != nil {
+		fields["error"] = err.Error()
+	}
+	l := &Launcher{c: LauncherConfig{Dir: dir}}
+	l.event(eventAdvance, fields)
+	return l.logErr
 }

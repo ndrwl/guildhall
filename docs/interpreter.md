@@ -3,7 +3,7 @@
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
 It follows `changes_requested` and `failed` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review and validation gates before `deliver`, [publishes and merges](#publish-and-deliver) through the forge and [validates](#validate) the published head against the forge's checks; the checks gate, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
-[`task start`, `step done` and `step retry`](running.md) run it from the command line; the per-task watcher is later work.
+[`task start`, `step done` and `step retry`](running.md) run it from the command line; from a copy, each attempt's launcher runs them itself as the task's [watcher](running.md#the-watcher).
 
 ## Seams
 

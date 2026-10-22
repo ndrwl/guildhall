@@ -37,8 +37,10 @@ const LogFile = "launcher.log"
 // The process's output is appended to LogFile in the attempt directory.
 // Launch returns once the process owns the attempt and has recorded its
 // endpoint, so a Stop reaches it, and never waits for the attempt to finish;
-// a process that exits first is an error, and one that does not get there
-// within StartTimeout is stopped and is an error.
+// a process that exits first is an error, one that finishes the attempt
+// before recording its endpoint is an error at once, and one that does not
+// get there within StartTimeout or before ctx ends is stopped and is an
+// error, Launch waiting only until it releases the attempt, not for it to exit.
 //
 // Stop asks only the process Launch started to stop through its endpoint and
 // waits for that process to exit. It refuses a handle this Process did
@@ -51,6 +53,10 @@ type Process struct {
 	// Store and StateDir are the Director store and the absolute state
 	// directory, as `artisan start --store --state` takes them.
 	Store, StateDir string
+	// Copy is the Director copy the engine runs from, empty when it runs over explicit paths. When set, the
+	// launcher is also given `--copy` and `--advance`, so it advances the task once it records the attempt
+	// (Config.Advance); Store and StateDir must be the copy's own.
+	Copy string
 	// StartTimeout bounds Launch's wait for ownership; zero is 30 seconds.
 	StartTimeout time.Duration
 
@@ -92,6 +98,9 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
 		"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
 		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
+	if p.Copy != "" {
+		cmd.Args = append(cmd.Args, "--copy", p.Copy, "--advance")
+	}
 	cmd.Env = append(os.Environ(), p.Env...)
 	cmd.Stdout, cmd.Stderr = log, log
 	detach(cmd)
@@ -106,7 +115,9 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	go func() { _ = cmd.Wait(); close(c.exited) }()
 	h := interp.Handle{Identity: as.Identity, Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
 	if err := errors.Join(identityErr, p.owned(ctx, c)); err != nil {
-		_ = p.stop(c)
+		if !errors.Is(err, errReleased) {
+			_ = p.stop(c, true)
+		}
 		return interp.Handle{}, fmt.Errorf("launch: %s: %w; see %s", k, err, filepath.Join(at.Dir(), LogFile))
 	}
 	p.mu.Lock()
@@ -118,7 +129,11 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	return h, nil
 }
 
-// owned waits until c owns its attempt with its endpoint recorded.
+// errReleased is owned's error for a launcher that finished its attempt before recording its endpoint: the
+// attempt failed at setup and there is nothing to stop, and the launcher's advance waits for the caller's lock.
+var errReleased = errors.New("the launcher finished the attempt before recording its endpoint")
+
+// owned waits until c owns its attempt with its endpoint recorded, and fails at once when c released it without one.
 func (p *Process) owned(ctx context.Context, c *child) error {
 	timeout := p.StartTimeout
 	if timeout <= 0 {
@@ -129,8 +144,13 @@ func (p *Process) owned(ctx context.Context, c *child) error {
 	exited := false
 	for {
 		o, err := c.at.owner()
-		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity && o.Endpoint != "" {
-			return nil
+		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity {
+			if o.Endpoint != "" {
+				return nil
+			}
+			if o.State == store.OwnerReleased {
+				return errReleased
+			}
 		}
 		if exited {
 			return errors.New("the launcher exited before owning the attempt")
@@ -155,21 +175,27 @@ func (p *Process) Stop(h interp.Handle) error {
 	if !ok {
 		return fmt.Errorf("launch: handle %s was not returned by this launcher", h.Ref)
 	}
-	return p.stop(c)
+	return p.stop(c, false)
 }
 
-// stop asks c's endpoint to stop and waits for its process to exit.
-func (p *Process) stop(c *child) error {
+// stop asks c's endpoint to stop and waits for its process to exit or, with released, for it to release its
+// attempt: Launch's caller holds the task lock the launcher's advance then waits for.
+func (p *Process) stop(c *child, released bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	called := false
 	for {
 		o, err := c.at.owner()
 		if err != nil {
 			return err
 		}
+		mine := o != nil && artisan.Identity(o.LauncherIdentity) == c.identity
+		if released && mine && o.State == store.OwnerReleased {
+			return nil
+		}
 		select {
 		case <-c.exited:
-			if o != nil && artisan.Identity(o.LauncherIdentity) == c.identity {
+			if mine {
 				if live, err := ProbeOwner(*o); err != nil || live != store.ProbeGone {
 					return errors.Join(ErrNotStopped, err)
 				}
@@ -177,8 +203,12 @@ func (p *Process) stop(c *child) error {
 			return nil
 		default:
 		}
-		if o != nil && artisan.Identity(o.LauncherIdentity) == c.identity && o.Endpoint != "" {
+		if mine && o.Endpoint != "" && !called {
 			_, err := artisan.Call(ctx, o.Endpoint, c.at.Key, c.identity, artisan.OpStop)
+			if released {
+				called = true
+				continue
+			}
 			select {
 			case <-c.exited:
 				if err != nil && !errors.Is(err, artisan.ErrEndpointRequest) {

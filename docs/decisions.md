@@ -77,3 +77,4 @@ Until then a new decision is cited by its file path rather than a number.
 - [D61. The grill is the Director's live interview of the Guildmaster](decisions/0061-grill-live-interview.md)
 - [D62. A failed attempt has a next attempt](decisions/0062-failed-attempt-retry.md)
 - [D63. Role prompts and stage guides ship with the binary](decisions/0063-release-baseline.md)
+- [D64. The per-task watcher is the launcher's last act](decisions/0064-launcher-advances-its-task.md)

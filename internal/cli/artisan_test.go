@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
@@ -28,7 +29,11 @@ func TestMain(m *testing.M) {
 	runStewardSCPStub()
 	switch os.Getenv(roleEnv) {
 	case "guildhall":
-		os.Exit(New().Run(os.Args[1:]))
+		// As cmd/guildhall assembles it, with an empty release skills root and the release baseline: a launcher's advance installs them.
+		app := New()
+		app.InstallSkills = func(string) error { return nil }
+		app.InstallBaseline = baseline.Install
+		os.Exit(app.Run(os.Args[1:]))
 	case "herdr":
 		os.Exit(fakeHerdr(os.Args[1:]))
 	}

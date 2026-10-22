@@ -24,6 +24,12 @@
 //     first finish stands, so an attempt another writer already finished
 //     with the same outcome is not an error, and one finished with another
 //     keeps the store's.
+//  6. with Config.Advance, once the store outcome is recorded it advances the
+//     attempt's task as its watcher (advance): step done after a finished
+//     attempt with a valid result, otherwise task start, so the engine sends
+//     the Director attempt-failed. The advance's failure is only logged and
+//     never changes the outcome or Run's result: both commands are
+//     idempotent, and the Director's next task start repeats them.
 //
 // When survivors outlive the last rung (artisan.ErrNotEmpty) the attempt is
 // left running and owned, so reconcile sees the survivors once this process
@@ -49,7 +55,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
@@ -187,6 +195,10 @@ type Config struct {
 	Ladder            artisan.Ladder
 	ResultGrace       time.Duration
 	HeartbeatInterval time.Duration
+	// Advance, when set, is the guildhall program followed by the options every advance of the attempt's task
+	// takes, such as `guildhall --copy <dir>`: once the store outcome is recorded, Run advances the task with it
+	// (the package comment's step 6). Nil advances nothing.
+	Advance []string
 }
 
 // Report is how an owned attempt ended.
@@ -267,6 +279,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 		})
 		if err == nil {
 			rep.AttemptOutcome = outcome
+			c.advance(rep)
 		}
 		return rep, errors.Join(runErr, err)
 	}
@@ -302,6 +315,36 @@ func Run(ctx context.Context, c Config) (Report, error) {
 		return rep, errors.Join(runErr, err)
 	}
 	return finish(outcome, runErr)
+}
+
+// advance runs c.Advance for the attempt rep recorded: the program, then step done with the attempt's identity
+// and result file after a finished attempt with a valid result, otherwise task start with its task, then the
+// rest of c.Advance and the identity. The child's output is appended to LogFile in the attempt directory and its
+// end is logged as an advance event; neither its failure nor the log's changes the attempt.
+func (c Config) advance(rep Report) {
+	if len(c.Advance) == 0 {
+		return
+	}
+	k := c.Key
+	command := []string{"task", "start"}
+	identity := []string{"--repo", k.Repository, k.TaskID}
+	if rep.Outcome.State == artisan.Finished && rep.Result != nil {
+		command = []string{"step", "done"}
+		identity = []string{"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt), "--result", c.Files().ResultFile}
+	}
+	argv := slices.Concat(c.Advance[1:], identity)
+	cmd := exec.Command(c.Advance[0], append(command, argv...)...)
+	log, err := os.OpenFile(filepath.Join(c.Dir(), LogFile), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err == nil {
+		defer func() { _ = log.Close() }()
+		cmd.Stdout, cmd.Stderr = log, log
+	}
+	err = errors.Join(err, cmd.Run())
+	exit := -1
+	if cmd.ProcessState != nil {
+		exit = cmd.ProcessState.ExitCode()
+	}
+	_ = artisan.LogAdvance(c.Dir(), strings.Join(command, " "), exit, err)
 }
 
 // newUnit is artisan.NewUnit; tests replace it to end the launcher inside
