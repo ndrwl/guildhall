@@ -3,6 +3,7 @@
 ## Contract
 
 The spec, identity, capabilities and versioned result file, completion only from that file (`docs/adapters.md`).
+`SessionSpec` is what a runtime gets for one interactive [Director session](../director.md#start): absolute session directory, copy and role prompt, a one-line first message, model and effort; `Validate` refuses anything else, and `SessionEnv` sets `CopyEnv`, `GUILDHALL_COPY`, to the copy before the spec's own entries.
 `FakeName` and `ClaudeName` are the one spelling of the runtime adapter names, which [`runtimes`](adapter-runtimes.md) is keyed by and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to.
 The cancel marker is the `.cancelled` sidecar beside the result file, naming the attempt: `Cancelled` reports it, refusing one that names another attempt with `ErrIdentityMismatch`, and `MarkCancelled` writes it durably and idempotently; while it is present `ReadResult` and `WriteResult` refuse with `ErrAttemptCancelled`.
 The terminal boundary `tabHost` operates only on tabs the host created or adopted and honours its context; `AdoptTab` accepts a tab an earlier host on the same terminal created, as a durable record names it, after checking it is still there in the host's session and workspace; `HerdrTabs` implements it over the Herdr client.

@@ -2,8 +2,56 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-Only `director status` and the [session record](store.md#director-sessions) are built; the session supervisor (`director start`) that writes the record, and the pause, stop and handoff commands, are designed in the slice 4 plan and land later.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start --foreground` that writes it and `director ready` are built; the session's Herdr tab and the pause, stop, handoff and reload commands are designed in the slice 4 plan and land later.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
+
+## Start
+
+```sh
+guildhall director start [runtime] --foreground [--check] [--copy <dir>]
+```
+
+`director start` is the session supervisor: it runs one Director session in the current terminal and records it ([decision](decisions/director-start.md)).
+It follows the [role grammar](decisions/0053-cli-role-grammar.md): the runtime is the positional argument, else the config's [`[director] adapter`](configuration.md#the-director-table), and a copy without either is refused with exit 1 listing the adapters.
+It needs a [copy](running.md#copies), from `--copy` or `GUILDHALL_COPY`, because the session lives in it.
+`--foreground` is required: the session's own Herdr tab is designed and lands later, so without it `start` is a usage error, exit 2.
+
+It first runs a preflight and prints one line per check, as `doctor` prints, stopping at the first that fails:
+
+- `config`: the copy's `config.toml` is a Director config.
+  Until managed mode lands, a copy with `managed.toml` beside its config, or with inline `[managed]` settings, is refused naming `guildhall director enrol`.
+- `runtime`: the runtime is one of the adapters, and the program it runs is on `PATH`; the fake runtime is the `guildhall` executable itself.
+- `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.
+- `skills`: the release skills and baseline install.
+
+A failed check is exit 1 with nothing recorded and nothing written in the copy, and `--check` exits 0 after the preflight, also recording nothing.
+
+Then it records session `<n>`, one more than the newest, as `recovering` with its own process identity, release and config digest, which supersedes any earlier session still recorded live.
+It renders the session into `<copy>/director/session-<n>/` with [`render.Session`](rendering.md#director-sessions):
+
+- `role.md`: the role prompt, from `[director] role` relative to the config directory, else the copy's `baseline/roles/director.md`, else the release's;
+- every release skill, byte for byte, in the runtime's skills directory, `.claude/skills/` for Claude Code;
+- the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking and denies edits to the copy's `config.toml` and `managed.toml`;
+- `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest handoff note (none until handoff notes land), and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command;
+- `manifest.json`: the digest of every file above.
+
+It then runs the runtime's session command as its child in that directory, with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
+For Claude Code that is `claude --append-system-prompt-file role.md --add-dir <copy> [--model <model>] "<first message>"`; `[director] effort` is not passed, since Claude Code reads effort from its own settings.
+The terminal's interrupt reaches the runtime, which handles it; the supervisor waits for the runtime to end, records the session `stopped`, and exits 0, or 1 naming the status when the runtime exited nonzero.
+A session already stopped or superseded by a newer one is left as it is.
+A reload request that starts a new session in the same supervisor lands with handoff notes.
+
+## Ready
+
+```sh
+guildhall director ready [--copy <dir> | --store <file>]
+```
+
+`director ready` moves the newest session from `recovering` to `running`, which records its ready time, and prints the session as one JSON line.
+A `running` session is printed unchanged, exit 0; no session, or one that is `paused`, `stopping` or `stopped`, is exit 1.
+
+While the newest session is `recovering` it starts no new work: `task new`, and `task start` of a task with no attempt yet, are refused with exit 1 naming `guildhall director ready`, and record nothing.
+Everything else is unaffected, so the Director recovers what is in flight first: `task start` of a task already under way, `step done`, `step retry`, `decide answer`, `messages` and every read.
 
 ## Status
 
@@ -12,7 +60,7 @@ guildhall director status --json [--copy <dir> | --store <file> --state <dir>]
 ```
 
 `director status` is the Director's status feed and the Guildmaster's "what needs me" query in one read-only JSON document ([decision](decisions/director-status-feed.md)).
-firstmate's external monitor reads it, the Director's skills run it at every turn, and the session supervisor will render its `needs_me` into a new session's startup instructions.
+firstmate's external monitor reads it, the Director's skills run it at every turn, and the session supervisor renders its `needs_me` into a new session's [startup instructions](#start).
 
 It reads the store in one read transaction, opened read-only and waiting up to 30 seconds for a writer's lock as every advance does, so it never writes, never creates a store and succeeds once a writer lets go.
 It then reads files under the state directory: each task's newest `next.json` and the attempt directories of running attempts, which it classifies with [`reconcile.Classify`](artisan.md#reconcile) and the launcher identity probe; classifying may create an attempt's `attempt.lock`, as `artisan status` does.
@@ -47,7 +95,7 @@ The document has these sections:
   5. `messages`: one item counting the other unread messages; `guildhall messages list director`.
   6. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
 
-  A Director session in `recovering` will be the first item once the session supervisor lands.
+  The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
   Done and cancelled tasks contribute no `retry`, `resume` or `director` item.
 
 Times are commit times of the store's receipts, in UTC.

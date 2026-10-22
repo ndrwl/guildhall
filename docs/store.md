@@ -82,7 +82,7 @@ Within one open store, calls are safe from many goroutines; bbolt serializes wri
 
 ## Director sessions
 
-The newest Director session is the Director's current one; the session supervisor records it and its state moves, and [`director status`](director.md#status) reports it.
+The newest Director session is the Director's current one; the session supervisor, [`director start`](director.md#start), records it and its state moves, and [`director status`](director.md#status) reports it.
 `StartDirectorSession` records session `<n>` as `recovering` when `<n>` is one more than the newest session's number, or 1 in a store with none; the store sets its start time and refuses a session given any time or state sequence.
 Starting it records every earlier session that has not stopped as `stopped`, in the same transaction, so exactly one session is current.
 

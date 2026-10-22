@@ -116,6 +116,8 @@ The wrapper keeps the result protocol, not the model:
 This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort.
 Transcripts, cost, session resume and the Herdr tab mode are later work.
 
+The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills and whose `.claude/settings.json` lets Bash run `guildhall` and read-only `git` and denies edits to the copy's `config.toml` and `managed.toml`.
+
 ## Conformance
 
 Every runtime adapter passes one shared suite, `adaptertest.RunConformance`, before Guildhall launches it: it declares exactly its capabilities, refuses an invalid spec without a command, runs in the spec's working directory and environment, completes only from a valid result file for its identity, never completes without a result, on a malformed result or on a result for another attempt, leaves no result when stopped, and never replaces an existing result.
@@ -129,6 +131,7 @@ Inside a test binary the interpreter's adapter guard admits `claude` only while 
 ```sh
 GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaude -v -timeout 15m
 ```
+Every runtime also passes `adaptertest.RunSessionContract` for its Director session, the fake as `guildhall fake-director` and the Claude adapter over the stub, which plays a session scripted by `claude-stub:` lines of its role prompt.
 CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keeps the Herdr tab contract over a real POSIX shell; it runs on Linux and macOS, and Windows panes are covered by the live checks below.
 
 ## Running an attempt

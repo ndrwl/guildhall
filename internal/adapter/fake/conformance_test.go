@@ -17,11 +17,16 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch"
 )
 
-// TestMain lets the test binary act as `guildhall fake-artisan`, so the
-// conformance suite runs the shipped fake runtime as a real child process.
+// TestMain lets the test binary act as `guildhall fake-artisan` and `guildhall fake-director`, so the
+// conformance suites run the shipped fake runtime as a real child process, and as the session suite's
+// recording guildhall.
 func TestMain(m *testing.M) {
+	adaptertest.RunIfRecorder()
 	if len(os.Args) > 1 && os.Args[1] == Subcommand {
 		os.Exit(Main(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == DirectorSubcommand {
+		os.Exit(DirectorMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	os.Exit(m.Run())
 }

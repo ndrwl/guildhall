@@ -83,7 +83,30 @@ func (a *App) taskStart(args []string) int {
 	if *decision != "" {
 		ev.Kind, ev.Decision = interp.DecisionAnswered, *decision
 	}
+	if err := newWorkAdmitted(f.store, f.repo, ev.Task); err != nil {
+		return a.fail(fmt.Errorf("task start: %w", err))
+	}
 	return a.advanced(a.advance(f, ev))
+}
+
+// newWorkAdmitted refuses to start a task with no attempt yet while the newest Director session is recovering;
+// a task already under way advances (docs/director.md#ready). A missing store is left to the advance to refuse.
+func newWorkAdmitted(path, repo, task string) error {
+	if _, err := os.Stat(path); err != nil {
+		return nil
+	}
+	_, err := withStore(path, true, func(s *store.Store) (struct{}, error) {
+		refusal := refuseWhileRecovering(s)
+		if refusal == nil {
+			return struct{}{}, nil
+		}
+		attempts, err := s.Attempts(repo, task)
+		if err != nil || len(attempts) > 0 {
+			return struct{}{}, err
+		}
+		return struct{}{}, refusal
+	})
+	return err
 }
 
 // step runs `guildhall step done|retry`.

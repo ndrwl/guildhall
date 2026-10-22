@@ -78,6 +78,22 @@ type Config struct {
 	Repositories []Repository      `toml:"repository"`
 	// Profiles are the Director's named Artisan profiles, keyed by the name workflow steps give in "profile".
 	Profiles map[string]Profile `toml:"profile"`
+	// Director chooses who runs the Director's own session (docs/director.md#start); Director mode only.
+	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
+	Director *Director `toml:"director" json:",omitempty"`
+}
+
+// Director chooses the runtime adapter, model and effort of the Director's session and optionally its role
+// prompt. Like a profile it names no credential. Adapter is required to start a session, not to parse.
+type Director struct {
+	// Adapter names the runtime adapter, such as "claude"; a positional runtime overrides it for one command.
+	Adapter string `toml:"adapter"`
+	// Model and Effort are passed to the adapter as given; empty means the adapter's default.
+	Model  string `toml:"model"`
+	Effort string `toml:"effort"`
+	// Role is a slash-separated path relative to the config file's directory; empty keeps the copy's
+	// baseline/roles/director.md, else the release's.
+	Role string `toml:"role"`
 }
 
 // ErrUnknownProfile reports a profile name that the Director config does not declare.
@@ -221,6 +237,9 @@ func (c *Config) validate() []string {
 		if len(c.Profiles) > 0 {
 			add("profiles belong to a director, not the steward")
 		}
+		if c.Director != nil {
+			add("the director table belongs to a director, not the steward")
+		}
 	default:
 		add(`mode must be "steward" or "director", not %q`, c.Mode)
 	}
@@ -270,6 +289,15 @@ func (c *Config) validate() []string {
 		}
 		if p.Role != "" && !configRelative(p.Role) {
 			add("profile %q: role must be a relative slash-separated path inside the config directory", name)
+		}
+	}
+
+	if d := c.Director; d != nil {
+		if d.Adapter != "" && !workflow.ValidID(d.Adapter) {
+			add("director: invalid adapter %q", d.Adapter)
+		}
+		if d.Role != "" && !configRelative(d.Role) {
+			add("director: role must be a relative slash-separated path inside the config directory")
 		}
 	}
 

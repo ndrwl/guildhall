@@ -1,6 +1,7 @@
 // Package claudetest is a stand-in Claude Code for tests: the test binary
 // itself, installed on PATH under the name `claude`, plays a print-mode
-// session that makes no model calls. It checks the arguments the Claude
+// session that makes no model calls, or an interactive Director session
+// scripted by `claude-stub:` lines of its role prompt (Script). It checks the arguments the Claude
 // adapter passes, reads the prompt file and draft result file the
 // instruction names, and acts on one prompt line `claude-stub: <behaviour>`,
 // an adaptertest.Behaviour; a prompt without one succeeds.
@@ -23,6 +24,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/interp"
 )
 
@@ -44,6 +46,15 @@ const (
 // Prompt is the prompt that makes the stub produce b.
 func Prompt(b adaptertest.Behaviour) string {
 	return "Do the task.\n" + Directive + " " + string(b) + "\n"
+}
+
+// Script is the role prompt that makes the interactive stub play steps in order (fake.RunScript).
+func Script(steps ...string) string {
+	var b strings.Builder
+	for _, s := range steps {
+		b.WriteString(Directive + " " + s + "\n")
+	}
+	return b.String()
 }
 
 // Install puts the stub on PATH as `claude` for t and its child processes,
@@ -113,6 +124,9 @@ func exitCode(err error) int {
 // stub checks args as the Claude adapter passes them and plays the prompt's
 // behaviour into the draft the instruction names.
 func stub(args []string) error {
+	if len(args) > 0 && args[0] == "--append-system-prompt-file" {
+		os.Exit(session(args))
+	}
 	if len(args) < 2 || args[0] != "--print" {
 		return fmt.Errorf("want --print and an instruction first, got %q", args)
 	}
@@ -236,4 +250,39 @@ func hang() {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+// session plays an interactive Director session: it checks the arguments claude.Adapter.Session passes and the
+// session directory's settings, then plays the role prompt's Directive lines with fake.RunScript over standard
+// input. Refused arguments exit 2.
+func session(args []string) int {
+	fail := func(format string, a ...any) int {
+		fmt.Fprintf(os.Stderr, "claude stub: "+format+"\n", a...)
+		return 2
+	}
+	if len(args) < 5 || args[2] != "--add-dir" {
+		return fail("want --append-system-prompt-file <role> --add-dir <copy> [--model <m>] <first message>, got %q", args)
+	}
+	role, copyDir, rest := args[1], args[3], args[4:]
+	if len(rest) == 3 && rest[0] == "--model" && rest[1] != "" {
+		rest = rest[2:]
+	}
+	if len(rest) != 1 || strings.TrimSpace(rest[0]) == "" || strings.ContainsAny(rest[0], "\r\n") {
+		return fail("want one first message line last, got %q", rest)
+	}
+	if !filepath.IsAbs(role) || !filepath.IsAbs(copyDir) {
+		return fail("role %q and copy %q must be absolute", role, copyDir)
+	}
+	if got := os.Getenv(adapter.CopyEnv); got != copyDir {
+		return fail("%s = %q, want the added copy %q", adapter.CopyEnv, got, copyDir)
+	}
+	settings, err := os.ReadFile(filepath.Join(".claude", "settings.json"))
+	if err != nil || !json.Valid(settings) {
+		return fail("session settings: %v", err)
+	}
+	text, err := os.ReadFile(role)
+	if err != nil {
+		return fail("%v", err)
+	}
+	return fake.RunScript(Directive, string(text), os.Stdin, os.Stdout, os.Stderr)
 }
