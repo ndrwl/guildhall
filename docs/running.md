@@ -38,11 +38,12 @@ The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/conf
 | Forge | [`forge.GitHub`](contracts/forge.md): `git` pushes from the repository's `path` to its `remote`, and `gh`, found on `PATH` and signed in with its own credentials, opens and merges pull requests; only `github.com` remotes are supported |
 | Baseline | The role `roles/artisan.md` and the guide `stages/<kind>.md` from `baseline/` beside the config file when there, else from the [release baseline](contracts/baseline.md) embedded in the binary, so a copy with only its config file runs every shipped Artisan kind; every `baseline/standards/*.md` in name order, because the release ships no standards; a step profile's `role` overrides the default role and is resolved relative to the config directory; a guide in neither root is refused, as is a copy file that exists but cannot be read, and the manifest records each file's root, `copy` or `release` |
 | Skills | The embedded release skills, installed into a temporary root for the advance |
-| Attempts | `<state>/<repository>/<task>/<step>-<n>`, laid out by `artisan.AttemptKey`; the task's working directory is `<state>/<repository>/<task>/work` |
+| Attempts | `<state>/<repository>/<task>/<step>-<n>`, laid out by `artisan.AttemptKey` |
+| Working directory | `<state>/<repository>/<task>/work`, a [git worktree](interpreter.md#the-working-directory) of the repository's `path` on branch `guildhall/<task>`, which the first attempt creates from the default branch of the repository's `remote`, fetched with `git` found on `PATH`, and every later attempt reuses; the `path` must be absolute on the machine the Director runs on |
 | Documents | `<state>/documents` |
 
 An advance holds the task's lock, `attempt.lock` in `<state>/<repository>/<task>`, for its whole run, waiting at most 30 seconds for it, so two advances of one task never interleave; the interpreter is not safe for concurrent use on one task.
-Each `git` or `gh` run is bounded by five minutes, so a forge that does not answer is an error that records nothing, and an interrupt (Ctrl+C) ends the advance; either way the lock is released and running the command again replays the advance.
+Each `git` or `gh` run of the forge and of the working directory is bounded by five minutes, so a forge that does not answer is an error that records nothing, and an interrupt (Ctrl+C) ends the advance; either way the lock is released and running the command again replays the advance.
 The interrupt is exercised by a Unix test only; a second interrupt while the advance unwinds ends the process at once.
 
 ## `task start`

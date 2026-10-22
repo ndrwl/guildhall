@@ -93,6 +93,9 @@ type App struct {
 	// Forge publishes and merges task branches for task start and step done; nil means forge.GitHub over git
 	// and gh found on PATH.
 	Forge interp.Forge
+	// Workspaces makes each task's working directory a worktree of its repository for task start, step done and
+	// step retry; nil means git.Program over git found on PATH.
+	Workspaces interp.Workspaces
 	// Getenv reads the environment, such as GUILDHALL_COPY; nil means an empty environment.
 	Getenv func(string) string
 }

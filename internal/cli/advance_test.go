@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +20,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
+	"github.com/ndrwl/guildhall/internal/git"
+	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -28,6 +32,8 @@ type runDirector struct {
 	store, config, state string
 	// forge, when set, is the App's forge.
 	forge interp.Forge
+	// workspaces is the App's workspaces: the double, with app's remote's default branch set.
+	workspaces *gittest.Workspaces
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -45,15 +51,40 @@ func newRunDirectorWith(t *testing.T, config string) runDirector {
 	return newRunDirectorAt(t, cfg)
 }
 
+// appRepo is repository app's path in the run configs, in this machine's form: a Director opens only a path
+// absolute on its own machine (D11), so on Windows the configs are copied with a drive path.
+var appRepo = func() string {
+	if runtime.GOOS == "windows" {
+		return `C:\srv\app`
+	}
+	return "/srv/app"
+}()
+
 // newRunDirectorAt is newRunDirector over the absolute config file cfg, with its baseline and workflows beside it.
 func newRunDirectorAt(t *testing.T, cfg string) runDirector {
 	t.Helper()
+	if appRepo != "/srv/app" {
+		dir := t.TempDir()
+		if err := os.CopyFS(dir, os.DirFS(filepath.Dir(cfg))); err != nil {
+			t.Fatal(err)
+		}
+		cfg = filepath.Join(dir, filepath.Base(cfg))
+		b, err := os.ReadFile(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(cfg, bytes.Replace(b, []byte(`path = "/srv/app"`), []byte("path = '"+appRepo+"'"), 1), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Setenv(roleEnv, "guildhall")
 	state, err := os.MkdirTemp("", "gr")
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := runDirector{store: emptyStore(t), config: cfg, state: state}
+	ws := gittest.NewWorkspaces()
+	ws.SetDefault("git@github.com:example/app.git", strings.Repeat("d", 40))
+	d := runDirector{store: emptyStore(t), config: cfg, state: state, workspaces: ws}
 	t.Cleanup(func() {
 		d.stopAll(t)
 		_ = os.RemoveAll(state)
@@ -72,6 +103,9 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app.InstallSkills = func(string) error { return nil }
 	app.InstallBaseline = baseline.Install
 	app.Forge = d.forge
+	if d.workspaces != nil {
+		app.Workspaces = d.workspaces
+	}
 	code := app.Run(args)
 	return code, stdout.String(), stderr.String()
 }
@@ -316,7 +350,7 @@ func TestTaskDelivers(t *testing.T) {
 	const remote, head = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
 	f := forgetest.NewFake()
 	f.SetBranch(remote, "main", strings.Repeat("a", 40))
-	f.AddCommit("/srv/app", head)
+	f.AddCommit(appRepo, head)
 	d.forge = f
 	step := func(args ...string) string {
 		t.Helper()
@@ -354,6 +388,11 @@ func TestTaskDelivers(t *testing.T) {
 	}
 	if prs := f.PullRequests(remote); prs[0].State != forge.Merged {
 		t.Errorf("pull request = %+v, want merged", prs[0])
+	}
+	// Each attempt ran in the task's workspace, a worktree of the repository on the branch publish pushes.
+	ws := git.Workspace{Repository: appRepo, Remote: remote, Branch: "guildhall/t-1", Dir: filepath.Join(d.state, "app", "t-1", "work")}
+	if calls := d.workspaces.Calls(); len(calls) != 2 || calls[0] != ws || calls[1] != ws {
+		t.Errorf("workspaces = %+v, want %+v for the plan and build attempts", calls, ws)
 	}
 }
 

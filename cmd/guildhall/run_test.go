@@ -16,6 +16,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -26,11 +27,24 @@ type binDirector struct {
 	bin, store, cfg, state string
 	flags                  []string
 	attempts               []string
+	// repository is repository app's path, a real git repository whose remote's default branch is at base.
+	repository, base string
 }
 
-// newBinDirector builds the binary and creates an empty store and a short state directory for cfg.
+// newBinDirector builds the binary and creates an empty store and a short state directory for cfg, a copy of a
+// run config that it points at a new real repository and remote (gittest.Repository) in place.
 func newBinDirector(t *testing.T, cfg string) *binDirector {
 	t.Helper()
+	repository, remote, base := gittest.Repository(t)
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = bytes.Replace(b, []byte(`path = "/srv/app"`), []byte("path = '"+repository+"'"), 1)
+	b = bytes.Replace(b, []byte(`remote = "git@github.com:example/app.git"`), []byte("remote = '"+remote+"'"), 1)
+	if err := os.WriteFile(cfg, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	gobin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("go command not on PATH")
@@ -54,7 +68,7 @@ func newBinDirector(t *testing.T, cfg string) *binDirector {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	d := &binDirector{t: t, bin: bin, store: storePath, cfg: cfg, state: state,
+	d := &binDirector{t: t, bin: bin, store: storePath, cfg: cfg, state: state, repository: repository, base: base,
 		flags: []string{"--store", storePath, "--config", cfg, "--state", state, "--repo", "app"}}
 	t.Cleanup(func() {
 		d.stopAll()
@@ -153,11 +167,7 @@ func (d *binDirector) answer(decision string) string {
 // step done takes it, decide answer and task start --decision cross each Guildmaster step. Afterwards every
 // attempt's launcher is proven stopped and the timeline records the run in order.
 func TestTaskRunsEndToEnd(t *testing.T) {
-	cfg, err := filepath.Abs(filepath.Join("..", "..", "internal", "cli", "testdata", "run", "config.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := newBinDirector(t, cfg)
+	d := newBinDirector(t, filepath.Join(runCopy(t), "config.toml"))
 	d.newTask()
 	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
 	d.want(d.done("plan", 1), `{"wait":"decision","step":"accept","decision":"accept-1"}`)
@@ -166,6 +176,19 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 	d.want(d.answer("sign-off-1"), `{"wait":"decision","step":"deliver","decision":"deliver-1"}`)
 
 	d.stopAll()
+
+	// Both attempts ran in one worktree of the repository, on the task branch, started at the remote's default
+	// branch; the fake Artisan's outputs are untracked files in it.
+	work := filepath.Join(d.state, "app", "t-1", "work")
+	if got := d.git(work, "rev-parse", "HEAD"); got != d.base {
+		t.Errorf("worktree at %s, want the remote's default branch at %s", got, d.base)
+	}
+	if got := d.git(work, "symbolic-ref", "--short", "HEAD"); got != "guildhall/t-1" {
+		t.Errorf("worktree on branch %s, want guildhall/t-1", got)
+	}
+	if list := d.git(d.repository, "worktree", "list", "--porcelain"); !strings.Contains(filepath.ToSlash(list), filepath.ToSlash(filepath.Base(work))) {
+		t.Errorf("the repository does not list the worktree %s:\n%s", work, list)
+	}
 
 	var tl struct {
 		Attempts []struct {
@@ -299,14 +322,31 @@ func TestRetryAfterAKilledLauncher(t *testing.T) {
 	}
 }
 
-// neverPlanned copies internal/cli/testdata/run to a temporary directory, which it returns, with the plan stage's
-// fake Artisan set never to publish a result, so its launcher runs until it is stopped.
-func neverPlanned(t *testing.T) string {
+// git runs git in dir and returns its trimmed output.
+func (d *binDirector) git(dir string, args ...string) string {
+	d.t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	if err != nil {
+		d.t.Fatalf("git %q: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// runCopy copies internal/cli/testdata/run to a temporary directory and returns it.
+func runCopy(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "internal", "cli", "testdata", "run"))); err != nil {
 		t.Fatal(err)
 	}
+	return dir
+}
+
+// neverPlanned copies internal/cli/testdata/run to a temporary directory, which it returns, with the plan stage's
+// fake Artisan set never to publish a result, so its launcher runs until it is stopped.
+func neverPlanned(t *testing.T) string {
+	t.Helper()
+	dir := runCopy(t)
 	plan := filepath.Join(dir, "baseline", "stages", "plan.md")
 	f, err := os.OpenFile(plan, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {

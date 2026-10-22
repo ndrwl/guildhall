@@ -1,0 +1,69 @@
+# Worktree custody red runs, 2026-10-22, before the implementation (Linux)
+
+## go test -run 'TestWorkspaceContract|TestEnsureProgram' ./internal/git/ against a stub Program.Ensure returning nil
+--- FAIL: TestWorkspaceContract (2.57s)
+    --- FAIL: TestWorkspaceContract/program (2.54s)
+        --- FAIL: TestWorkspaceContract/program/creates_the_worktree_at_the_remote's_default_branch (0.29s)
+        --- FAIL: TestWorkspaceContract/program/reuses_the_worktree_across_attempts (0.24s)
+        --- FAIL: TestWorkspaceContract/program/an_empty_directory_becomes_the_worktree (0.35s)
+        --- FAIL: TestWorkspaceContract/program/refuses_a_plain_directory_with_files (0.34s)
+        --- FAIL: TestWorkspaceContract/program/a_directory_with_spaces (0.29s)
+        --- FAIL: TestWorkspaceContract/program/workspaces_of_one_repository_are_independent (0.33s)
+        --- FAIL: TestWorkspaceContract/program/refuses_an_invalid_workspace (0.36s)
+        --- FAIL: TestWorkspaceContract/program/ended_context (0.32s)
+    --- FAIL: TestWorkspaceContract/double (0.03s)
+        --- FAIL: TestWorkspaceContract/double/an_empty_directory_becomes_the_worktree (0.00s)
+--- FAIL: TestEnsureProgram (3.40s)
+    --- FAIL: TestEnsureProgram/an_interrupted_creation_is_finished (0.74s)
+        --- FAIL: TestEnsureProgram/an_interrupted_creation_is_finished/registered (0.41s)
+        --- FAIL: TestEnsureProgram/an_interrupted_creation_is_finished/unregistered (0.33s)
+    --- FAIL: TestEnsureProgram/a_removed_worktree_keeps_its_branch's_commits (0.30s)
+    --- FAIL: TestEnsureProgram/an_agent_may_move_the_worktree's_branch (0.33s)
+    --- FAIL: TestEnsureProgram/refuses_a_checkout_of_another_repository (0.75s)
+    --- FAIL: TestEnsureProgram/refuses_a_subdirectory_of_the_repository's_own_checkout (0.46s)
+    --- FAIL: TestEnsureProgram/an_unreachable_remote_creates_nothing (0.40s)
+    --- FAIL: TestEnsureProgram/a_worktree's_commit_is_pushed_from_the_repository (0.41s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/git	5.972s
+FAIL
+
+The double's one failure was its harness arranging no parent directory, against the suite's Arrange contract; the harness was fixed, not the suite.
+Its remaining cases passed on first run against the double written with the suite.
+
+## go test -run Workspace ./internal/interp/ with Engine.Workspaces declared but not called
+--- FAIL: TestAttemptsRunInTheTaskWorkspace (0.79s)
+    --- FAIL: TestAttemptsRunInTheTaskWorkspace/double (0.11s)
+        workspace_test.go:38: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        workspace_test.go:39: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:director Step:plan Attempt:1 Decision:}
+        workspace_test.go:40: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:2 Decision:}
+        workspace_test.go:41: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:2 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        workspace_test.go:44: Ensure calls = [], want {Repository:<tmp>/TestAttemptsRunInTheTaskWorkspacedouble2162099088/003/app Remote:git@github.com:example/app.git Branch:guildhall/t7 Dir:<tmp>/TestAttemptsRunInTheTaskWorkspacedouble2162099088/002/app/t7/work} before each of two launches
+        workspace_test.go:51: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        workspace_test.go:51: document: {Repository:app TaskID:t7 Name:plan-2-inputs Path:tasks/app/t7/plan-2.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        workspace_test.go:51: document: {Repository:app TaskID:t7 Name:plan-2-spec Path:tasks/app/t7/plan-2/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+    --- FAIL: TestAttemptsRunInTheTaskWorkspace/store (0.68s)
+        workspace_test.go:38: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        workspace_test.go:39: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:director Step:plan Attempt:1 Decision:}
+        workspace_test.go:40: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:2 Decision:}
+        workspace_test.go:41: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:2 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        workspace_test.go:44: Ensure calls = [], want {Repository:<tmp>/TestAttemptsRunInTheTaskWorkspacestore1027037862/004/app Remote:git@github.com:example/app.git Branch:guildhall/t7 Dir:<tmp>/TestAttemptsRunInTheTaskWorkspacestore1027037862/003/app/t7/work} before each of two launches
+        workspace_test.go:51: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        workspace_test.go:51: document: {Repository:app TaskID:t7 Name:plan-2-inputs Path:tasks/app/t7/plan-2.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        workspace_test.go:51: document: {Repository:app TaskID:t7 Name:plan-2-spec Path:tasks/app/t7/plan-2/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+--- FAIL: TestWorkspaceFailureLaunchesNothing (0.23s)
+    --- FAIL: TestWorkspaceFailureLaunchesNothing/double (0.04s)
+        workspace_test.go:65: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: <nil>
+        workspace_test.go:67: Advance without a workspace = <nil>, want the workspace's error
+    --- FAIL: TestWorkspaceFailureLaunchesNothing/store (0.19s)
+        workspace_test.go:65: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: <nil>
+        workspace_test.go:67: Advance without a workspace = <nil>, want the workspace's error
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	1.045s
+FAIL
+
+## go test -run TestTaskDelivers ./internal/cli/ with the CLI passing no Workspaces
+--- FAIL: TestTaskDelivers (0.46s)
+    advance_test.go:393: workspaces = [], want {Repository:/srv/app Remote:git@github.com:example/app.git Branch:guildhall/t-1 Dir:<state>/app/t-1/work} for the plan and build attempts
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.470s
+FAIL
