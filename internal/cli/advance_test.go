@@ -179,13 +179,20 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			out = append(out, fmt.Sprintf("artisan harness inventory %s-%d: exit %d, %v, %s %s", a.Step, a.Number, code, err, stdout, stderr))
 		}
 		// A launcher that has just recorded its outcome may still be exiting: stop proves it only once gone.
-		// Once it is gone stop is not retried, so a surviving worker tree is reported rather than waited out.
+		// Stop probes the launcher the ownership record names, which the inventory need not list (where its
+		// unit is a process group). Once it is gone stop is not retried, so a surviving worker tree is
+		// reported rather than waited out.
 		exiting := func() bool {
-			i := slices.IndexFunc(procs, func(p harnessProcess) bool { return p.Role == "launcher" })
-			if i < 0 {
+			s, err := store.Open(d.store, store.Options{ReadOnly: true})
+			if err != nil {
 				return false
 			}
-			lv, _ := artisan.Probe(artisan.Identity{PID: procs[i].PID, Token: procs[i].Token})
+			o, err := s.Ownership("app", "t-1", a.Step, a.Number)
+			_ = s.Close()
+			if err != nil || o.LauncherIdentity.PID == 0 {
+				return false
+			}
+			lv, _ := artisan.Probe(artisan.Identity(o.LauncherIdentity))
 			return lv != artisan.Gone
 		}
 		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
