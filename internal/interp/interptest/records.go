@@ -514,6 +514,7 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 	}
 	setup := func(t *testing.T) RecordsHarness {
 		h := newHarness(t)
+		h.Clock.Set(time.Date(2031, 3, 9, 12, 0, 0, 0, time.UTC))
 		if _, err := h.CreateTask("task:app:t7", task); err != nil {
 			t.Fatal(err)
 		}

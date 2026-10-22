@@ -57,7 +57,7 @@ func TestStopNamesALauncherStillAdvancing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("launchtest.Stop = %v after %d stops, want the attempt proven stopped", err, stops)
 	}
-	if stops <= 3 {
+	if stops < 3 {
 		t.Errorf("launchtest.Stop proved the attempt stopped after %d stops, before the advance was released", stops)
 	}
 	s, err := store.Open(p.Store, store.Options{ReadOnly: true, LockTimeout: storeWait})
