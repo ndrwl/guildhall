@@ -188,6 +188,17 @@ func stub(args []string) error {
 			return fmt.Errorf("%s is outside the added directories %q", f, added)
 		}
 	}
+	granted, err := settings(flags, added)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(granted)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(draft), GrantedFile), data, 0o600); err != nil {
+		return err
+	}
 	id, err := identity(instruction)
 	if err != nil {
 		return err
@@ -232,7 +243,7 @@ func stub(args []string) error {
 	default:
 		return fmt.Errorf("unknown behaviour %q", b)
 	}
-	data, err := json.Marshal(result)
+	data, err = json.Marshal(result)
 	if err != nil {
 		return err
 	}
@@ -243,6 +254,62 @@ func stub(args []string) error {
 		return errExit{}
 	}
 	return nil
+}
+
+// GrantedFile is the record, in the model directory, of the allowed tools a print-mode stub session was granted.
+const GrantedFile = "claude-stub-granted.json"
+
+// Granted returns the allowed tools the stub's print-mode session for the result file result was granted, in
+// order, as the --settings file it was given lists them; a session given no settings file was granted none.
+func Granted(result string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(claude.ModelDir(result), GrantedFile))
+	if err != nil {
+		return nil, err
+	}
+	var granted []string
+	if err := json.Unmarshal(data, &granted); err != nil {
+		return nil, err
+	}
+	return granted, nil
+}
+
+// settings reads the allow rules of the one --settings file in flags: an absolute path outside the added
+// directories, holding exactly a permissions object with an allow list. No --settings grants none.
+func settings(flags, added []string) ([]string, error) {
+	i := slices.Index(flags, "--settings")
+	if i < 0 {
+		return []string{}, nil
+	}
+	if i+1 >= len(flags) || slices.Contains(flags[i+1:], "--settings") {
+		return nil, fmt.Errorf("want one --settings file, got %q", flags)
+	}
+	path := flags[i+1]
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("--settings %q must be an absolute file", path)
+	}
+	for _, d := range added {
+		if rel, err := filepath.Rel(d, path); err == nil && !strings.HasPrefix(rel, "..") {
+			return nil, fmt.Errorf("--settings %s is inside the added directory %s, which Claude may write", path, d)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var s struct {
+		Permissions struct {
+			Allow []string `json:"allow"`
+		} `json:"permissions"`
+	}
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&s); err != nil {
+		return nil, fmt.Errorf("--settings %s: %w", path, err)
+	}
+	if len(s.Permissions.Allow) == 0 {
+		return nil, fmt.Errorf("--settings %s allows nothing", path)
+	}
+	return s.Permissions.Allow, nil
 }
 
 // addDirs are the directories after each --add-dir.

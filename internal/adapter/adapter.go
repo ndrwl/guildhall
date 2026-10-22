@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // The names of the runtime adapters Guildhall can launch: the one spelling that package
@@ -36,10 +37,15 @@ type Spec struct {
 	ResultFile string
 	// Env holds extra NAME=VALUE entries for the Artisan's environment.
 	Env []string
+	// AllowedTools are the tool permission rules the runtime grants the Artisan beyond its baseline, in the
+	// runtime's own syntax, from the Director's profile (docs/adapters.md#artisan-permissions); empty grants
+	// nothing. A runtime that cannot grant them refuses a spec naming any.
+	AllowedTools []string
 }
 
-// Validate checks the identity, that every path is absolute, and that the
-// result file is distinct from the prompt file.
+// Validate checks the identity, that every path is absolute, that the
+// result file is distinct from the prompt file, and that every allowed tool
+// is a non-empty rule without control characters.
 func (s Spec) Validate() error {
 	if err := s.Identity.Validate(); err != nil {
 		return err
@@ -55,6 +61,17 @@ func (s Spec) Validate() error {
 	for _, kv := range s.Env {
 		if name, _, ok := strings.Cut(kv, "="); !ok || name == "" {
 			return fmt.Errorf("environment entry %q is not NAME=VALUE", kv)
+		}
+	}
+	return CheckAllowedTools(s.AllowedTools)
+}
+
+// CheckAllowedTools refuses an allowed tool that is empty or holds a control character; the runtime's own syntax
+// is checked by the Director's config (config.CheckAllowedTool) and by the runtime.
+func CheckAllowedTools(rules []string) error {
+	for _, rule := range rules {
+		if rule == "" || strings.ContainsFunc(rule, unicode.IsControl) {
+			return fmt.Errorf("allowed tool %q is not a permission rule", rule)
 		}
 	}
 	return nil

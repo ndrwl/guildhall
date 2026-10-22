@@ -430,7 +430,7 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 			return false, next, r.workerStalled(s.ID, a.Number)
 		}
 		// Recorded but never marked launched: the advance stopped between the two.
-		name, _, err := r.prepare(s)
+		rt, _, err := r.prepare(s)
 		if err != nil {
 			return false, Next{}, err
 		}
@@ -438,7 +438,7 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		if err != nil {
 			return false, Next{}, err
 		}
-		return false, next, r.retryLaunched(s.ID, a.Number, r.launch(s, a.Number, name, r.boundInputs(b)))
+		return false, next, r.retryLaunched(s.ID, a.Number, r.launch(s, a.Number, rt, r.boundInputs(b)))
 	case a.Outcome != store.AttemptSucceeded && r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt == a.Number:
 		next, err := r.start(s)
 		return false, next, r.retryLaunched(s.ID, next.Attempt, err)
@@ -466,26 +466,33 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 	return true, Next{}, nil
 }
 
-// prepare resolves the adapter and the inputs of an Artisan step, or the inputs alone of a Director stage, which
-// runs no adapter; both are checked before anything is recorded.
-func (r *run) prepare(s workflow.Step) (string, []render.Input, error) {
+// artisanRuntime is who runs an Artisan step's attempt: the adapter and the allowed tools its profile grants.
+type artisanRuntime struct {
+	adapter      string
+	allowedTools []string
+}
+
+// prepare resolves the runtime and the inputs of an Artisan step, or the inputs alone of a Director stage, which
+// runs no adapter; both are checked before anything is recorded. A step without a profile runs DefaultAdapter
+// granting nothing.
+func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 	if s.Actor() == workflow.DirectorActor {
 		inputs, err := r.inputs(s)
-		return "", inputs, err
+		return artisanRuntime{}, inputs, err
 	}
-	name := r.e.DefaultAdapter
+	rt := artisanRuntime{adapter: r.e.DefaultAdapter}
 	if p := s.Profile(); p != "" {
 		profile, ok := r.e.Config.Profiles[p]
 		if !ok {
-			return "", nil, fmt.Errorf("%w: %q", config.ErrUnknownProfile, p)
+			return artisanRuntime{}, nil, fmt.Errorf("%w: %q", config.ErrUnknownProfile, p)
 		}
-		name = profile.Adapter
+		rt = artisanRuntime{adapter: profile.Adapter, allowedTools: slices.Clone(profile.AllowedTools)}
 	}
-	if err := CheckAdapter(name); err != nil {
-		return "", nil, err
+	if err := CheckAdapter(rt.adapter); err != nil {
+		return artisanRuntime{}, nil, err
 	}
 	inputs, err := r.inputs(s)
-	return name, inputs, err
+	return rt, inputs, err
 }
 
 // retryLaunched sends the reason of the retry that attempt n of step follows once its launch succeeded, so a
@@ -524,7 +531,7 @@ func (r *run) start(s workflow.Step) (Next, error) {
 			return Next{Wait: WaitPaused, Step: s.ID}, nil
 		}
 	}
-	name, inputs, err := r.prepare(s)
+	rt, inputs, err := r.prepare(s)
 	if err != nil {
 		return Next{}, err
 	}
@@ -576,7 +583,7 @@ func (r *run) start(s workflow.Step) (Next, error) {
 		return Next{}, fmt.Errorf("recorded attempt %d, expected %d: another writer advanced the task", rc.Attempt, n)
 	}
 	r.addAttempt(store.StageAttempt{Repository: r.task.Repository, TaskID: r.task.ID, Step: s.ID, Number: n})
-	return Next{Wait: waitFor(s), Step: s.ID, Attempt: n}, r.launch(s, n, name, inputs)
+	return Next{Wait: waitFor(s), Step: s.ID, Attempt: n}, r.launch(s, n, rt, inputs)
 }
 
 // budgetRefused tells the Director that a cap refused attempt n of step s, once per task and UTC day: a later
@@ -605,7 +612,7 @@ const launchedFile = "launched.json"
 
 // launch launches attempt n from its published preparation, rendering and publishing it first when none was;
 // a Director stage's attempt is handed to the Director instead.
-func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render.Input) error {
+func (r *run) launch(s workflow.Step, n int, rt artisanRuntime, inputs []render.Input) error {
 	work, err := r.workDir()
 	if err != nil {
 		return fmt.Errorf("working directory: %w", err)
@@ -618,12 +625,13 @@ func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render
 		return r.hand(s, n, p)
 	}
 	h, err := r.e.Launcher.Launch(r.ctx, Spec{
-		Identity:   r.identity(s.ID, n),
-		Adapter:    adapterName,
-		WorkDir:    work,
-		PromptFile: p.promptFile,
-		ResultFile: r.resultFile(s.ID, n),
-		Manifest:   p.manifest,
+		Identity:     r.identity(s.ID, n),
+		Adapter:      rt.adapter,
+		WorkDir:      work,
+		PromptFile:   p.promptFile,
+		ResultFile:   r.resultFile(s.ID, n),
+		Manifest:     p.manifest,
+		AllowedTools: rt.allowedTools,
 	})
 	if err != nil {
 		return fmt.Errorf("launch attempt %d: %w", n, err)

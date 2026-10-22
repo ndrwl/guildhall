@@ -2,7 +2,7 @@
 
 ## Contract
 
-The test-only fake runtime: no optional capabilities, bounded prompt directives (`docs/adapters.md`).
+The test-only fake runtime: no optional capabilities, bounded prompt directives (`docs/adapters.md`); `Adapter.Command` refuses a spec naming allowed tools, since the fake grants none.
 `Main` is `guildhall fake-artisan`; `Run` handles interrupts itself, honours the attempt's cancel marker unless told to ignore it, and with the P0 lifecycle directives plays a process tree (`grandchildren`, `grandchild-cmd`), ignores the marker or interrupts, publishes a late result, echoes input, bounds its lifetime and records every process's identity in an inventory directory through `artisan.RecordProcess`.
 Once its work ends, before any result, `Run` writes `ReportedUsage`, fixed measured tokens and an estimated cost, as the attempt's [usage file](../adapters.md#usage-file); work ended by an interrupt or the cancel marker writes none, and a failure to write it is shown as progress and does not stop the result.
 
@@ -21,3 +21,4 @@ Seven refused prompts in the validation test pass against the old fake as well, 
 `TestRunOutputDirective` was written red first (the directive was unknown): the `output` directive writes its file before the result and lists it, and paths that are absolute, escaping, empty, backslashed or without text are refused before anything is written.
 `TestRunReportsFixedUsage` was written red first ([red run](../evidence/attempt-spend-2026-10-22-red.txt)): a succeeded, failed, result-less and failing-exit worker each write `ReportedUsage`, and an interrupted one writes no usage file.
 `TestRunWritesResultDespiteUsageFailure` was added when review found a usage write failure stopping the result.
+`TestAdapterDeclaresNoCapabilitiesAndBuildsArgv`'s refusal of a spec naming allowed tools was written red first ([red run](../evidence/artisan-allow-rules-2026-10-22-red.txt)).

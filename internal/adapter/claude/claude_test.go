@@ -20,6 +20,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
@@ -147,7 +148,7 @@ func testSpec(t *testing.T) adapter.Spec {
 }
 
 func args(spec adapter.Spec) claude.Args {
-	return claude.Args{Identity: spec.Identity, PromptFile: spec.PromptFile, ResultFile: spec.ResultFile}
+	return claude.Args{Identity: spec.Identity, PromptFile: spec.PromptFile, ResultFile: spec.ResultFile, AllowedTools: spec.AllowedTools}
 }
 
 func TestCommand(t *testing.T) {
@@ -174,6 +175,32 @@ func TestCommand(t *testing.T) {
 	}
 }
 
+// TestCommandPassesAllowedTools: the spec's allowed tools reach the wrapper as one --allow-tool each, in order, and
+// ParseArgs reads exactly them back; a spec with none passes none.
+func TestCommandPassesAllowedTools(t *testing.T) {
+	spec := testSpec(t)
+	spec.AllowedTools = []string{"Bash(go test:*)", "Bash(git commit:*)"}
+	program := filepath.Join(t.TempDir(), "claude")
+	cmd, err := claude.Adapter{Executable: "/bin/guildhall", Claude: program}.Command(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/bin/guildhall", claude.Subcommand, "--task", "task-1", "--attempt", "attempt-1", "--prompt", spec.PromptFile, "--result", spec.ResultFile,
+		"--allow-tool", "Bash(go test:*)", "--allow-tool", "Bash(git commit:*)", "--claude", program}
+	if !slices.Equal(cmd.Argv, want) {
+		t.Errorf("Command argv = %q, want %q", cmd.Argv, want)
+	}
+	parsed, err := claude.ParseArgs(cmd.Argv[2:])
+	if err != nil || !slices.Equal(parsed.AllowedTools, spec.AllowedTools) {
+		t.Errorf("ParseArgs(Command) = %+v, %v; want allowed tools %q", parsed, err, spec.AllowedTools)
+	}
+	spec.AllowedTools = nil
+	cmd, err = claude.Adapter{Executable: "/bin/guildhall"}.Command(spec)
+	if err != nil || slices.Contains(cmd.Argv, "--allow-tool") {
+		t.Errorf("Command without allowed tools = %q, %v; want no --allow-tool", cmd.Argv, err)
+	}
+}
+
 func TestParseArgsRefuses(t *testing.T) {
 	spec := testSpec(t)
 	good := []string{"--task", "task-1", "--attempt", "attempt-1", "--prompt", spec.PromptFile, "--result", spec.ResultFile}
@@ -186,6 +213,8 @@ func TestParseArgsRefuses(t *testing.T) {
 		"unknown flag":     append(slices.Clone(good), "--model", "x"),
 		"relative program": append(slices.Clone(good), "--claude", "bin/claude"),
 		"prompt in model":  {"--task", "task-1", "--attempt", "attempt-1", "--prompt", claude.PromptCopy(spec.ResultFile), "--result", spec.ResultFile},
+		"empty allow tool": append(slices.Clone(good), "--allow-tool", ""),
+		"control in rule":  append(slices.Clone(good), "--allow-tool", "Bash(go test\n:*)"),
 	} {
 		if _, err := claude.ParseArgs(argv); err == nil {
 			t.Errorf("%s: ParseArgs(%q) accepted", name, argv)
@@ -208,6 +237,15 @@ func TestClaudeArgs(t *testing.T) {
 	}
 	if claude.PromptCopy(spec.ResultFile) != filepath.Join(model, "prompt.md") || claude.DraftFile(spec.ResultFile) != filepath.Join(model, artisan.ResultFile) {
 		t.Errorf("prompt copy %s and draft %s; want both in %s", claude.PromptCopy(spec.ResultFile), claude.DraftFile(spec.ResultFile), model)
+	}
+	a.AllowedTools = []string{"Bash(go test:*)", "Bash(git commit:*)"}
+	settings := claude.ArtisanSettingsPath(spec.ResultFile)
+	want = []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--permission-mode", claude.PermissionMode, "--settings", settings, "--add-dir", model}
+	if got := claude.ClaudeArgs(a); !slices.Equal(got, want) {
+		t.Errorf("ClaudeArgs with allowed tools = %q, want %q", got, want)
+	}
+	if settings != filepath.Join(filepath.Dir(spec.ResultFile), claude.ArtisanSettingsFile) {
+		t.Errorf("settings file %s; want %s beside the result", settings, claude.ArtisanSettingsFile)
 	}
 	in := claude.Instruction(a)
 	for _, s := range []string{
@@ -238,7 +276,7 @@ func TestModelDirExcludesControlFiles(t *testing.T) {
 	}
 	added := got[i+1:]
 	attempt := filepath.Dir(spec.ResultFile)
-	for _, f := range []string{artisan.ResultFile, artisan.ResultFile + ".cancelled", artisan.OutcomeFile, artisan.LockFile, artisan.EventsFile, launch.LogFile} {
+	for _, f := range []string{artisan.ResultFile, artisan.ResultFile + ".cancelled", artisan.OutcomeFile, artisan.LockFile, artisan.EventsFile, launch.LogFile, claude.ArtisanSettingsFile} {
 		path := filepath.Join(attempt, f)
 		for _, d := range added {
 			if rel, err := filepath.Rel(d, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -406,6 +444,58 @@ func TestRunReportsDenials(t *testing.T) {
 	}
 }
 
+// TestArtisanSettings: the settings file grants exactly the rules, in order, as Claude Code's permissions.allow and
+// nothing else.
+func TestArtisanSettings(t *testing.T) {
+	got := string(claude.ArtisanSettings([]string{"Bash(go test:*)", "Bash(git commit:*)"}))
+	want := `{"permissions":{"allow":["Bash(go test:*)","Bash(git commit:*)"]}}` + "\n"
+	if got != want {
+		t.Errorf("ArtisanSettings = %q, want %q", got, want)
+	}
+}
+
+// TestSuggestedGoAllowedToolsAreValidConfig: the documented set for a Go repository is one a profile accepts.
+func TestSuggestedGoAllowedToolsAreValidConfig(t *testing.T) {
+	for _, rule := range claude.SuggestedGoAllowedTools {
+		if err := config.CheckAllowedTool(rule); err != nil {
+			t.Errorf("suggested rule %q refused: %v", rule, err)
+		}
+	}
+	for _, want := range []string{"Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)"} {
+		if !slices.Contains(claude.SuggestedGoAllowedTools, want) {
+			t.Errorf("suggested set %q lacks %q", claude.SuggestedGoAllowedTools, want)
+		}
+	}
+}
+
+// TestRunGrantsAllowedTools: the session Claude runs is granted exactly the attempt's allowed tools, through a
+// settings file outside the directories Claude may write; an attempt with none is given no settings file.
+func TestRunGrantsAllowedTools(t *testing.T) {
+	claudetest.Install(t)
+	for name, rules := range map[string][]string{
+		"none":      nil,
+		"suggested": claude.SuggestedGoAllowedTools,
+		"one":       {"Bash(sh check.sh)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			spec := testSpec(t)
+			spec.AllowedTools = rules
+			var stderr bytes.Buffer
+			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
+				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
+			}
+			got, err := claudetest.Granted(spec.ResultFile)
+			if err != nil || !slices.Equal(got, rules) || got == nil {
+				t.Errorf("granted %q, %v; want exactly %q", got, err, rules)
+			}
+			_, err = os.Stat(claude.ArtisanSettingsPath(spec.ResultFile))
+			if exists := err == nil; exists != (len(rules) > 0) {
+				t.Errorf("settings file exists %v (%v); want %v", exists, err, len(rules) > 0)
+			}
+		})
+	}
+}
+
 // TestRunWritesUsage: once Claude exits the wrapper writes the usage its output reports beside the result, a
 // draft or not, and passes the session's result text through; a stopped session writes none, so its usage is
 // unknown.
@@ -483,6 +573,14 @@ func TestRunStopsOnContext(t *testing.T) {
 // so makes a model call; CI never sets it.
 const LiveEnv = "GUILDHALL_CLAUDE_LIVE"
 
+// LiveGrantEnv chooses what TestLiveClaudeBuildPermissions grants: unset, nothing, so only the machine's own
+// settings can allow its commands; "configured", the profile grant a Go builder would be configured with,
+// SuggestedGoAllowedTools and the check's own command, so the run shows those rules suffice.
+const LiveGrantEnv = "GUILDHALL_CLAUDE_LIVE_GRANT"
+
+// liveGrant is the configured mode's grant.
+var liveGrant = append(slices.Clone(claude.SuggestedGoAllowedTools), "Bash(sh check.sh)")
+
 // TestLiveClaude runs one real attempt through the wrapper with the `claude`
 // on PATH, signed in as the developer: run it by hand with
 // GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaude -v -timeout 15m
@@ -524,14 +622,22 @@ func TestLiveClaude(t *testing.T) {
 
 // TestLiveClaudeBuildPermissions is the Artisan permissions' live acceptance: one real attempt through the
 // wrapper, in a git repository, asked to run a check and commit as the build stage asks. It passes only where
-// Claude's settings allow those shell commands (docs/adapters.md#artisan-permissions); a denial is named in the
-// failure. Run it by hand with
-// GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m
+// Claude's settings, or with GUILDHALL_CLAUDE_LIVE_GRANT=configured the profile grant liveGrant, allow those shell
+// commands (docs/adapters.md#artisan-permissions); a denial is named in the failure. Run it by hand with
+// GUILDHALL_CLAUDE_LIVE=1 [GUILDHALL_CLAUDE_LIVE_GRANT=configured] go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m
 func TestLiveClaudeBuildPermissions(t *testing.T) {
 	if os.Getenv(LiveEnv) != "1" {
 		t.Skipf("set %s=1 to run a real Claude Code session; it makes a model call", LiveEnv)
 	}
 	spec := testSpec(t)
+	switch mode := os.Getenv(LiveGrantEnv); mode {
+	case "":
+	case "configured":
+		spec.AllowedTools = liveGrant
+		t.Logf("granting %q", spec.AllowedTools)
+	default:
+		t.Fatalf("%s=%q; want unset or configured", LiveGrantEnv, mode)
+	}
 	git := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", spec.WorkDir, "-c", "user.name=Guildhall", "-c", "user.email=guildhall@example.invalid"}, args...)...)

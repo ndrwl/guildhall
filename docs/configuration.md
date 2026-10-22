@@ -100,8 +100,11 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | `adapter` | Required: the runtime adapter, such as `claude`. |
 | `model`, `effort` | Passed to the adapter as given; empty means the adapter's default. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
+| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`; empty, the default, grants nothing. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the suggested set for a Go repository). |
 
 A profile names no credential.
+Each `allowed_tools` entry is a tool name, optionally with a specifier in parentheses, with no control characters and listed once; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused, so a grant names its commands.
+The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or `GUILDHALL_COPY` selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
 
 ### The director table

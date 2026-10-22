@@ -50,13 +50,17 @@ type Adapter struct {
 // Capabilities reports the fake adapter's optional capabilities: none.
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
-// Command returns the fake Artisan invocation for spec.
+// Command returns the fake Artisan invocation for spec. It refuses a spec
+// naming allowed tools, since the fake grants none.
 func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
 		return adapter.Command{}, err
 	}
 	if a.Executable == "" {
 		return adapter.Command{}, errors.New("fake adapter: guildhall executable is not set")
+	}
+	if len(spec.AllowedTools) > 0 {
+		return adapter.Command{}, errors.New("fake adapter: it grants no allowed tools")
 	}
 	return adapter.Command{
 		Argv: []string{a.Executable, Subcommand,

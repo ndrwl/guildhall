@@ -57,6 +57,14 @@ const PermissionMode = "acceptEdits"
 // result message, which carries the session's token usage and Claude Code's cost estimate (ParseUsage).
 const OutputFormat = "json"
 
+// ArtisanSettingsFile is the Claude Code settings file the wrapper writes beside the result file for an attempt
+// granted allowed tools (ArtisanSettings), outside the model directory, so Claude cannot change its own grant.
+const ArtisanSettingsFile = "claude-settings.json"
+
+// SuggestedGoAllowedTools is the documented allowed_tools set for a Go repository's builder profile
+// (docs/adapters.md#artisan-permissions): its checks, staging and committing, and read-only status and diff.
+var SuggestedGoAllowedTools = []string{"Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)"}
+
 // maxOutputBytes bounds the print-mode output the wrapper keeps to read usage from.
 const maxOutputBytes = 4 << 20
 
@@ -81,7 +89,8 @@ type Adapter struct {
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
 // Command returns the wrapper invocation for spec: an argument list run in
-// spec's working directory with spec's environment. It refuses an invalid
+// spec's working directory with spec's environment, passing each of spec's
+// allowed tools as --allow-tool. It refuses an invalid
 // spec or an unset Executable, returning no command.
 func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
@@ -93,6 +102,9 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	argv := []string{a.Executable, Subcommand,
 		"--task", spec.TaskID, "--attempt", spec.AttemptID,
 		"--prompt", spec.PromptFile, "--result", spec.ResultFile}
+	for _, rule := range spec.AllowedTools {
+		argv = append(argv, "--allow-tool", rule)
+	}
 	if a.Claude != "" {
 		argv = append(argv, "--claude", a.Claude)
 	}
@@ -106,11 +118,14 @@ type Args struct {
 	ResultFile string
 	// Claude is the Claude Code program; empty means Program on PATH.
 	Claude string
+	// AllowedTools are the permission rules the session is granted beyond PermissionMode, one --allow-tool each.
+	AllowedTools []string
 }
 
-// ParseArgs parses `--task --attempt --prompt --result [--claude]`; every
-// path must be absolute, the prompt and result files must differ and the
-// prompt must not be in the model directory, which every run replaces.
+// ParseArgs parses `--task --attempt --prompt --result [--allow-tool <rule>]...
+// [--claude]`; every path must be absolute, the prompt and result files must
+// differ, the prompt must not be in the model directory, which every run
+// replaces, and each rule must be one adapter.CheckAllowedTools accepts.
 func ParseArgs(argv []string) (Args, error) {
 	fs := flag.NewFlagSet(Subcommand, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -120,6 +135,10 @@ func ParseArgs(argv []string) (Args, error) {
 	fs.StringVar(&a.PromptFile, "prompt", "", "prompt file")
 	fs.StringVar(&a.ResultFile, "result", "", "result file")
 	fs.StringVar(&a.Claude, "claude", "", "Claude Code program")
+	fs.Func("allow-tool", "permission rule granted to the session (repeat per rule)", func(rule string) error {
+		a.AllowedTools = append(a.AllowedTools, rule)
+		return nil
+	})
 	if err := fs.Parse(argv); err != nil {
 		return Args{}, err
 	}
@@ -133,6 +152,9 @@ func ParseArgs(argv []string) (Args, error) {
 		return Args{}, fmt.Errorf("--claude %q must be an absolute path", a.Claude)
 	}
 	if err := a.Validate(); err != nil {
+		return Args{}, err
+	}
+	if err := adapter.CheckAllowedTools(a.AllowedTools); err != nil {
 		return Args{}, err
 	}
 	if !filepath.IsAbs(a.PromptFile) || !filepath.IsAbs(a.ResultFile) {
@@ -151,6 +173,24 @@ func ParseArgs(argv []string) (Args, error) {
 // for the result file result: artisan.ModelDir beside it.
 func ModelDir(result string) string {
 	return filepath.Join(filepath.Dir(result), artisan.ModelDir)
+}
+
+// ArtisanSettingsPath is the settings file the wrapper writes for the result file result: ArtisanSettingsFile
+// beside it.
+func ArtisanSettingsPath(result string) string {
+	return filepath.Join(filepath.Dir(result), ArtisanSettingsFile)
+}
+
+// ArtisanSettings is the Claude Code settings file granting rules: a permissions object whose allow list is
+// rules, in order, and nothing else, as JSON with a trailing newline.
+func ArtisanSettings(rules []string) []byte {
+	type permissions struct {
+		Allow []string `json:"allow"`
+	}
+	data, _ := json.Marshal(struct {
+		Permissions permissions `json:"permissions"`
+	}{permissions{Allow: rules}})
+	return append(data, '\n')
 }
 
 // DraftFile is the draft result Claude writes in the model directory for the
@@ -196,10 +236,15 @@ func Instruction(a Args) string {
 }
 
 // ClaudeArgs are the arguments after the program for attempt a: print mode
-// with Instruction as the prompt, OutputFormat, PermissionMode, and only the
-// model directory added for tool access.
+// with Instruction as the prompt, OutputFormat, PermissionMode, the settings
+// file at ArtisanSettingsPath when a has allowed tools, and only the model
+// directory added for tool access.
 func ClaudeArgs(a Args) []string {
-	return []string{"--print", Instruction(a), "--output-format", OutputFormat, "--permission-mode", PermissionMode, "--add-dir", ModelDir(a.ResultFile)}
+	args := []string{"--print", Instruction(a), "--output-format", OutputFormat, "--permission-mode", PermissionMode}
+	if len(a.AllowedTools) > 0 {
+		args = append(args, "--settings", ArtisanSettingsPath(a.ResultFile))
+	}
+	return append(args, "--add-dir", ModelDir(a.ResultFile))
 }
 
 // ParseUsage reads the usage Claude Code reports in its print-mode JSON output, the session's result message:
@@ -305,7 +350,8 @@ var errMarked = errors.New("cancel marker present")
 // (adapter.ErrAttemptCancelled) or an existing result file
 // (adapter.ErrResultExists); it replaces the model directory with one holding
 // only the prompt copy and the inputs and skills directories beside the prompt
-// file, so a stale draft is never published, then runs Claude in the
+// file, so a stale draft is never published, writes ArtisanSettings at
+// ArtisanSettingsPath when a has allowed tools, then runs Claude in the
 // current directory with ClaudeArgs, no standard input, and its output on
 // stdout and stderr. An interrupt, the end of ctx, or the attempt's cancel
 // marker asks Claude to stop (an interrupt on Unix, termination on Windows),
@@ -338,6 +384,11 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	}
 	if err := prepareModelDir(a); err != nil {
 		return fmt.Errorf("claude adapter: model directory: %w", err)
+	}
+	if len(a.AllowedTools) > 0 {
+		if err := os.WriteFile(ArtisanSettingsPath(a.ResultFile), ArtisanSettings(a.AllowedTools), 0o600); err != nil {
+			return fmt.Errorf("claude adapter: settings: %w", err)
+		}
 	}
 	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt)
 	defer stopSignals()

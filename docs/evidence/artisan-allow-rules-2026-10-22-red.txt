@@ -1,0 +1,76 @@
+# Red run for profile allowed tools, against stub bodies (config.CheckAllowedTool accepting everything, no adapter.Spec
+# validation of rules, a fake granting silently, claude.ArtisanSettings empty, no --allow-tool or --settings, interp and
+# launch.Process dropping the rules, the old artisans preflight line), on Linux, 2026-10-22.
+# go test ./internal/config ./internal/adapter ./internal/adapter/fake ./internal/adapter/claude ./internal/interp ./internal/launch ./internal/cli -run '<the tests below>' -v
+# Passing tests are listed by name only; long lines are cut at 300 characters.
+
+--- PASS: TestProfileAllowedTools (0.01s)
+    profile_test.go:139: allowed_tools = [""]: err = <nil>, want "profile \"p\": allowed_tools: "
+    profile_test.go:139: allowed_tools = ["go test"]: err = <nil>, want "profile \"p\": allowed_tools: "
+    profile_test.go:139: allowed_tools = ["Bash()"]: err = <nil>, want "profile \"p\": allowed_tools: "
+    profile_test.go:139: allowed_tools = ["Bash(go test)x"]: err = <nil>, want "profile \"p\": allowed_tools: "
+    profile_test.go:139: allowed_tools = ["Bash"]: err = <nil>, want "every shell command"
+    profile_test.go:139: allowed_tools = ["Bash(go test:*"]: err = <nil>, want "profile \"p\": allowed_tools: "
+    profile_test.go:139: allowed_tools = ["Bash(go test\nrm -rf /)"]: err = <nil>, want "profile \"p\": allowed_tools: "
+    profile_test.go:139: allowed_tools = ["Bash(*)"]: err = <nil>, want "every shell command"
+    profile_test.go:139: allowed_tools = ["Bash(:*)"]: err = <nil>, want "every shell command"
+--- FAIL: TestInvalidAllowedToolsRefused (0.03s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.051s
+    launch_test.go:35: spec {Identity:{TaskID:task-1 AttemptID:attempt-1} WorkDir:$TMP/TestSpecValidate1747632653/001 PromptFile:$TMP/TestSpecValidate1747632653/001/p.md ResultFile:$TMP/TestSpecValidate1747632653/001/r.json Env:[] AllowedTools:[]} accepted
+    launch_test.go:35: spec {Identity:{TaskID:task-1 AttemptID:attempt-1} WorkDir:$TMP/TestSpecValidate1747632653/001 PromptFile:$TMP/TestSpecValidate1747632653/001/p.md ResultFile:$TMP/TestSpecValidate1747632653/001/r.json Env:[] AllowedTools:[Bash(go test
+--- FAIL: TestSpecValidate (0.01s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter	0.020s
+    fake_test.go:43: Command with allowed tools = {Argv:[/opt/guildhall fake-artisan --task task-1 --attempt attempt-1 --prompt $TMP/TestAdapterDeclaresNoCapabilitiesAndBuildsArgv1808815875/001/p.md --result $TMP/TestAdapterDeclaresNoCapabilitiesAndBuildsArgv1808815875/001/r.json] Dir:$TMP/TestAdapt
+--- FAIL: TestAdapterDeclaresNoCapabilitiesAndBuildsArgv (0.01s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	0.015s
+    claude_test.go:191: Command argv = ["/bin/guildhall" "claude-artisan" "--task" "task-1" "--attempt" "attempt-1" "--prompt" "$TMP/TestCommandPassesAllowedTools3023851657/002/prompt.md" "--result" "$TMP/TestCommandPassesAllowedTools3023851657/002/result.json" "--claude" "$TMP/TestCommandPassesAllo
+    claude_test.go:195: ParseArgs(Command) = {Identity:{TaskID:task-1 AttemptID:attempt-1} PromptFile:$TMP/TestCommandPassesAllowedTools3023851657/002/prompt.md ResultFile:$TMP/TestCommandPassesAllowedTools3023851657/002/result.json Claude:$TMP/TestCommandPassesAllowedTools3023851657/003/claude Allo
+--- FAIL: TestCommandPassesAllowedTools (0.01s)
+--- PASS: TestParseArgsRefuses (0.01s)
+    claude_test.go:245: ClaudeArgs with allowed tools = ["--print" "You are a Guildhall Artisan working on task task-1, attempt attempt-1, in the current directory.\nRead the prompt file below and follow it; the inputs and skills directories it names are beside it.\n\nPrompt file: $TMP/TestClaudeArg
+--- FAIL: TestClaudeArgs (0.00s)
+--- PASS: TestModelDirExcludesControlFiles (0.01s)
+    claude_test.go:453: ArtisanSettings = "", want "{\"permissions\":{\"allow\":[\"Bash(go test:*)\",\"Bash(git commit:*)\"]}}\n"
+--- FAIL: TestArtisanSettings (0.00s)
+--- PASS: TestSuggestedGoAllowedToolsAreValidConfig (0.00s)
+    claude_test.go:489: granted [], <nil>; want exactly ["Bash(go test:*)" "Bash(go vet:*)" "Bash(git add:*)" "Bash(git commit:*)" "Bash(git status:*)" "Bash(git diff:*)"]
+    claude_test.go:493: settings file exists false (stat $TMP/TestRunGrantsAllowedToolssuggested760612699/002/claude-settings.json: no such file or directory); want true
+    claude_test.go:489: granted [], <nil>; want exactly ["Bash(sh check.sh)"]
+    claude_test.go:493: settings file exists false (stat $TMP/TestRunGrantsAllowedToolsone2956849825/002/claude-settings.json: no such file or directory); want true
+--- FAIL: TestRunGrantsAllowedTools (0.07s)
+    --- PASS: TestRunGrantsAllowedTools/none (0.03s)
+    --- FAIL: TestRunGrantsAllowedTools/suggested (0.02s)
+    --- FAIL: TestRunGrantsAllowedTools/one (0.02s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	0.110s
+    engine_test.go:453: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    engine_test.go:453: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    engine_test.go:459: launch spec allowed tools = [], want ["Bash(go test:*)" "Bash(git commit:*)"]
+    engine_test.go:462: AdapterSpec allowed tools = [], want ["Bash(go test:*)" "Bash(git commit:*)"]
+--- FAIL: TestProfileAllowedToolsReachTheLaunch (0.06s)
+    --- PASS: TestProfileAllowedToolsReachTheLaunch/none (0.03s)
+    --- FAIL: TestProfileAllowedToolsReachTheLaunch/granted (0.03s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.067s
+    process_test.go:301: argv = ["artisan" "start" "--store" "$TMP/TestProcessPassesTheProfilesAllowedTools3875328331/001/director.store" "--state" "$TMP" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "$TMP/app/t7/build-1/prompt/prompt.md" "--workdir" "$
+--- FAIL: TestProcessPassesTheProfilesAllowedTools (0.06s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	0.071s
+--- PASS: TestTaskStartLaunchesClaude (0.11s)
+    advance_test.go:507: plan-1 was granted [], <nil>; want ["Bash(go test:*)" "Bash(git commit:*)"]
+--- FAIL: TestTaskStartGrantsTheProfilesAllowedTools (0.10s)
+    artisan_test.go:178: --allow-tool in a tab: exit 2, stderr "guildhall: artisan start: flag provided but not defined: -allow-tool\n\nUsage: guildhall <command>\n\nCommands:\n  version        print the guildhall version and platform\n  doctor         report the platform and the tools guildhall use
+--- FAIL: TestArtisanStartRefusesExistingResultAndBadFlags (0.00s)
+    director_test.go:249: artisans line "artisans: profiles builder, reviewer run claude print mode, which allows edits only: a build's checks and commits need Bash allowed by Claude's settings (docs/adapters.md#artisan-permissions)" lacks "Director alpha":
+    director_test.go:249: artisans line "artisans: profiles builder, reviewer run claude print mode, which allows edits only: a build's checks and commits need Bash allowed by Claude's settings (docs/adapters.md#artisan-permissions)" lacks "$TMP/TestDirectorStartCheckNamesArtisanPermissions777876749
+    director_test.go:249: artisans line "artisans: profiles builder, reviewer run claude print mode, which allows edits only: a build's checks and commits need Bash allowed by Claude's settings (docs/adapters.md#artisan-permissions)" lacks "profile builder grants Bash(go test:*), Bash(git commit:*)"
+    director_test.go:249: artisans line "artisans: profiles builder, reviewer run claude print mode, which allows edits only: a build's checks and commits need Bash allowed by Claude's settings (docs/adapters.md#artisan-permissions)" lacks "profile reviewer grants nothing":
+--- FAIL: TestDirectorStartCheckNamesArtisanPermissions (0.04s)
+    director_test.go:263: exit 0
+--- FAIL: TestDirectorStartRefusesAllowedToolsARuntimeCannotGrant (0.03s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.291s
+FAIL

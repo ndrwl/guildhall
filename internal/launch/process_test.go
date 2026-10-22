@@ -272,3 +272,32 @@ func TestProcessLaunchFailsWhenTheLauncherExitsFirst(t *testing.T) {
 		t.Errorf("launcher log = %q, %v; want the refusal", log, err)
 	}
 }
+
+// TestProcessPassesTheProfilesAllowedTools: a spec's allowed tools reach `artisan start` as one --allow-tool each,
+// in order, so the runtime grants exactly them; a spec with none passes none (TestProcessStartsArtisanStartOnTheAdapterSpec).
+func TestProcessPassesTheProfilesAllowedTools(t *testing.T) {
+	p := newProcess(t)
+	argv := filepath.Join(t.TempDir(), "argv.json")
+	p.Env = []string{argvEnv + "=" + argv}
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	spec.AllowedTools = []string{"Bash(go test:*)", "Bash(git commit:*)"}
+	if _, err := p.Launch(context.Background(), spec); err == nil {
+		t.Fatal("Launch of a refusing launcher succeeded")
+	}
+	b, err := os.ReadFile(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	as := spec.AdapterSpec()
+	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
+		"--repo", "app", "--task", "t7", "--step", "build", "--attempt", "1",
+		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir,
+		"--allow-tool", "Bash(go test:*)", "--allow-tool", "Bash(git commit:*)"}
+	if !slices.Equal(got, want) {
+		t.Errorf("argv = %q\nwant %q", got, want)
+	}
+}

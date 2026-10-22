@@ -438,12 +438,31 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 	if err != nil || r.Summary != claudetest.Summary {
 		t.Errorf("plan-1 result %+v, %v; want the stub Claude's", r, err)
 	}
+	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || len(got) != 0 {
+		t.Errorf("plan-1 was granted %q, %v; a profile without allowed_tools grants none", got, err)
+	}
 	// The launcher records the usage the stub's JSON output reported on the attempt.
 	u := claudetest.Usage
 	want := store.Spend{Tokens: store.SpendMeasured, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
 		CacheCreationInputTokens: u.CacheCreationInputTokens, CacheReadInputTokens: u.CacheReadInputTokens, Cost: store.SpendEstimated, CostUSD: u.CostUSD}
 	if a := d.waitSpend(t, "plan", 1); *a.Spend != want {
 		t.Errorf("plan-1 spend = %+v, want the stub's %+v", *a.Spend, want)
+	}
+}
+
+// TestTaskStartGrantsTheProfilesAllowedTools: a Director's profile allowed_tools reach the Claude session its stage
+// runs, exactly and in order, through launch.Process, `artisan start` and the wrapper.
+func TestTaskStartGrantsTheProfilesAllowedTools(t *testing.T) {
+	claudetest.Install(t)
+	d := newRunDirectorWith(t, "claude-allowed.toml")
+	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitResult(t, "plan", 1)
+	want := []string{"Bash(go test:*)", "Bash(git commit:*)"}
+	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, want) {
+		t.Errorf("plan-1 was granted %q, %v; want %q", got, err, want)
 	}
 }
 

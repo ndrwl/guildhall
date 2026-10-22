@@ -1,0 +1,19 @@
+# The Director the claude allowed-tools test runs: the claude Director
+# with its planner profile granting allowed tools from this config alone.
+schema_version = 1
+mode = "director"
+name = "beta"
+
+[local]
+standards_revision = "standards-1"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+workflow = "claude-straight"
+
+[profile.planner]
+adapter = "claude"
+allowed_tools = ["Bash(go test:*)", "Bash(git commit:*)"]

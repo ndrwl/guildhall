@@ -187,7 +187,7 @@ func (a *App) artisanStart(args []string) int {
 	var (
 		adapterName, prompt, result, workdir string
 		session, workspace, label            string
-		herdrExec                            stringList
+		herdrExec, allowed                   stringList
 		timeout, stall                       time.Duration
 		stopOnTimeout, advance               bool
 		id                                   adapter.Identity
@@ -205,6 +205,7 @@ func (a *App) artisanStart(args []string) int {
 	fl.StringVar(&label, "tab-label", "", "tab label")
 	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
 	fl.DurationVar(&stall, "stall-interval", 0, "send the Director worker-stalled when the worker is silent this long; zero observes nothing")
+	fl.Var(&allowed, "allow-tool", "permission rule the owned attempt's runtime grants its Artisan (repeat per rule)")
 	fl.BoolVar(&stopOnTimeout, "stop-on-timeout", false, "stop the owned Windows worker, or request Ctrl+C on other platforms, when the wait times out")
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan start: " + err.Error())
@@ -247,9 +248,9 @@ func (a *App) artisanStart(args []string) int {
 			}
 			advanceArgv = []string{exe, "--copy", dir}
 		}
-		return a.runOwned(at, adapterName, prompt, workdir, timeout, stall, advanceArgv)
-	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0:
-		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance and --stall-interval do not apply in a Herdr tab")
+		return a.runOwned(at, adapterName, prompt, workdir, allowed, timeout, stall, advanceArgv)
+	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0 || len(allowed) > 0:
+		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance, --stall-interval and --allow-tool do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):
@@ -300,11 +301,12 @@ func (a *App) artisanStart(args []string) int {
 // runOwned runs attempt at as its launcher (launch.Run): the named adapter's
 // Artisan runs in a containment unit with this process's terminal, its output on
 // stderr so stdout carries only the report, and the exit code is the store
-// outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error. A non-nil
+// outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error. The adapter
+// spec carries allowed, which a runtime that cannot grant them refuses. A non-nil
 // advance is launch.Config.Advance, the task's advance once the attempt is recorded. A positive stall is
 // launch.Config.StallInterval, its sends going through the store and waking the Director as the engine's outbox does.
-func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, timeout, stall time.Duration, advance []string) int {
-	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile}
+func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, allowed []string, timeout, stall time.Duration, advance []string) int {
+	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile, AllowedTools: allowed}
 	for _, p := range []struct {
 		dst *string
 		src string

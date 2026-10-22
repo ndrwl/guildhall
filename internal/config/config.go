@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 
@@ -137,6 +138,24 @@ type Profile struct {
 	Effort string `toml:"effort"`
 	// Role is a slash-separated path relative to the config file's directory; empty keeps the release role.
 	Role string `toml:"role"`
+	// AllowedTools are the tool permission rules this Director grants the profile's Artisan beyond its runtime's
+	// baseline, in the runtime's own syntax, such as "Bash(go test:*)" for Claude Code; empty grants nothing
+	// (docs/adapters.md#artisan-permissions). They come only from this copy's own config file, never a managed one.
+	AllowedTools []string `toml:"allowed_tools" json:",omitempty"`
+}
+
+// CheckAllowedTool reports why rule cannot be a profile's allowed_tools entry, or nil if it can: a tool name,
+// optionally with a parenthesised specifier, with no control characters, and never a rule that allows every shell
+// command (Bash alone, Bash(*) or Bash(:*)).
+func CheckAllowedTool(rule string) error {
+	m := allowedToolPattern.FindStringSubmatch(rule)
+	switch {
+	case m == nil || strings.ContainsFunc(rule, unicode.IsControl):
+		return fmt.Errorf("%q is not a permission rule: a tool name, optionally with a specifier in parentheses, such as Bash(go test:*)", rule)
+	case m[1] == "Bash" && strings.Trim(m[3], "*: ") == "":
+		return fmt.Errorf("%q allows every shell command; name the commands, such as Bash(go test:*)", rule)
+	}
+	return nil
 }
 
 // PrivateConfig is a reference to the private config repository, never a credential.
@@ -169,6 +188,8 @@ var (
 	keyPattern        = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 	credentialPattern = regexp.MustCompile(`(?i)(token|passw|secret|api_?key|credential|private_?key)`)
 	drivePathPattern  = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
+	// allowedToolPattern is a permission rule: a tool name and an optional non-empty parenthesised specifier.
+	allowedToolPattern = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_]*)(\((.+)\))?$`)
 )
 
 // ownerAbsolute reports whether path is absolute on its owner machine, which may run another OS than this host:
@@ -339,6 +360,15 @@ func (c *Config) validate() []string {
 		}
 		if p.Role != "" && !configRelative(p.Role) {
 			add("profile %q: role must be a relative slash-separated path inside the config directory", name)
+		}
+		seen := map[string]bool{}
+		for _, rule := range p.AllowedTools {
+			if err := CheckAllowedTool(rule); err != nil {
+				add("profile %q: allowed_tools: %v", name, err)
+			} else if seen[rule] {
+				add("profile %q: allowed_tools lists %q twice", name, rule)
+			}
+			seen[rule] = true
 		}
 	}
 

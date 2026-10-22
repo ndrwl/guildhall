@@ -38,6 +38,10 @@ func TestAdapterDeclaresNoCapabilitiesAndBuildsArgv(t *testing.T) {
 	if _, err := (Adapter{}).Command(spec); err == nil {
 		t.Error("Command accepted an empty executable")
 	}
+	spec.AllowedTools = []string{"Bash(go test:*)"}
+	if cmd, err := a.Command(spec); err == nil || len(cmd.Argv) != 0 {
+		t.Errorf("Command with allowed tools = %+v, %v; want a refusal, since the fake grants nothing", cmd, err)
+	}
 }
 
 // setup writes a prompt and returns the run arguments for it.
