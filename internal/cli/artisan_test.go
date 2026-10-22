@@ -17,6 +17,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/herdr"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // roleEnv makes the test binary act as another program in child processes:
@@ -24,6 +25,7 @@ import (
 const roleEnv = "GUILDHALL_CLI_TEST_ROLE"
 
 func TestMain(m *testing.M) {
+	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
 	claudetest.RunIfStub()
 	runStewardSCPStub()

@@ -16,9 +16,11 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/cli"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 func TestMain(m *testing.M) {
+	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
 	mainIfDyingLauncher()
 	if len(os.Args) > 1 && os.Args[1] == fake.Subcommand {
