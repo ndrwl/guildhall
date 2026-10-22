@@ -99,3 +99,12 @@ $ go test ./internal/launch -run TestProcessLaunchReturnsOnceItsStoppedLauncherR
 FAIL
 FAIL	github.com/ndrwl/guildhall/internal/launch	30.199s
 FAIL
+
+$ go test ./internal/cli -run TestTheWatcherReportsAnInterruptedLaunch -count=1   # review regression, against process.go before Launch's stop returned on the release
+--- FAIL: TestTheWatcherReportsAnInterruptedLaunch (91.18s)
+    advance_interrupt_unix_test.go:143: task start took 31.082149615s after the interrupt; want no wait for the launcher's advance
+    advance_interrupt_unix_test.go:160: no attempt-failed message within a minute: store: record not found: message "app.t-1.attempt-failed.plan-1"; plan-1 launcher log:
+        fake artisan: cancel marker present; stopping without a result
+        guildhall: lock task app/t-1: context deadline exceeded
+        {"attempt":"app/t-1/plan/1","outcome":{"schema":"guildhall.attempt-outcome/1","state":"cancelled","detail":"cancel marker present","rung":1},"attempt_outcome":"stopped"}
+FAIL
