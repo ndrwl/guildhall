@@ -19,8 +19,17 @@ func TestStoreRecordsContract(t *testing.T) {
 	interptest.RunRecordsContract(t, newStoreRecordsHarness)
 }
 
+// TestStoreRecordsHarnessNamesWriters pins the per-operation adapter's concurrency at the two
+// processes production has, since bbolt's lock wait is an unordered poll (docs/store.md#one-writer).
+func TestStoreRecordsHarnessNamesWriters(t *testing.T) {
+	if h := newStoreRecordsHarness(t); h.Writers != 2 || h.Operations == 0 {
+		t.Errorf("Writers, Operations = %d, %d; want 2 writers and a named loop", h.Writers, h.Operations)
+	}
+}
+
 // newStoreRecordsHarness is storeRecords over a new temporary store; its setup writes open the store
-// per call as the adapter does, so neither holds the store's lock between operations.
+// per call as the adapter does, so neither holds the store's lock between operations. It runs the
+// concurrent case at two writers, the contention production has, with a shorter loop.
 func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 	path := filepath.Join(t.TempDir(), "director.store")
 	s, err := store.Open(path, store.Options{})
@@ -34,6 +43,7 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 		return withStore(path, false, fn)
 	}
 	return interptest.RecordsHarness{
+		Writers: 2, Operations: 20,
 		Records: storeRecords(path),
 		CreateTask: func(m string, task store.Task) (store.Receipt, error) {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.CreateTask(m, task) })

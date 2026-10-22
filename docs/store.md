@@ -67,6 +67,7 @@ Several writers finish attempts, each under its own mutation id: the launcher wh
 A store has exactly one writer at a time.
 This uses bbolt's own kernel file lock and no second lock: a writable open takes an exclusive lock (`flock` on Linux and macOS, `LockFileEx` on Windows) and a read-only open takes a shared lock.
 Opening waits at most the lock timeout, two seconds by default, and then fails with `ErrLocked`.
+The wait is a poll of the kernel lock with no queue, so contending openers are not served in order: past the number the timeout can serve, an opener is refused with `ErrLocked` even though others got in.
 So a second writer is refused, and a read-only open is refused while a writer holds the store.
 The lock belongs to the open file, so two opens in one process exclude each other as two processes do.
 The kernel releases the lock when the holding process exits, including when it is killed, and committed mutations survive.

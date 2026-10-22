@@ -384,6 +384,9 @@ type RecordsHarness struct {
 	AnswerDecision    func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
 	RuleFinding       func(mutationID string, r store.Ruling) (store.Receipt, error)
 	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
+	// Writers and Operations size the concurrent case, defaulting to 4 writers of 30 operations each;
+	// an implementation that opens the store per operation across processes sets the writers production has.
+	Writers, Operations int
 }
 
 // NewRecordsHarness returns the double under the contract suite.
@@ -416,10 +419,11 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 
 	t.Run("concurrent lists and writes", func(t *testing.T) {
 		h := setup(t)
+		writers, operations := cmp.Or(h.Writers, 4), cmp.Or(h.Operations, 30)
 		var wg sync.WaitGroup
-		for worker := range 4 {
+		for worker := range writers {
 			wg.Go(func() {
-				for i := range 30 {
+				for i := range operations {
 					id := fmt.Sprintf("record-%d-%d", worker, i)
 					if _, err := h.Records.StartAttempt("attempt-"+id, "app", "t7", id); err != nil {
 						t.Error(err)
@@ -446,7 +450,7 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		a, _ := h.Records.Attempts("app", "t7")
 		d, _ := h.Records.Documents("app", "t7")
 		q, _ := h.Records.Decisions("app", "t7")
-		if len(a) != 120 || len(d) != 120 || len(q) != 120 {
+		if n := writers * operations; len(a) != n || len(d) != n || len(q) != n {
 			t.Fatalf("counts = %d, %d, %d", len(a), len(d), len(q))
 		}
 	})
