@@ -1,0 +1,16 @@
+Red run for the zero-idle safety check's typed wake (D14b), 2026-10-22, on eef5cf2 with the branch's tests and the Herdr stand-in's body returning "not built" for every call.
+The matching green run is the branch's go test ./cmd/guildhall -run TestSafetyZeroIdleTurns.
+
+## go test ./cmd/guildhall -run TestSafetyZeroIdleTurns -count=1
+--- FAIL: TestSafetyZeroIdleTurns (0.00s)
+    --- FAIL: TestSafetyZeroIdleTurns/fake (31.55s)
+        director_safety_test.go:637: stand-in turns 0, owned processes 0
+        director_safety_test.go:676: wakes for the note [{Sequence:17 MessageID:n-1 SenderType:local Decision:queued Reason:pane: herdr tab get: exit 2: stub herdr: not built: ["tab" "get" "w1:t1" "--session" "lab"]}], want exactly one, woke
+        director_safety_test.go:681: typed into the pane [], want only "guildhall: 1 unread (note 1)"
+    --- FAIL: TestSafetyZeroIdleTurns/claude (31.55s)
+        director_safety_test.go:637: stand-in turns 0, owned processes 0
+        director_safety_test.go:676: wakes for the note [{Sequence:17 MessageID:n-1 SenderType:local Decision:queued Reason:pane: herdr tab get: exit 2: stub herdr: not built: ["tab" "get" "w1:t1" "--session" "lab"]}], want exactly one, woke
+        director_safety_test.go:681: typed into the pane [], want only "guildhall: 1 unread (note 1)"
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	31.557s
+FAIL
