@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/ndrwl/guildhall/baseline"
@@ -100,6 +101,9 @@ func TestKindWithoutAGuideIsRefused(t *testing.T) {
 }
 
 func TestUnreadableCopyFileIsRefusedNotReplaced(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports a file used as a path component as ERROR_PATH_NOT_FOUND, which is fs.ErrNotExist")
+	}
 	cfg, cfgDir, release := configOnlyCopy(t)
 	if err := os.MkdirAll(filepath.Join(cfgDir, "baseline"), 0o755); err != nil {
 		t.Fatal(err)
