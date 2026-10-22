@@ -62,7 +62,7 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		// Sweep the orphaned worker so the cleanup's stop proves the attempt not running.
-		_, _, _ = d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repository", "app", "--task", "t-1", "--step", "plan", "--attempt", "1")
+		_, _, _ = d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1")
 	})
 	hb, err := artisan.ReadHeartbeat(key.Dir(d.state))
 	if err != nil {

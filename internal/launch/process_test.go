@@ -135,7 +135,7 @@ func TestProcessStartsArtisanStartOnTheAdapterSpec(t *testing.T) {
 	as := spec.AdapterSpec()
 	k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
 	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
-		"--repository", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", "1",
+		"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", "1",
 		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir}
 	if !slices.Equal(got, want) {
 		t.Errorf("argv = %q\nwant %q", got, want)
