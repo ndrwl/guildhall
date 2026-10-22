@@ -105,6 +105,38 @@ func TestRetryRefusedAtStartSendsNoReason(t *testing.T) {
 	}
 }
 
+// TestRetryReasonIsResentOnReplay: when the advance stops after attempt 2 is recorded but before the reason is
+// sent, replaying the retry sends it; a replay with another reason changes nothing.
+func TestRetryReasonIsResentOnReplay(t *testing.T) {
+	plan2 := planExpectation(t, interptest.Fail("still no plan"))
+	plan2.Attempt = 2
+	e := newEnv(t, backends[0], planExpectation(t, interptest.Fail("no plan")), plan2)
+	e.advance(t, interp.Event{Kind: interp.TaskCreated})
+	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
+	outbox := e.eng.Outbox
+	e.eng.Outbox = &interruptedOutbox{Outbox: outbox, fail: true}
+	if err := advanceErr(t, e, retried("plan", 1, "the runner was killed")); err == nil {
+		t.Fatal("retry with an interrupted outbox succeeded")
+	}
+	if got := e.attempts(t); len(got) != 2 {
+		t.Fatalf("attempts = %+v, want attempt 2 recorded", got)
+	}
+	if got, ok := e.messages(t)["app.t7.attempt-retried.plan-1"]; ok {
+		t.Fatalf("interrupted reason was stored: %q", got)
+	}
+	want(t, e.advance(t, retried("plan", 1, "the runner was killed")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
+	if got := e.messages(t)["app.t7.attempt-retried.plan-1"]; got != "the runner was killed" {
+		t.Errorf("replayed reason message = %q", got)
+	}
+	want(t, e.advance(t, retried("plan", 1, "another reason")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
+	if got := e.messages(t)["app.t7.attempt-retried.plan-1"]; got != "the runner was killed" {
+		t.Errorf("a replay with another reason changed the message to %q", got)
+	}
+	if got := e.attempts(t); len(got) != 2 {
+		t.Errorf("replays recorded attempts: %+v", got)
+	}
+}
+
 // TestRetryOfAStoppedAttempt: a stopped attempt, such as one whose launcher resume settled, is retried too.
 func TestRetryOfAStoppedAttempt(t *testing.T) {
 	plan2 := planExpectation(t, interptest.Fail("no plan"))

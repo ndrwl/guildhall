@@ -307,7 +307,7 @@ func TestRetryAfterAKilledLauncher(t *testing.T) {
 	}
 	exp := []string{
 		"start-attempt attempt/plan/1", "finish-attempt attempt/plan/1", "send-message message/app.t-1.attempt-failed.plan-1",
-		"send-message message/app.t-1.attempt-retried.plan-1", "start-attempt attempt/plan/2",
+		"start-attempt attempt/plan/2", "send-message message/app.t-1.attempt-retried.plan-1",
 	}
 	if !slices.Equal(order, exp) {
 		t.Errorf("timeline events:\n%q\nwant\n%q", order, exp)

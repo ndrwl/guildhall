@@ -8,7 +8,9 @@ It is valid only when the named attempt is the step's latest and finished `faile
 Naming the attempt, rather than only the step, makes the decision about one outcome: a retry of attempt 1 that arrives after attempt 2 started is a replay that writes nothing, and one aimed at an older attempt is refused, so a stale or repeated command cannot start two attempts.
 Refusals use the engine's `ErrEvent`, as every event that does not match the records does; the engine has no `ErrInvalid` of its own.
 
-The reason, when given, is sent as Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the adapter and inputs resolve and before the attempt is recorded, under an id derived from the attempt, so a refused start sends nothing, so a crash between the two resends it unchanged and `task timeline` shows it before the attempt it explains.
+The reason, when given, is sent as Director message `<repo>.<task>.attempt-retried.<step>-<n>` only after the next attempt is recorded, under an id derived from the retried attempt.
+A retry refused before then sends nothing, so the Director can repeat it with another reason.
+A crash between the two is recovered by replaying the retry, which resends the reason under the same id; a replay with a different reason conflicts with the message already sent and is ignored.
 It is optional because a retry after a killed launcher needs no explanation, and a required one would be filled with noise.
 
 A failed or stopped attempt no longer counts as having served loop feedback: the attempt that retries a looped build is given the reviewer's feedback again, where it would otherwise lose it.
