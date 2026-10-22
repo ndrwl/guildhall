@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -137,6 +138,144 @@ func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 		return PullRequest{}, fmt.Errorf("%w: %s", ErrRefused, run.output)
 	}
 	return PullRequest{}, fmt.Errorf("%w: pull request %s is %s at %s after the merge", ErrRefused, pr.URL, pr.State, pr.Head)
+}
+
+// checksQuery reads a commit's status check rollup: its check runs and commit statuses, at most one page.
+const checksQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      __typename
+      ... on Commit {
+        statusCheckRollup {
+          contexts(first: 100) {
+            pageInfo { hasNextPage }
+            nodes {
+              __typename
+              ... on CheckRun { id name status conclusion detailsUrl }
+              ... on StatusContext { id context state targetUrl }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+// ghContext is one check run or commit status of a rollup.
+type ghContext struct {
+	Typename   string  `json:"__typename"`
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	Status     string  `json:"status"`
+	Conclusion *string `json:"conclusion"`
+	DetailsURL *string `json:"detailsUrl"`
+	Context    string  `json:"context"`
+	State      string  `json:"state"`
+	TargetURL  *string `json:"targetUrl"`
+}
+
+// check maps a context to a check; a state GitHub has added since is an error rather than a guess.
+func (c ghContext) check() (Check, error) {
+	switch c.Typename {
+	case "CheckRun":
+		out := Check{Name: c.Name, URL: deref(c.DetailsURL), ID: c.ID}
+		switch c.Status {
+		case "QUEUED", "IN_PROGRESS", "WAITING", "PENDING", "REQUESTED":
+			out.State = CheckPending
+			return out, nil
+		case "COMPLETED":
+		default:
+			return Check{}, fmt.Errorf("check run %q has unknown status %q", c.Name, c.Status)
+		}
+		switch deref(c.Conclusion) {
+		case "SUCCESS", "NEUTRAL", "SKIPPED":
+			out.State = CheckPassed
+		case "FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE":
+			out.State = CheckFailed
+		default:
+			return Check{}, fmt.Errorf("check run %q has unknown conclusion %q", c.Name, deref(c.Conclusion))
+		}
+		return out, nil
+	case "StatusContext":
+		out := Check{Name: c.Context, URL: deref(c.TargetURL), ID: c.ID}
+		switch c.State {
+		case "EXPECTED", "PENDING":
+			out.State = CheckPending
+		case "SUCCESS":
+			out.State = CheckPassed
+		case "FAILURE", "ERROR":
+			out.State = CheckFailed
+		default:
+			return Check{}, fmt.Errorf("commit status %q has unknown state %q", c.Context, c.State)
+		}
+		return out, nil
+	}
+	return Check{}, fmt.Errorf("unknown check kind %q", c.Typename)
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// Checks returns every check run and commit status github.com reports for c.Head, with its node id, sorted by
+// name, URL and then id, read in one GraphQL call bound to the commit, so a pull request that moved since cannot
+// answer for it.
+// A head the remote does not hold is ErrUnknownHead; no checks is an empty list. More than one page of checks,
+// or a state this implementation does not know, is an error rather than a partial or guessed answer.
+func (g GitHub) Checks(ctx context.Context, c Commit) ([]Check, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	repo, err := GitHubRepository(c.Remote)
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(repo, "/")
+	var resp struct {
+		Data struct {
+			Repository *struct {
+				Object *struct {
+					Typename          string `json:"__typename"`
+					StatusCheckRollup *struct {
+						Contexts struct {
+							PageInfo struct {
+								HasNextPage bool `json:"hasNextPage"`
+							} `json:"pageInfo"`
+							Nodes []ghContext `json:"nodes"`
+						} `json:"contexts"`
+					} `json:"statusCheckRollup"`
+				} `json:"object"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := g.ghJSON(ctx, c.Repository, &resp, "api", "graphql", "--hostname", parts[0],
+		"-f", "query="+checksQuery, "-f", "owner="+parts[1], "-f", "name="+parts[2], "-f", "oid="+c.Head); err != nil {
+		return nil, err
+	}
+	r := resp.Data.Repository
+	switch {
+	case r == nil:
+		return nil, fmt.Errorf("gh api graphql: no repository %s", repo)
+	case r.Object == nil || r.Object.Typename != "Commit":
+		return nil, fmt.Errorf("%w: %s is not a commit of %s", ErrUnknownHead, c.Head, repo)
+	case r.Object.StatusCheckRollup == nil:
+		return []Check{}, nil
+	case r.Object.StatusCheckRollup.Contexts.PageInfo.HasNextPage:
+		return nil, fmt.Errorf("%s reports more than 100 checks for %s; reading more than one page is not supported", repo, c.Head)
+	}
+	out := []Check{}
+	for _, n := range r.Object.StatusCheckRollup.Contexts.Nodes {
+		check, err := n.check()
+		if err != nil {
+			return nil, fmt.Errorf("%s at %s: %w", repo, c.Head, err)
+		}
+		out = append(out, check)
+	}
+	slices.SortStableFunc(out, CompareChecks)
+	return out, nil
 }
 
 // GitHubRepository returns the github.com/<owner>/<repo> a remote names, from its https://, ssh:// or

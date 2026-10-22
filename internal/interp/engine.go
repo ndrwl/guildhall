@@ -64,6 +64,9 @@ const (
 	// WaitDirector: an attempt failed or stopped, or the forge refused or the Guildmaster held a merge; the
 	// Director decides what happens next.
 	WaitDirector Wait = "director"
+	// WaitChecks: validate waits for the forge's checks of the published head to finish; advancing the task
+	// again reads them again.
+	WaitChecks Wait = "checks"
 	// WaitDone: deliver merged the task's pull request and the task is done.
 	WaitDone Wait = "done"
 )
@@ -80,8 +83,8 @@ type Next struct {
 }
 
 var (
-	// ErrUnsupported reports a step, actor or outcome the engine does not run yet, such as an engine
-	// step other than publish and deliver, a Director stage, a rejected outcome or a loop back to a non-Artisan step.
+	// ErrUnsupported reports a step, actor or outcome the engine does not run yet, such as a Director stage,
+	// a rejected outcome or a loop back to a non-Artisan step.
 	ErrUnsupported = errors.New("not supported by the engine")
 	// ErrSpecGate reports an accepted spec whose digest is not the one the Guildmaster approved.
 	ErrSpecGate = errors.New("spec gate")
@@ -100,6 +103,9 @@ var (
 	// ErrReviewGate reports a deliver step reached without a current, non-blocking, non-rejected
 	// outcome for every preceding review or document-review step (docs/interpreter.md#review-gate).
 	ErrReviewGate = errors.New("review gate")
+	// ErrValidationGate reports a deliver step whose validation input is not a passed result for the delivered
+	// head (docs/interpreter.md#validate).
+	ErrValidationGate = errors.New("validation gate")
 )
 
 // Engine is the deterministic workflow interpreter: it advances a task through its bound workflow
@@ -112,6 +118,9 @@ var (
 //     then waits for its result;
 //   - a Guildmaster step opens a typed decision bound to its subject and waits for the answer;
 //   - publish pushes the head to the task branch and records its pull request (Forge);
+//   - validate reads the forge's checks of the published head and waits while they are pending; finished
+//     checks are recorded as a result, and a failed one follows the step's failed loop rule
+//     (docs/interpreter.md#validate);
 //   - deliver under the "approval" merge policy opens the merge decision and waits; a merge answer merges the
 //     published pull request through Forge and closes the task, and a hold answer or a refused merge waits for
 //     the Director (docs/interpreter.md#publish-and-deliver).
@@ -141,8 +150,8 @@ var (
 // recorded binding, and refuses one that fails with ErrPreparation, launching and removing nothing.
 // Only an unpublished prompt.partial, which no launch was given, is removed and rendered again.
 //
-// The checks gate, validate, automatic merging, Director stages and loops back to a step not run
-// by an Artisan are refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
+// The checks gate, automatic merging, Director stages and loops back to a step not run by an Artisan are
+// refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
 type Engine struct {
 	Records  Records
 	Launcher Launcher
@@ -165,13 +174,18 @@ type Engine struct {
 	// interval and its worker's last output older than it (docs/interpreter.md#worker-stalled-observations).
 	// Zero or negative disables them; `task start` and `step done` set it from the config's stall_interval.
 	StallInterval time.Duration
-	// Now is the clock the observations read; nil is wall time.
+	// ChecksRefresh is how long a waiting validate step waits after reading a head's checks before an advance
+	// reads that head's checks again; zero or negative reads them at every advance (docs/interpreter.md#validate).
+	// `task start` and `step done` set it from the config's checks_refresh.
+	ChecksRefresh time.Duration
+	// Now is the clock the observations and ChecksRefresh read; nil is wall time.
 	Now func() time.Time
 	// Base returns the commit a repository's tasks are based on now; nil or an error means every code review
 	// is full. Rebases classifies a new head against the last reviewed range (docs/interpreter.md#rebase-aware-review).
 	Base    func(repository string) (string, error)
 	Rebases Rebases
-	// Forge publishes and merges a repository's task branches; nil refuses publish and merging with ErrUnsupported.
+	// Forge publishes, reads the checks of and merges a repository's task branches; nil refuses publish,
+	// validate and merging with ErrUnsupported.
 	Forge Forge
 }
 
@@ -209,6 +223,13 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 		if a != nil && a.Outcome == store.AttemptSucceeded && !r.taken(step, a.Number) {
 			if err := r.takeResult(step, a); err != nil {
 				return Next{}, err
+			}
+		}
+	}
+	for _, step := range def.Steps {
+		if step.Type == "validate" {
+			if err := r.replayValidation(step); err != nil {
+				return Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)
 			}
 		}
 	}
@@ -332,6 +353,8 @@ func (r *run) step(s workflow.Step) (done bool, next Next, err error) {
 		return r.guildmaster(s)
 	case actor == workflow.EngineActor && s.Type == "publish":
 		return r.publish(s)
+	case actor == workflow.EngineActor && s.Type == "validate":
+		return r.validate(s)
 	case actor == workflow.EngineActor && s.Type == "deliver":
 		return r.deliver(s)
 	default:

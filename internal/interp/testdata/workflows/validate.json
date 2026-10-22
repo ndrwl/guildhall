@@ -1,0 +1,21 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "validate",
+  "description": "Plan, Guildmaster acceptance, build, an Artisan review, publish, validation of the published head's checks with one failed round back to the build, and delivery under the repository's merge policy.",
+  "steps": [
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}},
+    {"id": "validate", "type": "validate", "version": 1,
+     "inputs": {"head": ["publish.head"]},
+     "on": {"failed": {"goto": "build", "max": 1}}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["publish.head"], "review": ["review.outcome"], "validation": ["validate.result"]}}
+  ]
+}

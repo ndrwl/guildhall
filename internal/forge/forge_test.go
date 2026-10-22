@@ -101,8 +101,33 @@ func newGitHub(t *testing.T) *gh {
 			s.Refuse = reason
 			g.writeState(t, s)
 		},
+		SetChecks: func(t *testing.T, head string, checks []forge.Check) {
+			var nodes []map[string]any
+			for _, c := range checks {
+				node := map[string]any{"__typename": "CheckRun", "id": c.ID, "name": c.Name, "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": c.URL}
+				switch c.State {
+				case forge.CheckPending:
+					node["status"], node["conclusion"] = "IN_PROGRESS", nil
+				case forge.CheckFailed:
+					node["conclusion"] = "FAILURE"
+				}
+				nodes = append(nodes, node)
+			}
+			g.setChecks(t, head, nodes)
+		},
 	}
 	return g
+}
+
+// setChecks makes nodes, in GitHub's statusCheckRollup context form, the checks the fake gh reports for head.
+func (g *gh) setChecks(t *testing.T, head string, nodes []map[string]any) {
+	t.Helper()
+	s := g.readState(t)
+	if s.Checks == nil {
+		s.Checks = map[string][]map[string]any{}
+	}
+	s.Checks[head] = nodes
+	g.writeState(t, s)
 }
 
 func (g *gh) git(t *testing.T, dir string, args ...string) string {
@@ -143,13 +168,21 @@ func TestGitHubArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := h.Forge.Checks(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]}); err != nil {
 		t.Fatal(err)
 	}
 	calls := g.readState(t).Calls
 	for _, c := range calls {
 		t.Logf("gh %q", c)
-		if i := slices.Index(c, "--repo"); i < 0 || i+1 >= len(c) || c[i+1] != "github.com/acme/widgets" {
+		if len(c) > 1 && c[0] == "api" {
+			if !slices.Equal(flagValues(c, "--hostname"), []string{"github.com"}) || !slices.Contains(c, "owner=acme") || !slices.Contains(c, "name=widgets") ||
+				!slices.Contains(c, "oid="+h.Heads[0]) {
+				t.Errorf("gh %q does not name github.com, acme/widgets and the head", c)
+			}
+		} else if i := slices.Index(c, "--repo"); i < 0 || i+1 >= len(c) || c[i+1] != "github.com/acme/widgets" {
 			t.Errorf("gh %q does not name --repo github.com/acme/widgets", c)
 		}
 		if slices.Contains(c, "--admin") || slices.Contains(c, "--auto") || slices.Contains(c, "--base") {
@@ -163,6 +196,80 @@ func TestGitHubArguments(t *testing.T) {
 	}
 	if merge < 0 || !slices.Contains(calls[merge], "--squash") || !slices.Equal(flagValues(calls[merge], "--match-head-commit"), []string{h.Heads[0]}) {
 		t.Errorf("pr merge = %v", calls)
+	}
+	if !slices.ContainsFunc(calls, func(c []string) bool { return len(c) > 1 && c[0] == "api" && c[1] == "graphql" }) {
+		t.Errorf("no api graphql call reads the checks: %v", calls)
+	}
+}
+
+// TestGitHubCheckStates: every check run status and conclusion and every commit status state GitHub reports
+// maps to pending, passed or failed, a commit status is named by its context, and the checks are sorted.
+func TestGitHubCheckStates(t *testing.T) {
+	g := newGitHub(t)
+	h := g.harness
+	ctx := context.Background()
+	if _, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: remote, Branch: "guildhall/t7", Head: h.Heads[0], Title: "Task t7"}); err != nil {
+		t.Fatal(err)
+	}
+	run := func(name, status string, conclusion any) map[string]any {
+		return map[string]any{"__typename": "CheckRun", "id": "CR_" + name, "name": name, "status": status, "conclusion": conclusion, "detailsUrl": "https://ci.invalid/" + name}
+	}
+	status := func(context, state string) map[string]any {
+		return map[string]any{"__typename": "StatusContext", "id": "SC_" + context, "context": context, "state": state, "targetUrl": nil}
+	}
+	nodes := []map[string]any{
+		run("queued", "QUEUED", nil), run("in-progress", "IN_PROGRESS", nil), run("waiting", "WAITING", nil),
+		run("pending", "PENDING", nil), run("requested", "REQUESTED", nil),
+		run("success", "COMPLETED", "SUCCESS"), run("neutral", "COMPLETED", "NEUTRAL"), run("skipped", "COMPLETED", "SKIPPED"),
+		run("failure", "COMPLETED", "FAILURE"), run("cancelled", "COMPLETED", "CANCELLED"), run("timed-out", "COMPLETED", "TIMED_OUT"),
+		run("action-required", "COMPLETED", "ACTION_REQUIRED"), run("stale", "COMPLETED", "STALE"), run("startup-failure", "COMPLETED", "STARTUP_FAILURE"),
+		status("s-expected", "EXPECTED"), status("s-pending", "PENDING"), status("s-success", "SUCCESS"), status("s-failure", "FAILURE"), status("s-error", "ERROR"),
+	}
+	g.setChecks(t, h.Heads[0], nodes)
+	got, err := h.Forge.Checks(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]forge.CheckState{
+		"queued": forge.CheckPending, "in-progress": forge.CheckPending, "waiting": forge.CheckPending, "pending": forge.CheckPending, "requested": forge.CheckPending,
+		"success": forge.CheckPassed, "neutral": forge.CheckPassed, "skipped": forge.CheckPassed,
+		"failure": forge.CheckFailed, "cancelled": forge.CheckFailed, "timed-out": forge.CheckFailed, "action-required": forge.CheckFailed,
+		"stale": forge.CheckFailed, "startup-failure": forge.CheckFailed,
+		"s-expected": forge.CheckPending, "s-pending": forge.CheckPending, "s-success": forge.CheckPassed, "s-failure": forge.CheckFailed, "s-error": forge.CheckFailed,
+	}
+	if len(got) != len(want) || !slices.IsSortedFunc(got, func(a, b forge.Check) int { return strings.Compare(a.Name, b.Name) }) {
+		t.Errorf("Checks = %+v, want %d checks sorted by name", got, len(want))
+	}
+	for _, c := range got {
+		if c.State != want[c.Name] {
+			t.Errorf("check %s is %s, want %s", c.Name, c.State, want[c.Name])
+		}
+		id := "CR_" + c.Name
+		if strings.HasPrefix(c.Name, "s-") {
+			id = "SC_" + c.Name
+		}
+		if c.ID != id {
+			t.Errorf("check %s has id %q, want %q", c.Name, c.ID, id)
+		}
+		if strings.HasPrefix(c.Name, "s-") != (c.URL == "") || !strings.HasPrefix(c.Name, "s-") && c.URL != "https://ci.invalid/"+c.Name {
+			t.Errorf("check %s has URL %q", c.Name, c.URL)
+		}
+	}
+
+	// A status GitHub adds later would be read wrongly, so an unknown state or kind fails the read.
+	for _, bad := range []map[string]any{run("new", "COMPLETED", "SOMETHING_NEW"), run("new", "LATER", nil), status("new", "LATER"), {"__typename": "Other"}} {
+		g.setChecks(t, h.Heads[0], []map[string]any{bad})
+		if got, err := h.Forge.Checks(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]}); err == nil || errors.Is(err, forge.ErrUnknownHead) {
+			t.Errorf("Checks with %v = %+v, %v, want a plain error", bad, got, err)
+		}
+	}
+
+	// More checks than one page holds fail the read rather than leaving some out.
+	s := g.readState(t)
+	s.Checks[h.Heads[0]], s.MoreChecks = nodes[:1], true
+	g.writeState(t, s)
+	if got, err := h.Forge.Checks(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]}); err == nil {
+		t.Errorf("Checks with another page = %+v, want an error", got)
 	}
 }
 
@@ -352,6 +459,10 @@ type ghState struct {
 	HangMerge bool       `json:"hang_merge"`
 	Offline   bool       `json:"offline"`
 	Calls     [][]string `json:"calls"`
+	// Checks are each head's statusCheckRollup contexts, in GitHub's form; a head without an entry has no rollup.
+	Checks map[string][]map[string]any `json:"checks"`
+	// MoreChecks reports another page of contexts.
+	MoreChecks bool `json:"more_checks"`
 }
 
 type ghPR struct {
@@ -413,6 +524,9 @@ func runGH(s *ghState, bare string, args []string) int {
 		return fail(2, "fake gh: unknown command %q", args)
 	}
 	cmd, rest := args[0]+" "+args[1], args[2:]
+	if cmd == "api graphql" {
+		return graphQL(s, bare, rest)
+	}
 	flags := map[string]string{}
 	var positional []string
 	bools := map[string]bool{"--squash": true}
@@ -549,4 +663,55 @@ func runGH(s *ghState, bare string, args []string) int {
 			return 0
 		}
 	}
+}
+
+// graphQL answers the statusCheckRollup query the GitHub forge reads checks with, and refuses any other.
+func graphQL(s *ghState, bare string, args []string) int {
+	fail := func(code int, format string, a ...any) int {
+		fmt.Fprintf(os.Stderr, format+"\n", a...)
+		return code
+	}
+	fields := map[string]string{}
+	hostname := ""
+	for i := 0; i < len(args); i++ {
+		if i+1 >= len(args) {
+			return fail(2, "fake gh: %s needs a value", args[i])
+		}
+		switch args[i] {
+		case "--hostname":
+			hostname = args[i+1]
+		case "-f":
+			k, v, ok := strings.Cut(args[i+1], "=")
+			if !ok {
+				return fail(2, "fake gh: -f %q is not key=value", args[i+1])
+			}
+			fields[k] = v
+		default:
+			return fail(2, "fake gh: api graphql does not take %s", args[i])
+		}
+		i++
+	}
+	if len(fields) != 4 || !strings.Contains(fields["query"], "statusCheckRollup") || fields["oid"] == "" {
+		return fail(2, "fake gh: unknown query %v", fields)
+	}
+	if s.Offline {
+		return fail(1, "error connecting to api.github.com")
+	}
+	if hostname != "github.com" || fields["owner"] != "acme" || fields["name"] != "widgets" {
+		return fail(1, "fake gh: no repository %s/%s/%s", hostname, fields["owner"], fields["name"])
+	}
+	var object any
+	if exec.Command("git", "--git-dir", bare, "cat-file", "-e", fields["oid"]+"^{commit}").Run() == nil {
+		var rollup any
+		if nodes, ok := s.Checks[fields["oid"]]; ok {
+			rollup = map[string]any{"contexts": map[string]any{"pageInfo": map[string]any{"hasNextPage": s.MoreChecks}, "nodes": nodes}}
+		}
+		object = map[string]any{"__typename": "Commit", "statusCheckRollup": rollup}
+	}
+	data, err := json.Marshal(map[string]any{"data": map[string]any{"repository": map[string]any{"object": object}}})
+	if err != nil {
+		return fail(1, "fake gh: %v", err)
+	}
+	fmt.Println(string(data))
+	return 0
 }

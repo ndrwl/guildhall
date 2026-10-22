@@ -27,14 +27,19 @@ func (r *run) workerStalled(step string, number int) error {
 	if h.Key() != r.key(step, number) {
 		return nil
 	}
-	now := time.Now()
-	if r.e.Now != nil {
-		now = r.e.Now()
-	}
+	now := r.now()
 	if h.Time.After(now) || now.Sub(h.Time) > interval || now.Sub(h.LastOutputAt) <= interval {
 		return nil
 	}
 	output := h.LastOutputAt.UTC().Format(time.RFC3339Nano)
 	return r.notify(fmt.Sprintf("worker-stalled.%s-%d.%s", step, number, digest.Of([]byte(output)).Hex()), WorkerStalled,
 		fmt.Sprintf("Attempt %d of step %s has a fresh heartbeat but no output since %s.", number, step, output))
+}
+
+// now is the engine's clock.
+func (r *run) now() time.Time {
+	if r.e.Now != nil {
+		return r.e.Now()
+	}
+	return time.Now()
 }

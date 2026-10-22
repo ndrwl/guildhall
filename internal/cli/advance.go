@@ -201,6 +201,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
+	refresh, err := cfg.ChecksRefresh()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
 	r, ok := cfg.Repository(f.repo)
 	if !ok {
 		return interp.Next{}, fmt.Errorf("config %s has no repository %q", f.config, f.repo)
@@ -257,7 +261,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Outbox:   storeRecords(f.store),
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
-		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, Forge: fg,
+		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
 	}
 	// An interrupt ends the advance and releases the task lock; the next advance replays it.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

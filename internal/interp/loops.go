@@ -26,11 +26,14 @@ const (
 	RulingsPort = "rulings"
 )
 
-// changesRequested is the only outcome whose loop rules the engine follows.
+// changesRequested is the outcome whose loop rules every looping kind but validate follows (loopOutcome).
 const changesRequested = string(workflow.VerdictChangesRequested)
 
-// exitOptions are the answers a loop-exit decision offers.
-var exitOptions = []string{"continue", "accept", "reject"}
+// exitOptions are the answers a loop-exit decision offers; validationExitOptions those of a validate step's.
+var (
+	exitOptions           = []string{"continue", "accept", "reject"}
+	validationExitOptions = []string{"continue", "reject"}
+)
 
 // binding is what an Artisan attempt was given, recorded as document <step>-<n>-inputs before the attempt
 // itself, so the engine can tell later whether the attempt is still current and which loops it served.
@@ -161,7 +164,7 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 
 // allowed is how many times step s may loop: its rule's max plus one for every loop-exit answered continue.
 func (r *run) allowed(s workflow.Step) int {
-	return s.On[changesRequested].Max + r.continued(s.ID)
+	return s.On[loopOutcome(s)].Max + r.continued(s.ID)
 }
 
 // pending returns, as feedback inputs, every allowed firing of a loop back to step t that no attempt of t
@@ -169,7 +172,7 @@ func (r *run) allowed(s workflow.Step) int {
 func (r *run) pending(t workflow.Step) ([]render.Input, error) {
 	var out []render.Input
 	for _, s := range r.def.Steps {
-		if rule, ok := s.On[changesRequested]; !ok || rule.Goto != t.ID {
+		if rule, ok := s.On[loopOutcome(s)]; !ok || rule.Goto != t.ID {
 			continue
 		}
 		fs, err := r.firings(s)
@@ -270,18 +273,24 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 }
 
 // exit asks the Guildmaster how to leave a loop at firing k, decision <step>-x<k>: because max is exhausted,
-// or, when dispute is not empty, because a rule-cited blocker's ruling was contested.
+// or, when dispute is not empty, because a rule-cited blocker's ruling was contested. For validate, max is
+// exhausted and dispute names the failing checks; its exit offers no accept, since nothing passed to accept.
 func (r *run) exit(s workflow.Step, k int, subject *store.Subject, dispute string) (bool, Next, error) {
 	id := decisionID(s.ID, k, true)
 	d := r.decision(id)
 	if d == nil {
 		why := fmt.Sprintf("Step %s of %s/%s still requests changes after %d rounds, its max of %d.", s.ID, r.task.Repository, r.task.ID, k, s.On[changesRequested].Max)
-		if dispute != "" {
+		options := exitOptions
+		switch {
+		case s.Type == "validate":
+			why = fmt.Sprintf("Step %s of %s/%s still fails on head %s after %d rounds, its max of %d; %s.", s.ID, r.task.Repository, r.task.ID, subject.Digest, k, s.On[validationFailedOutcome].Max, dispute)
+			options = validationExitOptions
+		case dispute != "":
 			why = fmt.Sprintf("Round %d of step %s of %s/%s on %s %s:\n%s", k, s.ID, r.task.Repository, r.task.ID, subject.Kind, subject.Digest, dispute)
 		}
 		nd := store.Decision{
-			Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionLoopExit, Subject: subject, Options: exitOptions,
-			Question: boundedQuestion(why),
+			Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionLoopExit, Subject: subject, Options: options,
+			Question: boundedQuestion(why, options),
 		}
 		if _, err := r.e.Records.OpenDecision(r.mutation("decision", id), nd); err != nil {
 			return false, Next{}, err

@@ -125,7 +125,7 @@ It needs a small Director config naming your repository; see [configuration and 
 | --- | --- |
 | Creating, inspecting and timing tasks; answering decisions; local messages | Built, driven by hand with commands |
 | Advancing a task stage by stage and launching an agent for each stage | Built, with a test-only fake agent and a minimal Claude adapter whose live acceptance is pending |
-| Publishing and merging a task's pull request through `gh` | Built, exercised in CI against a stand-in `gh`; live GitHub behaviour is not claimed |
+| Publishing a task's pull request, waiting for its CI checks and merging it through `gh` | Built, exercised in CI against a stand-in `gh`; live GitHub behaviour is not claimed |
 | Steward rollouts of shared settings over SSH | Built, preview and apply |
 | The conversational Director (`guildhall director start`) | Planned |
 | Running stages that the Director itself performs, and background watching of running agents | Planned |

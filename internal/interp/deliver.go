@@ -148,7 +148,7 @@ func (r *run) published(s workflow.Step, h string) (*pullRequestDoc, error) {
 	return &pr, nil
 }
 
-// deliver checks the review gate and, under the approval policy, opens the merge decision bound to the head.
+// deliver checks the review and validation gates and, under the approval policy, opens the merge decision bound to the head.
 // A merge answer squash-merges the published pull request at that head and closes the task; a hold answer, or a
 // merge the forge refuses, waits for the Director. The auto policy is not supported.
 func (r *run) deliver(s workflow.Step) (bool, Next, error) {
@@ -172,6 +172,9 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 		return false, Next{}, err
 	}
 	if err := r.gate(s, h); err != nil {
+		return false, Next{}, err
+	}
+	if err := r.validated(s, h); err != nil {
 		return false, Next{}, err
 	}
 	pr, err := r.published(s, h)

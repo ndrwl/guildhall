@@ -68,11 +68,12 @@ func (f PromptFunc) Prompt(stage render.Stage, inputs []render.Input) (render.Re
 	return f(stage, inputs)
 }
 
-// Forge is the pull-request boundary publish and deliver call (docs/interpreter.md#publish-and-deliver).
+// Forge is the pull-request boundary publish, validate and deliver call (docs/interpreter.md#publish-and-deliver).
 // forge.GitHub implements it and forgetest.Fake is its double; both pass forgetest.RunForgeContract.
 type Forge interface {
 	Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error)
 	Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, error)
+	Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error)
 }
 
 var _ Forge = forge.GitHub{}

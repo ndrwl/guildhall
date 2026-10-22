@@ -5,6 +5,7 @@ package forgetest
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 type Forge interface {
 	Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error)
 	Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, error)
+	Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error)
 }
 
 // Harness is one forge under the contract suite, over a repository whose remote's default branch is Base, at
@@ -31,6 +33,8 @@ type Harness struct {
 	Branch func(t *testing.T, name string) string
 	// Refuse makes the forge refuse every later merge with reason; nil skips the refusal case.
 	Refuse func(t *testing.T, reason string)
+	// SetChecks makes checks the checks the forge reports for a pushed head; nil skips the cases that need checks.
+	SetChecks func(t *testing.T, head string, checks []forge.Check)
 }
 
 // RunForgeContract runs the forge contract against fresh harnesses from newHarness.
@@ -141,6 +145,92 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		}
 		if _, err := h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: h.Remote, Number: 0, Head: h.Heads[1]}); !errors.Is(err, forge.ErrInvalid) {
 			t.Errorf("Merge of pull request 0 = %v, want ErrInvalid", err)
+		}
+	})
+
+	commit := func(h Harness, head string) forge.Commit {
+		return forge.Commit{Repository: h.Repository, Remote: h.Remote, Head: head}
+	}
+	checks := func(t *testing.T, h Harness, head string) []forge.Check {
+		t.Helper()
+		got, err := h.Forge.Checks(ctx, commit(h, head))
+		if err != nil {
+			t.Fatalf("Checks(%s) = %v", head, err)
+		}
+		t.Logf("Checks(%s) = %+v", head, got)
+		return got
+	}
+
+	t.Run("reports no checks for a head nothing checked", func(t *testing.T) {
+		h := newHarness(t)
+		publish(t, h, h.Heads[0])
+		if got := checks(t, h, h.Heads[0]); len(got) != 0 {
+			t.Errorf("Checks = %+v, want none", got)
+		}
+	})
+
+	t.Run("reports every check of the head with its run id sorted by name", func(t *testing.T) {
+		h := newHarness(t)
+		if h.SetChecks == nil {
+			t.Skip("this forge cannot be given checks")
+		}
+		publish(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], []forge.Check{
+			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test", ID: "run-3"},
+			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1"},
+			{Name: "lint", State: forge.CheckPassed, ID: "run-2"},
+		})
+		want := []forge.Check{
+			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1"},
+			{Name: "lint", State: forge.CheckPassed, ID: "run-2"},
+			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test", ID: "run-3"},
+		}
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, want) {
+			t.Errorf("Checks = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("reports a re-run check as its new run", func(t *testing.T) {
+		h := newHarness(t)
+		if h.SetChecks == nil {
+			t.Skip("this forge cannot be given checks")
+		}
+		publish(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-1"}})
+		checks(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2"}})
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2"}}) {
+			t.Errorf("Checks after a re-run = %+v, want the new run", got)
+		}
+	})
+
+	t.Run("reads the checks of the head asked for, not of the pull request", func(t *testing.T) {
+		h := newHarness(t)
+		if h.SetChecks == nil {
+			t.Skip("this forge cannot be given checks")
+		}
+		publish(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed}})
+		publish(t, h, h.Heads[1])
+		h.SetChecks(t, h.Heads[1], []forge.Check{{Name: "ci", State: forge.CheckPassed}})
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckFailed}}) {
+			t.Errorf("Checks of the earlier head = %+v, want its failure", got)
+		}
+		if got := checks(t, h, h.Heads[1]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckPassed}}) {
+			t.Errorf("Checks of the published head = %+v, want its pass", got)
+		}
+	})
+
+	t.Run("refuses a head the remote does not hold and an invalid commit", func(t *testing.T) {
+		h := newHarness(t)
+		publish(t, h, h.Heads[0])
+		if _, err := h.Forge.Checks(ctx, commit(h, h.Heads[2])); !errors.Is(err, forge.ErrUnknownHead) {
+			t.Errorf("Checks of an unpushed head = %v, want ErrUnknownHead", err)
+		}
+		for _, c := range []forge.Commit{commit(h, "HEAD"), {Repository: h.Repository, Head: h.Heads[0]}, {Remote: h.Remote, Head: h.Heads[0]}} {
+			if _, err := h.Forge.Checks(ctx, c); !errors.Is(err, forge.ErrInvalid) {
+				t.Errorf("Checks(%+v) = %v, want ErrInvalid", c, err)
+			}
 		}
 	})
 
