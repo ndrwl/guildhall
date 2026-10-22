@@ -1,4 +1,4 @@
-# Role prompts and stage guides ship with the binary
+# D63. Role prompts and stage guides ship with the binary
 
 A Director copy could not run an Artisan stage until someone wrote `baseline/roles/artisan.md` and a `baseline/stages/<kind>.md` for every kind beside its config, so a new copy with only `config.toml` failed its first launch.
 

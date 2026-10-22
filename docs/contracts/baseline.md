@@ -7,9 +7,9 @@ It ships no standards: standards are the Guildmaster's, kept in a copy's own `ba
 `Install(dir)` writes the root into a directory that must not exist or must be empty (`ErrNotEmpty`) and leaves nothing behind on error.
 An advance resolves each role and guide from the copy's `baseline/` first and then this root, and the manifest records which ([running a task](../running.md#what-an-advance-runs-over)); `guildhall render` uses it for a request that names no role or guide.
 The content is runtime-neutral Markdown (R1.21) with no frontmatter, LF endings and one sentence per line.
-The Director role states R1.5, the [conversation-first rule](../decisions/director-conversation-first.md), the [live grill](../decisions/grill-live-interview.md), the inbox discipline and the command vocabulary of the README's conversation.
+The Director role states R1.5, the [conversation-first rule](../decisions/0057-director-conversation-first.md), the [live grill](../decisions/0061-grill-live-interview.md), the inbox discipline and the command vocabulary of the README's conversation.
 
-Rationale: [Release baseline](../decisions/release-baseline.md).
+Rationale: [Release baseline](../decisions/0063-release-baseline.md).
 Pure over embedded files: no interface and no double.
 
 ## Tests
