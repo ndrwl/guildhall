@@ -70,8 +70,8 @@ func TestRunningCapRefusesALaunchUntilOneFinishes(t *testing.T) {
 				t.Fatalf("budget-refused messages = %v, want one for two refusals", msgs)
 			}
 			for id, text := range msgs {
-				if !strings.HasPrefix(id, "app.t7."+interp.BudgetRefused+".") || !strings.Contains(text, config.MaxRunningAttemptsKey) || !strings.Contains(text, "plan") {
-					t.Errorf("message %s = %q, want the task's, naming the rail and the step", id, text)
+				if !strings.HasPrefix(id, "app.t7."+interp.BudgetRefused+".") || !strings.Contains(text, config.MaxRunningAttemptsKey) || !strings.Contains(text, "plan") || !strings.Contains(text, "guildhall task start") {
+					t.Errorf("message %s = %q, want the task's, naming the rail, the step and task start", id, text)
 				}
 			}
 
@@ -121,7 +121,8 @@ func TestDailyCapRefusesUntilTheNextDay(t *testing.T) {
 	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
 }
 
-// TestRetryPastACapSendsNoReason: a retry refused at a cap sends no reason, and a later retry launches.
+// TestRetryPastACapSendsNoReason: a retry refused at a cap sends no reason, its budget-refused message names
+// step retry, and a later retry launches.
 func TestRetryPastACapSendsNoReason(t *testing.T) {
 	plan2 := planExpectation(t, interptest.Fail("still no plan"))
 	plan2.Attempt = 2
@@ -135,6 +136,15 @@ func TestRetryPastACapSendsNoReason(t *testing.T) {
 	}
 	if got := e.messages(t)["app.t7.attempt-retried.plan-1"]; got != "" {
 		t.Errorf("a refused retry sent the reason %q", got)
+	}
+	msgs := budgetMessages(t, e)
+	if len(msgs) != 1 {
+		t.Fatalf("budget-refused messages = %v, want one", msgs)
+	}
+	for id, text := range msgs {
+		if !strings.Contains(text, "guildhall step retry for step plan attempt 1") || strings.Contains(text, "task start") {
+			t.Errorf("message %s = %q, want it to name step retry for step plan attempt 1", id, text)
+		}
 	}
 	if _, err := e.h.Records.FinishAttempt("finish:plan", "app", "t8", "plan", 1, store.AttemptFailed); err != nil {
 		t.Fatal(err)

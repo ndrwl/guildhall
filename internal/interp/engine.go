@@ -558,7 +558,7 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	inputs = r.boundInputs(b)
 	rc, err := r.e.Records.StartCappedAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID, r.e.Caps)
 	if refusal, ok := errors.AsType[*store.CapRefusal](err); ok {
-		return Next{}, r.budgetRefused(s, refusal, err)
+		return Next{}, r.budgetRefused(s, n, refusal, err)
 	}
 	if err != nil {
 		return Next{}, err
@@ -570,16 +570,21 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	return Next{Wait: waitFor(s), Step: s.ID, Attempt: n}, r.launch(s, n, name, inputs)
 }
 
-// budgetRefused tells the Director that a cap refused step s's next attempt, once per task and UTC day: a later
-// refusal that day, at either cap, conflicts with the message already sent and sends nothing. It returns the
-// refusal named by its guard rail's setting.
-func (r *run) budgetRefused(s workflow.Step, refusal *store.CapRefusal, err error) error {
+// budgetRefused tells the Director that a cap refused attempt n of step s, once per task and UTC day: a later
+// refusal that day, at either cap, conflicts with the message already sent and sends nothing. The message names
+// the command that starts the refused attempt: step retry for a refused retry, task start otherwise. It returns
+// the refusal named by its guard rail's setting.
+func (r *run) budgetRefused(s workflow.Step, n int, refusal *store.CapRefusal, err error) error {
 	rail := config.MaxRunningAttemptsKey
 	if refusal.Cap == store.CapDaily {
 		rail = config.MaxAttemptsPerDayKey
 	}
 	err = fmt.Errorf("guard rail %s: %w", rail, err)
-	text := fmt.Sprintf("Step %s was not started: guard rail %s, %v. Run guildhall task start for the task again when capacity returns.", s.ID, rail, refusal)
+	again := "guildhall task start for the task"
+	if r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt+1 == n {
+		again = fmt.Sprintf("guildhall step retry for step %s attempt %d", s.ID, r.retry.Attempt)
+	}
+	text := fmt.Sprintf("Step %s was not started: guard rail %s, %v. Run %s again when capacity returns.", s.ID, rail, refusal, again)
 	if serr := r.notify(BudgetRefused+"."+refusal.Day.Format(time.DateOnly), BudgetRefused, text); serr != nil && !errors.Is(serr, store.ErrMutationConflict) {
 		return errors.Join(err, serr)
 	}
