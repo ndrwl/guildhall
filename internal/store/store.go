@@ -126,7 +126,7 @@ func Open(path string, opts Options) (*Store, error) {
 			return nil, fmt.Errorf("store: %w", err)
 		}
 	}
-	boltOpts := &bolt.Options{Timeout: timeout, ReadOnly: opts.ReadOnly}
+	boltOpts := &bolt.Options{Timeout: timeout, ReadOnly: opts.ReadOnly, NoSync: syncSkipped.Load()}
 	if opts.RequireStore {
 		boltOpts.NoFreelistSync = true
 		boltOpts.OpenFile = func(name string, flag int, mode os.FileMode) (*os.File, error) {

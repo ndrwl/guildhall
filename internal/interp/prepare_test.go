@@ -19,6 +19,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
@@ -26,6 +27,7 @@ import (
 const childEnv = "GUILDHALL_INTERP_TEST_CHILD"
 
 func TestMain(m *testing.M) {
+	store.SkipSyncForTests()
 	if os.Getenv(childEnv) == "1" {
 		os.Exit(child(os.Args[len(os.Args)-3:]))
 	}

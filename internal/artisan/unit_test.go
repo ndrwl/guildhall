@@ -10,9 +10,11 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 func TestMain(m *testing.M) {
+	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
 	mainIfEndpointHolder()
 	os.Exit(m.Run())
