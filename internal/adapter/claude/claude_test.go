@@ -542,10 +542,14 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	git("init", "-q")
-	git("commit", "-q", "--allow-empty", "-m", "base")
+	if err := os.WriteFile(filepath.Join(spec.WorkDir, "check.sh"), []byte("echo 'checks passed'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "check.sh")
+	git("commit", "-q", "-m", "base")
 	base := git("rev-parse", "HEAD")
 	prompt := "This is a Guildhall Artisan permissions check. Create the file hello.txt in the working directory containing the single line `hello`. " +
-		"Run the repository's check, `git status --short`, then commit hello.txt with git, message `Add hello`. " +
+		"Run the repository's check, `sh check.sh`, and confirm it prints `checks passed`, then commit hello.txt with git, message `Add hello`. " +
 		"Report success only if the commit was made, listing hello.txt as your one output; otherwise report failure and say which command was refused.\n"
 	if err := os.WriteFile(spec.PromptFile, []byte(prompt), 0o600); err != nil {
 		t.Fatal(err)
@@ -562,5 +566,7 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 	t.Logf("result: %+v", r)
 	if head := git("rev-parse", "HEAD"); r.Status != adapter.StatusSucceeded || head == base {
 		t.Errorf("result %s, head %s from base %s; want a new commit. Wrapper output:\n%s", r.Status, head, base, stderr.String())
+	} else if files := git("diff", "--name-only", base, "HEAD"); files != "hello.txt" {
+		t.Errorf("commit changed %q; want only hello.txt", files)
 	}
 }
