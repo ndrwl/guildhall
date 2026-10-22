@@ -16,6 +16,7 @@ import (
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/skills"
@@ -373,6 +374,19 @@ func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 // superviseTyping is supervise that also returns the pipe the runtime reads, for the test to type into.
 func superviseTyping(t *testing.T, dir string, grace time.Duration) (<-chan int, *os.File) {
 	t.Helper()
+	return superviseConfigured(t, dir, grace, nil)
+}
+
+// superviseWith is supervise with the App configured by configure, when it is set.
+func superviseWith(t *testing.T, dir string, grace time.Duration, configure func(*App)) <-chan int {
+	t.Helper()
+	done, _ := superviseConfigured(t, dir, grace, configure)
+	return done
+}
+
+// superviseConfigured is superviseTyping with the App configured by configure, when it is set.
+func superviseConfigured(t *testing.T, dir string, grace time.Duration, configure func(*App)) (<-chan int, *os.File) {
+	t.Helper()
 	stdin, typing, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -380,6 +394,9 @@ func superviseTyping(t *testing.T, dir string, grace time.Duration) (<-chan int,
 	t.Cleanup(func() { _ = stdin.Close(); _ = typing.Close() })
 	app, _, _ := supervisorApp(stdin, grace)
 	app.Stdout, app.Stderr = io.Discard, io.Discard
+	if configure != nil {
+		configure(app)
+	}
 	before := len(sessions(t, dir))
 	done := make(chan int, 1)
 	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
@@ -492,5 +509,94 @@ func TestDirectorStopNowEndsTheRuntimeAtOnce(t *testing.T) {
 	}
 	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorStopped || !got[0].StopNow {
 		t.Errorf("sessions = %+v; want session 1 stopped at once", got)
+	}
+}
+
+// pausedInPane records session 1 in the store at path, run by this process, bound to pane w1:p1 and paused.
+func pausedInPane(t *testing.T, path string) {
+	t.Helper()
+	self, err := artisan.Self()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		r, err := s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity(self), Release: "test",
+			ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t1", Pane: "w1:p1"}})
+		if err == nil {
+			r, err = s.SetDirectorState(1, store.DirectorRunning, r.Sequence)
+		}
+		if err == nil {
+			r, err = s.SetDirectorState(1, store.DirectorPaused, r.Sequence)
+		}
+		return r, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDirectorResumeWakesQueuedWork: a note sent while the Director was paused is queued, and a task was held; a
+// resume run from another terminal types one line of what waits into the Director's pane and prints that it woke
+// it, leaving the note's queued wake as it was; a repeated resume of the running session types nothing more.
+func TestDirectorResumeWakesQueuedWork(t *testing.T) {
+	d := newRunDirector(t)
+	pausedInPane(t, d.store)
+	panes := &typedPanes{}
+	d.panes = panes
+	app, _, stderr := newTestApp(nil, nil)
+	app.DirectorPane = panes
+	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Please do the queued work."}`)
+	if code := app.Run([]string{"messages", "send", "--store", d.store, "director", "-"}); code != 0 {
+		t.Fatalf("messages send: exit %d, %s", code, stderr)
+	}
+	writeNext(t, d.state, "t-1", `{"wait":"paused","step":"build"}`+"\n")
+	queued := readWakes(t, d.store)
+	if len(queued) != 1 || queued[0].Decision != store.WakeQueued || queued[0].Reason != "paused" || len(panes.lines) != 0 {
+		t.Fatalf("while paused: wakes %+v, typed %q", queued, panes.lines)
+	}
+	code, out, se := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	var doc struct {
+		Session store.DirectorSession `json:"session"`
+		NeedsMe []needsMeItem         `json:"needs_me"`
+		Wake    *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Session.State != store.DirectorRunning {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s", code, out, err, se)
+	}
+	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeWoke}) {
+		t.Errorf("resume printed wake %+v, want woke", doc.Wake)
+	}
+	if want := []string{"w1:p1 guildhall: resumed, 2 waiting (messages 1, paused 1)"}; !slices.Equal(panes.lines, want) {
+		t.Errorf("typed %q, want %q", panes.lines, want)
+	}
+	if got := readWakes(t, d.store); !slices.Equal(got, queued) {
+		t.Errorf("wakes after resume = %+v, want the queued wake unchanged", got)
+	}
+	code, out, se = d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	doc.Wake = nil
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Wake != nil {
+		t.Fatalf("repeated resume: exit %d, %q (%v), stderr %s; want no wake", code, out, err, se)
+	}
+	if len(panes.lines) > 1 {
+		t.Errorf("a repeated resume typed %q", panes.lines[1:])
+	}
+}
+
+// TestDirectorResumeWithNothingWaitingTypesNothing: a resume with nothing in needs_me types nothing and prints
+// that it queued nothing waiting.
+func TestDirectorResumeWithNothingWaitingTypesNothing(t *testing.T) {
+	d := newRunDirector(t)
+	pausedInPane(t, d.store)
+	panes := &typedPanes{}
+	d.panes = panes
+	code, out, se := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	var doc struct {
+		Wake *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s", code, out, err, se)
+	}
+	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}) || len(panes.lines) != 0 {
+		t.Errorf("resume printed wake %+v and typed %q; want queued: nothing waiting", doc.Wake, panes.lines)
 	}
 }

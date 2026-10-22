@@ -94,16 +94,9 @@ func Wake(ctx context.Context, st WakeStore, pane DirectorPane, messageID, sende
 // the Director can be woken, and returns why not otherwise, and the crossings typed. A positive idle adds the idle
 // trigger's next crossing and types the line with nothing unread; an error is the store's.
 func typeWake(ctx context.Context, st WakeStore, pane DirectorPane, idle time.Duration) (string, []store.HandoffDue, error) {
-	d, err := st.LatestDirectorSession()
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return "no session", nil, nil
-	case err != nil:
-		return "", nil, err
-	case d.State != store.DirectorRunning && d.State != store.DirectorRecovering:
-		return string(d.State), nil, nil
-	case d.Pane == (store.DirectorPane{}) || pane == nil:
-		return "no pane", nil, nil
+	d, reason, err := wakeable(st, pane)
+	if reason != "" || err != nil {
+		return reason, nil, err
 	}
 	unread, err := st.DirectorUnread()
 	if err != nil {
@@ -121,18 +114,43 @@ func typeWake(ctx context.Context, st WakeStore, pane DirectorPane, idle time.Du
 			return "", nil, err
 		}
 	}
-	err = pane.TypeLine(ctx, d.Pane, HandoffLine(WakeLine(unread), dues))
-	switch {
-	case errors.Is(err, ErrNotRunning):
-		return "runtime not running", nil, nil
-	case err != nil:
-		reason := strings.Join(strings.Fields("pane: "+err.Error()), " ")
-		if len(reason) > store.MaxWakeReasonBytes {
-			reason = strings.ToValidUTF8(reason[:store.MaxWakeReasonBytes], "")
-		}
+	if reason := paneReason(pane.TypeLine(ctx, d.Pane, HandoffLine(WakeLine(unread), dues))); reason != "" {
 		return reason, nil, nil
 	}
 	return "", dues, nil
+}
+
+// wakeable returns the newest session when the Director can be woken through pane, and otherwise why not: "no
+// session", the session's state when it is not running or recovering, or "no pane". An error is the store's.
+func wakeable(st SessionReader, pane DirectorPane) (store.DirectorSession, string, error) {
+	d, err := st.LatestDirectorSession()
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return d, "no session", nil
+	case err != nil:
+		return d, "", err
+	case d.State != store.DirectorRunning && d.State != store.DirectorRecovering:
+		return d, string(d.State), nil
+	case d.Pane == (store.DirectorPane{}) || pane == nil:
+		return d, "no pane", nil
+	}
+	return d, "", nil
+}
+
+// paneReason is why a typed line did not reach the Director, from TypeLine's error: "" for none, "runtime not
+// running", or "pane: <error>" on one line bounded by MaxWakeReasonBytes.
+func paneReason(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrNotRunning):
+		return "runtime not running"
+	}
+	reason := strings.Join(strings.Fields("pane: "+err.Error()), " ")
+	if len(reason) > store.MaxWakeReasonBytes {
+		reason = strings.ToValidUTF8(reason[:store.MaxWakeReasonBytes], "")
+	}
+	return reason
 }
 
 // WakeLine is the line a wake types: "guildhall: <n> unread (<type> <count>, ...)", types in name order, or
@@ -141,10 +159,59 @@ func WakeLine(unread map[string]int) string {
 	if len(unread) == 0 {
 		return "guildhall: 0 unread"
 	}
-	total, parts := 0, make([]string, 0, len(unread))
-	for _, typ := range slices.Sorted(maps.Keys(unread)) {
-		total += unread[typ]
-		parts = append(parts, fmt.Sprintf("%s %d", typ, unread[typ]))
+	total, parts := counts(unread)
+	return fmt.Sprintf("guildhall: %d unread (%s)", total, parts)
+}
+
+// counts sums n and lists it as "<name> <count>, ..." in name order.
+func counts(n map[string]int) (int, string) {
+	total, parts := 0, make([]string, 0, len(n))
+	for _, name := range slices.Sorted(maps.Keys(n)) {
+		total += n[name]
+		parts = append(parts, fmt.Sprintf("%s %d", name, n[name]))
 	}
-	return fmt.Sprintf("guildhall: %d unread (%s)", total, strings.Join(parts, ", "))
+	return total, strings.Join(parts, ", ")
+}
+
+// ResumeWake is what WakeResumed did: woke when it typed the resume line, otherwise queued with the reason.
+type ResumeWake struct {
+	Decision store.WakeDecision `json:"decision"`
+	Reason   string             `json:"reason,omitempty"`
+}
+
+// SessionReader reads the newest Director session, all WakeResumed needs of the store.
+type SessionReader interface {
+	LatestDirectorSession() (store.DirectorSession, error)
+}
+
+// WakeResumed wakes the Director once after `director resume` has moved its session to running, for the work
+// that waited while it was paused (docs/messaging.md#waking-the-director). waiting counts what the status feed's
+// needs_me lists for the Director to act on, by kind.
+//
+// With work waiting, the newest session running and a bound pane, it types ResumeLine(waiting), which carries
+// counts only, and returns woke. Otherwise it types nothing and returns queued with the reason: "nothing
+// waiting", or one of Wake's session and pane reasons. It records nothing: a resume is not a message, so each
+// message keeps the one wake recorded for it, and the caller wakes once for the one resume that moved the session.
+func WakeResumed(ctx context.Context, st SessionReader, pane DirectorPane, waiting map[string]int) (ResumeWake, error) {
+	if len(waiting) == 0 {
+		return ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}, nil
+	}
+	d, reason, err := wakeable(st, pane)
+	if err != nil {
+		return ResumeWake{}, err
+	}
+	if reason == "" {
+		reason = paneReason(pane.TypeLine(ctx, d.Pane, ResumeLine(waiting)))
+	}
+	if reason != "" {
+		return ResumeWake{Decision: store.WakeQueued, Reason: reason}, nil
+	}
+	return ResumeWake{Decision: store.WakeWoke}, nil
+}
+
+// ResumeLine is the line WakeResumed types: "guildhall: resumed, <n> waiting (<kind> <count>, ...)", kinds in
+// name order.
+func ResumeLine(waiting map[string]int) string {
+	total, parts := counts(waiting)
+	return fmt.Sprintf("guildhall: resumed, %d waiting (%s)", total, parts)
 }

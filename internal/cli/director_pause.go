@@ -13,6 +13,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -70,26 +71,27 @@ func liveSession(s *store.Store) (store.DirectorSession, bool, error) {
 	return d, err == nil && lv == artisan.Gone, nil
 }
 
-// pauseMove moves a live newest session from one of running and paused to the other; a session already there
-// is returned unchanged.
-func pauseMove(s *store.Store, from, to store.DirectorState) (store.DirectorSession, error) {
+// pauseMove moves a live newest session from one of running and paused to the other and reports whether it moved
+// it; a session already there is returned unchanged.
+func pauseMove(s *store.Store, from, to store.DirectorState) (store.DirectorSession, bool, error) {
 	d, gone, err := liveSession(s)
 	switch {
 	case err != nil:
-		return d, err
+		return d, false, err
 	case gone:
-		return d, fmt.Errorf("the Director session %d's supervisor is gone; record it with guildhall director stop", d.Number)
+		return d, false, fmt.Errorf("the Director session %d's supervisor is gone; record it with guildhall director stop", d.Number)
 	case d.State == to:
-		return d, nil
+		return d, false, nil
 	case d.State == store.DirectorRecovering:
-		return d, fmt.Errorf("the Director session %d is recovering; run guildhall director ready first", d.Number)
+		return d, false, fmt.Errorf("the Director session %d is recovering; run guildhall director ready first", d.Number)
 	case d.State != from:
-		return d, fmt.Errorf("the Director session %d is %s, not %s", d.Number, d.State, from)
+		return d, false, fmt.Errorf("the Director session %d is %s, not %s", d.Number, d.State, from)
 	}
 	if _, err := s.SetDirectorState(d.Number, to, d.StateSequence); err != nil {
-		return d, err
+		return d, false, err
 	}
-	return s.DirectorSession(d.Number)
+	d, err = s.DirectorSession(d.Number)
+	return d, err == nil, err
 }
 
 // directorPause runs `guildhall director pause [--copy <dir> | --store <file>]`: the newest session moves from
@@ -100,7 +102,8 @@ func (a *App) directorPause(args []string) int {
 		return code
 	}
 	d, err := withStore(path, false, func(s *store.Store) (store.DirectorSession, error) {
-		return pauseMove(s, store.DirectorRunning, store.DirectorPaused)
+		d, _, err := pauseMove(s, store.DirectorRunning, store.DirectorPaused)
+		return d, err
 	})
 	if err != nil {
 		return a.fail(fmt.Errorf("director pause: %w", err))
@@ -108,22 +111,26 @@ func (a *App) directorPause(args []string) int {
 	return a.printJSON(d)
 }
 
-// resumed is what `director resume` prints: the session and the status feed's needs_me.
+// resumed is what `director resume` prints: the session, the status feed's needs_me and, when this resume moved
+// the session, its wake of the Director.
 type resumed struct {
 	Session store.DirectorSession `json:"session"`
 	NeedsMe []needsMeItem         `json:"needs_me"`
+	Wake    *messaging.ResumeWake `json:"wake,omitempty"`
 }
 
 // directorResume runs `guildhall director resume [--copy <dir> | --store <file> --state <dir>]`: the newest
-// session moves from paused to running and is printed with needs_me, which the Director then works
-// (docs/director.md#pause-and-resume).
+// session moves from paused to running and is printed with needs_me, which the Director then works; a resume that
+// moved it wakes the Director once for what waits there (docs/director.md#pause-and-resume).
 func (a *App) directorResume(args []string) int {
 	path, state, code := a.sessionArgs("director resume", args, true, nil)
 	if code >= 0 {
 		return code
 	}
-	d, err := withStore(path, false, func(s *store.Store) (store.DirectorSession, error) {
-		return pauseMove(s, store.DirectorPaused, store.DirectorRunning)
+	var moved bool
+	d, err := withStore(path, false, func(s *store.Store) (d store.DirectorSession, err error) {
+		d, moved, err = pauseMove(s, store.DirectorPaused, store.DirectorRunning)
+		return d, err
 	})
 	if err != nil {
 		return a.fail(fmt.Errorf("director resume: %w", err))
@@ -132,7 +139,36 @@ func (a *App) directorResume(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("director resume: needs_me: %w", err))
 	}
-	return a.printJSON(resumed{Session: d, NeedsMe: status.NeedsMe})
+	out := resumed{Session: d, NeedsMe: status.NeedsMe}
+	if moved {
+		ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+		w, err := messaging.WakeResumed(ctx, storeRecords(path), a.directorPane(), waitingKinds(status.NeedsMe))
+		cancel()
+		if err != nil {
+			// The session is running: the wake's failure does not undo the resume, and the work waits for the
+			// Director's next turn.
+			a.notef("guildhall: director resume: wake: %v\n", err)
+		} else {
+			out.Wake = &w
+		}
+	}
+	return a.printJSON(out)
+}
+
+// waitingKinds counts the needs_me items that wait on the Director by kind, the messages item by its count; a task
+// waiting for its checks waits on the session supervisor, not the Director.
+func waitingKinds(items []needsMeItem) map[string]int {
+	n := map[string]int{}
+	for _, it := range items {
+		switch {
+		case it.Kind == checksKind:
+		case it.Count > 0:
+			n[it.Kind] += it.Count
+		default:
+			n[it.Kind]++
+		}
+	}
+	return n
 }
 
 // directorStop runs `guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]`: the newest
