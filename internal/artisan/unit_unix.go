@@ -94,7 +94,14 @@ func (u *groupUnit) Start(cmd *exec.Cmd) (Identity, error) {
 		close(u.done)
 	}()
 	id, pgid, err := u.lookupGroup(pid)
-	if err == nil {
+	switch {
+	case errors.Is(err, errNoProcess):
+		// The worker exited before the lookup. Setpgid made it lead group
+		// pid, and it is unreaped until Close, so it is recorded and its exit
+		// is read as any exit is.
+		pgid = pid
+		id, err = lookupExited(pid)
+	case err == nil:
 		err = u.verifyWorker(pid)
 	}
 	if err != nil || pgid != pid {
