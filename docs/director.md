@@ -46,7 +46,7 @@ The document has these sections:
   5. `messages`: one item counting the other unread messages; `guildhall messages list director`.
   6. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
 
-  A Director session in `recovering` will be the first item once the session record lands.
+  A Director session in `recovering` will be the first item once the session supervisor lands.
   Done and cancelled tasks contribute no `retry`, `resume` or `director` item.
 
 Times are commit times of the store's receipts, in UTC.
