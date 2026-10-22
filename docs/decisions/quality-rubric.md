@@ -20,7 +20,7 @@ The audit, reference-run, judge and skill-edit settings are parsed, validated an
 
 ## The facts script
 
-The skill's facts script reads a unified diff and prints counts and `file:line` items for the script-judged criteria: size against the budget, sleeps and skips in tests, removed assertions, secret patterns, and workflow permissions, pins and `pull_request_target`.
+The skill's facts script reads a unified diff and prints counts and `file:line` items for the criteria a script judges or flags: size against the budget, sleeps and skips in tests, removed assertions, secret patterns, and workflow permissions, pins and `pull_request_target`.
 It is a `.sh` and `.ps1` twin using only the shell and awk, with no model call, network or third-party tool, so the self-review runs on every platform the Director does and CI tests it on a fixture diff.
 Duplication, complexity and vulnerability tools such as `dupl`, `gocognit` and `govulncheck` are run only when already installed and are recorded as missing evidence otherwise, so the skill adds no dependency (S7).
 
