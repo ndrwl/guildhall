@@ -97,3 +97,4 @@ Until then a new decision is cited by its file path rather than a number.
 - [D81. Faster, steadier Windows CI](decisions/0081-windows-ci-speed.md)
 - [D82. Handoff notes, `director reload` and the end of a turn](decisions/0082-director-handoff-reload.md)
 - [D83. The quality rubric ships as a document and a Director skill, each practice behind a setting](decisions/0083-quality-rubric.md)
+- [D84. Holding admission, stopping unowned attempts and containing the Director's runtime](decisions/0084-director-stop-admission.md)
