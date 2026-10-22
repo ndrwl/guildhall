@@ -8,6 +8,7 @@ Slice 4 plans every sender to the Director to share one wake, over the [session 
 `messaging.Wake` is the one wake function, called after every send to the Director: the engine's outbox (`task start`, `step done`, `step retry`) and `messages send ... director`.
 The launcher's own stall send is planned and not built; when it lands it calls the same function as `guildhall`.
 It reads the newest session; only a `running` or `recovering` session with a bound pane is woken, by typing one fixed line, `guildhall: <n> unread (<type> <count>, ...)`, carrying counts and never message text, so no sender can type instructions into the Director's session.
+A sender chooses its message's type, so the line names only Guildhall's own types, the engine's and the local `question` and `note`, and counts every other type as `other`.
 Every other case types nothing and records `queued` with the reason, such as `no session`, `no pane`, `paused` or `stopped`; the message still waits in the inbox for the Director's next turn.
 A paused session is not woken: pausing is how the Guildmaster quiets the Director, and the next resume shows what needs it.
 
