@@ -108,13 +108,12 @@ func (s *Store) DirectorView() (DirectorView, error) {
 		case !errors.Is(err, ErrNotFound):
 			return err
 		}
-		if wakes := directorBucket(tx, bucketWakes); wakes != nil {
-			if k, raw := wakes.Cursor().Last(); k != nil {
-				v.LastWake = new(Wake)
-				if err := decode(k, raw, v.LastWake); err != nil {
-					return err
-				}
-			}
+		var wake Wake
+		switch err := lastJSON(directorBucket(tx, bucketWakes), &wake); {
+		case err == nil:
+			v.LastWake = &wake
+		case !errors.Is(err, ErrNotFound):
+			return err
 		}
 		return tx.Bucket(bucketReceipts).ForEach(func(k, raw []byte) error {
 			var r Receipt
