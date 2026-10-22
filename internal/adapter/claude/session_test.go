@@ -26,18 +26,21 @@ func TestClaudeSessionContract(t *testing.T) {
 }
 
 func TestSessionCommand(t *testing.T) {
-	spec := adapter.SessionSpec{Dir: "/c/director/session-2", Copy: "/c", RolePrompt: "/c/director/session-2/role.md",
+	c := t.TempDir()
+	dir := filepath.Join(c, "director", "session-2")
+	spec := adapter.SessionSpec{Dir: dir, Copy: c, RolePrompt: filepath.Join(dir, "role.md"),
 		FirstMessage: "You are starting up.", Model: "opus", Effort: "high", Env: []string{"A=1"}}
 	cmd, err := claude.Adapter{}.Session(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", "/c", "--model", "opus", "You are starting up."}
-	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=/c", "A=1"}) {
+	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--model", "opus", "You are starting up."}
+	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
 		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
 	}
 	spec.Model = ""
-	if cmd, err := (claude.Adapter{Claude: "/opt/claude"}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{"/opt/claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", "/c", "You are starting up."}) {
+	named := filepath.Join(c, "claude")
+	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "You are starting up."}) {
 		t.Errorf("named claude, no model: %+v, %v", cmd, err)
 	}
 	if cmd, err := (claude.Adapter{Claude: "bin/claude"}).Session(spec); err == nil || len(cmd.Argv) > 0 {
