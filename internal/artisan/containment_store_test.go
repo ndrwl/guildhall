@@ -99,6 +99,9 @@ func TestContainmentPersistsAsOwnership(t *testing.T) {
 // TestPlatformUnitPersistsAsOwnership stores this platform's backend's
 // containment and its started worker's identity.
 func TestPlatformUnitPersistsAsOwnership(t *testing.T) {
+	// The inventory dir is created first so its removal runs after Close
+	// has stopped the worker that writes into it.
+	dir := t.TempDir()
 	u, err := artisan.NewUnit("persist-" + rand.Text()[:8])
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +111,7 @@ func TestPlatformUnitPersistsAsOwnership(t *testing.T) {
 			t.Errorf("Close: %v", err)
 		}
 	})
-	worker, err := u.Start(artisantest.Command(t.TempDir(), artisantest.Worker{}))
+	worker, err := u.Start(artisantest.Command(dir, artisantest.Worker{}))
 	if err != nil {
 		t.Fatal(err)
 	}
