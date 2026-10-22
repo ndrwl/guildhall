@@ -481,10 +481,15 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
 	// way the supervisor outlives the runtime to record the end.
+	watch, err := a.watchChecks(p, n, dir, copyDir, storePath, state)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err))
+	}
 	if err := c.Start(); err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err))
 	}
-	ended, stopped, err := a.waitSession(c, signals, storePath, n)
+	ended, stopped, err := a.waitSession(c, signals, storePath, n, watch)
+	watch.wait()
 	var exit *exec.ExitError
 	switch {
 	case stopped:
@@ -505,10 +510,10 @@ const stopKill = 10 * time.Second
 
 // waitSession waits for the started runtime c of session n to end, passing it each termination among signals,
 // and returns the last termination passed on, if any, and whether it ended the runtime for a stop, with c's end.
-// Every App.SessionPoll it reads the session from the store at storePath: once `director stop` has recorded it
-// stopping, it ends the runtime after App.StopGrace, or at once for stop --now, and kills it if it has not exited
-// stopKill later.
-func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, storePath string, n int) (os.Signal, bool, error) {
+// Every App.SessionPoll it ticks watch and reads the session from the store at storePath: once `director stop`
+// has recorded it stopping, it ends the runtime after App.StopGrace, or at once for stop --now, and kills it if it
+// has not exited stopKill later.
+func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, storePath string, n int, watch *checksWatch) (os.Signal, bool, error) {
 	waited := make(chan error, 1)
 	go func() { waited <- c.Wait() }()
 	poll, grace := a.SessionPoll, a.StopGrace
@@ -529,6 +534,7 @@ func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, storePath strin
 				ended = s
 			}
 		case <-tick.C:
+			watch.tick(time.Now())
 			if !stopped.IsZero() {
 				if time.Since(stopped) >= stopKill {
 					_ = c.Process.Kill()

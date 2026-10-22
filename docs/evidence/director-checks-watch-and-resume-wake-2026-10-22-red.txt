@@ -1,0 +1,52 @@
+# X1 and X5 (Sol cross-review), red runs against 5c626dd with each test added and its implementation stubbed, go1.27.2 linux/amd64
+$ go test ./internal/messaging -run Resume -count=1   # stubbed WakeResumed and ResumeLine
+--- FAIL: TestWakeResumedTypesOneLineForWaitingWork (0.06s)
+    wake_test.go:238: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want woke
+--- FAIL: TestWakeResumedQueuesWithTheReason (0.40s)
+    --- FAIL: TestWakeResumedQueuesWithTheReason/nothing_waiting (0.05s)
+        wake_test.go:267: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want queued: nothing waiting
+    --- FAIL: TestWakeResumedQueuesWithTheReason/no_session (0.05s)
+        wake_test.go:267: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want queued: no session
+    --- FAIL: TestWakeResumedQueuesWithTheReason/no_pane (0.05s)
+        wake_test.go:267: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want queued: no pane
+    --- FAIL: TestWakeResumedQueuesWithTheReason/paused_again (0.05s)
+        wake_test.go:267: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want queued: paused
+    --- FAIL: TestWakeResumedQueuesWithTheReason/stopping (0.05s)
+        wake_test.go:267: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want queued: stopping
+    --- FAIL: TestWakeResumedQueuesWithTheReason/runtime_ended (0.05s)
+        wake_test.go:267: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want queued: runtime not running
+    --- FAIL: TestWakeResumedQueuesWithTheReason/typing_failed (0.05s)
+        wake_test.go:267: WakeResumed = {Decision: Reason:}, messaging: wake resumed: not built; want queued: pane: herdr server_unavailable: socket gone
+    wake_test.go:276: WakeResumed with no terminal = {Decision: Reason:}, messaging: wake resumed: not built; want queued: no pane
+--- FAIL: TestResumeLine (0.00s)
+    wake_test.go:289: ResumeLine(map[messages:1]) = "", want "guildhall: resumed, 1 waiting (messages 1)"
+    wake_test.go:289: ResumeLine(map[decision:1 messages:3 paused:2]) = "", want "guildhall: resumed, 6 waiting (decision 1, messages 3, paused 2)"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/messaging	0.454s
+FAIL
+
+$ go test ./internal/cli -run 'ChecksWatch|ChecksWaiting|WaitingForChecks|SupervisorAdvances|DirectorResumeWakes|ResumeWithNothing' -count=1   # stubbed checksWatch and checksWaiting, no checks item, resume without a wake
+--- FAIL: TestChecksWatchPacesRoundsByTheRefresh (0.00s)
+    checks_watch_test.go:77: first round advanced [], want t-1 then t-2
+--- FAIL: TestChecksWatchRunsOneRoundAtATime (0.00s)
+    checks_watch_test.go:102: advanced [], want one round
+--- FAIL: TestChecksWatchReportsAndRetriesAFailure (0.00s)
+    checks_watch_test.go:118: advanced [], want both tasks in both rounds
+    checks_watch_test.go:121: reported []
+    checks_watch_test.go:128: a failed listing advanced [] and reported []
+--- FAIL: TestStatusListsATaskWaitingForChecks (0.05s)
+    checks_watch_test.go:158: needs_me = [], want [{Kind:checks Repository:app TaskID:t-1 Step:validate Attempt:0 Decision: Message: Count:0 Retryable:false Resume:false Reason:step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh and wakes you when they finish Command:guildhall task start --repo app t-1}]
+--- FAIL: TestChecksWaitingListsOpenTasksWhileTheSessionWorks (0.43s)
+    checks_watch_test.go:189: after []: waiting = [], <nil>; want [{app t-1}]
+    checks_watch_test.go:189: after [running]: waiting = [], <nil>; want [{app t-1}]
+--- FAIL: TestTheSupervisorAdvancesATaskWhenItsChecksFinish (181.58s)
+    checks_watch_test.go:276: next.json = {"wait":"checks","step":"validate"}
+        , want {"wait":"decision","step":"deliver","decision":"deliver-1"} once the checks passed
+--- FAIL: TestDirectorResumeWakesQueuedWork (0.17s)
+    director_pause_test.go:526: resume printed wake <nil>, want woke
+    director_pause_test.go:529: typed [], want ["w1:p1 guildhall: resumed, 2 waiting (messages 1, paused 1)"]
+panic: runtime error: slice bounds out of range [1:0] [recovered, repanicked]
+# The panic is the test's own guard on the repeated resume indexing past no typed line, corrected before the green run; it kept TestDirectorResumeWithNothingWaitingTypesNothing from running here, and an earlier red run of it failed:
+#     director_pause_test.go:559: resume printed wake <nil> and typed []; want queued: nothing waiting
+FAIL	github.com/ndrwl/guildhall/internal/cli	182.260s
+FAIL
