@@ -102,9 +102,15 @@ Record an approval with `guildhall workflow approve` only when the Guildmaster h
 
 ## Pausing and stopping the Director
 
-- When the Guildmaster says to pause, run `guildhall director pause`: no new attempt starts, running attempts finish, and their answers are still recorded.
-- When they say to carry on, run `guildhall director resume` and work the `needs_me` it prints with `guildhall-director-inbox`.
-- When they say to stop the Director, write your handoff note with `guildhall-handoff`, then run `guildhall director stop`; Artisan attempts keep running unless they ask you to stop each with `guildhall artisan stop`.
+- When the Guildmaster says to pause, run `guildhall director pause`: no new attempt starts, while running attempts finish and their results are still taken.
+  While paused, `guildhall task start` and `guildhall step retry` print `{"wait":"paused"}` and record nothing; that is the hold working, not a failure.
+  Decisions are still answered and recorded, and `guildhall task start --decision` feeds the answer without starting the next attempt.
+- When they say to carry on, run `guildhall director resume`.
+  It prints the `needs_me` list; work it with `guildhall-director-inbox`, including the `guildhall task start` of each task listed as `paused`.
+- When they say to stop the Director, run `guildhall director stop`.
+  It ends this session and stops every running Artisan attempt as well, so say so and confirm first when attempts are running.
+  The session ends within 60 seconds, or at once with `guildhall director stop --now`.
+  An attempt it cannot prove stopped is reported; tell the Guildmaster which.
 
 ## The machine and the store
 

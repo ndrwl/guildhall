@@ -13,7 +13,7 @@ The release now ships those skills, and a test holds them to that rule.
   So a new README command is not complete until a skill can call it.
 - **Skills name only real commands.**
   The CLI's help test fails for any command a release skill names that the help does not list, so a skill cannot send the Director to a command that does not exist.
-  The commands of slices not yet built, `director pause|resume|stop` and `director handoff|reload`, are listed as pending with their slice, and a pending command the help lists fails the test until it leaves the list, so each is checked against the built command when it lands.
+  The commands of the slice not yet built, `director handoff|reload`, are listed as pending with their slice, and a pending command the help lists fails the test until it leaves the list, so each is checked against the built command when it lands.
 - **`/guildhall-handoff`, not `/handoff`.**
   Claude Code invokes a skill by its name, and every release skill carries the `guildhall-` prefix, so the Guildmaster types `/guildhall-handoff`; the same directory serves the Director and the Guildmaster.
 - **Notes and drafts never go to a temporary directory.**
@@ -23,5 +23,6 @@ The release now ships those skills, and a test holds them to that rule.
 
 ## Not yet
 
-The pending commands land with the pause, stop, handoff and reload slices, whose tests then pin the skills to them.
+The pending commands land with the handoff and reload slice, whose tests then pin the skills to them; `director pause|resume|stop` landed first and the skills follow their built behaviour, including that `stop` also stops running attempts.
+A `stop-requested` message asking for a handoff note before a stop lands with handoff notes, and the skills gain it then.
 No live Claude Code Director session has followed these skills; the scripted stand-in of the CI safety checks follows the same command sequences.

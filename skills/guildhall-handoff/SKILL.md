@@ -1,6 +1,6 @@
 ---
 name: guildhall-handoff
-description: Use as the Director to hand off to a fresh session, when the Guildmaster types /guildhall-handoff or asks for it, a wake line says handoff due, or a stop is requested, by recording a handoff note and reloading.
+description: Use as the Director to hand off to a fresh session, when the Guildmaster types /guildhall-handoff or asks for it, or a wake line says handoff due, by recording a handoff note and reloading.
 ---
 
 Adapted from `handoff` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
@@ -14,7 +14,6 @@ The Guildmaster can ask for it by typing `/guildhall-handoff`, optionally follow
 
 - The Guildmaster types `/guildhall-handoff` or asks you to hand off.
 - A wake line ends `; handoff due (<reason>)`.
-- A `stop-requested` message says your session is being stopped.
 
 Never hand off in the middle of a command: finish the message or step you are on first.
 In the middle of a grill, do not finish the stage; carry its open questions in the note instead.
@@ -71,5 +70,4 @@ guildhall director reload --now
 ```
 
 `guildhall director reload --now` is refused unless this session recorded the newest note, and, during a grill, unless the note was recorded after the grill's attempt started.
-For a `stop-requested` message, record the note and end your turn without reloading: the supervisor ends the session.
 Tell the Guildmaster in one sentence that you are handing off and that the next session picks up from the note.

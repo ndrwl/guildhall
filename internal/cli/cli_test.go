@@ -247,9 +247,6 @@ func TestHelpNamesReadmeCommands(t *testing.T) {
 // pendingCommands are the commands the Director's skills name before the slice 4 slice that builds them lands.
 // Each leaves this list when the help lists it, so the skills are pinned to the command as built.
 var pendingCommands = map[string]string{
-	"director pause":   "D10",
-	"director resume":  "D10",
-	"director stop":    "D10",
 	"director handoff": "D11",
 	"director reload":  "D11",
 }

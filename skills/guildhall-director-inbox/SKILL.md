@@ -42,7 +42,6 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `merged` | The task's change merged and the task is done: tell the Guildmaster. |
 | `merge-held` | The Guildmaster held the merge: ask what they want changed and give that as work. |
 | `merge-refused` | The forge refused the merge, with its reason: give an Artisan the fix, such as a rebase, and run `guildhall task start` once it is done so the merge is asked again. |
-| `stop-requested` | Your session is being stopped: write your handoff note with `guildhall-handoff` and end your turn. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |
 
 A wake line that ends `; handoff due (<reason>)` asks you to hand off: finish the message you are on, then run `guildhall-handoff`.

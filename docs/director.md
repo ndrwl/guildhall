@@ -55,7 +55,7 @@ The release ships the Director's own skills beside the stage skills, each render
 - `guildhall-handoff`: record a handoff note and reload; the Guildmaster can type `/guildhall-handoff`.
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
-The pause, stop, handoff and reload commands they name are designed and land later.
+The handoff and reload commands they name are designed and land later.
 
 ## Ready
 
