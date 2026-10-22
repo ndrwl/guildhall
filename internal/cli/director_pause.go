@@ -191,7 +191,7 @@ func (a *App) directorStop(args []string) int {
 		switch {
 		case err != nil:
 			return d, err
-		case d.State == store.DirectorStopped:
+		case d.State == store.DirectorStopped && d.Sweeping:
 		case d.State != store.DirectorStopping || now && !d.StopNow && !gone:
 			_, err = s.RequestDirectorStop(d.Number, now && !gone, d.StateSequence)
 		}

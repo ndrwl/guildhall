@@ -231,6 +231,13 @@ func (s *Store) RequestDirectorStop(n int, now bool, from uint64) (Receipt, erro
 	}{n, now, from}
 	id := fmt.Sprintf("director-stop:%d:%s:%d", n, map[bool]string{false: "turn", true: "now"}[now], from)
 	return s.moveSession(id, opRequestDirectorStop, req, n, from, func(d *DirectorSession) error {
+		if d.State == DirectorStopped {
+			if d.Sweeping || d.Runtime == (Containment{}) {
+				return invalid("director session %d has no runtime recovery to request", n)
+			}
+			d.Sweeping = true
+			return nil
+		}
 		if d.State == DirectorStopping && (d.StopNow || !now) {
 			return invalid("director session %d is already stopping", n)
 		}
@@ -337,7 +344,7 @@ func (s *Store) moveSession(id, op string, req any, n int, from uint64, move fun
 		switch {
 		case d.StateSequence != from:
 			return invalid("director session %d changed at sequence %d, after the read at %d", n, d.StateSequence, from)
-		case d.State == DirectorStopped && op != opFinishDirectorStop:
+		case d.State == DirectorStopped && op != opFinishDirectorStop && op != opRequestDirectorStop:
 			return invalid("director session %d is stopped", n)
 		}
 		if err := move(&d); err != nil {
