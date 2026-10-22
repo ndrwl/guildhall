@@ -18,10 +18,11 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// watchDouble is checksWatch's waiting and advance: it lists tasks and records each advance, holding each advance
-// until release is closed when release is set.
+// watchDouble is checksWatch's waiting, advance and clock: it lists tasks and records each advance, holding each
+// advance until release is closed when release is set, and its rounds end at ended.
 type watchDouble struct {
 	mu       sync.Mutex
+	ended    time.Time
 	tasks    []taskRef
 	listErr  error
 	fail     map[taskRef]error
@@ -51,6 +52,11 @@ func (d *watchDouble) watch(every time.Duration) *checksWatch {
 			defer d.mu.Unlock()
 			d.reported = append(d.reported, r.repo+"/"+r.task+": "+err.Error())
 		},
+		now: func() time.Time {
+			d.mu.Lock()
+			defer d.mu.Unlock()
+			return d.ended
+		},
 	}
 }
 
@@ -68,9 +74,9 @@ var (
 // TestChecksWatchPacesRoundsByTheRefresh: the first tick advances every waiting task at once; a tick before the
 // refresh has passed advances nothing; one after it advances them again.
 func TestChecksWatchPacesRoundsByTheRefresh(t *testing.T) {
-	d := &watchDouble{tasks: []taskRef{t1, t2}}
-	w := d.watch(time.Minute)
 	at := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	d := &watchDouble{tasks: []taskRef{t1, t2}, ended: at}
+	w := d.watch(time.Minute)
 	w.tick(at)
 	w.wait()
 	if got, _ := d.got(); !slices.Equal(got, []taskRef{t1, t2}) {
@@ -85,6 +91,26 @@ func TestChecksWatchPacesRoundsByTheRefresh(t *testing.T) {
 	w.wait()
 	if got, _ := d.got(); !slices.Equal(got, []taskRef{t1, t2, t1, t2}) {
 		t.Fatalf("after the refresh advanced %v, want a second round", got)
+	}
+}
+
+// TestChecksWatchPacesRoundsFromTheirEnd: a round that ends after it started is followed by the next only once the
+// refresh has passed since it ended, so each read it made is a refresh old by then.
+func TestChecksWatchPacesRoundsFromTheirEnd(t *testing.T) {
+	at := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	d := &watchDouble{tasks: []taskRef{t1}, ended: at.Add(5 * time.Second)}
+	w := d.watch(time.Minute)
+	w.tick(at)
+	w.wait()
+	w.tick(at.Add(time.Minute))
+	w.wait()
+	if got, _ := d.got(); len(got) != 1 {
+		t.Fatalf("a tick a refresh after the round started but not after it ended advanced %v", got[1:])
+	}
+	w.tick(at.Add(time.Minute + 5*time.Second))
+	w.wait()
+	if got, _ := d.got(); !slices.Equal(got, []taskRef{t1, t1}) {
+		t.Fatalf("a refresh after the round ended advanced %v, want a second round", got)
 	}
 }
 
@@ -106,9 +132,9 @@ func TestChecksWatchRunsOneRoundAtATime(t *testing.T) {
 // TestChecksWatchReportsAndRetriesAFailure: a failed advance is reported and the round goes on to the next task;
 // the next round tries it again. A failed listing is reported and advances nothing.
 func TestChecksWatchReportsAndRetriesAFailure(t *testing.T) {
-	d := &watchDouble{tasks: []taskRef{t1, t2}, fail: map[taskRef]error{t1: errors.New("forge unreachable")}}
-	w := d.watch(time.Minute)
 	at := time.Now()
+	d := &watchDouble{tasks: []taskRef{t1, t2}, fail: map[taskRef]error{t1: errors.New("forge unreachable")}, ended: at}
+	w := d.watch(time.Minute)
 	w.tick(at)
 	w.wait()
 	w.tick(at.Add(time.Minute))

@@ -1,18 +1,22 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ndrwl/guildhall/baseline"
+	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -368,8 +372,8 @@ func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 	return superviseWith(t, dir, grace, nil)
 }
 
-// superviseWith is supervise with the App configured by configure, when it is set.
-func superviseWith(t *testing.T, dir string, grace time.Duration, configure func(*App)) <-chan int {
+// superviseWith is supervise with the App configured by configure, when it is set, and args after the copy.
+func superviseWith(t *testing.T, dir string, grace time.Duration, configure func(*App), args ...string) <-chan int {
 	t.Helper()
 	stdin, typing, err := os.Pipe()
 	if err != nil {
@@ -388,7 +392,7 @@ func superviseWith(t *testing.T, dir string, grace time.Duration, configure func
 		configure(app)
 	}
 	done := make(chan int, 1)
-	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
+	go func() { done <- app.Run(append([]string{"director", "start", "--copy", dir}, args...)) }()
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorRunning {
 			return done
@@ -539,6 +543,88 @@ func TestDirectorResumeWakesQueuedWork(t *testing.T) {
 	}
 	if len(panes.lines) > 1 {
 		t.Errorf("a repeated resume typed %q", panes.lines[1:])
+	}
+}
+
+// pipePane is the DirectorPane double of a pane whose runtime reads w: each line typed is written to w.
+type pipePane struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (p *pipePane) TypeLine(_ context.Context, _ store.DirectorPane, line string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, err := io.WriteString(p.w, line+"\n")
+	return err
+}
+
+// turns reads the fake Director's turn log at path, one kind per turn.
+func turns(t *testing.T, path string) []string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for line := range strings.Lines(string(b)) {
+		_, kind, _ := strings.Cut(strings.TrimSpace(line), " ")
+		kinds = append(kinds, kind)
+	}
+	return kinds
+}
+
+// TestDirectorResumeWakesTheBlockedRuntime: a supervised session bound to a pane whose runtime is blocked reading
+// its input is paused and sent a note, which is queued and reaches no runtime; a resume run from another terminal
+// types the wake line into the pane, and the runtime takes one turn on it.
+func TestDirectorResumeWakesTheBlockedRuntime(t *testing.T) {
+	dir, d := supervisedCopy(t)
+	log := filepath.Join(t.TempDir(), "turns.log")
+	t.Setenv(fake.TurnLogEnv, log)
+	input, typing, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = input.Close(); _ = typing.Close() })
+	pane := &pipePane{w: typing}
+	d.pane = pane
+	done := superviseWith(t, dir, time.Nanosecond, func(app *App) { app.Stdin = input },
+		"--herdr-session", "lab", "--herdr-workspace", "w1", "--herdr-tab", "w1:t1", "--herdr-pane", "w1:p1")
+	if code, out, se := d.run(t, "director", "pause", "--copy", dir); code != 0 {
+		t.Fatalf("director pause: exit %d, %s %s", code, out, se)
+	}
+	app, _, stderr := newTestApp(nil, nil)
+	app.DirectorPane = pane
+	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Please do the queued work."}`)
+	if code := app.Run([]string{"messages", "send", "--store", d.store, "director", "-"}); code != 0 {
+		t.Fatalf("messages send: exit %d, %s", code, stderr)
+	}
+	if got := turns(t, log); !slices.Equal(got, []string{"start"}) {
+		t.Fatalf("turns while paused = %q, want only the start", got)
+	}
+	code, out, se := d.run(t, "director", "resume", "--copy", dir)
+	var doc struct {
+		Wake *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeWoke}) {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s; want woke", code, out, err, se)
+	}
+	for end := time.Now().Add(testenv.Ceiling(2 * time.Minute)); ; time.Sleep(50 * time.Millisecond) {
+		got := turns(t, log)
+		if slices.Equal(got, []string{"start", "input"}) {
+			break
+		}
+		if len(got) > 2 || time.Now().After(end) {
+			t.Fatalf("turns after resume = %q, want the start and one input", got)
+		}
+	}
+	if code, out, se := d.run(t, "director", "stop", "--now", "--copy", dir); code != 0 {
+		t.Fatalf("director stop --now: exit %d, %s %s", code, out, se)
+	}
+	if code := ended(t, done); code != 0 {
+		t.Errorf("director start exited %d, want 0", code)
 	}
 }
 

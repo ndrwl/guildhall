@@ -23,6 +23,7 @@ The binary refuses `guildhall task new`, and `guildhall task start` of a task wi
    - `resume`: a running attempt whose launcher is stuck, exited or unknown; run `guildhall artisan resume` with the flags the item names.
    - `stalled`, `decision`, `messages` and `director`: handle them with `guildhall-director-inbox`.
    - `paused`: a task held while the session was paused; once you are ready and not paused, start it again with `guildhall task start` as the item names.
+   - `checks`: not yours; your session's supervisor reads the task's checks again on its own and wakes you when they finish, so never poll them or run its `guildhall task start` yourself.
 5. A `director-stage` message is a grill or other stage that is yours to run; run it with `guildhall-director-stage`, and carry on any open grill questions from the handoff note rather than asking them again.
 6. When nothing left in `needs_me` is yours to act on now, run `guildhall director ready`.
    Items waiting on the Guildmaster, such as open decisions, do not hold you back: tell the Guildmaster about them and get ready.
