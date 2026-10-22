@@ -168,6 +168,10 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	var inFlight []string
 	for _, it := range status.NeedsMe {
+		if it.Kind == checksKind {
+			inFlight = append(inFlight, fmt.Sprintf("%s: %s; the session supervisor advances it", it.Kind, oneLine(it.Reason)))
+			continue
+		}
 		inFlight = append(inFlight, fmt.Sprintf("%s: %s; run `%s`", it.Kind, oneLine(it.Reason), it.Command))
 	}
 	handoff, err := withStore(storePath, true, func(s *store.Store) (string, error) {
