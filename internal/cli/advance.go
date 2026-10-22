@@ -345,6 +345,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if a.Workspaces != nil {
 		ws = a.Workspaces
 	}
+	// An interrupt ends the advance and releases the task lock; the next advance replays it.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	context.AfterFunc(ctx, stop)
 	e := &interp.Engine{
 		Records:  storeRecords(f.store),
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall},
@@ -354,13 +358,13 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
 		Workspaces: ws,
-		Hold:       func() (bool, error) { return withStore(f.store, true, held) },
-		Caps:       store.AttemptCaps{MaxRunning: rails.MaxRunningAttempts, MaxPerDay: rails.MaxAttemptsPerDay},
+		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the
+		// classifier runs over the same repository.
+		Base:    func(string) (string, error) { return git.Program{}.Base(ctx, r.Path, interp.TaskBranch(ev.Task)) },
+		Rebases: git.Program{},
+		Hold:    func() (bool, error) { return withStore(f.store, true, held) },
+		Caps:    store.AttemptCaps{MaxRunning: rails.MaxRunningAttempts, MaxPerDay: rails.MaxAttemptsPerDay},
 	}
-	// An interrupt ends the advance and releases the task lock; the next advance replays it.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	context.AfterFunc(ctx, stop)
 	n, err := e.Advance(ctx, ev)
 	if err != nil {
 		return n, err

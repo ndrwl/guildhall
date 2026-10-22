@@ -43,10 +43,11 @@ The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/conf
 | Skills | The embedded release skills, installed into a temporary root for the advance |
 | Attempts | `<state>/<repository>/<task>/<step>-<n>`, laid out by `artisan.AttemptKey` |
 | Working directory | `<state>/<repository>/<task>/work`, a [git worktree](interpreter.md#the-working-directory) of the repository's `path` on branch `guildhall/<task>`, which the first attempt creates from the default branch of the repository's `remote`, fetched with `git` found on `PATH`, and every later attempt reuses, and the merge that closes the task removes with its local branch when nothing in them is undelivered; the `path` must be absolute on the machine the Director runs on |
+| Base and classifier | For an Artisan code review, the [rebase-aware review](interpreter.md#rebase-aware-review)'s `Engine.Base` is the merge base of branch `guildhall/<task>` and the remote's default branch as the working directory's custody last fetched it (`refs/guildhall/default/guildhall/<task>`), read from the repository's `path` with no network call, and its classifier is `git.Program` over that `path`; a base that cannot be read, such as with no working directory yet, leaves the review full |
 | Documents | `<state>/documents` |
 
 An advance holds the task's lock, `attempt.lock` in `<state>/<repository>/<task>`, for its whole run, waiting at most 30 seconds for it, so two advances of one task never interleave; the interpreter is not safe for concurrent use on one task.
-Each `git` or `gh` run of the forge and of the working directory is bounded by five minutes, so a forge that does not answer is an error that records nothing, and an interrupt (Ctrl+C) ends the advance; either way the lock is released and running the command again replays the advance.
+Each `git` or `gh` run of the forge, of the working directory and of the review classifier is bounded by five minutes, so a forge that does not answer is an error that records nothing, and an interrupt (Ctrl+C) ends the advance; either way the lock is released and running the command again replays the advance.
 The interrupt is exercised by a Unix test only; a second interrupt while the advance unwinds ends the process at once.
 
 ## The watcher

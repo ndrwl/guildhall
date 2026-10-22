@@ -1,0 +1,17 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "fake-review",
+  "description": "The fake Artisan's path with an Artisan code review that may send the build back once: plan, Guildmaster acceptance, build, review and delivery under the approval merge policy.",
+  "steps": [
+    {"id": "plan", "type": "plan", "version": 1},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1,
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 1}}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}}
+  ]
+}

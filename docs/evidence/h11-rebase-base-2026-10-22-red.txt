@@ -1,0 +1,20 @@
+# F38: git.Program.Base before it was implemented (go test ./internal/git -run TestBaseProgram, a stub returning an error)
+--- FAIL: TestBaseProgram (2.94s)
+    --- FAIL: TestBaseProgram/a_new_workspace_is_based_on_the_default_branch_it_started_at (0.60s)
+        base_test.go:44: Base = not implemented
+    --- FAIL: TestBaseProgram/the_base_moves_when_the_branch_is_rebased_onto_the_fetched_default_branch (0.87s)
+        base_test.go:55: Base = not implemented
+    --- FAIL: TestBaseProgram/a_reused_workspace_whose_remote_is_unreachable_is_still_reused (0.45s)
+        base_test.go:74: Base = not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/git	2.951s
+FAIL
+
+# F38: the CLI advance before it set Engine.Base and Engine.Rebases (go test ./internal/cli -run TestReviewAfterARebaseReviewsTheResolution)
+--- FAIL: TestReviewAfterARebaseReviewsTheResolution (1.54s)
+    rebase_test.go:123: review-1 binding = {Scope:full Range:<nil>}, want full over bd236a0b33ddd603153f8261b38cbd5e1b619847..8602bd23675a1c50b213a833746d5f0fc4ddb4bb
+    rebase_test.go:138: review-2 binding = {Scope:full Range:<nil>}, want rebase over c8a6ad3c4a8181d43fe4707e2e99f13bd0eb0e3c..7a41d94f6813de43b9e0d58145c10c4031b7324a
+    rebase_test.go:141: no review-2-resolution document
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	1.545s
+FAIL
