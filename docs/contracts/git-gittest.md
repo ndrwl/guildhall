@@ -13,6 +13,6 @@ The shared workspace contract suite, `RunWorkspaceContract` with its `WorkspaceH
 ## Tests
 
 Run by `internal/git/git_test.go`, against `git.Program` and `Script`; `Script` is the double in `internal/interp/rebase_test.go`.
-`RunWorkspaceContract` is run by `internal/git/workspace_test.go` against `git.Program` and `Workspaces`, which is the double in `internal/interp/workspace_test.go` and the CLI's run-director tests; `Repositories` builds the fixtures of the `git.Program` harness, `TestEnsureProgram` and `TestRetireProgram`, and `Repository` those of the built-binary tests.
+`RunWorkspaceContract` is run by `internal/git/workspace_test.go` against `git.Program` and `Workspaces`, which is the double in `internal/interp/workspace_test.go` and the CLI's run-director tests; `Repositories` builds the fixtures of the `git.Program` harness, `TestEnsureProgram`, `TestRetireProgram` and `TestBaseProgram`, and `Repository` those of the built-binary tests.
 `workspace_test.go`'s `TestRepositoriesCopiesAreIndependent` was written red first against a `Repositories` returning empty paths ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): two copies, each one commit behind its own remote's trunk, with its own `origin`, sharing no directory, and a push through one never reaching the other's remote.
 The classification suite and `Script` moved here unchanged from `internal/git`'s own tests.
