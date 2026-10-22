@@ -327,13 +327,13 @@ func (s *Store) Wakes(after uint64, limit int) ([]Wake, bool, error) {
 // choose, counts as "other", so the wake line carries no sender-chosen text. The engine sends attempt-failed,
 // attempt-retried and decision (internal/interp/engine.go), changes-requested, loop-exit-rejected and stall
 // (loops.go), checks-pending, checks-passed and checks-failed (validate.go), published, merge-held,
-// merge-refused and merged (deliver.go) and worker-stalled (heartbeat.go); question and note are the
-// documented kinds of a local message (docs/messaging.md).
+// merge-refused and merged (deliver.go), worker-stalled (heartbeat.go) and workspace-kept (workspace.go);
+// question and note are the documented kinds of a local message (docs/messaging.md).
 var unreadTypes = map[string]bool{
 	"attempt-failed": true, "attempt-retried": true, "changes-requested": true, "checks-failed": true,
 	"checks-passed": true, "checks-pending": true, "decision": true, "loop-exit-rejected": true,
 	"merge-held": true, "merge-refused": true, "merged": true, "published": true, "stall": true,
-	"worker-stalled": true, "question": true, "note": true,
+	"worker-stalled": true, "workspace-kept": true, "question": true, "note": true,
 }
 
 // DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the

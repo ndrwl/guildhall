@@ -138,7 +138,7 @@ guildhall: 3 unread (attempt-failed 1, question 2)
 ```
 
 The line counts the Director's unread messages by type, in type order, and never carries message text, so no sender can type instructions into the Director's session.
-Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine sends (`attempt-failed`, `attempt-retried`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`) and the local `question` and `note`; every other type counts as `other`.
+Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine sends (`attempt-failed`, `attempt-retried`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`.
 Otherwise nothing is typed and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
 
 | Reason | When |
