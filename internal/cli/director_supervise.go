@@ -233,6 +233,8 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	ended, ending, err := a.waitSession(u, c, signals, &w)
 	var exit *exec.ExitError
 	switch {
+	case errors.Is(err, errRuntimeOutlived):
+		return a.fail(fmt.Errorf("director start: %w", err)), false
 	case ending == endForStop:
 		_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by director stop\n", n)
 		return 0, false
@@ -279,6 +281,10 @@ func startRuntime(c *exec.Cmd, n int) (runtimeUnit, error) {
 	}
 	return u, nil
 }
+
+// errRuntimeOutlived is waitSession's error when the runtime's unit is not proven empty and released after the
+// runtime's end: the session's processes may still run, whatever ended the runtime.
+var errRuntimeOutlived = errors.New("the runtime's unit is not proven empty")
 
 // empty kills whatever is left in the unit u of a runtime that has exited and waits until it is empty, reading its
 // members every poll, for at most stopKill.
@@ -364,7 +370,9 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 			decide("")
 		case <-u.Exited():
 			err := errors.Join(empty(u, poll), u.Close())
-			if ps := c.ProcessState; err == nil && ps != nil && !ps.Success() {
+			if err != nil {
+				err = fmt.Errorf("%w: %w", errRuntimeOutlived, err)
+			} else if ps := c.ProcessState; ps != nil && !ps.Success() {
 				err = &exec.ExitError{ProcessState: ps}
 			}
 			return ended, ending, err

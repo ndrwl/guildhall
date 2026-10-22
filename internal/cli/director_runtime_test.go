@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,5 +86,32 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// survivingUnit is a runtime unit whose runtime has exited and whose one other member never ends.
+type survivingUnit struct{ exited chan struct{} }
+
+func (u survivingUnit) Members() ([]artisan.Identity, error) {
+	return []artisan.Identity{{PID: 42}}, nil
+}
+func (u survivingUnit) Terminate() error        { return nil }
+func (u survivingUnit) Kill() error             { return nil }
+func (u survivingUnit) Exited() <-chan struct{} { return u.exited }
+func (u survivingUnit) Close() error            { return nil }
+
+// TestSessionEndReportsASurvivingProcess: a stopped runtime whose unit is not proven empty stopKill after it ended is
+// an error naming the survivor, not a successful stop.
+func TestSessionEndReportsASurvivingProcess(t *testing.T) {
+	path := emptyStore(t)
+	recordSession(t, path, false, store.DirectorRunning, store.DirectorStopping)
+	u := survivingUnit{exited: make(chan struct{})}
+	close(u.exited)
+	app, _, _ := newTestApp(nil, nil)
+	app.SessionPoll = 10 * time.Millisecond
+	w := sessionWatch{storePath: path, n: 1, grace: time.Nanosecond}
+	_, _, err := app.waitSession(u, &exec.Cmd{}, make(chan os.Signal), &w)
+	if !errors.Is(err, errRuntimeOutlived) || !strings.Contains(err.Error(), "42") {
+		t.Fatalf("waitSession = %v, want errRuntimeOutlived naming process 42", err)
 	}
 }
