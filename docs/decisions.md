@@ -100,3 +100,4 @@ Until then a new decision is cited by its file path rather than a number.
 - [D84. Holding admission, stopping unowned attempts and containing the Director's runtime](decisions/0084-director-stop-admission.md)
 - [D85. Automatic handoff triggers and the context reporter](decisions/0085-director-handoff-triggers.md)
 - [D86. The supervisor's checks watcher and the resume wake](decisions/0086-director-checks-watch.md)
+- [D87. Deliver opens the Guildmaster's audit of a sampled task](decisions/0087-quality-audit.md)

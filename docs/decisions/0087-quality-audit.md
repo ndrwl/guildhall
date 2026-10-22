@@ -1,4 +1,4 @@
-# Deliver opens the Guildmaster's audit of a sampled task
+# D87. Deliver opens the Guildmaster's audit of a sampled task
 
 The Guildmaster accepted a three-question audit of one in five delivered tasks, behind configuration, so the model judge's drift is measured rather than assumed ([G4](../quality.md#honesty-and-evidence-g)).
 This change gives it a decision kind and opens it.

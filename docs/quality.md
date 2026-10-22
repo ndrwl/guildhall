@@ -409,7 +409,7 @@ The criteria read these records:
 The Director runs the [`guildhall-self-review`](../skills/guildhall-self-review/SKILL.md) skill after a task merges, when `quality_self_review` is `on`; it is `off` by default.
 The skill writes one `self-review-<n>.json` document per task under the copy's `quality/<repo>/<task>/` directory, with the facts its script prints, the gates and trends the records show, and each model-judged score left pending for a judge session that is neither the Director nor the builder.
 The self-review is for learning and for evaluating workflow changes; it never re-gates a merged task.
-Independently of self-review, deliver opens the Guildmaster's `audit` decision for one in `quality_audit_sample` delivered tasks, chosen by the task's identity; the default is 5, 0 disables audits, and 1 audits every task ([decision](decisions/quality-audit.md)).
+Independently of self-review, deliver opens the Guildmaster's `audit` decision for one in `quality_audit_sample` delivered tasks, chosen by the task's identity; the default is 5, 0 disables audits, and 1 audits every task ([decision](decisions/0087-quality-audit.md)).
 Launching the judge session, the lesson-proposal shape that applies `quality_skill_edits_need_approval`, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
 
 ## Sources
