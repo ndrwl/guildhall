@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 func sampleSession(n int) DirectorSession {
@@ -355,5 +359,62 @@ func TestDirectorRecordsOnSchemaV1Fixture(t *testing.T) {
 	}
 	if rep, err := s.Doctor(); err != nil || len(rep.Problems) != 0 {
 		t.Fatalf("doctor = %+v, %v", rep, err)
+	}
+}
+
+// TestDoctorCountsDirectorRecords shows doctor decodes and counts the Director's sessions and wakes.
+func TestDoctorCountsDirectorRecords(t *testing.T) {
+	s, _ := messagingStore(t)
+	mustStartSession(t, s, sampleSession(1))
+	mustSend(t, s, toDirector("q-1"))
+	if _, err := s.RecordWake(Wake{MessageID: "q-1", SenderType: "local", Decision: WakeWoke}); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := s.Doctor()
+	if err != nil || len(rep.Problems) != 0 {
+		t.Fatalf("doctor = %+v, %v", rep, err)
+	}
+	if rep.DirectorSessions != 1 || rep.Wakes != 1 {
+		t.Fatalf("director sessions %d, wakes %d; want 1 and 1", rep.DirectorSessions, rep.Wakes)
+	}
+}
+
+// TestDoctorReportsDamagedDirectorRecords shows a session or wake that does not decode is a problem, not a
+// clean store.
+func TestDoctorReportsDamagedDirectorRecords(t *testing.T) {
+	for _, bucket := range []string{"sessions", "wakes"} {
+		t.Run(bucket, func(t *testing.T) {
+			s, path := messagingStore(t)
+			mustStartSession(t, s, sampleSession(1))
+			mustSend(t, s, toDirector("q-1"))
+			if _, err := s.RecordWake(Wake{MessageID: "q-1", SenderType: "local", Decision: WakeQueued, Reason: "no pane"}); err != nil {
+				t.Fatal(err)
+			}
+			_ = s.Close()
+			db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Update(func(tx *bolt.Tx) error {
+				return tx.Bucket([]byte("director")).Bucket([]byte(bucket)).Put([]byte("99999999999999999999"), []byte("{not json"))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			_ = db.Close()
+			rep, err := openTest(t, path).Doctor()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rep.Problems) != 1 || !strings.Contains(rep.Problems[0], "director "+bucket) {
+				t.Fatalf("problems = %q, want one naming director %s", rep.Problems, bucket)
+			}
+			sessions, wakes := 1, 2
+			if bucket == "sessions" {
+				sessions, wakes = 2, 1
+			}
+			if rep.DirectorSessions != sessions || rep.Wakes != wakes {
+				t.Fatalf("director sessions %d, wakes %d; want %d and %d", rep.DirectorSessions, rep.Wakes, sessions, wakes)
+			}
+		})
 	}
 }

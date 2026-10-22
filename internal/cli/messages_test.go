@@ -294,3 +294,31 @@ func TestMessagesConcurrentSends(t *testing.T) {
 		t.Fatalf("successful sends missing from inbox: %v", want)
 	}
 }
+
+// TestMessagesListShowsWake shows each listed Director message carries its recorded wake decision and reason,
+// and a message to an Artisan, which nothing wakes, carries none.
+func TestMessagesListShowsWake(t *testing.T) {
+	path := messagingStorePath(t)
+	for _, to := range []string{"director", "artisan:app/t-1/build/1"} {
+		role, _, _ := strings.Cut(to, ":")
+		if code, _, stderr := runMessages(t, envelope("m-"+role, role), "send", "--store", path, to, "-"); code != 0 {
+			t.Fatalf("send to %s: %s", to, stderr)
+		}
+	}
+	type page struct {
+		Messages []struct {
+			ID   string      `json:"id"`
+			Wake *store.Wake `json:"wake"`
+		} `json:"messages"`
+	}
+	_, out, _ := runMessages(t, "", "list", "--store", path, "director")
+	p := decodeJSON[page](t, out)
+	if len(p.Messages) != 1 || p.Messages[0].Wake == nil || p.Messages[0].Wake.Decision != store.WakeQueued || p.Messages[0].Wake.Reason != "no session" ||
+		p.Messages[0].Wake.MessageID != "m-director" || p.Messages[0].Wake.Time.IsZero() {
+		t.Fatalf("director list = %s", out)
+	}
+	_, out, _ = runMessages(t, "", "list", "--store", path, "artisan:app/t-1/build/1")
+	if p := decodeJSON[page](t, out); len(p.Messages) != 1 || p.Messages[0].Wake != nil || strings.Contains(out, `"wake"`) {
+		t.Fatalf("artisan list = %s", out)
+	}
+}

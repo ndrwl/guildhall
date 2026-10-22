@@ -13,7 +13,10 @@ type Report struct {
 	Receipts int
 	// WorkflowApprovals counts recorded workflow approvals.
 	WorkflowApprovals int
-	Repositories      []RepositoryCounts
+	// DirectorSessions and Wakes count the Director's session and wake records (docs/store.md#director-sessions).
+	DirectorSessions int
+	Wakes            int
+	Repositories     []RepositoryCounts
 	// Problems lists bbolt integrity errors and undecodable records; empty means none were found.
 	Problems []string
 }
