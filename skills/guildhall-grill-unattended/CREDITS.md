@@ -13,6 +13,7 @@ A Steward-managed override of an adapted skill keeps that line.
 | `guildhall-hallmark` | `skills/engineering/improve-codebase-architecture/SKILL.md` (scan and report) and `skills/engineering/codebase-design/SKILL.md` (vocabulary and principles) |
 | `guildhall-contract-tdd` | `skills/engineering/tdd/SKILL.md`, `tests.md` and `mocking.md` |
 | `guildhall-review` | `skills/engineering/code-review/SKILL.md` |
+| `guildhall-handoff` | `skills/productivity/handoff/SKILL.md` |
 
 The upstream licence applies to the adapted text:
 

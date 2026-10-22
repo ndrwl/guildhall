@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -13,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/skills"
 )
 
 // newTestApp returns an App whose PATH lookups and commands are answered from
@@ -183,7 +188,8 @@ func TestHelpPrintsUsageToStdout(t *testing.T) {
 }
 
 // TestHelpNamesReadmeCommands pins the help text to the README command list:
-// every `guildhall <command>` the list names appears in the usage.
+// every `guildhall <command>` the list names appears in the usage, and every command a release skill names is
+// one the usage lists or one still pending.
 func TestHelpNamesReadmeCommands(t *testing.T) {
 	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {
@@ -207,6 +213,71 @@ func TestHelpNamesReadmeCommands(t *testing.T) {
 			t.Errorf("help does not name README command %q", c[1])
 		}
 	}
+
+	var listed []string
+	for line := range strings.Lines(stdout.String()) {
+		if usage, ok := strings.CutPrefix(line, "  "); ok && usage != "" && usage[0] >= 'a' && usage[0] <= 'z' {
+			usage, _, _ = strings.Cut(strings.TrimSuffix(usage, "\n"), "  ")
+			listed = append(listed, commandNames(usage)...)
+		}
+	}
+	pending := slices.Collect(maps.Keys(pendingCommands))
+	err = fs.WalkDir(skills.Release(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
+			return err
+		}
+		data, err := fs.ReadFile(skills.Release(), p)
+		for _, m := range skillCommand.FindAllStringSubmatch(string(data), -1) {
+			if !namedBy(listed, m[1]) && !namedBy(pending, m[1]) {
+				t.Errorf("%s names `guildhall %s`, which help does not list", p, m[1])
+			}
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for c, slice := range pendingCommands {
+		if namedBy(listed, c) {
+			t.Errorf("help lists %q, which %s built: remove it from pendingCommands", c, slice)
+		}
+	}
+}
+
+// pendingCommands are the commands the Director's skills name before the slice 4 slice that builds them lands.
+// Each leaves this list when the help lists it, so the skills are pinned to the command as built.
+var pendingCommands = map[string]string{
+	"director handoff": "D11",
+	"director reload":  "D11",
+}
+
+// skillCommand finds a guildhall command a skill names in code: its words up to the first flag or placeholder.
+var skillCommand = regexp.MustCompile("(?m)(?:`|^[ \t]*)guildhall ([a-z][a-z-]*(?: [a-z][a-z-]*)*)")
+
+// namedBy reports whether a skill's command words start with one of the commands, so "messages list director" is "messages list".
+func namedBy(commands []string, words string) bool {
+	return slices.ContainsFunc(commands, func(c string) bool { return words == c || strings.HasPrefix(words, c+" ") })
+}
+
+// commandNames returns the commands a usage phrase names: its words before any flag, placeholder or ellipsis,
+// with an alternation such as "task new|show" expanded to one command per choice.
+func commandNames(phrase string) []string {
+	var words []string
+	for _, w := range strings.Fields(phrase) {
+		if strings.ContainsAny(w[:1], "-<[(.") {
+			break
+		}
+		words = append(words, w)
+	}
+	i := slices.IndexFunc(words, func(w string) bool { return strings.Contains(w, "|") })
+	if i < 0 {
+		return []string{strings.Join(words, " ")}
+	}
+	var names []string
+	for _, choice := range strings.Split(strings.Join(words[i:], " "), "|") {
+		names = append(names, strings.Join(append(slices.Clone(words[:i]), choice), " "))
+	}
+	return names
 }
 
 // TestArtisanRoleGrammar pins the role grammar of docs/decisions/0053-cli-role-grammar.md

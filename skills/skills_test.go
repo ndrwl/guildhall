@@ -257,6 +257,30 @@ func TestSkillFrontmatter(t *testing.T) {
 	}
 }
 
+// TestAdaptedSkillsCarryCredits checks that a skill carries CREDITS.md exactly when its body names an upstream source.
+func TestAdaptedSkillsCarryCredits(t *testing.T) {
+	notice, err := fs.ReadFile(skills.Release(), "CREDITS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range shipped(t) {
+		data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		adapted := strings.Contains(string(data), "\nAdapted from `")
+		credits, err := fs.ReadFile(skills.Release(), name+"/CREDITS.md")
+		switch {
+		case adapted && !bytes.Equal(credits, notice):
+			t.Errorf("%s is adapted but its CREDITS.md is not the release's: %v", name, err)
+		case adapted && !strings.Contains(string(notice), "| `"+name+"` |"):
+			t.Errorf("%s is adapted but CREDITS.md does not list its upstream source", name)
+		case !adapted && err == nil:
+			t.Errorf("%s carries CREDITS.md but names no upstream source", name)
+		}
+	}
+}
+
 func TestRegularFilesWithLFOnly(t *testing.T) {
 	for _, name := range append(shipped(t), "CREDITS.md") {
 		err := filepath.WalkDir(name, func(p string, d fs.DirEntry, err error) error {
@@ -518,6 +542,9 @@ func TestInstallIsTheFirstRenderRoot(t *testing.T) {
 	}
 	want := goldenDigests(t)
 	for _, s := range r.Manifest.Skills {
+		if _, err := fs.Stat(skills.Release(), s.Name+"/CREDITS.md"); errors.Is(err, fs.ErrNotExist) {
+			continue // not adapted; TestAdaptedSkillsCarryCredits checks which skills are
+		}
 		for _, dir := range []string{release, r.SkillsPath} {
 			notice, err := os.ReadFile(filepath.Join(dir, s.Name, "CREDITS.md"))
 			if err != nil {
@@ -550,5 +577,104 @@ func TestInstallRefusesANonEmptyDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(empty, "CREDITS.md")); err != nil {
 		t.Errorf("refused install removed the first: %v", err)
+	}
+}
+
+// directorSkills are the skills the Director's session works through (D57: plain English is the primary interface).
+var directorSkills = []string{
+	"guildhall-director-inbox",
+	"guildhall-director-stage",
+	"guildhall-director-startup",
+	"guildhall-director-tasks",
+	"guildhall-handoff",
+}
+
+// notAskedOfTheDirector lists the README commands the Guildmaster never asks the Director to run, with why.
+var notAskedOfTheDirector = map[string]string{
+	"help":            "the Director answers in plain English",
+	"store init":      "a store exists before any Director runs",
+	"director start":  "the Guildmaster starts the Director; a session cannot start itself",
+	"artisan start":   "task start and step retry launch every attempt",
+	"fake-artisan":    "a test wrapper artisan start runs",
+	"claude-artisan":  "the Claude wrapper artisan start runs",
+	"steward rollout": "the Steward's command, not the Director's",
+	"render":          "the engine renders every prompt",
+}
+
+// readmeCommand finds each `guildhall <command>` in the README's command list.
+var readmeCommand = regexp.MustCompile("`guildhall ([^`]+)`")
+
+// skillCommand finds a guildhall command a skill names in code: its words up to the first flag or placeholder.
+var skillCommand = regexp.MustCompile("(?m)(?:`|^[ \t]*)guildhall ([a-z][a-z-]*(?: [a-z][a-z-]*)*)")
+
+// commandNames returns the commands a usage phrase names: its words before any flag, placeholder or ellipsis,
+// with an alternation such as "task new|show" expanded to one command per choice.
+func commandNames(phrase string) []string {
+	var words []string
+	for _, w := range strings.Fields(phrase) {
+		if strings.ContainsAny(w[:1], "-<[(.") {
+			break
+		}
+		words = append(words, w)
+	}
+	i := slices.IndexFunc(words, func(w string) bool { return strings.Contains(w, "|") })
+	if i < 0 {
+		return []string{strings.Join(words, " ")}
+	}
+	var names []string
+	for _, choice := range strings.Split(strings.Join(words[i:], " "), "|") {
+		names = append(names, strings.Join(append(slices.Clone(words[:i]), choice), " "))
+	}
+	return names
+}
+
+// TestDirectorSkillsNameEveryReadmeCommand is D57's rule, mechanically checked: every command of the README's
+// command list that the Guildmaster would otherwise type is named by at least one of the Director's skills.
+func TestDirectorSkillsNameEveryReadmeCommand(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, list, ok := strings.Cut(string(readme), "\n## The commands\n")
+	if !ok {
+		t.Fatal("README.md has no The commands section")
+	}
+	list, _, _ = strings.Cut(list, "\n## ")
+	var commands []string
+	for _, m := range readmeCommand.FindAllStringSubmatch(list, -1) {
+		commands = append(commands, commandNames(m[1])...)
+	}
+	if len(commands) == 0 {
+		t.Fatal("README.md lists no commands")
+	}
+
+	var named []string
+	for _, name := range directorSkills {
+		err := fs.WalkDir(skills.Release(), name, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || path.Ext(p) != ".md" {
+				return err
+			}
+			data, err := fs.ReadFile(skills.Release(), p)
+			for _, m := range skillCommand.FindAllStringSubmatch(string(data), -1) {
+				named = append(named, m[1])
+			}
+			return err
+		})
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for _, c := range commands {
+		if _, ok := notAskedOfTheDirector[c]; ok {
+			continue
+		}
+		if !slices.ContainsFunc(named, func(n string) bool { return n == c || strings.HasPrefix(n, c+" ") }) {
+			t.Errorf("no Director skill names `guildhall %s`", c)
+		}
+	}
+	for c := range notAskedOfTheDirector {
+		if !slices.Contains(commands, c) {
+			t.Errorf("%q is excused but the README does not list it", c)
+		}
 	}
 }
