@@ -1,0 +1,80 @@
+Red runs for the Director's Herdr tab (D6b), 2026-10-22, on bdfc0e8 with the branch's tests against stub bodies.
+Each section names the command and the stub; long lines are cut at 240 characters and temporary paths shortened. The matching green run is the branch's go test ./...
+
+## store: go test ./internal/store -run Director, before StartDirectorSession set or refused EndReason
+--- FAIL: TestDirectorSessionStartRefusals (0.04s)
+    director_test.go:88: end reason given: err = <nil>, want ErrInvalid
+    director_test.go:88: skips a number: err = <nil>, want ErrInvalid
+    director_test.go:92: refused starts wrote 2 receipts
+--- FAIL: TestSecondDirectorSessionSupersedesTheFirst (0.05s)
+    director_test.go:198: superseded session = {Number:1 State:stopped Identity:{PID:4242 Token:boot-1:77} Release:v0.4.0 ConfigDigest:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc Pane:{Session:lab Workspace:w1 Ta
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	1.137s
+FAIL
+
+## adapter: go test ./internal/adapter -run 'Workspace|OpensThenTypes|Contract', Workspaces, CreateWorkspace, EnsureWorkspace, TabLauncher.Open and Type returning "not built" on every host
+--- FAIL: TestTabLauncherOpensThenTypes (0.00s)
+--- FAIL: TestHerdrTabsContract (0.18s)
+    --- FAIL: TestHerdrTabsContract/a_created_workspace_is_listed_and_accepts_tabs (0.00s)
+    --- FAIL: TestHerdrTabsContract/ensure_creates_a_workspace_once_and_reuses_it_by_label (0.00s)
+    --- FAIL: TestHerdrTabsContract/an_ended_context_fails_the_workspace_operations (0.00s)
+--- FAIL: TestFakeTabsContract (0.00s)
+    --- FAIL: TestFakeTabsContract/a_created_workspace_is_listed_and_accepts_tabs (0.00s)
+    --- FAIL: TestFakeTabsContract/ensure_creates_a_workspace_once_and_reuses_it_by_label (0.00s)
+    --- FAIL: TestFakeTabsContract/an_ended_context_fails_the_workspace_operations (0.00s)
+--- FAIL: TestShellPanesContract (0.01s)
+    --- FAIL: TestShellPanesContract/a_created_workspace_is_listed_and_accepts_tabs (0.00s)
+    --- FAIL: TestShellPanesContract/ensure_creates_a_workspace_once_and_reuses_it_by_label (0.00s)
+    --- FAIL: TestShellPanesContract/an_ended_context_fails_the_workspace_operations (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter	0.197s
+ok  	github.com/ndrwl/guildhall/internal/adapter/claude	0.160s
+ok  	github.com/ndrwl/guildhall/internal/adapter/fake	0.157s
+ok  	github.com/ndrwl/guildhall/internal/adapter/runtimes	0.005s [no tests to run]
+FAIL
+
+## config: go test ./internal/config -run HerdrSession, HerdrSession returning "not built" and Parse not checking herdr_session
+    --- FAIL: TestHerdrSession/unset_is_none (0.00s)
+        herdr_session_test.go:22: HerdrSession() = "", not built; want ""
+    --- FAIL: TestHerdrSession/a_local_session (0.00s)
+        herdr_session_test.go:22: HerdrSession() = "", not built; want "guild-lab"
+    --- FAIL: TestHerdrSession/a_managed_session (0.00s)
+        herdr_session_test.go:22: HerdrSession() = "", not built; want "fleet_1"
+--- FAIL: TestHerdrSessionRefusesAnUnusableName (0.01s)
+    herdr_session_test.go:34: "default": Parse error <nil>, want one naming herdr_session
+    herdr_session_test.go:34: "": Parse error <nil>, want one naming herdr_session
+    herdr_session_test.go:34: "-lab": Parse error <nil>, want one naming herdr_session
+    herdr_session_test.go:34: "my lab": Parse error <nil>, want one naming herdr_session
+    herdr_session_test.go:34: "lab/1": Parse error <nil>, want one naming herdr_session
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.024s
+FAIL
+
+## cli: go test ./internal/cli -run DirectorStart, with the pane flags parsed but unused and no wrapper (start without --foreground a usage error)
+--- FAIL: TestDirectorStartOpensTheDirectorTab (0.03s)
+    director_tab_test.go:210: start 1: exit 2
+--- FAIL: TestDirectorStartFailsWhenTheTabCommandEnds (0.03s)
+    director_tab_test.go:247: exit 2, stdout "", stderr "guildhall: director start runs the session in this terminal; pass --foreground\n\nUsage: guildhall <command>\n\nCommands:\n  version        print the guildhall version and platform\n 
+--- FAIL: TestDirectorStartRefusesALiveSession (0.23s)
+    --- FAIL: TestDirectorStartRefusesALiveSession/recovering (0.12s)
+        director_tab_test.go:276: ["--copy" "$TMPDIR/TestDirectorStartRefusesALiveSessionrecovering3649774733/001"]: exit 2, stdout "", stderr "guildhall: director start runs the session in this terminal; pass --foreground\n\nUsage: guildha
+        director_tab_test.go:276: ["--copy" "$TMPDIR/TestDirectorStartRefusesALiveSessionrecovering3649774733/001" "--foreground"]: exit 0, stdout "config: admitted ($TMPDIR/TestDirectorStartRefusesALiveSessionrecovering3649774733/001/confi
+        director_tab_test.go:283: sessions = [{Number:1 State:stopped Identity:{PID:3580553 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:30641377} Release:dev ConfigDigest:sha256:ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    --- FAIL: TestDirectorStartRefusesALiveSession/running (0.11s)
+        director_tab_test.go:276: ["--copy" "$TMPDIR/TestDirectorStartRefusesALiveSessionrunning2258392211/001"]: exit 2, stdout "", stderr "guildhall: director start runs the session in this terminal; pass --foreground\n\nUsage: guildhall 
+        director_tab_test.go:276: ["--copy" "$TMPDIR/TestDirectorStartRefusesALiveSessionrunning2258392211/001" "--foreground"]: exit 0, stdout "config: admitted ($TMPDIR/TestDirectorStartRefusesALiveSessionrunning2258392211/001/config.toml
+        director_tab_test.go:283: sessions = [{Number:1 State:stopped Identity:{PID:3580553 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:30641377} Release:dev ConfigDigest:sha256:ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+--- FAIL: TestDirectorStartSupersedesADeadSession (0.12s)
+    director_tab_test.go:308: sessions = [{Number:1 State:stopped Identity:{PID:3580553 Token:gone} Release:dev ConfigDigest:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc Pane:{Session: Workspace: Tab: Pane:} Start
+--- FAIL: TestDirectorStartRecordsItsPane (0.10s)
+    director_tab_test.go:321: sessions = [{Number:1 State:stopped Identity:{PID:3580553 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:30641377} Release:dev ConfigDigest:sha256:754f01332c71e0b0d53290f7b595cb439b28727d55914a6c2b05b2a026424433 Pa
+--- FAIL: TestDirectorStartRefusals (0.42s)
+    --- FAIL: TestDirectorStartRefusals/a_tab_without_a_herdr_session (0.04s)
+        director_test.go:271: exit 2, stdout "", stderr "guildhall: director start runs the session in this terminal; pass --foreground\n\nUsage: guildhall <command>\n\nCommands:\n  version        print the guildhall version and platform\n 
+    --- FAIL: TestDirectorStartRefusals/half_a_pane_binding (0.10s)
+        director_test.go:271: exit 0, stdout "config: admitted ($TMPDIR/TestDirectorStartRefusalshalf_a_pane_binding557315393/001/config.toml)\nruntime: fake ($TMPDIR/go-build2902354135/b001/cli.test)\nstore: opens ($TMPDIR/TestDirectorStar
+--- FAIL: TestDirectorStartRunsTheSessionInAShellPane (0.04s)
+    director_unix_test.go:75: exit 2
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	1.699s
+FAIL

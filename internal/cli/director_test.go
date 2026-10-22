@@ -251,7 +251,8 @@ func TestDirectorStartRefusals(t *testing.T) {
 			}},
 		{name: "runtime not on PATH", table: "[director]\nadapter = \"claude\"\n", code: 1, want: "claude: not found on PATH",
 			setup: func(t *testing.T, dir string) { t.Setenv("PATH", t.TempDir()) }},
-		{name: "not foreground", table: "[director]\nadapter = \"fake\"\n", noForeground: true, code: 2, want: "--foreground"},
+		{name: "a tab without a herdr session", table: "[director]\nadapter = \"fake\"\n", noForeground: true, code: 1, want: "herdr_session"},
+		{name: "half a pane binding", table: "[director]\nadapter = \"fake\"\n", args: []string{"--herdr-session", "lab", "--herdr-tab", "w1:t2"}, code: 2, want: "--herdr-pane"},
 		{name: "two runtimes", table: "[director]\nadapter = \"fake\"\n", args: []string{"fake", "claude"}, code: 2, want: "one runtime"},
 	}
 	for _, c := range cases {

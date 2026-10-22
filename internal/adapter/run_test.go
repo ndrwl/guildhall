@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/herdr"
 )
 
 // helperEnv makes the test binary act as a child process for process tests.
@@ -112,6 +114,35 @@ func TestTabLauncherTypesCommandForThePaneShell(t *testing.T) {
 	}
 	if err := run.Stop(context.Background()); err != nil || len(f.sentLines()) != 2 || f.sentLines()[1] != "keys "+run.Tab.PaneID+" ctrl+c" {
 		t.Errorf("Stop = %v, sent = %q", err, f.sentLines())
+	}
+}
+
+// TestTabLauncherOpensThenTypes opens a tab, as the Director's wrapper does before it knows the argv that names
+// the tab, and types into it only when asked: the typed line is argv quoted for the shell Open reported.
+func TestTabLauncherOpensThenTypes(t *testing.T) {
+	f := newFakeTabs("lab", "zsh")
+	f.busyReads = 2
+	l := TabLauncher{Host: f, WorkspaceID: "w1", ShellReady: time.Minute, Poll: time.Millisecond}
+	tab, shell, err := l.Open(context.Background(), "director ada", "/copy", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell != "zsh" || len(f.created) != 1 || f.created[0].Label != "director ada" || f.created[0].Cwd != "/copy" {
+		t.Errorf("shell %q, created %+v", shell, f.created)
+	}
+	if sent := f.sentLines(); len(sent) != 0 {
+		t.Errorf("Open typed %q", sent)
+	}
+	argv := []string{"/bin/guildhall", "director", "start", "--herdr-tab", tab.TabID}
+	if err := l.Type(context.Background(), tab, shell, argv); err != nil {
+		t.Fatal(err)
+	}
+	line, _ := herdr.ShellCommand("zsh", argv)
+	if sent := f.sentLines(); len(sent) != 1 || sent[0] != "run "+tab.PaneID+" "+line {
+		t.Errorf("sent = %q, want the argv quoted for zsh", sent)
+	}
+	if err := l.Type(context.Background(), tab, "powershell", []string{"x", ""}); err == nil || len(f.sentLines()) != 1 {
+		t.Errorf("Type of an argv PowerShell cannot pass = %v, sent %q", err, f.sentLines())
 	}
 }
 

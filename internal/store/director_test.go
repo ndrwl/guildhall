@@ -79,6 +79,7 @@ func TestDirectorSessionStartRefusals(t *testing.T) {
 		"started at given":    func(d *DirectorSession) { d.StartedAt = testTime },
 		"ready at given":      func(d *DirectorSession) { d.ReadyAt = testTime },
 		"state sequence give": func(d *DirectorSession) { d.StateSequence = 9 },
+		"end reason given":    func(d *DirectorSession) { d.EndReason = EndSuperseded },
 	}
 	for name, edit := range bad {
 		d := sampleSession(1)
@@ -193,7 +194,7 @@ func TestSecondDirectorSessionSupersedesTheFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if old.State != DirectorStopped || old.EndedAt != testTime || old.StateSequence != r.Sequence {
+	if old.State != DirectorStopped || old.EndedAt != testTime || old.StateSequence != r.Sequence || old.EndReason != EndSuperseded {
 		t.Fatalf("superseded session = %+v", old)
 	}
 	latest, err := s.LatestDirectorSession()
@@ -208,6 +209,9 @@ func TestSecondDirectorSessionSupersedesTheFirst(t *testing.T) {
 	mustMove(t, s, 2, DirectorStopped)
 	ended, _ := s.DirectorSession(2)
 	mustStartSession(t, s, sampleSession(3))
+	if ended.EndReason != "" {
+		t.Fatalf("a session stopped by its supervisor has end reason %q", ended.EndReason)
+	}
 	if again, _ := s.DirectorSession(2); again != ended {
 		t.Fatalf("starting session 3 changed stopped session 2: %+v -> %+v", ended, again)
 	}

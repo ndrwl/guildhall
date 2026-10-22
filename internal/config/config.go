@@ -63,6 +63,10 @@ const ChecksRefreshKey = "checks_refresh"
 // DefaultChecksRefresh is the checks refresh of a config that does not set ChecksRefreshKey.
 const DefaultChecksRefresh = time.Minute
 
+// HerdrSessionKey is the setting that names the Herdr session the Director's tab opens in
+// (docs/configuration.md#settings).
+const HerdrSessionKey = "herdr_session"
+
 // Config is one copy's parsed configuration.
 type Config struct {
 	SchemaVersion int  `toml:"schema_version"`
@@ -264,6 +268,16 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	if m, ok := c.Managed[HerdrSessionKey]; ok {
+		if err := checkHerdrSession(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[HerdrSessionKey]; ok {
+		if err := checkHerdrSession(v); err != nil {
+			add("local %v", err)
+		}
+	}
 	if m, ok := c.Managed[ChecksRefreshKey]; ok {
 		if _, err := parseChecksRefresh(m.Value); err != nil {
 			add("managed %v", err)
@@ -422,6 +436,31 @@ func parseChecksRefresh(v string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"1m\", or \"0s\" to read at every advance", ChecksRefreshKey, v)
 	}
 	return d, nil
+}
+
+// HerdrSession returns the effective HerdrSessionKey setting: the named Herdr session the Director's tab opens
+// in, or "" when it is not set.
+// A value Herdr would not take as a session name, or Herdr's default session, is an error; Parse refuses one
+// already.
+func (c *Config) HerdrSession() (string, error) {
+	v, ok := c.Setting(HerdrSessionKey)
+	if !ok {
+		return "", nil
+	}
+	return v, checkHerdrSession(v)
+}
+
+// herdrSessionName is the shape of a Herdr session name the herdr client accepts.
+var herdrSessionName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+func checkHerdrSession(v string) error {
+	switch {
+	case v == "default":
+		return fmt.Errorf(`%s "default" is refused: name a dedicated Herdr session`, HerdrSessionKey)
+	case !herdrSessionName.MatchString(v):
+		return fmt.Errorf("%s %q must be letters, digits, '-' or '_', starting with a letter or digit", HerdrSessionKey, v)
+	}
+	return nil
 }
 
 // Profile returns the profile with this name, or an error wrapping ErrUnknownProfile.

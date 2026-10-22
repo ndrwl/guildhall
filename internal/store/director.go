@@ -80,10 +80,16 @@ type DirectorSession struct {
 	StartedAt time.Time `json:"started_at"`
 	ReadyAt   time.Time `json:"ready_at,omitzero"`
 	EndedAt   time.Time `json:"ended_at,omitzero"`
+	// EndReason says why a stopped session ended when its supervisor did not record the end: EndSuperseded
+	// when a newer session was recorded over it. It is set by the store.
+	EndReason string `json:"end_reason,omitempty"`
 	// StateSequence is the sequence of the receipt that recorded State. SetDirectorState names it, so a move
 	// decided on a stale read is refused rather than applied over a newer one.
 	StateSequence uint64 `json:"state_sequence"`
 }
+
+// EndSuperseded is the end reason of a session recorded stopped because a newer session was recorded.
+const EndSuperseded = "superseded"
 
 // WakeDecision is what a wake did.
 type WakeDecision string
@@ -149,7 +155,7 @@ func (s *Store) StartDirectorSession(d DirectorSession) (Receipt, error) {
 				return err
 			}
 			if prev.State != DirectorStopped {
-				prev.State, prev.EndedAt, prev.StateSequence = DirectorStopped, now, r.Sequence
+				prev.State, prev.EndedAt, prev.EndReason, prev.StateSequence = DirectorStopped, now, EndSuperseded, r.Sequence
 				if err := putJSON(sessions, sessionKey(newest), prev); err != nil {
 					return err
 				}
@@ -392,8 +398,8 @@ func validateSession(d DirectorSession) error {
 		return invalid("a new director session is %s, not %q", DirectorRecovering, d.State)
 	case d.Identity.PID < 1:
 		return invalid("director session pid %d must be positive", d.Identity.PID)
-	case !d.StartedAt.IsZero() || !d.ReadyAt.IsZero() || !d.EndedAt.IsZero() || d.StateSequence != 0:
-		return invalid("director session times and state sequence are set by the store")
+	case !d.StartedAt.IsZero() || !d.ReadyAt.IsZero() || !d.EndedAt.IsZero() || d.StateSequence != 0 || d.EndReason != "":
+		return invalid("director session times, end reason and state sequence are set by the store")
 	}
 	if err := validateText("director session token", d.Identity.Token, 256); err != nil {
 		return err

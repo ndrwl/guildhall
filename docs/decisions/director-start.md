@@ -5,9 +5,9 @@ It is the session supervisor the [session record](director-session-record.md) wa
 
 ## Decisions
 
-- **Foreground only, for now.**
+- **Foreground first.**
   The session runs as the supervisor's child in the current terminal, with the terminal's input and output.
-  Opening the session's own Herdr tab is the next slice; until then `--foreground` is required, so the flag's meaning does not change when the tab lands.
+  `--foreground` names that, so its meaning did not change when the session's own [Herdr tab](director-tab.md) landed: without it, `director start` opens the tab and runs the foreground supervisor there.
 - **Recovering starts no new work.**
   A new session is `recovering` until the Director runs `guildhall director ready`, which follows the captain's rule that a restarted Director handles what is in flight before starting anything.
   The binary enforces it at the two commands that start new work, `task new` and `task start` of a task with no attempt, and nowhere else, so recovery itself (`step done`, `step retry`, `decide answer`, `messages`, every read, and advancing a task already under way) is never blocked.
@@ -26,5 +26,5 @@ It is the session supervisor the [session record](director-session-record.md) wa
 
 ## Not yet
 
-The status-line context reporter, the reload loop that starts a new session after a handoff, handoff notes in `startup.md`, the Herdr status preflight line and the Herdr tab land with the handoff, reload and tab slices.
+The status-line context reporter, the reload loop that starts a new session after a handoff and handoff notes in `startup.md` land with the handoff and reload slices; the Herdr status preflight line and the Herdr tab landed with the [tab slice](director-tab.md).
 A live Claude Code Director session has not been run; the stub proves only the command shape and settings the adapter writes.

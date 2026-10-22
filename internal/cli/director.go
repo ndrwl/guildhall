@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
@@ -20,6 +21,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -47,8 +49,9 @@ func (a *App) fakeDirector(args []string) int {
 // errStartRefused is a failed preflight check, already printed on its own line.
 var errStartRefused = errors.New("director start: preflight failed")
 
-// directorStart runs `guildhall director start [runtime] --foreground [--check] [--copy <dir>]`: the session
-// supervisor (docs/director.md#start).
+// directorStart runs `guildhall director start [runtime] [--foreground] [--check] [--copy <dir>]`: with
+// --foreground the session supervisor (docs/director.md#start), else the wrapper that opens the Director's
+// Herdr tab and runs the supervisor in it (docs/director.md#the-directors-tab).
 func (a *App) directorStart(args []string) int {
 	fl := flag.NewFlagSet("director start", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
@@ -56,6 +59,11 @@ func (a *App) directorStart(args []string) int {
 	cp.register(fl)
 	foreground := fl.Bool("foreground", false, "run the session in this terminal")
 	check := fl.Bool("check", false, "run the preflight only")
+	var pane store.DirectorPane
+	fl.StringVar(&pane.Session, "herdr-session", "", "the Herdr session of the tab the session runs in")
+	fl.StringVar(&pane.Workspace, "herdr-workspace", "", "the Herdr workspace of that tab")
+	fl.StringVar(&pane.Tab, "herdr-tab", "", "the Herdr tab")
+	fl.StringVar(&pane.Pane, "herdr-pane", "", "the Herdr pane")
 	if err := parseInterspersed(fl, args); err != nil {
 		return a.usageError("director start: " + err.Error())
 	}
@@ -65,10 +73,12 @@ func (a *App) directorStart(args []string) int {
 		return a.usageError("director start: " + err.Error())
 	case fl.NArg() > 1:
 		return a.usageError("director start takes at most one runtime")
-	case !*foreground:
-		return a.usageError("director start runs the session in this terminal; pass --foreground")
 	case cp.dir == "":
 		return a.usageError("director start: --copy is required, or GUILDHALL_COPY")
+	case pane != (store.DirectorPane{}) && (pane.Session == "" || pane.Workspace == "" || pane.Tab == "" || pane.Pane == ""):
+		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane go together")
+	case pane != (store.DirectorPane{}) && !*foreground:
+		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane bind a --foreground session to its tab")
 	}
 	copyDir, err := filepath.Abs(cp.dir)
 	if err != nil {
@@ -77,6 +87,10 @@ func (a *App) directorStart(args []string) int {
 	p, err := a.preflight(copyDir, cfgPath, storePath, fl.Arg(0))
 	if p.cleanup != nil {
 		defer p.cleanup()
+	}
+	var host adapter.TabHost
+	if err == nil && !*foreground {
+		host, err = a.herdrPreflight(p)
 	}
 	if err != nil {
 		if !errors.Is(err, errStartRefused) {
@@ -87,7 +101,10 @@ func (a *App) directorStart(args []string) int {
 	if *check {
 		return 0
 	}
-	return a.superviseSession(p, copyDir, storePath, state)
+	if *foreground {
+		return a.superviseSession(p, copyDir, storePath, state, pane)
+	}
+	return a.openDirectorTab(host, p, copyDir, storePath, fl.Arg(0))
 }
 
 // startPlan is what the preflight resolved for a session.
@@ -106,14 +123,8 @@ type startPlan struct {
 // errStartRefused; nothing is recorded.
 func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPlan, error) {
 	p := startPlan{cfgPath: cfgPath}
-	line := func(name, format string, args ...any) {
-		_, _ = fmt.Fprintf(a.Stdout, "%s: %s\n", name, fmt.Sprintf(format, args...))
-	}
-	refuse := func(name string, err error) (startPlan, error) {
-		line(name, "refused: %v", err)
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: director start: %s: %v\n", name, err)
-		return p, errStartRefused
-	}
+	line := a.preflightLine
+	refuse := func(name string, err error) (startPlan, error) { return p, a.refuseCheck(name, err) }
 	cfg, err := admitConfig(copyDir, cfgPath)
 	if err != nil {
 		return refuse("config", err)
@@ -180,6 +191,176 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 	return p, nil
 }
 
+// preflightLine prints one preflight check's line.
+func (a *App) preflightLine(name, format string, args ...any) {
+	_, _ = fmt.Fprintf(a.Stdout, "%s: %s\n", name, fmt.Sprintf(format, args...))
+}
+
+// refuseCheck prints the line and the error of a failed preflight check and returns errStartRefused.
+func (a *App) refuseCheck(name string, err error) error {
+	a.preflightLine(name, "refused: %v", err)
+	_, _ = fmt.Fprintf(a.Stderr, "guildhall: director start: %s: %v\n", name, err)
+	return errStartRefused
+}
+
+// herdrTimeout bounds the Herdr status check of the wrapper's preflight.
+const herdrTimeout = 30 * time.Second
+
+// herdrPreflight is the wrapper's last preflight check: the config names a Herdr session, its server runs and
+// is new enough, and the terminal host over it is returned.
+func (a *App) herdrPreflight(p startPlan) (adapter.TabHost, error) {
+	session, err := p.cfg.HerdrSession()
+	switch {
+	case err != nil:
+		return nil, a.refuseCheck("herdr", err)
+	case session == "":
+		return nil, a.refuseCheck("herdr", fmt.Errorf("no [local] %s names the Herdr session the Director's tab opens in; set it, or pass --foreground", config.HerdrSessionKey))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), herdrTimeout)
+	defer cancel()
+	open := a.DirectorTabs
+	if open == nil {
+		open = openHerdrTabs
+	}
+	host, version, err := open(ctx, session)
+	if err != nil {
+		return nil, a.refuseCheck("herdr", err)
+	}
+	a.preflightLine("herdr", "session %q (server %s)", session, version)
+	return host, nil
+}
+
+// openHerdrTabs is the Herdr host, found on PATH as herdr, for the named session once its status shows the
+// server running and new enough.
+func openHerdrTabs(ctx context.Context, session string) (adapter.TabHost, string, error) {
+	c, err := herdr.New(herdr.Options{Session: session, Command: []string{"herdr"}})
+	if err != nil {
+		return nil, "", err
+	}
+	st, err := c.Status(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	return adapter.NewHerdrTabs(c), st.ServerVersion, nil
+}
+
+// errDirectorLive refuses a start while the newest session's supervisor is alive.
+var errDirectorLive = errors.New("director: live")
+
+// checkSupersede returns the newest session's number, 0 when there is none, refusing with errDirectorLive while
+// that session is not stopped and its supervisor is alive or cannot be shown gone. A session whose supervisor is
+// gone is superseded when the next one is recorded.
+func checkSupersede(s *store.Store) (int, error) {
+	d, err := s.LatestDirectorSession()
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return 0, nil
+	case err != nil:
+		return 0, err
+	case d.State == store.DirectorStopped:
+		return d.Number, nil
+	}
+	switch live, err := artisan.Probe(artisan.Identity(d.Identity)); live {
+	case artisan.Gone:
+		return d.Number, nil
+	case artisan.Alive:
+		return 0, fmt.Errorf("%w: session %d is %s under its supervisor, pid %d", errDirectorLive, d.Number, d.State, d.Identity.PID)
+	default:
+		return 0, fmt.Errorf("%w: session %d is %s and its supervisor, pid %d, cannot be shown gone: %v", errDirectorLive, d.Number, d.State, d.Identity.PID, err)
+	}
+}
+
+// directorStartWait bounds the wrapper's wait for the session record; directorStartPoll is the interval
+// between its reads.
+var directorStartWait, directorStartPoll = 2 * time.Minute, 200 * time.Millisecond
+
+// openDirectorTab is the wrapper: it opens the Director's tab, labelled with its name, in the workspace labelled
+// with its name, types the supervisor's command into it, waits for the session the supervisor records with
+// that tab's pane and prints it. The tab is never closed here.
+func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storePath, runtime string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	newest, err := withStore(storePath, true, checkSupersede)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err))
+	}
+	exe, err := a.Executable()
+	if err != nil {
+		return a.fail(err)
+	}
+	name := p.cfg.Name
+	ws, err := adapter.EnsureWorkspace(ctx, host, name, copyDir)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: workspace %s: %w", name, err))
+	}
+	l := adapter.TabLauncher{Host: host, WorkspaceID: ws}
+	tab, shell, err := l.Open(ctx, "director "+name, copyDir, nil)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err))
+	}
+	argv := []string{exe, "director", "start"}
+	if runtime != "" {
+		argv = append(argv, runtime)
+	}
+	argv = append(argv, "--copy", copyDir, "--foreground",
+		"--herdr-session", tab.Session, "--herdr-workspace", tab.WorkspaceID, "--herdr-tab", tab.TabID, "--herdr-pane", tab.PaneID)
+	if err := l.Type(ctx, tab, shell, argv); err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err))
+	}
+	a.preflightLine("tab", "director %s (workspace %s, tab %s, pane %s)", name, tab.WorkspaceID, tab.TabID, tab.PaneID)
+	d, err := waitTabSession(ctx, host, tab, storePath, newest)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err))
+	}
+	return a.printJSON(d)
+}
+
+// waitTabSession waits for a session after the one numbered after that records tab's pane, as launch.Process
+// waits for ownership. It fails once the tab's shell, having been seen running the typed command, is idle again
+// with no such session, and after directorStartWait.
+func waitTabSession(ctx context.Context, host adapter.TabHost, tab adapter.TabRef, storePath string, after int) (store.DirectorSession, error) {
+	want := store.DirectorPane{Session: tab.Session, Workspace: tab.WorkspaceID, Tab: tab.TabID, Pane: tab.PaneID}
+	deadline := time.Now().Add(directorStartWait)
+	busy := false
+	for {
+		d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) {
+			latest, err := s.LatestDirectorSession()
+			if err != nil {
+				return store.DirectorSession{}, err
+			}
+			for n := after + 1; n <= latest.Number; n++ {
+				if d, err := s.DirectorSession(n); err != nil || d.Pane == want {
+					return d, err
+				}
+			}
+			return store.DirectorSession{}, nil
+		})
+		switch {
+		case err != nil && !errors.Is(err, store.ErrNotFound):
+			return d, err
+		case d.Number > 0:
+			return d, nil
+		}
+		info, err := host.PaneProcessInfo(ctx, tab)
+		switch {
+		case err != nil:
+			return store.DirectorSession{}, fmt.Errorf("tab %s: %w", tab.TabID, err)
+		case !info.ShellIdle():
+			busy = true
+		case busy:
+			return store.DirectorSession{}, fmt.Errorf("the command typed into tab %s ended before it recorded a session; the tab is left open with its output", tab.TabID)
+		}
+		if time.Now().After(deadline) {
+			return store.DirectorSession{}, fmt.Errorf("no session recorded tab %s within %s; the tab is left open", tab.TabID, directorStartWait)
+		}
+		select {
+		case <-ctx.Done():
+			return store.DirectorSession{}, ctx.Err()
+		case <-time.After(directorStartPoll):
+		}
+	}
+}
+
 // admitConfig loads the copy's config for a standalone Director: a managed copy, with managed.toml beside the
 // config or inline [managed] settings, is refused until managed mode lands.
 func admitConfig(copyDir, cfgPath string) (*config.Config, error) {
@@ -202,7 +383,7 @@ func admitConfig(copyDir, cfgPath string) (*config.Config, error) {
 // superviseSession records a new session as recovering, renders it, runs the runtime in it as this process's
 // child and records the session stopped when the runtime ends. From before the session is recorded until it is
 // recorded stopped the supervisor handles the session signals rather than dying of them.
-func (a *App) superviseSession(p startPlan, copyDir, storePath, state string) int {
+func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pane store.DirectorPane) int {
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, sessionSignals...)
 	defer signal.Stop(signals)
@@ -215,14 +396,13 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string) in
 		return a.fail(err)
 	}
 	session, err := withStore(storePath, false, func(s *store.Store) (store.DirectorSession, error) {
-		d := store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity(self),
-			Release: Version(), ConfigDigest: string(digest.Of(data))}
-		latest, err := s.LatestDirectorSession()
-		if err == nil {
-			d.Number = latest.Number + 1
-		} else if !errors.Is(err, store.ErrNotFound) {
+		d := store.DirectorSession{State: store.DirectorRecovering, Identity: store.ProcessIdentity(self),
+			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: pane}
+		newest, err := checkSupersede(s)
+		if err != nil {
 			return d, err
 		}
+		d.Number = newest + 1
 		_, err = s.StartDirectorSession(d)
 		return d, err
 	})

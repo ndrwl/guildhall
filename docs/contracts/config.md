@@ -11,6 +11,7 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `Profile` and `CheckProfiles` refuse an unknown profile name (`ErrUnknownProfile`).
 `StallInterval` is the effective `stall_interval` [setting](../configuration.md#settings) as a duration, `DefaultStallInterval` (15 minutes) when unset and zero for `0s`; `Parse` refuses a managed or local value that is not a nonnegative Go duration, and `StallInterval` returns that error for a config built without `Parse`.
 `ChecksRefresh` is the effective `checks_refresh` setting the same way, `DefaultChecksRefresh` (1 minute) when unset and zero for `0s`.
+`HerdrSession` is the effective `herdr_session` setting, `""` when unset; `Parse` refuses a managed or local value that is `default` or not a Herdr session name.
 A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `Director` is the optional [`[director]` table](../configuration.md#the-director-table): an adapter that is an id when set, a config-relative role path, and none in a Steward config; it is omitted from JSON when unset, so a config without it keeps its digest.
 
@@ -19,4 +20,5 @@ A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `config_test.go`, `managed_test.go`, `profile_test.go`; real temporary files: `load_test.go`.
 `stall_test.go` was written red first against a stub `StallInterval` ([red run](../evidence/stall-adapter-choice-2026-10-22-red.txt)): the default, local, zero, managed and overridden values, and refusal of values that are not nonnegative durations.
 `checks_refresh_test.go` pins the same cases for `ChecksRefresh`, and `TestDirectorConfig` the `no_ci` default and value; they were added with the implementation and were not run red.
+`herdr_session_test.go` was written red first against a stub `HerdrSession` ([red run](../evidence/director-tab-2026-10-22-red.txt)): unset, local and managed values, and refusals of `default` and malformed names.
 `director_test.go` pins the `[director]` table's parse and refusals; it was added with the implementation and was not run red.

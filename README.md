@@ -127,7 +127,7 @@ It needs a small Director config naming your repository; see [configuration and 
 | Advancing a task stage by stage and launching an agent for each stage | Built, with a test-only fake agent and a minimal Claude adapter whose live acceptance is pending |
 | Publishing a task's pull request, waiting for its CI checks and merging it through `gh` | Built, exercised in CI against a stand-in `gh`; live GitHub behaviour is not claimed |
 | Steward rollouts of shared settings over SSH | Built, preview and apply |
-| The conversational Director (`guildhall director start`) | Built in the foreground, exercised in CI against a stand-in Claude Code; its Herdr tab, pause, stop and handoff are planned |
+| The conversational Director (`guildhall director start`) | Built in its own Herdr tab or the foreground, exercised in CI against a stand-in Claude Code and a stand-in terminal; the tab's lab checklist is not yet run, and pause, stop and handoff are planned |
 | Running stages that the Director itself performs, and background watching of running agents | Planned |
 | Docker isolation for agents | Planned |
 | Any runtime or platform supported for real work | Not yet: each needs to pass live acceptance first |
@@ -143,7 +143,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall step retry`: start the next attempt of a step after a failed or stopped one; see [running a task](docs/running.md#step-retry).
 - `guildhall decide list|show|answer`: decisions waiting for you; see [decisions](docs/decisions-cli.md).
 - `guildhall director status --json`: everything in flight and what needs the Director or you, in one JSON document; see [the Director](docs/director.md#status).
-- `guildhall director start` and `guildhall director ready`: run a Director session in your terminal, and let a recovering session start new work; see [the Director](docs/director.md#start).
+- `guildhall director start` and `guildhall director ready`: run a Director session in its own Herdr tab or your terminal, and let a recovering session start new work; see [the Director](docs/director.md#start).
 - `guildhall artisan start|stop|status|resume`: control one agent attempt; `guildhall fake-artisan` and `guildhall claude-artisan` are the fake and Claude wrappers; see [Artisan commands](docs/artisan.md#commands) and [adapters](docs/adapters.md).
 - `guildhall messages send|list|read|ack`: informational messages between the Director and its agents; see [messaging](docs/messaging.md).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
