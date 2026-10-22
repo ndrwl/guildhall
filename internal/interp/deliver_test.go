@@ -159,8 +159,9 @@ func TestPublishAndMerge(t *testing.T) {
 	}
 }
 
-// TestMergeRefusedWaitsForTheDirector: a merge the forge refuses records nothing, tells the Director the
-// forge's reason and waits for the Director; a later advance tries the merge again.
+// TestMergeRefusedWaitsForTheDirector: a merge the forge refuses records the refusal, tells the Director the
+// forge's reason and waits for the Director; a later advance tries the merge again, recording a refusal for a
+// new reason and nothing for one already recorded.
 func TestMergeRefusedWaitsForTheDirector(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -172,6 +173,11 @@ func TestMergeRefusedWaitsForTheDirector(t *testing.T) {
 			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), wait)
 			if _, ok := e.documents(t)["deliver-1-merge"]; ok || e.task(t).State != store.TaskOpen {
 				t.Fatalf("a refused merge recorded a merge or closed the task")
+			}
+			refused := e.pullRequestDoc(t, "deliver-1-refused")
+			if refused["schema"] != "guildhall.merge-refusal/1" || refused["head"] != head || refused["number"] != float64(1) || refused["remote"] != repoRemote ||
+				refused["url"] != f.PullRequests(repoRemote)[0].URL || !strings.Contains(refused["reason"].(string), `"ci" is failing`) {
+				t.Errorf("deliver-1-refused = %v", refused)
 			}
 			page, err := e.mailbox.List(store.Recipient{Role: store.RecipientDirector}, 0, 100)
 			if err != nil {
@@ -186,11 +192,25 @@ func TestMergeRefusedWaitsForTheDirector(t *testing.T) {
 			if got := len(e.inbox(t)); got != n {
 				t.Errorf("a repeated refusal sent %d new messages", got-n)
 			}
+			if _, ok := e.documents(t)["deliver-1-refused-2"]; ok {
+				t.Errorf("a repeated refusal was recorded again")
+			}
+
+			f.Refuse("The head branch is behind the base branch")
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), wait)
+			if r := e.pullRequestDoc(t, "deliver-1-refused-2"); !strings.Contains(r["reason"].(string), "behind the base branch") {
+				t.Errorf("deliver-1-refused-2 = %v", r)
+			}
+			f.Refuse(`Required status check "ci" is failing`)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), wait)
+			if _, ok := e.documents(t)["deliver-1-refused-3"]; ok {
+				t.Errorf("a refusal already recorded was recorded again")
+			}
 
 			f.Refuse("")
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDone, Step: "deliver"})
-			if _, merges := f.Calls(); merges != 3 {
-				t.Errorf("merges = %d, want 3", merges)
+			if _, merges := f.Calls(); merges != 5 {
+				t.Errorf("merges = %d, want 5", merges)
 			}
 		})
 	}

@@ -165,6 +165,28 @@ func TestGitHubArguments(t *testing.T) {
 	}
 }
 
+// TestGitHubMergeSignedOut: a merge gh cannot make because it is not signed in (gh's exit 4) never reached the
+// forge, so it is a plain error and not ErrRefused.
+func TestGitHubMergeSignedOut(t *testing.T) {
+	g := newGitHub(t)
+	h := g.harness
+	ctx := context.Background()
+	pr, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: remote, Branch: "guildhall/t7", Head: h.Heads[0], Title: "Task t7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := g.readState(t)
+	s.SignedOut = true
+	g.writeState(t, s)
+	_, err = h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
+	if err == nil || errors.Is(err, forge.ErrRefused) || !strings.Contains(err.Error(), "gh auth login") {
+		t.Errorf("Merge signed out = %v, want a plain error carrying gh's message", err)
+	}
+	if got := remoteBranch(g.bare, "main"); got != h.BaseHead {
+		t.Errorf("main = %s, want it unmoved at %s", got, h.BaseHead)
+	}
+}
+
 func flagValues(args []string, flags ...string) []string {
 	var out []string
 	for _, f := range flags {
@@ -267,11 +289,13 @@ func TestValidBranch(t *testing.T) {
 	}
 }
 
-// ghState is the fake gh's persisted state: its pull requests, a merge refusal and every call it was given.
+// ghState is the fake gh's persisted state: its pull requests, a merge refusal, whether a merge finds gh
+// signed out, and every call it was given.
 type ghState struct {
-	PRs    []ghPR     `json:"prs"`
-	Refuse string     `json:"refuse"`
-	Calls  [][]string `json:"calls"`
+	PRs       []ghPR     `json:"prs"`
+	Refuse    string     `json:"refuse"`
+	SignedOut bool       `json:"signed_out"`
+	Calls     [][]string `json:"calls"`
 }
 
 type ghPR struct {
@@ -446,6 +470,8 @@ func runGH(s *ghState, bare string, args []string) int {
 		switch head := remoteBranch(bare, p.Branch); {
 		case flags["--squash"] != "true":
 			return fail(2, "fake gh: merge without --squash")
+		case s.SignedOut:
+			return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
 		case s.Refuse != "":
 			return fail(1, "X Pull request acme/widgets#%d is not mergeable: %s.", p.Number, s.Refuse)
 		case p.State != "OPEN":

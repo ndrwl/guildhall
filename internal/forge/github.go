@@ -87,7 +87,8 @@ func (g GitHub) Publish(ctx context.Context, c Change) (PullRequest, error) {
 // commit. It never passes --admin or --auto, so the forge's protection, required checks and review rules apply.
 // A pull request already merged at m.Head is returned as it is, so repeating a merge is safe.
 // A forge refusal, a closed pull request, one merged at another head or one not merged after the forge
-// answered is ErrRefused with the reason; an error reaching the forge is returned as it is.
+// answered is ErrRefused with the reason; an error reaching the forge, such as gh's failed sign-in, is returned
+// as it is.
 func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 	if err := m.Validate(); err != nil {
 		return PullRequest{}, err
@@ -111,7 +112,8 @@ func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 			return PullRequest{}, ctx.Err()
 		}
 		var run *runError
-		if errors.As(err, &run) {
+		var exit *exec.ExitError
+		if errors.As(err, &run) && !(errors.As(err, &exit) && exit.ExitCode() == ghAuthRequired) {
 			return PullRequest{}, fmt.Errorf("%w: %s", ErrRefused, run.output)
 		}
 		return PullRequest{}, err
@@ -207,6 +209,9 @@ func (g GitHub) gh(ctx context.Context, dir string, args ...string) ([]byte, err
 func (g GitHub) git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	return run(ctx, dir, orDefault(g.Git, "git"), []string{"GIT_TERMINAL_PROMPT=0"}, append([]string{"-C", dir}, args...)...)
 }
+
+// ghAuthRequired is the exit code gh exits with when it is not signed in or its sign-in failed.
+const ghAuthRequired = 4
 
 // runError is a program that ran and exited unsuccessfully, with what it printed.
 type runError struct {

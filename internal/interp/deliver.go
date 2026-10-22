@@ -19,6 +19,9 @@ import (
 // pullRequestSchema versions the pull-request documents publish and deliver record.
 const pullRequestSchema = "guildhall.pull-request/1"
 
+// refusalSchema versions the merge refusals deliver records.
+const refusalSchema = "guildhall.merge-refusal/1"
+
 // branchPrefix starts every task branch publish pushes: a task's branch is branchPrefix + its id.
 const branchPrefix = "guildhall/"
 
@@ -28,6 +31,17 @@ type pullRequestDoc struct {
 	// Remote is the remote the branch was pushed to; deliver merges there whatever the configuration says later.
 	Remote string `json:"remote"`
 	forge.PullRequest
+}
+
+// refusalDoc is a merge the forge refused at a merge decision: <decision>-refused, then -refused-2 and on.
+type refusalDoc struct {
+	Schema string `json:"schema"`
+	Remote string `json:"remote"`
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+	Head   string `json:"head"`
+	// Reason is the forge's reason, as the error it returned.
+	Reason string `json:"reason"`
 }
 
 // mergeOptions are the answers the merge decision offers.
@@ -187,6 +201,7 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 }
 
 // merge merges the pull request the merge decision d approved, records it as <decision>-merge and closes the task.
+// A merge the forge refuses is recorded and waits for the Director.
 func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h string, pr *pullRequestDoc) (bool, Next, error) {
 	name := d.ID + "-merge"
 	if r.document(name) == nil {
@@ -199,6 +214,9 @@ func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h
 		merged, err := r.e.Forge.Merge(r.ctx, forge.Merge{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Head: h})
 		if errors.Is(err, forge.ErrRefused) {
 			reason := err.Error()
+			if err := r.recordRefusal(d, refusalDoc{Schema: refusalSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: h, Reason: reason}); err != nil {
+				return false, Next{}, err
+			}
 			return false, Next{Wait: WaitDirector, Step: s.ID, Decision: d.ID},
 				r.notify(fmt.Sprintf("merge-refused.%s.%s", d.ID, digest.Of([]byte(reason)).Hex()[:12]), "merge-refused",
 					fmt.Sprintf("The forge refused to merge pull request %s at head %s: %s\nThe Director decides how to recover; advancing the task again retries the merge.", pr.URL, h, reason))
@@ -217,4 +235,29 @@ func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h
 		return false, Next{}, err
 	}
 	return false, Next{Wait: WaitDone, Step: s.ID}, nil
+}
+
+// recordRefusal records a refusal of the merge decision d as its next refusal document, unless one of its refusals
+// already holds the same content, so a refusal repeated or replayed for the same reason is recorded once.
+func (r *run) recordRefusal(d store.Decision, doc refusalDoc) error {
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	sum := digest.Of(data).Hex()
+	p, _ := parseDecision(d.ID)
+	p.part = "refused"
+	for ; ; p.index = max(2, p.index+1) {
+		ref := r.document(documentName(p))
+		if ref == nil {
+			break
+		}
+		if ref.SHA256 == sum {
+			return nil
+		}
+	}
+	return r.put(store.DocumentRef{
+		Repository: r.task.Repository, TaskID: r.task.ID, Name: documentName(p),
+		Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "refused-"+sum[:12]+".json"), SHA256: sum,
+	}, data)
 }
