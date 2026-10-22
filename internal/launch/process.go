@@ -29,7 +29,7 @@ const LogFile = "launcher.log"
 // artisan.AttemptKey.AttemptID, or a result file other than
 // artisan.ResultFile in artisan.AttemptKey.Dir. The attempt must already be
 // recorded running in Store, as the interpreter records it before launch.
-// The process gets the adapter name unchanged and the prompt file, working
+// The process gets the adapter name unchanged and the prompt file and working
 // directory of interp.Spec.AdapterSpec, the mapping the adapter conformance
 // suite runs runtimes on; `artisan start` looks the name up in package
 // runtimes, and a name it refuses, like every other startup failure, is the

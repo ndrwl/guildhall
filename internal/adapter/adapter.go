@@ -42,8 +42,8 @@ type Spec struct {
 	Profile string
 }
 
-// Validate checks the identity, that every path is absolute, that the
-// result file is distinct from the prompt file.
+// Validate checks the identity, that the working directory, prompt and result paths
+// are absolute, and that the result file is distinct from the prompt file.
 func (s Spec) Validate() error {
 	if err := s.Identity.Validate(); err != nil {
 		return err

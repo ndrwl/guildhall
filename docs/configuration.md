@@ -98,7 +98,7 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | Key | Meaning |
 |---|---|
 | `adapter` | Required: the runtime adapter, such as `claude`. |
-| `model`, `effort` | Passed to the adapter as given; empty means the adapter's default. |
+| `model`, `effort` | Profile model and effort selections; the current [Claude adapter](adapters.md#claude-adapter) does not pass them to Artisan sessions. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
 | `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`; empty, the default, grants nothing. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the suggested set for a Go repository). |
 
