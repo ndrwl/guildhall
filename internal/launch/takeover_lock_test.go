@@ -15,6 +15,8 @@ import (
 )
 
 func TestRunTakeoverWaitsForOutcomePublication(t *testing.T) {
+	// One exited owner serves every case: it is gone, and each case records it in its own store.
+	id, containment := exitedOwner(t)
 	for _, publish := range []bool{false, true} {
 		name := "timeout"
 		if publish {
@@ -22,7 +24,6 @@ func TestRunTakeoverWaitsForOutcomePublication(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			a := newAttempt(t)
-			id, containment := exitedOwner(t)
 			recordOwner(t, a, id, containment, "")
 			before := ownership(t, a)
 			ctx, cancel := context.WithTimeout(context.Background(), deadline)

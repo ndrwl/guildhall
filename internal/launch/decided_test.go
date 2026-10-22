@@ -17,11 +17,12 @@ import (
 )
 
 func TestRunDecidedAttemptPreservesOwnership(t *testing.T) {
+	// One exited owner serves every case: it is gone, and each case records it in its own store.
+	id, containment := exitedOwner(t)
 	for _, state := range []artisan.OutcomeState{artisan.Finished, artisan.Cancelled, artisan.Failed} {
 		for _, blocked := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/blocked-endpoint=%t", state, blocked), func(t *testing.T) {
 				a := newAttempt(t)
-				id, containment := exitedOwner(t)
 				endpoint, err := artisan.EndpointPath(a.StateDir, a.Key)
 				if err != nil {
 					t.Fatal(err)
