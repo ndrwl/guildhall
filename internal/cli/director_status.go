@@ -74,6 +74,8 @@ type statusSession struct {
 	StopNow   bool                   `json:"stop_now,omitempty"`
 	Sweeping  bool                   `json:"sweeping,omitempty"`
 	EndReason string                 `json:"end_reason,omitempty"`
+	// LastWake is the newest wake of any message to the Director, so whether it woke anyone and why not.
+	LastWake *store.Wake `json:"last_wake,omitempty"`
 	// GuardRails are the copy's guard rails and what the attempt caps count today (docs/director.md#guard-rails).
 	GuardRails statusGuardRails `json:"guard_rails"`
 	// HandoffNote and Reload are the newest handoff note and reload request, whichever session recorded them.
@@ -260,10 +262,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	}
 
 	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly), SpendToday: v.Usage.Spend}
-	out.Session.GuardRails = usage
+	out.Session.GuardRails, out.Session.LastWake = usage, v.LastWake
 	if d := v.Session; d != nil {
-		out.Session = statusSession{GuardRails: usage, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
-			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
+		out.Session = statusSession{GuardRails: usage, LastWake: v.LastWake, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release,
+			Pane: d.Pane, StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
 			HandoffNote: v.Handoff, Reload: v.Reload}
 		// A missing or unreadable report is no report: the status line rewrites it after the next message.
 		if f := d.Handoff.ContextFile; f != "" {

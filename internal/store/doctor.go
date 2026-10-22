@@ -76,6 +76,24 @@ func (s *Store) Doctor() (Report, error) {
 				return nil
 			})
 		}
+		for _, d := range []struct {
+			name   []byte
+			n      *int
+			record func() any
+		}{
+			{bucketSessions, &rep.DirectorSessions, func() any { return new(DirectorSession) }},
+			{bucketWakes, &rep.Wakes, func() any { return new(Wake) }},
+		} {
+			if b := directorBucket(tx, d.name); b != nil {
+				_ = b.ForEach(func(k, v []byte) error {
+					*d.n++
+					if err := decode(k, v, d.record()); err != nil {
+						problem("director %s: %v", d.name, err)
+					}
+					return nil
+				})
+			}
+		}
 		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
 			counts := RepositoryCounts{Repository: string(repo)}
 			for name, n := range map[string]*int{
