@@ -262,6 +262,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	// An interrupt ends the advance and releases the task lock; the next advance replays it.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	context.AfterFunc(ctx, stop)
 	return e.Advance(ctx, ev)
 }
 

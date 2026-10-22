@@ -43,6 +43,7 @@ The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/conf
 
 An advance holds the task's lock, `attempt.lock` in `<state>/<repository>/<task>`, for its whole run, waiting at most 30 seconds for it, so two advances of one task never interleave; the interpreter is not safe for concurrent use on one task.
 Each `git` or `gh` run is bounded by five minutes, so a forge that does not answer is an error that records nothing, and an interrupt (Ctrl+C) ends the advance; either way the lock is released and running the command again replays the advance.
+The interrupt is exercised by a Unix test only; a second interrupt while the advance unwinds ends the process at once.
 
 ## `task start`
 
