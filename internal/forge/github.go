@@ -86,9 +86,11 @@ func (g GitHub) Publish(ctx context.Context, c Change) (PullRequest, error) {
 // Merge squash-merges pull request m.Number only while it is at m.Head, and returns it merged with its merge
 // commit. It never passes --admin or --auto, so the forge's protection, required checks and review rules apply.
 // A pull request already merged at m.Head is returned as it is, so repeating a merge is safe.
-// A forge refusal, a closed pull request, one merged at another head or one not merged after the forge
-// answered is ErrRefused with the reason; an error reaching the forge, such as gh's failed sign-in, is returned
-// as it is.
+// A merge gh fails is checked by viewing the pull request again: merged at m.Head, it is returned; still open,
+// closed or at another head, the failure is the forge's refusal, ErrRefused with gh's reason. A closed pull
+// request, one merged at another head or one not merged after the forge answered is ErrRefused too. A failure
+// that leaves the forge's answer unknown, such as gh's failed sign-in or a view that fails after the merge,
+// is returned as a plain error.
 func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 	if err := m.Validate(); err != nil {
 		return PullRequest{}, err
@@ -107,25 +109,27 @@ func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 	case pr.State != Open:
 		return PullRequest{}, fmt.Errorf("%w: pull request %s is %s at %s", ErrRefused, pr.URL, pr.State, pr.Head)
 	}
-	if _, err := g.gh(ctx, m.Repository, "pr", "merge", strconv.Itoa(m.Number), "--repo", repo, "--squash", "--match-head-commit", m.Head); err != nil {
+	var run *runError
+	_, mergeErr := g.gh(ctx, m.Repository, "pr", "merge", strconv.Itoa(m.Number), "--repo", repo, "--squash", "--match-head-commit", m.Head)
+	if mergeErr != nil {
 		if ctx.Err() != nil {
 			return PullRequest{}, ctx.Err()
 		}
-		var run *runError
 		var exit *exec.ExitError
-		if errors.As(err, &run) && !(errors.As(err, &exit) && exit.ExitCode() == ghAuthRequired) {
-			return PullRequest{}, fmt.Errorf("%w: %s", ErrRefused, run.output)
+		if !errors.As(mergeErr, &run) || errors.As(mergeErr, &exit) && exit.ExitCode() == ghAuthRequired {
+			return PullRequest{}, mergeErr
 		}
-		return PullRequest{}, err
 	}
 	pr, err = g.view(ctx, m.Repository, repo, m.Number)
-	if err != nil {
-		return PullRequest{}, err
+	switch {
+	case err != nil:
+		return PullRequest{}, errors.Join(mergeErr, err)
+	case pr.State == Merged && pr.Head == m.Head && digest.ValidHead(pr.MergeCommit):
+		return pr, nil
+	case mergeErr != nil:
+		return PullRequest{}, fmt.Errorf("%w: %s", ErrRefused, run.output)
 	}
-	if pr.State != Merged || pr.Head != m.Head || !digest.ValidHead(pr.MergeCommit) {
-		return PullRequest{}, fmt.Errorf("%w: pull request %s is %s at %s after the merge", ErrRefused, pr.URL, pr.State, pr.Head)
-	}
-	return pr, nil
+	return PullRequest{}, fmt.Errorf("%w: pull request %s is %s at %s after the merge", ErrRefused, pr.URL, pr.State, pr.Head)
 }
 
 // GitHubRepository returns the github.com/<owner>/<repo> a remote names, from its https://, ssh:// or

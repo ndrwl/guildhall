@@ -216,6 +216,40 @@ func TestMergeRefusedWaitsForTheDirector(t *testing.T) {
 	}
 }
 
+// unreachable is a forge whose merges fail without the forge's answer, as when the connection drops.
+type unreachable struct{ interp.Forge }
+
+var errUnreachable = errors.New("error connecting to api.github.com")
+
+func (unreachable) Merge(context.Context, forge.Merge) (forge.PullRequest, error) {
+	return forge.PullRequest{}, errUnreachable
+}
+
+// TestMergeUnreachable: a merge that fails without the forge refusing it fails the advance, records no refusal
+// and sends no merge-refused message; a later advance merges.
+func TestMergeUnreachable(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, f := newPublishEnv(t, b)
+			e.toSignOff(t)
+			e.answer(t, "deliver-1", "merge")
+			e.eng.Forge = unreachable{f}
+			n := len(e.inbox(t))
+			if err := advanceErr(t, e, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}); !errors.Is(err, errUnreachable) {
+				t.Fatalf("advance = %v, want the forge's error", err)
+			}
+			if _, ok := e.documents(t)["deliver-1-refused"]; ok {
+				t.Errorf("an unreachable forge was recorded as a refusal")
+			}
+			if got := len(e.inbox(t)); got != n {
+				t.Errorf("an unreachable forge sent %d messages", got-n)
+			}
+			e.eng.Forge = f
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), interp.Next{Wait: interp.WaitDone, Step: "deliver"})
+		})
+	}
+}
+
 // TestMergeHeld: a hold answer merges nothing and waits for the Director.
 func TestMergeHeld(t *testing.T) {
 	for _, b := range backends {

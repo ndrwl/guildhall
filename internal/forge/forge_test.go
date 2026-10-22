@@ -187,6 +187,29 @@ func TestGitHubMergeSignedOut(t *testing.T) {
 	}
 }
 
+// TestGitHubMergeUnreachable: a merge gh fails whose outcome a view cannot then learn, as when the connection
+// drops, is a plain error and not ErrRefused.
+func TestGitHubMergeUnreachable(t *testing.T) {
+	g := newGitHub(t)
+	h := g.harness
+	ctx := context.Background()
+	pr, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: remote, Branch: "guildhall/t7", Head: h.Heads[0], Title: "Task t7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := g.readState(t)
+	s.DropMerge = true
+	g.writeState(t, s)
+	_, err = h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
+	if err == nil || errors.Is(err, forge.ErrRefused) || !strings.Contains(err.Error(), "error connecting") {
+		t.Errorf("Merge unreachable = %v, want a plain error carrying gh's message", err)
+	}
+	calls := g.readState(t).Calls
+	if last := calls[len(calls)-1]; len(last) < 2 || last[0] != "pr" || last[1] != "view" {
+		t.Errorf("last gh call = %q, want the view checking the failed merge", last)
+	}
+}
+
 func flagValues(args []string, flags ...string) []string {
 	var out []string
 	for _, f := range flags {
@@ -290,11 +313,13 @@ func TestValidBranch(t *testing.T) {
 }
 
 // ghState is the fake gh's persisted state: its pull requests, a merge refusal, whether a merge finds gh
-// signed out, and every call it was given.
+// signed out, whether the connection drops at the next merge and stays down, and every call it was given.
 type ghState struct {
 	PRs       []ghPR     `json:"prs"`
 	Refuse    string     `json:"refuse"`
 	SignedOut bool       `json:"signed_out"`
+	DropMerge bool       `json:"drop_merge"`
+	Offline   bool       `json:"offline"`
 	Calls     [][]string `json:"calls"`
 }
 
@@ -391,6 +416,9 @@ func runGH(s *ghState, bare string, args []string) int {
 			return fail(2, "fake gh: %s does not take %s", cmd, f)
 		}
 	}
+	if s.Offline {
+		return fail(1, "error connecting to api.github.com")
+	}
 	if flags["--repo"] != "github.com/acme/widgets" {
 		return fail(1, "fake gh: no repository %q", flags["--repo"])
 	}
@@ -472,6 +500,9 @@ func runGH(s *ghState, bare string, args []string) int {
 			return fail(2, "fake gh: merge without --squash")
 		case s.SignedOut:
 			return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
+		case s.DropMerge:
+			s.Offline = true
+			return fail(1, "error connecting to api.github.com")
 		case s.Refuse != "":
 			return fail(1, "X Pull request acme/widgets#%d is not mergeable: %s.", p.Number, s.Refuse)
 		case p.State != "OPEN":

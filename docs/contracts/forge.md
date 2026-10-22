@@ -19,12 +19,13 @@ The returned pull request is at the head just published, because a forge may rep
 `Merge(ctx, Merge)` squash-merges pull request `Merge.Number` only while it is at `Merge.Head`, and returns it merged with its merge commit.
 A pull request already merged at that head is returned as it is, so repeating a merge is safe.
 A forge refusal (required checks, protection, a branch behind its base, a pull request no longer at the head), a closed pull request, one merged at another head, or one not merged after the forge answered, is `ErrRefused` with the forge's reason in the error text; nothing was merged.
-A malformed merge is `ErrInvalid`; an error reaching the forge, such as a missing program or a failed sign-in, is returned as it is and is not `ErrRefused`.
+A merge the forge fails is checked by viewing the pull request again: merged at the head, it is returned; still open, closed or at another head, the failure is the forge's refusal, `ErrRefused` with its reason.
+A malformed merge is `ErrInvalid`; a failure that leaves the forge's answer unknown, such as a missing program, a failed sign-in, or a view that fails after the merge failed, is returned as a plain error and is not `ErrRefused`.
 Neither operation is safe for concurrent calls on one branch; the interpreter calls them under the task's lock.
 
 `GitHub` is the implementation for `github.com`: git, found on `PATH` unless `GitHub.Git` names it, pushes with `git -C <repository> push --porcelain <remote> +<head>:refs/heads/<branch>`, and gh, found on `PATH` unless `GitHub.GH` names it, reads the default branch (`gh repo view --json defaultBranchRef`), lists the branch's open pull request, creates one with `--head`, `--title` and `--body` (no `--base`, so the default branch), views it and merges it with `gh pr merge <n> --squash --match-head-commit <head>`.
 Every gh call names `--repo github.com/<owner>/<repo>`, which `GitHubRepository` derives from an `https://`, `ssh://git@` or scp-like `git@github.com:` remote, with or without `.git`; any other remote, including GitHub Enterprise hosts and local paths, is `ErrUnsupportedRemote` before git or gh runs.
-Programs run with argument lists, never through a shell, with `GH_PROMPT_DISABLED=1` and `GIT_TERMINAL_PROMPT=0` so neither waits for input; a merge whose gh call exits unsuccessfully is `ErrRefused` with gh's standard error, except gh's exit 4, a missing or failed sign-in, which is returned as it is.
+Programs run with argument lists, never through a shell, with `GH_PROMPT_DISABLED=1` and `GIT_TERMINAL_PROMPT=0` so neither waits for input; a merge whose gh call exits unsuccessfully and whose pull request gh then views still unmerged is `ErrRefused` with gh's standard error, while gh's exit 4, a missing or failed sign-in, and a failing view are returned as they are.
 Platform differences: none in the contract.
 
 ## Tests
@@ -32,7 +33,7 @@ Platform differences: none in the contract.
 [`internal/forge/forgetest`](forge-forgetest.md) defines `RunForgeContract` and the double `Fake`.
 `forge_test.go` runs the suite against `Fake` and against `GitHub` with real git pushing to a local bare repository, which the test's own git configuration maps to `https://github.com/acme/widgets.git` with `insteadOf`, and the test binary acting as gh over a state file, reading branch heads from the bare repository; the fake gh refuses any command or flag it does not know, so a change in what `GitHub` asks for fails.
 `TestGitHubArguments` pins the gh calls: `--repo` on every call, `--head`, `--title` and `--body` on create, `--squash` and `--match-head-commit <head>` on merge, and never `--admin`, `--auto` or `--base`.
-`TestGitHubMergeSignedOut` pins that a merge the fake gh refuses with exit 4, signed out, is a plain error and not `ErrRefused`.
+`TestGitHubMergeSignedOut` pins that a merge the fake gh refuses with exit 4, signed out, is a plain error and not `ErrRefused`, and `TestGitHubMergeUnreachable` that a merge failing with exit 1 whose follow-up view fails is a plain error too.
 `TestGitHubRemotes` pins the remote forms and that an unsupported remote runs nothing.
 `TestValidBranch` pins the branch-name rule.
 `TestGitHubLive` runs the suite, without the refusal case, against a real sandbox repository only when `GUILDHALL_LIVE_FORGE_REMOTE` names one; CI never sets it, and it has not been run.
