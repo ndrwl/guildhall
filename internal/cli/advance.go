@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -258,7 +259,11 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, Forge: fg,
 	}
-	return e.Advance(context.Background(), ev)
+	// An interrupt ends the advance and releases the task lock; the next advance replays it.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	context.AfterFunc(ctx, stop)
+	return e.Advance(ctx, ev)
 }
 
 // baselinePrompter renders from baseline/ beside the config file and the release skills root (docs/running.md).

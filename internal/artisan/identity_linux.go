@@ -49,16 +49,32 @@ func Lookup(pid int) (Identity, error) {
 }
 
 func lookupGroup(pid int) (Identity, int, error) {
-	boot, err := bootID()
-	if err != nil {
-		return Identity{}, 0, err
-	}
-	state, _, pgrp, start, err := procStat(pid)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ESRCH) || err == nil && (state == 'Z' || state == 'X') {
+	id, pgrp, isZombie, err := readProcess(pid)
+	if err == nil && isZombie {
 		return Identity{}, 0, fmt.Errorf("pid %d: %w", pid, errNoProcess)
 	}
+	return id, pgrp, err
+}
+
+// lookupExited returns the identity of pid, live or exited and unreaped.
+func lookupExited(pid int) (Identity, error) {
+	id, _, _, err := readProcess(pid)
+	return id, err
+}
+
+// readProcess returns the identity and process group of pid and whether it
+// is a zombie; a pid with no process is errNoProcess.
+func readProcess(pid int) (id Identity, pgrp int, isZombie bool, err error) {
+	boot, err := bootID()
 	if err != nil {
-		return Identity{}, 0, err
+		return Identity{}, 0, false, err
 	}
-	return Identity{PID: pid, Token: boot + ":" + start}, pgrp, nil
+	state, _, pgrp, start, err := procStat(pid)
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
+		return Identity{}, 0, false, fmt.Errorf("pid %d: %w", pid, errNoProcess)
+	}
+	if err != nil {
+		return Identity{}, 0, false, err
+	}
+	return Identity{PID: pid, Token: boot + ":" + start}, pgrp, state == 'Z' || state == 'X', nil
 }

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/digest"
 )
@@ -20,7 +21,13 @@ import (
 type GitHub struct {
 	// Git and GH are the git and gh executables; empty means each found on PATH.
 	Git, GH string
+	// Timeout bounds each git or gh run; zero means DefaultTimeout. A run past it is ended and is a plain
+	// error naming the program and the timeout, never ErrRefused.
+	Timeout time.Duration
 }
+
+// DefaultTimeout is how long one git or gh run may take when GitHub.Timeout is zero.
+const DefaultTimeout = 5 * time.Minute
 
 // Publish pushes c.Head to refs/heads/<c.Branch> on c.Remote, replacing what that task branch held, and returns
 // the branch's open pull request, opening one against the remote's default branch when none is open.
@@ -207,11 +214,18 @@ func (g GitHub) ghJSON(ctx context.Context, dir string, v any, args ...string) e
 }
 
 func (g GitHub) gh(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	return run(ctx, dir, orDefault(g.GH, "gh"), []string{"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}, args...)
+	return run(ctx, g.timeout(), dir, orDefault(g.GH, "gh"), []string{"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}, args...)
+}
+
+func (g GitHub) timeout() time.Duration {
+	if g.Timeout == 0 {
+		return DefaultTimeout
+	}
+	return g.Timeout
 }
 
 func (g GitHub) git(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	return run(ctx, dir, orDefault(g.Git, "git"), []string{"GIT_TERMINAL_PROMPT=0"}, append([]string{"-C", dir}, args...)...)
+	return run(ctx, g.timeout(), dir, orDefault(g.Git, "git"), []string{"GIT_TERMINAL_PROMPT=0"}, append([]string{"-C", dir}, args...)...)
 }
 
 // ghAuthRequired is the exit code gh exits with when it is not signed in or its sign-in failed.
@@ -231,13 +245,23 @@ func (e *runError) Error() string {
 
 func (e *runError) Unwrap() error { return e.err }
 
-func run(ctx context.Context, dir, program string, env []string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, program, args...)
+// runWaitDelay is how long a run ended at its timeout waits for its output pipes before they are closed.
+const runWaitDelay = 5 * time.Second
+
+func run(ctx context.Context, timeout time.Duration, dir, program string, env []string, args ...string) ([]byte, error) {
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, program, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
+	cmd.WaitDelay = runWaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		// A run past its timeout gave no answer: it is not the forge's refusal, so it is not a runError.
+		if ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("%s %s: no answer within %v: %w", program, strings.Join(args, " "), timeout, context.DeadlineExceeded)
+		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
 			return nil, &runError{program: program, args: args, output: strings.TrimSpace(stderr.String()), err: err}

@@ -30,7 +30,7 @@ A unit holds one worker and every descendant that stays inside it.
 
 | Operation | Contract |
 |---|---|
-| `Start(cmd)` | Runs the command inside the unit and returns the worker's identity once membership is verified; a failure after the process exists kills it and returns `ErrContainment`. A second start is `ErrStarted`. |
+| `Start(cmd)` | Runs the command inside the unit and returns the worker's identity once membership is verified, or once it is found already exited; a failure after the process exists kills it and returns `ErrContainment`. A second start is `ErrStarted`. |
 | `Members()` | The live contained processes by identity. Empty means the unit is empty. A member whose identity cannot be read is an error, never left out. |
 | `Interrupt()` | See the [`Unit.Interrupt` contract](../internal/artisan/artisan.go), including Windows delivery limits. |
 | `Terminate()` | SIGTERM to the group on Unix; refused on Windows with `ErrUnsupportedRung`, which matches `errors.ErrUnsupported`. |
@@ -114,6 +114,7 @@ The macOS backend and the Linux fallback.
 
 - The worker leads its own process group (`Setpgid`).
 - When the worker's stdin is the launcher's terminal, the worker group becomes the terminal's foreground group (`Foreground`, `Ctty`), so Ctrl+C in the pane reaches the worker rather than the launcher; `Close` gives the terminal back.
+- A worker that has already exited when `Start` looks up its group has exited, not escaped: the kernel made it the leader of the group at its own pid, so `Start` records its identity, read from the unreaped leader, and reports it started, and the launcher reads the exit as any exit is; `ErrContainment` is kept for a unit that could not be created or a worker that is live and outside its unit.
 - The leader is not reaped before `Close`: Linux waits with `waitid(WNOWAIT)` and macOS polls until the leader is a zombie, so the group id stays allocated while the unit can signal it.
 - Every signal is preceded by the leader check: a live process at the group id that is not the recorded worker refuses the signal with `ErrGroupReused`, and a leader that cannot be read is not signalled.
 - Linux sets `Pdeathsig` to SIGKILL, starting the worker from a locked OS thread because the signal follows the creating thread.

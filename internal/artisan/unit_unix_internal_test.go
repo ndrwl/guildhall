@@ -84,7 +84,8 @@ func TestStartRollbackKillsDescendants(t *testing.T) {
 		if err != nil {
 			return Identity{}, 0, err
 		}
-		return lookupGroup(pid)
+		// An unreadable worker is not contained; one merely exited would be.
+		return Identity{}, 0, unix.EPERM
 	}
 	cmd := exec.Command("/bin/sh", "-c", `sleep 60 & echo $! > "$1"`, "worker", pidFile)
 	if _, err := u.Start(cmd); !errors.Is(err, ErrContainment) {
@@ -138,5 +139,71 @@ func TestLeaderCheck(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// exitedBeforeLookup is a unit whose start-time lookup runs only once the
+// worker has exited, the race a worker that exits at once can win.
+func exitedBeforeLookup(t *testing.T) *groupUnit {
+	t.Helper()
+	unit, err := newUnit("exited-" + strconv.Itoa(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := unit.(*groupUnit)
+	t.Cleanup(func() { _ = u.Close() })
+	u.lookupGroup = func(pid int) (Identity, int, error) {
+		select {
+		case <-u.done:
+		case <-time.After(10 * time.Second):
+			return Identity{}, 0, errors.New("worker did not exit")
+		}
+		return lookupGroup(pid)
+	}
+	return u
+}
+
+// TestStartWorkerExitedBeforeLookup: a worker gone before its group is looked
+// up has exited, not escaped: Start reports its identity and Exited closes.
+func TestStartWorkerExitedBeforeLookup(t *testing.T) {
+	u := exitedBeforeLookup(t)
+	cmd := exec.Command("true")
+	id, err := u.Start(cmd)
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	if id.PID != cmd.Process.Pid || id.Token == "" {
+		t.Fatalf("Start identity = %+v, want pid %d with a token", id, cmd.Process.Pid)
+	}
+	select {
+	case <-u.Exited():
+	case <-time.After(10 * time.Second):
+		t.Fatal("Exited did not close")
+	}
+	if lv, err := Probe(id); lv != Gone || err != nil {
+		t.Fatalf("Probe(%v) = %v, %v; want gone", id, lv, err)
+	}
+	if err := u.Close(); err != nil {
+		t.Fatalf("Close = %v", err)
+	}
+}
+
+type noResultFiles struct{}
+
+func (noResultFiles) ValidResult() (bool, error) { return false, nil }
+func (noResultFiles) Marked() (bool, error)      { return false, nil }
+func (noResultFiles) Mark() error                { return nil }
+
+// TestLauncherWorkerExitedBeforeLookup: the launcher reads that exit as any
+// exit, so the attempt fails with no result rather than on containment.
+func TestLauncherWorkerExitedBeforeLookup(t *testing.T) {
+	l, err := NewLauncher(LauncherConfig{Dir: t.TempDir(), Unit: exitedBeforeLookup(t), Files: noResultFiles{},
+		Key: AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := l.Run(exec.Command("true"), nil)
+	if err != nil || out.State != Failed {
+		t.Fatalf("Run = %+v, %v; want failed with no error", out, err)
 	}
 }

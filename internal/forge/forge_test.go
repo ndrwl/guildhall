@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
@@ -210,6 +211,34 @@ func TestGitHubMergeUnreachable(t *testing.T) {
 	}
 }
 
+// TestGitHubMergeTimeout: a gh run that outlasts the forge's timeout is ended and is a plain error naming gh
+// and the timeout, never ErrRefused, and nothing is merged.
+func TestGitHubMergeTimeout(t *testing.T) {
+	g := newGitHub(t)
+	h := g.harness
+	ctx := context.Background()
+	pr, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: remote, Branch: "guildhall/t7", Head: h.Heads[0], Title: "Task t7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := g.readState(t)
+	s.HangMerge = true
+	g.writeState(t, s)
+	f := h.Forge.(forge.GitHub)
+	f.Timeout = 500 * time.Millisecond
+	began := time.Now()
+	_, err = f.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
+	if took := time.Since(began); took > 30*time.Second {
+		t.Fatalf("Merge took %v past a %v timeout", took, f.Timeout)
+	}
+	if err == nil || errors.Is(err, forge.ErrRefused) || !strings.Contains(err.Error(), f.GH+" pr merge") || !strings.Contains(err.Error(), "500ms") {
+		t.Errorf("Merge hung = %v, want a plain error naming gh and the timeout", err)
+	}
+	if head := remoteBranch(g.bare, "main"); head != h.BaseHead {
+		t.Errorf("main = %s, want it unmoved at %s", head, h.BaseHead)
+	}
+}
+
 func flagValues(args []string, flags ...string) []string {
 	var out []string
 	for _, f := range flags {
@@ -313,12 +342,14 @@ func TestValidBranch(t *testing.T) {
 }
 
 // ghState is the fake gh's persisted state: its pull requests, a merge refusal, whether a merge finds gh
-// signed out, whether the connection drops at the next merge and stays down, and every call it was given.
+// signed out, whether the connection drops at the next merge and stays down, whether a merge hangs, and every
+// call it was given.
 type ghState struct {
 	PRs       []ghPR     `json:"prs"`
 	Refuse    string     `json:"refuse"`
 	SignedOut bool       `json:"signed_out"`
 	DropMerge bool       `json:"drop_merge"`
+	HangMerge bool       `json:"hang_merge"`
 	Offline   bool       `json:"offline"`
 	Calls     [][]string `json:"calls"`
 }
@@ -500,6 +531,9 @@ func runGH(s *ghState, bare string, args []string) int {
 			return fail(2, "fake gh: merge without --squash")
 		case s.SignedOut:
 			return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
+		case s.HangMerge:
+			time.Sleep(time.Minute)
+			return fail(1, "fake gh: hung merge was not killed")
 		case s.DropMerge:
 			s.Offline = true
 			return fail(1, "error connecting to api.github.com")

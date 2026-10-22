@@ -1,0 +1,20 @@
+# F30: artisan Start before the fix (go test ./internal/artisan -run ExitedBeforeLookup)
+--- FAIL: TestStartWorkerExitedBeforeLookup (0.00s)
+    unit_unix_internal_test.go:173: Start = containment could not be established: worker 672997 in group 0: pid 672997: no such live process
+--- FAIL: TestLauncherWorkerExitedBeforeLookup (0.00s)
+    unit_unix_internal_test.go:207: Run = {Schema:guildhall.attempt-outcome/1 State:failed Detail:start worker: containment could not be established: worker 673000 in group 0: pid 673000: no such live process LateResultRejected:false Rung:0 Survivors:[]}, containment could not be established: worker 673000 in group 0: pid 673000: no such live process; want failed with no error
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/artisan	0.010s
+FAIL
+
+# F33: forge without GitHub.Timeout (go test ./internal/forge -run TestGitHubMergeTimeout)
+# github.com/ndrwl/guildhall/internal/forge_test [github.com/ndrwl/guildhall/internal/forge.test]
+internal/forge/forge_test.go:228:4: f.Timeout undefined (type forge.GitHub has no field or method Timeout)
+internal/forge/forge_test.go:232:55: f.Timeout undefined (type forge.GitHub has no field or method Timeout)
+FAIL	github.com/ndrwl/guildhall/internal/forge [build failed]
+FAIL
+
+# F33: advance on context.Background() (go test ./internal/cli -run TestInterruptedAdvanceReleasesTheTask); the SIGINT ends the test process
+signal: interrupt
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.533s
+FAIL
