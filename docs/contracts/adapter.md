@@ -3,7 +3,9 @@
 ## Contract
 
 The spec, identity, capabilities and versioned result file, completion only from that file (`docs/adapters.md`).
-`Spec.Copy` and `Spec.Profile` reference the Director's profile ([Artisan permissions](../adapters.md#artisan-permissions)); no rule list is transported. `ProfileTools` loads that copy's `config.toml` via `config.Load`, refuses undeclared profiles and returns exactly their configured rules; without both fields it returns none. Claude resolves this reference at settings creation, and the fake refuses a referenced profile granting rules.
+`Spec.Copy` and `Spec.Profile` reference the Director's profile ([Artisan permissions](../adapters.md#artisan-permissions)); no rule list is transported.
+`ProfileTools` loads that copy's `config.toml` via `config.Load`, refuses undeclared profiles and returns exactly their configured rules; without both fields it returns none.
+Claude resolves this reference at settings creation, and the fake refuses a referenced profile granting rules.
 `SessionSpec` is what a runtime gets for one interactive [Director session](../director.md#start): absolute session directory, copy and role prompt, a one-line first message, model and effort; `Validate` refuses anything else, and `SessionEnv` sets `CopyEnv`, `GUILDHALL_COPY`, to the copy before the spec's own entries.
 `FakeName` and `ClaudeName` are the one spelling of the runtime adapter names, which [`runtimes`](adapter-runtimes.md) is keyed by and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to.
 The cancel marker is the `.cancelled` sidecar beside the result file, naming the attempt: `Cancelled` reports it, refusing one that names another attempt with `ErrIdentityMismatch`, and `MarkCancelled` writes it durably and idempotently; while it is present `ReadResult` and `WriteResult` refuse with `ErrAttemptCancelled`.

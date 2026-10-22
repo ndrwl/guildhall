@@ -467,7 +467,7 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 	return true, Next{}, nil
 }
 
-// artisanRuntime is who runs an Artisan step's attempt: the adapter and the allowed tools its profile grants.
+// artisanRuntime identifies the adapter and profile; grants are resolved by the runtime, not transported here.
 type artisanRuntime struct {
 	adapter string
 	profile string

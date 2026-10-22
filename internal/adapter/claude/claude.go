@@ -125,8 +125,8 @@ type Args struct {
 	allowedTools []string
 }
 
-// ParseArgs parses the wrapper arguments; the prompt and result paths must be absolute,
-// distinct and outside the model directory.
+// ParseArgs parses the wrapper arguments; the prompt and result paths must be absolute
+// and distinct, and the prompt must be outside the model directory.
 func ParseArgs(argv []string) (Args, error) {
 	fs := flag.NewFlagSet(Subcommand, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

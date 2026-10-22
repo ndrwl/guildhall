@@ -51,7 +51,7 @@ type Adapter struct {
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
 // Command returns the fake Artisan invocation for spec. It refuses a spec
-// naming allowed tools, since the fake grants none.
+// referencing a profile that grants allowed tools, since the fake grants none.
 func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
 		return adapter.Command{}, err

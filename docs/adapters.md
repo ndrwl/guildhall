@@ -91,7 +91,7 @@ The usage file is the adapter's, like the result: the model never writes it.
 
 ## Fake adapter
 
-The fake adapter is a test-only runtime with no optional capabilities; it grants no [allowed tools](#artisan-permissions), so its `Command` refuses a spec naming any.
+The fake adapter is a test-only runtime with no optional capabilities; it grants no [allowed tools](#artisan-permissions), so its `Command` refuses a referenced profile granting any.
 It runs `guildhall fake-artisan --task <id> --attempt <id> --prompt <file> --result <file>`, which reads the prompt, prints its progress, and writes a result whose summary records the prompt's size and SHA-256 digest.
 
 Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; each key may appear once, and an unknown key or value is refused before anything is written.
@@ -145,15 +145,17 @@ The wrapper keeps the result protocol, not the model:
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
 - it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
-This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort; of a profile it passes only the `allowed_tools`.
+This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort; of a profile it uses only the `allowed_tools`, loaded through the copy/profile reference.
 Transcripts, session resume and the Herdr tab mode are later work.
 
-The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills and whose `.claude/settings.json` lets Bash run `guildhall` and read-only `git`, denies any `git` command with `--output`, and denies edits to the copy's `config.toml` and `managed.toml`.
+The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills; that page describes the session's permission settings.
 
 ### Artisan permissions
 
 The default workflow's build stage asks its Artisan to run the repository's checks and commit its work ([`build.md`](../baseline/stages/build.md)), and both are shell commands, which the wrapper's `acceptEdits` does not allow.
-Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` reference and settings file above. Raw rule flags are not accepted; an undeclared profile is refused. Without both reference fields, the wrapper grants nothing.
+Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` reference and settings file above.
+Raw rule flags are not accepted; an undeclared profile is refused.
+Without both reference fields, the wrapper grants nothing.
 The list is empty by default, and an empty list grants nothing, so nothing is granted unless a Director's config says so.
 The rules come only from the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
 
