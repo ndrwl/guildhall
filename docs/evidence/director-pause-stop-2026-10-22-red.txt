@@ -1,0 +1,91 @@
+Red runs for director pause, resume and stop (D10), 2026-10-22, on bdfc0e8 with the branch's tests against stub bodies:
+RequestDirectorStop and EndDirectorSession returning an error, an Engine.Hold that was declared but never asked, and director pause, resume and stop failing as not implemented.
+Each section names the command; the matching green run is the branch's go test ./...
+
+$ go test ./internal/store/ -run "DirectorStop|EndDirector"
+--- FAIL: TestRequestDirectorStopMoves (0.70s)
+    --- FAIL: TestRequestDirectorStopMoves/recovering (0.10s)
+        director_stop_test.go:42: stop: err = store: RequestDirectorStop is not implemented, want ok true
+    --- FAIL: TestRequestDirectorStopMoves/running (0.18s)
+        director_stop_test.go:42: stop: err = store: RequestDirectorStop is not implemented, want ok true
+    --- FAIL: TestRequestDirectorStopMoves/paused (0.12s)
+        director_stop_test.go:42: stop: err = store: RequestDirectorStop is not implemented, want ok true
+    --- FAIL: TestRequestDirectorStopMoves/stopping_takes_now (0.09s)
+        director_stop_test.go:35: store: RequestDirectorStop is not implemented
+    --- FAIL: TestRequestDirectorStopMoves/stopping_stays (0.12s)
+        director_stop_test.go:35: store: RequestDirectorStop is not implemented
+    --- FAIL: TestRequestDirectorStopMoves/stopped (0.09s)
+        director_stop_test.go:47: refused stop err = store: RequestDirectorStop is not implemented, want ErrInvalid
+--- FAIL: TestRequestDirectorStopRefusesStaleAndSuperseded (0.09s)
+    director_stop_test.go:74: stale stop = store: RequestDirectorStop is not implemented, want ErrInvalid
+--- FAIL: TestEndDirectorSessionRecordsTheReason (0.07s)
+    director_stop_test.go:96: after []: store: EndDirectorSession is not implemented
+--- FAIL: TestEndDirectorSessionRefusals (0.07s)
+    director_stop_test.go:120: blank reason: err = store: EndDirectorSession is not implemented, want ErrInvalid
+    director_stop_test.go:120: two lines reason: err = store: EndDirectorSession is not implemented, want ErrInvalid
+    director_stop_test.go:120: long reason: err = store: EndDirectorSession is not implemented, want ErrInvalid
+    director_stop_test.go:124: stale end: err = store: EndDirectorSession is not implemented, want ErrInvalid
+    director_stop_test.go:132: end of a stopped session: err = store: EndDirectorSession is not implemented, want ErrInvalid
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.931s
+FAIL
+
+$ go test ./internal/interp/ -run Hold
+--- FAIL: TestHoldStartsNoNewAttempt (0.10s)
+    --- FAIL: TestHoldStartsNoNewAttempt/double (0.02s)
+        hold_test.go:24: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        hold_test.go:26: held task-created: {Wait:attempt Step:plan Attempt:1 Decision:}, want {Wait:paused Step:plan Attempt:0 Decision:}
+        script.go:165: mock agent: 1 expected launches never happened: build
+    --- FAIL: TestHoldStartsNoNewAttempt/store (0.08s)
+        hold_test.go:24: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        hold_test.go:26: held task-created: {Wait:attempt Step:plan Attempt:1 Decision:}, want {Wait:paused Step:plan Attempt:0 Decision:}
+        script.go:165: mock agent: 1 expected launches never happened: build
+--- FAIL: TestHoldErrorFailsTheAdvance (0.01s)
+    script.go:196: mock agent: script exhausted: unexpected launch of step "plan" attempt 1
+    hold_test.go:74: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: interp: app/t7 step plan: launch attempt 1: mock agent: script exhausted: unexpected launch of step "plan" attempt 1
+    hold_test.go:75: Advance = interp: app/t7 step plan: launch attempt 1: mock agent: script exhausted: unexpected launch of step "plan" attempt 1, want the hold's error
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.112s
+FAIL
+
+$ go test ./internal/cli/ -run "DirectorPauseResumeStop|DirectorResumeListsHeld|TaskStartWhilePaused|HeldWhilePaused|DirectorStop"
+--- FAIL: TestDirectorPauseResumeStop (1.51s)
+        director_pause_test.go:147: stderr "guildhall: director pause is not implemented\n" does not name "no Director session"
+        director_pause_test.go:147: stderr "guildhall: director resume is not implemented\n" does not name "no Director session"
+        director_pause_test.go:147: stderr "guildhall: director stop is not implemented\n" does not name "no Director session"
+        director_pause_test.go:147: stderr "guildhall: director pause is not implemented\n" does not name "director ready"
+        director_pause_test.go:147: stderr "guildhall: director resume is not implemented\n" does not name "director ready"
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:129: move to stopping: store: RequestDirectorStop is not implemented
+        director_pause_test.go:129: move to stopping: store: RequestDirectorStop is not implemented
+        director_pause_test.go:129: move to stopping: store: RequestDirectorStop is not implemented
+        director_pause_test.go:129: move to stopping: store: RequestDirectorStop is not implemented
+        director_pause_test.go:147: stderr "guildhall: director pause is not implemented\n" does not name "stopped"
+        director_pause_test.go:147: stderr "guildhall: director resume is not implemented\n" does not name "stopped"
+        director_pause_test.go:147: stderr "guildhall: director stop is not implemented\n" does not name "stopped"
+        director_pause_test.go:147: stderr "guildhall: director pause is not implemented\n" does not name "director stop"
+        director_pause_test.go:147: stderr "guildhall: director resume is not implemented\n" does not name "director stop"
+        director_pause_test.go:140: exit 1, want 0
+        director_pause_test.go:140: exit 1, want 0
+--- FAIL: TestDirectorResumeListsHeldTasks (0.11s)
+    director_pause_test.go:202: status needs_me = [], want [{Kind:paused Repository:app TaskID:t-1 Step: Attempt:0 Decision: Message: Count:0 Retryable:false Resume:false Reason:the last advance was held while the Director was paused Command:guildhall task start --repo app t-1}]
+    director_pause_test.go:209: resume: exit 1, unexpected end of JSON input
+--- FAIL: TestTaskStartWhilePausedLaunchesNothing (0.07s)
+    director_pause_test.go:222: pause: exit 1,  guildhall: director pause is not implemented
+--- FAIL: TestHeldWhilePausedOrStopping (0.23s)
+    director_pause_test.go:271: after [running paused]: held = false, <nil>; want true
+    director_pause_test.go:268: move to stopping: store: RequestDirectorStop is not implemented
+--- FAIL: TestDirectorStopEndsTheSessionAndItsAttempts (0.37s)
+    director_pause_test.go:384: director stop: exit 1, "" (unexpected end of JSON input), stderr guildhall: director stop is not implemented
+--- FAIL: TestDirectorStopNowEndsTheRuntimeAtOnce (0.12s)
+    director_pause_test.go:409: director stop --now: exit 1,  guildhall: director stop is not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	2.426s
+FAIL

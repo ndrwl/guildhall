@@ -72,6 +72,8 @@ const (
 	// WaitDirectorStage: a Director stage's attempt is handed to the Director, whose `step finish` writes its result
 	// (docs/interpreter.md#director-stages).
 	WaitDirectorStage Wait = "director-stage"
+	// WaitPaused: Engine.Hold held the step's next attempt; advancing the task again once the hold lifts starts it.
+	WaitPaused Wait = "paused"
 )
 
 // DirectorStage is the type of the Director message that hands it a Director stage's attempt.
@@ -200,6 +202,12 @@ type Engine struct {
 	// Forge publishes, reads the checks of and merges a repository's task branches; nil refuses publish,
 	// validate and merging with ErrUnsupported.
 	Forge Forge
+	// Hold, when set, is asked before each new attempt of an Artisan step is recorded; true holds it: the advance
+	// records, renders and launches nothing for it and returns WaitPaused for the step, and a later advance once
+	// Hold answers false starts it. An error fails the advance. Results, decisions and messages are never held,
+	// nor is the relaunch of an attempt already recorded. `task start`, `step done` and `step retry` hold while
+	// the Director's session is paused or stopping (docs/director.md#pause-and-resume).
+	Hold func() (bool, error)
 }
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
@@ -492,6 +500,15 @@ func (r *run) retryReason(ev Event) error {
 // start records the step's binding and its next attempt, then launches it with its wired inputs plus
 // the engine's extras (previous outcome, loop feedback).
 func (r *run) start(s workflow.Step) (Next, error) {
+	if r.e.Hold != nil {
+		held, err := r.e.Hold()
+		if err != nil {
+			return Next{}, fmt.Errorf("hold: %w", err)
+		}
+		if held {
+			return Next{Wait: WaitPaused, Step: s.ID}, nil
+		}
+	}
 	name, inputs, err := r.prepare(s)
 	if err != nil {
 		return Next{}, err

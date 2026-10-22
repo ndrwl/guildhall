@@ -9,3 +9,6 @@ var sessionSignals = []os.Signal{os.Interrupt}
 
 // terminate passes nothing on: the console's interrupt has already reached the runtime.
 func terminate(*os.Process, os.Signal) bool { return false }
+
+// endRuntime ends the runtime p: Windows has no termination signal to ask it with.
+func endRuntime(p *os.Process) { _ = p.Kill() }

@@ -83,6 +83,9 @@ func (a *App) taskStart(args []string) int {
 	if *decision != "" {
 		ev.Kind, ev.Decision = interp.DecisionAnswered, *decision
 	}
+	if hold, err := heldNow(f.store); err != nil || hold {
+		return a.paused("task start", err)
+	}
 	if err := newWorkAdmitted(f.store, f.repo, ev.Task); err != nil {
 		return a.fail(fmt.Errorf("task start: %w", err))
 	}
@@ -149,7 +152,19 @@ func (a *App) stepRetry(args []string) int {
 	case err != nil || n < 1:
 		return a.usageError(fmt.Sprintf("step retry: --attempt %q must be a positive attempt number", *attempt))
 	}
+	if hold, err := heldNow(f.store); err != nil || hold {
+		return a.paused("step retry", err)
+	}
 	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptRetried, Repository: f.repo, Task: *task, Step: *step, Attempt: n, Reason: *reason}))
+}
+
+// paused prints pausedWait for a command the Director's paused or stopping session holds, or fails with err.
+func (a *App) paused(cmd string, err error) int {
+	if err != nil {
+		return a.fail(fmt.Errorf("%s: %w", cmd, err))
+	}
+	_, _ = fmt.Fprintln(a.Stdout, pausedWait)
+	return 0
 }
 
 // stepDone runs `guildhall step done`: it validates the attempt's result file and feeds attempt-result (docs/running.md).
@@ -309,6 +324,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
 		Workspaces: ws,
+		Hold:       func() (bool, error) { return withStore(f.store, true, held) },
 	}
 	// An interrupt ends the advance and releases the task lock; the next advance replays it.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

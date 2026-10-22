@@ -67,6 +67,8 @@ type statusSession struct {
 	StartedAt time.Time              `json:"started_at,omitzero"`
 	ReadyAt   time.Time              `json:"ready_at,omitzero"`
 	EndedAt   time.Time              `json:"ended_at,omitzero"`
+	StopNow   bool                   `json:"stop_now,omitempty"`
+	EndReason string                 `json:"end_reason,omitempty"`
 }
 
 // statusMode is the copy's mode; standalone until managed mode exists.
@@ -197,7 +199,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string) (directorSta
 
 	if d := v.Session; d != nil {
 		out.Session = statusSession{State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
-			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt}
+			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, EndReason: d.EndReason}
 		if d.State == store.DirectorRecovering {
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",
 				Reason: fmt.Sprintf("Director session %d is recovering and starts no new work until it is ready", d.Number), Command: "guildhall director ready"})
@@ -229,7 +231,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string) (directorSta
 		latest[at.Repository+"/"+at.TaskID+"/"+at.Step] = at // attempts come in number order
 	}
 
-	var retry, resume, wait []needsMeItem
+	var retry, resume, wait, held []needsMeItem
 	for _, t := range v.Tasks {
 		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}}
 		st.Next, st.NextError = readNext(filepath.Join(stateDir, t.Repository, t.ID, "next.json"))
@@ -271,9 +273,13 @@ func readDirectorStatus(ctx context.Context, path, stateDir string) (directorSta
 		}
 		if open && st.Next != nil {
 			var n struct{ Wait interp.Wait }
-			if json.Unmarshal(st.Next, &n) == nil && n.Wait == interp.WaitDirector {
+			switch _ = json.Unmarshal(st.Next, &n); n.Wait {
+			case interp.WaitDirector:
 				wait = append(wait, needsMeItem{Kind: "director", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance waits for the Director",
 					Command: fmt.Sprintf("guildhall task timeline --repo %s --json %s", t.Repository, t.ID)})
+			case interp.WaitPaused:
+				held = append(held, needsMeItem{Kind: "paused", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance was held while the Director was paused",
+					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
 			}
 		}
 		out.Tasks = append(out.Tasks, st)
@@ -314,7 +320,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string) (directorSta
 		out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "messages", Count: others, Reason: fmt.Sprintf("%d unread Director message%s", others, plural),
 			Command: "guildhall messages list director"})
 	}
-	if out.NeedsMe = append(out.NeedsMe, wait...); out.NeedsMe == nil {
+	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held); out.NeedsMe == nil {
 		out.NeedsMe = []needsMeItem{}
 	}
 	return out, nil
