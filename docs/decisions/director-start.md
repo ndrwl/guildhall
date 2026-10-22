@@ -17,7 +17,7 @@ It is the session supervisor the [session record](director-session-record.md) wa
   The Director's own skills are not written yet, so a session gets every release skill, by directory name with the first root winning, and its manifest records each tree digest, which equals the release's.
 - **One session shape per runtime, beside the attempt shape.**
   `runtimes.LookupSession` is the one owner of the session runtimes, as `Lookup` is of attempt runtimes.
-  Each runtime names the program it needs on `PATH`, its skills directory and its own session files; Claude Code's are `.claude/skills/` and `.claude/settings.json`, which allows `guildhall` and read-only `git` in Bash and denies edits to the copy's `config.toml` and `managed.toml`.
+  Each runtime names the program it needs on `PATH`, its skills directory and its own session files; Claude Code's are `.claude/skills/` and `.claude/settings.json`, which allows `guildhall` and read-only `git` in Bash, denies any `git` command with `--output`, and denies edits to the copy's `config.toml` and `managed.toml`.
   The model is passed as `--model`; effort is not passed, because Claude Code reads it from its own settings.
 - **The session doubles share one script.**
   Neither the fake Director nor the Claude stub calls a model: both play `guildhall` commands scripted in their role prompt with `fake.RunScript`, end at a scripted `/exit` or status, and otherwise read their input until `/exit`, so the session contract and the later CI safety checks run the same script on both.

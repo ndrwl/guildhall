@@ -116,7 +116,7 @@ The wrapper keeps the result protocol, not the model:
 This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort.
 Transcripts, cost, session resume and the Herdr tab mode are later work.
 
-The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills and whose `.claude/settings.json` lets Bash run `guildhall` and read-only `git` and denies edits to the copy's `config.toml` and `managed.toml`.
+The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills and whose `.claude/settings.json` lets Bash run `guildhall` and read-only `git`, denies any `git` command with `--output`, and denies edits to the copy's `config.toml` and `managed.toml`.
 
 ## Conformance
 

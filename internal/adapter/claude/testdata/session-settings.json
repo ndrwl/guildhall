@@ -17,10 +17,10 @@
       "Bash(git ls-files *)",
       "Bash(git branch --list)",
       "Bash(git branch --list *)",
-      "Bash(git remote -v)",
-      "Bash(git remote -v *)"
+      "Bash(git remote -v)"
     ],
     "deny": [
+      "Bash(git *--output*)",
       "Edit(//home/g/copy/config.toml)",
       "Edit(//home/g/copy/managed.toml)"
     ]

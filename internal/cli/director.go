@@ -266,19 +266,43 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string) i
 	c := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
 	c.Dir, c.Env = cmd.Dir, append(os.Environ(), cmd.Env...)
 	c.Stdin, c.Stdout, c.Stderr = a.Stdin, a.Stdout, a.Stderr
-	// The terminal's interrupt reaches the runtime, which handles it; the supervisor outlives it to record the end.
-	interrupts := make(chan os.Signal, 1)
-	signal.Notify(interrupts, os.Interrupt)
-	defer signal.Stop(interrupts)
-	err = c.Run()
+	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
+	// way the supervisor outlives the runtime to record the end.
+	signals := make(chan os.Signal, 4)
+	signal.Notify(signals, sessionSignals...)
+	defer signal.Stop(signals)
+	if err := c.Start(); err != nil {
+		return a.fail(fmt.Errorf("director start: run the runtime: %w", err))
+	}
+	ended, err := waitSession(c, signals)
 	var exit *exec.ExitError
 	switch {
+	case ended != nil:
+		return a.fail(fmt.Errorf("director start: ended by %v", ended))
 	case errors.As(err, &exit):
 		return a.fail(fmt.Errorf("director start: the runtime exited with status %d", exit.ExitCode()))
 	case err != nil:
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err))
 	}
 	return 0
+}
+
+// waitSession waits for the started runtime c to end, passing it each termination among signals, and returns
+// the last termination passed on, if any, with c's end.
+func waitSession(c *exec.Cmd, signals <-chan os.Signal) (os.Signal, error) {
+	waited := make(chan error, 1)
+	go func() { waited <- c.Wait() }()
+	var ended os.Signal
+	for {
+		select {
+		case s := <-signals:
+			if terminate(c.Process, s) {
+				ended = s
+			}
+		case err := <-waited:
+			return ended, err
+		}
+	}
 }
 
 // stopSession records session n stopped unless it already is or a newer session superseded it.
