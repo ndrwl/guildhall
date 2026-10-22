@@ -75,6 +75,8 @@ Commands:
                  record a handoff note for the Director's next session
   director reload [--now] --copy <dir>
                  restart the Director session at a quiet point, or at the end of the turn
+  director turn-started --copy <dir>
+                 tell the session supervisor the runtime's turn has started (its turn-start hook)
   director turn-ended --copy <dir>
                  tell the session supervisor the runtime's turn has ended (its end-of-turn hook)
   help           print this help

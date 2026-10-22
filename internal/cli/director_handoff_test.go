@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -252,21 +253,24 @@ func TestDirectorReloadNowWaitsForANoteAfterTheStage(t *testing.T) {
 	}
 }
 
-// TestDirectorTurnEndedNeverExitsTwo: a Claude Code Stop hook reads exit 2 as "keep going", so turn-ended
-// reports a usage error and no supervisor with exit 1.
-func TestDirectorTurnEndedNeverExitsTwo(t *testing.T) {
-	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n")
-	for name, args := range map[string][]string{"no copy": nil, "unknown flag": {"--bogus"}, "argument": {"--copy", dir, "extra"}} {
-		if code, _, _ := runCLI(t, append([]string{"director", "turn-ended"}, args...)...); code != 1 {
-			t.Errorf("%s: exit %d, want 1", name, code)
+// TestDirectorTurnSignalsNeverExitTwo: a Claude Code Stop hook reads exit 2 as "keep going" and a
+// UserPromptSubmit hook as "block the prompt", so turn-ended and turn-started report a usage error and no
+// supervisor with exit 1.
+func TestDirectorTurnSignalsNeverExitTwo(t *testing.T) {
+	for _, cmd := range []string{"turn-ended", "turn-started"} {
+		dir := directorCopy(t, "[director]\nadapter = \"fake\"\n")
+		for name, args := range map[string][]string{"no copy": nil, "unknown flag": {"--bogus"}, "argument": {"--copy", dir, "extra"}} {
+			if code, _, _ := runCLI(t, append([]string{"director", cmd}, args...)...); code != 1 {
+				t.Errorf("%s %s: exit %d, want 1", cmd, name, code)
+			}
 		}
-	}
-	if code, _, stderr := runCLI(t, "director", "turn-ended", "--copy", dir); code != 1 || !strings.Contains(stderr, "no Director session") {
-		t.Errorf("no session: exit %d, stderr %s", code, stderr)
-	}
-	recordSession(t, filepath.Join(dir, "director.store"), false, store.DirectorRunning)
-	if code, _, stderr := runCLI(t, "director", "turn-ended", "--copy", dir); code != 1 || !strings.Contains(stderr, "no supervisor") {
-		t.Errorf("no supervisor listening: exit %d, stderr %s", code, stderr)
+		if code, _, stderr := runCLI(t, "director", cmd, "--copy", dir); code != 1 || !strings.Contains(stderr, "no Director session") {
+			t.Errorf("%s no session: exit %d, stderr %s", cmd, code, stderr)
+		}
+		recordSession(t, filepath.Join(dir, "director.store"), false, store.DirectorRunning)
+		if code, _, stderr := runCLI(t, "director", cmd, "--copy", dir); code != 1 || !strings.Contains(stderr, "no supervisor") {
+			t.Errorf("%s no supervisor listening: exit %d, stderr %s", cmd, code, stderr)
+		}
 	}
 }
 
@@ -365,7 +369,7 @@ func TestReloadNowFallsBackToTheGrace(t *testing.T) {
 }
 
 // TestPlainReloadWaitsForAQuietPoint: a plain reload is applied only once a turn has ended, whether the turn
-// ended after the request or before it.
+// ended after the request or before it, and a reload during a turn the captain started waits for that turn's end.
 func TestPlainReloadWaitsForAQuietPoint(t *testing.T) {
 	dir, _ := supervisedCopy(t)
 	done := supervise(t, dir, time.Hour)
@@ -374,11 +378,79 @@ func TestPlainReloadWaitsForAQuietPoint(t *testing.T) {
 	copyRun(t, dir, "director", "turn-ended")
 	waitSessions(t, dir, 2)
 	copyRun(t, dir, "director", "turn-ended")
+	copyRun(t, dir, "director", "turn-started")
 	copyRun(t, dir, "director", "reload")
+	holdsOne(t, dir, 2)
+	copyRun(t, dir, "director", "turn-ended")
 	waitSessions(t, dir, 3)
+	copyRun(t, dir, "director", "turn-ended")
+	copyRun(t, dir, "director", "reload")
+	waitSessions(t, dir, 4)
 	copyRun(t, dir, "director", "stop", "--now")
 	if code := ended(t, done); code != 0 {
 		t.Errorf("director start exited %d, want 0", code)
+	}
+}
+
+// TestReloadTakesTheCurrentRuntime: a reload resolves the runtime again from the copy's config, so one changed to
+// a runtime not on PATH ends the supervisor with an error once the old session is recorded stopped as reloaded.
+func TestReloadTakesTheCurrentRuntime(t *testing.T) {
+	dir, _ := supervisedCopy(t)
+	done := supervise(t, dir, time.Hour)
+	cfg := filepath.Join(dir, "config.toml")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, cfg, strings.Replace(string(b), `adapter = "fake"`, `adapter = "claude"`, 1))
+	t.Setenv("PATH", t.TempDir())
+	copyRun(t, dir, "director", "turn-ended")
+	copyRun(t, dir, "director", "reload")
+	if code := ended(t, done); code != 1 {
+		t.Errorf("director start exited %d, want 1", code)
+	}
+	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorStopped || got[0].EndReason != "reloaded" {
+		t.Errorf("sessions = %+v; want session 1 stopped as reloaded and no other", got)
+	}
+}
+
+// TestTurnStartKeepsAHookedRuntimeBusy: with a hook, a stop or a reload --now past the grace waits for the end of
+// a turn that started after the last turn end.
+func TestTurnStartKeepsAHookedRuntimeBusy(t *testing.T) {
+	for _, now := range []bool{false, true} {
+		dir := directorCopy(t, "[director]\nadapter = \"fake\"\n")
+		path := filepath.Join(dir, "director.store")
+		recordSession(t, path, false, store.DirectorRunning)
+		w := sessionWatch{storePath: path, state: filepath.Join(dir, "state"), n: 1, grace: time.Nanosecond, hook: true}
+		if got := w.decide(session.TurnEnded); got != keepRunning {
+			t.Fatalf("now %v: turn end with nothing asked = %d", now, got)
+		}
+		w.decide(session.TurnStarted)
+		s, err := store.Open(path, store.Options{RequireStore: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := endForStop
+		if now {
+			want = endForReload
+			_, err = s.RequestDirectorReload(true)
+		} else {
+			var d store.DirectorSession
+			if d, err = s.DirectorSession(1); err == nil {
+				_, err = s.RequestDirectorStop(1, false, d.StateSequence)
+			}
+		}
+		if cerr := s.Close(); err != nil || cerr != nil {
+			t.Fatal(err, cerr)
+		}
+		w.decide("")
+		time.Sleep(time.Millisecond)
+		if got := w.decide(""); got != keepRunning {
+			t.Errorf("now %v: past the grace mid-turn = %d, want the runtime kept running", now, got)
+		}
+		if got := w.decide(session.TurnEnded); got != want {
+			t.Errorf("now %v: at the turn end = %d, want %d", now, got, want)
+		}
 	}
 }
 

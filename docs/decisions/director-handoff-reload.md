@@ -1,7 +1,7 @@
 # Handoff notes, `director reload` and the end of a turn
 
 A Director session's context runs out, its settings change and it is stopped, so a session must be able to hand over to the next one and end at a point that loses nothing.
-This is the first half of the slice 4 handoff plan (D11a): the note, `director reload [--now]`, the end-of-turn signal and the supervisor's loop.
+This is the first half of the slice 4 handoff plan (D11a): the note, `director reload [--now]`, the turn signals and the supervisor's loop.
 The automatic triggers (`handoff_after_tasks`, `handoff_context_percent`, `handoff_idle`) and the Claude status-line reporter `director context-report` are the second half.
 
 ## Decisions
@@ -19,20 +19,28 @@ The automatic triggers (`handoff_after_tasks`, `handoff_context_percent`, `hando
   It is refused unless the newest note was recorded by the current session and, while a Director stage attempt runs, after that attempt started, compared by receipt sequence.
   This is the "never mid-grill" rule: a reload during a grill carries the open questions in a note written for it.
 - **One end-of-turn rule for stop and reload.**
-  The supervisor decides at each turn-ended signal and at each poll with one pure function, `decideEnd`, tested as a table.
-  A stop or a reload `--now` ends the runtime at the next turn end; a plain reload waits for a quiet point, a turn ended since the newest wake and no Director stage running.
+  The supervisor decides at each turn signal and at each poll with one pure function, `decideEnd`, tested as a table.
+  A stop or a reload `--now` ends the runtime at the next turn end; a plain reload waits for a quiet point, a turn ended since the last turn start and the newest wake and no Director stage running.
   Without a hook, or with no endpoint, the 60-second grace stands in for the turn end, as D10's stop already used it; with a hook the grace also ends a stop or `--now` once the Director is idle, so stopping an idle Director does not wait forever for a turn that never comes.
   A turn-ended signal that arrived before a request is not taken as that request's turn end.
-- **The hook command names no path.**
-  The Claude `Stop` hook is `guildhall director turn-ended` with no `--copy`: the hook inherits the session's `GUILDHALL_COPY`, so no path has to be quoted for the shell Claude Code runs hooks in, on any platform.
+- **Turns that start are signalled too.**
+  In the foreground session the captain starts most turns by typing, and no wake records that, so a turn end alone would leave the Director idle for the rest of the session and let a plain reload, or a stop or `--now` past the grace, end it mid-turn.
+  Claude's `UserPromptSubmit` hook runs `guildhall director turn-started`, one more op on the same endpoint, and the Director is idle only while the newest signal is a turn end and no wake has typed since.
+  Waiting instead for a turn end after each request was rejected: an idle Director would then never reload.
+  The endpoint keeps the newest unread signal, so a turn that starts before the supervisor reads the previous end is never taken as idle.
+  A runtime without the hooks keeps the turn-end-only rule.
+- **The hook commands name no path.**
+  The Claude hooks are `guildhall director turn-started` and `guildhall director turn-ended` with no `--copy`: the hooks inherit the session's `GUILDHALL_COPY`, so no path has to be quoted for the shell Claude Code runs hooks in, on any platform.
   The slice plan wrote `--copy <dir>`; the environment carries the same copy.
 - **The endpoint is the session directory's.**
   `internal/session` binds `supervisor.sock` in the session directory with the attempt endpoint's stale-file rule and a versioned, strictly decoded line protocol naming the session number, so a hook from an older session cannot end a newer one.
   A session directory too long for an AF_UNIX path gets no endpoint and the supervisor falls back to the grace; it does not move the socket elsewhere, because the hook finds it from the copy and the session number alone.
-- **`turn-ended` never exits 2.**
-  A Claude Code `Stop` hook that exits 2 makes Claude keep going, so a usage error from `turn-ended` is exit 1, unlike every other command.
+- **The turn signals never exit 2.**
+  A Claude Code `Stop` hook that exits 2 makes Claude keep going and a `UserPromptSubmit` hook that exits 2 blocks the prompt, so a usage error from `turn-ended` or `turn-started` is exit 1, unlike every other command.
 - **A turn-end hook is a declared runtime capability.**
-  `runtimes.Session` gains `TurnEndHook`: true for Claude Code, whose settings register the hook, false for the fake, whose scripts run `turn-ended` themselves where a test needs a turn to end (R1.24).
+  `runtimes.Session` gains `TurnEndHook`: true for Claude Code, whose settings register both hooks, false for the fake, whose scripts run `turn-started` and `turn-ended` themselves where a test needs a turn to start or end (R1.24).
+- **A reload resolves the runtime again.**
+  The new session takes the copy's current `[director] adapter`, unless `director start` named a runtime, checked on `PATH` as the preflight does; a refused runtime ends the supervisor with exit 1 after the old session is recorded `stopped` as `reloaded`, leaving the reload requested for the next `director start`.
 
 ## Not yet
 

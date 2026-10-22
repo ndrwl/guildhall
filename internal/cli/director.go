@@ -19,10 +19,11 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/herdr"
+	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// director runs `guildhall director status|start|ready|pause|resume|stop|handoff|reload|turn-ended`
+// director runs `guildhall director status|start|ready|pause|resume|stop|handoff|reload|turn-started|turn-ended`
 // (docs/director.md).
 func (a *App) director(args []string) int {
 	if len(args) > 0 {
@@ -43,11 +44,13 @@ func (a *App) director(args []string) int {
 			return a.directorHandoff(args[1:])
 		case "reload":
 			return a.directorReload(args[1:])
+		case "turn-started":
+			return a.directorTurnSignal(session.TurnStarted, args[1:])
 		case "turn-ended":
-			return a.directorTurnEnded(args[1:])
+			return a.directorTurnSignal(session.TurnEnded, args[1:])
 		}
 	}
-	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, handoff, reload and turn-ended")
+	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, handoff, reload, turn-started and turn-ended")
 }
 
 // fakeDirector runs the fake Director session: `guildhall fake-director --role <file> <first message>`.
@@ -118,13 +121,16 @@ func (a *App) directorStart(args []string) int {
 
 // startPlan is what the preflight resolved for a session.
 type startPlan struct {
-	cfg      *config.Config
-	cfgPath  string
-	name     string
-	runtime  runtimes.Session
-	skills   string
-	baseline string
-	cleanup  func()
+	cfg     *config.Config
+	cfgPath string
+	// positional is the runtime named on the command line, if any; name and runtime are resolved from it or
+	// from [director] adapter.
+	positional string
+	name       string
+	runtime    runtimes.Session
+	skills     string
+	baseline   string
+	cleanup    func()
 }
 
 // preflight checks, in order, that the config is admitted, the runtime is known and on PATH, the store opens and
@@ -141,25 +147,10 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 	p.cfg = cfg
 	line("config", "admitted (%s)", cfgPath)
 
-	p.name = positional
-	if p.name == "" && cfg.Director != nil {
-		p.name = cfg.Director.Adapter
-	}
-	exe, err := a.Executable()
+	p.positional = positional
+	program, err := a.resolveRuntime(&p)
 	if err != nil {
-		return p, err
-	}
-	if p.runtime, err = runtimes.LookupSession(p.name, exe); err != nil {
-		if p.name == "" {
-			err = fmt.Errorf("no runtime: name one, or set [director] adapter; the adapters are %s", strings.Join(runtimes.Names(), ", "))
-		}
 		return refuse("runtime", err)
-	}
-	program := exe
-	if prog := p.runtime.Program(); prog != "" {
-		if program, err = a.LookPath(prog); err != nil {
-			return refuse("runtime", fmt.Errorf("%s: not found on PATH", prog))
-		}
 	}
 	line("runtime", "%s (%s)", p.name, program)
 
@@ -385,6 +376,31 @@ func runsProgram(info herdr.ProcessInfo, exe string) bool {
 		}
 	}
 	return false
+}
+
+// resolveRuntime resolves p's runtime from p.positional or else p.cfg's [director] adapter, and returns its
+// program, found on PATH, or the guildhall executable for a runtime with none.
+func (a *App) resolveRuntime(p *startPlan) (string, error) {
+	p.name = p.positional
+	if p.name == "" && p.cfg.Director != nil {
+		p.name = p.cfg.Director.Adapter
+	}
+	exe, err := a.Executable()
+	if err != nil {
+		return "", err
+	}
+	if p.runtime, err = runtimes.LookupSession(p.name, exe); err != nil {
+		if p.name == "" {
+			err = fmt.Errorf("no runtime: name one, or set [director] adapter; the adapters are %s", strings.Join(runtimes.Names(), ", "))
+		}
+		return "", err
+	}
+	if prog := p.runtime.Program(); prog != "" {
+		if exe, err = a.LookPath(prog); err != nil {
+			return "", fmt.Errorf("%s: not found on PATH", prog)
+		}
+	}
+	return exe, nil
 }
 
 // admitConfig loads the copy's config for a standalone Director: a managed copy, with managed.toml beside the

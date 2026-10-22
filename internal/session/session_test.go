@@ -17,15 +17,17 @@ import (
 	"github.com/ndrwl/guildhall/internal/session"
 )
 
-// hookEnv makes the test binary play the runtime's end-of-turn hook: "<dir>|<number>" signals that session.
+// hookEnv makes the test binary play one of the runtime's turn hooks: "<dir>|<number>|<op>" signals op to that
+// session.
 const hookEnv = "GUILDHALL_SESSION_TEST_HOOK"
 
 func TestMain(m *testing.M) {
 	if v := os.Getenv(hookEnv); v != "" {
-		dir, n, _ := strings.Cut(v, "|")
+		dir, rest, _ := strings.Cut(v, "|")
+		n, op, _ := strings.Cut(rest, "|")
 		number, _ := strconv.Atoi(n)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		err := session.SignalTurnEnded(ctx, dir, number)
+		err := session.Signal(ctx, dir, number, session.Turn(op))
 		cancel()
 		switch {
 		case errors.Is(err, session.ErrNoSupervisor):
@@ -55,12 +57,19 @@ func shortDir(t *testing.T) string {
 // hook runs the test binary as the end-of-turn hook of session number in dir and returns its exit status.
 func hook(t *testing.T, dir string, number int) int {
 	t.Helper()
+	return signal(t, dir, number, session.TurnEnded)
+}
+
+// signal runs the test binary as the turn hook signalling turn to session number in dir and returns its exit
+// status.
+func signal(t *testing.T, dir string, number int, turn session.Turn) int {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := exec.Command(exe)
-	c.Env = append(os.Environ(), hookEnv+"="+dir+"|"+strconv.Itoa(number))
+	c.Env = append(os.Environ(), hookEnv+"="+dir+"|"+strconv.Itoa(number)+"|"+string(turn))
 	out, err := c.CombinedOutput()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
@@ -75,12 +84,15 @@ func hook(t *testing.T, dir string, number int) int {
 	return 0
 }
 
-func received(e *session.Endpoint) bool {
+func received(e *session.Endpoint) bool { return next(e) == session.TurnEnded }
+
+// next returns the endpoint's unread turn signal, or "" with none.
+func next(e *session.Endpoint) session.Turn {
 	select {
-	case <-e.TurnEnded():
-		return true
+	case t := <-e.Turns():
+		return t
 	default:
-		return false
+		return ""
 	}
 }
 
@@ -140,6 +152,38 @@ func TestHookSignalsTheSupervisor(t *testing.T) {
 	}
 	if !received(e) || received(e) {
 		t.Fatal("two unread turn ends did not coalesce into one")
+	}
+}
+
+// TestTurnStartSignalsTheSupervisor crosses a real process boundary: a child process plays the turn-start hook,
+// and the newest unread signal stands for the turns before it.
+func TestTurnStartSignalsTheSupervisor(t *testing.T) {
+	dir := shortDir(t)
+	e := listen(t, dir, 2)
+	if code := signal(t, dir, 2, session.TurnStarted); code != 0 {
+		t.Fatalf("turn-start hook exited %d, want 0", code)
+	}
+	if got := next(e); got != session.TurnStarted {
+		t.Fatalf("received %q, want the turn start", got)
+	}
+	if code := signal(t, dir, 3, session.TurnStarted); code != 4 || next(e) != "" {
+		t.Fatalf("turn-start hook for another session exited %d, want ErrMismatch's 4 and nothing received", code)
+	}
+	for _, turn := range []session.Turn{session.TurnEnded, session.TurnStarted} {
+		if code := signal(t, dir, 2, turn); code != 0 {
+			t.Fatalf("%s hook exited %d", turn, code)
+		}
+	}
+	if got := next(e); got != session.TurnStarted || next(e) != "" {
+		t.Fatalf("received %q; want only the newer turn start", got)
+	}
+	for _, turn := range []session.Turn{session.TurnStarted, session.TurnEnded} {
+		if code := signal(t, dir, 2, turn); code != 0 {
+			t.Fatalf("%s hook exited %d", turn, code)
+		}
+	}
+	if got := next(e); got != session.TurnEnded || next(e) != "" {
+		t.Fatalf("received %q; want only the newer turn end", got)
 	}
 }
 
@@ -223,7 +267,7 @@ func TestMalformedRequestIsRefused(t *testing.T) {
 			t.Errorf("request %s: reply %q, %v; want an error reply", line, reply, err)
 		}
 	}
-	if received(e) {
-		t.Fatal("a malformed request was received as a turn end")
+	if got := next(e); got != "" {
+		t.Fatalf("a malformed request was received as %q", got)
 	}
 }

@@ -158,15 +158,16 @@ func runningDirectorStages(s *store.Store, state string) (map[artisan.AttemptKey
 	return out, nil
 }
 
-// turnEndedTimeout bounds one turn-ended signal, so a hook never holds the runtime long.
-const turnEndedTimeout = 30 * time.Second
+// turnSignalTimeout bounds one turn signal, so a hook never holds the runtime long.
+const turnSignalTimeout = 30 * time.Second
 
-// directorTurnEnded runs `guildhall director turn-ended [--copy <dir>]`, the runtime's end-of-turn hook: it
-// signals the newest session's supervisor over its session endpoint (docs/director.md#the-end-of-a-turn).
-// It never exits 2, which a Claude Code Stop hook reads as "keep going": a usage error is exit 1, as is no
-// supervisor listening.
-func (a *App) directorTurnEnded(args []string) int {
-	fl := flag.NewFlagSet("director turn-ended", flag.ContinueOnError)
+// directorTurnSignal runs `guildhall director turn-started|turn-ended [--copy <dir>]`, the runtime's turn-start
+// and end-of-turn hooks: it signals turn to the newest session's supervisor over its session endpoint
+// (docs/director.md#the-end-of-a-turn). It never exits 2, which a Claude Code Stop hook reads as "keep going"
+// and a UserPromptSubmit hook as "block the prompt": a usage error is exit 1, as is no supervisor listening.
+func (a *App) directorTurnSignal(turn session.Turn, args []string) int {
+	name := "director " + string(turn)
+	fl := flag.NewFlagSet(name, flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
 	cp.register(fl)
@@ -177,33 +178,33 @@ func (a *App) directorTurnEnded(args []string) int {
 	}
 	switch {
 	case err != nil:
-		return a.fail(fmt.Errorf("director turn-ended: %w", err))
+		return a.fail(fmt.Errorf("%s: %w", name, err))
 	case fl.NArg() > 0:
-		return a.fail(fmt.Errorf("director turn-ended: unexpected argument %q", fl.Arg(0)))
+		return a.fail(fmt.Errorf("%s: unexpected argument %q", name, fl.Arg(0)))
 	case cp.dir == "":
-		return a.fail(errors.New("director turn-ended: --copy is required, or GUILDHALL_COPY"))
+		return a.fail(fmt.Errorf("%s: --copy is required, or GUILDHALL_COPY", name))
 	}
 	copyDir, err := filepath.Abs(cp.dir)
 	if err != nil {
 		return a.fail(err)
 	}
 	if _, err := os.Stat(storePath); err != nil {
-		return a.fail(fmt.Errorf("director turn-ended: %w", noStore(storePath)))
+		return a.fail(fmt.Errorf("%s: %w", name, noStore(storePath)))
 	}
 	d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) { return s.LatestDirectorSession() })
 	if errors.Is(err, store.ErrNotFound) {
-		return a.fail(errors.New("director turn-ended: no Director session"))
+		return a.fail(fmt.Errorf("%s: no Director session", name))
 	} else if err != nil {
-		return a.fail(fmt.Errorf("director turn-ended: %w", err))
+		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), turnEndedTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), turnSignalTimeout)
 	defer cancel()
 	dir := filepath.Join(copyDir, "director", fmt.Sprintf("session-%d", d.Number))
-	if err := session.SignalTurnEnded(ctx, dir, d.Number); errors.Is(err, session.ErrPath) {
+	if err := session.Signal(ctx, dir, d.Number, turn); errors.Is(err, session.ErrPath) {
 		// The supervisor could not bind there either, so it waits out the grace instead.
-		return a.fail(fmt.Errorf("director turn-ended: session %d: no supervisor endpoint can listen: %w", d.Number, err))
+		return a.fail(fmt.Errorf("%s: session %d: no supervisor endpoint can listen: %w", name, d.Number, err))
 	} else if err != nil {
-		return a.fail(fmt.Errorf("director turn-ended: session %d: %w", d.Number, err))
+		return a.fail(fmt.Errorf("%s: session %d: %w", name, d.Number, err))
 	}
 	return 0
 }

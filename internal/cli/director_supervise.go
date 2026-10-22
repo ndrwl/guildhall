@@ -39,9 +39,10 @@ type endInput struct {
 	Reload *store.DirectorReload
 	// TurnEnded is set when the decision is made for a turn-ended signal that has just arrived.
 	TurnEnded bool
-	// Idle is set when a turn has ended since the newest wake typed into the Director's pane.
+	// Idle is set when a turn has ended since the last turn-started signal and the newest wake typed into the
+	// Director's pane.
 	Idle bool
-	// Hook is set when the runtime signals the end of its turns and the session endpoint is bound.
+	// Hook is set when the runtime signals the start and end of its turns and the session endpoint is bound.
 	Hook bool
 	// StageRunning is set when a Director stage attempt is running. It is read only for a plain reload.
 	StageRunning bool
@@ -105,9 +106,12 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 			return a.fail(fmt.Errorf("director start: record session %d reloaded: %w", n, err))
 		}
 		_, _ = fmt.Fprintf(a.Stdout, "session: %d reloaded\n", n)
-		// A reload takes the copy's current settings.
+		// A reload takes the copy's current settings, its runtime among them.
 		if p.cfg, err = admitConfig(copyDir, p.cfgPath); err != nil {
 			return a.fail(fmt.Errorf("director start: reload: %w", err))
+		}
+		if _, err := a.resolveRuntime(&p); err != nil {
+			return a.fail(fmt.Errorf("director start: reload: runtime: %w", err))
 		}
 	}
 }
@@ -207,7 +211,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	w := sessionWatch{storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook()}
 	if ep != nil {
-		w.turnEnded = ep.TurnEnded()
+		w.turns = ep.Turns()
 	}
 	ended, ending, err := a.waitSession(c, signals, &w)
 	var exit *exec.ExitError
@@ -243,20 +247,20 @@ type sessionWatch struct {
 	n                int
 	grace            time.Duration
 	hook             bool
-	// turnEnded receives the session endpoint's turn-ended signals; nil without an endpoint.
-	turnEnded <-chan struct{}
+	// turns receives the session endpoint's turn signals; nil without an endpoint.
+	turns <-chan session.Turn
 
 	// wanted is when an end now wanted was first seen, zero while none is.
 	wanted time.Time
 	// wakes is the newest wake sequence read, woke the newest wake that typed into the pane, and turnWake the
-	// newest wake sequence when the last turn ended; turned is set once a turn has ended.
+	// newest wake sequence when the last turn ended; turned is set while the last turn signal is a turn end.
 	wakes, woke, turnWake uint64
 	turned                bool
 }
 
 // waitSession waits for the started runtime c to end, passing it each termination among signals, and returns the
 // last termination passed on, if any, why the supervisor ended the runtime, if it did, and c's end.
-// Every App.SessionPoll, and at each turn-ended signal, it decides with decideEnd whether to end the runtime;
+// Every App.SessionPoll, and at each turn signal, it decides with decideEnd whether to end the runtime;
 // once it has, it kills the runtime if it has not exited stopKill later.
 func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch) (os.Signal, endAction, error) {
 	waited := make(chan error, 1)
@@ -269,14 +273,14 @@ func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch
 	defer tick.Stop()
 	var ended os.Signal
 	ending, endedAt := keepRunning, time.Time{}
-	decide := func(turnEnded bool) {
+	decide := func(turn session.Turn) {
 		if ending != keepRunning {
 			if time.Since(endedAt) >= stopKill {
 				_ = c.Process.Kill()
 			}
 			return
 		}
-		if ending = w.decide(turnEnded); ending != keepRunning {
+		if ending = w.decide(turn); ending != keepRunning {
 			endRuntime(c.Process)
 			endedAt = time.Now()
 		}
@@ -287,21 +291,27 @@ func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch
 			if terminate(c.Process, s) {
 				ended = s
 			}
-		case <-w.turnEnded:
-			decide(true)
+		case t := <-w.turns:
+			decide(t)
 		case <-tick.C:
-			decide(false)
+			decide("")
 		case err := <-waited:
 			return ended, ending, err
 		}
 	}
 }
 
-// decide reads the session, the pending reload and the wakes since the last read and applies decideEnd; a
-// failed read keeps the runtime running until the next.
-func (w *sessionWatch) decide(turnEnded bool) endAction {
+// decide reads the session, the pending reload and the wakes since the last read and applies decideEnd for turn,
+// the turn signal that has just arrived or none; a failed read keeps the runtime running until the next.
+func (w *sessionWatch) decide(turn session.Turn) endAction {
+	switch turn {
+	case session.TurnStarted:
+		w.turned = false
+	case session.TurnEnded:
+		w.turned = true
+	}
 	in, err := withStore(w.storePath, true, func(s *store.Store) (endInput, error) {
-		in := endInput{TurnEnded: turnEnded, Hook: w.hook, Grace: w.grace}
+		in := endInput{TurnEnded: turn == session.TurnEnded, Hook: w.hook, Grace: w.grace}
 		var err error
 		if in.Session, err = s.DirectorSession(w.n); err != nil {
 			return in, err
@@ -324,8 +334,8 @@ func (w *sessionWatch) decide(turnEnded bool) endAction {
 				}
 			}
 		}
-		if turnEnded {
-			w.turned, w.turnWake = true, w.wakes
+		if in.TurnEnded {
+			w.turnWake = w.wakes
 		}
 		in.Idle = w.turned && w.woke <= w.turnWake
 		if in.Reload != nil && !in.Reload.Now && (in.Idle || !w.hook) {

@@ -35,6 +35,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "guildhall director turn-started"
+          }
+        ]
+      }
     ]
   }
 }

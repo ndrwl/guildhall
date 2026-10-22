@@ -1,9 +1,9 @@
 // Package session is the Director session supervisor's control endpoint (docs/director.md#the-end-of-a-turn).
 //
 // The supervisor of session n binds one AF_UNIX stream socket, on Windows as on Unix, at EndpointFile in the
-// session's directory, as an attempt's launcher binds its control endpoint. The runtime's end-of-turn hook runs
-// `guildhall director turn-ended`, which calls SignalTurnEnded; the supervisor receives each signal on
-// Endpoint.TurnEnded. The line protocol is one JSON request line and one JSON reply line, each carrying
+// session's directory, as an attempt's launcher binds its control endpoint. The runtime's turn-start hook runs
+// `guildhall director turn-started` and its end-of-turn hook `guildhall director turn-ended`, each of which calls
+// Signal; the supervisor receives each signal on Endpoint.Turns. The line protocol is one JSON request line and one JSON reply line, each carrying
 // "schema": "guildhall.session-control/1" and the session number, decoded strictly as the attempt endpoint's
 // are. The endpoint does not authenticate its peers: access control is the session directory's.
 package session
@@ -45,15 +45,25 @@ var (
 const (
 	schemaPrefix    = "guildhall.session-control/"
 	schemaV1        = "guildhall.session-control/1"
-	opTurnEnded     = "turn-ended"
 	maxLineBytes    = 4 << 10
 	exchangeTimeout = 5 * time.Second
 	leftoverTimeout = time.Second
 )
 
+// Turn is a turn signal, named by its request op.
+type Turn string
+
+// The turn signals.
+const (
+	// TurnStarted is a runtime's turn starting, such as at a prompt the captain submitted.
+	TurnStarted Turn = "turn-started"
+	// TurnEnded is a runtime's turn ending.
+	TurnEnded Turn = "turn-ended"
+)
+
 type request struct {
 	Schema  string `json:"schema"`
-	Op      string `json:"op"`
+	Op      Turn   `json:"op"`
 	Session int    `json:"session"`
 }
 
@@ -85,7 +95,8 @@ type Endpoint struct {
 	path     string
 	number   int
 	ln       *net.UnixListener
-	ended    chan struct{}
+	turns    chan Turn
+	mu       sync.Mutex
 	once     sync.Once
 	closeErr error
 }
@@ -105,7 +116,7 @@ func Listen(dir string, number int) (*Endpoint, error) {
 	if err != nil {
 		return nil, fmt.Errorf("session: bind endpoint: %w", err)
 	}
-	e := &Endpoint{path: p, number: number, ln: ln, ended: make(chan struct{}, 1)}
+	e := &Endpoint{path: p, number: number, ln: ln, turns: make(chan Turn, 1)}
 	go e.serve()
 	return e, nil
 }
@@ -150,7 +161,7 @@ func (e *Endpoint) serve() {
 	}
 }
 
-// answer reads one request line from c and writes one reply line, delivering a turn end before replying.
+// answer reads one request line from c and writes one reply line, delivering a turn signal before replying.
 func (e *Endpoint) answer(c net.Conn) {
 	defer func() { _ = c.Close() }()
 	rep := reply{Schema: schemaV1, Session: e.number}
@@ -163,23 +174,31 @@ func (e *Endpoint) answer(c net.Conn) {
 	switch {
 	case err != nil:
 		rep.Error = fmt.Sprintf("malformed request: one %s JSON line of at most %d bytes is required: %v", schemaV1, maxLineBytes, err)
-	case req.Op != opTurnEnded:
+	case req.Op != TurnStarted && req.Op != TurnEnded:
 		rep.Error = fmt.Sprintf("unknown op %q", req.Op)
 	case req.Session != e.number:
 		rep.Error = ErrMismatch.Error()
 	default:
-		select {
-		case e.ended <- struct{}{}:
-		default: // an unread turn end already stands for this one
-		}
+		e.deliver(req.Op)
 	}
 	_ = c.SetWriteDeadline(time.Now().Add(exchangeTimeout))
 	_ = json.NewEncoder(c).Encode(rep)
 }
 
-// TurnEnded receives one value for each turn-ended request the endpoint has answered. It holds one: requests
-// that arrive while a value is unread coalesce into it.
-func (e *Endpoint) TurnEnded() <-chan struct{} { return e.ended }
+// deliver replaces any unread signal with t, so Turns holds the newest.
+func (e *Endpoint) deliver(t Turn) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	select {
+	case <-e.turns:
+	default:
+	}
+	e.turns <- t
+}
+
+// Turns receives the turn signals the endpoint has answered, in order. It holds one: a signal that arrives while
+// another is unread replaces it.
+func (e *Endpoint) Turns() <-chan Turn { return e.turns }
 
 // Path returns the socket path the endpoint is bound at.
 func (e *Endpoint) Path() string { return e.path }
@@ -195,11 +214,11 @@ func (e *Endpoint) Close() error {
 	return e.closeErr
 }
 
-// SignalTurnEnded tells the supervisor of session number, listening in the absolute session directory dir,
-// that the runtime's turn has ended, and returns once the endpoint has answered. Nothing listening is
+// Signal sends turn to the supervisor of session number, listening in the absolute session directory dir, and
+// returns once the endpoint has answered. Nothing listening is
 // ErrNoSupervisor, an endpoint serving another session ErrMismatch, and a malformed reply ErrProtocol.
 // ctx bounds the dial and the exchange.
-func SignalTurnEnded(ctx context.Context, dir string, number int) error {
+func Signal(ctx context.Context, dir string, number int, turn Turn) error {
 	p, err := EndpointPath(dir)
 	if err != nil {
 		return err
@@ -215,7 +234,7 @@ func SignalTurnEnded(ctx context.Context, dir string, number int) error {
 	defer func() { _ = c.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
 	defer stop()
-	if err := json.NewEncoder(c).Encode(request{Schema: schemaV1, Op: opTurnEnded, Session: number}); err != nil {
+	if err := json.NewEncoder(c).Encode(request{Schema: schemaV1, Op: turn, Session: number}); err != nil {
 		return fmt.Errorf("session: endpoint %s: %w", p, err)
 	}
 	line, err := bufio.NewReader(io.LimitReader(c, maxLineBytes)).ReadBytes('\n')
@@ -230,7 +249,7 @@ func SignalTurnEnded(ctx context.Context, dir string, number int) error {
 	case rep.Session != number:
 		return fmt.Errorf("session: %w: %s serves session %d, not %d", ErrMismatch, p, rep.Session, number)
 	case rep.Error != "":
-		return fmt.Errorf("session: endpoint %s refused the turn end: %s", p, rep.Error)
+		return fmt.Errorf("session: endpoint %s refused the %s signal: %s", p, turn, rep.Error)
 	}
 	return nil
 }
