@@ -15,8 +15,9 @@ import (
 
 func TestWorkspaceContract(t *testing.T) {
 	t.Run("program", func(t *testing.T) {
+		repositories := gittest.Repositories(t)
 		gittest.RunWorkspaceContract(t, func(t *testing.T) gittest.WorkspaceHarness {
-			return programHarness(t)
+			return programHarness(t, repositories)
 		})
 	})
 	t.Run("double", func(t *testing.T) {
@@ -59,11 +60,11 @@ func isolate(t *testing.T) string {
 	return global
 }
 
-// arrangeWorkspace makes a repository and its remote (gittest.Repository) and a workspace of it whose directory's
-// parent exists, and returns it with the base a new worktree must start at.
-func arrangeWorkspace(t *testing.T) (git.Workspace, string) {
+// arrangeWorkspace makes a repository and its remote from repositories (gittest.Repositories) and a workspace of
+// it whose directory's parent exists, and returns it with the base a new worktree must start at.
+func arrangeWorkspace(t *testing.T, repositories func(*testing.T) (string, string, string)) (git.Workspace, string) {
 	t.Helper()
-	repository, remote, base := gittest.Repository(t)
+	repository, remote, base := repositories(t)
 	tasks := filepath.Join(filepath.Dir(repository), "state", "app", "t-1")
 	if err := os.MkdirAll(tasks, 0o755); err != nil {
 		t.Fatal(err)
@@ -71,12 +72,12 @@ func arrangeWorkspace(t *testing.T) (git.Workspace, string) {
 	return git.Workspace{Repository: repository, Remote: remote, Branch: "guildhall/t-1", Dir: filepath.Join(tasks, "work")}, base
 }
 
-func programHarness(t *testing.T) gittest.WorkspaceHarness {
+func programHarness(t *testing.T, repositories func(*testing.T) (string, string, string)) gittest.WorkspaceHarness {
 	global := isolate(t)
 	return gittest.WorkspaceHarness{
 		Ensure:  git.Program{}.Ensure,
 		Retire:  git.Program{}.Retire,
-		Arrange: func(t *testing.T) (git.Workspace, string) { return arrangeWorkspace(t) },
+		Arrange: func(t *testing.T) (git.Workspace, string) { return arrangeWorkspace(t, repositories) },
 		Head:    func(t *testing.T, dir string) string { return repo{t, dir, global}.run("rev-parse", "HEAD") },
 		Commit: func(t *testing.T, dir, name string) string {
 			return repo{t, dir, global}.commit("attempt", map[string]string{name: name + "\n"})
@@ -92,6 +93,7 @@ func programHarness(t *testing.T) gittest.WorkspaceHarness {
 func TestEnsureProgram(t *testing.T) {
 	ctx := context.Background()
 	global := isolate(t)
+	repositories := gittest.Repositories(t)
 	ensure := func(t *testing.T, w git.Workspace) {
 		t.Helper()
 		if err := (git.Program{}).Ensure(ctx, w); err != nil {
@@ -114,7 +116,7 @@ func TestEnsureProgram(t *testing.T) {
 			},
 		} {
 			t.Run(name, func(t *testing.T) {
-				w, base := arrangeWorkspace(t)
+				w, base := arrangeWorkspace(t, repositories)
 				leave(t, w)
 				ensure(t, w)
 				if _, err := os.Stat(w.Dir + ".partial"); !errors.Is(err, os.ErrNotExist) {
@@ -139,7 +141,7 @@ func TestEnsureProgram(t *testing.T) {
 		}
 	})
 	t.Run("a removed worktree keeps its branch's commits", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		commit := repo{t, w.Dir, global}.commit("attempt", map[string]string{"c.txt": "c\n"})
 		repo{t, w.Repository, global}.run("worktree", "remove", w.Dir)
@@ -149,7 +151,7 @@ func TestEnsureProgram(t *testing.T) {
 		}
 	})
 	t.Run("a worktree deleted without git is created again", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		commit := repo{t, w.Dir, global}.commit("attempt", map[string]string{"c.txt": "c\n"})
 		if err := os.RemoveAll(w.Dir); err != nil {
@@ -161,7 +163,7 @@ func TestEnsureProgram(t *testing.T) {
 		}
 	})
 	t.Run("an agent may move the worktree's branch", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		r := repo{t, w.Dir, global}
 		r.run("checkout", "-q", "-b", "experiment")
@@ -172,8 +174,8 @@ func TestEnsureProgram(t *testing.T) {
 		}
 	})
 	t.Run("refuses a checkout of another repository", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
-		other, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
+		other, _ := arrangeWorkspace(t, repositories)
 		repo{t, other.Repository, global}.run("worktree", "add", "-q", w.Dir)
 		if err := (git.Program{}).Ensure(ctx, w); !errors.Is(err, git.ErrNotWorkspace) {
 			t.Errorf("Ensure over another repository's worktree = %v, want ErrNotWorkspace", err)
@@ -185,7 +187,7 @@ func TestEnsureProgram(t *testing.T) {
 		}
 	})
 	t.Run("refuses a subdirectory of the repository's own checkout", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		w.Dir = filepath.Join(w.Repository, "sub")
 		writeFile(t, filepath.Join(w.Dir, "f"), "f")
 		if err := (git.Program{}).Ensure(ctx, w); !errors.Is(err, git.ErrNotWorkspace) {
@@ -193,7 +195,7 @@ func TestEnsureProgram(t *testing.T) {
 		}
 	})
 	t.Run("an unreachable remote creates nothing", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		w.Remote = filepath.Join(t.TempDir(), "missing.git")
 		err := (git.Program{}).Ensure(ctx, w)
 		if err == nil || !strings.Contains(err.Error(), "fetch") {
@@ -208,7 +210,7 @@ func TestEnsureProgram(t *testing.T) {
 	// The edge publish needs (forge.GitHub.Publish): a worktree's commit is a commit of the repository, and the
 	// repository pushes it to the task branch.
 	t.Run("a worktree's commit is pushed from the repository", func(t *testing.T) {
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		ensure(t, w)
 		commit := repo{t, w.Dir, global}.commit("attempt", map[string]string{"c.txt": "c\n"})
 		r := repo{t, w.Repository, global}
@@ -235,9 +237,10 @@ func writeFile(t *testing.T, name, data string) {
 func TestRetireProgram(t *testing.T) {
 	ctx := context.Background()
 	global := isolate(t)
+	repositories := gittest.Repositories(t)
 	merged := func(t *testing.T) (git.Retirement, repo) {
 		t.Helper()
-		w, _ := arrangeWorkspace(t)
+		w, _ := arrangeWorkspace(t, repositories)
 		if err := (git.Program{}).Ensure(ctx, w); err != nil {
 			t.Fatal(err)
 		}
