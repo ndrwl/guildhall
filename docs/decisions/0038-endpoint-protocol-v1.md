@@ -5,3 +5,7 @@ The attempt control endpoint's request and reply lines carry `"schema": "guildha
 Before any identity check or handler call, the endpoint refuses a newer version, a missing or malformed schema, a duplicate key and a field version 1 does not declare, at any depth, and `Call` refuses such a reply with `ErrEndpointProtocol`.
 No unversioned client existed when this protocol was introduced; the current compatibility rules are in the [protocol reference](../artisan.md#protocol).
 A later version will be served only by naming it in the endpoint; the line framing, the 4 KiB request and 1 MiB reply bounds, the exchange deadline and the exact attempt and launcher match are unchanged.
+
+## F43 amendment: transport and handler bounds
+
+The shared endpoint's `exchangeTimeout` (5 s) bounds transport operations: client connect and request write, and server request read and reply write after the handler returns. Waiting for the handler's reply is bounded only by the caller's context, not by a whole-call exchange deadline, because an attempt's `stop` must be allowed to complete its stop ladder. Context expiry ends the caller's wait; it does not cancel server-side handler work. Both attempt control and session signals use this distinction ([endpoint contract](../contracts/endpoint.md)).

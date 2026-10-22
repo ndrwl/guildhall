@@ -140,14 +140,17 @@ func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state str
 	f := advanceFlags{store: storePath, config: p.cfgPath, state: state, copy: copyFlags{dir: copyDir}}
 	return &checksWatch{every: every, waiting: checksWaiting(storePath, state), now: time.Now,
 		advance: func(t taskRef) error {
-			if hold, err := heldNow(storePath); err != nil || hold {
+			f := f
+			f.repo = t.repo
+			if err := f.listed(); err != nil {
+				return err
+			}
+			if hold, err := heldWithRecords(storeRecords{path: storePath, wait: f.wait}); err != nil || hold {
 				return err
 			}
 			b := *a
 			var out strings.Builder
 			b.Stdout, b.Stderr = io.Discard, &out
-			f := f
-			f.repo = t.repo
 			_, err := b.advance(f, interp.Event{Kind: interp.TaskCreated, Repository: t.repo, Task: t.task})
 			if s := strings.TrimSpace(out.String()); s != "" {
 				logf("%s/%s: %s", t.repo, t.task, oneLine(s))

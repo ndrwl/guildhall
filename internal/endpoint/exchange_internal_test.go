@@ -2,6 +2,8 @@ package endpoint
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -9,6 +11,42 @@ import (
 	"testing"
 	"time"
 )
+
+func TestCallRequestWriteBound(t *testing.T) {
+	old := exchangeTimeout
+	exchangeTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { exchangeTimeout = old })
+	dir, err := os.MkdirTemp("", "ge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "s.sock")
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, _ := ln.Accept()
+		accepted <- c
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err = Call[string, struct{}](ctx, path, Protocol{}, strings.Repeat("x", 8<<20), func(struct{}) bool { return true })
+	if c := <-accepted; c != nil {
+		defer c.Close()
+	}
+	var timeout net.Error
+	if !errors.As(err, &timeout) || !timeout.Timeout() || ctx.Err() != nil {
+		t.Fatalf("Call: %v, context: %v; want transport timeout", err, ctx.Err())
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("request write took %v", elapsed)
+	}
+}
 
 type silentServer struct{}
 

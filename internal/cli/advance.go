@@ -33,6 +33,7 @@ import (
 type advanceFlags struct {
 	store, config, state, repo string
 	copy                       copyFlags
+	wait                       time.Duration
 }
 
 func (f *advanceFlags) register(fl *flag.FlagSet) {
@@ -55,13 +56,24 @@ func (f *advanceFlags) resolve(getenv func(string) string) error {
 }
 
 // listed refuses, before anything else is read or written, a repository the config does not list: the
-// repositories guard rail (docs/director.md#guard-rails). A config that cannot be loaded is left to the advance.
+// repositories guard rail (docs/director.md#guard-rails).
 func (f *advanceFlags) listed() error {
 	cfg, err := config.Load(f.config)
 	if err != nil {
+		return err
+	}
+	if _, err = cfg.ListedRepository(f.repo); err != nil {
+		return err
+	}
+	return f.resolveWait(cfg)
+}
+
+func (f *advanceFlags) resolveWait(cfg *config.Config) error {
+	if f.wait > 0 {
 		return nil
 	}
-	_, err = cfg.ListedRepository(f.repo)
+	var err error
+	f.wait, err = cfg.LockWait()
 	return err
 }
 
@@ -98,11 +110,11 @@ func (a *App) taskStart(args []string) int {
 		ev.Kind, ev.Decision = interp.DecisionAnswered, *decision
 	}
 	if *decision == "" {
-		if hold, err := heldNow(f.store); err != nil || hold {
+		if hold, err := heldWithRecords(storeRecords{path: f.store, wait: f.wait}); err != nil || hold {
 			return a.paused("task start", err)
 		}
 	}
-	if err := newWorkAdmitted(f.store, f.repo, ev.Task); err != nil {
+	if err := newWorkAdmitted(storeRecords{path: f.store, wait: f.wait}, f.repo, ev.Task); err != nil {
 		return a.fail(fmt.Errorf("task start: %w", err))
 	}
 	return a.advanced(a.advance(f, ev))
@@ -110,11 +122,11 @@ func (a *App) taskStart(args []string) int {
 
 // newWorkAdmitted refuses to start a task with no attempt yet while the newest Director session is recovering;
 // a task already under way advances (docs/director.md#ready). A missing store is left to the advance to refuse.
-func newWorkAdmitted(path, repo, task string) error {
-	if _, err := os.Stat(path); err != nil {
+func newWorkAdmitted(records storeRecords, repo, task string) error {
+	if _, err := os.Stat(records.path); err != nil {
 		return nil
 	}
-	_, err := withStore(path, true, func(s *store.Store) (struct{}, error) {
+	_, err := withRecords(records, true, nil, func(s *store.Store) (struct{}, error) {
 		refusal := refuseWhileRecovering(s)
 		if refusal == nil {
 			return struct{}{}, nil
@@ -171,7 +183,7 @@ func (a *App) stepRetry(args []string) int {
 	if err := f.listed(); err != nil {
 		return a.fail(fmt.Errorf("step retry: %w", err))
 	}
-	if hold, err := heldNow(f.store); err != nil || hold {
+	if hold, err := heldWithRecords(storeRecords{path: f.store, wait: f.wait}); err != nil || hold {
 		return a.paused("step retry", err)
 	}
 	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptRetried, Repository: f.repo, Task: *task, Step: *step, Attempt: n, Reason: *reason}))
@@ -275,12 +287,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
-	// The lock wait bounds this advance's task lock and every store open; a launcher's advance runs over the same
-	// copy, so it reads the same setting.
-	wait, err := cfg.LockWait()
-	if err != nil {
+	if err := f.resolveWait(cfg); err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
+	wait := f.wait
 	records := storeRecords{path: f.store, wait: wait}
 	r, err := cfg.ListedRepository(f.repo)
 	if err != nil {
@@ -360,7 +370,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	e := &interp.Engine{
 		Copy:     copyDir,
 		Records:  records,
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall},
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall, LockWait: wait},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },

@@ -51,7 +51,7 @@ const (
 	acceptRetry = 10 * time.Millisecond
 )
 
-// exchangeTimeout bounds the endpoint's read of a request line and its write of the reply line. It is a variable
+// exchangeTimeout bounds client connect and request write, and server request read and reply write. It is a variable
 // only so the package's tests can shorten it.
 var exchangeTimeout = 5 * time.Second
 
@@ -216,11 +216,12 @@ func (e *Endpoint) Close() error {
 // Call sends req to the endpoint at path speaking p and returns its reply, which must be strictly p in one line of at
 // most p.MaxReply bytes, otherwise p.Malformed, also matching strictjson.ErrNewerSchema for a newer version, and must name the owner the caller
 // expects, as owns reports, otherwise p.Mismatch with the reply. No socket at path, or one nothing listens on, is
-// ErrNotListening. ctx bounds the dial and the whole exchange; once it is done the error wraps its error. A reply's
-// own refusal is the consumer's to read.
+// ErrNotListening. Connect and request write are also bounded by exchangeTimeout. Waiting for the handler's
+// reply is bounded only by ctx, allowing stop to finish its ladder. Once ctx is done the error wraps its error.
+// A reply's own refusal is the consumer's to read.
 func Call[Req, Rep any](ctx context.Context, path string, p Protocol, req Req, owns func(Rep) bool) (Rep, error) {
 	var rep Rep
-	var d net.Dialer
+	d := net.Dialer{Timeout: exchangeTimeout}
 	c, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) || isRefused(err) {
@@ -229,6 +230,7 @@ func Call[Req, Rep any](ctx context.Context, path string, p Protocol, req Req, o
 		return rep, fmt.Errorf("endpoint %s: %w", path, err)
 	}
 	defer func() { _ = c.Close() }()
+	_ = c.SetWriteDeadline(time.Now().Add(exchangeTimeout))
 	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
 	defer stop()
 	if err := json.NewEncoder(c).Encode(req); err != nil {

@@ -340,10 +340,14 @@ func held(s *store.Store) (bool, error) {
 // heldNow is held over the store file at path, opened read-only; a missing store holds nothing, and is left to the
 // advance to refuse.
 func heldNow(path string) (bool, error) {
-	if _, err := os.Stat(path); err != nil {
+	return heldWithRecords(storeRecords{path: path})
+}
+
+func heldWithRecords(records storeRecords) (bool, error) {
+	if _, err := os.Stat(records.path); err != nil {
 		return false, nil
 	}
-	return withStore(path, true, held)
+	return withRecords(records, true, nil, held)
 }
 
 // pausedWait is what `task start` and `step retry` print when the Director holds new attempts.

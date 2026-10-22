@@ -58,6 +58,7 @@ type Process struct {
 	StallInterval time.Duration
 	// StartTimeout bounds Launch's wait for ownership; zero is 30 seconds.
 	StartTimeout time.Duration
+	LockWait     time.Duration
 
 	mu      sync.Mutex
 	started map[interp.Handle]*child
@@ -81,7 +82,7 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 		return interp.Handle{}, fmt.Errorf("launch: %w", err)
 	}
 	m := spec.Manifest.Identity
-	at := Attempt{Store: p.Store, StateDir: p.StateDir, Key: artisan.AttemptKey{Repository: m.Repository, TaskID: m.Task, Step: m.Step, Attempt: m.Attempt}}
+	at := Attempt{Store: p.Store, StateDir: p.StateDir, LockWait: p.LockWait, Key: artisan.AttemptKey{Repository: m.Repository, TaskID: m.Task, Step: m.Step, Attempt: m.Attempt}}
 	as := spec.AdapterSpec()
 	if as.Identity != at.Identity() || filepath.Clean(as.ResultFile) != at.Files().ResultFile {
 		return interp.Handle{}, fmt.Errorf("launch: spec for %s, result %s, is not attempt %s laid out under %s", as.Identity, as.ResultFile, at.Key, p.StateDir)

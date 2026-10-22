@@ -79,6 +79,9 @@ func (a *App) stepFinish(args []string) int {
 	case !*failed && len(outputs) == 0:
 		return a.usageError("step finish: --output <port>=<file> is required unless --failed")
 	}
+	if err := f.listed(); err != nil {
+		return a.fail(fmt.Errorf("step finish: %w", err))
+	}
 	k := artisan.AttemptKey{Repository: f.repo, TaskID: *task, Step: *step, Attempt: n}
 	if err := finishStage(f, k, *summary, outputs, *failed); err != nil {
 		return a.fail(fmt.Errorf("step finish: %w", err))
@@ -94,10 +97,10 @@ func finishStage(f advanceFlags, k artisan.AttemptKey, summary string, outputs s
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	wait, err := cfg.LockWait()
-	if err != nil {
+	if err := f.resolveWait(cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	wait := f.wait
 	r, err := cfg.ListedRepository(f.repo)
 	if err != nil {
 		return err

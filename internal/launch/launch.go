@@ -83,6 +83,7 @@ type Attempt struct {
 	Store    string
 	StateDir string
 	Key      artisan.AttemptKey
+	LockWait time.Duration
 }
 
 // Dir is the attempt directory, artisan.AttemptKey.Dir of StateDir.
@@ -585,6 +586,7 @@ func (a Attempt) write(fn func(*store.Store) error) error {
 }
 
 func (a Attempt) open(o store.Options, fn func(*store.Store) error) error {
+	o.LockTimeout = a.LockWait
 	s, err := store.Open(a.Store, o)
 	if err != nil {
 		return err
