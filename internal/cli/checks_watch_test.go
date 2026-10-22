@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -319,15 +320,21 @@ func validateCopy(t *testing.T, f *forgetest.Fake) (string, runDirector) {
 // TestTheSupervisorAdvancesATaskWhenItsChecksFinish: with a session supervisor running and task t-1 waiting at
 // validate for pending checks, the checks turning green take the task on to its merge decision with no task start
 // from the test, and send the Director the checks-passed message; while they stay pending, the supervisor's reads
-// send nothing new.
+// send nothing new. The test lowers the watcher's floor so several rounds read the pending checks quickly.
 func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 	f := forgetest.NewFake()
 	dir, d := validateCopy(t, f)
 	writeFile(t, d.config, strings.Replace(readFileString(t, d.config), "[local]\n", "[local]\nchecks_refresh = \"100ms\"\n", 1))
 	pending := len(directorMessages(t, d.store))
-	done := superviseWith(t, dir, time.Nanosecond, func(app *App) { app.Forge = f; app.Workspaces = d.workspaces })
-	// Several refreshes pass with the checks pending.
-	time.Sleep(time.Second)
+	cf := &countingForge{Fake: f}
+	done := superviseWith(t, dir, time.Nanosecond, func(app *App) {
+		app.Forge, app.Workspaces, app.ChecksWatchFloor = cf, d.workspaces, time.Nanosecond
+	})
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); cf.reads.Load() < 3; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("the supervisor read the pending checks %d times, want several", cf.reads.Load())
+		}
+	}
 	if got := directorMessages(t, d.store); len(got) != pending {
 		t.Fatalf("pending re-reads sent %v", got[pending:])
 	}
@@ -383,4 +390,15 @@ func writeNext(t *testing.T, state, task, body string) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(state, "app", task, nextFile), body)
+}
+
+// countingForge is a forgetest.Fake that counts its checks reads.
+type countingForge struct {
+	*forgetest.Fake
+	reads atomic.Int32
+}
+
+func (f *countingForge) Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error) {
+	f.reads.Add(1)
+	return f.Fake.Checks(ctx, c)
 }

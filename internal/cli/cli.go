@@ -126,6 +126,9 @@ type App struct {
 	// SessionPoll is how often a Director session's supervisor reads its session while the runtime runs; zero
 	// means one second.
 	SessionPoll time.Duration
+	// ChecksWatchFloor is the shortest time between a Director session's checks watcher rounds; zero means
+	// checksWatchFloor.
+	ChecksWatchFloor time.Duration
 	// StopGrace is how long the supervisor of a stopping session lets the runtime end by itself before ending
 	// it; zero means 60 seconds.
 	StopGrace time.Duration
