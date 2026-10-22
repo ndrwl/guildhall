@@ -167,6 +167,8 @@ func (a *App) Run(args []string) int {
 		return a.step(rest)
 	case "decide":
 		return a.decide(rest)
+	case "director":
+		return a.director(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

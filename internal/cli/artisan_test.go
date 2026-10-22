@@ -14,6 +14,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/herdr"
 )
 
@@ -22,6 +23,7 @@ import (
 const roleEnv = "GUILDHALL_CLI_TEST_ROLE"
 
 func TestMain(m *testing.M) {
+	artisantest.MainIfWorker()
 	claudetest.RunIfStub()
 	runStewardSCPStub()
 	switch os.Getenv(roleEnv) {
