@@ -197,6 +197,9 @@ func (s *Store) CreateTask(mutationID string, t Task) (Receipt, error) {
 	})
 }
 
+// opSetTaskState is the operation recorded on a task state receipt, which FinishedTasks counts.
+const opSetTaskState = "set-task-state"
+
 // SetTaskState moves an open task to done or cancelled; finished tasks do not change.
 func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskState) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
@@ -210,7 +213,7 @@ func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskSt
 		TaskID     string    `json:"task_id"`
 		State      TaskState `json:"state"`
 	}{repository, taskID, state}
-	return s.mutate(mutationID, "set-task-state", req, func(tx *bolt.Tx, r *Receipt) error {
+	return s.mutate(mutationID, opSetTaskState, req, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = repository, taskID, "task"
 		t, err := openTask(tx, repository, taskID)
 		if err != nil {

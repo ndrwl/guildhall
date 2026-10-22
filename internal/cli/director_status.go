@@ -258,6 +258,12 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.Session = statusSession{GuardRails: usage, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
 			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
 			HandoffNote: v.Handoff, Reload: v.Reload}
+		// A missing or unreadable report is no report: the status line rewrites it after the next message.
+		if f := d.Handoff.ContextFile; f != "" {
+			if c, err := session.ReadContext(f); err == nil {
+				out.Session.Context = &c
+			}
+		}
 		if d.State == store.DirectorRecovering {
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",
 				Reason: fmt.Sprintf("Director session %d is recovering and starts no new work until it is ready", d.Number), Command: "guildhall director ready"})

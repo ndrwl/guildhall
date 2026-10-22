@@ -18,6 +18,7 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `Director` is the optional [`[director]` table](../configuration.md#the-director-table): an adapter that is an id when set, a config-relative role path, an `idle_after` that is a positive Go duration when set, and none in a Steward config; it is omitted from JSON when unset, as `idle_after` is, so a config without them keeps its digest.
 `IdleAfter` returns the effective `[director] idle_after`, `DefaultIdleAfter` (5 minutes) when unset.
+`Handoff` returns the effective [automatic handoff](../director.md#automatic-handoff) triggers: `handoff_after_tasks` (0, off, when unset), `handoff_context_percent` (`DefaultHandoffContextPercent`, 70, when unset; 0 is off) and `handoff_idle` (`0s`, off, when unset); `Parse` refuses a negative task count, a percent outside 0 to 100 and an idle period that is not a non-negative duration.
 
 ## Tests
 
@@ -27,4 +28,5 @@ A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `herdr_session_test.go` was written red first against a stub `HerdrSession` ([red run](../evidence/director-tab-2026-10-22-red.txt)): unset, local and managed values, and refusals of `default` and malformed names.
 `quality_test.go` was written red first against a stub `Quality` ([red run](../evidence/quality-rubric-2026-10-22-red.txt)): the defaults, each setting set locally, managed and overridden, a managed cost cap beside local reference runs, and the refusals of each malformed value in both sections and of reference runs with no cap; the `quality_skill_edits_need_approval` cases were added after that run and were not run red.
 `director_test.go` pins the `[director]` table's parse and refusals, `idle_after` and its default among them; it was added with the implementation and was not run red.
+`TestDirectorHandoffTriggers` was written red first against a stub `Handoff` ([red run](../evidence/director-handoff-triggers-2026-10-22-red.txt)): the defaults, set values, every trigger off, and each refusal.
 `guard_rails_test.go` was written red first against stub `GuardRails` and `ListedRepository` ([red run](../evidence/guard-rails-2026-10-22-red.txt)): the defaults, local, managed and overridden caps, the listed ids and merge policies, refusal of caps that are zero, negative, words, fractions or padded, and the named refusal of an unlisted repository.

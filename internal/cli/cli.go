@@ -79,6 +79,8 @@ Commands:
                  tell the session supervisor the runtime's turn has started (its turn-start hook)
   director turn-ended --copy <dir>
                  tell the session supervisor the runtime's turn has ended (its end-of-turn hook)
+  director context-report --copy <dir>
+                 record the context a Director session's runtime reports (its status line)
   help           print this help
 `
 

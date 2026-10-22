@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -51,8 +52,8 @@ type WakeStore interface {
 // Director, acts on that decision and records it as the message's store.Wake.
 //
 // With the newest session running or recovering and a bound pane, it types one fixed line into that pane,
-// WakeLine of the Director's unread counts, which carries counts only and never message text, and records
-// woke. Otherwise it types nothing and records queued with the reason: "no session", the session's state
+// WakeLine of the Director's unread counts, which carries counts only and never message text, with HandoffLine's
+// suffix of the handoff crossings DueHandoffs finds, and records woke and each crossing typed. Otherwise it types nothing and records queued with the reason: "no session", the session's state
 // ("paused", "stopping" or "stopped"), "no pane", "nothing unread" when the message was acknowledged first,
 // "runtime not running", or "pane: <error>" when typing failed.
 // A queued message still waits in the inbox for the Director's next turn.
@@ -72,11 +73,15 @@ func Wake(ctx context.Context, st WakeStore, pane DirectorPane, messageID, sende
 		return store.Wake{}, fmt.Errorf("messaging: wake: %w: message %q is addressed to %s", store.ErrInvalid, messageID, FormatRecipient(m.To()))
 	}
 	w := store.Wake{MessageID: messageID, SenderType: senderType, Decision: store.WakeQueued}
-	if w.Reason, err = wakeReason(ctx, st, pane); err != nil {
+	var dues []store.HandoffDue
+	if w.Reason, dues, err = typeWake(ctx, st, pane, 0); err != nil {
 		return store.Wake{}, err
 	}
 	if w.Reason == "" {
 		w.Decision = store.WakeWoke
+	}
+	if err := recordDues(st, dues, messageID); err != nil {
+		return store.Wake{}, err
 	}
 	// A conflict means a concurrent wake recorded its decision first; that one stands.
 	if _, err := st.RecordWake(w); err != nil && !errors.Is(err, store.ErrMutationConflict) {
@@ -85,43 +90,57 @@ func Wake(ctx context.Context, st WakeStore, pane DirectorPane, messageID, sende
 	return st.WakeFor(messageID)
 }
 
-// wakeReason types the wake line when the Director can be woken and returns why not otherwise; an error is
-// the store's.
-func wakeReason(ctx context.Context, st WakeStore, pane DirectorPane) (string, error) {
+// typeWake types the wake line, with the suffix of the handoff crossings due, into the newest session's pane when
+// the Director can be woken, and returns why not otherwise, and the crossings typed. A positive idle adds the idle
+// trigger's next crossing and types the line with nothing unread; an error is the store's.
+func typeWake(ctx context.Context, st WakeStore, pane DirectorPane, idle time.Duration) (string, []store.HandoffDue, error) {
 	d, err := st.LatestDirectorSession()
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return "no session", nil
+		return "no session", nil, nil
 	case err != nil:
-		return "", err
+		return "", nil, err
 	case d.State != store.DirectorRunning && d.State != store.DirectorRecovering:
-		return string(d.State), nil
+		return string(d.State), nil, nil
 	case d.Pane == (store.DirectorPane{}) || pane == nil:
-		return "no pane", nil
+		return "no pane", nil, nil
 	}
 	unread, err := st.DirectorUnread()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	if len(unread) == 0 {
-		return "nothing unread", nil
+	if len(unread) == 0 && idle <= 0 {
+		return "nothing unread", nil, nil
 	}
-	err = pane.TypeLine(ctx, d.Pane, WakeLine(unread))
+	dues, err := DueHandoffs(st, d)
+	if err != nil {
+		return "", nil, err
+	}
+	if idle > 0 {
+		if dues, err = appendIdle(st, d.Number, dues, idle); err != nil {
+			return "", nil, err
+		}
+	}
+	err = pane.TypeLine(ctx, d.Pane, HandoffLine(WakeLine(unread), dues))
 	switch {
 	case errors.Is(err, ErrNotRunning):
-		return "runtime not running", nil
+		return "runtime not running", nil, nil
 	case err != nil:
 		reason := strings.Join(strings.Fields("pane: "+err.Error()), " ")
 		if len(reason) > store.MaxWakeReasonBytes {
 			reason = strings.ToValidUTF8(reason[:store.MaxWakeReasonBytes], "")
 		}
-		return reason, nil
+		return reason, nil, nil
 	}
-	return "", nil
+	return "", dues, nil
 }
 
-// WakeLine is the line a wake types: "guildhall: <n> unread (<type> <count>, ...)", types in name order.
+// WakeLine is the line a wake types: "guildhall: <n> unread (<type> <count>, ...)", types in name order, or
+// "guildhall: 0 unread" with nothing unread.
 func WakeLine(unread map[string]int) string {
+	if len(unread) == 0 {
+		return "guildhall: 0 unread"
+	}
 	total, parts := 0, make([]string, 0, len(unread))
 	for _, typ := range slices.Sorted(maps.Keys(unread)) {
 		total += unread[typ]

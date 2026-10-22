@@ -125,6 +125,13 @@ A request made while one is requested returns it, recording nothing, except that
 The session that applies it records `ApplyDirectorReload` with the old and new session numbers under `director-reload-applied:<sequence>`; an applied request never changes again.
 `LatestDirectorReload` returns the newest request, either state, and `DirectorView.Reload` the same in the view's transaction.
 
+### Handoff dues
+
+A session records its [automatic handoff](director.md#automatic-handoff) policy in its `handoff` field when it starts: `after_tasks`, `context_percent` from 0 to 100, and `context_file`, the absolute path of its context report when its runtime reports one; a value out of range is refused with `ErrInvalid`.
+`RecordHandoffDue` records one announced crossing of a trigger, `tasks`, `context` or `idle`, with its crossing number from 1, the one-line reason typed, at most 128 bytes, and the message whose wake carried it, none for the idle line, under the mutation id `handoff-due:<session>:<trigger>:<crossing>`, so each crossing is recorded once and recording it again with another reason or message is `ErrMutationConflict`; no such session is `ErrNotFound`.
+`HandoffDues` lists a session's crossings in sequence order.
+`FinishedTasks` counts the task state receipts, moves to `done` or `cancelled`, committed after the session's start receipt, across repositories; it reads every receipt, as the status feed does.
+
 ## Attempt ownership
 
 An ownership record says which per-attempt launcher owns a running stage attempt, so a second launcher cannot run the same attempt while the first is alive.

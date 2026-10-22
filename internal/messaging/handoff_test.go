@@ -195,7 +195,7 @@ func TestWakeIdleTypesTheIdleCrossing(t *testing.T) {
 	}
 	sendDirector(t, h, "q-1", "question", "Which branch?")
 	finishTask(t, h, "t-2")
-	if got, _, err = messaging.WakeIdle(context.Background(), h.s, pane, time.Hour); err != nil || len(got) != 2 || got[0].Crossing != 2 {
+	if got, _, err = messaging.WakeIdle(context.Background(), h.s, pane, time.Hour); err != nil || len(got) != 2 || got[1].Trigger != store.HandoffIdle || got[1].Crossing != 2 {
 		t.Fatalf("second WakeIdle = %+v, %v", got, err)
 	}
 	want := []string{

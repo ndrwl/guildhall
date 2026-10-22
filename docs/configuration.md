@@ -115,6 +115,9 @@ It belongs to a Director config; a Steward config with one is refused.
 | `model`, `effort` | Passed to the adapter as given; empty means the adapter's default. |
 | `role` | A role prompt replacing the copy's `baseline/roles/director.md` and the release's Director role: a relative slash-separated path inside the config file's directory. |
 | `idle_after` | How long a session whose runtime has turn hooks may go with no turn signal and no wake before the supervisor counts the Director as [idle](director.md#the-end-of-a-turn), such as after a turn the captain interrupted: a positive Go duration, `5m` when unset. |
+| `handoff_after_tasks` | [Automatic handoff](director.md#automatic-handoff) every that many tasks finished in a session: a non-negative integer, `0` (off) when unset. |
+| `handoff_context_percent` | Automatic handoff once the runtime reports that much of its context used: an integer from 0 to 100, `0` for off, `70` when unset. |
+| `handoff_idle` | Automatic handoff after that long with no turn signal and no wake: a non-negative Go duration, `0s` (off) when unset. |
 
 Like a profile it names no credential.
 A config without the table has the same config digest as before the table existed.

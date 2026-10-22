@@ -2,7 +2,7 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop`, `director handoff`, `director reload`, `director turn-started`, `director turn-ended` and the standalone [guard rails](#guard-rails) are built; the automatic handoff triggers are designed in the slice 4 plan and land later.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop`, `director handoff`, `director reload`, `director turn-started`, `director turn-ended`, the [automatic handoff](#automatic-handoff) triggers with `director context-report`, and the standalone [guard rails](#guard-rails) are built.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Start
@@ -151,7 +151,7 @@ Each attempt that cannot be proven stopped is reported on standard error and mak
 A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopping`, stops its attempts and then records it `stopped` with the end reason `superseded`.
 No session, or a session already `stopped` whose stop has finished its sweep, is exit 1.
 
-The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands with the automatic handoff triggers.
+The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands later.
 
 ## Handoff
 
@@ -198,6 +198,32 @@ The supervisor decides at each signal and about once a second:
 
 The fake runtime has no hooks, so its sessions wait out the 60 seconds unless their script runs `turn-started` and `turn-ended` itself; without a turn-start hook a turn the captain starts is not seen, so once a turn has ended the Director counts as idle until a wake types into its pane.
 A session directory whose socket path would pass the platform's AF_UNIX limit gets no endpoint; the supervisor says so when it starts and waits out the 60 seconds as for a runtime without a hook.
+
+## Automatic handoff
+
+```sh
+guildhall director context-report [--copy <dir>]
+```
+
+Three triggers tell the Director a handoff is due before its context runs out ([decision](decisions/director-handoff-triggers.md)); each is a [`[director]` setting](configuration.md#the-director-table) and 0 turns it off:
+
+- `handoff_after_tasks` (off unless set): every that many tasks moved to `done` or `cancelled` since the session started;
+- `handoff_context_percent` (70 unless set): the context the runtime last reported as used reaches the percent;
+- `handoff_idle` (off unless set): the Director has had no turn signal and no wake for that long and, with turn hooks, its turn is over.
+
+A trigger never ends the session itself: it asks the Director to run the [`guildhall-handoff`](#skills) skill, which writes a [note](#handoff), carrying any open grill questions, and then runs `director reload --now`.
+The first two ride on a [wake](messaging.md#waking-the-director): when a wake types its line and a trigger holds, the line ends `; handoff due (<reason>)`, such as `guildhall: 2 unread (question 2); handoff due (context 72%)`, with two reasons joined by `, ` when both hold, so no model turn is spent on the reminder alone.
+The idle trigger is the session supervisor's one timer: once the Director has been quiet for `handoff_idle` it types the same line, the unread counts with `; handoff due (idle <duration>)`, into the Director's pane.
+Each crossing is announced once and recorded as a [handoff due](store.md#handoff-dues): the task trigger's crossings are every `handoff_after_tasks` finished tasks, so a Director that carries on is reminded again after as many more; the context trigger crosses once per session; the idle trigger once per quiet period, which a turn signal or a wake ends.
+A wake that fails to type records no crossing, so the next one carries it.
+The thresholds are recorded in the session when it starts, so a changed setting takes effect at the next session.
+
+The context percent comes from the runtime, an optional capability (R1.24).
+For Claude Code, the session's settings register `guildhall director context-report` as the status line: Claude Code runs it after each assistant message with the session's status as JSON on standard input, and it writes `context_window.used_percentage`, rounded, to `context.json` in the session directory, then prints `context <n>%`.
+It finds the session from `GUILDHALL_COPY` and `GUILDHALL_SESSION`, which the supervisor sets for the runtime, and opens no store.
+Input with no percent yet, before the first message, writes and prints nothing; input that is not JSON, or no session number, is exit 1.
+A runtime without the capability, such as the fake, records no report path and its context trigger never fires.
+The lab checklist proves the reporter against a real Claude Code.
 
 ## Guard rails
 
@@ -270,7 +296,7 @@ The document has these sections:
   `partial` is always `true`; `excluded` names what the feed does not inspect: `worker files`, `transcripts` and `forge state`.
   `sequence` and `committed_at` are the newest mutation committed anywhere in the store when the read began; an empty store has sequence 0.
   Live attempt state is read after the store, so it can be newer than `sequence`.
-- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, `sweeping` while a [stop](#stop) has not finished stopping its attempts, and the `end_reason` of a session [stopped](#stop) as `superseded`.
+- `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, `sweeping` while a [stop](#stop) has not finished stopping its attempts, the `end_reason` of a session [stopped](#stop) as `superseded`, and `context`, the newest [context report](#automatic-handoff) with its `used_percent` and `reported_at`, absent when the runtime reported none.
   A store with no session reports only its `state`, `"no session"`, and `guard_rails`.
   `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_policies`, `max_running_attempts` and `max_attempts_per_day`, when the copy has a config, and always `running_attempts`, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
   A config that exists but cannot be read gives `config_error` in place of the rails.

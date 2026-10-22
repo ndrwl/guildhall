@@ -1,10 +1,12 @@
 package store
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -72,18 +74,93 @@ func handoffDueRecord(seq uint64) string {
 // ErrMutationConflict. Sequence and Time are set by the store. The session must exist, otherwise ErrNotFound; an
 // unknown trigger, a crossing below 1 or a reason that is empty or too long is ErrInvalid.
 func (s *Store) RecordHandoffDue(d HandoffDue) (Receipt, error) {
-	return Receipt{}, errors.New("store: RecordHandoffDue: not implemented")
+	if err := validateHandoffDue(d); err != nil {
+		return Receipt{}, err
+	}
+	return s.mutate(handoffDueMutationID(d), opRecordHandoffDue, d, func(tx *bolt.Tx, r *Receipt) error {
+		r.Record = handoffDueRecord(r.Sequence)
+		sessions := directorBucket(tx, bucketSessions)
+		if sessions == nil || sessions.Get(sessionKey(d.Session)) == nil {
+			return fmt.Errorf("director session %d: %w", d.Session, ErrNotFound)
+		}
+		dues, err := createDirectorBucket(tx, bucketHandoffDues)
+		if err != nil {
+			return err
+		}
+		d.Sequence, d.Time = r.Sequence, s.now().UTC()
+		return putJSON(dues, seqKey(d.Sequence), d)
+	})
+}
+
+func validateHandoffDue(d HandoffDue) error {
+	switch {
+	case d.Session < 1:
+		return invalid("director session number %d must be positive", d.Session)
+	case d.Trigger != HandoffTasks && d.Trigger != HandoffContext && d.Trigger != HandoffIdle:
+		return invalid("handoff trigger %q is not %q, %q or %q", d.Trigger, HandoffTasks, HandoffContext, HandoffIdle)
+	case d.Crossing < 1:
+		return invalid("handoff crossing %d must be positive", d.Crossing)
+	case d.Sequence != 0 || !d.Time.IsZero():
+		return invalid("handoff due sequence and time are set by the store")
+	case strings.ContainsFunc(d.Reason, unicode.IsControl):
+		return invalid("handoff due reason must be one line")
+	}
+	if d.MessageID != "" {
+		if err := ValidateMessageID(d.MessageID); err != nil {
+			return err
+		}
+	}
+	return validateText("handoff due reason", d.Reason, MaxHandoffReasonBytes)
 }
 
 // HandoffDues returns the announced crossings of session n in sequence order; none is an empty list.
 func (s *Store) HandoffDues(n int) ([]HandoffDue, error) {
-	return nil, errors.New("store: HandoffDues: not implemented")
+	out := []HandoffDue{}
+	err := s.view(func(tx *bolt.Tx) error {
+		b := directorBucket(tx, bucketHandoffDues)
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			var d HandoffDue
+			if err := decode(k, v, &d); err != nil {
+				return err
+			}
+			if d.Session == n {
+				out = append(out, d)
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: handoff dues of session %d: %w", n, err)
+	}
+	return out, nil
 }
 
 // FinishedTasks counts the tasks moved to done or cancelled since session n was recorded, across repositories.
 // No session n is ErrNotFound.
 func (s *Store) FinishedTasks(n int) (int, error) {
-	return 0, errors.New("store: FinishedTasks: not implemented")
+	count := 0
+	err := s.view(func(tx *bolt.Tx) error {
+		receipts := tx.Bucket(bucketReceipts)
+		var started Receipt
+		if err := getJSON(receipts, []byte(directorSessionMutationID(n)), &started); err != nil || started.Operation != opStartDirectorSession {
+			return fmt.Errorf("director session %d: %w", n, ErrNotFound)
+		}
+		return receipts.ForEach(func(k, raw []byte) error {
+			var r Receipt
+			if err := json.Unmarshal(raw, &r); err != nil {
+				return fmt.Errorf("receipt %q: %w", k, err)
+			}
+			if r.Operation == opSetTaskState && r.Sequence > started.Sequence {
+				count++
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return 0, fmt.Errorf("store: finished tasks of session %d: %w", n, err)
+	}
+	return count, nil
 }
-
-var _ = bolt.Tx{}

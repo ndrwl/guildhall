@@ -354,6 +354,17 @@ func (c *Config) validate() []string {
 				add("director: %v", err)
 			}
 		}
+		if d.HandoffAfterTasks < 0 {
+			add("director: handoff_after_tasks %d must not be negative", d.HandoffAfterTasks)
+		}
+		if p := d.HandoffContextPercent; p != nil && (*p < 0 || *p > 100) {
+			add("director: handoff_context_percent %d must be between 0 and 100", *p)
+		}
+		if d.HandoffIdle != "" {
+			if _, err := parseHandoffIdle(d.HandoffIdle); err != nil {
+				add("director: %v", err)
+			}
+		}
 	}
 
 	seenID, seenPath := map[string]bool{}, map[string]bool{}
@@ -516,7 +527,31 @@ func (c *Config) IdleAfter() (time.Duration, error) {
 // Handoff returns the effective [director] handoff triggers: DefaultHandoffContextPercent and the others off when
 // they are not set. A value Parse would refuse is an error.
 func (c *Config) Handoff() (Handoff, error) {
-	return Handoff{}, errors.New("config: Handoff: not implemented")
+	h := Handoff{ContextPercent: DefaultHandoffContextPercent}
+	d := c.Director
+	if d == nil {
+		return h, nil
+	}
+	h.AfterTasks = d.HandoffAfterTasks
+	if d.HandoffContextPercent != nil {
+		h.ContextPercent = *d.HandoffContextPercent
+	}
+	var err error
+	if d.HandoffIdle != "" {
+		h.Idle, err = parseHandoffIdle(d.HandoffIdle)
+	}
+	if err == nil && (h.AfterTasks < 0 || h.ContextPercent < 0 || h.ContextPercent > 100) {
+		err = fmt.Errorf("handoff thresholds %d tasks and %d%% are out of range", h.AfterTasks, h.ContextPercent)
+	}
+	return h, err
+}
+
+func parseHandoffIdle(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("handoff_idle %q must be a duration such as \"30m\", or \"0s\" for off", v)
+	}
+	return d, nil
 }
 
 func parseIdleAfter(v string) (time.Duration, error) {

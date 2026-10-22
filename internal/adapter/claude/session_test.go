@@ -54,7 +54,8 @@ func TestSessionCommand(t *testing.T) {
 
 // TestSessionSettingsGolden pins the session's Claude Code settings: guildhall and read-only git allowed, no
 // edit of the copy's config.toml or managed.toml, the UserPromptSubmit hook running guildhall director
-// turn-started and the Stop and StopFailure hooks running guildhall director turn-ended.
+// turn-started, the Stop and StopFailure hooks running guildhall director turn-ended and the status line running
+// guildhall director context-report.
 func TestSessionSettingsGolden(t *testing.T) {
 	files := claude.Adapter{}.SessionFiles("/home/g/copy")
 	if len(files) != 1 {

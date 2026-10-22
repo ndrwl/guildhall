@@ -1,8 +1,13 @@
 package session
 
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
 // ContextFile is the context report's file name in the session directory.
@@ -27,14 +32,42 @@ type Context struct {
 	ReportedAt time.Time `json:"reported_at"`
 }
 
+// contextFile is the context report's form on disk.
+type contextFile struct {
+	Schema      string    `json:"schema"`
+	UsedPercent int       `json:"used_percent"`
+	ReportedAt  time.Time `json:"reported_at"`
+}
+
 // WriteContext replaces the context report in the absolute session directory dir with c, atomically, so a reader
 // sees the whole earlier or the whole new report. A percent outside 0 to 100 is refused, writing nothing.
 func WriteContext(dir string, c Context) error {
-	return errors.New("session: WriteContext: not implemented")
+	switch {
+	case !filepath.IsAbs(dir):
+		return fmt.Errorf("session: context report: directory %q is not absolute", dir)
+	case c.UsedPercent < 0 || c.UsedPercent > 100:
+		return fmt.Errorf("session: context report: used percent %d is not between 0 and 100", c.UsedPercent)
+	}
+	b, err := json.Marshal(contextFile{Schema: contextSchema, UsedPercent: c.UsedPercent, ReportedAt: c.ReportedAt})
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(filepath.Join(dir, ContextFile), append(b, '\n'))
 }
 
 // ReadContext reads the context report at path, strictly decoded; a missing file wraps fs.ErrNotExist, and a
 // report that is not the schema, or a percent outside 0 to 100, is an error.
 func ReadContext(path string) (Context, error) {
-	return Context{}, errors.New("session: ReadContext: not implemented")
+	b, err := atomicfile.Read(path)
+	if err != nil {
+		return Context{}, fmt.Errorf("session: context report: %w", err)
+	}
+	var f contextFile
+	if err := strictjson.Decode(b, &f, strictjson.Options{Schema: contextSchemaPrefix, Version: 1, MaxBytes: contextMaxBytes}); err != nil {
+		return Context{}, fmt.Errorf("session: context report %s: %w", path, err)
+	}
+	if f.UsedPercent < 0 || f.UsedPercent > 100 {
+		return Context{}, fmt.Errorf("session: context report %s: used percent %d is not between 0 and 100", path, f.UsedPercent)
+	}
+	return Context{UsedPercent: f.UsedPercent, ReportedAt: f.ReportedAt}, nil
 }
