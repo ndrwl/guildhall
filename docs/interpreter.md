@@ -135,7 +135,8 @@ Without a rule, the task waits for the Director (`director`, naming the step).
 
 **Waiting on a failed head.** Three states leave the step waiting on the checks of a head whose latest result failed: no `on.failed` rule (`director`), a loop exit answered `reject` (`director`, naming the decision), and a loop target that ran and left the head unchanged (`checks`).
 In each, an advance reads the head's checks again, so a check the Director re-ran counts.
-A read records a new round only when it is new evidence: a pass, or failed check runs (name, state, URL and run id) that differ from the latest result's; the same failed runs keep the step waiting and spend no round of `max`, so a build that leaves the head unchanged launches nothing more until a check re-runs.
+A read records a new round only when it is new evidence: a pass, or a failed check run, by check name and run id, that is not among the latest result's failed runs, which is a new failure or a re-run that failed again.
+Failed runs that are all among the latest result's, the same ones or fewer, such as while one failed check re-runs or after it passes and another stays failed, keep the step waiting and spend no round of `max`, so a build that leaves the head unchanged launches nothing more until a check fails anew or everything passes.
 A pass completes the step; a new failure follows the loop rule as any failed round does, so after a rejected exit it opens the next loop exit.
 A forge that gives no run ids cannot show a re-run that failed the same way, which then reads as unchanged.
 

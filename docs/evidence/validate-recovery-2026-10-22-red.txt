@@ -27,3 +27,12 @@ $ go test ./internal/interp/ -run 'TestValidate(FailedSameHead|WithoutLoopRule|L
 FAIL
 FAIL	github.com/ndrwl/guildhall/internal/interp	2.052s
 FAIL
+
+# partial re-run red run: TestValidateFailedSameHead's partial re-run case against the rule that spent a round whenever the failed runs differed (2026-10-22, f3d39a4 + working tree)
+$ go test ./internal/interp/ -run 'TestValidateFailedSameHead'
+--- FAIL: TestValidateFailedSameHead (1.98s)
+    --- FAIL: TestValidateFailedSameHead/double/partial_re-run (0.09s)
+        validate_test.go:302: next = {Wait:decision Step:validate Attempt:0 Decision:validate-x2}, want {Wait:checks Step:validate Attempt:0 Decision:}
+    --- FAIL: TestValidateFailedSameHead/store/partial_re-run (0.54s)
+        validate_test.go:302: next = {Wait:decision Step:validate Attempt:0 Decision:validate-x2}, want {Wait:checks Step:validate Attempt:0 Decision:}
+FAIL

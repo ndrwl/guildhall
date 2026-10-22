@@ -246,7 +246,8 @@ func TestValidateLoopExit(t *testing.T) {
 // TestValidateFailedSameHead: a build round that answers failed checks with the same head spends no round while
 // the head's failed check runs are unchanged, launching nothing; a re-run of the failing check is new evidence:
 // passing, it reaches the merge decision with the unchanged head published once, and failing again, it is the
-// next round, here past max 1, so the loop exit opens.
+// next round, here past max 1, so the loop exit opens. A partial re-run that only leaves fewer failures keeps
+// waiting.
 func TestValidateFailedSameHead(t *testing.T) {
 	for _, b := range backends {
 		for _, passes := range []bool{true, false} {
@@ -284,6 +285,33 @@ func TestValidateFailedSameHead(t *testing.T) {
 				}
 			})
 		}
+		t.Run(b.name+"/partial re-run", func(t *testing.T) {
+			e, f := newValidateEnv(t, b)
+			lint := forge.Check{Name: "lint", State: forge.CheckFailed, ID: "run-2"}
+			both := []forge.Check{{Name: "ci", State: forge.CheckFailed, URL: "https://ci.invalid/ci", ID: "run-1"}, lint}
+			failed := result(head, "failed", both, "ci", "lint")
+			approved := bound(t, workflow.VerdictApproved, head, nil)
+			e.script.Expect(buildExp(t, 2, head, failed.digest(t)), reviewExp(t, "review", "reviewer", 2, head, &approved, approved))
+			f.SetChecks(repoRemote, head, both...)
+			want(t, e.toValidate(t), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), waitChecks)
+			// ci re-runs and passes while lint stays failed as before: fewer failures are no new evidence.
+			for _, state := range []forge.CheckState{forge.CheckPending, forge.CheckPassed} {
+				f.SetChecks(repoRemote, head, forge.Check{Name: "ci", State: state, URL: "https://ci.invalid/ci", ID: "run-3"}, lint)
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+				if _, ok := e.documents(t)["validate-2-result"]; ok {
+					t.Fatalf("ci %s with lint still failed recorded validate-2-result", state)
+				}
+			}
+			// lint re-runs and fails again: a failed run the latest result did not hold is the next round.
+			rerunLint := []forge.Check{{Name: "ci", State: forge.CheckPassed, URL: "https://ci.invalid/ci", ID: "run-3"}, {Name: "lint", State: forge.CheckFailed, ID: "run-4"}}
+			f.SetChecks(repoRemote, head, rerunLint...)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "validate", Decision: "validate-x2"})
+			if got, w := e.validationDoc(t, "validate-2-result"), result(head, "failed", rerunLint, "lint"); !equalResult(got, w) {
+				t.Errorf("validate-2-result = %+v, want %+v", got, w)
+			}
+		})
 	}
 }
 

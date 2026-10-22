@@ -71,8 +71,8 @@ func loopOutcome(s workflow.Step) string {
 // validate reads the forge's checks of the published head until they finish. Pending checks, or none reported yet,
 // wait; finished checks are recorded as the next round's result. A passed result for the head completes the step;
 // a failed one follows the failed loop rule. While the step waits on the head's checks, an advance reads them only
-// once ChecksRefresh has passed since the last read, and a failed read spends a round only when its failed check
-// runs differ from the latest result's (docs/interpreter.md#validate).
+// once ChecksRefresh has passed since the last read, and a failed read spends a round only when it holds a failed
+// check run the latest result's failed runs do not (docs/interpreter.md#validate).
 func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	in, err := r.input(s, "head")
 	if err != nil {
@@ -149,7 +149,7 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		return false, Next{Wait: WaitChecks, Step: s.ID}, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), "checks-pending",
 			fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL))
 	}
-	if last != nil && v.Verdict == validationFailed && slices.Equal(failedRuns(v.Checks), failedRuns(last.Checks)) {
+	if last != nil && v.Verdict == validationFailed && !newFailure(v.Checks, last.Checks) {
 		return false, wait, nil
 	}
 	id := decisionID(s.ID, k, false)
@@ -168,9 +168,14 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	return done, next, err
 }
 
-// failedRuns returns the failed checks of checks: the evidence a failed result gives its loop.
-func failedRuns(checks []forge.Check) []forge.Check {
-	return slices.DeleteFunc(slices.Clone(checks), func(c forge.Check) bool { return c.State != forge.CheckFailed })
+// newFailure reports whether checks hold a failed run, by check name and run id, that is not among the failed runs
+// of last: a new failure or a failed re-run, the only failed evidence a further round is spent on.
+func newFailure(checks, last []forge.Check) bool {
+	return slices.ContainsFunc(checks, func(c forge.Check) bool {
+		return c.State == forge.CheckFailed && !slices.ContainsFunc(last, func(l forge.Check) bool {
+			return l.State == forge.CheckFailed && l.Name == c.Name && l.ID == c.ID
+		})
+	})
 }
 
 // checksRead is when validate step s last read the checks of Head, kept in <state>/<repo>/<task>/<step>.checks.json.
