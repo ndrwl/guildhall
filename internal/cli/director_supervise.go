@@ -300,14 +300,14 @@ func startRuntime(c *exec.Cmd, n int, storePath string) (runtimeUnit, error) {
 	}
 	// The attempts' launchers the runtime starts leave the unit, under their own ownership and stop.
 	c.Env = append(c.Env, artisan.SessionEnv(u)...)
-	id, err := u.Start(c)
+	_, err = artisan.StartRecorded(u, c, func(id artisan.Identity) error {
+		uc := u.Containment()
+		rec := store.Containment{Kind: uc.Kind, Name: uc.Name, Reason: uc.Reason, Worker: store.ProcessIdentity(id)}
+		_, err := withStore(storePath, false, func(s *store.Store) (store.Receipt, error) { return s.RecordDirectorRuntime(n, rec) })
+		return err
+	})
 	if err != nil {
-		return nil, errors.Join(err, u.Close())
-	}
-	uc := u.Containment()
-	rec := store.Containment{Kind: uc.Kind, Name: uc.Name, Reason: uc.Reason, Worker: store.ProcessIdentity(id)}
-	if _, err := withStore(storePath, false, func(s *store.Store) (store.Receipt, error) { return s.RecordDirectorRuntime(n, rec) }); err != nil {
-		return nil, errors.Join(fmt.Errorf("record the runtime's unit: %w", err), u.Close())
+		return nil, errors.Join(fmt.Errorf("start recorded runtime: %w", err), u.Close())
 	}
 	return u, nil
 }
@@ -514,6 +514,12 @@ func stopSession(storePath string, n int) error {
 	_, err := withStore(storePath, false, func(s *store.Store) (struct{}, error) {
 		d, err := s.LatestDirectorSession()
 		if err != nil || d.Number != n || d.State == store.DirectorStopped {
+			return struct{}{}, err
+		}
+		if runtimeEnded(d) != nil {
+			if !d.Sweeping && d.State != store.DirectorStopping {
+				_, err = s.RequestDirectorStop(n, false, d.StateSequence)
+			}
 			return struct{}{}, err
 		}
 		_, err = s.SetDirectorState(n, store.DirectorStopped, d.StateSequence)

@@ -97,6 +97,14 @@ func newSessionUnit(name string) (Unit, error) {
 // with IsProcessInJob and only then resumes it, so no descendant can start
 // outside the job.
 func (u *jobUnit) Start(cmd *exec.Cmd) (Identity, error) {
+	return u.startRecorded(cmd, func(Identity) error { return nil })
+}
+
+func StartRecorded(u Unit, cmd *exec.Cmd, record func(Identity) error) (Identity, error) {
+	return u.(*jobUnit).startRecorded(cmd, record)
+}
+
+func (u *jobUnit) startRecorded(cmd *exec.Cmd, record func(Identity) error) (Identity, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	switch {
@@ -137,6 +145,9 @@ func (u *jobUnit) Start(cmd *exec.Cmd) (Identity, error) {
 	id, err := identityFromHandle(cmd.Process.Pid, h)
 	if err != nil {
 		return fail("Lookup", err)
+	}
+	if err := record(id); err != nil {
+		return fail("record runtime", err)
 	}
 	if r, _, _ := procNtResumeProcess.Call(uintptr(h)); r != 0 {
 		return fail("NtResumeProcess", fmt.Errorf("NTSTATUS %#x", r))

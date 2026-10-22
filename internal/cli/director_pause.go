@@ -64,7 +64,7 @@ func liveSession(s *store.Store) (store.DirectorSession, bool, error) {
 		return d, false, errors.New("no Director session; start one with guildhall director start")
 	case err != nil:
 		return d, false, err
-	case d.State == store.DirectorStopped && !d.Sweeping:
+	case d.State == store.DirectorStopped && !d.Sweeping && runtimeEnded(d) == nil:
 		return d, false, fmt.Errorf("the Director session %d is stopped", d.Number)
 	}
 	lv, err := artisan.Probe(artisan.Identity(d.Identity))
@@ -214,6 +214,7 @@ func (a *App) directorStop(args []string) int {
 	if code := a.printJSON(d); code != 0 || stopped {
 		return code
 	}
+	a.notef("guildhall: director stop: cleanup is incomplete; run guildhall director stop again\n")
 	return 1
 }
 

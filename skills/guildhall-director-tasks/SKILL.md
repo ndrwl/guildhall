@@ -111,7 +111,7 @@ Record an approval with `guildhall workflow approve` only when the Guildmaster h
   While paused, `guildhall task start` and `guildhall step retry` start nothing and print `{"wait":"paused","step":"<step>"}`; that is the hold working, not a failure, and the task is listed `paused` after the resume.
   Decisions are still answered and recorded, and `guildhall task start --decision` feeds the answer without starting the next attempt.
 - When they say to carry on, run `guildhall director resume`.
-  It prints the `needs_me` list; work it with `guildhall-director-inbox`, including the `guildhall task start` of each task listed as `paused`.
+  It prints the `needs_me` list; work it with `guildhall-director-inbox`, following each `paused` item's command: `guildhall task start` for a never-started step, or `guildhall step retry` for a failed or stopped attempt whose retry was held.
 - When they say to stop the Director, run `guildhall director stop`.
   It ends this session and stops every running Artisan attempt as well, so say so and confirm first when attempts are running.
   The session ends within 60 seconds, or at once with `guildhall director stop --now`.

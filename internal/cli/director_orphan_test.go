@@ -204,6 +204,11 @@ func TestDirectorStopEndsAGoneSupervisorsRuntime(t *testing.T) {
 // survivors and director stop, recording nothing, and director stop ends the tree before it records the session
 // stopped as superseded; director start is then admitted past it.
 func TestDirectorStartAndStopOverARecordedRuntimeUnit(t *testing.T) {
+	t.Run("running", func(t *testing.T) { checkRecordedRuntimeRecovery(t, false) })
+	t.Run("previously stopped", func(t *testing.T) { checkRecordedRuntimeRecovery(t, true) })
+}
+
+func checkRecordedRuntimeRecovery(t *testing.T, stopped bool) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n")
 	path := filepath.Join(dir, "director.store")
 	recordSession(t, path, true, store.DirectorRunning)
@@ -224,6 +229,19 @@ func TestDirectorStartAndStopOverARecordedRuntimeUnit(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	expected := store.DirectorRunning
+	if stopped {
+		if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+			d, err := s.LatestDirectorSession()
+			if err != nil {
+				return store.Receipt{}, err
+			}
+			return s.EndDirectorSession(1, store.EndSuperseded, d.StateSequence)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		expected = store.DirectorStopped
+	}
 	app, stdout, stderr := supervisorApp(nil, time.Hour)
 	code := app.Run([]string{"director", "start", "--copy", dir})
 	if msg := stderr.String(); code != 1 || !strings.Contains(msg, "director: live") || !strings.Contains(msg, strconv.Itoa(worker.PID)) ||
@@ -231,8 +249,16 @@ func TestDirectorStartAndStopOverARecordedRuntimeUnit(t *testing.T) {
 		t.Errorf("director start over the live unit: exit %d, stdout %s, stderr %s; want director: live naming process %d and director stop",
 			code, stdout, msg, worker.PID)
 	}
-	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorRunning {
+	if got := sessions(t, dir); len(got) != 1 || got[0].State != expected {
 		t.Fatalf("the refused start changed the sessions: %+v", got)
+	}
+	if !stopped {
+		if err := stopSession(path, 1); err != nil {
+			t.Fatal(err)
+		}
+		if d := sessions(t, dir)[0]; d.State != store.DirectorStopping || !d.Sweeping {
+			t.Fatalf("unproven cleanup released lifecycle: %+v", d)
+		}
 	}
 	code, printed, errs := stopCopy(t, dir)
 	if code != 0 || printed.State != store.DirectorStopped || printed.EndReason != store.EndSuperseded || printed.Sweeping {

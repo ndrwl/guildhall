@@ -126,6 +126,31 @@ func TestSessionEndReportsASurvivingProcess(t *testing.T) {
 // TestARuntimeWhoseUnitCannotBeRecordedEnds: a runtime whose unit the session record refuses, here because the
 // store has no session 1, is ended with its unit and startRuntime fails, so no runtime runs that the record does not
 // name (docs/director.md#the-runtimes-record).
+func TestRuntimeWaitsForRecord(t *testing.T) {
+	inv := t.TempDir()
+	u, err := artisan.NewSessionUnit("test-record-gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer u.Close()
+	cmd := artisantest.Command(inv, artisantest.Worker{Grandchildren: 1})
+	_, err = artisan.StartRecorded(u, cmd, func(id artisan.Identity) error {
+		time.Sleep(200 * time.Millisecond)
+		entries, err := artisantest.Inventory(inv)
+		if err != nil {
+			return err
+		}
+		if len(entries) != 0 {
+			t.Errorf("runtime executed before record: %+v", entries)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTree(t, inv)
+}
+
 func TestARuntimeWhoseUnitCannotBeRecordedEnds(t *testing.T) {
 	path := emptyStore(t)
 	inv := t.TempDir()
@@ -141,6 +166,9 @@ func TestARuntimeWhoseUnitCannotBeRecordedEnds(t *testing.T) {
 	entries, err := artisantest.Inventory(inv)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("unrecorded runtime executed: %+v", entries)
 	}
 	for _, e := range entries {
 		if lv, err := artisan.Probe(e.Identity); lv != artisan.Gone {

@@ -261,8 +261,16 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 		t.Fatalf("resume: exit %d, %v, %s", code, err, stderr)
 	}
 	for _, task := range []string{"t-1", "t-2"} {
-		if !slices.ContainsFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == task }) {
-			t.Errorf("resume needs_me = %+v; want %s paused", doc.NeedsMe, task)
+		index := slices.IndexFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == task })
+		if index < 0 {
+			t.Fatalf("resume needs_me = %+v; want %s paused", doc.NeedsMe, task)
+		}
+		if task == "t-2" {
+			args := strings.Fields(doc.NeedsMe[index].Command)[1:]
+			args = append(args, "--store", d.store, "--state", d.state, "--config", d.config)
+			if code, out, stderr := d.run(t, args...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":2}`+"\n" {
+				t.Fatalf("paused retry command: exit %d, %q, %s", code, out, stderr)
+			}
 		}
 	}
 	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {

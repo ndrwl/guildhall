@@ -56,15 +56,15 @@ When it ends the runtime for a [reload](#reload) it records the session `stopped
 The config read again chooses the runtime too: unless `director start` named one, a changed `[director] adapter` takes effect, checked on `PATH` as the preflight checks it, and a runtime refused then ends the supervisor with exit 1, with session `<n>` recorded `stopped` as `reloaded` and the reload left requested.
 A `director stop` recorded while the runtime is ending for the reload wins: the session is recorded `stopped` as for a stop and the supervisor exits 0 with no new session.
 A runtime that ends by itself is recorded `stopped` and gives the terminal back, even with a reload requested; that reload, like one requested while no supervisor runs, is recorded `applied` by the next `director start`.
-However the runtime ends, the supervisor kills whatever it left running in its unit and records the session `stopped` only once the unit is empty; a unit not proven empty within 10 seconds of the runtime's end makes the exit 1, naming the survivors.
+However the runtime ends, the supervisor kills whatever it left running in its unit and records the session `stopped` only once the unit is empty; a unit not proven empty within 10 seconds of the runtime's end makes the exit 1, naming the survivors and leaving the session stopping and sweeping for recovery with `guildhall director stop`.
 On Linux the runtime is also killed if the supervisor dies.
 
 ### The runtime's record
 
-Once the unit reports the runtime started, the supervisor records the unit on the session, as an Artisan's [ownership](artisan.md) records its worker: its kind, its name (the Job Object's name or the cgroup's directory; a process group has none), the Linux detection reason, and the runtime's process identity ([decision](decisions/director-runtime-record.md)).
+Once the unit reports the gated or suspended runtime process created, before its program can execute, the supervisor records the unit on the session, as an Artisan's [ownership](artisan.md) records its worker: its kind, its name (the Job Object's name or the cgroup's directory; a process group has none), the Linux detection reason, and the runtime's process identity ([decision](decisions/director-runtime-record.md)).
 A record that fails ends the runtime and its unit, and the supervisor exits 1 naming the failure, so no runtime runs that the record does not name.
 The record is what lets the session's processes be found after the supervisor has died, such as when its terminal is closed with `kill -9` or a crash: [`director stop`](#stop) sweeps the recorded unit and `director start` refuses while it holds a process.
-A supervisor that dies between starting the runtime and recording it leaves nothing recorded: on Windows the Job Object, which only the supervisor holds open, kills the runtime's processes as the supervisor dies, and on Linux the runtime itself is killed then, but a process it has already started in that moment is not found by the record.
+On Unix the runtime waits behind a pipe gate until its record commits; supervisor death before release closes the pipe and the gate exits without executing the runtime. On Windows the runtime remains suspended in its kill-on-close Job Object until the record commits. After release, recovery can always find the recorded unit.
 
 ## Skills
 
@@ -136,7 +136,7 @@ The hold is read in the same store transaction that records a new attempt, so an
 - `step done` still takes the attempt's result and opens any decision it leads to, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
 - `decide answer`, `messages`, `artisan stop` and every read are unaffected.
 
-`director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works, such as the `task start` of each held task.
+`director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works, using `task start` for a never-started step or `step retry` for a held retry.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
 A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks` and `decision` items, and the session has a bound pane, it types one line of counts by kind, never any text, and prints `"wake":{"decision":"woke"}` in its line:
@@ -182,9 +182,10 @@ A stopping session is stopped again without changing it, and `stop --now` after 
 Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `sweeping`, holding new attempts, and running `stop` again, even over a session since recorded `stopped`, finishes the sweep.
 
 A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopping`, ends every process still in the session's [recorded runtime unit](#the-runtimes-record), killing them from outside as a resumed Artisan attempt's unit is swept, stops its attempts and then records it `stopped` with the end reason `superseded`.
-Survivors of the unit that are not proven ended within 10 seconds, or a unit that cannot be read, are reported on standard error and make the exit 1, with the session left `stopping` and `sweeping` and not recorded `stopped`; running `stop` again sweeps it again.
-A session recorded before its runtime was, from a release without the record or a supervisor that died before writing it, has no unit to sweep.
-No session, or a session already `stopped` whose stop has finished its sweep, is exit 1.
+Survivors of the unit that are not proven ended within 10 seconds, or a unit that cannot be read, are reported on standard error and make the exit 1, with the session left `stopping` and `sweeping` and not recorded `stopped`; the diagnostic tells the user to run `guildhall director stop` again to finish the sweep.
+A session from a release without runtime records has no unit to sweep. In current releases, a crash before the record cannot leave an executing runtime.
+A previously `stopped` session whose recorded runtime unit is not proven empty remains eligible for `stop` recovery.
+No session, or a session already `stopped` whose stop has finished its sweep and whose runtime unit is proven empty, is exit 1.
 
 The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands later.
 
@@ -360,7 +361,7 @@ The document has these sections:
   5. `decision`: an open decision; `guildhall decide show --repo <r> --task <t> --decision <id>`.
   6. `messages`: one item counting the other unread messages; `guildhall messages list director`.
   7. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
-  8. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall task start --repo <r> <t>`.
+  8. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall task start --repo <r> <t>` for a never-started step, or `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>` when its latest attempt failed or stopped.
   9. `checks`: an open task whose `next.json` says `"wait":"checks"`, with its `step`, which the session supervisor's [checks watcher](#checks) advances; `guildhall task start --repo <r> <t>`.
 
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
