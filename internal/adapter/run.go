@@ -58,7 +58,7 @@ func (p *Process) Stop() error {
 	return err
 }
 
-// TabRef names a tab a tabHost created. The value carries no authority: the
+// TabRef names a tab a TabHost created. The value carries no authority: the
 // host that created the tab is the only one that accepts it, and a host refuses
 // the zero TabRef, a TabRef from another host and one it never returned.
 type TabRef struct {
@@ -68,15 +68,21 @@ type TabRef struct {
 	PaneID      string
 }
 
-// tabHost is the terminal a TabLauncher drives: it creates tabs and operates
+// TabHost is the terminal a TabLauncher drives: it creates tabs and operates
 // only on tabs it created. RunInTab success means the terminal accepted the
 // line, not that the command ran or finished; it types into whatever runs in
 // the pane. InterruptTab sends Ctrl+C and proves nothing about what stopped.
 // AdoptTab accepts a tab an earlier host on the same terminal created, as a
 // durable Guildhall record names it, once it has checked that the tab is still
 // there in the host's session and the recorded workspace; it types nothing.
+// Workspaces lists the session's workspaces, in the terminal's order, and
+// CreateWorkspace creates one without taking focus; a created workspace is
+// listed from then on and accepts tabs. Workspaces carry no ownership: any
+// host on the terminal lists and uses them.
 // Every operation honours its context.
-type tabHost interface {
+type TabHost interface {
+	Workspaces(ctx context.Context) ([]herdr.Workspace, error)
+	CreateWorkspace(ctx context.Context, label, cwd string) (herdr.Workspace, error)
 	CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, error)
 	AdoptTab(ctx context.Context, tab TabRef) error
 	PaneProcessInfo(ctx context.Context, tab TabRef) (herdr.ProcessInfo, error)
@@ -87,7 +93,7 @@ type tabHost interface {
 // errNotOwned reports a TabRef the host did not create.
 var errNotOwned = errors.New("tab was not created by this host")
 
-// HerdrTabs is the tabHost backed by a Herdr client. It keeps the client's
+// HerdrTabs is the TabHost backed by a Herdr client. It keeps the client's
 // ownership proof for each tab it created and accepts only those tabs.
 type HerdrTabs struct {
 	client *herdr.Client
@@ -95,9 +101,39 @@ type HerdrTabs struct {
 	owned  map[TabRef]herdr.OwnedTab
 }
 
-// NewHerdrTabs returns a tabHost for client.
+// NewHerdrTabs returns a TabHost for client.
 func NewHerdrTabs(client *herdr.Client) *HerdrTabs {
 	return &HerdrTabs{client: client, owned: map[TabRef]herdr.OwnedTab{}}
+}
+
+// Workspaces lists the session's workspaces.
+func (h *HerdrTabs) Workspaces(ctx context.Context) ([]herdr.Workspace, error) {
+	return h.client.WorkspaceList(ctx)
+}
+
+// CreateWorkspace creates a workspace without taking focus.
+func (h *HerdrTabs) CreateWorkspace(ctx context.Context, label, cwd string) (herdr.Workspace, error) {
+	return h.client.WorkspaceCreate(ctx, label, cwd)
+}
+
+// EnsureWorkspace returns the id of h's first workspace labelled label,
+// creating one with cwd, without focus, when there is none (R1.37). Two
+// callers racing can each create one; later calls reuse the first listed.
+func EnsureWorkspace(ctx context.Context, h TabHost, label, cwd string) (string, error) {
+	list, err := h.Workspaces(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, w := range list {
+		if w.Label == label {
+			return w.ID, nil
+		}
+	}
+	w, err := h.CreateWorkspace(ctx, label, cwd)
+	if err != nil {
+		return "", err
+	}
+	return w.ID, nil
 }
 
 // CreateTab creates a tab without taking focus.
@@ -153,7 +189,7 @@ var ErrShellIdle = errors.New("the pane's shell is idle; its program is not runn
 // tab, then types only while a program other than the shell runs in it, so a
 // line meant for that program never reaches a shell prompt (ErrShellIdle).
 // Success means the terminal accepted the line, not that the program read it.
-func typeRecorded(ctx context.Context, h tabHost, ref TabRef, line string) error {
+func typeRecorded(ctx context.Context, h TabHost, ref TabRef, line string) error {
 	if err := h.AdoptTab(ctx, ref); err != nil {
 		return err
 	}
@@ -196,7 +232,7 @@ func (h *HerdrTabs) InterruptTab(ctx context.Context, ref TabRef) error {
 
 // TabLauncher starts an Artisan in a new, visible Herdr tab (R1.38).
 type TabLauncher struct {
-	Host        tabHost
+	Host        TabHost
 	WorkspaceID string
 	// ShellReady bounds the wait for the new tab's shell to reach its prompt.
 	ShellReady time.Duration
@@ -207,7 +243,7 @@ type TabLauncher struct {
 // TabRun is an Artisan started in a Herdr tab. The tab is a presentation
 // binding only (R1.52): its closing or disappearance never completes the run.
 type TabRun struct {
-	host tabHost
+	host TabHost
 	Tab  TabRef
 }
 
@@ -219,22 +255,44 @@ func (l TabLauncher) Start(ctx context.Context, label string, cmd Command) (*Tab
 	if len(cmd.Argv) == 0 {
 		return nil, errors.New("artisan command is empty")
 	}
-	tab, err := l.Host.CreateTab(ctx, herdr.TabSpec{WorkspaceID: l.WorkspaceID, Label: label, Cwd: cmd.Dir, Env: cmd.Env})
+	tab, shell, err := l.Open(ctx, label, cmd.Dir, cmd.Env)
 	if err != nil {
 		return nil, err
 	}
-	shell, err := l.waitShell(ctx, tab)
-	if err != nil {
-		return nil, fmt.Errorf("tab %s: %w", tab.TabID, err)
-	}
-	line, err := herdr.ShellCommand(shell, cmd.Argv)
-	if err != nil {
-		return nil, fmt.Errorf("tab %s: %w", tab.TabID, err)
-	}
-	if err := l.Host.RunInTab(ctx, tab, line); err != nil {
-		return nil, fmt.Errorf("tab %s: %w", tab.TabID, err)
+	if err := l.Type(ctx, tab, shell, cmd.Argv); err != nil {
+		return nil, err
 	}
 	return &TabRun{host: l.Host, Tab: tab}, nil
+}
+
+// Open creates a tab labelled label in the launcher's workspace, with working
+// directory dir and env added to its shell's environment, and waits until its
+// shell is the only foreground process, returning the tab and the shell's
+// process name. A tab whose shell never becomes idle is left open.
+func (l TabLauncher) Open(ctx context.Context, label, dir string, env []string) (TabRef, string, error) {
+	tab, err := l.Host.CreateTab(ctx, herdr.TabSpec{WorkspaceID: l.WorkspaceID, Label: label, Cwd: dir, Env: env})
+	if err != nil {
+		return TabRef{}, "", err
+	}
+	shell, err := l.waitShell(ctx, tab)
+	if err != nil {
+		return TabRef{}, "", fmt.Errorf("tab %s: %w", tab.TabID, err)
+	}
+	return tab, shell, nil
+}
+
+// Type types argv into tab, a tab Open returned whose shell is shell, as one
+// line quoted for that shell (herdr.ShellCommand); an argv the shell cannot
+// pass unchanged types nothing.
+func (l TabLauncher) Type(ctx context.Context, tab TabRef, shell string, argv []string) error {
+	line, err := herdr.ShellCommand(shell, argv)
+	if err != nil {
+		return fmt.Errorf("tab %s: %w", tab.TabID, err)
+	}
+	if err := l.Host.RunInTab(ctx, tab, line); err != nil {
+		return fmt.Errorf("tab %s: %w", tab.TabID, err)
+	}
+	return nil
 }
 
 func (l TabLauncher) waitShell(ctx context.Context, tab TabRef) (string, error) {

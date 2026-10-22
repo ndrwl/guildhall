@@ -13,6 +13,7 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `ChecksRefresh` is the effective `checks_refresh` setting the same way, `DefaultChecksRefresh` (1 minute) when unset and zero for `0s`.
 `GuardRails` returns the [guard rails](../director.md#guard-rails): the listed repositories in config order, their merge policies, and the effective `max_running_attempts` and `max_attempts_per_day` settings, `DefaultMaxRunningAttempts` (4) and `DefaultMaxAttemptsPerDay` (40) when unset; `Parse` refuses a managed or local cap that is not a positive whole number written plainly, and `GuardRails` returns that error, naming the key, for a config built without `Parse`.
 `ListedRepository` returns a listed repository or an error wrapping `ErrRepositoryNotListed` that names the id; every command acting on a repository finds it there.
+`HerdrSession` is the effective `herdr_session` setting, `""` when unset; `Parse` refuses a managed or local value that is `default` or not a Herdr session name.
 A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `Director` is the optional [`[director]` table](../configuration.md#the-director-table): an adapter that is an id when set, a config-relative role path, and none in a Steward config; it is omitted from JSON when unset, so a config without it keeps its digest.
 
@@ -21,5 +22,6 @@ A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `config_test.go`, `managed_test.go`, `profile_test.go`; real temporary files: `load_test.go`.
 `stall_test.go` was written red first against a stub `StallInterval` ([red run](../evidence/stall-adapter-choice-2026-10-22-red.txt)): the default, local, zero, managed and overridden values, and refusal of values that are not nonnegative durations.
 `checks_refresh_test.go` pins the same cases for `ChecksRefresh`, and `TestDirectorConfig` the `no_ci` default and value; they were added with the implementation and were not run red.
+`herdr_session_test.go` was written red first against a stub `HerdrSession` ([red run](../evidence/director-tab-2026-10-22-red.txt)): unset, local and managed values, and refusals of `default` and malformed names.
 `director_test.go` pins the `[director]` table's parse and refusals; it was added with the implementation and was not run red.
 `guard_rails_test.go` was written red first against stub `GuardRails` and `ListedRepository` ([red run](../evidence/guard-rails-2026-10-22-red.txt)): the defaults, local, managed and overridden caps, the listed ids and merge policies, refusal of caps that are zero, negative, words, fractions or padded, and the named refusal of an unlisted repository.

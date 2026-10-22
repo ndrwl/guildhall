@@ -359,7 +359,7 @@ func supervisedCopy(t *testing.T) (string, runDirector) {
 	return dir, d
 }
 
-// supervise runs `director start --foreground` over dir in this process with grace as its stop grace, its
+// supervise runs `director start` over dir in this process with grace as its stop grace, its
 // runtime reading a pipe that stays open, and returns its exit status once it ends.
 func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 	t.Helper()
@@ -377,7 +377,7 @@ func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 	app.Stdout, app.Stderr = io.Discard, io.Discard
 	app.SessionPoll, app.StopGrace = 100*time.Millisecond, grace
 	done := make(chan int, 1)
-	go func() { done <- app.Run([]string{"director", "start", "--foreground", "--copy", dir}) }()
+	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
 	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
 		if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorRunning {
 			return done

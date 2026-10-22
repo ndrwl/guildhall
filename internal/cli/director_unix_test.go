@@ -3,15 +3,19 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/ndrwl/guildhall/baseline"
+	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
+	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/skills"
 )
@@ -37,7 +41,7 @@ func TestDirectorStartRecordsATerminatedSessionStopped(t *testing.T) {
 	app.InstallBaseline = baseline.Install
 	app.Stdin = stdin
 	done := make(chan int, 1)
-	go func() { done <- app.Run([]string{"director", "start", "--foreground", "--copy", dir}) }()
+	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
 	var code int
 	deadline := time.After(time.Minute)
 	for ended := false; !ended; {
@@ -57,5 +61,28 @@ func TestDirectorStartRecordsATerminatedSessionStopped(t *testing.T) {
 	}
 	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorStopped {
 		t.Errorf("sessions = %+v; want session 1 stopped", got)
+	}
+}
+
+// TestDirectorStartRunsTheSessionInAShellPane runs the wrapper over adaptertest.ShellPanes, whose panes run each
+// typed line with sh: the quoted line starts the supervisor, which records the pane it was given, and the
+// wrapper prints that session.
+func TestDirectorStartRunsTheSessionInAShellPane(t *testing.T) {
+	dir := tabCopy(t)
+	panes := adaptertest.NewShellPanes(t, "lab", "w1")
+	code, out, stderr := runWrapper(t, panes, "--tab", "--copy", dir)
+	if code != 0 {
+		t.Fatalf("exit %d\nstdout %s\nstderr %s", code, out, stderr)
+	}
+	d := lastSession(t, out)
+	if d.Number != 1 || d.Pane.Session != "lab" || d.Pane.Workspace == "w1" || d.Pane.Tab == "" || d.Pane.Pane == "" {
+		t.Errorf("printed %+v; want session 1 in a tab of a new workspace", d)
+	}
+	ws, err := panes.Workspaces(context.Background())
+	if err != nil || !slices.Contains(ws, herdr.Workspace{ID: d.Pane.Workspace, Label: "alpha"}) {
+		t.Errorf("workspaces = %+v, %v; want %s labelled alpha", ws, err, d.Pane.Workspace)
+	}
+	if sent := panes.Sent(); len(sent) != 1 || !strings.Contains(sent[0], "'--herdr-pane'") || strings.Contains(sent[0], "'--tab'") {
+		t.Errorf("sent = %q", sent)
 	}
 }

@@ -16,22 +16,22 @@ import (
 	"github.com/ndrwl/guildhall/internal/herdr"
 )
 
-// tabHost is the terminal boundary TabLauncher consumes. testTabHost is its
+// TabHost is the terminal boundary TabLauncher consumes. testTabHost is its
 // contract; it runs against HerdrTabs over a real herdr.Client whose Herdr
 // executable is a stub (the test binary), and against the fakeTabs double the
 // launcher tests use, so a launcher test that passes on the double means the
 // same against the real client.
 
 type tabHostUnderTest struct {
-	host tabHost
+	host TabHost
 	// foreign is another host of the same kind; its tabs must be refused.
-	foreign tabHost
+	foreign TabHost
 	session string
 	// sent returns the lines and keys that reached the terminal, in order.
 	sent func() []string
 	// reopen returns a new host on the same terminal, as a later process would
 	// make: it holds the tabs host created but owns none of them.
-	reopen func() tabHost
+	reopen func() TabHost
 }
 
 func testTabHost(t *testing.T, newHost func(t *testing.T) tabHostUnderTest) {
@@ -231,7 +231,100 @@ func testRecordedTabs(t *testing.T, newHost func(t *testing.T) tabHostUnderTest)
 	})
 }
 
-func mustCreate(t *testing.T, h tabHost, spec herdr.TabSpec) TabRef {
+// testWorkspaces is the contract for the session's workspaces, which the
+// Director's tab is opened in (R1.37).
+func testWorkspaces(t *testing.T, newHost func(t *testing.T) tabHostUnderTest) {
+	ctx := context.Background()
+	count := func(t *testing.T, h TabHost, label string) int {
+		t.Helper()
+		list, err := h.Workspaces(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, w := range list {
+			if w.Label == label {
+				n++
+			}
+		}
+		return n
+	}
+
+	t.Run("a created workspace is listed and accepts tabs", func(t *testing.T) {
+		h := newHost(t)
+		before, err := h.host.Workspaces(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, err := h.host.CreateWorkspace(ctx, "ada", t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if w.ID == "" || w.Label != "ada" {
+			t.Errorf("created workspace = %+v", w)
+		}
+		after, err := h.host.Workspaces(ctx)
+		if err != nil || len(after) != len(before)+1 || !slices.Contains(after, w) {
+			t.Errorf("workspaces = %+v, %v; want %+v and %d before it", after, err, w, len(before))
+		}
+		if !slices.Contains(mustWorkspaces(t, h.reopen()), w) {
+			t.Error("a later host on the terminal does not list the workspace")
+		}
+		ref, err := h.host.CreateTab(ctx, herdr.TabSpec{WorkspaceID: w.ID, Label: "director ada", Cwd: t.TempDir()})
+		if err != nil || ref.WorkspaceID != w.ID {
+			t.Errorf("tab in the new workspace = %+v, %v", ref, err)
+		}
+		if sent := h.sent(); len(sent) != 0 {
+			t.Errorf("workspace operations reached the terminal: %q", sent)
+		}
+	})
+	t.Run("ensure creates a workspace once and reuses it by label", func(t *testing.T) {
+		h := newHost(t)
+		first, err := EnsureWorkspace(ctx, h.host, "ada", t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := EnsureWorkspace(ctx, h.reopen(), "ada", t.TempDir())
+		if err != nil || again != first {
+			t.Errorf("second ensure = %q, %v; want %q", again, err, first)
+		}
+		if n := count(t, h.host, "ada"); n != 1 {
+			t.Errorf("%d workspaces labelled ada, want 1", n)
+		}
+		other, err := EnsureWorkspace(ctx, h.host, "grace", t.TempDir())
+		if err != nil || other == first || count(t, h.host, "grace") != 1 {
+			t.Errorf("ensure grace = %q, %v; want a second workspace", other, err)
+		}
+	})
+	t.Run("an ended context fails the workspace operations", func(t *testing.T) {
+		h := newHost(t)
+		done, cancel := context.WithCancel(ctx)
+		cancel()
+		if _, err := h.host.Workspaces(done); !errors.Is(err, context.Canceled) {
+			t.Errorf("Workspaces = %v", err)
+		}
+		if _, err := h.host.CreateWorkspace(done, "ada", ""); !errors.Is(err, context.Canceled) {
+			t.Errorf("CreateWorkspace = %v", err)
+		}
+		if _, err := EnsureWorkspace(done, h.host, "ada", ""); !errors.Is(err, context.Canceled) {
+			t.Errorf("EnsureWorkspace = %v", err)
+		}
+		if n := count(t, h.host, "ada"); n != 0 {
+			t.Errorf("cancelled calls created %d workspaces", n)
+		}
+	})
+}
+
+func mustWorkspaces(t *testing.T, h TabHost) []herdr.Workspace {
+	t.Helper()
+	list, err := h.Workspaces(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return list
+}
+
+func mustCreate(t *testing.T, h TabHost, spec herdr.TabSpec) TabRef {
 	t.Helper()
 	ref, err := h.CreateTab(context.Background(), spec)
 	if err != nil {
@@ -262,28 +355,31 @@ func TestHerdrTabsContract(t *testing.T) {
 			sent: func() []string {
 				return readLines(t, filepath.Join(dir, "sent-lab"))
 			},
-			reopen: func() tabHost { return client("lab") },
+			reopen: func() TabHost { return client("lab") },
 		}
 	}
 	testTabHost(t, newHost)
 	testRecordedTabs(t, newHost)
+	testWorkspaces(t, newHost)
 }
 
 func TestFakeTabsContract(t *testing.T) {
 	newHost := func(t *testing.T) tabHostUnderTest {
 		f := newFakeTabs("lab", "bash")
 		return tabHostUnderTest{host: f, foreign: newFakeTabs("other-lab", "bash"), session: "lab", sent: f.sentLines,
-			reopen: func() tabHost { return f.reopen() }}
+			reopen: func() TabHost { return f.reopen() }}
 	}
 	testTabHost(t, newHost)
 	testRecordedTabs(t, newHost)
+	testWorkspaces(t, newHost)
 }
 
-// tabsStubEnv makes the test binary act as the Herdr executable, keeping one
-// workspace w1, its tabs and pane states as files in the named directory.
+// tabsStubEnv makes the test binary act as the Herdr executable, keeping
+// workspace w1, labelled lab, the workspaces it creates, their tabs and pane
+// states as files in the named directory.
 const tabsStubEnv = "GUILDHALL_ADAPTER_TABS_STUB"
 
-// stubHerdr answers the tab and pane commands HerdrTabs sends, in the shapes
+// stubHerdr answers the workspace, tab and pane commands HerdrTabs sends, in the shapes
 // recorded from Herdr 0.9.5, and logs the input that reached each pane.
 func stubHerdr(dir string, args []string) int {
 	n := len(args)
@@ -308,9 +404,50 @@ func stubHerdr(dir string, args []string) int {
 			_ = f.Close()
 		}
 	}
+	tabFile := func(id string) string { return filepath.Join(dir, session+"-tab-"+strings.ReplaceAll(id, ":", "_")) }
+	workspaces := func() [][2]string {
+		list := [][2]string{{"w1", "lab"}}
+		b, _ := os.ReadFile(filepath.Join(dir, session+"-workspaces"))
+		for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			if id, label, ok := strings.Cut(line, "\t"); ok {
+				list = append(list, [2]string{id, label})
+			}
+		}
+		return list
+	}
+	flag := func(name string) string {
+		if i := slices.Index(args, name); i >= 0 && i+1 < len(args) {
+			return args[i+1]
+		}
+		return ""
+	}
 	switch strings.Join(args[:2], " ") {
+	case "workspace list":
+		var items []string
+		for i, w := range workspaces() {
+			items = append(items, fmt.Sprintf(`{"active_tab_id":"%[1]s:t1","agent_status":"unknown","focused":false,"label":%[2]q,"number":%[3]d,"pane_count":1,"tab_count":1,"workspace_id":%[1]q}`, w[0], w[1], i+1))
+		}
+		fmt.Printf(`{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[%s]}}`, strings.Join(items, ","))
+		return 0
+	case "workspace create":
+		if !slices.Contains(args, "--no-focus") {
+			fmt.Fprintf(os.Stderr, "stub herdr: workspace create without --no-focus: %q\n", args)
+			return 2
+		}
+		id, label := fmt.Sprintf("w%d", len(workspaces())+1), flag("--label")
+		f, err := os.OpenFile(filepath.Join(dir, session+"-workspaces"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+		if err != nil {
+			return 2
+		}
+		_, err = fmt.Fprintf(f, "%s\t%s\n", id, label)
+		if errors.Join(err, f.Close()) != nil {
+			return 2
+		}
+		fmt.Printf(`{"id":"cli:workspace:create","result":{"root_pane":{"agent_status":"unknown","focused":false,"pane_id":"%[1]s:p1","tab_id":"%[1]s:t1","workspace_id":%[1]q},"tab":{"agent_status":"unknown","focused":false,"label":"1","number":1,"pane_count":1,"tab_id":"%[1]s:t1","workspace_id":%[1]q},"type":"workspace_created","workspace":{"active_tab_id":"%[1]s:t1","agent_status":"unknown","focused":false,"label":%[2]q,"number":%[3]d,"pane_count":1,"tab_count":1,"workspace_id":%[1]q}}}`, id, label, len(workspaces()))
+		return 0
 	case "tab create":
-		if i := slices.Index(args, "--workspace"); i < 0 || args[i+1] != "w1" {
+		ws := flag("--workspace")
+		if !slices.ContainsFunc(workspaces(), func(w [2]string) bool { return w[0] == ws }) {
 			return fail("workspace_not_found", "workspace not found")
 		}
 		counter := filepath.Join(dir, session+"-tabs")
@@ -320,20 +457,19 @@ func stubHerdr(dir string, args []string) int {
 		if err := os.WriteFile(counter, []byte(strconv.Itoa(k)), 0o600); err != nil {
 			return 2
 		}
-		p, _ := pane(fmt.Sprintf("w1:p%d", k+1))
-		if err := os.WriteFile(p, []byte("idle"), 0o600); err != nil {
+		tab, paneID := fmt.Sprintf("%s:t%d", ws, k+1), fmt.Sprintf("%s:p%d", ws, k+1)
+		p, _ := pane(paneID)
+		if os.WriteFile(p, []byte("idle"), 0o600) != nil || os.WriteFile(tabFile(tab), []byte(ws), 0o600) != nil {
 			return 2
 		}
-		fmt.Printf(`{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w1:p%[1]d","tab_id":"w1:t%[1]d","workspace_id":"w1"},"tab":{"label":"x","tab_id":"w1:t%[1]d","workspace_id":"w1","pane_count":1},"type":"tab_created"}}`, k+1)
+		fmt.Printf(`{"id":"cli:tab:create","result":{"root_pane":{"pane_id":%[2]q,"tab_id":%[1]q,"workspace_id":%[3]q},"tab":{"label":"x","tab_id":%[1]q,"workspace_id":%[3]q,"pane_count":1},"type":"tab_created"}}`, tab, paneID, ws)
 		return 0
 	case "tab get":
-		counter, _ := os.ReadFile(filepath.Join(dir, session+"-tabs"))
-		k, _ := strconv.Atoi(string(counter))
-		var n int
-		if _, err := fmt.Sscanf(args[2], "w1:t%d", &n); err != nil || n < 2 || n > k+1 {
+		ws, err := os.ReadFile(tabFile(args[2]))
+		if err != nil {
 			return fail("tab_not_found", "tab "+args[2]+" not found")
 		}
-		fmt.Printf(`{"id":"cli:tab:get","result":{"tab":{"agent_status":"unknown","focused":false,"label":"x","number":%d,"pane_count":1,"tab_id":%q,"workspace_id":"w1"},"type":"tab_info"}}`, n, args[2])
+		fmt.Printf(`{"id":"cli:tab:get","result":{"tab":{"agent_status":"unknown","focused":false,"label":"x","number":2,"pane_count":1,"tab_id":%q,"workspace_id":%q},"type":"tab_info"}}`, args[2], ws)
 		return 0
 	case "pane process-info":
 		p, ok := pane(args[3])
@@ -391,8 +527,8 @@ func readLines(t *testing.T, path string) []string {
 	return lines
 }
 
-// fakeTabs is the tabHost double for launcher tests: one workspace w1, tabs
-// numbered per terminal, a shell that is busy for busyReads reads after
+// fakeTabs is the TabHost double for launcher tests: workspace w1, labelled
+// lab, then any it creates, tabs numbered per terminal, a shell that is busy for busyReads reads after
 // creation, and input logged per pane. Hosts from reopen share the terminal
 // and own only the tabs they create or adopt.
 type fakeTabs struct {
@@ -407,33 +543,56 @@ type fakeTerminal struct {
 	busyReads int
 	runErr    error
 
-	mu      sync.Mutex
-	next    int
-	created []herdr.TabSpec
-	tabs    []TabRef
-	busy    map[string]bool
-	sent    []string
+	mu         sync.Mutex
+	workspaces []herdr.Workspace
+	next       int
+	created    []herdr.TabSpec
+	tabs       []TabRef
+	busy       map[string]bool
+	sent       []string
 }
 
 func newFakeTabs(session, shell string) *fakeTabs {
-	return &fakeTabs{fakeTerminal: &fakeTerminal{session: session, shell: shell, busy: map[string]bool{}}}
+	return &fakeTabs{fakeTerminal: &fakeTerminal{session: session, shell: shell, busy: map[string]bool{},
+		workspaces: []herdr.Workspace{{ID: "w1", Label: "lab"}}}}
 }
 
 // reopen returns a new host on f's terminal that owns no tab.
 func (f *fakeTabs) reopen() *fakeTabs { return &fakeTabs{fakeTerminal: f.fakeTerminal} }
 
+func (f *fakeTabs) Workspaces(ctx context.Context) ([]herdr.Workspace, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.workspaces), nil
+}
+
+func (f *fakeTabs) CreateWorkspace(ctx context.Context, label, cwd string) (herdr.Workspace, error) {
+	if err := ctx.Err(); err != nil {
+		return herdr.Workspace{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w := herdr.Workspace{ID: fmt.Sprintf("w%d", len(f.workspaces)+1), Label: label}
+	f.workspaces = append(f.workspaces, w)
+	return w, nil
+}
+
 func (f *fakeTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, error) {
 	if err := ctx.Err(); err != nil {
 		return TabRef{}, err
 	}
-	if spec.WorkspaceID != "w1" {
-		return TabRef{}, &herdr.APIError{Code: "workspace_not_found", Message: "workspace not found"}
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if !slices.ContainsFunc(f.workspaces, func(w herdr.Workspace) bool { return w.ID == spec.WorkspaceID }) {
+		return TabRef{}, &herdr.APIError{Code: "workspace_not_found", Message: "workspace not found"}
+	}
 	f.created = append(f.created, spec)
 	f.next++
-	ref := TabRef{Session: f.session, WorkspaceID: spec.WorkspaceID, TabID: fmt.Sprintf("w1:t%d", f.next+1), PaneID: fmt.Sprintf("w1:p%d", f.next+1)}
+	ref := TabRef{Session: f.session, WorkspaceID: spec.WorkspaceID, TabID: fmt.Sprintf("%s:t%d", spec.WorkspaceID, f.next+1),
+		PaneID: fmt.Sprintf("%s:p%d", spec.WorkspaceID, f.next+1)}
 	f.tabs = append(f.tabs, ref)
 	f.owned = append(f.owned, ref)
 	return ref, nil

@@ -136,7 +136,7 @@ func TestDirectorStartRunsASession(t *testing.T) {
 			if rt == "claude" {
 				claudetest.Install(t)
 			}
-			code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir)
+			code, out, stderr := runDirectorCmd(t, "start", "--copy", dir)
 			if code != 0 {
 				t.Fatalf("exit %d\nstdout %s\nstderr %s", code, out, stderr)
 			}
@@ -184,14 +184,14 @@ func TestDirectorStartRunsASession(t *testing.T) {
 // its startup instructions list the recovering session and the message, and say there is no handoff note.
 func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
-	if code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir); code != 0 {
+	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
 		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
 	}
 	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-2")
 	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
 		return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-2", Type: "question", Text: "Which parser?"})
 	})
-	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--foreground", "--copy", dir); code != 0 {
+	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--copy", dir); code != 0 {
 		t.Fatalf("second session: exit %d\n%s\n%s", code, out, stderr)
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "director", "session-2", render.StartupFile))
@@ -211,7 +211,7 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 
 func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
-	code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--check", "--copy", dir)
+	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
 	}
@@ -230,12 +230,12 @@ func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 
 func TestDirectorStartRefusals(t *testing.T) {
 	cases := []struct {
-		name, table  string
-		args         []string
-		noForeground bool
-		setup        func(t *testing.T, dir string)
-		code         int
-		want         string
+		name, table string
+		args        []string
+		tab         bool
+		setup       func(t *testing.T, dir string)
+		code        int
+		want        string
 	}{
 		{name: "no adapter", table: "[director]\nmodel = \"opus\"\n", code: 1, want: "the adapters are claude, fake"},
 		{name: "no director table", code: 1, want: "the adapters are claude, fake"},
@@ -251,7 +251,11 @@ func TestDirectorStartRefusals(t *testing.T) {
 			}},
 		{name: "runtime not on PATH", table: "[director]\nadapter = \"claude\"\n", code: 1, want: "claude: not found on PATH",
 			setup: func(t *testing.T, dir string) { t.Setenv("PATH", t.TempDir()) }},
-		{name: "not foreground", table: "[director]\nadapter = \"fake\"\n", noForeground: true, code: 2, want: "--foreground"},
+		{name: "a tab without a herdr session", table: "[director]\nadapter = \"fake\"\n", tab: true, code: 1, want: "herdr_session"},
+		{name: "a pane binding for a tab", table: "[director]\nadapter = \"fake\"\n", tab: true, code: 2, want: "--tab",
+			args: []string{"--herdr-session", "lab", "--herdr-workspace", "w1", "--herdr-tab", "w1:t2", "--herdr-pane", "w1:p2"}},
+		{name: "foreground is the default, not a flag", table: "[director]\nadapter = \"fake\"\n", args: []string{"--foreground"}, code: 2, want: "foreground"},
+		{name: "half a pane binding", table: "[director]\nadapter = \"fake\"\n", args: []string{"--herdr-session", "lab", "--herdr-tab", "w1:t2"}, code: 2, want: "--herdr-pane"},
 		{name: "two runtimes", table: "[director]\nadapter = \"fake\"\n", args: []string{"fake", "claude"}, code: 2, want: "one runtime"},
 	}
 	for _, c := range cases {
@@ -261,8 +265,8 @@ func TestDirectorStartRefusals(t *testing.T) {
 				c.setup(t, dir)
 			}
 			args := []string{"start", "--copy", dir}
-			if !c.noForeground {
-				args = append(args, "--foreground")
+			if c.tab {
+				args = append(args, "--tab")
 			}
 			args = append(args, c.args...)
 			code, out, stderr := runDirectorCmd(t, args...)
@@ -285,7 +289,7 @@ func TestDirectorStartRefusals(t *testing.T) {
 // and the supervisor exit 1.
 func TestDirectorStartRecordsACrashedRuntimeStopped(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "exit 3")
-	code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir)
+	code, out, stderr := runDirectorCmd(t, "start", "--copy", dir)
 	if code != 1 || !strings.Contains(stderr, "status 3") {
 		t.Fatalf("exit %d, stdout %q, stderr %q; want exit 1 naming status 3", code, out, stderr)
 	}
