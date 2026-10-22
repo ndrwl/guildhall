@@ -306,6 +306,7 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	problems = append(problems, c.checkQuality()...)
 
 	for _, name := range slices.Sorted(maps.Keys(c.Profiles)) {
 		p := c.Profiles[name]

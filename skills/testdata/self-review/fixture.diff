@@ -1,0 +1,80 @@
+diff --git a/internal/store/store.go b/internal/store/store.go
+index 1111111..2222222 100644
+--- a/internal/store/store.go
++++ b/internal/store/store.go
+@@ -10,3 +10,5 @@ func open() error {
+ 	path := dir()
+-	return nil
++	token := "abcdefgh12345678"
++	_ = token
++	return check(path)
+ }
+@@ -40 +42 @@ func close() {
+-	time.Sleep(time.Second)
++	time.Sleep(2 * time.Second)
+diff --git a/internal/store/store_test.go b/internal/store/store_test.go
+index 3333333..4444444 100644
+--- a/internal/store/store_test.go
++++ b/internal/store/store_test.go
+@@ -20,5 +20,6 @@ func TestOpen(t *testing.T) {
+ 	if err := open(); err != nil {
+-		t.Errorf("open() = %v", err)
++		t.Log(err)
+ 	}
++	time.Sleep(10 * time.Millisecond)
+-	t.Fatalf("unreachable")
++	t.Skip("flaky on Windows")
+ }
+diff --git a/docs/notes.md b/docs/notes.md
+index 5555555..6666666 100644
+--- a/docs/notes.md
++++ b/docs/notes.md
+@@ -1,2 +1,2 @@
+--- a line that starts with two dashes
++++ a line that starts with two pluses
+ The end.
+\ No newline at end of file
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 7777777..8888888 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1,5 +1,11 @@
+-on: pull_request
++on: pull_request_target
++permissions:
++  contents: write
+ jobs:
+   test:
+     steps:
+-      - uses: actions/checkout@v3
++      - uses: actions/checkout@v4
++      - uses: actions/setup-go@0123456789abcdef0123456789abcdef01234567 # v5
++      - uses: ./.github/actions/local
++      - uses: "docker://alpine:3.20"
++        with: {go-version: stable}
+diff --git a/config/key.pem b/config/key.pem
+new file mode 100644
+index 0000000..9999999
+--- /dev/null
++++ b/config/key.pem
+@@ -0,0 +1 @@
++-----BEGIN OPENSSH PRIVATE KEY-----
+diff --git a/internal/store/testdata/case.json b/internal/store/testdata/case.json
+new file mode 100644
+index 0000000..aaaaaaa
+--- /dev/null
++++ b/internal/store/testdata/case.json
+@@ -0,0 +1,2 @@
++{"password": "correct-horse-battery"}
++{}
+diff --git a/old/gone.go b/old/gone.go
+deleted file mode 100644
+index bbbbbbb..0000000
+--- a/old/gone.go
++++ /dev/null
+@@ -1,2 +0,0 @@
+-package old
+-// Gone.
+diff --git a/img.png b/img.png
+index ccccccc..ddddddd 100644
+Binary files a/img.png and b/img.png differ

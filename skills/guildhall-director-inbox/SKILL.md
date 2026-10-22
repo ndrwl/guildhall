@@ -40,7 +40,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `worker-stalled` | An Artisan has written no output for a while: check it with `guildhall artisan status`, and stop it with `guildhall artisan stop` only when it is truly stuck. |
 | `question` | An Artisan asks you something: answer from what you know, or ask the Guildmaster when the answer is theirs, then reply with `guildhall messages send` to its attempt. |
 | `published` | A pull request opened or moved: tell the Guildmaster its URL when they are following that task. |
-| `merged` | The task's change merged and the task is done: tell the Guildmaster. |
+| `merged` | The task's change merged and the task is done: tell the Guildmaster, then run `guildhall-self-review` when `director status` shows `quality.self_review` on. |
 | `merge-held` | The Guildmaster held the merge: ask what they want changed and give that as work. |
 | `merge-refused` | The forge refused the merge, with its reason: give an Artisan the fix, such as a rebase, and run `guildhall task start` once it is done so the merge is asked again. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |

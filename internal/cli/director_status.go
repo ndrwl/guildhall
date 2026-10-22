@@ -28,9 +28,11 @@ const statusLimit = 20
 
 // directorStatus is what `director status` prints (docs/director.md#status).
 type directorStatus struct {
-	AsOf      statusLabel      `json:"as_of"`
-	Session   statusSession    `json:"session"`
-	Mode      statusMode       `json:"mode"`
+	AsOf    statusLabel   `json:"as_of"`
+	Session statusSession `json:"session"`
+	Mode    statusMode    `json:"mode"`
+	// Quality is the config's quality settings (docs/configuration.md#quality-settings), when the copy has a config.
+	Quality   *config.Quality  `json:"quality,omitempty"`
 	Tasks     []statusTask     `json:"tasks"`
 	Decisions []statusDecision `json:"decisions"`
 	Messages  statusMessages   `json:"messages"`
@@ -196,28 +198,32 @@ func (a *App) directorStatusCmd(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("director status: %w", err))
 	}
-	out.Session.GuardRails.GuardRails, out.Session.GuardRails.ConfigError = statusRails(*cfg, named)
+	out.Session.GuardRails.GuardRails, out.Quality, out.Session.GuardRails.ConfigError = statusConfig(*cfg, named)
 	return a.printJSON(out)
 }
 
-// statusRails reads the guard rails of the config at path: none for no path or a copy's config that does not
-// exist, and the reason for a config that cannot give them.
-func statusRails(path string, named bool) (*config.GuardRails, string) {
+// statusConfig reads the guard rails and quality settings of the config at path: none for no path or a copy's
+// config that does not exist, and the reason for a config that cannot give them.
+func statusConfig(path string, named bool) (*config.GuardRails, *config.Quality, string) {
 	if path == "" {
-		return nil, ""
+		return nil, nil, ""
 	}
 	cfg, err := config.Load(path)
 	if errors.Is(err, fs.ErrNotExist) && !named {
-		return nil, ""
+		return nil, nil, ""
 	}
 	if err != nil {
-		return nil, err.Error()
+		return nil, nil, err.Error()
 	}
 	g, err := cfg.GuardRails()
 	if err != nil {
-		return nil, err.Error()
+		return nil, nil, err.Error()
 	}
-	return &g, ""
+	q, err := cfg.Quality()
+	if err != nil {
+		return nil, nil, err.Error()
+	}
+	return &g, &q, ""
 }
 
 // readDirectorStatus builds the status feed: one read-only store transaction, by the clock now (nil is wall time),

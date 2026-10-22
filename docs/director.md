@@ -61,6 +61,7 @@ The release ships the Director's own skills beside the stage skills, each render
 - `guildhall-director-tasks`: turn what the Guildmaster says into commands, from giving work and answering decisions to merging, retrying, stopping, rulings and pausing.
 - `guildhall-director-stage`: run a [Director stage](interpreter.md#director-stages) from its brief and finish it with `step finish`.
 - `guildhall-handoff`: record a handoff note and reload; the Guildmaster can type `/guildhall-handoff`.
+- `guildhall-self-review`: after a task merges, when the [quality settings](configuration.md#quality-settings) turn it on, record the task against the [quality rubric](quality.md) without changing it.
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
 
@@ -267,6 +268,7 @@ The document has these sections:
   A config that exists but cannot be read gives `config_error` in place of the rails.
   The identity's liveness is not probed yet.
 - `mode`: `{"name":"standalone"}` until managed mode lands.
+- `quality`: the effective [quality settings](configuration.md#quality-settings), `self_review`, `size_budget_lines`, `size_budget_files`, `audit_sample`, `reference_runs`, `reference_runs_per_task`, `reference_cost_cap_usd` when set, and `judge_separate_family`, when the copy has a config; absent when it has none or its config cannot be read, which `guard_rails` reports as `config_error`.
 - `tasks`: every task in repository then id order, with its `state` (`open`, `done` or `cancelled`), bound `workflow`, and:
   - `next`: the `next.json` the task's last advance wrote beside its task lock, at `<state>/<repo>/<task>/next.json`, copied as JSON exactly as written; absent when there is none.
     A file that is not JSON is reported as `next_error` instead.
