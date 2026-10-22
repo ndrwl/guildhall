@@ -80,6 +80,20 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 A profile names no credential.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
 
+### The director table
+
+The optional `[director]` table chooses who runs the Director's own session, which [`director start`](director.md#start) runs.
+It belongs to a Director config; a Steward config with one is refused.
+
+| Key | Meaning |
+|---|---|
+| `adapter` | The runtime adapter, such as `claude`; required to start a session, and a positional runtime overrides it for one command. |
+| `model`, `effort` | Passed to the adapter as given; empty means the adapter's default. |
+| `role` | A role prompt replacing the copy's `baseline/roles/director.md` and the release's Director role: a relative slash-separated path inside the config file's directory. |
+
+Like a profile it names no credential.
+A config without the table has the same config digest as before the table existed.
+
 ## Workflow definitions
 
 A workflow defines the steps of one task as an ordered list of built-in step kinds.

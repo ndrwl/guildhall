@@ -45,6 +45,7 @@ Commands:
                  list, kill and probe an attempt's processes: lab test tooling
   fake-artisan   run the test-only fake Artisan
   claude-artisan run one attempt in Claude Code; artisan start --adapter claude runs it
+  fake-director  run the test-only fake Director session
   task new|show|list|timeline|files|finding rule|review --store <path> ...
                  create, list, show and inspect Director tasks and record rulings and full-review requests
   task start --store <path> --config <file> --state <dir> ...
@@ -57,6 +58,10 @@ Commands:
                  list open decisions, show one and record the Guildmaster's answer
   director status --json --store <path> --state <dir>
                  print the Director's status feed and what needs the Director or Guildmaster
+  director start [runtime] --foreground [--check] --copy <dir>
+                 run a Director session in this terminal under its supervisor
+  director ready --copy <dir>
+                 say the recovering Director session is ready to start new work
   help           print this help
 `
 
@@ -168,6 +173,8 @@ func (a *App) Run(args []string) int {
 		return a.fakeArtisan(rest)
 	case "claude-artisan":
 		return a.claudeArtisan(rest)
+	case "fake-director":
+		return a.fakeDirector(rest)
 	case "task":
 		if len(rest) > 0 && rest[0] == "start" {
 			return a.taskStart(rest[1:])

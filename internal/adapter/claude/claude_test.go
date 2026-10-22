@@ -24,10 +24,12 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch"
 )
 
-// TestMain lets the test binary act as the stub `claude` and as
-// `guildhall claude-artisan`, so the suite runs the shipped wrapper over a
-// Claude Code that makes no model calls.
+// TestMain lets the test binary act as the stub `claude`, as
+// `guildhall claude-artisan` and as the session suite's recording guildhall,
+// so the suites run the shipped wrapper and session over a Claude Code that
+// makes no model calls.
 func TestMain(m *testing.M) {
+	adaptertest.RunIfRecorder()
 	claudetest.RunIfStub()
 	if len(os.Args) > 1 && os.Args[1] == claude.Subcommand {
 		os.Exit(claude.Main(os.Args[2:], os.Stdout, os.Stderr))

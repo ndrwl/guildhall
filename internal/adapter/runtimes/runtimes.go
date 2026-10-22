@@ -25,10 +25,29 @@ type Runtime interface {
 	Command(spec adapter.Spec) (adapter.Command, error)
 }
 
+// Session builds the command that runs one interactive Director session (docs/director.md#start).
+type Session interface {
+	// Program is the program the session needs on PATH, or "" when it is the guildhall executable itself.
+	Program() string
+	// SkillsDir is the slash path, relative to the session directory, the session's skills are rendered into.
+	SkillsDir() string
+	// SessionFiles are the runtime's own files for a session of the copy, by slash path relative to the session
+	// directory, written before the session starts.
+	SessionFiles(copyDir string) map[string][]byte
+	// Session returns the session's command for a valid spec and refuses an invalid one with no command.
+	Session(spec adapter.SessionSpec) (adapter.Command, error)
+}
+
 // all builds each runtime over the guildhall executable.
-var all = map[string]func(executable string) Runtime{
-	adapter.FakeName:   func(exe string) Runtime { return fake.Adapter{Executable: exe} },
-	adapter.ClaudeName: func(exe string) Runtime { return claude.Adapter{Executable: exe} },
+var all = map[string]func(executable string) both{
+	adapter.FakeName:   func(exe string) both { return fake.Adapter{Executable: exe} },
+	adapter.ClaudeName: func(exe string) both { return claude.Adapter{Executable: exe} },
+}
+
+// both is a runtime that runs attempts and Director sessions.
+type both interface {
+	Runtime
+	Session
 }
 
 // Names returns the names of the runtimes Guildhall can launch, in sorted order.
@@ -39,6 +58,16 @@ func Names() []string {
 // Lookup returns the runtime called name, whose commands run executable, the guildhall binary.
 // A name that is not one of Names is refused with an error that wraps ErrUnknown and lists Names.
 func Lookup(name, executable string) (Runtime, error) {
+	build, ok := all[name]
+	if !ok {
+		return nil, fmt.Errorf("%w %q: the adapters are %s", ErrUnknown, name, strings.Join(Names(), ", "))
+	}
+	return build(executable), nil
+}
+
+// LookupSession returns the Director session runtime called name, as Lookup does for an attempt's runtime;
+// every runtime Guildhall can launch runs a Director session.
+func LookupSession(name, executable string) (Session, error) {
 	build, ok := all[name]
 	if !ok {
 		return nil, fmt.Errorf("%w %q: the adapters are %s", ErrUnknown, name, strings.Join(Names(), ", "))

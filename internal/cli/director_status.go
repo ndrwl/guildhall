@@ -141,11 +141,8 @@ type needsMeItem struct {
 	Command    string `json:"command"`
 }
 
-// director runs `guildhall director status` (docs/director.md#status).
-func (a *App) director(args []string) int {
-	if len(args) == 0 || args[0] != "status" {
-		return a.usageError("director: the command is status")
-	}
+// directorStatusCmd runs `guildhall director status` (docs/director.md#status).
+func (a *App) directorStatusCmd(args []string) int {
 	fl := flag.NewFlagSet("director status", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
@@ -153,7 +150,7 @@ func (a *App) director(args []string) int {
 	path := fl.String("store", "", "Director store file")
 	state := fl.String("state", "", "state directory")
 	asJSON := fl.Bool("json", false, "print JSON")
-	if err := fl.Parse(args[1:]); err != nil {
+	if err := fl.Parse(args); err != nil {
 		return a.usageError("director status: " + err.Error())
 	}
 	switch err := cp.apply(a.Getenv, path, nil, state); {
@@ -201,6 +198,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string) (directorSta
 	if d := v.Session; d != nil {
 		out.Session = statusSession{State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
 			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt}
+		if d.State == store.DirectorRecovering {
+			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",
+				Reason: fmt.Sprintf("Director session %d is recovering and starts no new work until it is ready", d.Number), Command: "guildhall director ready"})
+		}
 	}
 	for _, r := range v.Receipts[max(0, len(v.Receipts)-statusLimit):] {
 		out.Recent = append(out.Recent, recentReceipt{MutationID: r.MutationID, Operation: r.Operation, Repository: r.Repository, TaskID: r.TaskID,

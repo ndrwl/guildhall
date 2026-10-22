@@ -1,0 +1,402 @@
+package cli
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/ndrwl/guildhall/baseline"
+	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/skills"
+)
+
+// sessionScript is a Director role prompt that both session doubles play: the fake Director reads its
+// fake-director: lines and the Claude stub its claude-stub: lines.
+func sessionScript(steps ...string) string {
+	var b strings.Builder
+	b.WriteString("# Director\n\n")
+	for _, prefix := range []string{"fake-director:", claudetest.Directive} {
+		for _, s := range steps {
+			b.WriteString(prefix + " " + s + "\n")
+		}
+	}
+	return b.String()
+}
+
+// directorCopy is a Director copy over testdata/run with table appended to its config, an empty store, app's
+// workflow approved, and baseline/roles/director.md playing steps; guildhall on PATH is this test binary.
+func directorCopy(t *testing.T, table string, steps ...string) string {
+	t.Helper()
+	t.Setenv(roleEnv, "guildhall")
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "config.toml")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, append(b, []byte("\n"+table)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "state"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	approveRepo(t, filepath.Join(dir, "director.store"), cfg, "app")
+	writeFile(t, filepath.Join(dir, "baseline", "roles", "director.md"), sessionScript(steps...))
+	bin := t.TempDir()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "guildhall"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.Link(exe, filepath.Join(bin, name)); err != nil {
+		copyFile(t, exe, filepath.Join(bin, name))
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir
+}
+
+// runDirectorCmd runs `guildhall director <args>` in this process as cmd/guildhall assembles it, with no
+// GUILDHALL_COPY and empty standard input.
+func runDirectorCmd(t *testing.T, args ...string) (int, string, string) {
+	t.Helper()
+	app, stdout, stderr := newTestApp(nil, nil)
+	app.Executable = os.Executable
+	app.LookPath = exec.LookPath
+	app.InstallSkills = skills.Install
+	app.InstallBaseline = baseline.Install
+	app.Stdin = strings.NewReader("")
+	code := app.Run(append([]string{"director"}, args...))
+	return code, stdout.String(), stderr.String()
+}
+
+func sessions(t *testing.T, dir string) []store.DirectorSession {
+	t.Helper()
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{ReadOnly: true, RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	var out []store.DirectorSession
+	for n := 1; ; n++ {
+		d, err := s.DirectorSession(n)
+		if errors.Is(err, store.ErrNotFound) {
+			return out
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, d)
+	}
+}
+
+func hasTask(t *testing.T, dir, id string) bool {
+	t.Helper()
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{ReadOnly: true, RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	_, err = s.Task("app", id)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		t.Fatal(err)
+	}
+	return err == nil
+}
+
+// TestDirectorStartRunsASession runs a whole session on each runtime: the session is recorded recovering, a
+// task new before ready is refused, ready admits the next one, and the session is recorded stopped at exit.
+func TestDirectorStartRunsASession(t *testing.T) {
+	for _, rt := range []string{"fake", "claude"} {
+		t.Run(rt, func(t *testing.T) {
+			dir := directorCopy(t, "[director]\nadapter = \""+rt+"\"\nmodel = \"opus\"\n",
+				"guildhall task new --repo app --title Early t-early",
+				"guildhall director ready",
+				"guildhall task new --repo app --title Late t-late",
+				"/exit")
+			if rt == "claude" {
+				claudetest.Install(t)
+			}
+			code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir)
+			if code != 0 {
+				t.Fatalf("exit %d\nstdout %s\nstderr %s", code, out, stderr)
+			}
+			for _, want := range []string{"config: ", "runtime: " + rt, "store: ", "skills: ", "session: 1"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("stdout lacks %q:\n%s", want, out)
+				}
+			}
+			if !strings.Contains(out+stderr, "guildhall director ready") {
+				t.Errorf("the refused task new does not name director ready:\n%s\n%s", out, stderr)
+			}
+			got := sessions(t, dir)
+			if len(got) != 1 || got[0].State != store.DirectorStopped || got[0].ReadyAt.IsZero() || got[0].EndedAt.IsZero() ||
+				got[0].Identity.PID != os.Getpid() || got[0].Release == "" {
+				t.Fatalf("sessions = %+v; want session 1 stopped after ready, run by this process", got)
+			}
+			if hasTask(t, dir, "t-early") || !hasTask(t, dir, "t-late") {
+				t.Errorf("t-early recorded %v, t-late recorded %v; want only t-late", hasTask(t, dir, "t-early"), hasTask(t, dir, "t-late"))
+			}
+			session := filepath.Join(dir, "director", "session-1")
+			for _, f := range []string{render.RoleFile, render.StartupFile, render.ManifestFile} {
+				if _, err := os.Stat(filepath.Join(session, f)); err != nil {
+					t.Errorf("session file %s: %v", f, err)
+				}
+			}
+			var m render.SessionManifest
+			b, err := os.ReadFile(filepath.Join(session, render.ManifestFile))
+			if err != nil || json.Unmarshal(b, &m) != nil || m.Session != 1 || m.Role.Root != "copy" || len(m.Skills) == 0 {
+				t.Errorf("manifest = %+v, %v", m, err)
+			}
+			if rt == "claude" {
+				settings, err := os.ReadFile(filepath.Join(session, ".claude", "settings.json"))
+				if err != nil || !strings.Contains(string(settings), "config.toml") {
+					t.Errorf("settings = %s, %v", settings, err)
+				}
+				if _, err := os.Stat(filepath.Join(session, ".claude", "skills", "guildhall-grill", "SKILL.md")); err != nil {
+					t.Errorf("claude skills: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestDirectorStartStartupNamesWhatIsInFlight starts a second session over a store with an unread question:
+// its startup instructions list the recovering session and the message, and say there is no handoff note.
+func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
+	if code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir); code != 0 {
+		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
+	}
+	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-2")
+	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
+		return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-2", Type: "question", Text: "Which parser?"})
+	})
+	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--foreground", "--copy", dir); code != 0 {
+		t.Fatalf("second session: exit %d\n%s\n%s", code, out, stderr)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "director", "session-2", render.StartupFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	startup := string(b)
+	for _, want := range []string{"You are starting up.", "## Handoff note\n\nNone.", "recovering", "guildhall director ready", "guildhall messages list director"} {
+		if !strings.Contains(startup, want) {
+			t.Errorf("startup.md lacks %q:\n%s", want, startup)
+		}
+	}
+	if got := sessions(t, dir); len(got) != 2 || got[0].State != store.DirectorStopped || got[1].State != store.DirectorStopped {
+		t.Errorf("sessions = %+v", got)
+	}
+}
+
+func TestDirectorStartCheckRecordsNothing(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
+	code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--check", "--copy", dir)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
+	}
+	for _, want := range []string{"config: ", "runtime: fake", "store: ", "skills: "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, out)
+		}
+	}
+	if got := sessions(t, dir); len(got) != 0 {
+		t.Errorf("--check recorded %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "director")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("--check wrote the session directory: %v", err)
+	}
+}
+
+func TestDirectorStartRefusals(t *testing.T) {
+	cases := []struct {
+		name, table  string
+		args         []string
+		noForeground bool
+		setup        func(t *testing.T, dir string)
+		code         int
+		want         string
+	}{
+		{name: "no adapter", table: "[director]\nmodel = \"opus\"\n", code: 1, want: "the adapters are claude, fake"},
+		{name: "no director table", code: 1, want: "the adapters are claude, fake"},
+		{name: "unknown runtime", table: "[director]\nadapter = \"fake\"\n", args: []string{"codex"}, code: 1, want: `unknown runtime adapter "codex": the adapters are claude, fake`},
+		{name: "managed copy", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "director enrol",
+			setup: func(t *testing.T, dir string) { writeFile(t, filepath.Join(dir, "managed.toml"), "") }},
+		{name: "inline managed", table: "[director]\nadapter = \"fake\"\n\n[managed.stall_interval]\nvalue = \"5m\"\n", code: 1, want: "[managed]"},
+		{name: "no store", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "guildhall store init",
+			setup: func(t *testing.T, dir string) {
+				if err := os.Remove(filepath.Join(dir, "director.store")); err != nil {
+					t.Fatal(err)
+				}
+			}},
+		{name: "runtime not on PATH", table: "[director]\nadapter = \"claude\"\n", code: 1, want: "claude: not found on PATH",
+			setup: func(t *testing.T, dir string) { t.Setenv("PATH", t.TempDir()) }},
+		{name: "not foreground", table: "[director]\nadapter = \"fake\"\n", noForeground: true, code: 2, want: "--foreground"},
+		{name: "two runtimes", table: "[director]\nadapter = \"fake\"\n", args: []string{"fake", "claude"}, code: 2, want: "one runtime"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := directorCopy(t, c.table, "/exit")
+			if c.setup != nil {
+				c.setup(t, dir)
+			}
+			args := []string{"start", "--copy", dir}
+			if !c.noForeground {
+				args = append(args, "--foreground")
+			}
+			args = append(args, c.args...)
+			code, out, stderr := runDirectorCmd(t, args...)
+			if code != c.code || !strings.Contains(out+stderr, c.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q; want exit %d naming %q", code, out, stderr, c.code, c.want)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "director.store")); err == nil {
+				if got := sessions(t, dir); len(got) != 0 {
+					t.Errorf("refused start recorded %+v", got)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(dir, "director")); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("refused start wrote the session directory: %v", err)
+			}
+		})
+	}
+}
+
+// TestDirectorStartRecordsACrashedRuntimeStopped sees a runtime that exits nonzero end its session stopped
+// and the supervisor exit 1.
+func TestDirectorStartRecordsACrashedRuntimeStopped(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "exit 3")
+	code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir)
+	if code != 1 || !strings.Contains(stderr, "status 3") {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want exit 1 naming status 3", code, out, stderr)
+	}
+	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorStopped || !got[0].ReadyAt.IsZero() {
+		t.Errorf("sessions = %+v; want session 1 stopped, never ready", got)
+	}
+}
+
+// recoveringCopy is a Director copy over testdata/run whose newest session is recovering, with task t-1 and no attempt.
+func recoveringCopy(t *testing.T) string {
+	t.Helper()
+	dir := directorCopy(t, "")
+	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-1")
+	recoverSession(t, dir)
+	return dir
+}
+
+// recoverSession records session 1, recovering, as director start does before its runtime runs.
+func recoverSession(t *testing.T, dir string) {
+	t.Helper()
+	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
+		return s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 7, Token: "boot:7"},
+			Release: "dev", ConfigDigest: "sha256:" + strings.Repeat("c", 64)})
+	})
+}
+
+func withTestStore(t *testing.T, dir string, fn func(*store.Store) (store.Receipt, error)) {
+	t.Helper()
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = fn(s)
+	if err := errors.Join(err, s.Close()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDirectorReady(t *testing.T) {
+	dir := directorCopy(t, "")
+	if code, out, stderr := runDirectorCmd(t, "ready", "--copy", dir); code != 1 || !strings.Contains(stderr, "director start") {
+		t.Fatalf("no session: exit %d, stdout %q, stderr %q; want exit 1 naming director start", code, out, stderr)
+	}
+	recoverSession(t, dir)
+	for range 2 {
+		code, out, stderr := runDirectorCmd(t, "ready", "--copy", dir)
+		if code != 0 {
+			t.Fatalf("ready: exit %d, %s", code, stderr)
+		}
+		var d store.DirectorSession
+		if err := json.Unmarshal([]byte(out), &d); err != nil || d.Number != 1 || d.State != store.DirectorRunning || d.ReadyAt.IsZero() {
+			t.Fatalf("ready printed %q, %v; want session 1 running", out, err)
+		}
+	}
+	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
+		d, err := s.LatestDirectorSession()
+		if err != nil {
+			return store.Receipt{}, err
+		}
+		return s.SetDirectorState(d.Number, store.DirectorStopped, d.StateSequence)
+	})
+	if code, _, stderr := runDirectorCmd(t, "ready", "--copy", dir); code != 1 || !strings.Contains(stderr, "stopped") {
+		t.Fatalf("stopped session: exit %d, stderr %q; want exit 1 naming stopped", code, stderr)
+	}
+	if code, _, stderr := runDirectorCmd(t, "ready", "--copy", dir, "extra"); code != 2 || !strings.Contains(stderr, `unexpected argument "extra"`) {
+		t.Fatalf("argument: exit %d, stderr %q", code, stderr)
+	}
+}
+
+// TestRecoveringSessionStartsNoNewWork refuses task new and task start of a task with no attempt while the
+// newest session is recovering, naming director ready, and admits them after it; reads are unaffected.
+func TestRecoveringSessionStartsNoNewWork(t *testing.T) {
+	dir := recoveringCopy(t)
+	storePath, cfg := filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml")
+	code, _, stderr := runTask(t, "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Early", "t-2")
+	if code != 1 || !strings.Contains(stderr, "guildhall director ready") || hasTask(t, dir, "t-2") {
+		t.Fatalf("task new while recovering: exit %d, stderr %q; want exit 1 naming director ready", code, stderr)
+	}
+	code, out, stderr := runEnv(t, dir, "task", "start", "--repo", "app", "t-1")
+	if code != 1 || !strings.Contains(stderr, "guildhall director ready") {
+		t.Fatalf("task start while recovering: exit %d, stdout %q, stderr %q; want exit 1 naming director ready", code, out, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state", "app", "t-1", "next.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("refused task start advanced the task: %v", err)
+	}
+	if code, _, stderr := runEnv(t, dir, "task", "list", "--json"); code != 0 {
+		t.Errorf("task list while recovering: exit %d, %s", code, stderr)
+	}
+	if code, _, stderr := runEnv(t, dir, "messages", "list", "director"); code != 0 {
+		t.Errorf("messages list while recovering: exit %d, %s", code, stderr)
+	}
+	if code, _, stderr := runDirectorCmd(t, "ready", "--copy", dir); code != 0 {
+		t.Fatalf("ready: exit %d, %s", code, stderr)
+	}
+	if code, _, stderr := runTask(t, "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Late", "t-2"); code != 0 {
+		t.Fatalf("task new after ready: exit %d, %s", code, stderr)
+	}
+}
+
+// TestDirectorStatusListsARecoveringSessionFirst pins the needs_me item a recovering session adds.
+func TestDirectorStatusListsARecoveringSessionFirst(t *testing.T) {
+	dir := recoveringCopy(t)
+	code, out, stderr := directorCmd(t, nil, "status", "--json", "--copy", dir)
+	if code != 0 {
+		t.Fatalf("exit %d, %s", code, stderr)
+	}
+	var st directorStatus
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.NeedsMe) == 0 || st.NeedsMe[0].Kind != "recovering" || st.NeedsMe[0].Command != "guildhall director ready" {
+		t.Fatalf("needs_me = %+v; want the recovering session first", st.NeedsMe)
+	}
+}

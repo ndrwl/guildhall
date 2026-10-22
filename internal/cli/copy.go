@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/ndrwl/guildhall/internal/adapter"
 )
 
 // copyEnvVar selects a Director copy when --copy is absent (docs/running.md#copies).
-const copyEnvVar = "GUILDHALL_COPY"
+const copyEnvVar = adapter.CopyEnv
 
 // copyFlags is the --copy flag every store-taking command shares (docs/running.md#copies). A copy directory holds
 // config.toml, an optional managed.toml, director.store and state/.

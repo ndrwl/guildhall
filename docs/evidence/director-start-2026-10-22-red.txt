@@ -1,0 +1,73 @@
+Red runs for director start (D6a), 2026-10-22, on 2a6c32e with the branch's tests against stub bodies.
+Each section names the command and the stub; the matching green run is the branch's go test ./...
+
+$ go test ./internal/render/ -run Session
+--- FAIL: TestSessionGolden (0.00s)
+    session_test.go:45: render: Session is not implemented
+--- FAIL: TestSessionStartupNamesNoHandoffAndNothingInFlight (0.00s)
+    session_test.go:80: render: Session is not implemented
+--- FAIL: TestSessionSkillsMatchTheRelease (0.01s)
+    session_test.go:103: render: Session is not implemented
+--- FAIL: TestSessionRoleDigestStableAcrossLineEndings (0.00s)
+    session_test.go:130: render: Session is not implemented
+--- FAIL: TestSessionFirstRootWinsAndOrdersByName (0.00s)
+    session_test.go:152: render: Session is not implemented
+--- FAIL: TestSessionRefusals (0.02s)
+    session_test.go:212: non-empty dir: err = render: Session is not implemented, want ErrNotEmpty
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/render	0.036s
+FAIL
+
+$ go test ./internal/adapter/claude/ -run Session   # stub without its interactive mode, no settings golden yet
+--- FAIL: TestClaudeSessionContract (0.04s)
+    --- FAIL: TestClaudeSessionContract/plays_the_script_in_the_session_directory_with_the_copy (0.01s)
+        session.go:74: session output:
+            claude stub: want --print and an instruction first, got ["--append-system-prompt-file" "<tmp>/copy/director/session-1/role.md" "--add-dir" "<tmp>/copy" "You are starting up: read startup.md in this directory and follow it."]
+        session.go:75: exit status 2, want 0
+    --- FAIL: TestClaudeSessionContract/ends_with_the_scripted_status (0.01s)
+        session.go:90: session output:
+            claude stub: want --print and an instruction first, got ["--append-system-prompt-file" "<tmp>/copy/director/session-1/role.md" "--add-dir" "<tmp>/copy" "You are starting up: read startup.md in this directory and follow it."]
+        session.go:91: exit status 2, want 3
+    --- FAIL: TestClaudeSessionContract/ends_at_a_typed_/exit (0.01s)
+        session.go:109: session output:
+            claude stub: want --print and an instruction first, got ["--append-system-prompt-file" "<tmp>/copy/director/session-1/role.md" "--add-dir" "<tmp>/copy" "You are starting up: read startup.md in this directory and follow it."]
+        session.go:110: exit status 2, want 0
+    --- FAIL: TestClaudeSessionContract/ends_at_the_end_of_input (0.01s)
+        session.go:118: session output:
+            claude stub: want --print and an instruction first, got ["--append-system-prompt-file" "<tmp>/copy/director/session-1/role.md" "--add-dir" "<tmp>/copy" "You are starting up: read startup.md in this directory and follow it."]
+        session.go:119: exit status 2, want 0
+--- FAIL: TestSessionSettingsGolden (0.00s)
+    session_test.go:69: open testdata/session-settings.json: no such file or directory
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	0.044s
+FAIL
+
+$ go test ./internal/cli/ -run 'DirectorStart|DirectorReady|RecoveringSession'   # director start and ready stubbed, no gate, no recovering item
+--- FAIL: TestDirectorStartRunsASession (0.10s)
+    --- FAIL: TestDirectorStartRunsASession/fake (0.05s)
+    --- FAIL: TestDirectorStartRunsASession/claude (0.06s)
+--- FAIL: TestDirectorStartStartupNamesWhatIsInFlight (0.05s)
+    director_test.go:186: first session: exit 1
+--- FAIL: TestDirectorStartCheckRecordsNothing (0.06s)
+    director_test.go:214: exit 1
+--- FAIL: TestDirectorStartRefusals (0.48s)
+    --- FAIL: TestDirectorStartRefusals/no_adapter (0.06s)
+    --- FAIL: TestDirectorStartRefusals/no_director_table (0.06s)
+    --- FAIL: TestDirectorStartRefusals/unknown_runtime (0.04s)
+    --- FAIL: TestDirectorStartRefusals/managed_copy (0.06s)
+    --- FAIL: TestDirectorStartRefusals/inline_managed (0.05s)
+    --- FAIL: TestDirectorStartRefusals/no_store (0.06s)
+    --- FAIL: TestDirectorStartRefusals/runtime_not_on_PATH (0.06s)
+    --- FAIL: TestDirectorStartRefusals/not_foreground (0.04s)
+    --- FAIL: TestDirectorStartRefusals/two_runtimes (0.05s)
+--- FAIL: TestDirectorStartRecordsACrashedRuntimeStopped (0.05s)
+    director_test.go:288: exit 1, stdout "", stderr "guildhall: director start: not implemented\n"; want exit 1 naming status 3
+--- FAIL: TestDirectorReady (0.05s)
+    director_test.go:328: no session: exit 1, stdout "", stderr "guildhall: director ready: not implemented\n"; want exit 1 naming director start
+--- FAIL: TestRecoveringSessionStartsNoNewWork (0.09s)
+    director_test.go:363: task new while recovering: exit 0, stderr ""; want exit 1 naming director ready
+--- FAIL: TestDirectorStatusListsARecoveringSessionFirst (0.06s)
+    director_test.go:398: needs_me = []; want the recovering session first
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.952s
+FAIL
