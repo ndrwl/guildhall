@@ -170,6 +170,7 @@ The `task new` and `task start` lines need a Director config, `director.toml`, t
 A task is one unit of work in one repository; creating it records it and binds the exact workflow and configuration it was accepted under.
 `task start` launches the task's next ready stage as an owned Artisan attempt.
 The engine does not run Director stages yet, and the default workflow's first stage, `grill`, is run by the Director, so to try this give `app` a `[repository.workflow_overrides.grill]` with `actor = "artisan"`.
+The override changes only the actor: for the unattended grill, in which the Artisan proposes answers for you to review at acceptance instead of the Director interviewing you, the workflow's grill step must also list `guildhall-grill-unattended` in its `skills`.
 Nothing waits in the background yet, so you run `guildhall step done` once an attempt's result file exists; see [tasks](docs/tasks.md) and [running a task](docs/running.md).
 
 Each task follows a workflow.

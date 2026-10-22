@@ -15,7 +15,7 @@ import (
 
 func TestRenderRejectsInvalidSettingsBeforeInstallation(t *testing.T) {
 	for _, tc := range []struct{ name, kind, settings, diagnostic string }{
-		{"skills-string", "review", `{"actor":"artisan","skills":"guildhall-grill-notes"}`, "skills"},
+		{"skills-string", "review", `{"actor":"artisan","skills":"guildhall-grill-unattended"}`, "skills"},
 		{"skills-null", "review", `{"actor":"artisan","skills":null}`, "skills"},
 		{"skills-name", "review", `{"actor":"artisan","skills":["../skill"]}`, "skills"},
 		{"skills-duplicate", "review", `{"actor":"artisan","skills":["skill","skill"]}`, "skills"},

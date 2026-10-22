@@ -139,7 +139,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 
 | Kind | Actors | Produces |
 |---|---|---|
-| `grill` | `director` or `artisan` | notes |
+| `grill` | `director` or `artisan` | notes: the Director interviews the Guildmaster live with `guildhall-grill` and `guildhall-domain-model`; an Artisan grills unattended with `guildhall-grill-unattended` |
 | `research`, `plan`, `build` | `artisan` | notes, a spec document, a code head |
 | `document-review` | `artisan` or `guildmaster` | a review outcome for a document, such as the plan's spec |
 | `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` |
@@ -149,6 +149,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 | `handoff-wait` | `guildmaster` | a handoff document |
 
 The director actor on `grill` is part of the accepted workflow design's stage table (design report section 4.1: grill produces notes, with actor director, a conversation with the Guildmaster, or artisan) and does not conflict with R1.5, because a grill is the Director clarifying requirements with the Guildmaster, not doing the work.
+The director grill is a live interview in rounds of numbered questions until the Director and the Guildmaster share an understanding, recorded as the stage's notes (R1.13); the `artisan` actor is the opt-in for a repository meant to run unattended; with `guildhall-grill-unattended` listed in the grill step's `skills`, its Artisan answers its own questions with recommendations the Guildmaster reviews at acceptance ([decision](decisions/grill-live-interview.md)).
 A kind with more than one actor requires the `actor` setting; a kind with one actor refuses it.
 `publish` comes before `validate` so forge checks have a pushed head to read; it never merges.
 `publish` and `deliver` have no settings: the repository's configuration and merge policy decide where work goes and how it lands.

@@ -1,13 +1,14 @@
 ---
-name: guildhall-grill-notes
-description: Use in a grill stage to write its notes as one numbered round of open decisions, each with the recommended answer you proceed on.
+name: guildhall-grill-unattended
+description: Use in a grill stage run by an Artisan, where a repository runs unattended, to write its notes as one numbered round of open decisions, each with the recommended answer you proceed on.
 ---
 
 Adapted from `grilling` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
 
-# Grill notes
+# Unattended grill
 
 A grill stage stress-tests a task before anyone plans it.
+The Director normally grills the Guildmaster live; this skill is for a repository that overrides the grill actor to `artisan` so it can run unattended.
 Nobody answers you during the stage: you write the questions, recommend an answer to each, and proceed on your recommendations.
 The Director shows your notes to the Guildmaster at the next approval, and a "no" to any question sends the plan back with that answer.
 
