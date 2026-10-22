@@ -25,4 +25,4 @@ The release now ships those skills, and a test holds them to that rule.
 
 The pending commands land with the handoff and reload slice, whose tests then pin the skills to them; `director pause|resume|stop` landed first and the skills follow their built behaviour, including that `stop` also stops running attempts.
 A `stop-requested` message asking for a handoff note before a stop lands with handoff notes, and the skills gain it then.
-No live Claude Code Director session has followed these skills; the scripted stand-in of the CI safety checks follows the same command sequences.
+No live Claude Code Director session and no test has followed these command sequences yet; the CI safety checks will script them when they land.
