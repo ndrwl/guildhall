@@ -31,13 +31,14 @@ func TestRecordsContract(t *testing.T) {
 }
 
 func storeRecords(t *testing.T) interptest.RecordsHarness {
-	s, err := store.Open(filepath.Join(t.TempDir(), "director.store"), store.Options{})
+	clock := interptest.NewClock()
+	s, err := store.Open(filepath.Join(t.TempDir(), "director.store"), store.Options{Now: clock.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return interptest.RecordsHarness{Records: s, CreateTask: s.CreateTask, AnswerDecision: s.AnswerDecision, RuleFinding: s.RuleFinding,
-		RequestFullReview: s.RequestFullReview, PauseDirector: func() error { return interptest.PauseStoreDirector(s) }}
+		RequestFullReview: s.RequestFullReview, PauseDirector: func() error { return interptest.PauseStoreDirector(s) }, Clock: clock}
 }
 
 // backend is one set of records and mailbox the engine runs over.

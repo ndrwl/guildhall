@@ -1,0 +1,27 @@
+# Attempt-cap count (F44): red run, 2026-10-22
+
+The records contract's new cap cases and TestDailyCapRefusesUntilTheNextDay over both backends, with the harness clock (RecordsHarness.Clock) wired into the double only: the store backends still counted wall time, and the double still answered a closed task at a cap with a cap refusal.
+
+```
+$ go test ./internal/interp/... ./internal/cli/ -run 'TestRecordsContract|TestStoreRecordsContract|TestDailyCapRefusesUntilTheNextDay' -count=1
+--- FAIL: TestDailyCapRefusesUntilTheNextDay (0.05s)
+    --- FAIL: TestDailyCapRefusesUntilTheNextDay/store (0.03s)
+        budget_test.go:105: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: interp: app/t7 step plan: guard rail max_attempts_per_day: store: start-attempt attempt:app:t7:plan:1: attempt cap reached: 2 attempts were started on 2026-10-22 (UTC), the cap is 2
+        budget_test.go:105: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: interp: app/t7 step plan: guard rail max_attempts_per_day: store: start-attempt attempt:app:t7:plan:1: attempt cap reached: 2 attempts were started on 2026-10-22 (UTC), the cap is 2
+        budget_test.go:116: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: interp: app/t7 step plan: guard rail max_attempts_per_day: store: start-attempt attempt:app:t7:plan:1: attempt cap reached: 4 attempts were started on 2026-10-22 (UTC), the cap is 2
+        budget_test.go:120: budget-refused messages = map[app.t7.budget-refused.2026-10-22:Step plan was not started: guard rail max_attempts_per_day, attempt cap reached: 2 attempts were started on 2026-10-22 (UTC), the cap is 2. Run guildhall task start for the task again when capacity returns.], want a second one for 2026-10-23
+--- FAIL: TestRecordsContract (0.59s)
+    --- FAIL: TestRecordsContract/store (0.58s)
+            records.go:632: third start before midnight = store: start-attempt start-review: attempt cap reached: 2 attempts were started on 2026-10-22 (UTC), the cap is 2, want a daily cap refusal at 2 on 2031-03-09
+    --- FAIL: TestRecordsContract/double (0.01s)
+            records.go:656: capped start of a closed task at a cap = records: start-attempt start-build: attempt cap reached: 1 attempts are running, the cap is 1, want invalid store request and no cap refusal
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.650s
+ok  	github.com/ndrwl/guildhall/internal/interp/interptest	0.007s [no tests to run]
+--- FAIL: TestStoreRecordsContract (0.34s)
+    --- FAIL: TestStoreRecordsContract/refuses_at_the_daily_cap_until_the_clock_crosses_a_UTC_midnight (0.02s)
+        records.go:632: third start before midnight = store: start-attempt start-review: attempt cap reached: 2 attempts were started on 2026-10-22 (UTC), the cap is 2, want a daily cap refusal at 2 on 2031-03-09
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.350s
+FAIL
+```

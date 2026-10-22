@@ -39,12 +39,13 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	clock := interptest.NewClock()
 	write := func(fn func(*store.Store) (store.Receipt, error)) (store.Receipt, error) {
 		return withStore(path, false, fn)
 	}
 	return interptest.RecordsHarness{
 		Writers: 2, Operations: 20,
-		Records: storeRecords(path),
+		Records: clockedStoreRecords{storeRecords(path), clock}, Clock: clock,
 		CreateTask: func(m string, task store.Task) (store.Receipt, error) {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.CreateTask(m, task) })
 		},
@@ -62,6 +63,23 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 			return err
 		},
 	}
+}
+
+// clockedStoreRecords is storeRecords whose starts, the receipts the daily cap counts, are stamped by the
+// harness's clock rather than wall time.
+type clockedStoreRecords struct {
+	storeRecords
+	clock *interptest.Clock
+}
+
+func (p clockedStoreRecords) StartAttempt(m, repo, id, step string) (store.Receipt, error) {
+	return withStoreClock(string(p.storeRecords), false, p.clock.Now, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
+}
+
+func (p clockedStoreRecords) StartCappedAttempt(m, repo, id, step string, caps store.AttemptCaps) (store.Receipt, error) {
+	return withStoreClock(string(p.storeRecords), false, p.clock.Now, func(s *store.Store) (store.Receipt, error) {
+		return s.StartCappedAttempt(m, repo, id, step, caps)
+	})
 }
 
 // TestStoreRecordsOutboxContract runs the shared Mailbox suite through the production adapter's Send
