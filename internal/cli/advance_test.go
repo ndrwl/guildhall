@@ -182,6 +182,17 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			if code == 0 {
 				break
 			}
+			// A launcher that released its attempt at setup, before a worker, recorded no containment where
+			// its unit is not named (a process group), so stop cannot prove it stopped; once that launcher is
+			// gone nothing of the attempt is left.
+			var rep struct {
+				Endpoint       string
+				Classification struct{ State, Launcher string }
+			}
+			if json.Unmarshal([]byte(stdout), &rep) == nil && rep.Endpoint == "not asked: ownership released" &&
+				rep.Classification.State == "exited" && rep.Classification.Launcher == "gone" {
+				break
+			}
 			if !exiting() || time.Now().After(end) {
 				out = append(out, fmt.Sprintf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, stdout, stderr))
 				break
