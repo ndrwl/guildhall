@@ -2,20 +2,25 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ndrwl/guildhall/baseline"
+	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/skills"
@@ -373,6 +378,20 @@ func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 // superviseTyping is supervise that also returns the pipe the runtime reads, for the test to type into.
 func superviseTyping(t *testing.T, dir string, grace time.Duration) (<-chan int, *os.File) {
 	t.Helper()
+	return superviseConfigured(t, dir, grace, nil)
+}
+
+// superviseWith is supervise with the App configured by configure, when it is set, and args after the copy.
+func superviseWith(t *testing.T, dir string, grace time.Duration, configure func(*App), args ...string) <-chan int {
+	t.Helper()
+	done, _ := superviseConfigured(t, dir, grace, configure, args...)
+	return done
+}
+
+// superviseConfigured is superviseTyping with the App configured by configure, when it is set, and args after the
+// copy.
+func superviseConfigured(t *testing.T, dir string, grace time.Duration, configure func(*App), args ...string) (<-chan int, *os.File) {
+	t.Helper()
 	stdin, typing, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -380,9 +399,12 @@ func superviseTyping(t *testing.T, dir string, grace time.Duration) (<-chan int,
 	t.Cleanup(func() { _ = stdin.Close(); _ = typing.Close() })
 	app, _, _ := supervisorApp(stdin, grace)
 	app.Stdout, app.Stderr = io.Discard, io.Discard
+	if configure != nil {
+		configure(app)
+	}
 	before := len(sessions(t, dir))
 	done := make(chan int, 1)
-	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
+	go func() { done <- app.Run(append([]string{"director", "start", "--copy", dir}, args...)) }()
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		if got := sessions(t, dir); len(got) == before+1 && got[before].State == store.DirectorRunning {
 			return done, typing
@@ -492,5 +514,204 @@ func TestDirectorStopNowEndsTheRuntimeAtOnce(t *testing.T) {
 	}
 	if got := sessions(t, dir); len(got) != 1 || got[0].State != store.DirectorStopped || !got[0].StopNow {
 		t.Errorf("sessions = %+v; want session 1 stopped at once", got)
+	}
+}
+
+// pausedInPane records session 1 in the store at path, run by this process, bound to pane w1:p1 and paused.
+func pausedInPane(t *testing.T, path string) {
+	t.Helper()
+	self, err := artisan.Self()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		r, err := s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity(self), Release: "test",
+			ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t1", Pane: "w1:p1"}})
+		if err == nil {
+			r, err = s.SetDirectorState(1, store.DirectorRunning, r.Sequence)
+		}
+		if err == nil {
+			r, err = s.SetDirectorState(1, store.DirectorPaused, r.Sequence)
+		}
+		return r, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDirectorResumeWakesQueuedWork: a note sent while the Director was paused is queued, and a task was held; a
+// resume run from another terminal types one line of what waits into the Director's pane and prints that it woke
+// it, leaving the note's queued wake as it was; a repeated resume of the running session types nothing more.
+func TestDirectorResumeWakesQueuedWork(t *testing.T) {
+	d := newRunDirector(t)
+	pausedInPane(t, d.store)
+	panes := &typedPanes{}
+	d.panes = panes
+	app, _, stderr := newTestApp(nil, nil)
+	app.DirectorPane = panes
+	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Please do the queued work."}`)
+	if code := app.Run([]string{"messages", "send", "--store", d.store, "director", "-"}); code != 0 {
+		t.Fatalf("messages send: exit %d, %s", code, stderr)
+	}
+	writeNext(t, d.state, "t-1", `{"wait":"paused","step":"build"}`+"\n")
+	queued := readWakes(t, d.store)
+	if len(queued) != 1 || queued[0].Decision != store.WakeQueued || queued[0].Reason != "paused" || len(panes.lines) != 0 {
+		t.Fatalf("while paused: wakes %+v, typed %q", queued, panes.lines)
+	}
+	code, out, se := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	var doc struct {
+		Session store.DirectorSession `json:"session"`
+		NeedsMe []needsMeItem         `json:"needs_me"`
+		Wake    *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Session.State != store.DirectorRunning {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s", code, out, err, se)
+	}
+	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeWoke}) {
+		t.Errorf("resume printed wake %+v, want woke", doc.Wake)
+	}
+	if want := []string{"w1:p1 guildhall: resumed, 2 waiting (messages 1, paused 1)"}; !slices.Equal(panes.lines, want) {
+		t.Errorf("typed %q, want %q", panes.lines, want)
+	}
+	if got := readWakes(t, d.store); !slices.Equal(got, queued) {
+		t.Errorf("wakes after resume = %+v, want the queued wake unchanged", got)
+	}
+	code, out, se = d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	doc.Wake = nil
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Wake != nil {
+		t.Fatalf("repeated resume: exit %d, %q (%v), stderr %s; want no wake", code, out, err, se)
+	}
+	if len(panes.lines) > 1 {
+		t.Errorf("a repeated resume typed %q", panes.lines[1:])
+	}
+}
+
+// pipePane is the DirectorPane double of a pane whose runtime reads w: each line typed is written to w.
+type pipePane struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (p *pipePane) TypeLine(_ context.Context, _ store.DirectorPane, line string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, err := io.WriteString(p.w, line+"\n")
+	return err
+}
+
+// turns reads the fake Director's turn log at path, one kind per turn.
+func turns(t *testing.T, path string) []string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for line := range strings.Lines(string(b)) {
+		_, kind, _ := strings.Cut(strings.TrimSpace(line), " ")
+		kinds = append(kinds, kind)
+	}
+	return kinds
+}
+
+// TestDirectorResumeWakesTheBlockedRuntime: a supervised session bound to a pane whose runtime is blocked reading
+// its input is paused and sent a note, which is queued and reaches no runtime; a resume run from another terminal
+// types the wake line into the pane, and the runtime takes one turn on it.
+func TestDirectorResumeWakesTheBlockedRuntime(t *testing.T) {
+	dir, d := supervisedCopy(t)
+	log := filepath.Join(t.TempDir(), "turns.log")
+	t.Setenv(fake.TurnLogEnv, log)
+	input, typing, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = input.Close(); _ = typing.Close() })
+	pane := &pipePane{w: typing}
+	d.pane = pane
+	done := superviseWith(t, dir, time.Nanosecond, func(app *App) { app.Stdin = input },
+		"--herdr-session", "lab", "--herdr-workspace", "w1", "--herdr-tab", "w1:t1", "--herdr-pane", "w1:p1")
+	if code, out, se := d.run(t, "director", "pause", "--copy", dir); code != 0 {
+		t.Fatalf("director pause: exit %d, %s %s", code, out, se)
+	}
+	app, _, stderr := newTestApp(nil, nil)
+	app.DirectorPane = pane
+	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Please do the queued work."}`)
+	if code := app.Run([]string{"messages", "send", "--store", d.store, "director", "-"}); code != 0 {
+		t.Fatalf("messages send: exit %d, %s", code, stderr)
+	}
+	if got := turns(t, log); !slices.Equal(got, []string{"start"}) {
+		t.Fatalf("turns while paused = %q, want only the start", got)
+	}
+	code, out, se := d.run(t, "director", "resume", "--copy", dir)
+	var doc struct {
+		Wake *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeWoke}) {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s; want woke", code, out, err, se)
+	}
+	for end := time.Now().Add(testenv.Ceiling(2 * time.Minute)); ; time.Sleep(50 * time.Millisecond) {
+		got := turns(t, log)
+		if slices.Equal(got, []string{"start", "input"}) {
+			break
+		}
+		if len(got) > 2 || time.Now().After(end) {
+			t.Fatalf("turns after resume = %q, want the start and one input", got)
+		}
+	}
+	if code, out, se := d.run(t, "director", "stop", "--now", "--copy", dir); code != 0 {
+		t.Fatalf("director stop --now: exit %d, %s %s", code, out, se)
+	}
+	if code := ended(t, done); code != 0 {
+		t.Errorf("director start exited %d, want 0", code)
+	}
+}
+
+// TestDirectorResumeWithNothingWaitingTypesNothing: a resume with nothing in needs_me types nothing and prints
+// that it queued nothing waiting.
+func TestDirectorResumeWithNothingWaitingTypesNothing(t *testing.T) {
+	d := newRunDirector(t)
+	pausedInPane(t, d.store)
+	panes := &typedPanes{}
+	d.panes = panes
+	code, out, se := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	var doc struct {
+		Wake *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s", code, out, err, se)
+	}
+	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}) || len(panes.lines) != 0 {
+		t.Errorf("resume printed wake %+v and typed %q; want queued: nothing waiting", doc.Wake, panes.lines)
+	}
+}
+
+// TestDirectorResumeWithOnlyDecisionsTypesNothing: an open decision waits on the Guildmaster, so a resume whose
+// needs_me holds only that decision types nothing and prints that it queued nothing waiting.
+func TestDirectorResumeWithOnlyDecisionsTypesNothing(t *testing.T) {
+	d := newRunDirector(t)
+	pausedInPane(t, d.store)
+	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+		return s.OpenDecision("m-1", store.Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept?"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	panes := &typedPanes{}
+	d.panes = panes
+	code, out, se := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	var doc struct {
+		NeedsMe []needsMeItem         `json:"needs_me"`
+		Wake    *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s", code, out, err, se)
+	}
+	if len(doc.NeedsMe) != 1 || doc.NeedsMe[0].Kind != "decision" {
+		t.Fatalf("needs_me = %+v, want the one decision", doc.NeedsMe)
+	}
+	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}) || len(panes.lines) != 0 {
+		t.Errorf("resume printed wake %+v and typed %q; want queued: nothing waiting", doc.Wake, panes.lines)
 	}
 }

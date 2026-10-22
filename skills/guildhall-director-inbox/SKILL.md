@@ -20,6 +20,7 @@ Run this skill on every wake line and at the start of every turn, before anythin
 5. Acknowledge the message only once you have acted on it: `guildhall messages ack director <id>`.
    An acknowledged message leaves `needs_me`, so never acknowledge one you have not handled.
 6. Run `guildhall director status --json` again and repeat until nothing in `needs_me` is yours to act on now.
+   A `checks` item is not yours: your session's supervisor reads the task's checks again on its own and wakes you when they finish, so never poll them or run its `task start` yourself.
 
 ```sh
 guildhall director status --json
@@ -44,6 +45,8 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `merge-held` | The Guildmaster held the merge: ask what they want changed and give that as work. |
 | `merge-refused` | The forge refused the merge, with its reason: give an Artisan the fix, such as a rebase, and run `guildhall task start` once it is done so the merge is asked again. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |
+
+`director resume` wakes you with `guildhall: resumed, <n> waiting (...)` after a pause: run the loop as for any wake line, starting each held `paused` task with the `task start` its item names.
 
 A wake line that ends `; handoff due (<reason>)` asks you to hand off: finish the message you are on, then run `guildhall-handoff`.
 

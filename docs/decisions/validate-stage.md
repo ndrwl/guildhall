@@ -17,7 +17,7 @@ The choices the implementation made within that shape:
 - **A waiting failed head is read again**, so a check the Director re-ran counts: without an `on.failed` rule, after a rejected loop exit, and when the loop's target left the head unchanged.
   The Guildmaster asked for this after review found those states had no exit ("Yes lets check ci periodically - refresh can be set in config").
 - **A round is spent only on new evidence.** Each result records the head and every check's run id, and a failed read spends a round of `max` only when it holds a failed run, by check name and run id, that is not among the latest result's failed runs, a new failure or a failed re-run ("the checks should know which commits have been run"); the same or fewer failures keep waiting, since the build already had them as feedback, so an unchanged head no longer burns rounds and model launches on unchanged evidence.
-- **Reads are paced** by `checks_refresh`, default one minute; what advances a waiting task on a timer is the per-task watcher, slice 4's D3 and D5, not built here.
+- **Reads are paced** by [`checks_refresh`](../configuration.md#settings); autonomous continuation is now owned by the Director session's [checks watcher](../director.md#checks).
 - **Deliver checks its validation input** is a passed result for the delivered head (`ErrValidationGate`) before opening the merge decision.
   Validate already completes only on such a result, so the gate is deliberately redundant: it is kept as defence in depth, mirroring the review gate, and catches a workflow and records that disagree.
 

@@ -177,6 +177,10 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	var inFlight []string
 	for _, it := range status.NeedsMe {
+		if it.Kind == checksKind {
+			inFlight = append(inFlight, fmt.Sprintf("%s: %s; the session supervisor advances it", it.Kind, oneLine(it.Reason)))
+			continue
+		}
 		inFlight = append(inFlight, fmt.Sprintf("%s: %s; run `%s`", it.Kind, oneLine(it.Reason), it.Command))
 	}
 	handoff, err := withStore(storePath, true, func(s *store.Store) (string, error) {
@@ -226,6 +230,10 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
 	// way the supervisor outlives the runtime to record the end.
+	checks, err := a.watchChecks(p, n, dir, copyDir, storePath, state)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
 	u, err := startRuntime(c, n)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
@@ -239,11 +247,12 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	w := sessionWatch{storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now}
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks}
 	if ep != nil {
 		w.turns = ep.Turns()
 	}
 	ended, ending, err := a.waitSession(u, c, signals, &w)
+	checks.wait()
 	var exit *exec.ExitError
 	switch {
 	case errors.Is(err, errRuntimeOutlived):
@@ -337,6 +346,8 @@ type sessionWatch struct {
 	now func() time.Time
 	// turns receives the session endpoint's turn signals; nil without an endpoint.
 	turns <-chan session.Turn
+	// checks is the session's checks watcher, ticked at every poll; nil without one.
+	checks *checksWatch
 
 	// wanted is when an end now wanted was first seen, zero while none is, and signalled when the newest turn
 	// signal or wake arrived, or the first decision was made.
@@ -351,10 +362,10 @@ type sessionWatch struct {
 
 // waitSession waits for the started runtime c, in unit u, to end, passing its unit each termination among signals,
 // and returns the last termination passed on, if any, why the supervisor ended the runtime, if it did, and c's end.
-// Every App.SessionPoll, and at each turn signal, it decides with decideEnd whether to end the runtime's unit;
-// once it has, it kills the unit if the runtime has not exited stopKill later. However the runtime ends, it returns
-// only once the unit is empty: whatever the runtime left running is killed, and a unit not proven empty stopKill
-// after the runtime's end is an error.
+// Every App.SessionPoll it ticks the checks watcher, and every poll and at each turn signal it decides with
+// decideEnd whether to end the runtime's unit; once it has, it kills the unit if the runtime has not exited
+// stopKill later. However the runtime ends, it returns only once the unit is empty: whatever the runtime left
+// running is killed, and a unit not proven empty stopKill after the runtime's end is an error.
 func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch) (os.Signal, endAction, error) {
 	poll := a.SessionPoll
 	if poll <= 0 {
@@ -385,6 +396,9 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 		case t := <-w.turns:
 			decide(t)
 		case <-tick.C:
+			if w.checks != nil {
+				w.checks.tick(time.Now())
+			}
 			decide("")
 		case <-u.Exited():
 			err := errors.Join(empty(u, poll), u.Close())

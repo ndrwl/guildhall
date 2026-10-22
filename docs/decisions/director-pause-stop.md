@@ -15,7 +15,7 @@ The captain fixed the semantics: pause stops new work only and running attempts 
 - **Stopping holds launches too.**
   A `stopping` session holds launches as a paused one does, so no attempt starts after stop has stopped the running ones.
 - **Resume is the Director's, not the attempt's.**
-  `director resume` moves a paused session back to `running` and prints `needs_me` beside the session, which the Director then works.
+  See [pause and resume](../director.md#pause-and-resume) for the transition, status output and wake of waiting work.
   It is not `artisan resume`, which settles one attempt whose launcher is gone; the two share the lifecycle verb because the grammar gives every role the same four.
 - **Stop ends the session and its attempts.**
   `director stop` records `stopping`, then stops every running attempt in the store through its launcher, as `artisan stop` does, and prints the session.

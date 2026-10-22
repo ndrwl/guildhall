@@ -38,7 +38,7 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - `role.md`: the role prompt, from `[director] role` relative to the config directory, else the copy's `baseline/roles/director.md`, else the release's;
 - every release skill, byte for byte, in the runtime's skills directory, `.claude/skills/` for Claude Code;
 - the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and `Stop` and `StopFailure` hooks that run `guildhall director turn-ended` at the end of every turn;
-- `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command;
+- `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command, except a `checks` item, which says the session supervisor advances it ([checks](#checks));
 - `manifest.json`: the digest of every file above.
 
 It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory, inside a containment unit of its own ([runtime containment](decisions/director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
@@ -48,6 +48,7 @@ On Unix a hangup or termination of the supervisor, such as the terminal closing,
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.
 A session already stopped or superseded by a newer one is left as it is.
 While the runtime runs, the supervisor reads its session about once a second; once [`director stop`](#stop) has recorded it `stopping`, it ends the runtime at the [end of the turn](#the-end-of-a-turn), records the session `stopped` and exits 0.
+On the same tick it runs the [checks watcher](#checks).
 When it ends the runtime for a [reload](#reload) it records the session `stopped` with the end reason `reloaded`, reads the copy's config again and starts session `<n+1>` the same way in the same terminal, which records the reload `applied` from session `<n>` to `<n+1>`.
 The config read again chooses the runtime too: unless `director start` named one, a changed `[director] adapter` takes effect, checked on `PATH` as the preflight checks it, and a runtime refused then ends the supervisor with exit 1, with session `<n>` recorded `stopped` as `reloaded` and the reload left requested.
 A `director stop` recorded while the runtime is ending for the reload wins: the session is recorded `stopped` as for a stop and the supervisor exits 0 with no new session.
@@ -128,8 +129,30 @@ The hold is read in the same store transaction that records a new attempt, so an
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works, such as the `task start` of each held task.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
-A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0.
+A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks` and `decision` items, and the session has a bound pane, it types one line of counts by kind, never any text, and prints `"wake":{"decision":"woke"}` in its line:
+
+```text
+guildhall: resumed, 2 waiting (messages 1, paused 1)
+```
+
+Otherwise it types nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session and pane reasons, and the work waits for the Director's next turn.
+If reading the session for the wake fails, resume reports the error on standard error and omits `wake`, without failing or undoing the resume.
+The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/director-checks-watch.md)).
+A `checks` item is the supervisor's and a `decision` item the Guildmaster's, so neither counts nor wakes.
+
+A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0, with no `wake` and nothing typed.
 Both are exit 1 for no session, a session that is `recovering` (run `director ready`), `stopping` or `stopped`, and a session whose supervisor is gone, naming `director stop`.
+
+## Checks
+
+A task whose validate step waits for its published head's checks, `next.json` `{"wait":"checks","step":"validate"}`, is moved on by the session supervisor, not by the Director ([decision](decisions/director-checks-watch.md)).
+On its first supervisor tick, then on the first tick at least [`checks_refresh`](configuration.md#settings) after the previous round ends, the supervisor's checks watcher lists the open tasks waiting for checks and advances each in turn as `task start` does, in the supervisor process and with no model turn, while the session is `recovering` or `running`.
+The interval has a 30-second minimum, including when `checks_refresh` is `"0s"`.
+The advance reads the checks under the [validate step's pacing](interpreter.md#validate): checks still pending send nothing new, since a head's `checks-pending` message is sent once, and checks that finish send `checks-passed` or `checks-failed` and take the task on, which [wakes](messaging.md#waking-the-director) the Director as any send does.
+A repository with [`no_ci`](configuration.md#repositories) passes at its first read, so only a repository with CI waits here.
+While the session is `paused` or `stopping` the watcher advances nothing.
+One round runs at a time; a failed advance, such as an unreachable forge, is appended with its standard-error output to `checks.log` in the session's directory and tried again a refresh later, and the supervisor lets a running round end before it records the session stopped.
+With no supervisor running, the task waits until someone runs the `task start` its `checks` item in [`needs_me`](#status) names.
 
 ## Stop
 
@@ -324,9 +347,10 @@ The document has these sections:
   6. `messages`: one item counting the other unread messages; `guildhall messages list director`.
   7. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
   8. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall task start --repo <r> <t>`.
+  9. `checks`: an open task whose `next.json` says `"wait":"checks"`, with its `step`, which the session supervisor's [checks watcher](#checks) advances; `guildhall task start --repo <r> <t>`.
 
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
-  Done and cancelled tasks contribute no `advance`, `retry`, `resume`, `director` or `paused` item.
+  Done and cancelled tasks contribute no `advance`, `retry`, `resume`, `director`, `paused` or `checks` item.
 
 Times are commit times of the store's receipts, in UTC.
 The feed reads every receipt in the store, so its cost grows with the store's mutation count, as `task timeline`'s does.

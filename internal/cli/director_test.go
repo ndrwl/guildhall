@@ -181,7 +181,8 @@ func TestDirectorStartRunsASession(t *testing.T) {
 }
 
 // TestDirectorStartStartupNamesWhatIsInFlight starts a second session over a store with an unread question:
-// its startup instructions list the recovering session and the message, and say there is no handoff note.
+// its startup instructions list the recovering session and the message, and say there is no handoff note, and list
+// a task waiting for its checks as the supervisor's, with no command for the Director to run.
 func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
 	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
@@ -191,6 +192,7 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
 		return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-2", Type: "question", Text: "Which parser?"})
 	})
+	writeNext(t, filepath.Join(dir, "state"), "t-2", `{"wait":"checks","step":"validate"}`+"\n")
 	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--copy", dir); code != 0 {
 		t.Fatalf("second session: exit %d\n%s\n%s", code, out, stderr)
 	}
@@ -203,6 +205,10 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 		if !strings.Contains(startup, want) {
 			t.Errorf("startup.md lacks %q:\n%s", want, startup)
 		}
+	}
+	if !strings.Contains(startup, "checks: step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh, never more often than every 30 seconds, and wakes you when they finish; the session supervisor advances it") ||
+		strings.Contains(startup, "guildhall task start --repo app t-2") {
+		t.Errorf("startup.md does not list t-2's checks as the supervisor's:\n%s", startup)
 	}
 	if got := sessions(t, dir); len(got) != 2 || got[0].State != store.DirectorStopped || got[1].State != store.DirectorStopped {
 		t.Errorf("sessions = %+v", got)

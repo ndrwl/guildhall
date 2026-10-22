@@ -205,3 +205,88 @@ func TestWakeLine(t *testing.T) {
 		}
 	}
 }
+
+// TestWakeResumedTypesOneLineForWaitingWork: a resumed session with work waiting is typed one line of its counts,
+// and the per-message wakes recorded while it was paused stand unchanged.
+func TestWakeResumedTypesOneLineForWaitingWork(t *testing.T) {
+	h := wakeHarness(t, store.DirectorRunning, directorPane)
+	d, err := h.s.LatestDirectorSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.s.SetDirectorState(1, store.DirectorPaused, d.StateSequence); err != nil {
+		t.Fatal(err)
+	}
+	pane := &recordingPane{}
+	sendDirector(t, h, "n-1", "note", "Please do the queued work.")
+	queued := mustWake(t, h, pane, "n-1", messaging.SenderLocal)
+	if queued.Decision != store.WakeQueued || queued.Reason != "paused" {
+		t.Fatalf("wake while paused = %+v", queued)
+	}
+	if d, err = h.s.LatestDirectorSession(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.s.SetDirectorState(1, store.DirectorRunning, d.StateSequence); err != nil {
+		t.Fatal(err)
+	}
+	w, err := messaging.WakeResumed(context.Background(), h.s, pane, map[string]int{"messages": 1, "paused": 2})
+	if err != nil || w != (messaging.ResumeWake{Decision: store.WakeWoke}) {
+		t.Fatalf("WakeResumed = %+v, %v; want woke", w, err)
+	}
+	if !slices.Equal(pane.typed, []string{"w1:p2 guildhall: resumed, 3 waiting (messages 1, paused 2)"}) {
+		t.Fatalf("typed = %q", pane.typed)
+	}
+	if got, err := h.s.WakeFor("n-1"); err != nil || got != queued {
+		t.Fatalf("the message's wake = %+v, %v; want its queued wake %+v unchanged", got, err, queued)
+	}
+}
+
+func TestWakeResumedQueuesWithTheReason(t *testing.T) {
+	waiting := map[string]int{"paused": 1}
+	cases := []struct {
+		name    string
+		state   store.DirectorState
+		pane    store.DirectorPane
+		typer   *recordingPane
+		waiting map[string]int
+		reason  string
+	}{
+		{"nothing waiting", store.DirectorRunning, directorPane, &recordingPane{}, map[string]int{}, "nothing waiting"},
+		{"no session", "", directorPane, &recordingPane{}, waiting, "no session"},
+		{"no pane", store.DirectorRunning, store.DirectorPane{}, &recordingPane{}, waiting, "no pane"},
+		{"paused again", store.DirectorPaused, directorPane, &recordingPane{}, waiting, "paused"},
+		{"stopping", store.DirectorStopping, directorPane, &recordingPane{}, waiting, "stopping"},
+		{"runtime ended", store.DirectorRunning, directorPane, &recordingPane{err: fmt.Errorf("pane w1:p2: %w", messaging.ErrNotRunning)}, waiting, "runtime not running"},
+		{"typing failed", store.DirectorRunning, directorPane, &recordingPane{err: errors.New("herdr server_unavailable:\nsocket gone")}, waiting, "pane: herdr server_unavailable: socket gone"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := wakeHarness(t, c.state, c.pane)
+			w, err := messaging.WakeResumed(context.Background(), h.s, c.typer, c.waiting)
+			if err != nil || w != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: c.reason}) {
+				t.Fatalf("WakeResumed = %+v, %v; want queued: %s", w, err, c.reason)
+			}
+			if len(c.typer.typed) != 0 {
+				t.Fatalf("typed %q", c.typer.typed)
+			}
+		})
+	}
+	h := wakeHarness(t, store.DirectorRunning, directorPane)
+	if w, err := messaging.WakeResumed(context.Background(), h.s, nil, waiting); err != nil || w.Reason != "no pane" {
+		t.Fatalf("WakeResumed with no terminal = %+v, %v; want queued: no pane", w, err)
+	}
+}
+
+func TestResumeLine(t *testing.T) {
+	for _, c := range []struct {
+		waiting map[string]int
+		want    string
+	}{
+		{map[string]int{"messages": 1}, "guildhall: resumed, 1 waiting (messages 1)"},
+		{map[string]int{"paused": 2, "decision": 1, "messages": 3}, "guildhall: resumed, 6 waiting (decision 1, messages 3, paused 2)"},
+	} {
+		if got := messaging.ResumeLine(c.waiting); got != c.want {
+			t.Errorf("ResumeLine(%v) = %q, want %q", c.waiting, got, c.want)
+		}
+	}
+}

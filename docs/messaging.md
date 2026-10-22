@@ -159,6 +159,8 @@ The line is typed before the decision is recorded, so a send retried after a cra
 A failed wake never fails the send; the command reports the wake's failure on standard error, and `messages send` still prints the receipt as usual.
 The pane is reached through the Herdr session it was recorded in, with `herdr` found on `PATH`.
 
+The separate [resume wake](director.md#pause-and-resume) leaves each message's recorded wake unchanged.
+
 Every wake records its sender type: `guildhall` for the engine and `local` for `messages send`, which cannot tell the Guildmaster from an Artisan.
 Both wake on every message; the per-sender [wake policies](#waking-a-director) below are designed, not built.
 
