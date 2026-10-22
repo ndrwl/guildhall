@@ -72,8 +72,18 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		// Sweep the orphaned worker so the cleanup proves the attempt not running and its worker tree empty.
+		// Sweep the orphaned worker so the cleanup proves the attempt not running and its worker tree empty;
+		// the sweep settles the attempt, so the recorded worker itself must be proven gone here.
 		d.sweep(t, "plan", 1)
+		worker := artisan.Identity(o.Containment.Worker)
+		lv, err := artisan.Probe(worker)
+		for end := time.Now().Add(10 * time.Second); err == nil && lv != artisan.Gone && time.Now().Before(end); {
+			time.Sleep(50 * time.Millisecond)
+			lv, err = artisan.Probe(worker)
+		}
+		if err != nil || lv != artisan.Gone {
+			t.Errorf("plan-1 worker %d is %v (%v)", worker.PID, lv, err)
+		}
 	})
 	hb, err := artisan.ReadHeartbeat(key.Dir(d.state))
 	if err != nil {
