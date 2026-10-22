@@ -73,7 +73,7 @@ The repository's merge policy and the forge's protection always apply: a refused
 
 ## Audits
 
-An `audit` decision is the Guildmaster's three-question audit of a task that has already merged, opened for a sample of delivered tasks while self-review is on.
+An `audit` decision is the Guildmaster's three-question audit of a task that has already merged, opened for a sample of delivered tasks independently of self-review: `quality_audit_sample` defaults to 5, 0 disables audits, and 1 audits every task.
 Put its three questions to them as asked, record `yes` or `no` to the first as the answer's first line and their words on the other two as the note, and do not run `task start` afterwards: the task is done and the answer only records their view.
 
 ## Retrying, stopping and resuming attempts

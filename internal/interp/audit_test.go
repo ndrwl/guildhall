@@ -21,7 +21,7 @@ func (e *env) merged(t *testing.T, local map[string]string) interp.Next {
 	return e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"})
 }
 
-var auditEveryTask = map[string]string{config.QualitySelfReviewKey: "on", config.QualityAuditSampleKey: "1"}
+var auditEveryTask = map[string]string{config.QualitySelfReviewKey: "off", config.QualityAuditSampleKey: "1"}
 
 // TestAuditAfterMerge: when the task falls in the audit sample, the merge that closes it opens the Guildmaster's
 // three-question audit, kind audit, bound to the head that merged and naming its pull request, and tells the Director;
@@ -60,18 +60,18 @@ func TestAuditAfterMerge(t *testing.T) {
 	}
 }
 
-// TestNoAuditOutsideTheSample: the audit is off by default, off while self-review is off whatever the sample,
-// off at a sample of 0, and not opened for a task outside the sample; the merge closes the task the same way.
+// TestNoAuditOutsideTheSample: the audit is off at a sample of 0 and not opened for a task outside the sample;
+// the merge closes the task the same way.
 func TestNoAuditOutsideTheSample(t *testing.T) {
-	outside := qualityOf(t, map[string]string{config.QualitySelfReviewKey: "on", config.QualityAuditSampleKey: "1000000"})
+	outside := qualityOf(t, map[string]string{config.QualityAuditSampleKey: "1000000"})
 	if outside.Audits("app", "t7") {
 		t.Fatal("app/t7 falls in a one-in-a-million sample; choose a larger sample")
 	}
 	for name, local := range map[string]map[string]string{
-		"defaults":           nil,
-		"self-review off":    {config.QualitySelfReviewKey: "off", config.QualityAuditSampleKey: "1"},
-		"sample 0":           {config.QualitySelfReviewKey: "on", config.QualityAuditSampleKey: "0"},
-		"outside the sample": {config.QualitySelfReviewKey: "on", config.QualityAuditSampleKey: "1000000"},
+		"sample 0":             {config.QualityAuditSampleKey: "0"},
+		"sample 0 with review": {config.QualitySelfReviewKey: "on", config.QualityAuditSampleKey: "0"},
+		"outside the sample":   {config.QualityAuditSampleKey: "1000000"},
+		"outside with review":  {config.QualitySelfReviewKey: "on", config.QualityAuditSampleKey: "1000000"},
 	} {
 		for _, b := range backends {
 			t.Run(name+"/"+b.name, func(t *testing.T) {

@@ -21,8 +21,8 @@ const (
 	// flagged, never blocked; "0" turns that half of the flag off.
 	QualitySizeBudgetLinesKey = "quality_size_budget_lines"
 	QualitySizeBudgetFilesKey = "quality_size_budget_files"
-	// QualityAuditSampleKey queues one in this many delivered tasks for the Guildmaster's audit while self-review is
-	// on; "0" turns it off.
+	// QualityAuditSampleKey queues one in this many delivered tasks for the Guildmaster's audit;
+	// "0" turns it off.
 	QualityAuditSampleKey = "quality_audit_sample"
 	// QualityReferenceRunsKey chooses when the reference set runs on a real model: "off" or "on-change-and-release".
 	QualityReferenceRunsKey = "quality_reference_runs"
@@ -97,11 +97,11 @@ func (c *Config) Quality() (Quality, error) {
 	return q, nil
 }
 
-// Audits reports whether the delivered task repository/task is sampled for the Guildmaster's audit: only while
-// self-review is on and AuditSample is not 0, then every task at 1 and otherwise the task whose SHA-256 of
+// Audits reports whether the delivered task repository/task is sampled for the Guildmaster's audit:
+// no task at AuditSample 0, every task at 1 and otherwise the task whose SHA-256 of
 // "<repository>/<task>" is 0 modulo AuditSample, so about one in AuditSample is and asking again gives the same answer.
 func (q Quality) Audits(repository, task string) bool {
-	if !q.SelfReview || q.AuditSample == 0 {
+	if q.AuditSample == 0 {
 		return false
 	}
 	sum := sha256.Sum256([]byte(repository + "/" + task))

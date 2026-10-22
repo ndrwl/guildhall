@@ -97,16 +97,14 @@ func TestQualityRefusesAnInvalidSetting(t *testing.T) {
 	}
 }
 
-// TestQualityAudits: a delivered task is audited only while self-review is on and the sample is not 0; at 1 every
-// task is, and otherwise the task's identity alone chooses, so asking again gives the same answer and about one task
-// in N is chosen.
+// TestQualityAudits: no task is audited at sample 0, every task at 1, and otherwise the task's identity alone
+// chooses, so asking again gives the same answer and about one task in N is chosen, independent of self-review.
 func TestQualityAudits(t *testing.T) {
-	on := Quality{SelfReview: true, AuditSample: 1}
 	for _, tc := range []struct {
 		name string
 		q    Quality
 	}{
-		{"self-review off", Quality{SelfReview: false, AuditSample: 1}},
+		{"self-review off", Quality{SelfReview: false, AuditSample: 0}},
 		{"the audit off", Quality{SelfReview: true, AuditSample: 0}},
 	} {
 		for i := range 50 {
@@ -115,18 +113,25 @@ func TestQualityAudits(t *testing.T) {
 			}
 		}
 	}
-	for i := range 50 {
-		if !on.Audits("app", fmt.Sprint("t-", i)) {
-			t.Errorf("one in 1: Audits(app, t-%d) = false", i)
+	for _, selfReview := range []bool{false, true} {
+		one := Quality{SelfReview: selfReview, AuditSample: 1}
+		for i := range 50 {
+			if !one.Audits("app", fmt.Sprint("t-", i)) {
+				t.Errorf("self-review %t, one in 1: Audits(app, t-%d) = false", selfReview, i)
+			}
 		}
 	}
-	five := Quality{SelfReview: true, AuditSample: 5}
+	five := Quality{AuditSample: 5}
+	fiveWithReview := Quality{SelfReview: true, AuditSample: 5}
 	chosen := 0
 	for i := range 2000 {
 		id := fmt.Sprint("t-", i)
 		got := five.Audits("app", id)
 		if got != five.Audits("app", id) {
 			t.Fatalf("Audits(app, %s) changed between calls", id)
+		}
+		if got != fiveWithReview.Audits("app", id) {
+			t.Fatalf("Audits(app, %s) changed with self-review", id)
 		}
 		if got {
 			chosen++

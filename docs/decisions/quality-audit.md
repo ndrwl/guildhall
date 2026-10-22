@@ -1,4 +1,4 @@
-# Deliver opens the Guildmaster's audit of a sampled task, only while self-review is on
+# Deliver opens the Guildmaster's audit of a sampled task
 
 The Guildmaster accepted a three-question audit of one in five delivered tasks, behind configuration, so the model judge's drift is measured rather than assumed ([G4](../quality.md#honesty-and-evidence-g)).
 This change gives it a decision kind and opens it.
@@ -14,10 +14,10 @@ A step's decision is always `<step>-<round>`, so the id cannot collide with one,
 
 The alternative, a `question` decision with the audit's wording, would leave the audit indistinguishable from every other question in the timeline and in the H2 counts that read it.
 
-## Only while self-review is on, sampled by the task's identity
+## Independently configured, sampled by the task's identity
 
-The audit opens only while `quality_self_review` is on and `quality_audit_sample` is not 0, so a copy that sets nothing still opens no audit, whatever the sample's default of 5.
-The audit calibrates the judge that scores self-reviews, so it has no use without them.
+The audit is controlled by `quality_audit_sample` alone: 0 disables it, 1 selects every task, and the default of 5 samples about one in five tasks even when self-review is off.
+The Guildmaster's spot checks are useful independently of model self-reviews; enabling either practice does not require enabling the other.
 
 A task is sampled when the SHA-256 of `<repository>/<task>` is 0 modulo the sample, every task at 1.
 The task's identity alone chooses, so a replayed or retried close gives the same answer with no counter to keep, and two tasks closing at once cannot race for the same count.
@@ -29,4 +29,4 @@ Reference runs are not sampled, because the reference runner does not exist yet;
 Agreement between the judge and these answers is not computed yet, because the judge session is later work.
 The report's fix-PR link line, which C5 and E2 read, is not part of this change.
 
-Consequences: a copy with self-review on gains, for about one in five merged tasks, one decision after the merge and one `decision` message to the Director; nothing else changes, and the config digest of a copy that sets nothing is unchanged.
+Consequences: by default a copy gains, for about one in five merged tasks, one decision after the merge and one `decision` message to the Director, even with self-review off. Setting `quality_audit_sample` to 0 disables those audits; the default values and the config digest of a copy that sets nothing are unchanged.
