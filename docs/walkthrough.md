@@ -84,7 +84,7 @@ To stop one running Artisan attempt, use `guildhall artisan stop`; see [Artisan 
 
 ### Send and acknowledge a message
 
-With the copy and task `t-1` from above:
+With the copy from above; the output shown is for a copy where only `task new` has run, so `task start` and answered decisions add their own receipts and records:
 
 ```sh
 cat > note.json <<'EOF'

@@ -87,7 +87,7 @@ func TestCopyEnvironment(t *testing.T) {
 	}
 }
 
-// An explicit --store, --config or --state outside the selected copy is a usage error, whichever way the copy was selected.
+// An explicit --store, --config or --state outside the copy given with --copy is a usage error.
 func TestCopyDisagreementRefused(t *testing.T) {
 	dir := newCopy(t)
 	elsewhere := t.TempDir()
@@ -97,7 +97,6 @@ func TestCopyDisagreementRefused(t *testing.T) {
 		args            []string
 	}{
 		{"store", "", "--store", []string{"task", "list", "--copy", dir, "--store", outside, "--json"}},
-		{"store from environment", dir, "--store", []string{"task", "list", "--store", outside, "--json"}},
 		{"store doctor path", "", "store", []string{"store", "doctor", "--copy", dir, outside}},
 		{"config", "", "--config", []string{"task", "new", "--copy", dir, "--config", filepath.Join(elsewhere, "config.toml"), "--repo", "app", "--title", "T", "t-1"}},
 		{"state", "", "--state", []string{"artisan", "status", "--copy", dir, "--state", elsewhere, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"}},
@@ -107,6 +106,24 @@ func TestCopyDisagreementRefused(t *testing.T) {
 		if code != 2 || stdout != "" || !strings.Contains(stderr, tc.flag) || !strings.Contains(stderr, "copy") {
 			t.Errorf("%s: exit %d, stdout %q, stderr %q; want a usage error naming %s and the copy", tc.name, code, stdout, stderr, tc.flag)
 		}
+	}
+}
+
+// An explicit path flag overrides GUILDHALL_COPY entirely, so a launched child given another copy's paths keeps them.
+func TestCopyEnvironmentOverriddenByPathFlag(t *testing.T) {
+	envCopy := newCopy(t)
+	given := newCopy(t)
+	if code, _, stderr := runEnv(t, "", "task", "new", "--copy", given, "--repo", "app", "--title", "Only in given", "t-1"); code != 0 {
+		t.Fatalf("task new: exit %d, stderr %s", code, stderr)
+	}
+	_, want, _ := runEnv(t, "", "task", "list", "--copy", given, "--json")
+	if code, got, stderr := runEnv(t, envCopy, "task", "list", "--store", filepath.Join(given, "director.store"), "--json"); code != 0 || got != want {
+		t.Errorf("--store over GUILDHALL_COPY: exit %d, stdout %q, stderr %s; want %q", code, got, stderr, want)
+	}
+	code, _, stderr := runEnv(t, envCopy, "artisan", "status", "--store", filepath.Join(given, "director.store"), "--state", filepath.Join(given, "state"),
+		"--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1")
+	if code == 2 || strings.Contains(stderr, "copy") {
+		t.Errorf("artisan status --store --state over GUILDHALL_COPY: exit %d, stderr %q; want no usage error about the copy", code, stderr)
 	}
 }
 

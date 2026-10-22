@@ -20,8 +20,9 @@ The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/conf
 `config.Load` reads the copy's config as it reads any other.
 
 - `--copy` overrides `GUILDHALL_COPY`.
-- `GUILDHALL_COPY` must be an absolute path, so a child that inherits it in another working directory selects the same copy; a relative value is a usage error.
-- A path flag given with a copy must name the copy's own file, compared absolute and cleaned (ignoring case on Windows); one elsewhere, such as a `--store` outside the copy, is a usage error, exit 2.
+- `GUILDHALL_COPY` is only a default: a command given any of its path flags (`--store`, `--config`, `--state`, or the `store init|doctor` path) without `--copy` ignores it entirely, so a launched child given explicit paths keeps them, and its other path flags stay required.
+- When `GUILDHALL_COPY` is used it must be an absolute path, so a child that inherits it in another working directory selects the same copy; a relative value is a usage error.
+- A path flag given with `--copy` must name the copy's own file, compared absolute and cleaned (ignoring case on Windows); one elsewhere, such as a `--store` outside the copy, is a usage error, exit 2.
 - With neither `--copy` nor `GUILDHALL_COPY`, the path flags are required as before.
 - A copy, like a `--store`, without a store file is refused with exit 1, naming `guildhall store init <dir>/director.store`; no command but `store init` creates a store.
 

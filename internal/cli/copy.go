@@ -21,10 +21,11 @@ func (c *copyFlags) register(fl *flag.FlagSet) {
 
 // apply selects the copy, --copy or else GUILDHALL_COPY from getenv (nil is an empty environment), and defaults
 // each empty path it is given to that copy's director.store, config.toml or state; a nil path is a flag the
-// command does not take. A path already given must name the copy's own file. With no copy it changes nothing.
+// command does not take. With --copy, a path already given must name the copy's own file; without it, any path
+// given overrides GUILDHALL_COPY entirely. With no copy it changes nothing.
 func (c copyFlags) apply(getenv func(string) string, store, config, state *string) error {
 	dir := c.dir
-	if dir == "" && getenv != nil {
+	if dir == "" && getenv != nil && !anyGiven(store, config, state) {
 		// An inherited copy must not change meaning with a child's working directory.
 		if dir = getenv(copyEnvVar); dir != "" && !filepath.IsAbs(dir) {
 			return fmt.Errorf("%s %q must be an absolute path", copyEnvVar, dir)
@@ -52,6 +53,16 @@ func (c copyFlags) apply(getenv func(string) string, store, config, state *strin
 		}
 	}
 	return nil
+}
+
+// anyGiven reports whether any path the command takes was given explicitly.
+func anyGiven(paths ...*string) bool {
+	for _, p := range paths {
+		if p != nil && *p != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // samePath reports whether a and b name the same path, compared absolute and cleaned, ignoring case on Windows.
