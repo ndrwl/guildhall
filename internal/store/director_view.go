@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -27,6 +28,8 @@ type DirectorView struct {
 	Unread []Message
 	// Receipts are the receipts that name a task, in sequence order.
 	Receipts []Receipt
+	// Session is the newest Director session, or nil when the store has none.
+	Session *DirectorSession
 }
 
 // DirectorView reads the Director's view of the whole store without writing.
@@ -72,6 +75,12 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				}
 				v.Unread = append(v.Unread, m)
 			}
+		}
+		switch d, err := latestSession(tx); {
+		case err == nil:
+			v.Session = &d
+		case !errors.Is(err, ErrNotFound):
+			return err
 		}
 		return tx.Bucket(bucketReceipts).ForEach(func(k, raw []byte) error {
 			var r Receipt

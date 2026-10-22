@@ -126,8 +126,8 @@ Each command holds the store only for its own operation and waits up to two seco
 
 ## Director messaging (designed, not built)
 
-Everything in this section is designed, not built.
-No command, flag, config key or store record below exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
+Everything in this section is designed, not built, except the [wake record](store.md#records), which the store keeps.
+No command, flag, config key or other store record below exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [Director messaging](decisions/0049-director-messaging.md).
 It extends the local inbox above so a Director can hear from the Guildmaster and from other Directors, without giving any message more authority than the local inbox has today.
 
@@ -346,7 +346,7 @@ All are new records in the receiver's or sender's existing store, keyed outside 
 |---|---|---|
 | Director message | sender, message id | The envelope, the sender type, the sequence, and an inbox entry until acknowledged once; never changes another record. |
 | Outbox entry | message id | The envelope sent, the peer, and a state `pending`, `delivered` with the receiver's receipt, or `refused` with its reason. |
-| Wake | sequence | Each wake decision: the message's sender and id, the sender type, `woke` or `queued` with the reason (`budget spent`, `no pane`, `never`), and the window it counted against. The budget is computed from these records, so it survives restarts. |
+| Wake | sequence | The store record is built ([store](store.md#records)): each decision's message id, sender type, `woke` or `queued` with the reason, and time; nothing writes it yet. The budget adds the reasons `budget spent` and `never` and computes each window from the wakes' sender types and times, so it survives restarts with no change to the record. |
 | Inbox state | `director` | `open` or `closed`, with the reason, the alert decision and who changed it. |
 | Ticket | repository, ticket id | The source message's full `(sender, message id)` reference, the proposed title and repository, its decision, and a state `proposed`, `accepted` or `declined`, changed once. `accepted` records the task id later created. |
 

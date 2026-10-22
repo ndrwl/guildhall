@@ -6,11 +6,25 @@
       "transcripts",
       "forge state"
     ],
-    "sequence": 23,
-    "committed_at": "2026-10-22T09:22:00Z"
+    "sequence": 25,
+    "committed_at": "2026-10-22T09:26:00Z"
   },
   "session": {
-    "state": "no session"
+    "state": "running",
+    "number": 1,
+    "identity": {
+      "pid": 4242,
+      "token": "boot:4242"
+    },
+    "release": "v0.4.0",
+    "pane": {
+      "session": "lab",
+      "workspace": "w1",
+      "tab": "w1:t2",
+      "pane": "w1:p2"
+    },
+    "started_at": "2026-10-22T09:23:00Z",
+    "ready_at": "2026-10-22T09:25:00Z"
   },
   "mode": {
     "name": "standalone"

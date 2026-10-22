@@ -1,0 +1,422 @@
+package store
+
+import (
+	"bytes"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
+
+	"github.com/ndrwl/guildhall/internal/digest"
+)
+
+// bucketDirector is a top-level bucket holding the Director's own records: nested "sessions" keyed by
+// zero-padded session number and "wakes" keyed by zero-padded receipt sequence.
+// It is created by the first session or wake, so an existing schema 1 file accepts them unchanged.
+var (
+	bucketDirector = []byte("director")
+	bucketSessions = []byte("sessions")
+	bucketWakes    = []byte("wakes")
+)
+
+// Operations recorded on Director receipts.
+const (
+	opStartDirectorSession = "start-director-session"
+	opSetDirectorState     = "set-director-state"
+	opRecordWake           = "record-wake"
+)
+
+// MaxWakeReasonBytes bounds a wake's reason.
+const MaxWakeReasonBytes = 256
+
+// DirectorState is where a Director session is in its life (docs/store.md#director-sessions).
+// Within one session it moves only forward, recovering, then running or paused, then stopping, then stopped,
+// except that running and paused move to each other.
+type DirectorState string
+
+const (
+	// DirectorRecovering is a started session that has not yet said it is ready; it starts no new work.
+	DirectorRecovering DirectorState = "recovering"
+	// DirectorRunning is a ready session.
+	DirectorRunning DirectorState = "running"
+	// DirectorPaused is a session that starts no new work; its running attempts finish.
+	DirectorPaused DirectorState = "paused"
+	// DirectorStopping is a session asked to stop, which ends once its runtime ends.
+	DirectorStopping DirectorState = "stopping"
+	// DirectorStopped is an ended session. It never changes again.
+	DirectorStopped DirectorState = "stopped"
+)
+
+// directorRank orders states for the forward-only rule; running and paused share a rank.
+var directorRank = map[DirectorState]int{
+	DirectorRecovering: 0, DirectorRunning: 1, DirectorPaused: 1, DirectorStopping: 2, DirectorStopped: 3,
+}
+
+// DirectorPane is the Herdr pane a Director session runs in: one Guildhall created for it (R1.54).
+// The zero value means the session has no bound pane. It is presentation only (R1.52).
+type DirectorPane struct {
+	Session   string `json:"session"`
+	Workspace string `json:"workspace"`
+	Tab       string `json:"tab"`
+	Pane      string `json:"pane"`
+}
+
+// DirectorSession is one run of the Director's runtime under its session supervisor.
+// Sessions are numbered from 1; the newest is the Director's current session and supersedes every earlier one.
+type DirectorSession struct {
+	Number int           `json:"number"`
+	State  DirectorState `json:"state"`
+	// Identity is the session supervisor's process identity.
+	Identity ProcessIdentity `json:"identity"`
+	// Release is the Guildhall release the supervisor runs.
+	Release string `json:"release"`
+	// ConfigDigest is the "sha256:<hex>" digest of the configuration the session was started under.
+	ConfigDigest string       `json:"config_digest"`
+	Pane         DirectorPane `json:"pane,omitzero"`
+	// StartedAt, ReadyAt and EndedAt are set by the store, in UTC: when the session was recorded, when it first
+	// became running and when it was recorded stopped.
+	StartedAt time.Time `json:"started_at"`
+	ReadyAt   time.Time `json:"ready_at,omitzero"`
+	EndedAt   time.Time `json:"ended_at,omitzero"`
+	// StateSequence is the sequence of the receipt that recorded State. SetDirectorState names it, so a move
+	// decided on a stale read is refused rather than applied over a newer one.
+	StateSequence uint64 `json:"state_sequence"`
+}
+
+// WakeDecision is what a wake did.
+type WakeDecision string
+
+const (
+	// WakeWoke means the notice line was typed into the Director's pane.
+	WakeWoke WakeDecision = "woke"
+	// WakeQueued means nothing was typed; the message waits for the Director's next turn.
+	WakeQueued WakeDecision = "queued"
+)
+
+// Wake records one wake decision for one message to the Director (docs/messaging.md#store-records).
+// A message has at most one wake.
+type Wake struct {
+	// Sequence is set by the store to the wake receipt's sequence.
+	Sequence  uint64 `json:"sequence"`
+	MessageID string `json:"message_id"`
+	// SenderType is a lowercase id naming who sent the message, the input a per-sender wake policy reads.
+	SenderType string       `json:"sender_type"`
+	Decision   WakeDecision `json:"decision"`
+	// Reason says why a queued wake typed nothing, such as "no pane" or "stopped"; a woke wake has none.
+	Reason string `json:"reason,omitempty"`
+	// Time is set by the store, in UTC.
+	Time time.Time `json:"time"`
+}
+
+func directorSessionMutationID(n int) string { return "director-session:" + strconv.Itoa(n) }
+func wakeMutationID(messageID string) string { return "wake:" + messageID }
+
+func directorSessionRecord(n int) string { return "director/session/" + strconv.Itoa(n) }
+
+func sessionKey(n int) []byte   { return fmt.Appendf(nil, "%010d", n) }
+func wakeKey(seq uint64) []byte { return fmt.Appendf(nil, "%020d", seq) }
+
+// StartDirectorSession records a new Director session with the mutation id "director-session:<number>".
+// Its number must be one more than the newest session's, or 1 in a store with none; its state must be
+// recovering; its times and state sequence are set by the store. Recording it records every earlier session
+// that has not stopped as stopped, so exactly one session is current. Replaying returns the original receipt.
+func (s *Store) StartDirectorSession(d DirectorSession) (Receipt, error) {
+	if err := validateSession(d); err != nil {
+		return Receipt{}, err
+	}
+	return s.mutate(directorSessionMutationID(d.Number), opStartDirectorSession, d, func(tx *bolt.Tx, r *Receipt) error {
+		r.Record = directorSessionRecord(d.Number)
+		sessions, err := createDirectorBucket(tx, bucketSessions)
+		if err != nil {
+			return err
+		}
+		newest := 0
+		if k, _ := sessions.Cursor().Last(); k != nil {
+			if newest, err = strconv.Atoi(string(k)); err != nil {
+				return fmt.Errorf("%w: director session key %q", ErrNotStore, k)
+			}
+		}
+		if d.Number != newest+1 {
+			return invalid("director session %d must follow session %d", d.Number, newest)
+		}
+		now := s.now().UTC()
+		// Every earlier session is stopped except possibly the newest, so only it can need superseding.
+		if newest > 0 {
+			var prev DirectorSession
+			if err := getJSON(sessions, sessionKey(newest), &prev); err != nil {
+				return err
+			}
+			if prev.State != DirectorStopped {
+				prev.State, prev.EndedAt, prev.StateSequence = DirectorStopped, now, r.Sequence
+				if err := putJSON(sessions, sessionKey(newest), prev); err != nil {
+					return err
+				}
+			}
+		}
+		d.StartedAt, d.StateSequence = now, r.Sequence
+		return putJSON(sessions, sessionKey(d.Number), d)
+	})
+}
+
+// SetDirectorState moves the newest session, number n, to state to, with the mutation id
+// "director-state:<n>:<to>:<from>", where from is the StateSequence the caller read.
+// It is refused with ErrInvalid when n is not the newest session, from is not its StateSequence, the move
+// goes backward or stays put, or the session is stopped; ErrNotFound when there is no session n.
+// Reaching running for the first time sets ReadyAt, and reaching stopped sets EndedAt.
+// Replaying returns the original receipt.
+func (s *Store) SetDirectorState(n int, to DirectorState, from uint64) (Receipt, error) {
+	if _, ok := directorRank[to]; !ok {
+		return Receipt{}, invalid("director state %q is not one of recovering, running, paused, stopping or stopped", to)
+	}
+	if n < 1 {
+		return Receipt{}, invalid("director session number %d must be positive", n)
+	}
+	req := struct {
+		Number int           `json:"number"`
+		To     DirectorState `json:"to"`
+		From   uint64        `json:"from"`
+	}{n, to, from}
+	id := fmt.Sprintf("director-state:%d:%s:%d", n, to, from)
+	return s.mutate(id, opSetDirectorState, req, func(tx *bolt.Tx, r *Receipt) error {
+		r.Record = directorSessionRecord(n)
+		sessions := directorBucket(tx, bucketSessions)
+		var d DirectorSession
+		if err := getJSON(sessions, sessionKey(n), &d); err != nil {
+			return fmt.Errorf("director session %d: %w", n, err)
+		}
+		if k, _ := sessions.Cursor().Last(); string(k) != string(sessionKey(n)) {
+			return invalid("director session %d is superseded by a newer session", n)
+		}
+		switch {
+		case d.StateSequence != from:
+			return invalid("director session %d changed at sequence %d, after the read at %d", n, d.StateSequence, from)
+		case d.State == DirectorStopped, d.State == to, directorRank[to] < directorRank[d.State]:
+			return invalid("director session %d cannot move from %s to %s", n, d.State, to)
+		}
+		now := s.now().UTC()
+		if to == DirectorRunning && d.ReadyAt.IsZero() {
+			d.ReadyAt = now
+		}
+		if to == DirectorStopped {
+			d.EndedAt = now
+		}
+		d.State, d.StateSequence = to, r.Sequence
+		return putJSON(sessions, sessionKey(n), d)
+	})
+}
+
+// DirectorSession returns session n, or ErrNotFound.
+func (s *Store) DirectorSession(n int) (DirectorSession, error) {
+	var d DirectorSession
+	err := s.view(func(tx *bolt.Tx) error { return getJSON(directorBucket(tx, bucketSessions), sessionKey(n), &d) })
+	if err != nil {
+		return DirectorSession{}, fmt.Errorf("store: director session %d: %w", n, err)
+	}
+	return d, nil
+}
+
+// LatestDirectorSession returns the newest session, or ErrNotFound when the store has none.
+func (s *Store) LatestDirectorSession() (DirectorSession, error) {
+	var d DirectorSession
+	err := s.view(func(tx *bolt.Tx) error {
+		var err error
+		d, err = latestSession(tx)
+		return err
+	})
+	if err != nil {
+		return DirectorSession{}, fmt.Errorf("store: latest director session: %w", err)
+	}
+	return d, nil
+}
+
+func latestSession(tx *bolt.Tx) (DirectorSession, error) {
+	var d DirectorSession
+	sessions := directorBucket(tx, bucketSessions)
+	if sessions == nil {
+		return d, ErrNotFound
+	}
+	k, v := sessions.Cursor().Last()
+	if k == nil {
+		return d, ErrNotFound
+	}
+	return d, decode(k, v, &d)
+}
+
+// RecordWake records the wake decision for a message to the Director with the mutation id
+// "wake:<message id>", so a message is woken for at most once. The message must exist and be addressed to the
+// Director; a queued wake needs a non-blank one-line reason of at most MaxWakeReasonBytes and a woke wake has
+// none. Sequence and Time are set by the store. Replaying the same decision returns the original receipt, and a
+// different decision for the same message returns ErrMutationConflict.
+func (s *Store) RecordWake(w Wake) (Receipt, error) {
+	if err := validateWake(w); err != nil {
+		return Receipt{}, err
+	}
+	return s.mutate(wakeMutationID(w.MessageID), opRecordWake, w, func(tx *bolt.Tx, r *Receipt) error {
+		m, err := getMessage(tx, w.MessageID)
+		if err != nil {
+			return err
+		}
+		r.Repository, r.TaskID, r.Record = m.Repository, m.TaskID, "wake/"+m.ID
+		if m.Recipient != RecipientDirector {
+			return invalid("message %q is addressed to %s, not the director", m.ID, describeRecipient(m.To()))
+		}
+		wakes, err := createDirectorBucket(tx, bucketWakes)
+		if err != nil {
+			return err
+		}
+		w.Sequence, w.Time = r.Sequence, s.now().UTC()
+		return putJSON(wakes, wakeKey(w.Sequence), w)
+	})
+}
+
+// WakeFor returns the wake recorded for a message, or ErrNotFound.
+func (s *Store) WakeFor(messageID string) (Wake, error) {
+	if err := ValidateMessageID(messageID); err != nil {
+		return Wake{}, err
+	}
+	var w Wake
+	err := s.view(func(tx *bolt.Tx) error {
+		var r Receipt
+		if err := getJSON(tx.Bucket(bucketReceipts), []byte(wakeMutationID(messageID)), &r); err != nil || r.Operation != opRecordWake {
+			return ErrNotFound
+		}
+		return getJSON(directorBucket(tx, bucketWakes), wakeKey(r.Sequence), &w)
+	})
+	if err != nil {
+		return Wake{}, fmt.Errorf("store: wake for message %q: %w", messageID, err)
+	}
+	return w, nil
+}
+
+// Wakes returns at most limit (1 to MaxInboxLimit) wakes with a sequence greater than after, in sequence
+// order, and whether more remain.
+func (s *Store) Wakes(after uint64, limit int) ([]Wake, bool, error) {
+	if limit < 1 || limit > MaxInboxLimit {
+		return nil, false, invalid("wake limit %d must be between 1 and %d", limit, MaxInboxLimit)
+	}
+	var out []Wake
+	more := false
+	err := s.view(func(tx *bolt.Tx) error {
+		wakes := directorBucket(tx, bucketWakes)
+		if wakes == nil || after == ^uint64(0) {
+			return nil
+		}
+		c := wakes.Cursor()
+		for k, v := c.Seek(wakeKey(after + 1)); k != nil; k, v = c.Next() {
+			if len(out) == limit {
+				more = true
+				return nil
+			}
+			var w Wake
+			if err := decode(k, v, &w); err != nil {
+				return err
+			}
+			out = append(out, w)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("store: wakes: %w", err)
+	}
+	return out, more, nil
+}
+
+// DirectorUnread counts the Director's unacknowledged messages by message type.
+// Its cost grows with the number of unread messages and repositories, not with the store.
+func (s *Store) DirectorUnread() (map[string]int, error) {
+	counts := map[string]int{}
+	err := s.view(func(tx *bolt.Tx) error {
+		prefix := inboxPrefix(Recipient{Role: RecipientDirector})
+		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
+			inbox := repoBucket(tx, string(repo), bucketInbox)
+			if inbox == nil {
+				return nil
+			}
+			c := inbox.Cursor()
+			for k, id := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, id = c.Next() {
+				var m Message
+				if err := getJSON(repoBucket(tx, string(repo), bucketMessages), id, &m); err != nil {
+					return fmt.Errorf("inbox message %q: %w", id, err)
+				}
+				counts[m.Type]++
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: director unread: %w", err)
+	}
+	return counts, nil
+}
+
+func directorBucket(tx *bolt.Tx, name []byte) *bolt.Bucket {
+	if d := tx.Bucket(bucketDirector); d != nil {
+		return d.Bucket(name)
+	}
+	return nil
+}
+
+func createDirectorBucket(tx *bolt.Tx, name []byte) (*bolt.Bucket, error) {
+	d, err := tx.CreateBucketIfNotExists(bucketDirector)
+	if err != nil {
+		return nil, err
+	}
+	return d.CreateBucketIfNotExists(name)
+}
+
+func validateSession(d DirectorSession) error {
+	switch {
+	case d.Number < 1:
+		return invalid("director session number %d must be positive", d.Number)
+	case d.State != DirectorRecovering:
+		return invalid("a new director session is %s, not %q", DirectorRecovering, d.State)
+	case d.Identity.PID < 1:
+		return invalid("director session pid %d must be positive", d.Identity.PID)
+	case !d.StartedAt.IsZero() || !d.ReadyAt.IsZero() || !d.EndedAt.IsZero() || d.StateSequence != 0:
+		return invalid("director session times and state sequence are set by the store")
+	}
+	if err := validateText("director session token", d.Identity.Token, 256); err != nil {
+		return err
+	}
+	if err := validateText("director session release", d.Release, 256); err != nil {
+		return err
+	}
+	if _, err := digest.Parse(d.ConfigDigest); err != nil {
+		return invalid(`director session config digest %q must be "sha256:<64 lowercase hex>"`, d.ConfigDigest)
+	}
+	if d.Pane != (DirectorPane{}) {
+		for name, v := range map[string]string{"session": d.Pane.Session, "workspace": d.Pane.Workspace, "tab": d.Pane.Tab, "pane": d.Pane.Pane} {
+			if err := validateText("director pane "+name, v, 256); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateWake(w Wake) error {
+	if err := ValidateMessageID(w.MessageID); err != nil {
+		return err
+	}
+	if err := validateIDs(w.SenderType); err != nil {
+		return err
+	}
+	switch {
+	case w.Sequence != 0 || !w.Time.IsZero():
+		return invalid("a wake's sequence and time are set by the store")
+	case w.Decision == WakeWoke && w.Reason != "":
+		return invalid("a woke wake has no reason")
+	case w.Decision == WakeQueued:
+		if err := validateText("wake reason", w.Reason, MaxWakeReasonBytes); err != nil {
+			return err
+		}
+		if strings.ContainsAny(w.Reason, "\r\n") {
+			return invalid("wake reason must be one line")
+		}
+	case w.Decision != WakeWoke:
+		return invalid("wake decision %q must be %q or %q", w.Decision, WakeWoke, WakeQueued)
+	}
+	return nil
+}

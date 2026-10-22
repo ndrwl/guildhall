@@ -57,9 +57,16 @@ type statusLabel struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// statusSession is the newest Director session; until the session record exists it is always "no session".
+// statusSession is the newest Director session, or only the state "no session" when there is none.
 type statusSession struct {
-	State string `json:"state"`
+	State     string                 `json:"state"`
+	Number    int                    `json:"number,omitempty"`
+	Identity  *store.ProcessIdentity `json:"identity,omitempty"`
+	Release   string                 `json:"release,omitempty"`
+	Pane      store.DirectorPane     `json:"pane,omitzero"`
+	StartedAt time.Time              `json:"started_at,omitzero"`
+	ReadyAt   time.Time              `json:"ready_at,omitzero"`
+	EndedAt   time.Time              `json:"ended_at,omitzero"`
 }
 
 // statusMode is the copy's mode; standalone until managed mode exists.
@@ -191,6 +198,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string) (directorSta
 		NeedsMe:   []needsMeItem{},
 	}
 
+	if d := v.Session; d != nil {
+		out.Session = statusSession{State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
+			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt}
+	}
 	for _, r := range v.Receipts[max(0, len(v.Receipts)-statusLimit):] {
 		out.Recent = append(out.Recent, recentReceipt{MutationID: r.MutationID, Operation: r.Operation, Repository: r.Repository, TaskID: r.TaskID,
 			Attempt: r.Attempt, Record: r.Record, Sequence: r.Sequence, CommittedAt: r.CommittedAt})

@@ -111,6 +111,12 @@ func statusCopy(t *testing.T) string {
 		func() (store.Receipt, error) {
 			return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "lib", TaskID: "t-1", Type: "question", Text: "Which parser?"})
 		},
+		func() (store.Receipt, error) {
+			return s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 4242, Token: "boot:4242"},
+				Release: "v0.4.0", ConfigDigest: "sha256:" + strings.Repeat("c", 64),
+				Pane: store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"}})
+		},
+		func() (store.Receipt, error) { return s.SetDirectorState(1, store.DirectorRunning, 24) },
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
