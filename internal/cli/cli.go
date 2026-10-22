@@ -77,9 +77,11 @@ var doctorTools = []struct {
 // App holds the process boundaries the commands use, so tests can replace them.
 type App struct {
 	InstallSkills func(string) error
-	Stdin         io.Reader
-	Stdout        io.Writer
-	Stderr        io.Writer
+	// InstallBaseline writes the release baseline, the role prompts and stage guides, into an empty directory.
+	InstallBaseline func(string) error
+	Stdin           io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
 	// LookPath resolves a tool name on PATH.
 	LookPath func(file string) (string, error)
 	// Output runs a command and returns its combined stdout and stderr.

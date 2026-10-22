@@ -19,7 +19,8 @@ The `artisan` verbs follow the [role grammar](../decisions/0053-cli-role-grammar
 It invokes `App.InstallSkills` to install a temporary first root named `release` before optional managed and Director roots.
 Before installing or rendering, it validates the step settings through `workflow.ValidateStepSettings`, rejecting malformed values, invalid or duplicate names, disallowed actors and unknown setting keys with exit code 2.
 It returns the prompt manifest as JSON, retains the rendered attempt, removes the temporary root, and refuses to replace an existing attempt.
-`cmd/guildhall` supplies the embedded release installer; an unconfigured installer is an error.
+A request without a baseline role or guide path takes it from `App.InstallBaseline`'s temporary release baseline.
+`cmd/guildhall` supplies the embedded release skills and baseline installers; an unconfigured installer is an error, in `render` and in every advance.
 
 ## Tests
 

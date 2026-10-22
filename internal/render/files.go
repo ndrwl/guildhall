@@ -59,7 +59,7 @@ func readSource(what string, src Source) (File, string, error) {
 		return File{}, "", fmt.Errorf("render: %s %s: %w", what, name, err)
 	}
 	text := normalise(string(data))
-	return File{Path: name, Digest: string(digest.Of([]byte(text)))}, text, nil
+	return File{Path: name, Digest: string(digest.Of([]byte(text))), Root: src.Root}, text, nil
 }
 
 func checkInput(in Input) (InputFile, []byte, error) {

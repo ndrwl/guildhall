@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -69,6 +70,7 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Executable = os.Executable
 	app.InstallSkills = func(string) error { return nil }
+	app.InstallBaseline = baseline.Install
 	app.Forge = d.forge
 	code := app.Run(args)
 	return code, stdout.String(), stderr.String()

@@ -10,5 +10,6 @@ It accepts files in any order without modifying the input slice.
 ## Tests
 
 `render_test.go`: golden prompts and manifests per Artisan kind and golden questions per Guildmaster kind (`testdata/golden`), CRLF and CR sources against real temporary files, refusals.
+`TestManifestRecordsBaselineRoots` sees each role, guide and standard keep the root its source names.
 `TestTreeDigestIgnoresInputOrder` pins the fixture skill's recorded digest, input-order independence and preservation of the input order.
 The independent oracle remains in `skills/skills_test.go`; interpreter preparation refusal cases remain in `internal/interp/prepare_test.go`.

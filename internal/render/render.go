@@ -82,6 +82,8 @@ type Source struct {
 	Name string
 	// Path is the local file to read.
 	Path string
+	// Root names the baseline root the file was resolved from, such as "copy" or "release", and is recorded in the manifest.
+	Root string
 }
 
 // Baseline is the pinned prose a prompt is built from.
@@ -139,6 +141,8 @@ type Identity struct {
 type File struct {
 	Path   string `json:"path"`
 	Digest string `json:"digest"`
+	// Root is the baseline root a role, guide or standard came from (Source.Root); empty for every other file.
+	Root string `json:"root,omitempty"`
 }
 
 // InputFile is an input document and the port it was wired to.

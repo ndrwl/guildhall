@@ -471,3 +471,16 @@ func TestQuestionRefusesArtisanStage(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestManifestRecordsBaselineRoots(t *testing.T) {
+	b := baseline("build", "standards/review.md")
+	b.Role.Root, b.Guide.Root, b.Standards[0].Root = "copy", "release", "copy"
+	r, err := Prompt(Stage{Repository: "app", Task: "t-1", Attempt: 1, Dir: t.TempDir(), Step: step(t, "build", "build", "")}, nil, b, roots())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := r.Manifest
+	if m.Role.Root != "copy" || m.Guide.Root != "release" || m.Standards[0].Root != "copy" || m.Prompt.Root != "" {
+		t.Errorf("roots: role %q, guide %q, standard %q, prompt %q", m.Role.Root, m.Guide.Root, m.Standards[0].Root, m.Prompt.Root)
+	}
+}
