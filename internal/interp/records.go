@@ -7,8 +7,9 @@ import (
 )
 
 // Records is the part of the Director store the engine reads and writes, declared here by the consumer
-// (D9: the store has no general interface). *store.Store implements it, and interptest.Records is its
-// in-memory double; both pass interptest.RunRecordsContract.
+// (D9: the store has no general interface). In production cli.storeRecords implements it, opening the store
+// for each operation; *store.Store implements it in process, and interptest.Records is its in-memory double.
+// All three pass interptest.RunRecordsContract.
 //
 // Reads return a task's records in key order: attempts by step then number, documents by name and
 // decisions by id, rulings by document then finding. Task returns store.ErrNotFound for an unknown task; list reads return empty slices.

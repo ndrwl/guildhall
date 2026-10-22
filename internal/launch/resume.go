@@ -216,5 +216,5 @@ const ResumeCommand = "guildhall"
 // state paths are as given to the launcher, which uses absolute ones.
 func ResumeArgv(a Attempt) []string {
 	return []string{ResumeCommand, "artisan", "resume", "--store", a.Store, "--state", a.StateDir,
-		"--repository", a.Key.Repository, "--task", a.Key.TaskID, "--step", a.Key.Step, "--attempt", strconv.Itoa(a.Key.Attempt)}
+		"--repo", a.Key.Repository, "--task", a.Key.TaskID, "--step", a.Key.Step, "--attempt", strconv.Itoa(a.Key.Attempt)}
 }

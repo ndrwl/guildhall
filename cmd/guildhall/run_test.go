@@ -77,7 +77,7 @@ func TestTaskRunsEndToEnd(t *testing.T) {
 		for _, a := range attempts {
 			step, n, _ := strings.Cut(a, "/")
 			for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
-				out, stderr, err := try("", "artisan", "stop", "--store", storePath, "--state", state, "--repository", "app", "--task", "t-1", "--step", step, "--attempt", n)
+				out, stderr, err := try("", "artisan", "stop", "--store", storePath, "--state", state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", n)
 				if err == nil {
 					break
 				}

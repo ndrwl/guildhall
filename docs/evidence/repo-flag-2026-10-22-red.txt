@@ -1,0 +1,31 @@
+--- FAIL: TestArtisanOwnedCommandUsage (0.07s)
+    artisan_owned_test.go:206: status of a missing store: exit 2, stderr "guildhall: artisan status: flag provided but not defined: -repo\n\nUsage: guildhall <command> ...
+--- FAIL: TestArtisanStopWithoutAnOwner (0.07s)
+    artisan_owned_test.go:218: exit 2: "" (unexpected end of JSON input); stderr "guildhall: artisan stop: flag provided but not defined: -repo\n\nUsage: guildhall <command> ...
+--- FAIL: TestRepositoryFlagSpelling (0.07s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x70c2fc]
+
+goroutine 3 [running]:
+testing.tRunner.func1.2({0xa96288, 0xaf20b0})
+	$GOROOT/src/testing/testing.go:2125 +0x232
+testing.tRunner.func1()
+	$GOROOT/src/testing/testing.go:2128 +0x329
+panic({0xa96288?, 0xaf20b0?})
+	$GOROOT/src/runtime/panic.go:859 +0x125
+github.com/ndrwl/guildhall/internal/cli.(*App).runOwned(0x1be950cd3e58, {{0x1be950f921c0, 0x64}, {0x1be950be44f8, 0x11}, {{0x78e19f, 0x3}, {0x78e1a2, 0x3}, {0x78e713, ...}, ...}}, ...)
+	internal/cli/artisan.go:294 +0x4bc
+github.com/ndrwl/guildhall/internal/cli.(*App).artisanStart(0x1be950cd3e58, {0x1be951026020, 0x12, 0x1a})
+	internal/cli/artisan.go:224 +0xa37
+github.com/ndrwl/guildhall/internal/cli.(*App).artisan(0x1c0?, {0x1be951026010?, 0x1be951026000?, 0x1be950cd3c98?})
+	internal/cli/artisan.go:82 +0x111
+github.com/ndrwl/guildhall/internal/cli.(*App).Run(0x1be950cd3e58, {0x1be951026000?, 0x1?, 0x46e8ae?})
+	internal/cli/cli.go:148 +0x385
+github.com/ndrwl/guildhall/internal/cli.TestRepositoryFlagSpelling(0x1be950fa2488)
+	internal/cli/cli_test.go:261 +0x7ca
+testing.tRunner(0x1be950fa2488, 0xad6790)
+	$GOROOT/src/testing/testing.go:2195 +0xea
+created by testing.(*T).Run in goroutine 1
+	$GOROOT/src/testing/testing.go:2260 +0x4d4
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.311s
+FAIL

@@ -99,7 +99,7 @@ func (d runDirector) stopAll(t *testing.T) {
 	for _, a := range attempts {
 		// A launcher that has just recorded its outcome may still be exiting: stop proves it only once gone.
 		for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
-			code, out, stderr := d.run(t, "artisan", "stop", "--store", d.store, "--state", d.state, "--repository", "app", "--task", "t-1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number))
+			code, out, stderr := d.run(t, "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number))
 			if code == 0 {
 				break
 			}

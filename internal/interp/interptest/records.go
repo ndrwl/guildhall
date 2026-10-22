@@ -16,7 +16,7 @@ import (
 )
 
 // Records is the in-memory interp.Records double. It keeps the store's replay, conflict, numbering and
-// once-only rules and its sentinel errors, and passes RunRecordsContract with the real store.
+// once-only rules and its sentinel errors, and passes RunRecordsContract with cli.storeRecords and *store.Store.
 // It does not repeat the store's field validation beyond a decision's subject.
 type Records struct {
 	mu        sync.Mutex
