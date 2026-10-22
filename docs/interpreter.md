@@ -100,6 +100,7 @@ The engine runs it as an attempt, so everything after the attempt's result is th
 
 A crash between recording the attempt and the mark replays the hand-off from the published preparation: nothing is rendered again, and the message, sent again under the same id, is a replay that neither stores nor wakes twice.
 An advance that finds the stage marked and without a result waits again, sending nothing; there is no heartbeat, so no `worker-stalled` observation.
+An advance that finds the stage's result published but not taken, as a `step finish` that stopped after writing it leaves, takes it as `attempt-result` would, whatever its event: no launcher announces a Director stage's result, so `task start` recovers it.
 `interp.HandedToDirector(dir)` reports whether an attempt directory's `launched.json` names the director launcher.
 
 The Director ends the stage with [`step finish`](running.md#step-finish), which writes the attempt's `result.json` with `adapter.WriteResult` and feeds `attempt-result`, so the intake, the output documents (`<step>-<n>-<port>`), the outcome and replay are an Artisan's.

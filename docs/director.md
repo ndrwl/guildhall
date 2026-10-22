@@ -279,6 +279,7 @@ The document has these sections:
 - `needs_me`: what is waiting on the Director or the Guildmaster, each item with its `kind`, the task and attempt or decision it concerns, a `reason`, and the `command` the Director would run next, written without `--copy` because a Director session sets `GUILDHALL_COPY`.
   Items come in this order, and within a kind by repository, task, then step or message order:
   1. `advance`: an open task's step whose latest attempt is finished while the task's `next.json` still says `"wait":"attempt"` for that attempt, as a [watcher](running.md#the-watcher) whose advance failed leaves it; `guildhall step done --repo <r> --task <t> --step <s> --attempt <n> --result <file>` for a `succeeded` attempt whose result file exists, otherwise `guildhall task start --repo <r> <t>`.
+     A [Director stage](interpreter.md#director-stages) whose attempt is unfinished but has a published result, as a `step finish` that stopped before its advance leaves it, is also an `advance` item, with that `step done` command, whether or not its stage message was read.
   2. `retry`, `retryable: true`: an open task's step whose latest attempt finished `failed` or `stopped`; `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`, to which the Director adds `--reason`.
   3. `resume`, `resume: true`: a running attempt of an open task classified `stuck`, `exited` or `unknown`; `guildhall artisan resume --repo <r> --task <t> --step <s> --attempt <n>`.
   4. `stalled`: an unread `worker-stalled` message; `guildhall messages read <id>`.

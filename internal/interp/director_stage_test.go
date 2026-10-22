@@ -254,3 +254,37 @@ func TestDirectorStageAfterAnArtisanStage(t *testing.T) {
 		})
 	}
 }
+
+// TestAnyAdvanceTakesAPublishedDirectorStageResult: a Director stage has no launcher to announce its result, so an
+// advance that stopped after `step finish` published the result is recovered by any later advance, as by task
+// start: a succeeded result moves the task on and a failed one waits for the Director, each recorded once.
+func TestAnyAdvanceTakesAPublishedDirectorStageResult(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e := newEnvDefinition(t, b, loadWorkflow(t, "director-grill"), researchExpectation([]byte("notes\n")))
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			finishStage(t, e, "grill", 1, adapter.StatusFailed)
+			failed := interp.Next{Wait: interp.WaitDirector, Step: "grill", Attempt: 1}
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), failed)
+			if got := e.attempts(t); got[0].Outcome != store.AttemptFailed {
+				t.Errorf("grill 1 outcome = %q, want failed", got[0].Outcome)
+			}
+			if _, ok := e.messages(t)["app.t7.attempt-failed.grill-1"]; !ok {
+				t.Errorf("messages = %v, want attempt-failed for grill 1", e.messages(t))
+			}
+
+			want(t, e.advance(t, retried("grill", 1, "again")), interp.Next{Wait: interp.WaitDirectorStage, Step: "grill", Attempt: 2})
+			finishStage(t, e, "grill", 2, adapter.StatusSucceeded, interptest.File{Path: "notes.md", Data: grillNotes})
+			research := interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1}
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), research)
+			docs := e.documents(t)
+			if d := docs["grill-2-notes"]; d.SHA256 != sum(grillNotes) {
+				t.Errorf("grill-2-notes = %+v, want the Director's notes", d)
+			}
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "grill", Attempt: 2}), research)
+			if got := len(e.documents(t)); got != len(docs) || len(e.script.Launched()) != 1 {
+				t.Errorf("replay: %d documents, want %d; %d launches, want 1", got, len(docs), len(e.script.Launched()))
+			}
+		})
+	}
+}

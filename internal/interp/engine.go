@@ -415,7 +415,15 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 	case a.Outcome == "":
 		next := Next{Wait: waitFor(s), Step: s.ID, Attempt: a.Number}
 		if exists(r.resultFile(s.ID, a.Number)) {
-			return false, next, nil
+			if s.Actor() != workflow.DirectorActor {
+				return false, next, nil
+			}
+			// No launcher announces a Director stage's result, so an advance that stopped after step finish
+			// published it is recovered by taking it here.
+			if err := r.takeResult(s, a); err != nil {
+				return false, Next{}, err
+			}
+			return r.attempted(s)
 		}
 		if exists(filepath.Join(r.attemptDir(s.ID, a.Number), launchedFile)) {
 			if s.Actor() == workflow.DirectorActor {

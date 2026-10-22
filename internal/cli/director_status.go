@@ -328,6 +328,17 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 					item.Kind, item.Resume, item.Reason, item.Command = "resume", true, string(c.State)+": "+c.Reason, "guildhall artisan resume "+flags
 					resume = append(resume, item)
 				}
+				// No launcher announces a Director stage's result, so one published by a step finish that stopped
+				// before its advance waits here until it is taken.
+				result := filepath.Join(key.Dir(stateDir), artisan.ResultFile)
+				if handed, _ := interp.HandedToDirector(key.Dir(stateDir)); open && handed {
+					if _, err := os.Stat(result); err == nil {
+						it := item
+						it.Kind, it.Reason = "advance", fmt.Sprintf("attempt %d of Director stage %s has a published result that was not taken", at.Number, at.Step)
+						it.Command = "guildhall step done " + flags + " --result " + result
+						advance = append(advance, it)
+					}
+				}
 			case store.AttemptFailed, store.AttemptStopped:
 				if open {
 					it := item

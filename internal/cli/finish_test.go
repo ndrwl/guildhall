@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -191,5 +192,58 @@ func TestStepFinishUsage(t *testing.T) {
 	}
 	if _, out, _ := d.run(t, "help"); !strings.Contains(out, "step finish") {
 		t.Errorf("help does not list step finish:\n%s", out)
+	}
+}
+
+// TestPublishedStageResultRecovers: a step finish that stopped after publishing the grill's result, before its
+// advance, leaves a result no launcher announces. Whether the stage message is still unread or was acknowledged,
+// director status lists the exact step done that takes it, and that or task start moves the task on to the plan.
+func TestPublishedStageResultRecovers(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		ack     bool
+		recover func(d runDirector, flags, result string) []string
+	}{
+		{"unread, step done", false, func(d runDirector, flags, result string) []string {
+			return append(append([]string{"step", "done"}, d.flags(strings.Fields(flags)...)...), "--result", result)
+		}},
+		{"acknowledged, task start", true, func(d runDirector, _, _ string) []string {
+			return append([]string{"task", "start"}, d.flags("t-1")...)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newRunDirectorWith(t, "grill.toml")
+			if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+				t.Fatalf("task start: exit %d, stderr %s", code, stderr)
+			}
+			file, _ := grillNotesFile(t)
+			f := advanceFlags{store: d.store, config: d.config, state: d.state, repo: "app"}
+			k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "grill", Attempt: 1}
+			if err := finishStage(f, k, "Agreed.", stageOutputs{{"notes", file}}, false); err != nil {
+				t.Fatal(err)
+			}
+			if tc.ack {
+				if code, _, stderr := d.run(t, "messages", "ack", "--store", d.store, "director", "app.t-1.stage.grill-1"); code != 0 {
+					t.Fatalf("messages ack: exit %d, stderr %s", code, stderr)
+				}
+			}
+			st, err := readDirectorStatus(context.Background(), d.store, d.state, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := d.result("grill", 1)
+			flags := "--repo app --task t-1 --step grill --attempt 1"
+			i := slices.IndexFunc(st.NeedsMe, func(it needsMeItem) bool { return it.Kind == "advance" && it.Step == "grill" })
+			if i < 0 || st.NeedsMe[i].Command != "guildhall step done "+flags+" --result "+result {
+				t.Fatalf("needs_me = %+v, want an advance taking grill 1's result with step done", st.NeedsMe)
+			}
+			if code, out, stderr := d.run(t, tc.recover(d, flags, result)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+				t.Fatalf("recovery: exit %d, %q, stderr %s; want the plan's attempt", code, out, stderr)
+			}
+			if got := d.attempts(t); len(got) != 2 || got[0].Outcome != store.AttemptSucceeded {
+				t.Errorf("attempts = %+v, want grill 1 succeeded and the plan's attempt", got)
+			}
+			d.waitResult(t, "plan", 1)
+		})
 	}
 }
