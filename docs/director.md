@@ -151,7 +151,7 @@ The interval has a 30-second minimum, including when `checks_refresh` is `"0s"`.
 The advance reads the checks under the [validate step's pacing](interpreter.md#validate): checks still pending send nothing new, since a head's `checks-pending` message is sent once, and checks that finish send `checks-passed` or `checks-failed` and take the task on, which [wakes](messaging.md#waking-the-director) the Director as any send does.
 A repository with [`no_ci`](configuration.md#repositories) passes at its first read, so only a repository with CI waits here.
 While the session is `paused` or `stopping` the watcher advances nothing.
-One round runs at a time; a failed advance, such as an unreachable forge, is appended with its output to `checks.log` in the session's directory and tried again a refresh later, and the supervisor lets a running round end before it records the session stopped.
+One round runs at a time; a failed advance, such as an unreachable forge, is appended with its standard-error output to `checks.log` in the session's directory and tried again a refresh later, and the supervisor lets a running round end before it records the session stopped.
 With no supervisor running, the task waits until someone runs the `task start` its `checks` item in [`needs_me`](#status) names.
 
 ## Stop
