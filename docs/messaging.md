@@ -151,7 +151,7 @@ Otherwise nothing is typed and the wake is recorded `queued` with its reason, an
 
 A message is woken for at most once: the wake records the mutation `wake:<id>`, and a retried send finds the recorded wake and types nothing new.
 The line is typed before the decision is recorded, so a send retried after a crash between the two may type it again.
-A failed wake never fails the send; `messages send` prints the receipt as usual and reports the wake's failure on standard error.
+A failed wake never fails the send; the command reports the wake's failure on standard error, and `messages send` still prints the receipt as usual.
 The pane is reached through the Herdr session it was recorded in, with `herdr` found on `PATH`.
 
 Every wake records its sender type: `guildhall` for the engine and `local` for `messages send`, which cannot tell the Guildmaster from an Artisan.

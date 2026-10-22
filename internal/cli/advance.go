@@ -271,7 +271,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Records:  storeRecords(f.store),
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
-		Outbox:   wakingOutbox{storeRecords(f.store), a.directorPane()},
+		Outbox:   wakingOutbox{storeRecords(f.store), a.directorPane(), a.Stderr},
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,

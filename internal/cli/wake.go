@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
@@ -48,11 +49,12 @@ func (h herdrPanes) TypeLine(ctx context.Context, p store.DirectorPane, line str
 
 // wakingOutbox is the engine's outbox: it sends through records and then wakes the Director for a message
 // addressed to it (docs/messaging.md#waking-the-director). A failed wake does not fail the send: the message
-// is stored and waits for the Director's next turn, and a replayed send, as the engine's recovery makes,
-// tries the wake again.
+// is stored and waits for the Director's next turn, the failure is reported on stderr, and a replayed send,
+// as the engine's recovery makes, tries the wake again.
 type wakingOutbox struct {
 	records storeRecords
 	pane    messaging.DirectorPane
+	stderr  io.Writer
 }
 
 func (o wakingOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
@@ -60,7 +62,9 @@ func (o wakingOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Rece
 	if err == nil && to.Role == store.RecipientDirector {
 		ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
 		defer cancel()
-		_, _ = messaging.Wake(ctx, o.records, o.pane, e.ID, messaging.SenderGuildhall)
+		if _, werr := messaging.Wake(ctx, o.records, o.pane, e.ID, messaging.SenderGuildhall); werr != nil {
+			_, _ = fmt.Fprintf(o.stderr, "guildhall: wake: %v\n", werr)
+		}
 	}
 	return r, err
 }
