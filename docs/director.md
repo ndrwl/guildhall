@@ -181,7 +181,7 @@ The session's supervisor then ends the runtime and records the session `stopped`
 A stopping session is stopped again without changing it, and `stop --now` after a plain stop ends the runtime at once.
 Each attempt that cannot be proven stopped is reported on standard error and makes the exit 1; the session stays `sweeping`, holding new attempts, and running `stop` again, even over a session since recorded `stopped`, finishes the sweep.
 
-A session whose supervisor's identity is gone cannot end its runtime, so `stop` records it `stopping`, ends every process still in the session's [recorded runtime unit](#the-runtimes-record), killing them from outside as a resumed Artisan attempt's unit is swept, stops its attempts and then records it `stopped` with the end reason `superseded`.
+When a session's supervisor is gone, `stop` takes over cleanup: it records the session `stopping`, ends every process still in the session's [recorded runtime unit](#the-runtimes-record), killing them from outside as a resumed Artisan attempt's unit is swept, stops its attempts and then records it `stopped` with the end reason `superseded`.
 Survivors of the unit that are not proven ended within 10 seconds, or a unit that cannot be read, are reported on standard error and make the exit 1, with the session left `stopping` and `sweeping` and not recorded `stopped`; the diagnostic tells the user to run `guildhall director stop` again to finish the sweep.
 A session from a release without runtime records has no unit to sweep.
 In current releases, a crash before the record cannot leave an executing runtime.

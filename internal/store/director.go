@@ -91,7 +91,8 @@ type DirectorSession struct {
 	// StopNow is set by RequestDirectorStop for `director stop --now`: the supervisor ends the runtime at once.
 	StopNow bool `json:"stop_now,omitempty"`
 	// Sweeping is set by RequestDirectorStop and cleared by FinishDirectorStop once director stop has swept the
-	// session's attempts; while it is set the session holds new attempts (Holds), stopped or not.
+	// session's runtime and attempts as required by docs/director.md#stop; while it is set the session holds new
+	// attempts (Holds), stopped or not.
 	Sweeping bool `json:"sweeping,omitempty"`
 	// Runtime is the containment unit the session's runtime runs in, with the runtime as its worker, once
 	// RecordDirectorRuntime has recorded it; it is empty until then.
@@ -269,7 +270,8 @@ func (s *Store) EndDirectorSession(n int, reason string, from uint64) (Receipt, 
 	})
 }
 
-// FinishDirectorStop clears Sweeping on the newest session, number n, once director stop has swept its attempts,
+// FinishDirectorStop clears Sweeping on the newest session, number n, once director stop has completed the sweeps
+// required by docs/director.md#stop,
 // with the mutation id "director-swept:<n>:<from>", stopped or not. It is refused with ErrInvalid when Sweeping is
 // not set, and a stale from and a superseded session as SetDirectorState refuses them. Replaying returns the
 // original receipt.

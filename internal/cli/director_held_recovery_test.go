@@ -47,6 +47,7 @@ func TestHeldRecoveryWritesWait(t *testing.T) {
 				if err != nil || string(data) != want {
 					t.Fatalf("persisted recovery wait = %q, %v", data, err)
 				}
+				t.Logf("held %s: %s; persisted next.json: %s", name, want, data)
 				n := 1
 				if retry {
 					n = 2
