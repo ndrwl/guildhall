@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -488,7 +489,8 @@ func TestSafetyGuardRails(t *testing.T) {
 // TestSafetyCrashRecovery: task t-1's plan attempt is running when the Director's runtime is killed and then its
 // launcher; with a Guildmaster note unread, director start again renders a startup.md listing the attempt to
 // resume and the note, refuses task new until the scripted Director runs ready, and the Director resumes and
-// retries the attempt, which the launcher's watcher takes on to the next decision.
+// retries the attempt; the watcher then takes the task through the workflow, the Director answering each decision,
+// to the deliver step's merge decision. director status lists the killed launcher's attempt with resume: true.
 func TestSafetyCrashRecovery(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "", "guildhall-fake: result=never\nguildhall-fake: lifetime=5m\n")
@@ -528,6 +530,22 @@ func TestSafetyCrashRecovery(t *testing.T) {
 		})
 		c.guildhall(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Check on t-1."}`,
 			"messages", "send", "director", "-")
+		type needsMe struct {
+			Repository string `json:"repository"`
+			TaskID     string `json:"task_id"`
+			Step       string `json:"step"`
+			Attempt    int    `json:"attempt"`
+			Resume     bool   `json:"resume"`
+		}
+		var status struct {
+			NeedsMe []needsMe `json:"needs_me"`
+		}
+		if err := json.Unmarshal([]byte(c.guildhall("", "director", "status", "--json")), &status); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(status.NeedsMe, needsMe{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1, Resume: true}) {
+			t.Errorf("director status needs_me %+v, want app t-1 plan attempt 1 with resume: true", status.NeedsMe)
+		}
 
 		c.setPlan("")
 		c.script(
@@ -553,17 +571,33 @@ func TestSafetyCrashRecovery(t *testing.T) {
 		if c.hasTask("t-early") || !c.hasTask("t-late") {
 			t.Errorf("task new before ready recorded %v, after ready %v; want refused, then admitted", c.hasTask("t-early"), c.hasTask("t-late"))
 		}
-		c.waitFor("decision accept-1 opened by the watcher", func() bool {
-			return c.hasDecision("accept-1")
-		})
+		// The watcher takes t-1 on through the fake-straight workflow, the Director answering each decision, to the
+		// deliver step's merge decision, its final wait.
+		answer := filepath.Join(c.dir, "answer.md")
+		if err := os.WriteFile(answer, []byte("approved\nLooks right.\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range []struct{ decision, next string }{
+			{"accept-1", `{"wait":"attempt","step":"build","attempt":1}`},
+			{"sign-off-1", `{"wait":"decision","step":"deliver","decision":"deliver-1"}`},
+		} {
+			c.waitFor("decision "+d.decision+" opened by the watcher", func() bool {
+				return c.hasDecision(d.decision)
+			})
+			c.guildhall("", "decide", "answer", "--repo", "app", "--task", "t-1", "--decision", d.decision, "--answer-file", answer)
+			if got := strings.TrimSpace(c.guildhall("", "task", "start", "--repo", "app", "--decision", d.decision, "t-1")); got != d.next {
+				t.Fatalf("task start --decision %s: got %s, want %s", d.decision, got, d.next)
+			}
+		}
 		var got []string
 		for _, a := range c.attempts("t-1") {
 			got = append(got, fmt.Sprintf("%s-%d %s", a.Step, a.Number, a.Outcome))
 		}
-		if want := []string{"plan-1 failed", "plan-2 succeeded"}; !slices.Equal(got, want) {
+		if want := []string{"build-1 succeeded", "plan-1 failed", "plan-2 succeeded"}; !slices.Equal(got, want) {
 			t.Errorf("t-1 attempts %q, want %q", got, want)
 		}
 		c.stopAttempt("t-1", "plan", 2)
+		c.stopAttempt("t-1", "build", 1)
 		c.finish(2)
 	})
 }

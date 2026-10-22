@@ -136,7 +136,9 @@ Each check counts the stand-in's turns, one for its first message and one for ea
 - Approval: the Director's `task new` on a workflow below the review floor is refused; it approves the workflow with words, and the same `task new` succeeds.
 - Guard rails: with `max_running_attempts = "1"`, a `task new` for an unlisted repository is refused, a second task's start is refused while the first runs, the Director is told once with `budget-refused`, and the start is admitted once the first attempt is stopped.
 - Crash recovery: with a task's attempt running, the Director's runtime is killed, then the attempt's launcher, and the Guildmaster sends a note.
-  `director start` again renders a `startup.md` that names the attempt to resume and the unread message, `task new` is refused until the Director runs `director ready`, and the Director resumes and retries the attempt, which the launcher's watcher takes on to the next decision.
+  `director status --json` lists the attempt in `needs_me` with `resume: true`.
+  `director start` again renders a `startup.md` that names the attempt to resume and the unread message, `task new` is refused until the Director runs `director ready`, and the Director resumes and retries the attempt.
+  The watcher then takes the task through the rest of the fake-straight workflow, the Director answering each decision with `decide answer` and `task start --decision`, to the build attempt, the sign-off and the deliver step's merge decision, the workflow's final wait.
 - Zero idle turns: with one open decision and nothing else, a ready Director takes no turn and is sent no wake over a 30 s hold.
   A Guildmaster note then records exactly one wake.
   A foreground session binds no pane, so that wake is queued and types nothing; the check that the wake types one line, which the runtime takes as one turn, comes with the Director's Herdr tab.
