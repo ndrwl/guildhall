@@ -49,14 +49,14 @@ A decision is a question Guildhall opened for the Guildmaster, such as approving
 Read it with `guildhall decide show --repo app --task t-12 --decision accept-1`, put its question and options to the Guildmaster in plain English, and wait for their reply.
 Then record their reply:
 
-1. Map their reply onto exactly one of the decision's options, such as `approve` for "yes, go ahead"; when it fits none or more than one, ask again rather than guess.
+1. Map their reply onto exactly one of the decision's options, such as `approved` for "yes, go ahead"; when it fits none or more than one, ask again rather than guess.
 2. Keep their own words as the note: the answer's first line is the option and everything after a blank line is what they said.
 3. Record it with `guildhall decide answer`, reading the answer from standard input.
 4. Continue the task with `guildhall task start --decision`, because answering never advances a task by itself.
 
 ```sh
 guildhall decide answer --repo app --task t-12 --decision accept-1 --answer-file - <<'ANSWER'
-approve
+approved
 
 Looks right, but keep the export behind a flag for now.
 ANSWER
