@@ -187,6 +187,10 @@ type Config struct {
 	Ladder            artisan.Ladder
 	ResultGrace       time.Duration
 	HeartbeatInterval time.Duration
+	// Advance, when set, is the guildhall program followed by the options every advance of the attempt's task
+	// takes, such as `guildhall --copy <dir>`: once the store outcome is recorded, Run advances the task with it
+	// (the package comment's step 6). Nil advances nothing.
+	Advance []string
 }
 
 // Report is how an owned attempt ended.

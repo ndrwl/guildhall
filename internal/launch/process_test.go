@@ -142,6 +142,34 @@ func TestProcessStartsArtisanStartOnTheAdapterSpec(t *testing.T) {
 	}
 }
 
+// TestProcessAsksAnEngineCopysLauncherToAdvance: a Process whose engine runs from a copy gives artisan start
+// the copy and --advance, so the launcher advances the task once it records the attempt.
+func TestProcessAsksAnEngineCopysLauncherToAdvance(t *testing.T) {
+	p := newProcess(t)
+	p.Copy = filepath.Join(t.TempDir(), "copy")
+	argv := filepath.Join(t.TempDir(), "argv.json")
+	p.Env = []string{argvEnv + "=" + argv}
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	if _, err := p.Launch(context.Background(), spec); err == nil {
+		t.Fatal("Launch of a refusing launcher succeeded")
+	}
+	b, err := os.ReadFile(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	as := spec.AdapterSpec()
+	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
+		"--repo", "app", "--task", "t7", "--step", "build", "--attempt", "1",
+		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir, "--copy", p.Copy, "--advance"}
+	if !slices.Equal(got, want) {
+		t.Errorf("argv = %q\nwant %q", got, want)
+	}
+}
+
 func TestProcessRefusesASpecOutsideItsAttemptLayout(t *testing.T) {
 	p := newProcess(t)
 	good := prepared(t, p, fixtureSpec(t, ""))

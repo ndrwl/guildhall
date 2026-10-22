@@ -23,6 +23,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -243,6 +244,81 @@ func TestTaskStartAndStepDone(t *testing.T) {
 	// The answer alone advances nothing; start with the decision does.
 	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...); code != 1 || !strings.Contains(stderr, "not answered") {
 		t.Errorf("start on an unanswered decision: exit %d, stderr %s", code, stderr)
+	}
+}
+
+// newRunCopy is newRunDirector over a Director copy holding testdata/run's config, baseline and workflows, its
+// director.store and a short state directory, returned with the copy.
+func newRunCopy(t *testing.T) (runDirector, string) {
+	t.Helper()
+	t.Setenv(roleEnv, "guildhall")
+	dir, err := os.MkdirTemp("", "gc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	d := runDirector{store: filepath.Join(dir, "director.store"), config: filepath.Join(dir, "config.toml"), state: filepath.Join(dir, "state")}
+	s, err := store.Open(d.store, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		d.stopAll(t)
+		_ = os.RemoveAll(dir)
+	})
+	approveRepo(t, d.store, d.config, "app")
+	newTask(t, d.store, d.config, "app", "Sort the task list", "t-1")
+	return d, dir
+}
+
+// waitDecision waits for the store to record decision id of task app/t-1.
+func (d runDirector) waitDecision(t *testing.T, id string) {
+	t.Helper()
+	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			continue
+		}
+		ds, err := s.Decisions("app", "t-1")
+		_ = s.Close()
+		if err == nil && slices.ContainsFunc(ds, func(d store.Decision) bool { return d.ID == id }) {
+			return
+		}
+	}
+	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), launch.LogFile))
+	t.Fatalf("decision %s was not opened within a minute; plan-1 launcher log:\n%s", id, log)
+}
+
+// TestTaskStartAndStepDoneByTheWatcher is D3: task start from a copy launches the plan attempt with --advance,
+// and the attempt's launcher, once it records the result, runs step done itself, so the task reaches the
+// accept-1 decision without step done typed by hand.
+func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {
+	d, dir := newRunCopy(t)
+	code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1")
+	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitDecision(t, "accept-1")
+	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1"); code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
+		t.Errorf("task start after the launcher's advance: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	if got := d.attempts(t); len(got) != 1 || got[0].Outcome != store.AttemptSucceeded {
+		t.Errorf("attempts %+v, want plan-1 succeeded", got)
+	}
+}
+
+// TestArtisanStartAdvanceNeedsACopy: --advance advances over a copy, so without one it is a usage error.
+func TestArtisanStartAdvanceNeedsACopy(t *testing.T) {
+	d := runDirector{store: "s", config: "c", state: "st"}
+	args := []string{"artisan", "start", "--store", "s", "--state", "st", "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1",
+		"--adapter", "fake", "--prompt", "p", "--workdir", "w", "--advance"}
+	if code, out, stderr := d.run(t, args...); code != 2 || out != "" || !strings.Contains(stderr, "--advance") {
+		t.Errorf("artisan start --advance without a copy: exit %d, %q, stderr %s; want 2 naming --advance", code, out, stderr)
 	}
 }
 

@@ -2,7 +2,8 @@
 
 `guildhall task start`, `guildhall step done` and `guildhall step retry` drive a task through the [interpreter](interpreter.md) from the command line.
 Each runs one `interp.Engine.Advance` and prints where the task now stands; launching an Artisan attempt runs it as its own [owned launcher](artisan.md#commands) process, which outlives the command.
-Nothing waits in the background yet: the per-task watcher that waits on the result file and calls `step done` is the next slice, so today the caller runs `step done` once the result file exists.
+When the advance runs from a [copy](#copies), each attempt's launcher is also the task's watcher: once it records the attempt's outcome it runs `step done` or `task start` itself ([the watcher](#the-watcher)), so nobody types `step done`.
+Over explicit `--store`, `--config` and `--state` paths nothing advances in the background, and the caller runs `step done` once the result file exists.
 
 ```sh
 guildhall task start --store <file> --config <director.toml> --state <dir> --repo <id> [--decision <id>] <task>
@@ -46,6 +47,20 @@ An advance holds the task's lock, `attempt.lock` in `<state>/<repository>/<task>
 Each `git` or `gh` run of the forge and of the working directory is bounded by five minutes, so a forge that does not answer is an error that records nothing, and an interrupt (Ctrl+C) ends the advance; either way the lock is released and running the command again replays the advance.
 The interrupt is exercised by a Unix test only; a second interrupt while the advance unwinds ends the process at once.
 
+## The watcher
+
+An advance from a copy launches each attempt with `artisan start --copy <dir> --advance` ([commands](artisan.md#commands)).
+Once the launcher has published the attempt's outcome, recorded its store outcome and released its ownership, it advances the task over the same copy:
+
+| How the attempt ended | The launcher runs |
+|---|---|
+| Finished with a valid result, succeeded or failed | `guildhall step done --copy <dir> --repo <repo> --task <task> --step <step> --attempt <n> --result <attempt dir>/result.json` |
+| Anything else: failed without a result, stopped, or failed at setup | `guildhall task start --copy <dir> --repo <repo> <task>`, which sends the Director `attempt-failed` |
+
+The advance's output is appended to the attempt's `launcher.log` and an `advance` event with its exit status to its `events.jsonl` ([events](artisan.md#events)).
+A failed advance changes neither the attempt's outcome nor the launcher's exit status: both commands are idempotent, so the Director's next `task start` repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).
+An attempt [`artisan resume`](artisan.md#resume) settles after its launcher died is not advanced; the Director's `task start` after the resume is.
+
 ## `task start`
 
 `task start` advances the task from its records with the `task-created` event: an unstarted task launches its first ready stage, and a task still waiting on a running attempt or unanswered decision changes nothing.
@@ -74,7 +89,7 @@ An attempt whose launcher died is first settled with [`artisan resume`](artisan.
 
 ## Output and exit status
 
-All three print one JSON line, what the task waits for: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start` reads again once `checks_refresh` has passed, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
+All three print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start` reads again once `checks_refresh` has passed, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
 
 | Exit status | Meaning |
 |---|---|

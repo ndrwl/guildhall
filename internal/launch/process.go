@@ -51,6 +51,10 @@ type Process struct {
 	// Store and StateDir are the Director store and the absolute state
 	// directory, as `artisan start --store --state` takes them.
 	Store, StateDir string
+	// Copy is the Director copy the engine runs from, empty when it runs over explicit paths. When set, the
+	// launcher is also given `--copy` and `--advance`, so it advances the task once it records the attempt
+	// (Config.Advance); Store and StateDir must be the copy's own.
+	Copy string
 	// StartTimeout bounds Launch's wait for ownership; zero is 30 seconds.
 	StartTimeout time.Duration
 

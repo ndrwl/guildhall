@@ -1,0 +1,83 @@
+# Red run at 4d7327c plus the contract stubs and tests of D3 (the launcher's advance), 2026-10-22T09:59Z, linux/amd64
+# TestRunWithoutAdvanceRunsNone passes against the stubs: a nil Advance already runs nothing.
+$ go test ./internal/launch/ -run 'Advance|TestProcessAsks' -count=1; go test ./internal/cli/ -run 'ByTheWatcher|AdvanceNeedsACopy' -count=1; go test ./cmd/guildhall/ -run 'WithTheWatcher|KilledWorker' -count=1
+--- FAIL: TestRunAdvancesAFinishedAttemptWithItsResult (0.58s)
+    --- FAIL: TestRunAdvancesAFinishedAttemptWithItsResult/succeeded (0.29s)
+        advance_test.go:191: advances [], want one
+    --- FAIL: TestRunAdvancesAFinishedAttemptWithItsResult/failed (0.29s)
+        advance_test.go:191: advances [], want one
+--- FAIL: TestRunAdvancesAFailedAttemptWithTaskStart (0.28s)
+    advance_test.go:207: advances [], want one
+--- FAIL: TestRunAdvancesACancelledAttemptOnlyAfterItsDecision (0.19s)
+    advance_test.go:228: advances [], want one
+--- FAIL: TestRunAdvanceFailureLeavesTheOutcome (0.30s)
+    advance_test.go:246: advances [], want one
+--- FAIL: TestProcessAsksAnEngineCopysLauncherToAdvance (0.06s)
+    process_test.go:169: argv = ["artisan" "start" "--store" "/tmp/fm-guildhall-d3-watcher/gotmp/TestProcessAsksAnEngineCopysLauncherToAdvance1194689693/001/director.store" "--state" "/tmp/lp2084798725" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "/tmp/lp2084798725/app/t7/build-1/prompt/prompt.md" "--workdir" "/tmp/fm-guildhall-d3-watcher/gotmp/TestProcessAsksAnEngineCopysLauncherToAdvance1194689693/005"]
+        want ["artisan" "start" "--store" "/tmp/fm-guildhall-d3-watcher/gotmp/TestProcessAsksAnEngineCopysLauncherToAdvance1194689693/001/director.store" "--state" "/tmp/lp2084798725" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "/tmp/lp2084798725/app/t7/build-1/prompt/prompt.md" "--workdir" "/tmp/fm-guildhall-d3-watcher/gotmp/TestProcessAsksAnEngineCopysLauncherToAdvance1194689693/005" "--copy" "/tmp/fm-guildhall-d3-watcher/gotmp/TestProcessAsksAnEngineCopysLauncherToAdvance1194689693/002/copy" "--advance"]
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	1.685s
+FAIL
+--- FAIL: TestTaskStartAndStepDoneByTheWatcher (60.13s)
+    advance_test.go:222: decision accept-1 was not opened within a minute; plan-1 launcher log:
+        fake artisan: task t-1 attempt plan-1
+        fake artisan: read prompt /tmp/gc519263846/state/app/t-1/plan-1/prompt/prompt.md (350 bytes)
+        fake artisan: wrote succeeded result to /tmp/gc519263846/state/app/t-1/plan-1/result.json
+        {"attempt":"app/t-1/plan/1","outcome":{"schema":"guildhall.attempt-outcome/1","state":"finished","detail":"result accepted"},"attempt_outcome":"succeeded","result":{"task_id":"t-1","attempt_id":"plan-1","status":"succeeded","summary":"fake artisan read 350 bytes of prompt, sha256 a9618eb917b1b6f7a3f82f788ab1b18bfc051f67a2a746d1f31d0a67c9f3f752","outputs":[{"path":"spec.md"}]}}
+--- FAIL: TestArtisanStartAdvanceNeedsACopy (0.00s)
+    advance_test.go:237: artisan start --advance without a copy: exit 2, "", stderr guildhall: artisan start: flag provided but not defined: -advance
+        
+        Usage: guildhall <command>
+        
+        Commands:
+          version        print the guildhall version and platform
+          doctor         report the platform and the tools guildhall uses
+          store init <path>
+                         create and initialize an empty store file
+          store doctor <path>
+                         check a store file read-only and count its records
+          steward rollout ...
+                         plan and apply rollouts of managed settings to enrolled Director copies
+          messages send|list|read|ack --store <path> ...
+                         send, list, read and acknowledge local Director and Artisan messages
+          workflow approve|approvals --store <path> ...
+                         record and list Guildmaster approvals of workflow revisions
+          render <request.json>
+                         render a prompt with embedded release skills first
+          artisan start|stop|status|resume
+                         start, stop, classify and resume one owned Artisan attempt
+          artisan harness inventory|kill-owned|probe --lab
+                         list, kill and probe an attempt's processes: lab test tooling
+          fake-artisan   run the test-only fake Artisan
+          claude-artisan run one attempt in Claude Code; artisan start --adapter claude runs it
+          task new|show|list|timeline|files|finding rule|review --store <path> ...
+                         create, list, show and inspect Director tasks and record rulings and full-review requests
+          task start --store <path> --config <file> --state <dir> ...
+                         advance a task, launching its next ready stage
+          step done --store <path> --config <file> --state <dir> ...
+                         take one attempt's result file and advance its task
+          step retry --store <path> --config <file> --state <dir> ...
+                         start the next attempt after a failed or stopped one
+          decide list|show|answer --store <path> ...
+                         list open decisions, show one and record the Guildmaster's answer
+          director status --json --store <path> --state <dir>
+                         print the Director's status feed and what needs the Director or Guildmaster
+          help           print this help
+        ; want 2 naming --advance
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	60.141s
+FAIL
+--- FAIL: TestTaskRunsEndToEndWithTheWatcher (120.79s)
+    run_test.go:258: decision accept-1 was not opened within two minutes
+--- FAIL: TestTheWatcherTellsTheDirectorOfAKilledWorker (61.04s)
+    run_test.go:329: no attempt-failed message: exit status 1
+        guildhall: messages read: messaging: store: record not found: message "app.t-1.attempt-failed.plan-1"
+        
+        launcher log:
+        fake artisan: task t-1 attempt plan-1
+        fake artisan: read prompt /tmp/gk1085602435/state/app/t-1/plan-1/prompt/prompt.md (408 bytes)
+        fake artisan: working for 1m0s
+        {"attempt":"app/t-1/plan/1","outcome":{"schema":"guildhall.attempt-outcome/1","state":"failed","detail":"worker exited without a result"},"attempt_outcome":"failed"}
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	181.844s
+FAIL
