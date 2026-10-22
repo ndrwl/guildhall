@@ -145,8 +145,8 @@ func testRunner(t *testing.T, newRunner func(t *testing.T) runnerUnderTest) {
 				if !errors.Is(got.err, context.Canceled) {
 					t.Errorf("run after cancellation = exit %d, %v; want an error matching context.Canceled", got.exit, got.err)
 				}
-			case <-time.After(time.Minute):
-				t.Fatal("run did not return within a minute of cancellation")
+			case <-time.After(testenv.Ceiling(time.Minute)):
+				t.Fatalf("run did not return within %v of cancellation", testenv.Ceiling(time.Minute))
 			}
 		})
 	}

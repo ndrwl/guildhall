@@ -1,6 +1,10 @@
 # Windows CI speed timings, 2026-10-22
 
-Seconds from `go test -json` on instrumented workflow_dispatch runs. main a/b: main 098b9af (runs 39833908526, 39834988861). branch a: 371fc61, every change but the shell batching (run 39834985109). branch b: the branch head (run 39836095590). Every test passed in all four runs.
+Seconds from `go test -json` on instrumented workflow_dispatch runs.
+main a/b: main 098b9af (runs 39833908526, 39834988861).
+branch a: 371fc61, every change but the shell batching (run 39834985109).
+branch b: the branch head (run 39836095590).
+Every test passed in all four runs.
 
 **windows-latest**
 
