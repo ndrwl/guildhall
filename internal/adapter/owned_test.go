@@ -20,7 +20,7 @@ func TestOwnedWorkerHelper(t *testing.T) {
 		return
 	}
 	id := Identity{TaskID: "task", AttemptID: "attempt"}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(60*time.Second))
 	defer cancel()
 	if err := JoinOwnedWorker(ctx, os.Getenv("GUILDHALL_CONTROL"), os.Getenv("GUILDHALL_TOKEN"), id, os.Getenv("GUILDHALL_RESULT")); err != nil {
 		os.Exit(2)
@@ -69,7 +69,7 @@ func TestOwnedWorkerStopContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = cmd.Process.Kill() })
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(15*time.Second))
 		defer cancel()
 		if err := owner.Accept(ctx); err != nil {
 			t.Fatal(err)
@@ -88,7 +88,7 @@ func TestOwnedWorkerStopContract(t *testing.T) {
 	}
 	owner, target, result, work := start("target")
 	_, unrelated, otherResult, otherWork := start("unrelated")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 	defer cancel()
 	if err := owner.Stop(ctx); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestOwnedWorkerRejectsUnverifiedIdentity(t *testing.T) {
 					t.Errorf("close owned worker: %v", err)
 				}
 			}()
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 			defer cancel()
 			done := make(chan error, 1)
 			go func() { done <- o.Accept(ctx) }()

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"golang.org/x/sys/unix"
 )
 
@@ -58,7 +59,7 @@ func TestFailedExecRestoresForeground(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, "-test.run=^TestFailedExecRestoresForeground$")
 	cmd.Env = append(os.Environ(), "ARTISAN_FOREGROUND_TEST=1")

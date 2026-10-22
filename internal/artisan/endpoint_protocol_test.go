@@ -15,6 +15,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/strictjson"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 const controlSchema = "guildhall.attempt-control/1"
@@ -104,7 +105,7 @@ func replyServer(t *testing.T, path, reply string) {
 			if err != nil {
 				return
 			}
-			_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+			_ = c.SetDeadline(time.Now().Add(testenv.Ceiling(10 * time.Second)))
 			_, _ = bufio.NewReader(c).ReadBytes('\n')
 			_, _ = c.Write([]byte(reply + "\n"))
 			_ = c.Close()
@@ -138,7 +139,7 @@ func TestCallRefusesUnsupportedReplies(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := endpointPath(t)
 			replyServer(t, path, tc.reply)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 			defer cancel()
 			st, err := artisan.Call(ctx, path, testKey, self, artisan.OpStop)
 			if !errors.Is(err, artisan.ErrEndpointProtocol) {
@@ -152,7 +153,7 @@ func TestCallRefusesUnsupportedReplies(t *testing.T) {
 
 	path := endpointPath(t)
 	replyServer(t, path, reply(v1, ""))
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 	defer cancel()
 	if st, err := artisan.Call(ctx, path, testKey, self, artisan.OpStop); err != nil || st.Phase != "stopped" {
 		t.Errorf("version 1 reply: %+v, %v", st, err)

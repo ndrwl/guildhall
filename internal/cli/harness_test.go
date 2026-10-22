@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 type harnessProcess struct {
@@ -113,7 +114,7 @@ func TestArtisanHarnessInventoryAndKillOwned(t *testing.T) {
 	if killed := decodeJSON[[]harnessProcess](t, stdout); code != 0 || len(killed) < 3 {
 		t.Errorf("kill-owned: exit %d, %+v; stderr %q", code, killed, stderr)
 	}
-	end := time.Now().Add(10 * time.Second)
+	end := time.Now().Add(testenv.Ceiling(10 * time.Second))
 	for _, p := range recorded {
 		id := artisan.Identity{PID: p.PID, Token: p.Token}
 		lv, err := artisan.Probe(id)
@@ -127,7 +128,7 @@ func TestArtisanHarnessInventoryAndKillOwned(t *testing.T) {
 	}
 	select {
 	case <-exited:
-	case <-time.After(10 * time.Second):
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
 		t.Fatal("launcher was not reaped after kill-owned")
 	}
 	for _, p := range list() {

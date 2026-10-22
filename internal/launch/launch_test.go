@@ -15,10 +15,18 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-const deadline = 30 * time.Second
+// deadline is the longest a test waits for a launcher, worker or store event,
+// and a worker's lifetime when it must outlast the test: scaled for slow
+// runners, so test children, which inherit the environment, share it.
+var deadline = testenv.Ceiling(30 * time.Second)
+
+// storeWait is how long a test's own store open waits for a launcher or
+// advance child that holds the lock.
+var storeWait = testenv.Ceiling(store.DefaultLockTimeout)
 
 var key = artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
@@ -53,7 +61,7 @@ func newAttempt(t *testing.T) launch.Attempt {
 
 func withStore(t *testing.T, a launch.Attempt, fn func(*store.Store)) {
 	t.Helper()
-	s, err := store.Open(a.Store, store.Options{})
+	s, err := store.Open(a.Store, store.Options{LockTimeout: storeWait})
 	if err != nil {
 		t.Fatal(err)
 	}

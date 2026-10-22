@@ -16,6 +16,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/skills"
 )
 
@@ -378,7 +379,7 @@ func supervise(t *testing.T, dir string, grace time.Duration) <-chan int {
 	app.SessionPoll, app.StopGrace = 100*time.Millisecond, grace
 	done := make(chan int, 1)
 	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
-	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorRunning {
 			return done
 		}
@@ -394,7 +395,7 @@ func ended(t *testing.T, done <-chan int) int {
 	select {
 	case code := <-done:
 		return code
-	case <-time.After(2 * time.Minute):
+	case <-time.After(testenv.Ceiling(2 * time.Minute)):
 		t.Fatal("director start did not end after director stop")
 		return 0
 	}
@@ -409,7 +410,7 @@ func TestDirectorStopEndsTheSessionAndItsAttempts(t *testing.T) {
 	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	for end := time.Now().Add(time.Minute); ; time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err != nil {
 			t.Fatal(err)
@@ -428,7 +429,7 @@ func TestDirectorStopEndsTheSessionAndItsAttempts(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopping || printed.StopNow {
 		t.Fatalf("director stop: exit %d, %q (%v), stderr %s", code, out, err, stderr)
 	}
-	for end := time.Now().Add(time.Minute); ; time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
 		got := d.attempts(t)
 		if len(got) == 1 && got[0].Outcome == store.AttemptStopped {
 			break

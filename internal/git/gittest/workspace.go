@@ -365,19 +365,15 @@ func (f *Workspaces) Calls() []git.Workspace {
 // that starts at base proves it fetched the remote's default branch. Both are under one new temporary directory.
 func Repository(t *testing.T) (repository, remote, base string) {
 	t.Helper()
-	root := t.TempDir()
+	return buildRepository(t, t.TempDir())
+}
+
+// buildRepository builds Repository's fixture in root.
+func buildRepository(t *testing.T, root string) (repository, remote, base string) {
+	t.Helper()
 	global := filepath.Join(root, "gitconfig")
 	writeFile(t, global, "")
-	git := func(dir string, args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+global)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
+	git := repositoryGit(t, global)
 	remote, repository = filepath.Join(root, "remote.git"), filepath.Join(root, "repository")
 	seed := filepath.Join(root, "seed")
 	git(root, "init", "-q", "--bare", "--initial-branch", "trunk", remote)
@@ -392,6 +388,50 @@ func Repository(t *testing.T) (repository, remote, base string) {
 	commit("a.txt")
 	git(root, "clone", "-q", remote, repository)
 	return repository, remote, commit("b.txt")
+}
+
+// repositoryGit returns a runner of git in a directory, with the system configuration and every global setting
+// but global's excluded, that fails t.
+func repositoryGit(t *testing.T, global string) func(dir string, args ...string) string {
+	return func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+global)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+}
+
+// Repositories returns a Repository for each test it is called with, built with real git only once per t: each
+// call copies that first fixture's files into its own test's temporary directory and points the copy's origin at
+// the copy's own remote, so each repository and remote are independent of every other copy and of the first, and
+// a case costs one git run instead of building the history. t must outlive every test the result is called with.
+func Repositories(t *testing.T) func(*testing.T) (repository, remote, base string) {
+	template := t.TempDir()
+	var (
+		mu    sync.Mutex
+		built bool
+		head  string
+	)
+	return func(ct *testing.T) (string, string, string) {
+		ct.Helper()
+		mu.Lock()
+		defer mu.Unlock()
+		if !built {
+			_, _, head = buildRepository(ct, template)
+			built = true
+		}
+		root := ct.TempDir()
+		if err := os.CopyFS(root, os.DirFS(template)); err != nil {
+			ct.Fatalf("copy the repository fixture: %v", err)
+		}
+		repository, remote := filepath.Join(root, "repository"), filepath.Join(root, "remote.git")
+		repositoryGit(ct, filepath.Join(root, "gitconfig"))(repository, "remote", "set-url", "origin", remote)
+		return repository, remote, head
+	}
 }
 
 // Retire implements the contract over the double's directories, where every file is untracked.

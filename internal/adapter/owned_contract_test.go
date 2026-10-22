@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // These cases pin OwnedWorker's cancellation contract on every platform: a
@@ -55,7 +57,7 @@ func ownedWithFake(t *testing.T, native *fakeNative) (*OwnedWorker, Spec) {
 	}
 	t.Cleanup(func() { _ = o.Close() })
 	if native != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 		defer cancel()
 		done := make(chan error, 1)
 		go func() { done <- o.Accept(ctx) }()

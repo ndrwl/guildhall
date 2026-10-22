@@ -1,0 +1,35 @@
+# Windows CI speed red runs, 2026-10-22, before each implementation (Linux)
+
+## go test -run Sync ./internal/store against a SkipSyncForTests that set nothing
+```
+--- FAIL: TestSkipSyncForTestsSkipsFsync (0.00s)
+    testsync_test.go:49: SkipSyncForTests did not set the switch
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.071s
+FAIL
+```
+
+## CI= go test -run TestCeiling ./internal/testenv against a Ceiling returning d unchanged
+```
+--- FAIL: TestCeiling (0.00s)
+    --- FAIL: TestCeiling/a_CI_runner_scales_it (0.00s)
+        ceiling_test.go:23: Ceiling(2s) with CI="true" = 2s; want 10s
+    --- FAIL: TestCeiling/any_CI_value_scales_it (0.00s)
+        ceiling_test.go:23: Ceiling(2s) with CI="1" = 2s; want 10s
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/testenv	0.004s
+FAIL
+```
+
+## go test ./internal/git/gittest against a Repositories returning empty paths
+```
+--- FAIL: TestRepositoriesCopiesAreIndependent (0.00s)
+    --- FAIL: TestRepositoriesCopiesAreIndependent/copy (0.00s)
+        workspace_test.go:37: Repositories gave "", "", ""
+    --- FAIL: TestRepositoriesCopiesAreIndependent/copy#01 (0.00s)
+        workspace_test.go:37: Repositories gave "", "", ""
+    workspace_test.go:65: made 0 copies, want 2
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/git/gittest	0.007s
+FAIL
+```

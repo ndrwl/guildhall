@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // App.LookPath and App.Output are doctor's process boundary.
@@ -97,7 +99,7 @@ func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary)
 				ctxErr error
 			}{out, err, ctx.Err()}
 		}()
-		startup := time.NewTimer(30 * time.Second)
+		startup := time.NewTimer(testenv.Ceiling(30 * time.Second))
 		defer startup.Stop()
 		poll := time.NewTicker(10 * time.Millisecond)
 		defer poll.Stop()
@@ -113,7 +115,7 @@ func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary)
 			case got := <-done:
 				t.Fatalf("Output returned before readiness: output %q, error %v", got.out, got.err)
 			case <-startup.C:
-				t.Fatal("probe did not become ready within 30 seconds")
+				t.Fatalf("probe did not become ready within %v", testenv.Ceiling(30*time.Second))
 			case <-poll.C:
 			}
 		}
@@ -129,7 +131,7 @@ func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary)
 			if !errors.Is(got.ctxErr, context.Canceled) {
 				t.Errorf("context error at Output return = %v, want Canceled", got.ctxErr)
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(testenv.Ceiling(5 * time.Second)):
 			t.Fatal("Output did not return promptly after cancellation")
 		}
 	})

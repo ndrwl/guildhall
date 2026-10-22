@@ -11,6 +11,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // TestTaskStartObservesAStalledWorker: an advance over a config that leaves stall_interval at its default
@@ -52,7 +53,7 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 	// Kill the launcher only once its worker runs: on Windows the worker starts suspended and joins the
 	// launcher's Job Object before it resumes, so a launcher killed in between leaves it suspended outside any job.
 	var o store.Ownership
-	for end := time.Now().Add(time.Minute); ; time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err != nil {
 			t.Fatal(err)
@@ -78,7 +79,7 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 		d.sweep(t, "plan", 1)
 		worker := artisan.Identity(o.Containment.Worker)
 		lv, err := artisan.Probe(worker)
-		for end := time.Now().Add(10 * time.Second); err == nil && lv != artisan.Gone && time.Now().Before(end); {
+		for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); err == nil && lv != artisan.Gone && time.Now().Before(end); {
 			time.Sleep(50 * time.Millisecond)
 			lv, err = artisan.Probe(worker)
 		}
@@ -146,9 +147,9 @@ func TestTheLauncherSendsAStallWithoutAnAdvance(t *testing.T) {
 	}
 	start()
 	t.Cleanup(func() { d.stopAll(t) })
-	for end := time.Now().Add(time.Minute); d.stalls(t) == 0; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); d.stalls(t) == 0; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(end) {
-			t.Fatal("the launcher sent no worker-stalled message within a minute")
+			t.Fatalf("the launcher sent no worker-stalled message within %v", testenv.Ceiling(time.Minute))
 		}
 	}
 	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}

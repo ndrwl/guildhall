@@ -27,6 +27,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // runDirector is a Director over testdata/run: a store holding task app/t-1 on the fake-straight workflow,
@@ -132,7 +133,7 @@ func (d runDirector) result(step string, n int) string {
 // waitResult waits for the attempt's launcher to publish a valid result.
 func (d runDirector) waitResult(t *testing.T, step string, n int) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(time.Minute))
 	defer cancel()
 	if _, err := adapter.WaitResult(ctx, d.result(step, n), adapter.Identity{TaskID: "t-1", AttemptID: artisan.AttemptKey{Step: step, Attempt: n}.AttemptID()}, adapter.WaitOptions{Poll: 20 * time.Millisecond}); err != nil {
 		t.Fatalf("result of %s-%d: %v", step, n, err)
@@ -178,16 +179,23 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			out = append(out, fmt.Sprintf("artisan harness inventory %s-%d: exit %d, %v, %s %s", a.Step, a.Number, code, err, stdout, stderr))
 		}
 		// A launcher that has just recorded its outcome may still be exiting: stop proves it only once gone.
-		// Once it is gone stop is not retried, so a surviving worker tree is reported rather than waited out.
+		// Stop probes the launcher the ownership record names, which the inventory need not list (where its
+		// unit is a process group). Once it is gone stop is not retried, so a surviving worker tree is
+		// reported rather than waited out.
 		exiting := func() bool {
-			i := slices.IndexFunc(procs, func(p harnessProcess) bool { return p.Role == "launcher" })
-			if i < 0 {
+			s, err := store.Open(d.store, store.Options{ReadOnly: true})
+			if err != nil {
 				return false
 			}
-			lv, _ := artisan.Probe(artisan.Identity{PID: procs[i].PID, Token: procs[i].Token})
+			o, err := s.Ownership("app", "t-1", a.Step, a.Number)
+			_ = s.Close()
+			if err != nil || o.LauncherIdentity.PID == 0 {
+				return false
+			}
+			lv, _ := artisan.Probe(artisan.Identity(o.LauncherIdentity))
 			return lv != artisan.Gone
 		}
-		for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 			code, stdout, stderr := d.run(t, append([]string{"artisan", "stop"}, at...)...)
 			if code == 0 {
 				break
@@ -214,7 +222,7 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			o, err := s.Ownership("app", "t-1", a.Step, a.Number)
 			_ = s.Close()
 			id := artisan.Identity(o.LauncherIdentity)
-			for end := time.Now().Add(time.Minute); err == nil && id.PID != 0; time.Sleep(50 * time.Millisecond) {
+			for end := time.Now().Add(testenv.Ceiling(time.Minute)); err == nil && id.PID != 0; time.Sleep(50 * time.Millisecond) {
 				lv, perr := artisan.Probe(id)
 				if perr == nil && lv == artisan.Gone {
 					break
@@ -225,6 +233,7 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 				}
 			}
 		}
+		// Not a ceiling: a case that orphans a worker waits all of it, so it stays the same on every host.
 		settle := time.Now().Add(10 * time.Second)
 		for _, p := range procs {
 			id := artisan.Identity{PID: p.PID, Token: p.Token}
@@ -342,7 +351,7 @@ func newRunCopyOn(t *testing.T, workflow string) (runDirector, string) {
 // waitDecision waits for the store to record decision id of task app/t-1.
 func (d runDirector) waitDecision(t *testing.T, id string) {
 	t.Helper()
-	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err != nil {
 			continue
@@ -354,7 +363,7 @@ func (d runDirector) waitDecision(t *testing.T, id string) {
 		}
 	}
 	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), launch.LogFile))
-	t.Fatalf("decision %s was not opened within a minute; plan-1 launcher log:\n%s", id, log)
+	t.Fatalf("decision %s was not opened within %v; plan-1 launcher log:\n%s", id, testenv.Ceiling(time.Minute), log)
 }
 
 // TestTaskStartAndStepDoneByTheWatcher is TestTaskStartAndStepDone from a copy (D3): task start launches the plan
@@ -399,7 +408,7 @@ func TestTheWatcherReportsASetupFailure(t *testing.T) {
 		t.Errorf("task start took %v to report the setup failure; want no wait for the launcher's advance", took)
 	}
 	var msg store.Message
-	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err == nil {
 			msg, err = s.Message("app.t-1.attempt-failed.plan-1")
@@ -410,7 +419,7 @@ func TestTheWatcherReportsASetupFailure(t *testing.T) {
 		}
 		if time.Now().After(end) {
 			log, _ := os.ReadFile(filepath.Join(k.Dir(d.state), launch.LogFile))
-			t.Fatalf("no attempt-failed message within a minute: %v; plan-1 launcher log:\n%s", err, log)
+			t.Fatalf("no attempt-failed message within %v: %v; plan-1 launcher log:\n%s", testenv.Ceiling(time.Minute), err, log)
 		}
 	}
 	if msg.Type != "attempt-failed" {
@@ -481,7 +490,7 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 // waitSpend waits for the attempt's launcher to record its spend and returns the attempt.
 func (d runDirector) waitSpend(t *testing.T, step string, n int) store.StageAttempt {
 	t.Helper()
-	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err != nil {
 			continue
@@ -493,7 +502,7 @@ func (d runDirector) waitSpend(t *testing.T, step string, n int) store.StageAtte
 		}
 	}
 	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}.Dir(d.state), launch.LogFile))
-	t.Fatalf("%s-%d spend was not recorded within a minute; launcher log:\n%s", step, n, log)
+	t.Fatalf("%s-%d spend was not recorded within %v; launcher log:\n%s", step, n, testenv.Ceiling(time.Minute), log)
 	return store.StageAttempt{}
 }
 

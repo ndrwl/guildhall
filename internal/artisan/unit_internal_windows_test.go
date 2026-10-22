@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"golang.org/x/sys/windows"
 )
 
@@ -34,7 +35,7 @@ func TestInterruptAfterWorkerExit(t *testing.T) {
 	}
 	select {
 	case <-u.Exited():
-	case <-time.After(10 * time.Second):
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
 		t.Fatal("worker did not exit")
 	}
 	if state, err := windows.WaitForSingleObject(u.workerHandle, 0); state != windows.WAIT_OBJECT_0 || err != nil {

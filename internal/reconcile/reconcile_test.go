@@ -33,6 +33,7 @@ const (
 var key = artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
 func TestMain(m *testing.M) {
+	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
 	mainIfLauncher()
 	os.Exit(m.Run())

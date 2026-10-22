@@ -12,6 +12,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"golang.org/x/sys/unix"
 )
 
@@ -34,7 +35,7 @@ func TestCgroupKillEmpties(t *testing.T) {
 		t.Fatal(err)
 	}
 	var gc artisantest.Entry
-	for end := time.Now().Add(10 * time.Second); gc.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); gc.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		entries, err := artisantest.Inventory(inventory)
 		if err != nil {
 			t.Fatal(err)
@@ -62,7 +63,7 @@ func TestCgroupKillEmpties(t *testing.T) {
 	if err := u.Kill(); err != nil {
 		t.Fatal(err)
 	}
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if m, err = u.Members(); err == nil && len(m) == 0 {
 			// Members excludes zombies; cgroup.procs can retain an exiting
 			// task briefly after its identity is already reported gone.

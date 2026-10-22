@@ -7,6 +7,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // The exited leader remains unreaped until Close. Darwin can report EPERM
@@ -31,7 +32,7 @@ func TestSignalsAfterWorkerExit(t *testing.T) {
 	}
 	select {
 	case <-u.Exited():
-	case <-time.After(10 * time.Second):
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
 		t.Fatal("worker did not exit")
 	}
 	for _, action := range []struct {

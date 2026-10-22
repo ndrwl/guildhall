@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // StartInPane returns a Subject.Start that runs the runtime the way
@@ -50,7 +51,7 @@ func (p *paneProcess) Exited() <-chan struct{} { return p.exited }
 
 // Stop sends Ctrl+C to the tab; at an idle shell prompt that does nothing.
 func (p *paneProcess) Stop() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(30*time.Second))
 	defer cancel()
 	return p.run.Stop(ctx)
 }

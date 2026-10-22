@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // TestWindowsNativeWorkerContract runs the nativeWorker contract against a
@@ -35,7 +37,7 @@ func TestWindowsNativeWorkerContract(t *testing.T) {
 			<-exited
 		})
 		var created uint64
-		deadline := time.Now().Add(30 * time.Second)
+		deadline := time.Now().Add(testenv.Ceiling(30 * time.Second))
 		for {
 			b, err := os.ReadFile(createdFile)
 			if err == nil && strings.HasSuffix(string(b), "\n") {

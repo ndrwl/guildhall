@@ -9,6 +9,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // platformHarness: the detected Linux backend decides whether a setsid
@@ -84,10 +85,10 @@ func TestSubreaperRecordsReparent(t *testing.T) {
 	})
 	select {
 	case <-u.Exited():
-	case <-time.After(10 * time.Second):
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
 		t.Fatal("worker did not exit after spawning")
 	}
-	for end := time.Now().Add(10 * time.Second); gc.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); gc.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		inv, _ := artisantest.Inventory(dir)
 		for _, e := range inv {
 			if e.Role == "grandchild-setsid" {
@@ -99,7 +100,7 @@ func TestSubreaperRecordsReparent(t *testing.T) {
 		t.Fatal("grandchild did not record itself")
 	}
 	var escapes []artisan.Identity
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if escapes, err = esc.Escapes(); err != nil {
 			t.Fatalf("Escapes() = %v", err)
 		}

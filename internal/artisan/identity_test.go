@@ -8,6 +8,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // The identity contract against the real OS; pinned from the P0 scratch tests.
@@ -34,7 +35,7 @@ func TestIdentityContract(t *testing.T) {
 		_ = cmd.Wait()
 	})
 	var id artisan.Identity
-	for end := time.Now().Add(10 * time.Second); id.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); id.PID == 0 && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if inv, _ := artisantest.Inventory(dir); len(inv) == 1 {
 			id = inv[0].Identity
 		}
@@ -56,7 +57,7 @@ func TestIdentityContract(t *testing.T) {
 	}
 	// Exited but not yet reaped: a zombie is gone.
 	lv, err := artisan.Probe(id)
-	for end := time.Now().Add(10 * time.Second); lv == artisan.Alive && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); lv == artisan.Alive && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		lv, err = artisan.Probe(id)
 	}
 	if lv != artisan.Gone || err != nil {

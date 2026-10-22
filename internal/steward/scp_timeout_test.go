@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 func TestTransportTimeoutWithChild(t *testing.T) {
@@ -33,7 +35,7 @@ func TestTransportTimeoutWithChild(t *testing.T) {
 					done <- transport.Put(ctx, local, remote)
 				}
 			}()
-			readyTimeout := time.NewTimer(10 * time.Second)
+			readyTimeout := time.NewTimer(testenv.Ceiling(10 * time.Second))
 			defer readyTimeout.Stop()
 			tick := time.NewTicker(10 * time.Millisecond)
 			defer tick.Stop()
@@ -72,7 +74,7 @@ func TestTransportTimeoutWithChild(t *testing.T) {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("expected cancellation, got %v", err)
 				}
-			case <-time.After(10 * time.Second):
+			case <-time.After(testenv.Ceiling(10 * time.Second)):
 				t.Fatal("transport did not return after cancellation with child holding output pipes")
 			}
 		})
