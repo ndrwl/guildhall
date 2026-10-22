@@ -200,6 +200,10 @@ type LauncherConfig struct {
 	// heartbeat's LastOutputAt. Nil, or a zero time, reports the time Run
 	// began; a time after the beat reports the beat's time.
 	LastOutput func() time.Time
+	// Beat, when set, is called with each heartbeat once it is written, from
+	// Run's goroutine, so the supervision loop waits for it and it must return
+	// promptly. A failed write calls nothing.
+	Beat func(Heartbeat)
 }
 
 // Launcher supervises one attempt's worker. It is the EndpointHandler of
@@ -602,6 +606,11 @@ func (l *Launcher) heartbeat() {
 		Sequence: l.seq, Time: now.UTC(), WorkerState: phase, LastOutputAt: out.UTC()}
 	if err := WriteHeartbeat(l.c.Dir, h); err != nil {
 		l.event(eventHeartbeatFailed, map[string]any{"sequence": l.seq, "error": err.Error()})
+		return
+	}
+	if l.c.Beat != nil {
+		h.Schema = HeartbeatSchema
+		l.c.Beat(h)
 	}
 }
 

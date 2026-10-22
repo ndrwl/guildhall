@@ -67,6 +67,15 @@ func TestWorkerStalled(t *testing.T) {
 				want(t, e.advance(t, ev), next)
 				count(1)
 			}
+			// The message is interp.StalledMessage, the one the attempt's launcher sends for the same crossing.
+			page, err := e.mailbox.List(store.Recipient{Role: store.RecipientDirector}, 0, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sent := interp.StalledMessage(hb.Key(), hb.LastOutputAt)
+			if m := page.Messages[len(page.Messages)-1]; sent.ID == "" || m.ID != sent.ID || m.Type != sent.Type || m.Text != sent.Text || m.Repository != sent.Repository || m.Task != sent.Task {
+				t.Fatalf("engine sent %+v, StalledMessage is %+v", m, sent)
+			}
 			hb.Sequence++
 			hb.LastOutputAt = now
 			put()

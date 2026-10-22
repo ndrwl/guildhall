@@ -162,6 +162,13 @@ func TestArtisanStartRefusesExistingResultAndBadFlags(t *testing.T) {
 			t.Errorf("%q accepted; stderr %q", bad, stderr)
 		}
 	}
+	// The stall interval is an owned launcher's, never negative.
+	for bad, want := range map[string]string{"-1s": "must not be negative", "1m": "do not apply in a Herdr tab"} {
+		app, _, stderr := newArtisanApp(t)
+		if code := app.Run(append(append([]string{}, inTab...), "--stall-interval", bad)); code != 2 || !strings.Contains(stderr.String(), want) {
+			t.Errorf("--stall-interval %s in a tab: exit %d, stderr %q; want 2 naming %q", bad, code, stderr, want)
+		}
+	}
 }
 
 type artisanTestWriter func([]byte) (int, error)

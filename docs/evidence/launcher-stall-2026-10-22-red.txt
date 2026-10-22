@@ -1,0 +1,34 @@
+# D4 launcher stall, red run against the stubs (2a6c32e + stubs), go version go1.27.2 linux/amd64
+--- FAIL: TestWorkerStalled (0.10s)
+    --- FAIL: TestWorkerStalled/double (0.01s)
+        worker_stalled_test.go:28: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        worker_stalled_test.go:50: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        worker_stalled_test.go:61: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        worker_stalled_test.go:77: engine sent {Envelope:{Schema:guildhall.message/1 ID:app.t7.worker-stalled.plan-1.020851cbddc83af7e424499eb73eebb95cf84df3f6d43bc7ab8f19d01f0609b9 Recipient:director Repository:app Task:t7 Step: Attempt:0 Type:worker-stalled Text:Attempt 1 of step plan has a fresh heartbeat but no output since 2025-12-31T23:57:00Z. Artifacts:[]} Sequence:1 Acknowledged:false}, StalledMessage is {Schema: ID: Recipient: Repository: Task: Step: Attempt:0 Type: Text: Artifacts:[]}
+    --- FAIL: TestWorkerStalled/store (0.09s)
+        worker_stalled_test.go:28: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        worker_stalled_test.go:50: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        worker_stalled_test.go:61: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        worker_stalled_test.go:77: engine sent {Envelope:{Schema:guildhall.message/1 ID:app.t7.worker-stalled.plan-1.020851cbddc83af7e424499eb73eebb95cf84df3f6d43bc7ab8f19d01f0609b9 Recipient:director Repository:app Task:t7 Step: Attempt:0 Type:worker-stalled Text:Attempt 1 of step plan has a fresh heartbeat but no output since 2025-12-31T23:57:00Z. Artifacts:[]} Sequence:4 Acknowledged:false}, StalledMessage is {Schema: ID: Recipient: Repository: Task: Step: Attempt:0 Type: Text: Artifacts:[]}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.108s
+FAIL
+=== RUN   TestProcessPassesTheEnginesStallInterval
+    process_test.go:198: argv = ["artisan" "start" "--store" "<tmp>" "--state" "<tmp>" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "<tmp>" "--workdir" "<tmp>"]
+--- FAIL: TestProcessPassesTheEnginesStallInterval (0.07s)
+=== RUN   TestLauncherSendsOneStallPerCrossing
+    stall_test.go:156: worker-stalled messages = 0, want 1
+--- FAIL: TestLauncherSendsOneStallPerCrossing (30.09s)
+=== RUN   TestLauncherWithoutStallIntervalSendsNone
+--- PASS: TestLauncherWithoutStallIntervalSendsNone (1.07s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	31.248s
+FAIL
+=== RUN   TestTaskStartObservesAStalledWorker
+--- PASS: TestTaskStartObservesAStalledWorker (0.20s)
+=== RUN   TestTheLauncherSendsAStallWithoutAnAdvance
+    stall_test.go:151: the launcher sent no worker-stalled message within a minute
+--- FAIL: TestTheLauncherSendsAStallWithoutAnAdvance (60.16s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	60.374s
+FAIL

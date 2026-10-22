@@ -128,7 +128,7 @@ Each command holds the store only for its own operation and waits up to two seco
 ## Waking the Director
 
 A message to the Director is stored first and wakes second: storing never depends on waking, and a message that wakes nobody is still in the inbox.
-After every send to `director`, by the engine's outbox (`task start`, `step done`, `step retry`) or by `messages send ... director`, the sending command decides then and there whether to wake the Director and records that decision; nothing waits in the background (R1.29).
+After every send to `director`, by the engine's outbox (`task start`, `step done`, `step retry`), by an attempt's launcher sending [`worker-stalled`](artisan.md#heartbeat) or by `messages send ... director`, the sending command decides then and there whether to wake the Director and records that decision; nothing waits in the background (R1.29).
 
 The command reads the Director's newest [session](store.md#director-sessions).
 When it is `running` or `recovering` and has a bound pane, the command types one line and Enter into that pane, which Guildhall created for the Director's session (R1.54), and records `woke`:

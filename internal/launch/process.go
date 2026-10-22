@@ -57,6 +57,9 @@ type Process struct {
 	// launcher is also given `--copy` and `--advance`, so it advances the task once it records the attempt
 	// (Config.Advance); Store and StateDir must be the copy's own.
 	Copy string
+	// StallInterval, when positive, is passed as `--stall-interval`, so the launcher sends the Director
+	// worker-stalled from its heartbeat (Config.StallInterval); the engine passes its own.
+	StallInterval time.Duration
 	// StartTimeout bounds Launch's wait for ownership; zero is 30 seconds.
 	StartTimeout time.Duration
 
@@ -100,6 +103,9 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
 	if p.Copy != "" {
 		cmd.Args = append(cmd.Args, "--copy", p.Copy, "--advance")
+	}
+	if p.StallInterval > 0 {
+		cmd.Args = append(cmd.Args, "--stall-interval", p.StallInterval.String())
 	}
 	cmd.Env = append(os.Environ(), p.Env...)
 	cmd.Stdout, cmd.Stderr = log, log

@@ -102,12 +102,14 @@ func TestStopTerminalDecisionRequiresTerminationProof(t *testing.T) {
 					c = store.Containment{}
 				}
 				if proof == "survivors" {
+					// Created before Close is registered, so it is removed after.
+					dir := t.TempDir()
 					u, err := artisan.NewUnit(fmt.Sprintf("survivor-%d", time.Now().UnixNano()))
 					if err != nil {
 						t.Fatal(err)
 					}
 					t.Cleanup(func() { _ = u.Close() })
-					w, err := u.Start(artisantest.Command(t.TempDir(), artisantest.Worker{Lifetime: deadline}))
+					w, err := u.Start(artisantest.Command(dir, artisantest.Worker{Lifetime: deadline}))
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -18,7 +18,9 @@
 //     with state running;
 //  4. it supervises until the launcher decides the attempt and the unit is
 //     empty; ctx ending, the endpoint's stop and a relayed stop signal each
-//     request the one stop ladder;
+//     request the one stop ladder; with Config.StallInterval, each heartbeat
+//     past the interval since the worker's output sends the Director
+//     interp.StalledMessage, once per crossing;
 //  5. it records the store outcome with FinishAttempt, translated by one
 //     rule (attemptOutcome), which also releases the ownership; the store's
 //     first finish stands, so an attempt another writer already finished
@@ -58,11 +60,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -199,6 +203,12 @@ type Config struct {
 	// takes, such as `guildhall --copy <dir>`: once the store outcome is recorded, Run advances the task with it
 	// (the package comment's step 6). Nil advances nothing.
 	Advance []string
+	// StallInterval, when positive, is how long the worker may be silent before the launcher sends the Director
+	// interp.StalledMessage through Outbox, once per crossing, from its heartbeat (docs/artisan.md#heartbeat);
+	// the worker's output time is the newest modification of Stdout and Stderr when they are regular files.
+	// Zero, or a nil Outbox, sends nothing.
+	StallInterval time.Duration
+	Outbox        interp.Outbox
 }
 
 // Report is how an owned attempt ended.
@@ -250,8 +260,10 @@ func Run(ctx context.Context, c Config) (Report, error) {
 		own.Containment = store.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}
 	}
 	recorded := &recordingUnit{Unit: unit, a: a, own: own, mutation: mutation("running")}
+	stalls := c.stalls()
+	defer stalls.close()
 	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: a.Dir(), Unit: recorded, Files: a.Files(), Ladder: c.Ladder,
-		ResultGrace: c.ResultGrace, Key: k, HeartbeatInterval: c.HeartbeatInterval})
+		ResultGrace: c.ResultGrace, Key: k, HeartbeatInterval: c.HeartbeatInterval, LastOutput: lastOutput(c.Stdout, c.Stderr), Beat: stalls.beat})
 	if err != nil {
 		return rep, err
 	}
@@ -299,6 +311,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	stopOnEnd := context.AfterFunc(ctx, func() { _, _ = l.Stop() })
 	out, runErr := l.Run(cmd, c.Signals)
 	stopOnEnd()
+	stalls.close()
 	rep.Outcome = out
 	if out.State == "" || errors.Is(runErr, artisan.ErrNotEmpty) {
 		return rep, runErr
@@ -345,6 +358,93 @@ func (c Config) advance(rep Report) {
 		exit = cmd.ProcessState.ExitCode()
 	}
 	_ = artisan.LogAdvance(c.Dir(), strings.Join(command, " "), exit, err)
+}
+
+// lastOutput is the worker's last output for the heartbeat: the newest modification time of those of ws that are
+// regular files, such as launcher.log, and zero when none is.
+func lastOutput(ws ...io.Writer) func() time.Time {
+	var files []*os.File
+	for _, w := range ws {
+		if f, ok := w.(*os.File); ok && !slices.Contains(files, f) {
+			if fi, err := f.Stat(); err == nil && fi.Mode().IsRegular() {
+				files = append(files, f)
+			}
+		}
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	return func() time.Time {
+		var newest time.Time
+		for _, f := range files {
+			if fi, err := f.Stat(); err == nil && fi.ModTime().After(newest) {
+				newest = fi.ModTime()
+			}
+		}
+		return newest
+	}
+}
+
+// stallSender sends the Director interp.StalledMessage once per crossing of the stall interval, from the beats
+// its goroutine receives, so the launcher's supervision loop never waits for the store or the wake. A beat that
+// arrives while a send is in flight replaces any beat still waiting, and close waits for the goroutine.
+type stallSender struct {
+	beats chan artisan.Heartbeat
+	done  chan struct{}
+	once  sync.Once
+}
+
+// stalls starts the stall sender for c; with no positive interval or no outbox it receives nothing.
+func (c Config) stalls() *stallSender {
+	s := &stallSender{done: make(chan struct{})}
+	if c.StallInterval <= 0 || c.Outbox == nil {
+		close(s.done)
+		return s
+	}
+	s.beats = make(chan artisan.Heartbeat, 1)
+	go func() {
+		defer close(s.done)
+		// sent is the last output of the crossing sent.
+		var sent time.Time
+		for h := range s.beats {
+			if h.Time.Sub(h.LastOutputAt) <= c.StallInterval || h.LastOutputAt.Equal(sent) {
+				continue
+			}
+			if _, err := c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, interp.StalledMessage(h.Key(), h.LastOutputAt)); err == nil {
+				sent = h.LastOutputAt
+			}
+		}
+	}()
+	return s
+}
+
+// beat is the launcher's artisan.LauncherConfig.Beat.
+func (s *stallSender) beat(h artisan.Heartbeat) {
+	if s.beats == nil {
+		return
+	}
+	select {
+	case s.beats <- h:
+	default:
+		select {
+		case <-s.beats:
+		default:
+		}
+		select {
+		case s.beats <- h:
+		default:
+		}
+	}
+}
+
+// close stops the sender once a send in flight ends; closing again changes nothing.
+func (s *stallSender) close() {
+	s.once.Do(func() {
+		if s.beats != nil {
+			close(s.beats)
+		}
+	})
+	<-s.done
 }
 
 // newUnit is artisan.NewUnit; tests replace it to end the launcher inside

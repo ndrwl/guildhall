@@ -34,6 +34,8 @@ Configure `Engine.StallInterval` to a positive duration to enable heartbeat obse
 `Engine.Now` supplies the clock in tests and defaults to wall time.
 When an advance reaches a launched, unfinished attempt with no result, the engine reads the launcher's [`heartbeat.json`](artisan.md#heartbeat) from the attempt directory beside `launched.json` with `artisan.ReadHeartbeat`; a heartbeat within the interval (and not in the future) plus `last_output_at` older than the interval sends a `worker-stalled` Director message.
 Its derived identity includes the attempt and last-output time: replay and repeated advances send nothing new, while fresh output followed by another crossing sends again.
+`interp.StalledMessage(key, lastOutput)` is that message, id, type and text; the attempt's launcher sends the same message from its own heartbeat when it runs with [`--stall-interval`](artisan.md#heartbeat), which `launch.Process` passes from `Engine.StallInterval`, so a silent worker is reported without anything advancing its task, and an advance observing the same crossing replays it.
+The advance's observation stays as the fallback, for a launcher that runs without the interval or could not send.
 Attempts, their records and waits are unchanged.
 Missing or stale heartbeats, and one naming another attempt, emit nothing; a stale heartbeat of a live launcher is reconcile's [`stuck`](artisan.md#reconcile).
 A heartbeat file the engine cannot accept, such as a newer schema, fails the advance with that error rather than being guessed at.

@@ -25,6 +25,7 @@ func TestMain(m *testing.M) {
 		os.Exit(fake.Main(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	mainIfAdvance()
+	mainIfSpeaker()
 	if path := os.Getenv(argvEnv); path != "" {
 		recordArgv(path)
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -107,6 +108,71 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 	}
 	// The engine's outbox wakes the Director for the stall once, as Guildhall; with no session it queues.
 	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].SenderType != "guildhall" || ws[0].Decision != store.WakeQueued || ws[0].Reason != "no session" {
+		t.Errorf("wakes = %+v; want one queued guildhall wake", ws)
+	}
+}
+
+// TestTheLauncherSendsAStallWithoutAnAdvance: with stall_interval at 2s, a launched worker that stays silent gets
+// one worker-stalled message from its own launcher, with nothing advancing the task meanwhile, under the id the
+// engine derives for the same crossing, and the launcher wakes the Director for it as Guildhall; a later
+// advance observing the same heartbeat replays it and sends nothing new.
+func TestTheLauncherSendsAStallWithoutAnAdvance(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(dir, "baseline", "stages", "plan.md")
+	guide, err := os.ReadFile(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan, append(guide, "guildhall-fake: result=never\nguildhall-fake: lifetime=1m\n"...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "config.toml")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, bytes.Replace(b, []byte("standards_revision"), []byte("stall_interval = \"2s\"\nstandards_revision"), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := newRunDirectorAt(t, cfg)
+	start := func() {
+		t.Helper()
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+			t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+		}
+	}
+	start()
+	t.Cleanup(func() { d.stopAll(t) })
+	for end := time.Now().Add(time.Minute); d.stalls(t) == 0; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the launcher sent no worker-stalled message within a minute")
+		}
+	}
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	hb, err := artisan.ReadHeartbeat(key.Dir(d.state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(d.store, store.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, _, err := s.Inbox(store.Recipient{Role: store.RecipientDirector}, 0, 100)
+	_ = s.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := msgs[len(msgs)-1]; m.ID != interp.StalledMessage(key, hb.LastOutputAt).ID {
+		t.Fatalf("stall %s, want the engine's id for output at %s, %s", m.ID, hb.LastOutputAt, interp.StalledMessage(key, hb.LastOutputAt).ID)
+	}
+	start()
+	if got := d.stalls(t); got != 1 {
+		t.Errorf("after an advance: %d worker-stalled messages, want 1", got)
+	}
+	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].SenderType != "guildhall" || ws[0].Decision != store.WakeQueued {
 		t.Errorf("wakes = %+v; want one queued guildhall wake", ws)
 	}
 }
