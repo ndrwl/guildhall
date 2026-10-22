@@ -37,6 +37,7 @@ Document paths must be valid UTF-8; invalid UTF-8 is refused with `ErrInvalid` b
 
 Every change is a mutation that names a caller-chosen mutation id of 1 to 128 characters from letters, digits, `.`, `_`, `:` and `-`, starting with a letter or digit.
 A mutation runs in one bbolt transaction that writes its records and a receipt together and commits durably before the call returns.
+Only a test binary can turn off the fsync of each commit, with `SkipSyncForTests`.
 After a crash, either the records and the receipt are both present or neither is.
 
 A receipt holds the mutation id, the operation, a sha256 digest of the operation and request, the repository and task, the attempt number where one applies, the record it wrote, a store-wide sequence number starting at 1 and the commit time in UTC.

@@ -8,11 +8,17 @@ The ownership record's `Containment` is a recovery description of every Artisan 
 
 Director sessions and wakes in the `director` bucket ([director-session-record](../decisions/director-session-record.md)): `StartDirectorSession` numbered from 1 and superseding every earlier session that has not stopped, `SetDirectorState`'s forward-only moves with `running` and `paused` moving to each other and a compare-and-set on `StateSequence`, `RequestDirectorStop` to `stopping` with `StopNow` and `EndDirectorSession` to `stopped` with an end reason under the same rules ([director-pause-stop](../decisions/director-pause-stop.md)), `DirectorSession` and `LatestDirectorSession`; `RecordWake` once per message to the Director with `WakeFor` and ordered, bounded `Wakes`; `DirectorUnread`'s counts by type, keyed only by Guildhall's own types and `other` for every other type, which the [wake](../messaging.md#waking-the-director) types; and `DirectorView.Session`, the newest session read in the view's transaction.
 
+`SkipSyncForTests` makes every store a test binary opens afterwards skip bbolt's fsync of each commit ([windows-ci-speed](../decisions/windows-ci-speed.md)); records, receipts, locking and replay are unchanged and only a power loss could lose a commit.
+It panics outside a test binary (`testing.Testing`), so production stores sync every commit.
+The test binaries of `internal/store`, `messaging`, `interp`, `cli`, `launch`, `artisan` and `reconcile` call it from `TestMain`, which their own child processes run too; `cmd/guildhall`'s built binary syncs as production does.
+
 The [attempt ownership contract](../store.md#attempt-ownership) defines monotonic recovery evidence, `ProbeLauncher`'s containment refusal and the explicit containment-aware recovery path.
 
 ## Tests
 
 Real bbolt files: `store_test.go`, `records_test.go`, `messages_test.go`, `approvals_test.go`, `history_test.go`, `ownership_test.go`, `process_test.go` (separate processes, including a take-over refused while another process owns the attempt and allowed once it is killed), `fixture_test.go` (schema v1 file), `rulings_test.go`; full-review requests are pinned by the store run of `interptest.RunRecordsContract`
+
+`testsync_test.go` was written red first against a `SkipSyncForTests` that set nothing ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): `TestOpenSyncsEveryCommitByDefault` pins that a store opened without it syncs and its commit survives a reopen, and `TestSkipSyncForTestsSkipsFsync`, which was red, that one opened after it does not sync and its commit still survives a reopen.
 
 `TestFinishAttemptFirstFinishStands` was written red first ([red run](../evidence/finish-first-stands-2026-10-21-red.txt)), with the equal-outcome case of `RunRecordsContract`: a second finish with an equal outcome under a new mutation id returns the first finish's receipt, writes no receipt and takes no sequence number; another outcome is refused with `ErrInvalid`.
 
