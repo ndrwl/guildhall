@@ -431,6 +431,11 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 			return false, next, r.workerStalled(s.ID, a.Number)
 		}
 		// Recorded but never marked launched: the advance stopped between the two.
+		if held, err := r.admissionHeld(); err != nil {
+			return false, Next{}, err
+		} else if held {
+			return false, Next{Wait: WaitPaused, Step: s.ID}, nil
+		}
 		rt, _, err := r.prepare(s)
 		if err != nil {
 			return false, Next{}, err
@@ -520,17 +525,24 @@ func (r *run) retryReason(ev Event) error {
 	return err
 }
 
+func (r *run) admissionHeld() (bool, error) {
+	if r.e.Hold == nil {
+		return false, nil
+	}
+	held, err := r.e.Hold()
+	if err != nil {
+		return false, fmt.Errorf("hold: %w", err)
+	}
+	return held, nil
+}
+
 // start records the step's binding and its next attempt, then launches it with its wired inputs plus
 // the engine's extras (previous outcome, loop feedback).
 func (r *run) start(s workflow.Step) (Next, error) {
-	if r.e.Hold != nil {
-		held, err := r.e.Hold()
-		if err != nil {
-			return Next{}, fmt.Errorf("hold: %w", err)
-		}
-		if held {
-			return Next{Wait: WaitPaused, Step: s.ID}, nil
-		}
+	if held, err := r.admissionHeld(); err != nil {
+		return Next{}, err
+	} else if held {
+		return Next{Wait: WaitPaused, Step: s.ID}, nil
 	}
 	rt, inputs, err := r.prepare(s)
 	if err != nil {

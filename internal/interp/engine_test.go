@@ -465,6 +465,112 @@ func TestProfileAllowedToolsReachTheLaunch(t *testing.T) {
 	}
 }
 
+type interruptedStart struct{ interp.Records }
+
+func (r interruptedStart) StartCappedAttempt(m, repo, task, step string, caps store.AttemptCaps) (store.Receipt, error) {
+	rc, err := r.Records.StartCappedAttempt(m, repo, task, step, caps)
+	if err != nil {
+		return rc, err
+	}
+	return rc, errors.New("interrupted after recording attempt")
+}
+
+func TestCrashBetweenRecordAndLaunchReplaysWhilePaused(t *testing.T) {
+	for _, b := range backends {
+		for _, director := range []bool{false, true} {
+			for _, retry := range []bool{false, true} {
+				name := b.name + "/artisan/start"
+				if director {
+					name = b.name + "/director/start"
+				}
+				if retry {
+					name += "/retry"
+				}
+				t.Run(name, func(t *testing.T) {
+					n := 1
+					if retry {
+						n = 2
+					}
+					step, wait := "plan", interp.WaitAttempt
+					var e *env
+					if director {
+						e = newEnvDefinition(t, b, loadWorkflow(t, "director-grill"))
+						step, wait = "grill", interp.WaitDirectorStage
+					} else {
+						exp := straightScript(t)[0]
+						exp.Attempt = n
+						e = newEnv(t, b, exp)
+					}
+					e.eng.Caps.Hold = true
+					e.eng.Records = interruptedStart{e.h.Records}
+					ev := interp.Event{Kind: interp.TaskCreated}
+					if err := advanceErr(t, e, ev); err == nil {
+						t.Fatal("start was not interrupted")
+					}
+					if retry {
+						if _, err := e.h.Records.FinishAttempt("stopped-before-retry", "app", "t7", step, 1, store.AttemptStopped); err != nil {
+							t.Fatal(err)
+						}
+						ev = interp.Event{Kind: interp.AttemptRetried, Step: step, Attempt: 1, Reason: "retry interrupted work"}
+						if err := advanceErr(t, e, ev); err == nil {
+							t.Fatal("retry was not interrupted")
+						}
+					}
+					e.eng.Records = e.h.Records
+					held := true
+					e.eng.Hold = func() (bool, error) { return held, nil }
+					if s, ok := e.h.Records.(*store.Store); ok {
+						if err := e.h.PauseDirector(); err != nil {
+							t.Fatal(err)
+						}
+						e.eng.Hold = func() (bool, error) {
+							d, err := s.LatestDirectorSession()
+							return d.State == store.DirectorPaused || d.State == store.DirectorStopping || d.Sweeping, err
+						}
+					}
+					for range 2 {
+						want(t, e.advance(t, ev), interp.Next{Wait: interp.WaitPaused, Step: step})
+					}
+					if len(e.attempts(t)) != n || len(e.stages) != 0 || len(e.script.Launched()) != 0 || len(e.messages(t)) != 0 {
+						t.Fatalf("held recovery changed work: attempts %v, renders %d, launches %d, messages %v", e.attempts(t), len(e.stages), len(e.script.Launched()), e.messages(t))
+					}
+					if _, err := os.Stat(e.stageDir(step, n)); !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("held recovery prepared attempt: %v", err)
+					}
+					readHold := e.eng.Hold
+					boom := errors.New("hold unreadable")
+					e.eng.Hold = func() (bool, error) { return false, boom }
+					if err := advanceErr(t, e, ev); !errors.Is(err, boom) {
+						t.Fatalf("hold error = %v", err)
+					}
+					e.eng.Hold = readHold
+					held = false
+					if s, ok := e.h.Records.(*store.Store); ok {
+						d, err := s.LatestDirectorSession()
+						if err != nil {
+							t.Fatal(err)
+						}
+						if _, err := s.SetDirectorState(d.Number, store.DirectorRunning, d.StateSequence); err != nil {
+							t.Fatal(err)
+						}
+					}
+					want(t, e.advance(t, ev), interp.Next{Wait: wait, Step: step, Attempt: n})
+					if len(e.attempts(t)) != n || len(e.stages) != 1 {
+						t.Fatalf("recovery duplicated work: attempts %v, renders %d", e.attempts(t), len(e.stages))
+					}
+					if director {
+						if handed, err := interp.HandedToDirector(e.stageDir(step, n)); err != nil || !handed {
+							t.Fatalf("stage not handed over: %v, %v", handed, err)
+						}
+					} else if len(e.script.Launched()) != 1 {
+						t.Fatalf("recovery launches = %d", len(e.script.Launched()))
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestZeroModelGuard(t *testing.T) {
 	e := newEnv(t, backends[0])
 	e.eng.Config.Profiles["planner"] = config.Profile{Adapter: "claude"}
