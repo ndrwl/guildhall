@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/endpoint/endpointtest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -187,6 +188,46 @@ func startHolder(t *testing.T, path string) *exec.Cmd {
 		t.Fatalf("holder did not report ready within %v for %s", testenv.Ceiling(10*time.Second), path)
 	}
 	return cmd
+}
+
+// TestEndpointContract runs the shared endpoint contract against the attempt control endpoint: the owner is the
+// attempt and its launcher.
+func TestEndpointContract(t *testing.T) {
+	self := mustSelf(t)
+	launcher, err := json.Marshal(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := artisan.Identity{PID: self.PID, Token: self.Token + "-other"}
+	request := func(attempt string) string {
+		return fmt.Sprintf(`{"schema":"guildhall.attempt-control/1","op":"status","attempt":%q,"launcher":%s}`, attempt, launcher)
+	}
+	endpointtest.RunEndpointContract(t, func(t *testing.T) endpointtest.Harness {
+		path := endpointPath(t)
+		h := &testHandler{}
+		served := func() int { return int(h.statuses.Load() + h.stops.Load() + h.cancels.Load()) }
+		return endpointtest.Harness{
+			Path: path, Protocol: artisan.ControlProtocol(),
+			Listen: func() (endpointtest.Endpoint, error) {
+				e, err := artisan.Listen(path, testKey, self, ownedBy(self), h)
+				if err != nil {
+					return nil, err
+				}
+				return e, nil
+			},
+			Call: func(ctx context.Context) error {
+				_, err := artisan.Call(ctx, path, testKey, self, artisan.OpStatus)
+				return err
+			},
+			CallOther: func(ctx context.Context) error {
+				_, err := artisan.Call(ctx, path, testKey, other, artisan.OpStatus)
+				return err
+			},
+			Request: request(testKey.String()),
+			Foreign: request("app/t-1/build/2"),
+			Served:  served,
+		}
+	})
 }
 
 func TestEndpointPath(t *testing.T) {
@@ -526,15 +567,7 @@ func TestListenRemovesStaleSocketOfExitedOwner(t *testing.T) {
 
 func TestListenRemovesStaleSocketOfClosedListener(t *testing.T) {
 	path := endpointPath(t)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ln.SetUnlinkOnClose(false)
-	_ = ln.Close()
+	endpointtest.StaleSocket(t, path)
 	assertExists(t, path, "socket file kept on close (precondition)")
 	listen(t, path, &testHandler{})
 	if _, err := call(t, path, artisan.OpStatus); err != nil {

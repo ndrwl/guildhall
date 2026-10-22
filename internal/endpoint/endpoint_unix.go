@@ -1,6 +1,6 @@
 //go:build unix
 
-package artisan
+package endpoint
 
 import (
 	"errors"
@@ -11,5 +11,5 @@ import (
 // isRefused reports whether a dial failed because nothing listens on the socket.
 func isRefused(err error) bool { return errors.Is(err, syscall.ECONNREFUSED) }
 
-// restrictEndpoint limits the socket to its owner.
-func restrictEndpoint(path string) error { return os.Chmod(path, 0o600) }
+// restrict limits the socket to its owner.
+func restrict(path string) error { return os.Chmod(path, 0o600) }

@@ -142,7 +142,7 @@ func (a *App) directorResume(args []string) int {
 	out := resumed{Session: d, NeedsMe: status.NeedsMe}
 	if moved {
 		ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
-		w, err := messaging.WakeResumed(ctx, storeRecords(path), a.directorPane(), waitingKinds(status.NeedsMe))
+		w, err := messaging.WakeResumed(ctx, storeRecords{path: path}, a.directorPane(), waitingKinds(status.NeedsMe))
 		cancel()
 		if err != nil {
 			// The session is running: the wake's failure does not undo the resume, and the work waits for the

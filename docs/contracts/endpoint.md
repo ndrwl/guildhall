@@ -1,0 +1,26 @@
+# `internal/endpoint`
+
+## Contract
+
+Guildhall's one control endpoint, the AF_UNIX socket of the [attempt endpoint decision](../decisions/0034-attempt-endpoint-af-unix.md) and the line protocol of the [protocol decision](../decisions/0038-endpoint-protocol-v1.md), extracted from its two copies by sustainability review 12 (F43).
+Its consumers are the attempt control endpoint (`artisan.Listen` and `artisan.Call`, [control endpoint](../artisan.md#control-endpoint)) and the Director session's turn signals (`session.Listen` and `session.Signal`, [session](session.md)); a later socket, such as a context reporter or a release reload, composes over it rather than copying it.
+
+- An endpoint is one AF_UNIX stream socket, on Windows as on Unix, at a path of at most `MaxPath` bytes (103 on macOS, 107 on Linux and Windows); a longer path is `ErrPath` and creates nothing.
+- Each consumer names its `Protocol`: the schema prefix and the one version it speaks, its request and reply size limits, its mismatch error and its malformed-reply error. `Protocol.Current` is the schema every request and reply carries.
+- `Listen` creates a missing directory `0700`, binds, and on Unix makes the socket `0600`; on Windows the socket inherits the directory's ACL. The endpoint does not authenticate its peers; access control is the directory's.
+- A leftover file at the path is bound over only once proven stale: a socket whose connection is refused, because nothing listens on it, is removed first. A socket that accepts the connection is `ErrAnswers`; anything else, a regular file, a directory or a socket that refuses access, is `ErrUnknown`. Either is kept.
+- Each connection is one exchange: one request line of at most `Protocol.MaxRequest` bytes, decoded with [`strictjson`](strictjson.md) under the consumer's schema and version, answered by one reply line. A request that is not one such line, including a missing, unversioned, older or newer schema, a duplicate key, an undeclared field at any depth and trailing data, is answered with the consumer's `Server.Refuse` and reaches neither `Owns` nor `Serve`; a newer version's refusal says it is unsupported.
+- A request naming another owner than `Server.Owns` accepts is answered with `Refuse` carrying the consumer's `Mismatch` text and never reaches `Serve`.
+- `Serve` is called concurrently, one call per request, and the reply is written when it returns, so a request that blocks, such as an attempt's `stop`, delays no other.
+- The endpoint reads a request line, and writes its reply, each within `exchangeTimeout` (5 s); a peer that sends no complete line in time is refused and disconnected. `Call` is bounded by its context, dial and exchange, not by a fixed timeout, because a consumer's request may wait for its server, as `stop` waits for the attempt to end; once the context is done its error is wrapped.
+- `Call` writes one request line and reads one reply line of at most `Protocol.MaxReply` bytes, decoded strictly; a reply that is not the protocol is the consumer's `Malformed`, also matching `strictjson.ErrNewerSchema` for a newer version, and one naming another owner than the caller expects is the consumer's `Mismatch`, returned with the reply. No socket file at the path, or one nothing listens on, is `ErrNotListening`, which never proves the owner exited. A reply's own refusal is the consumer's to read.
+- `Close` stops accepting, lets requests being answered get their reply, and removes the socket file; it is idempotent.
+
+## Tests
+
+`endpointtest.RunEndpointContract` ([contract](endpoint-endpointtest.md)) is the shared suite; `endpoint_test.go` runs it over a test consumer, a ping naming an owner, and `artisan` and `session` each run it over their own `Listen` and `Call`.
+`endpoint_test.go` also covers the path limit creating nothing, `Call` with no socket file and over a stale socket (`ErrNotListening`), a blocked request delaying no other with the caller's context bounding a `Call`, and `Call` refusing a newer, unversioned, extended, duplicated, oversize and non-JSON reply as the consumer's `Malformed` and a reply naming another owner as its `Mismatch`, while returning a refusal reply for the consumer to read; `dir_unix_test.go` checks a missing directory is created `0700`, and `exchange_internal_test.go`, with the bound shortened, that a silent peer is refused once the exchange bound passes.
+The package and its suite were written red first against stub `Listen` and `Call` bodies that refused everything ([red run](../evidence/h12-endpoint-handed-lockwait-2026-10-23-red.txt)); every case failed, the refusal cases on the stubs' error not being the sentinel they expect.
+The artisan endpoint tests, `session_test.go` and `launch`'s `TestStopThroughTheEndpoint` pin the two consumers across the change and passed unchanged, apart from two stale-socket fixtures now made by `endpointtest.StaleSocket` and two session refusals that now name `ErrAnswers` and `ErrUnknown`.
+Two drifts between the former copies are now one rule: the attempt endpoint refuses a regular file at its path as `ErrEndpointUnknown` instead of removing it, as the session endpoint did, and the session endpoint creates its directory `0700` and its socket `0600`, as the attempt endpoint did.
+The deletion gate `grep -rn 'net.ListenUnix' internal` finds the one site in `endpoint.go`.

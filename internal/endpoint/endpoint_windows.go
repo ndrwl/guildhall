@@ -1,4 +1,4 @@
-package artisan
+package endpoint
 
 import (
 	"errors"
@@ -6,10 +6,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const maxEndpointPath = 107
+const maxPath = 107
 
 // isRefused reports whether a dial failed because nothing listens on the socket.
 func isRefused(err error) bool { return errors.Is(err, windows.WSAECONNREFUSED) }
 
-// restrictEndpoint does nothing: the socket inherits the state directory's ACL.
-func restrictEndpoint(string) error { return nil }
+// restrict does nothing: the socket inherits its directory's ACL.
+func restrict(string) error { return nil }

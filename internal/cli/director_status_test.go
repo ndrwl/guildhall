@@ -44,7 +44,8 @@ func exitedLauncher(t *testing.T) store.ProcessIdentity {
 // directory remains, as the reconcile fixtures leave it. lib/t-1 sends a question; app/t-2 has an unread
 // worker-stalled message and an acknowledged note. app/t-7's plan attempt succeeded with its result file and app/t-8's
 // was stopped, while each task's next.json still waits on that attempt, as a watcher whose advance failed leaves them.
-// app/t-3's plan attempt reported a measured and estimated spend and its build attempt an unknown one.
+// app/t-3's plan attempt reported a measured and estimated spend and its build attempt an unknown one. app/t-9's
+// plan attempt is a Director stage the engine handed to the Director, with no ownership record (F46).
 // The question woke the Director and the worker-stalled message, woken last, was queued.
 func statusCopy(t *testing.T) string {
 	t.Helper()
@@ -144,6 +145,8 @@ func statusCopy(t *testing.T) string {
 		func() (store.Receipt, error) {
 			return s.RecordWake(store.Wake{MessageID: "app.t-2.worker-stalled.plan-1.abc", SenderType: "guildhall", Decision: store.WakeQueued, Reason: "runtime not running"})
 		},
+		func() (store.Receipt, error) { return s.CreateTask("i-34", task("app", "t-9", "Director stage")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-35", "app", "t-9", "plan") },
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
@@ -170,6 +173,12 @@ func statusCopy(t *testing.T) string {
 		writeFile(t, filepath.Join(state, "app", task, "next.json"), `{"wait":"attempt","step":"plan","attempt":1}`+"\n")
 	}
 	writeFile(t, filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-7", Step: "plan", Attempt: 1}.Dir(state), artisan.ResultFile), "{}\n")
+	handed := artisan.AttemptKey{Repository: "app", TaskID: "t-9", Step: "plan", Attempt: 1}.Dir(state)
+	if err := os.MkdirAll(handed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(handed, "launched.json"), `{"launcher":"director","identity":{"task_id":"t-9","attempt_id":"plan-1"}}`+"\n")
+	writeFile(t, filepath.Join(state, "app", "t-9", "next.json"), `{"wait":"director-stage","step":"plan","attempt":1}`+"\n")
 	return dir
 }
 

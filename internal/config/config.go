@@ -64,6 +64,13 @@ const ChecksRefreshKey = "checks_refresh"
 // DefaultChecksRefresh is the checks refresh of a config that does not set ChecksRefreshKey.
 const DefaultChecksRefresh = time.Minute
 
+// LockWaitKey is the setting that bounds each advance's waits for its task lock and for the store's lock
+// (docs/configuration.md#settings).
+const LockWaitKey = "lock_wait"
+
+// DefaultLockWait is the lock wait of a config that does not set LockWaitKey.
+const DefaultLockWait = 30 * time.Second
+
 // HerdrSessionKey is the setting that names the Herdr session the Director's tab opens in
 // (docs/configuration.md#settings).
 const HerdrSessionKey = "herdr_session"
@@ -344,6 +351,16 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	if m, ok := c.Managed[LockWaitKey]; ok {
+		if _, err := parseLockWait(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[LockWaitKey]; ok {
+		if _, err := parseLockWait(v); err != nil {
+			add("local %v", err)
+		}
+	}
 	problems = append(problems, c.checkQuality()...)
 
 	for _, name := range slices.Sorted(maps.Keys(c.Profiles)) {
@@ -516,6 +533,24 @@ func parseChecksRefresh(v string) (time.Duration, error) {
 	d, err := time.ParseDuration(v)
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"1m\", or \"0s\" to read at every advance", ChecksRefreshKey, v)
+	}
+	return d, nil
+}
+
+// LockWait returns the effective LockWaitKey setting as a duration: DefaultLockWait when it is not set.
+// A value that is not a positive Go duration is an error; Parse refuses one already.
+func (c *Config) LockWait() (time.Duration, error) {
+	v, ok := c.Setting(LockWaitKey)
+	if !ok {
+		return DefaultLockWait, nil
+	}
+	return parseLockWait(v)
+}
+
+func parseLockWait(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("%s %q must be a positive duration such as \"30s\"", LockWaitKey, v)
 	}
 	return d, nil
 }

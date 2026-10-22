@@ -1,0 +1,109 @@
+Red run for sustainability review 12's F43 (one control endpoint), F46 (a handed-over stage has a name) and F49 (a lock wait the
+tests can set), 2026-10-23, on the branch's tests against stub bodies, each run separately:
+- F43: endpoint.Listen and endpoint.Call returning "not implemented" before doing anything. Every case of the suite
+  failed, the refusal cases too, since a stub's error is not the sentinel they expect; only the example passed. The consumers' own
+  tests (artisan's endpoint tests, session_test.go, TestStopThroughTheEndpoint) pin behaviour across the change and are
+  not red evidence.
+- F46: reconcile.Classify ignoring Attempt.Handed (the field present, the rule absent).
+- F49: config.LockWait returning DefaultLockWait whatever the copy set, and Parse checking no lock_wait value.
+The matching green run is the branch's go test ./...
+
+=== go test -v ./internal/endpoint (stub Listen and Call)
+    exchange_internal_test.go:32: endpoint: Listen: not implemented
+--- FAIL: TestASilentPeerIsDisconnected (0.00s)
+    dir_unix_test.go:14: Listen: endpoint: Listen: not implemented
+--- FAIL: TestListenCreatesItsDirectoryPrivate (0.00s)
+--- FAIL: TestEndpointContract (0.01s)
+    --- FAIL: TestEndpointContract/serves_the_owner (0.00s)
+    --- FAIL: TestEndpointContract/close_removes_the_socket (0.00s)
+    --- FAIL: TestEndpointContract/stale_socket_is_replaced (0.00s)
+    --- FAIL: TestEndpointContract/answering_socket_is_refused_and_kept (0.00s)
+    --- FAIL: TestEndpointContract/foreign_file_is_refused_and_kept (0.00s)
+    --- FAIL: TestEndpointContract/oversize_request_is_refused (0.00s)
+    --- FAIL: TestEndpointContract/wrong_peer_is_refused (0.00s)
+    --- FAIL: TestEndpointContract/old_and_new_schemas_are_refused (0.00s)
+    endpoint_test.go:118: Listen at a 125-byte path = endpoint: Listen: not implemented, want ErrPath
+--- FAIL: TestListenRefusesALongPath (0.00s)
+    endpoint_test.go:130: Call with no socket file = endpoint: Call: not implemented, want ErrNotListening
+    endpoint_test.go:134: Call to a stale socket = endpoint: Call: not implemented, want ErrNotListening
+--- FAIL: TestCallWithNothingListening (0.00s)
+    endpoint_test.go:142: Listen: endpoint: Listen: not implemented
+--- FAIL: TestABlockedRequestDelaysNoOther (0.00s)
+    endpoint_test.go:222: Call = endpoint: Call: not implemented, want not ping protocol version 1
+    endpoint_test.go:222: Call = endpoint: Call: not implemented, want not ping protocol version 1
+    endpoint_test.go:222: Call = endpoint: Call: not implemented, want the ping endpoint serves another owner
+    endpoint_test.go:222: Call = endpoint: Call: not implemented, want not ping protocol version 1
+    endpoint_test.go:222: Call = endpoint: Call: not implemented, want not ping protocol version 1
+    endpoint_test.go:222: Call = endpoint: Call: not implemented, want not ping protocol version 1
+    endpoint_test.go:222: Call = endpoint: Call: not implemented, want not ping protocol version 1
+    endpoint_test.go:234: a refusal reply: {Schema: Owner: Error:}, endpoint: Call: not implemented; want it returned for the consumer to read
+--- FAIL: TestCallRefusesUnsupportedReplies (0.01s)
+    --- FAIL: TestCallRefusesUnsupportedReplies/oversize (0.00s)
+    --- FAIL: TestCallRefusesUnsupportedReplies/not_json (0.00s)
+    --- FAIL: TestCallRefusesUnsupportedReplies/another_owner (0.00s)
+    --- FAIL: TestCallRefusesUnsupportedReplies/newer_version (0.00s)
+    --- FAIL: TestCallRefusesUnsupportedReplies/missing_version (0.00s)
+    --- FAIL: TestCallRefusesUnsupportedReplies/unknown_field (0.00s)
+    --- FAIL: TestCallRefusesUnsupportedReplies/duplicate_key (0.00s)
+--- PASS: ExampleProtocol_Current (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/endpoint	0.046s
+FAIL
+
+=== go test ./internal/reconcile -run TestClassifyFiles (Classify ignoring Handed)
+--- FAIL: TestClassifyFiles (0.02s)
+    --- FAIL: TestClassifyFiles/a_handed_attempt_with_no_ownership_record_is_handed (0.00s)
+        reconcile_test.go:213: state "absent" (no ownership record), want "handed": {State:absent Reason:no ownership record Outcome:<nil> Launcher: Endpoint: Heartbeat:<nil> HeartbeatAge:0s Survivors:[]}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/reconcile	0.027s
+FAIL
+
+=== go test ./internal/cli -run TestDirectorStatusGolden (same stub; the golden diff is trimmed to the handed task)
+--- FAIL: TestDirectorStatusGolden
+              "id": "t-9",
+              "title": "Director stage",
+              "state": "open",
+              "workflow": {
+                "name": "default",
+                "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+              },
+              "next": {
+                "wait": "director-stage",
+                "step": "plan",
+                "attempt": 1
+              },
+              "steps": [
+                {
+                  "step": "plan",
+                  "attempt": 1,
+                  "live": {
+                    "state": "absent",
+                    "reason": "no ownership record"
+                  }
+                }
+
+=== go test ./internal/config -run LockWait (stub LockWait and Parse)
+--- FAIL: TestLockWait (0.01s)
+    --- FAIL: TestLockWait/a_local_duration (0.00s)
+        lock_wait_test.go:28: LockWait() = 30s, <nil>; want 2s
+    --- FAIL: TestLockWait/a_managed_duration (0.00s)
+        lock_wait_test.go:28: LockWait() = 30s, <nil>; want 1m0s
+    --- FAIL: TestLockWait/an_overridable_managed_duration_replaced_locally (0.00s)
+        lock_wait_test.go:28: LockWait() = 30s, <nil>; want 500ms
+--- FAIL: TestLockWaitRefusesAnInvalidDuration (0.00s)
+    lock_wait_test.go:49: "[local]\nlock_wait = \"soon\"": Parse error <nil>, want one naming lock_wait
+    lock_wait_test.go:49: "[local]\nlock_wait = \"-1s\"": Parse error <nil>, want one naming lock_wait
+    lock_wait_test.go:49: "[local]\nlock_wait = \"0s\"": Parse error <nil>, want one naming lock_wait
+    lock_wait_test.go:49: "[local]\nlock_wait = \"30\"": Parse error <nil>, want one naming lock_wait
+    lock_wait_test.go:49: "[managed.lock_wait]\nvalue = \"later\"\n[local]": Parse error <nil>, want one naming lock_wait
+    lock_wait_test.go:54: LockWait of an unparsed invalid value succeeded
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.014s
+FAIL
+
+=== go test ./cmd/guildhall -run TestTheWatcherTellsTheDirectorOfAFailedAdvance (stub LockWait; endpoint restored)
+--- FAIL: TestTheWatcherTellsTheDirectorOfAFailedAdvance (66.95s)
+    run_test.go:420: the advance-failed message came 1m5.327548671s after the lock was taken, over 10s: the copy's lock_wait did not bound the advance
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	66.959s
+FAIL

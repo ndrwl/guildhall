@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/endpoint"
+	"github.com/ndrwl/guildhall/internal/endpoint/endpointtest"
 	"github.com/ndrwl/guildhall/internal/session"
 )
 
@@ -104,6 +106,37 @@ func listen(t *testing.T, dir string, number int) *session.Endpoint {
 	}
 	t.Cleanup(func() { _ = e.Close() })
 	return e
+}
+
+// TestEndpointContract runs the shared endpoint contract against the session endpoint: the owner is the session
+// number.
+func TestEndpointContract(t *testing.T) {
+	endpointtest.RunEndpointContract(t, func(t *testing.T) endpointtest.Harness {
+		dir := shortDir(t)
+		var e *session.Endpoint
+		return endpointtest.Harness{
+			Path: filepath.Join(dir, session.EndpointFile), Protocol: session.SessionProtocol(),
+			Listen: func() (endpointtest.Endpoint, error) {
+				ep, err := session.Listen(dir, 1)
+				if err != nil {
+					return nil, err
+				}
+				e = ep
+				return ep, nil
+			},
+			Call:      func(ctx context.Context) error { return session.Signal(ctx, dir, 1, session.TurnEnded) },
+			CallOther: func(ctx context.Context) error { return session.Signal(ctx, dir, 2, session.TurnEnded) },
+			Request:   `{"schema":"guildhall.session-control/1","op":"turn-ended","session":1}`,
+			Foreign:   `{"schema":"guildhall.session-control/1","op":"turn-ended","session":2}`,
+			// The endpoint holds one unread signal, so a served request is one there to take.
+			Served: func() int {
+				if e != nil && next(e) != "" {
+					return 1
+				}
+				return 0
+			},
+		}
+	})
 }
 
 func TestEndpointPath(t *testing.T) {
@@ -212,19 +245,13 @@ func TestSignalWithNoSupervisor(t *testing.T) {
 
 func TestListenOverLeftovers(t *testing.T) {
 	dir := shortDir(t)
-	p := filepath.Join(dir, session.EndpointFile)
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: p, Net: "unix"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ln.SetUnlinkOnClose(false)
-	_ = ln.Close()
+	endpointtest.StaleSocket(t, filepath.Join(dir, session.EndpointFile))
 	e := listen(t, dir, 1)
 	if code := hook(t, dir, 1); code != 0 || !received(e) {
 		t.Fatalf("over a stale socket: hook exited %d", code)
 	}
-	if _, err := session.Listen(dir, 2); err == nil {
-		t.Fatal("Listen over a live endpoint succeeded")
+	if _, err := session.Listen(dir, 2); !errors.Is(err, endpoint.ErrAnswers) {
+		t.Fatalf("Listen over a live endpoint = %v, want endpoint.ErrAnswers", err)
 	}
 	if code := hook(t, dir, 1); code != 0 {
 		t.Fatalf("the live endpoint stopped answering after a refused Listen: exit %d", code)
@@ -235,8 +262,8 @@ func TestListenOverLeftovers(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Listen(other, 1); err == nil {
-		t.Fatal("Listen over a regular file succeeded")
+	if _, err := session.Listen(other, 1); !errors.Is(err, endpoint.ErrUnknown) {
+		t.Fatalf("Listen over a regular file = %v, want endpoint.ErrUnknown", err)
 	}
 	if b, err := os.ReadFile(file); err != nil || string(b) != "x" {
 		t.Fatalf("the regular file was not kept: %q, %v", b, err)

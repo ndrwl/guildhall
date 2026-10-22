@@ -46,7 +46,8 @@ The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/conf
 | Base and classifier | For an Artisan code review, the [rebase-aware review](interpreter.md#rebase-aware-review)'s `Engine.Base` is the merge base of branch `guildhall/<task>` and the remote's default branch as the working directory's custody last fetched it (`refs/guildhall/default/guildhall/<task>`), read from the repository's `path` with no network call, and its classifier is `git.Program` over that `path`; a base that cannot be read, such as with no working directory yet, leaves the review full |
 | Documents | `<state>/documents` |
 
-An advance holds the task's lock, `attempt.lock` in `<state>/<repository>/<task>`, for its whole run, waiting at most 30 seconds for it, so two advances of one task never interleave; the interpreter is not safe for concurrent use on one task.
+An advance holds the task's lock, `attempt.lock` in `<state>/<repository>/<task>`, for its whole run, waiting at most the copy's [`lock_wait`](configuration.md#settings), 30 seconds by default, for it, so two advances of one task never interleave; the interpreter is not safe for concurrent use on one task.
+The same wait bounds each of the advance's opens of the store, which waits for another process's lock; a launcher's advance runs over the same copy, so it waits the same.
 Each `git` or `gh` run of the forge, of the working directory and of the review classifier is bounded by five minutes, so a forge that does not answer is an error that records nothing, and an interrupt (Ctrl+C) ends the advance; either way the lock is released and running the command again replays the advance.
 The interrupt is exercised by a Unix test only; a second interrupt while the advance unwinds ends the process at once.
 
@@ -61,7 +62,7 @@ Once the launcher has published the attempt's outcome, recorded its store outcom
 | Anything else: failed without a result, stopped, or failed at setup | `guildhall task start --copy <dir> --repo <repo> <task>`, which sends the Director `attempt-failed` |
 
 The advance's output is appended to the attempt's `launcher.log` and an `advance` event with its exit status to its `events.jsonl` ([events](artisan.md#events)).
-An advance that exits unsuccessfully, such as one that waited 30 seconds for a task lock another advance held, is run once more, which waits the lock wait again.
+An advance that exits unsuccessfully, such as one that waited its `lock_wait` for a task lock another advance held, is run once more, which waits the lock wait again.
 When that run fails too, the launcher sends the Director `<repo>.<task>.advance-failed.<step>-<n>`, type `advance-failed`, naming the command and its last line of error output; the send goes through the store with no task lock, and the Director is [woken](messaging.md#waking-the-director) for it as for any other send.
 [`director status`](director.md#status) lists the attempt nobody took as an `advance` item until an advance takes it.
 A failed advance changes neither the attempt's outcome nor the launcher's exit status: both commands are idempotent, so the Director's next `task start`, or the `step done` the status item names, repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).

@@ -1,37 +1,32 @@
 // Package session is the Director session supervisor's control endpoint (docs/director.md#the-end-of-a-turn).
 //
-// The supervisor of session n binds one AF_UNIX stream socket, on Windows as on Unix, at EndpointFile in the
-// session's directory, as an attempt's launcher binds its control endpoint. The runtime's turn-start hook runs
-// `guildhall director turn-started` and its end-of-turn hook `guildhall director turn-ended`, each of which calls
-// Signal; the supervisor receives each signal on Endpoint.Turns. The line protocol is one JSON request line and one JSON reply line, each carrying
-// "schema": "guildhall.session-control/1" and the session number, decoded strictly as the attempt endpoint's
-// are. The endpoint does not authenticate its peers: access control is the session directory's.
+// The supervisor of session n binds one endpoint (docs/contracts/endpoint.md), an AF_UNIX stream socket on Windows
+// as on Unix, at EndpointFile in the session's directory, as an attempt's launcher binds its control endpoint. The
+// runtime's turn-start hook runs `guildhall director turn-started` and its end-of-turn hook
+// `guildhall director turn-ended`, each of which calls Signal; the supervisor receives each signal on
+// Endpoint.Turns. The line protocol is one JSON request line and one JSON reply line, each carrying
+// "schema": "guildhall.session-control/1" and the session number, which the endpoint package decodes strictly and
+// whose session number is the peer check. The endpoint does not authenticate its peers: access control is the
+// session directory's.
 package session
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
-	"net"
-	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
-	"github.com/ndrwl/guildhall/internal/artisan"
-	"github.com/ndrwl/guildhall/internal/strictjson"
+	"github.com/ndrwl/guildhall/internal/endpoint"
 )
 
 // EndpointFile is the endpoint's socket file name in the session directory.
 const EndpointFile = "supervisor.sock"
 
-// Errors returned by the session endpoint.
+// Errors returned by the session endpoint. Listen's refusals of a leftover file are the endpoint package's
+// endpoint.ErrAnswers and endpoint.ErrUnknown.
 var (
-	// ErrPath refuses a socket path longer than artisan.MaxEndpointPath bytes or a relative session directory.
+	// ErrPath refuses a socket path longer than endpoint.MaxPath bytes or a relative session directory.
 	ErrPath = errors.New("session endpoint path is unusable")
 	// ErrNoSupervisor reports that nothing listens at the session's endpoint: no supervisor runs the session.
 	ErrNoSupervisor = errors.New("no supervisor listens at the session endpoint")
@@ -41,14 +36,11 @@ var (
 	ErrProtocol = errors.New("session endpoint reply is not session-control protocol version 1")
 )
 
-// Limits and version of the line protocol.
-const (
-	schemaPrefix    = "guildhall.session-control/"
-	schemaV1        = "guildhall.session-control/1"
-	maxLineBytes    = 4 << 10
-	exchangeTimeout = 5 * time.Second
-	leftoverTimeout = time.Second
-)
+// sessionProtocol is the session control line protocol, version 1.
+var sessionProtocol = endpoint.Protocol{
+	Schema: "guildhall.session-control/", Version: 1, MaxRequest: 4 << 10, MaxReply: 4 << 10,
+	Mismatch: ErrMismatch, Malformed: ErrProtocol,
+}
 
 // Turn is a turn signal, named by its request op.
 type Turn string
@@ -73,116 +65,62 @@ type reply struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func lineOptions() strictjson.Options {
-	return strictjson.Options{Schema: schemaPrefix, Version: 1, MaxBytes: maxLineBytes}
-}
-
 // EndpointPath returns the endpoint's socket path for the absolute session directory dir: dir/EndpointFile.
-// A relative dir, or a path longer than artisan.MaxEndpointPath, is ErrPath.
+// A relative dir, or a path longer than endpoint.MaxPath, is ErrPath.
 func EndpointPath(dir string) (string, error) {
 	if !filepath.IsAbs(dir) {
 		return "", fmt.Errorf("session: %w: directory %q is not absolute", ErrPath, dir)
 	}
 	p := filepath.Join(dir, EndpointFile)
-	if len(p) > artisan.MaxEndpointPath {
-		return "", fmt.Errorf("session: %w: %q is %d bytes, limit %d", ErrPath, p, len(p), artisan.MaxEndpointPath)
+	if len(p) > endpoint.MaxPath {
+		return "", fmt.Errorf("session: %w: %q is %d bytes, limit %d", ErrPath, p, len(p), endpoint.MaxPath)
 	}
 	return p, nil
 }
 
 // Endpoint is a bound session endpoint.
 type Endpoint struct {
-	path     string
-	number   int
-	ln       *net.UnixListener
-	turns    chan Turn
-	mu       sync.Mutex
-	once     sync.Once
-	closeErr error
+	*endpoint.Endpoint
+	turns chan Turn
+	mu    sync.Mutex
 }
 
 // Listen binds the endpoint of session number in the absolute session directory dir. A leftover socket file
-// nothing listens on is removed first; one that answers, or any other file there, is refused and kept.
-// The endpoint serves until Close.
+// nothing listens on is removed first; one that answers is refused as endpoint.ErrAnswers and any other file there
+// as endpoint.ErrUnknown, and kept. The endpoint serves until Close, which stops it and removes the socket file,
+// idempotently.
 func Listen(dir string, number int) (*Endpoint, error) {
 	p, err := EndpointPath(dir)
 	if err != nil {
 		return nil, err
 	}
-	if err := removeStale(p); err != nil {
-		return nil, err
-	}
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: p, Net: "unix"})
+	e := &Endpoint{turns: make(chan Turn, 1)}
+	ep, err := endpoint.Listen[request, reply](p, sessionProtocol, signalServer{number: number, e: e})
 	if err != nil {
-		return nil, fmt.Errorf("session: bind endpoint: %w", err)
+		return nil, fmt.Errorf("session: %w", err)
 	}
-	e := &Endpoint{path: p, number: number, ln: ln, turns: make(chan Turn, 1)}
-	go e.serve()
+	e.Endpoint = ep
 	return e, nil
 }
 
-// removeStale removes a leftover socket at path that nothing listens on and refuses anything else there.
-func removeStale(path string) error {
-	fi, err := os.Lstat(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return nil
-	case err != nil:
-		return fmt.Errorf("session: leftover endpoint: %w", err)
-	case fi.Mode().Type() != fs.ModeSocket:
-		return fmt.Errorf("session: leftover endpoint %s is not a socket; kept", path)
-	}
-	c, err := net.DialTimeout("unix", path, leftoverTimeout)
-	if err == nil {
-		_ = c.Close()
-		return fmt.Errorf("session: an endpoint already answers at %s; kept", path)
-	}
-	if !isRefused(err) {
-		return fmt.Errorf("session: leftover endpoint %s cannot be proven stale: %w; kept", path, err)
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("session: remove stale endpoint: %w", err)
-	}
-	return nil
+// signalServer serves the turn signals of one session, delivering each to e before replying.
+type signalServer struct {
+	number int
+	e      *Endpoint
 }
 
-func (e *Endpoint) serve() {
-	for {
-		c, err := e.ln.Accept()
-		if errors.Is(err, net.ErrClosed) {
-			return
-		}
-		if err != nil {
-			// A transient accept failure, such as running out of descriptors.
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		go e.answer(c)
-	}
+func (s signalServer) Owns(req request) bool { return req.Session == s.number }
+
+func (s signalServer) Refuse(msg string) reply {
+	return reply{Schema: sessionProtocol.Current(), Session: s.number, Error: msg}
 }
 
-// answer reads one request line from c and writes one reply line, delivering a turn signal before replying.
-func (e *Endpoint) answer(c net.Conn) {
-	defer func() { _ = c.Close() }()
-	rep := reply{Schema: schemaV1, Session: e.number}
-	_ = c.SetReadDeadline(time.Now().Add(exchangeTimeout))
-	var req request
-	line, err := bufio.NewReader(io.LimitReader(c, maxLineBytes)).ReadBytes('\n')
-	if err == nil {
-		err = strictjson.Decode(line, &req, lineOptions())
+func (s signalServer) Serve(req request) reply {
+	if req.Op != TurnStarted && req.Op != TurnEnded {
+		return s.Refuse(fmt.Sprintf("unknown op %q", req.Op))
 	}
-	switch {
-	case err != nil:
-		rep.Error = fmt.Sprintf("malformed request: one %s JSON line of at most %d bytes is required: %v", schemaV1, maxLineBytes, err)
-	case req.Op != TurnStarted && req.Op != TurnEnded:
-		rep.Error = fmt.Sprintf("unknown op %q", req.Op)
-	case req.Session != e.number:
-		rep.Error = ErrMismatch.Error()
-	default:
-		e.deliver(req.Op)
-	}
-	_ = c.SetWriteDeadline(time.Now().Add(exchangeTimeout))
-	_ = json.NewEncoder(c).Encode(rep)
+	s.e.deliver(req.Op)
+	return reply{Schema: sessionProtocol.Current(), Session: s.number}
 }
 
 // deliver replaces any unread signal with t, so Turns holds the newest.
@@ -200,20 +138,6 @@ func (e *Endpoint) deliver(t Turn) {
 // another is unread replaces it.
 func (e *Endpoint) Turns() <-chan Turn { return e.turns }
 
-// Path returns the socket path the endpoint is bound at.
-func (e *Endpoint) Path() string { return e.path }
-
-// Close stops accepting requests and removes the socket file. It is idempotent.
-func (e *Endpoint) Close() error {
-	e.once.Do(func() {
-		e.closeErr = e.ln.Close()
-		if err := os.Remove(e.path); err != nil && !errors.Is(err, fs.ErrNotExist) && e.closeErr == nil {
-			e.closeErr = err
-		}
-	})
-	return e.closeErr
-}
-
 // Signal sends turn to the supervisor of session number, listening in the absolute session directory dir, and
 // returns once the endpoint has answered. Nothing listening is
 // ErrNoSupervisor, an endpoint serving another session ErrMismatch, and a malformed reply ErrProtocol.
@@ -223,31 +147,15 @@ func Signal(ctx context.Context, dir string, number int, turn Turn) error {
 	if err != nil {
 		return err
 	}
-	var d net.Dialer
-	c, err := d.DialContext(ctx, "unix", p)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) || isRefused(err) {
-			return fmt.Errorf("session: %w: %s", ErrNoSupervisor, p)
-		}
-		return fmt.Errorf("session: endpoint %s: %w", p, err)
-	}
-	defer func() { _ = c.Close() }()
-	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
-	defer stop()
-	if err := json.NewEncoder(c).Encode(request{Schema: schemaV1, Op: turn, Session: number}); err != nil {
-		return fmt.Errorf("session: endpoint %s: %w", p, err)
-	}
-	line, err := bufio.NewReader(io.LimitReader(c, maxLineBytes)).ReadBytes('\n')
-	if err != nil {
-		return fmt.Errorf("session: endpoint %s: %w", p, err)
-	}
-	var rep reply
-	if err := strictjson.Decode(line, &rep, lineOptions()); err != nil {
-		return fmt.Errorf("session: %w: %s: %w", ErrProtocol, p, err)
-	}
+	req := request{Schema: sessionProtocol.Current(), Op: turn, Session: number}
+	rep, err := endpoint.Call(ctx, p, sessionProtocol, req, func(rep reply) bool { return rep.Session == number })
 	switch {
-	case rep.Session != number:
-		return fmt.Errorf("session: %w: %s serves session %d, not %d", ErrMismatch, p, rep.Session, number)
+	case errors.Is(err, endpoint.ErrNotListening):
+		return fmt.Errorf("session: %w: %w", ErrNoSupervisor, err)
+	case errors.Is(err, ErrMismatch):
+		return fmt.Errorf("session: %w; it serves session %d, not %d", err, rep.Session, number)
+	case err != nil:
+		return fmt.Errorf("session: %w", err)
 	case rep.Error != "":
 		return fmt.Errorf("session: endpoint %s refused the %s signal: %s", p, turn, rep.Error)
 	}

@@ -21,7 +21,7 @@ const wakeTimeout = 10 * time.Second
 func (a *App) wake(path, messageID, sender string) (store.Wake, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
 	defer cancel()
-	return messaging.Wake(ctx, storeRecords(path), a.directorPane(), messageID, sender)
+	return messaging.Wake(ctx, storeRecords{path: path}, a.directorPane(), messageID, sender)
 }
 
 func (a *App) directorPane() messaging.DirectorPane {
@@ -98,35 +98,35 @@ func (o *deferredOutbox) wakeAll(w wakingOutbox) {
 }
 
 func (p storeRecords) WakeFor(id string) (store.Wake, error) {
-	return withStore(string(p), true, func(s *store.Store) (store.Wake, error) { return s.WakeFor(id) })
+	return withRecords(p, true, nil, func(s *store.Store) (store.Wake, error) { return s.WakeFor(id) })
 }
 
 func (p storeRecords) Message(id string) (store.Message, error) {
-	return withStore(string(p), true, func(s *store.Store) (store.Message, error) { return s.Message(id) })
+	return withRecords(p, true, nil, func(s *store.Store) (store.Message, error) { return s.Message(id) })
 }
 
 func (p storeRecords) LatestDirectorSession() (store.DirectorSession, error) {
-	return withStore(string(p), true, func(s *store.Store) (store.DirectorSession, error) { return s.LatestDirectorSession() })
+	return withRecords(p, true, nil, func(s *store.Store) (store.DirectorSession, error) { return s.LatestDirectorSession() })
 }
 
 func (p storeRecords) DirectorUnread() (map[string]int, error) {
-	return withStore(string(p), true, func(s *store.Store) (map[string]int, error) { return s.DirectorUnread() })
+	return withRecords(p, true, nil, func(s *store.Store) (map[string]int, error) { return s.DirectorUnread() })
 }
 
 func (p storeRecords) RecordWake(w store.Wake) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.RecordWake(w) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.RecordWake(w) })
 }
 
 func (p storeRecords) HandoffDues(n int) ([]store.HandoffDue, error) {
-	return withStore(string(p), true, func(s *store.Store) ([]store.HandoffDue, error) { return s.HandoffDues(n) })
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.HandoffDue, error) { return s.HandoffDues(n) })
 }
 
 func (p storeRecords) FinishedTasks(n int) (int, error) {
-	return withStore(string(p), true, func(s *store.Store) (int, error) { return s.FinishedTasks(n) })
+	return withRecords(p, true, nil, func(s *store.Store) (int, error) { return s.FinishedTasks(n) })
 }
 
 func (p storeRecords) RecordHandoffDue(d store.HandoffDue) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.RecordHandoffDue(d) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.RecordHandoffDue(d) })
 }
 
-var _ messaging.WakeStore = storeRecords("")
+var _ messaging.WakeStore = storeRecords{}

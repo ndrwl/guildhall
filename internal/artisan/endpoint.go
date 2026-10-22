@@ -1,22 +1,14 @@
 package artisan
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
-	"net"
-	"os"
 	"path/filepath"
-	"sync"
-	"time"
 
-	"github.com/ndrwl/guildhall/internal/strictjson"
+	"github.com/ndrwl/guildhall/internal/endpoint"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -32,25 +24,28 @@ import (
 // cancel do is the launcher's EndpointHandler.
 //
 // The line protocol is versioned (docs/artisan.md#protocol): request and reply
-// carry "schema": "guildhall.attempt-control/1". The endpoint decodes a
-// request strictly and refuses, before matching identities or calling any
-// handler, a missing or unversioned schema, a newer version, a duplicate key
-// and a field the protocol does not declare, at any depth; Call refuses such
-// a reply with ErrEndpointProtocol.
+// carry "schema": "guildhall.attempt-control/1". The endpoint package binds,
+// serves and calls it (docs/contracts/endpoint.md): it decodes a request
+// strictly and refuses, before matching identities or calling any handler, a
+// missing or unversioned schema, a newer version, a duplicate key and a field
+// the protocol does not declare, at any depth; Call refuses such a reply with
+// ErrEndpointProtocol.
 
-// Errors returned by the control endpoint.
+// Errors returned by the control endpoint. ErrEndpointPath, ErrEndpointAnswers and ErrEndpointUnknown are the
+// endpoint package's, which owns the rules behind them.
 var (
 	// ErrEndpointPath refuses a socket path longer than MaxEndpointPath bytes.
-	ErrEndpointPath = errors.New("endpoint path exceeds the AF_UNIX path limit")
+	ErrEndpointPath = endpoint.ErrPath
 	// ErrNotOwner refuses to bind because the attempt's ownership record does
 	// not name this launcher, or cannot be read; nothing is created.
 	ErrNotOwner = errors.New("attempt ownership record does not name this launcher")
 	// ErrEndpointAnswers refuses to bind over a socket that accepts connections
 	// although no ownership record names it; the socket file is kept.
-	ErrEndpointAnswers = errors.New("an unrecorded endpoint answers at the attempt's path")
+	ErrEndpointAnswers = endpoint.ErrAnswers
 	// ErrEndpointUnknown refuses to bind over a leftover file that cannot be
-	// proven stale, such as one that refuses access; the file is kept.
-	ErrEndpointUnknown = errors.New("leftover endpoint file cannot be proven stale")
+	// proven stale, such as a regular file, a directory or a socket that
+	// refuses access; the file is kept.
+	ErrEndpointUnknown = endpoint.ErrUnknown
 	// ErrEndpointMismatch reports a reply that names another attempt or
 	// launcher than the caller expected.
 	ErrEndpointMismatch = errors.New("endpoint answered for another attempt or launcher")
@@ -64,9 +59,9 @@ var (
 )
 
 // MaxEndpointPath is the longest socket path, in bytes, this platform's
-// AF_UNIX address holds with its terminating NUL: 103 on macOS, 107 on Linux
-// and Windows.
-const MaxEndpointPath = maxEndpointPath
+// AF_UNIX address holds with its terminating NUL: endpoint.MaxPath, 103 on
+// macOS, 107 on Linux and Windows.
+const MaxEndpointPath = endpoint.MaxPath
 
 // AttemptKey names one stage attempt as the store keys it. It owns the
 // attempt layout: the interpreter prepares Dir and the launcher runs in it,
@@ -173,24 +168,11 @@ type EndpointHandler interface {
 // released one, is an error.
 type OwnerLookup func() (Identity, error)
 
-// Limits and version of the line protocol.
-const (
-	// endpointSchema prefixes the protocol version in every request and reply.
-	endpointSchema  = "guildhall.attempt-control/"
-	endpointVersion = 1
-	// endpointSchemaV1 is the schema this endpoint speaks and Call sends.
-	endpointSchemaV1 = "guildhall.attempt-control/1"
-	maxRequestBytes  = 4 << 10
-	maxReplyBytes    = 1 << 20
-	// exchangeTimeout bounds reading a request and writing its reply.
-	exchangeTimeout = 5 * time.Second
-	// leftoverTimeout bounds the connection attempt that tests a leftover file.
-	leftoverTimeout = time.Second
-)
-
-// endpointOptions are the strict decoding rules for a line of at most max bytes.
-func endpointOptions(max int) strictjson.Options {
-	return strictjson.Options{Schema: endpointSchema, Version: endpointVersion, MaxBytes: max}
+// controlProtocol is the attempt control line protocol, version 1
+// (docs/artisan.md#protocol).
+var controlProtocol = endpoint.Protocol{
+	Schema: "guildhall.attempt-control/", Version: 1, MaxRequest: 4 << 10, MaxReply: 1 << 20,
+	Mismatch: ErrEndpointMismatch, Malformed: ErrEndpointProtocol,
 }
 
 type endpointRequest struct {
@@ -210,13 +192,7 @@ type endpointReply struct {
 
 // Endpoint is a bound control endpoint.
 type Endpoint struct {
-	path     string
-	key      AttemptKey
-	self     Identity
-	h        EndpointHandler
-	ln       *net.UnixListener
-	once     sync.Once
-	closeErr error
+	*endpoint.Endpoint
 }
 
 // Listen binds the control endpoint of attempt k at path for launcher self
@@ -224,17 +200,20 @@ type Endpoint struct {
 // otherwise returns ErrNotOwner without creating anything. A path longer than
 // MaxEndpointPath is ErrEndpointPath.
 //
-// A leftover file at path is handled by the stale-file rule. Taking the
-// ownership record proved any previous owner exited, so a leftover nothing
-// listens on (the connection is refused) is that owner's stale socket and is
-// removed before binding. A leftover that accepts a connection is an
-// unrecorded endpoint: ErrEndpointAnswers, and the file is kept. Any other
-// leftover, such as one that refuses access or a directory, cannot be proven
-// stale: ErrEndpointUnknown, and it is kept.
+// The endpoint package binds it (docs/contracts/endpoint.md). A leftover file
+// at path is handled by its stale-file rule: taking the ownership record
+// proved any previous owner exited, so a leftover socket nothing listens on
+// (the connection is refused) is that owner's stale socket and is removed
+// before binding. A socket that accepts a connection is an unrecorded
+// endpoint: ErrEndpointAnswers, and the file is kept. Any other leftover,
+// such as a regular file, a directory or a socket that refuses access,
+// cannot be proven stale: ErrEndpointUnknown, and it is kept.
 //
 // The endpoint's parent directory is created with mode 0700 and, on Unix,
 // the socket is made 0600; access control is the state directory's, and the
-// endpoint does not authenticate its peers.
+// endpoint does not authenticate its peers. Close stops accepting requests
+// and removes the socket file; requests being answered still get their
+// reply. It is idempotent.
 func Listen(path string, k AttemptKey, self Identity, owner OwnerLookup, h EndpointHandler) (*Endpoint, error) {
 	if err := k.validate(); err != nil {
 		return nil, err
@@ -249,155 +228,68 @@ func Listen(path string, k AttemptKey, self Identity, owner OwnerLookup, h Endpo
 	if got != self {
 		return nil, fmt.Errorf("artisan: %w: attempt %s is recorded for launcher %d", ErrNotOwner, k, got.PID)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("artisan: endpoint directory: %w", err)
-	}
-	if err := removeStale(path); err != nil {
-		return nil, err
-	}
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	e, err := endpoint.Listen[endpointRequest, endpointReply](path, controlProtocol, controlServer{attempt: k.String(), self: self, h: h})
 	if err != nil {
-		return nil, fmt.Errorf("artisan: bind endpoint: %w", err)
+		return nil, fmt.Errorf("artisan: %w", err)
 	}
-	if err := restrictEndpoint(path); err != nil {
-		_ = ln.Close()
-		return nil, fmt.Errorf("artisan: restrict endpoint: %w", err)
-	}
-	e := &Endpoint{path: path, key: k, self: self, h: h, ln: ln}
-	go e.serve()
-	return e, nil
+	return &Endpoint{e}, nil
 }
 
-// removeStale applies the stale-file rule to whatever is at path.
-func removeStale(path string) error {
-	fi, err := os.Lstat(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return nil
-	case err != nil:
-		return fmt.Errorf("artisan: %w: %w", ErrEndpointUnknown, err)
-	case fi.IsDir():
-		return fmt.Errorf("artisan: %w: %s is a directory; kept", ErrEndpointUnknown, path)
-	}
-	c, err := net.DialTimeout("unix", path, leftoverTimeout)
-	if err == nil {
-		_ = c.Close()
-		return fmt.Errorf("artisan: %w: %s; kept", ErrEndpointAnswers, path)
-	}
-	if !isRefused(err) {
-		return fmt.Errorf("artisan: %w: %s: %w; kept", ErrEndpointUnknown, path, err)
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("artisan: remove stale endpoint: %w", err)
-	}
-	return nil
+// controlServer serves attempt control requests for one attempt and launcher.
+type controlServer struct {
+	attempt string
+	self    Identity
+	h       EndpointHandler
 }
 
-func (e *Endpoint) serve() {
-	for {
-		c, err := e.ln.Accept()
-		if errors.Is(err, net.ErrClosed) {
-			return
-		}
-		if err != nil {
-			// A transient accept failure, such as running out of descriptors.
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		go e.answer(c)
-	}
+func (s controlServer) Owns(req endpointRequest) bool {
+	return req.Attempt == s.attempt && req.Launcher == s.self
 }
 
-// answer reads one request line from c and writes one reply line.
-func (e *Endpoint) answer(c net.Conn) {
-	defer func() { _ = c.Close() }()
-	rep := endpointReply{Schema: endpointSchemaV1, Attempt: e.key.String(), Launcher: e.self}
-	_ = c.SetReadDeadline(time.Now().Add(exchangeTimeout))
-	var req endpointRequest
-	line, err := bufio.NewReader(io.LimitReader(c, maxRequestBytes)).ReadBytes('\n')
-	if err == nil {
-		err = strictjson.Decode(line, &req, endpointOptions(maxRequestBytes))
-	}
-	if errors.Is(err, strictjson.ErrNewerSchema) {
-		rep.Error = fmt.Sprintf("unsupported protocol version: %v", err)
-	} else if err != nil {
-		rep.Error = fmt.Sprintf("malformed request: one %s JSON line of at most %d bytes is required: %v", endpointSchemaV1, maxRequestBytes, err)
-	} else if req.Attempt != rep.Attempt || req.Launcher != e.self {
-		rep.Error = ErrEndpointMismatch.Error()
-	} else {
-		var st EndpointState
-		switch req.Op {
-		case OpStatus:
-			st, err = e.h.Status()
-		case OpStop:
-			st, err = e.h.Stop()
-		case OpCancel:
-			st, err = e.h.Cancel()
-		default:
-			err = fmt.Errorf("unknown op %q", req.Op)
-		}
-		if err != nil {
-			rep.Error = err.Error()
-		} else {
-			rep.State = &st
-		}
-	}
-	_ = c.SetWriteDeadline(time.Now().Add(exchangeTimeout))
-	_ = json.NewEncoder(c).Encode(rep)
+func (s controlServer) Refuse(msg string) endpointReply {
+	return endpointReply{Schema: controlProtocol.Current(), Attempt: s.attempt, Launcher: s.self, Error: msg}
 }
 
-// Path returns the socket path the endpoint is bound at.
-func (e *Endpoint) Path() string { return e.path }
-
-// Close stops accepting requests and removes the socket file; requests being
-// answered still get their reply. It is idempotent.
-func (e *Endpoint) Close() error {
-	e.once.Do(func() { e.closeErr = e.ln.Close() })
-	return e.closeErr
+func (s controlServer) Serve(req endpointRequest) endpointReply {
+	var st EndpointState
+	var err error
+	switch req.Op {
+	case OpStatus:
+		st, err = s.h.Status()
+	case OpStop:
+		st, err = s.h.Stop()
+	case OpCancel:
+		st, err = s.h.Cancel()
+	default:
+		err = fmt.Errorf("unknown op %q", req.Op)
+	}
+	if err != nil {
+		return s.Refuse(err.Error())
+	}
+	return endpointReply{Schema: controlProtocol.Current(), Attempt: s.attempt, Launcher: s.self, State: &st}
 }
 
 // Call sends op to the endpoint at path and returns the state it answers.
 // The reply must be protocol version 1, otherwise ErrEndpointProtocol, and
 // name attempt k and launcher, otherwise ErrEndpointMismatch; a reply carrying
-// an error, including the endpoint's refusal of the request, is ErrEndpointRequest. ctx bounds the dial and
-// the whole exchange. A failed dial says nothing about whether the owner is
-// alive: a silent endpoint never proves exit.
+// an error, including the endpoint's refusal of the request, is
+// ErrEndpointRequest. ctx bounds the dial and the whole exchange. A failed
+// dial, endpoint.ErrNotListening when nothing listens, says nothing about
+// whether the owner is alive: a silent endpoint never proves exit.
 func Call(ctx context.Context, path string, k AttemptKey, launcher Identity, op EndpointOp) (EndpointState, error) {
-	var d net.Dialer
-	c, err := d.DialContext(ctx, "unix", path)
-	if err != nil {
-		return EndpointState{}, fmt.Errorf("artisan: endpoint %s: %w", path, err)
-	}
-	defer func() { _ = c.Close() }()
-	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
-	defer stop()
-	if err := json.NewEncoder(c).Encode(endpointRequest{Schema: endpointSchemaV1, Op: op, Attempt: k.String(), Launcher: launcher}); err != nil {
-		return EndpointState{}, callErr(ctx, path, err)
-	}
-	line, err := bufio.NewReader(io.LimitReader(c, maxReplyBytes)).ReadBytes('\n')
-	if err != nil {
-		return EndpointState{}, callErr(ctx, path, err)
-	}
-	var rep endpointReply
-	if err := strictjson.Decode(line, &rep, endpointOptions(maxReplyBytes)); err != nil {
-		return EndpointState{}, fmt.Errorf("artisan: %w: %s: %w", ErrEndpointProtocol, path, err)
-	}
-	if rep.Attempt != k.String() || rep.Launcher != launcher {
-		return EndpointState{}, fmt.Errorf("artisan: %w: %s answered for attempt %q launcher %d", ErrEndpointMismatch, path, rep.Attempt, rep.Launcher.PID)
-	}
-	if rep.Error != "" {
+	req := endpointRequest{Schema: controlProtocol.Current(), Op: op, Attempt: k.String(), Launcher: launcher}
+	rep, err := endpoint.Call(ctx, path, controlProtocol, req, func(rep endpointReply) bool {
+		return rep.Attempt == k.String() && rep.Launcher == launcher
+	})
+	switch {
+	case errors.Is(err, ErrEndpointMismatch):
+		return EndpointState{}, fmt.Errorf("artisan: %w; it answered for attempt %q launcher %d", err, rep.Attempt, rep.Launcher.PID)
+	case err != nil:
+		return EndpointState{}, fmt.Errorf("artisan: %w", err)
+	case rep.Error != "":
 		return EndpointState{}, fmt.Errorf("artisan: %w: %s: %s", ErrEndpointRequest, op, rep.Error)
-	}
-	if rep.State == nil {
+	case rep.State == nil:
 		return EndpointState{}, fmt.Errorf("artisan: endpoint %s: reply has neither state nor error", path)
 	}
 	return *rep.State, nil
-}
-
-// callErr reports a failed exchange, as the context's error once it is done.
-func callErr(ctx context.Context, path string, err error) error {
-	if ctx.Err() != nil {
-		return fmt.Errorf("artisan: endpoint %s: %w: %w", path, ctx.Err(), err)
-	}
-	return fmt.Errorf("artisan: endpoint %s: %w", path, err)
 }

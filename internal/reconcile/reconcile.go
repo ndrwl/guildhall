@@ -11,7 +11,9 @@
 //     unknown, a newer schema reported apart from damage;
 //  2. the cancel marker: cancelled;
 //  3. a valid result: finished;
-//  4. no ownership record: absent;
+//  4. no ownership record: handed when Attempt.Handed says the engine handed
+//     the attempt to the Director as a Director stage, which runs no
+//     launcher, and absent otherwise;
 //  5. the owner, by its recorded launcher identity:
 //     - gone: exited when no containment is recorded or artisan.Contained
 //     proves the recorded unit empty (see artisan.Contained);
@@ -71,6 +73,9 @@ const (
 	Stuck     State = "stuck"
 	Exited    State = "exited"
 	Unknown   State = "unknown"
+	// Handed is a Director stage's attempt with no ownership record: the
+	// engine handed it to the Director, which runs it in its own session.
+	Handed State = "handed"
 )
 
 // DefaultStaleAfter is the heartbeat age Classify calls stale when Options
@@ -91,6 +96,10 @@ type Attempt struct {
 	Files artisan.AttemptFiles
 	// Owner is the attempt's ownership record, nil when it has none.
 	Owner *store.Ownership
+	// Handed is whether the engine handed the attempt to the Director as a
+	// Director stage (interp.HandedToDirector); reconcile cannot read the
+	// mark itself, so its caller does.
+	Handed bool
 }
 
 // Options tune Classify.
@@ -143,6 +152,9 @@ func Classify(ctx context.Context, a Attempt, o Options) Classification {
 		return c
 	}
 	if a.Owner == nil {
+		if a.Handed {
+			return Classification{State: Handed, Reason: "handed to the Director"}
+		}
 		return Classification{State: Absent, Reason: "no ownership record"}
 	}
 	return classifyOwner(ctx, a, o)
