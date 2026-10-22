@@ -27,7 +27,7 @@ func TestReviewAfterARebaseReviewsTheResolution(t *testing.T) {
 	}
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
-	d, dir := newRunCopyOn(t, "fake-review")
+	d, dir := newRunCopyOn(t, "fake-review", "config.toml")
 	cfg, err := config.Load(d.config)
 	if err != nil {
 		t.Fatal(err)

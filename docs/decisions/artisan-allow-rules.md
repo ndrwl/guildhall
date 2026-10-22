@@ -8,7 +8,7 @@ This supersedes, for this narrow case, [D55](0055-claude-adapter-wrapper.md)'s a
 A profile's `allowed_tools` ([profiles](../configuration.md#profiles)) lists Claude Code permission rules, such as `Bash(go test:*)`, that the stage's print-mode session is granted beyond `acceptEdits`.
 It is empty by default, and empty grants nothing, so a Director's first build runs its checks and commits on any machine only once its config says so, and never by accident.
 `config.Parse` refuses a rule that is not a tool name with an optional parenthesised specifier, a duplicate, and a rule allowing every shell command (`Bash`, `Bash(*)`, `Bash(:*)`), so a grant always names its commands.
-The suggested set for a Go builder, `claude.SuggestedGoAllowedTools`, is `go test`, `go vet`, `git add` and `git commit`, plus `git status` and `git diff` as read-only helpers ([Artisan permissions](../adapters.md#artisan-permissions)).
+The suggested set for a Go builder, `claude.SuggestedGoAllowedTools`, is `go test`, `go vet`, `git add` and `git commit`, plus `git status` and `git diff`, deliberately included as read-only helpers ([Artisan permissions](../adapters.md#artisan-permissions)).
 
 ## Whose setting it is
 
@@ -19,9 +19,9 @@ The `director start` preflight's `artisans` line names the Director, its config 
 
 ## How it reaches the session
 
-The rules travel with the attempt: the interpreter puts the profile's rules on `interp.Spec`, `launch.Process` passes them to `artisan start` as `--allow-tool`, the claude adapter passes them to `guildhall claude-artisan`, and the wrapper writes them as `permissions.allow` in a settings file it passes with `--settings`.
+Grants travel by reference only: the interpreter puts the Director copy and profile name on `interp.Spec`, mapped unchanged to `adapter.Spec`; `launch.Process`, `artisan start` and the Claude adapter forward `--copy` and `--profile` to `guildhall claude-artisan`. The wrapper calls `config.Load` on that copy's `config.toml`, refuses an undeclared profile and writes exactly its `allowed_tools` as `permissions.allow` in a settings file passed with `--settings`. Without both copy and profile it grants nothing. Neither public entry path accepts `--allow-tool`, and no argv or environment rule list adds a grant.
 A settings file, rather than `--allowedTools`, keeps the rules off Claude Code's command line, unaffected by Claude Code's comma and space splitting or by a Windows command shim's quoting, and the file is in the attempt directory, outside every directory Claude may write, so the session cannot change its own grant.
 The rules widen Claude Code's own settings and never narrow them: a machine's or repository's settings still apply, and their `deny` rules still win.
-Only the claude adapter grants them; the fake refuses a spec naming any, and the preflight refuses `allowed_tools` on a profile of another adapter rather than silently granting nothing.
+Only the claude adapter grants them; the fake loads the referenced profile and refuses one granting any, and the preflight refuses `allowed_tools` on a profile of another adapter rather than silently granting nothing.
 
 CI checks the whole path over the stub Claude, which records the rules its settings file granted; `TestLiveClaudeBuildPermissions` gains a mode, `GUILDHALL_CLAUDE_LIVE_GRANT=configured`, that grants the suggested set to a real session, and has not been run yet.

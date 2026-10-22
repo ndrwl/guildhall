@@ -232,7 +232,7 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 		grants = append(grants, fmt.Sprintf(who+" nothing, so claude print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings (docs/adapters.md#artisan-permissions)",
 			strings.Join(bare, ", ")))
 	}
-	return whose + strings.Join(grants, "; "), nil
+	return whose + strings.Join(grants, "; ") + "; wrappers load grants by copy/profile reference, never raw rule flags", nil
 }
 
 // preflightLine prints one preflight check's line.

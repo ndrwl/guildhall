@@ -174,8 +174,8 @@ func TestArtisanStartRefusesExistingResultAndBadFlags(t *testing.T) {
 	}
 	// Allowed tools are granted only to an owned attempt's runtime.
 	app, _, stderr = newArtisanApp(t)
-	if code := app.Run(append(append([]string{}, inTab...), "--allow-tool", "Bash(go test:*)")); code != 2 || !strings.Contains(stderr.String(), "--allow-tool") {
-		t.Errorf("--allow-tool in a tab: exit %d, stderr %q; want 2 naming --allow-tool", code, stderr)
+	if code := app.Run(append(append([]string{}, inTab...), "--allow-tool", "Bash(go test:*)")); code != 2 || !strings.Contains(stderr.String(), "allow-tool") {
+		t.Errorf("--allow-tool in a tab: exit %d, stderr %q; want 2 naming allow-tool", code, stderr)
 	}
 }
 

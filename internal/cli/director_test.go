@@ -250,7 +250,7 @@ func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants Bash(go test:*), Bash(git commit:*)",
-		"profile reviewer grants nothing", "edits only", "Bash", "docs/adapters.md#artisan-permissions"} {
+		"profile reviewer grants nothing", "edits only", "Bash", "docs/adapters.md#artisan-permissions", "copy/profile reference, never raw rule flags"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("artisans line %q lacks %q:\n%s", line, want, out)
 		}

@@ -30,7 +30,7 @@ const LogFile = "launcher.log"
 // artisan.ResultFile in artisan.AttemptKey.Dir. The attempt must already be
 // recorded running in Store, as the interpreter records it before launch.
 // The process gets the adapter name unchanged and the prompt file, working
-// directory and allowed tools, one --allow-tool each, of interp.Spec.AdapterSpec, the mapping the adapter conformance
+// directory of interp.Spec.AdapterSpec, the mapping the adapter conformance
 // suite runs runtimes on; `artisan start` looks the name up in package
 // runtimes, and a name it refuses, like every other startup failure, is the
 // process exiting before it owns the attempt.
@@ -53,10 +53,6 @@ type Process struct {
 	// Store and StateDir are the Director store and the absolute state
 	// directory, as `artisan start --store --state` takes them.
 	Store, StateDir string
-	// Copy is the Director copy the engine runs from, empty when it runs over explicit paths. When set, the
-	// launcher is also given `--copy` and `--advance`, so it advances the task once it records the attempt
-	// (Config.Advance); Store and StateDir must be the copy's own.
-	Copy string
 	// StallInterval, when positive, is passed as `--stall-interval`, so the launcher sends the Director
 	// worker-stalled from its heartbeat (Config.StallInterval); the engine passes its own.
 	StallInterval time.Duration
@@ -102,14 +98,14 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 		cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
 			"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
 			"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
-		if p.Copy != "" {
-			cmd.Args = append(cmd.Args, "--copy", p.Copy, "--advance")
+		if as.Copy != "" {
+			cmd.Args = append(cmd.Args, "--copy", as.Copy, "--advance")
 		}
 		if p.StallInterval > 0 {
 			cmd.Args = append(cmd.Args, "--stall-interval", p.StallInterval.String())
 		}
-		for _, rule := range as.AllowedTools {
-			cmd.Args = append(cmd.Args, "--allow-tool", rule)
+		if as.Profile != "" {
+			cmd.Args = append(cmd.Args, "--profile", as.Profile)
 		}
 		cmd.Env = append(os.Environ(), p.Env...)
 		cmd.Stdout, cmd.Stderr = log, log

@@ -50,14 +50,12 @@ type Spec struct {
 	ResultFile string
 	// Manifest is the manifest render.Prompt returned for PromptFile.
 	Manifest render.Manifest
-	// AllowedTools are the tool permission rules the stage's profile grants its Artisan (config.Profile.AllowedTools),
-	// from the Director's own config; empty grants nothing.
-	AllowedTools []string
+	Copy     string
+	Profile  string
 }
 
 // Validate checks the identity, that every path is absolute, that the result file is distinct
-// from the prompt file, that an adapter is named, that the manifest is a prompt manifest and that every allowed
-// tool is one adapter.CheckAllowedTools accepts.
+// from the prompt file, that an adapter is named and that the manifest is a prompt manifest.
 func (s Spec) Validate() error {
 	if err := s.Identity.Validate(); err != nil {
 		return err
@@ -76,16 +74,16 @@ func (s Spec) Validate() error {
 	if s.Manifest.Schema != render.ManifestSchema {
 		return fmt.Errorf("manifest schema %q, want %q", s.Manifest.Schema, render.ManifestSchema)
 	}
-	return adapter.CheckAllowedTools(s.AllowedTools)
+	return nil
 }
 
 // AdapterSpec returns the adapter.Spec for s that the adapter conformance suite runs runtimes on and
 // launch.Process starts the attempt from: the same identity, working directory, prompt file and result
-// file, the same allowed tools, and no extra environment. The adapter name and manifest stay with the launcher, which passes
+// file, and no extra environment. The adapter name and manifest stay with the launcher, which passes
 // the name to the runtime's owner and has already checked the prompt against its manifest.
 // A spec Validate accepts maps to one adapter.Spec.Validate accepts.
 func (s Spec) AdapterSpec() adapter.Spec {
-	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile, AllowedTools: slices.Clone(s.AllowedTools)}
+	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile, Copy: s.Copy, Profile: s.Profile}
 }
 
 // Handle names one launched attempt. It carries no authority: only the launcher that returned it accepts it.

@@ -17,7 +17,7 @@ func TestSpecValidate(t *testing.T) {
 	if err := good.Validate(); err != nil {
 		t.Fatalf("valid spec refused: %v", err)
 	}
-	if granted := (Spec{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.ResultFile, AllowedTools: []string{"Bash(go test:*)"}}); granted.Validate() != nil {
+	if granted := (Spec{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.ResultFile, Copy: dir, Profile: "builder"}); granted.Validate() != nil {
 		t.Errorf("spec with an allowed tool refused: %v", granted.Validate())
 	}
 	bad := []Spec{
@@ -27,8 +27,6 @@ func TestSpecValidate(t *testing.T) {
 		{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: "r.json"},
 		{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.PromptFile},
 		{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.ResultFile, Env: []string{"NOVALUE"}},
-		{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.ResultFile, AllowedTools: []string{""}},
-		{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.ResultFile, AllowedTools: []string{"Bash(go test\n:*)"}},
 	}
 	for _, s := range bad {
 		if err := s.Validate(); err == nil {

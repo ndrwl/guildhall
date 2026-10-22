@@ -444,23 +444,22 @@ func TestCrashBetweenRecordAndLaunchReplays(t *testing.T) {
 	}
 }
 
-// TestProfileAllowedToolsReachTheLaunch: an Artisan stage is launched with exactly the allowed tools its profile in
-// the Director's config grants, and AdapterSpec carries them to the runtime; a profile granting none launches none.
 func TestProfileAllowedToolsReachTheLaunch(t *testing.T) {
 	for name, rules := range map[string][]string{"none": nil, "granted": {"Bash(go test:*)", "Bash(git commit:*)"}} {
 		t.Run(name, func(t *testing.T) {
 			e := newEnv(t, backends[0], planExpectation(t, interptest.Succeed("plan written")))
 			e.eng.Config.Profiles["planner"] = config.Profile{Adapter: interp.MockAdapter, AllowedTools: rules}
+			e.eng.Copy = t.TempDir()
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})
 			launched := e.script.Launched()
 			if len(launched) != 1 {
 				t.Fatalf("launched %d attempts, want 1", len(launched))
 			}
-			if got := launched[0].AllowedTools; !slices.Equal(got, rules) {
-				t.Errorf("launch spec allowed tools = %q, want %q", got, rules)
+			if got := launched[0]; got.Copy != e.eng.Copy || got.Profile != "planner" {
+				t.Errorf("launch reference = %s/%s", got.Copy, got.Profile)
 			}
-			if got := launched[0].AdapterSpec().AllowedTools; !slices.Equal(got, rules) {
-				t.Errorf("AdapterSpec allowed tools = %q, want %q", got, rules)
+			if got := launched[0].AdapterSpec(); got.Copy != e.eng.Copy || got.Profile != "planner" {
+				t.Errorf("adapter reference = %s/%s", got.Copy, got.Profile)
 			}
 		})
 	}

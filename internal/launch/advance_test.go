@@ -358,8 +358,9 @@ func TestProcessLaunchReturnsOnceItsStoppedLauncherReleases(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := newProcess(t)
-	p.Copy, p.Store, p.StateDir, p.StartTimeout = dir, filepath.Join(dir, "director.store"), filepath.Join(dir, "state"), time.Millisecond
+	p.Store, p.StateDir, p.StartTimeout = filepath.Join(dir, "director.store"), filepath.Join(dir, "state"), time.Millisecond
 	spec := prepared(t, p, fixtureSpec(t, instructions[interptest.Hangs]))
+	spec.Copy = dir
 	k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
 	record, unlocked := filepath.Join(t.TempDir(), "advances.jsonl"), filepath.Join(t.TempDir(), "unlocked")
 	b, err := json.Marshal(advanceDouble{Record: record, Dir: k.Dir(p.StateDir), Store: p.Store, Until: unlocked})

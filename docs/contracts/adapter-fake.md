@@ -2,7 +2,7 @@
 
 ## Contract
 
-The test-only fake runtime: no optional capabilities, bounded prompt directives (`docs/adapters.md`); `Adapter.Command` refuses a spec naming allowed tools, since the fake grants none.
+The test-only fake runtime: no optional capabilities, bounded prompt directives (`docs/adapters.md`); `Adapter.Command` loads the spec's copy/profile reference through `adapter.ProfileTools` and refuses a profile granting allowed tools, since the fake grants none; an undeclared profile is also refused.
 `Main` is `guildhall fake-artisan`; `Run` handles interrupts itself, honours the attempt's cancel marker unless told to ignore it, and with the P0 lifecycle directives plays a process tree (`grandchildren`, `grandchild-cmd`), ignores the marker or interrupts, publishes a late result, echoes input, bounds its lifetime and records every process's identity in an inventory directory through `artisan.RecordProcess`.
 Once its work ends, before any result, `Run` writes `ReportedUsage`, fixed measured tokens and an estimated cost, as the attempt's [usage file](../adapters.md#usage-file); work ended by an interrupt or the cancel marker writes none, and a failure to write it is shown as progress and does not stop the result.
 

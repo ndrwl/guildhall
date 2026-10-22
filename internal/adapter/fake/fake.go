@@ -59,7 +59,11 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if a.Executable == "" {
 		return adapter.Command{}, errors.New("fake adapter: guildhall executable is not set")
 	}
-	if len(spec.AllowedTools) > 0 {
+	rules, err := adapter.ProfileTools(spec.Copy, spec.Profile)
+	if err != nil {
+		return adapter.Command{}, err
+	}
+	if len(rules) > 0 {
 		return adapter.Command{}, errors.New("fake adapter: it grants no allowed tools")
 	}
 	return adapter.Command{

@@ -384,7 +384,7 @@ Refusing an already-decided attempt preserves its ownership record and containme
 
 With a positive `--stall-interval` (zero, the default, observes nothing), the launcher also sends the Director `worker-stalled` from its heartbeat when the worker has been silent past the interval ([heartbeat](#heartbeat)); `launch.Process` passes the engine's `stall_interval` when it is positive.
 
-Each `--allow-tool <rule>`, repeated per rule, is a tool permission the runtime grants the worker beyond its baseline ([Artisan permissions](adapters.md#artisan-permissions)); `launch.Process` passes the stage's profile `allowed_tools` from the Director's own config, one flag each, and the fake runtime refuses any; it applies only to an owned attempt, and in a Herdr tab it is a usage error.
+`--profile <name>` names the profile in the Director `--copy` ([Artisan permissions](adapters.md#artisan-permissions)); `launch.Process` passes this reference, never rules. The Claude wrapper loads the copy's `config.toml` and grants exactly that profile's `allowed_tools`; an undeclared profile is refused, and without both copy and profile nothing is granted. The fake runtime refuses a profile granting rules. `--profile` applies only to an owned attempt; in a Herdr tab it is a usage error. Neither `artisan start` nor `claude-artisan` accepts `--allow-tool`.
 
 The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.
 Survivors after the last rung leave the attempt running and owned, and the endpoint reports a stop error.

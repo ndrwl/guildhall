@@ -122,7 +122,7 @@ Work ended by an interrupt or the cancel marker writes none.
 ## Claude adapter
 
 The Claude adapter runs one attempt as a non-interactive Claude Code session, with no optional capabilities.
-Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--allow-tool <rule>]... [--claude <program>]`, a wrapper in the attempt's working directory that runs:
+Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
 claude --print <instruction> --output-format json --permission-mode acceptEdits [--settings <settings file>] --add-dir <model directory>
@@ -132,7 +132,7 @@ claude --print <instruction> --output-format json --permission-mode acceptEdits 
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
 - The instruction names the prompt copy and a draft result file, `model/result.json`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
 - `acceptEdits` lets Claude edit files in the working directory and the model directory; every other tool that needs permission, such as shell commands, is denied unless the attempt's allowed tools or Claude's own settings allow it, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
-- With one or more `--allow-tool` rules, the wrapper writes the settings file `claude-settings.json` in the attempt directory, beside the result and outside every directory Claude may write, as `{"permissions":{"allow":[<rules>]}}` and nothing else, and passes it with `--settings`; with none it passes no settings file.
+- With one or more `allowed_tools` in the profile loaded from the referenced copy's `config.toml` via `config.Load`, the wrapper writes the settings file `claude-settings.json` in the attempt directory, beside the result and outside every directory Claude may write, as `{"permissions":{"allow":[<rules>]}}` and nothing else, and passes it with `--settings`; with none it passes no settings file.
 - Claude gets no standard input; with `--output-format json` it prints one result message as it exits, which the wrapper reads, and its error output goes to the wrapper's.
 
 The wrapper keeps the result protocol, not the model:
@@ -153,7 +153,7 @@ The same adapter runs the [Director's session](director.md#start) interactively,
 ### Artisan permissions
 
 The default workflow's build stage asks its Artisan to run the repository's checks and commit its work ([`build.md`](../baseline/stages/build.md)), and both are shell commands, which the wrapper's `acceptEdits` does not allow.
-Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--allow-tool` and settings file above.
+Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` reference and settings file above. Raw rule flags are not accepted; an undeclared profile is refused. Without both reference fields, the wrapper grants nothing.
 The list is empty by default, and an empty list grants nothing, so nothing is granted unless a Director's config says so.
 The rules come only from the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
 

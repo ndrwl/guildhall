@@ -14,7 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode"
+
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
 // The names of the runtime adapters Guildhall can launch: the one spelling that package
@@ -36,16 +37,13 @@ type Spec struct {
 	// ResultFile is the absolute path the Artisan writes its result to.
 	ResultFile string
 	// Env holds extra NAME=VALUE entries for the Artisan's environment.
-	Env []string
-	// AllowedTools are the tool permission rules the runtime grants the Artisan beyond its baseline, in the
-	// runtime's own syntax, from the Director's profile (docs/adapters.md#artisan-permissions); empty grants
-	// nothing. A runtime that cannot grant them refuses a spec naming any.
-	AllowedTools []string
+	Env     []string
+	Copy    string
+	Profile string
 }
 
 // Validate checks the identity, that every path is absolute, that the
-// result file is distinct from the prompt file, and that every allowed tool
-// is a non-empty rule without control characters.
+// result file is distinct from the prompt file.
 func (s Spec) Validate() error {
 	if err := s.Identity.Validate(); err != nil {
 		return err
@@ -63,18 +61,22 @@ func (s Spec) Validate() error {
 			return fmt.Errorf("environment entry %q is not NAME=VALUE", kv)
 		}
 	}
-	return CheckAllowedTools(s.AllowedTools)
+	return nil
 }
 
-// CheckAllowedTools refuses an allowed tool that is empty or holds a control character; the runtime's own syntax
-// is checked by the Director's config (config.CheckAllowedTool) and by the runtime.
-func CheckAllowedTools(rules []string) error {
-	for _, rule := range rules {
-		if rule == "" || strings.ContainsFunc(rule, unicode.IsControl) {
-			return fmt.Errorf("allowed tool %q is not a permission rule", rule)
-		}
+func ProfileTools(copyDir, profile string) ([]string, error) {
+	if copyDir == "" || profile == "" {
+		return nil, nil
 	}
-	return nil
+	cfg, err := config.Load(filepath.Join(copyDir, "config.toml"))
+	if err != nil {
+		return nil, err
+	}
+	p, err := cfg.Profile(profile)
+	if err != nil {
+		return nil, err
+	}
+	return p.AllowedTools, nil
 }
 
 // Capabilities are the optional runtime features an adapter has proven

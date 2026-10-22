@@ -174,6 +174,7 @@ type Engine struct {
 	StandardsRevision string
 	// DocumentDir is the absolute Director document directory every recorded document path is relative to.
 	DocumentDir string
+	Copy        string
 	// StateDir is the absolute directory holding attempt directories, <repo>/<task>/<step>-<n>, and each
 	// task's working directory, <repo>/<task>/work.
 	StateDir string
@@ -468,8 +469,8 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 
 // artisanRuntime is who runs an Artisan step's attempt: the adapter and the allowed tools its profile grants.
 type artisanRuntime struct {
-	adapter      string
-	allowedTools []string
+	adapter string
+	profile string
 }
 
 // prepare resolves the runtime and the inputs of an Artisan step, or the inputs alone of a Director stage, which
@@ -486,7 +487,7 @@ func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 		if !ok {
 			return artisanRuntime{}, nil, fmt.Errorf("%w: %q", config.ErrUnknownProfile, p)
 		}
-		rt = artisanRuntime{adapter: profile.Adapter, allowedTools: slices.Clone(profile.AllowedTools)}
+		rt = artisanRuntime{adapter: profile.Adapter, profile: p}
 	}
 	if err := CheckAdapter(rt.adapter); err != nil {
 		return artisanRuntime{}, nil, err
@@ -625,13 +626,13 @@ func (r *run) launch(s workflow.Step, n int, rt artisanRuntime, inputs []render.
 		return r.hand(s, n, p)
 	}
 	h, err := r.e.Launcher.Launch(r.ctx, Spec{
-		Identity:     r.identity(s.ID, n),
-		Adapter:      rt.adapter,
-		WorkDir:      work,
-		PromptFile:   p.promptFile,
-		ResultFile:   r.resultFile(s.ID, n),
-		Manifest:     p.manifest,
-		AllowedTools: rt.allowedTools,
+		Identity:   r.identity(s.ID, n),
+		Adapter:    rt.adapter,
+		WorkDir:    work,
+		PromptFile: p.promptFile,
+		ResultFile: r.resultFile(s.ID, n),
+		Manifest:   p.manifest,
+		Copy:       r.e.Copy, Profile: rt.profile,
 	})
 	if err != nil {
 		return fmt.Errorf("launch attempt %d: %w", n, err)

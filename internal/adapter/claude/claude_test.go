@@ -148,7 +148,7 @@ func testSpec(t *testing.T) adapter.Spec {
 }
 
 func args(spec adapter.Spec) claude.Args {
-	return claude.Args{Identity: spec.Identity, PromptFile: spec.PromptFile, ResultFile: spec.ResultFile, AllowedTools: spec.AllowedTools}
+	return claude.Args{Identity: spec.Identity, PromptFile: spec.PromptFile, ResultFile: spec.ResultFile, Copy: spec.Copy, Profile: spec.Profile}
 }
 
 func TestCommand(t *testing.T) {
@@ -175,26 +175,24 @@ func TestCommand(t *testing.T) {
 	}
 }
 
-// TestCommandPassesAllowedTools: the spec's allowed tools reach the wrapper as one --allow-tool each, in order, and
-// ParseArgs reads exactly them back; a spec with none passes none.
 func TestCommandPassesAllowedTools(t *testing.T) {
 	spec := testSpec(t)
-	spec.AllowedTools = []string{"Bash(go test:*)", "Bash(git commit:*)"}
+	spec.Copy, spec.Profile = grantProfile(t, []string{"Bash(go test:*)", "Bash(git commit:*)"})
 	program := filepath.Join(t.TempDir(), "claude")
 	cmd, err := claude.Adapter{Executable: "/bin/guildhall", Claude: program}.Command(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"/bin/guildhall", claude.Subcommand, "--task", "task-1", "--attempt", "attempt-1", "--prompt", spec.PromptFile, "--result", spec.ResultFile,
-		"--allow-tool", "Bash(go test:*)", "--allow-tool", "Bash(git commit:*)", "--claude", program}
+		"--copy", spec.Copy, "--profile", spec.Profile, "--claude", program}
 	if !slices.Equal(cmd.Argv, want) {
 		t.Errorf("Command argv = %q, want %q", cmd.Argv, want)
 	}
 	parsed, err := claude.ParseArgs(cmd.Argv[2:])
-	if err != nil || !slices.Equal(parsed.AllowedTools, spec.AllowedTools) {
-		t.Errorf("ParseArgs(Command) = %+v, %v; want allowed tools %q", parsed, err, spec.AllowedTools)
+	if err != nil || parsed.Copy != spec.Copy || parsed.Profile != spec.Profile {
+		t.Errorf("ParseArgs(Command) = %+v, %v; want profile reference", parsed, err)
 	}
-	spec.AllowedTools = nil
+	spec.Copy, spec.Profile = "", ""
 	cmd, err = claude.Adapter{Executable: "/bin/guildhall"}.Command(spec)
 	if err != nil || slices.Contains(cmd.Argv, "--allow-tool") {
 		t.Errorf("Command without allowed tools = %q, %v; want no --allow-tool", cmd.Argv, err)
@@ -238,12 +236,7 @@ func TestClaudeArgs(t *testing.T) {
 	if claude.PromptCopy(spec.ResultFile) != filepath.Join(model, "prompt.md") || claude.DraftFile(spec.ResultFile) != filepath.Join(model, artisan.ResultFile) {
 		t.Errorf("prompt copy %s and draft %s; want both in %s", claude.PromptCopy(spec.ResultFile), claude.DraftFile(spec.ResultFile), model)
 	}
-	a.AllowedTools = []string{"Bash(go test:*)", "Bash(git commit:*)"}
 	settings := claude.ArtisanSettingsPath(spec.ResultFile)
-	want = []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--permission-mode", claude.PermissionMode, "--settings", settings, "--add-dir", model}
-	if got := claude.ClaudeArgs(a); !slices.Equal(got, want) {
-		t.Errorf("ClaudeArgs with allowed tools = %q, want %q", got, want)
-	}
 	if settings != filepath.Join(filepath.Dir(spec.ResultFile), claude.ArtisanSettingsFile) {
 		t.Errorf("settings file %s; want %s beside the result", settings, claude.ArtisanSettingsFile)
 	}
@@ -479,7 +472,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			spec := testSpec(t)
-			spec.AllowedTools = rules
+			spec.Copy, spec.Profile = grantProfile(t, rules)
 			var stderr bytes.Buffer
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
@@ -633,8 +626,8 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 	switch mode := os.Getenv(LiveGrantEnv); mode {
 	case "":
 	case "configured":
-		spec.AllowedTools = liveGrant
-		t.Logf("granting %q", spec.AllowedTools)
+		spec.Copy, spec.Profile = grantProfile(t, liveGrant)
+		t.Logf("granting %q", liveGrant)
 	default:
 		t.Fatalf("%s=%q; want unset or configured", LiveGrantEnv, mode)
 	}

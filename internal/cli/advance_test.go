@@ -265,11 +265,11 @@ func TestTaskStartAndStepDone(t *testing.T) {
 // director.store and a short state directory, returned with the copy.
 func newRunCopy(t *testing.T) (runDirector, string) {
 	t.Helper()
-	return newRunCopyOn(t, "fake-straight")
+	return newRunCopyOn(t, "fake-straight", "config.toml")
 }
 
 // newRunCopyOn is newRunCopy with repository app on the workflow named workflow in testdata/run/workflows.
-func newRunCopyOn(t *testing.T, workflow string) (runDirector, string) {
+func newRunCopyOn(t *testing.T, workflow, configFile string) (runDirector, string) {
 	t.Helper()
 	t.Setenv(roleEnv, "guildhall")
 	dir, err := os.MkdirTemp("", "gc")
@@ -282,7 +282,7 @@ func newRunCopyOn(t *testing.T, workflow string) (runDirector, string) {
 	d := runDirector{store: filepath.Join(dir, "director.store"), config: filepath.Join(dir, "config.toml"), state: filepath.Join(dir, "state")}
 	// A launcher's advance runs as guildhall, with real git workspaces, so app is a real repository and remote.
 	repository, remote, _ := gittest.Repository(t)
-	b, err := os.ReadFile(d.config)
+	b, err := os.ReadFile(filepath.Join(dir, configFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,8 +454,11 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 // runs, exactly and in order, through launch.Process, `artisan start` and the wrapper.
 func TestTaskStartGrantsTheProfilesAllowedTools(t *testing.T) {
 	claudetest.Install(t)
-	d := newRunDirectorWith(t, "claude-allowed.toml")
-	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	d, copyDir := newRunCopyOn(t, "claude-straight", "claude-allowed.toml")
+	if code, _, stderr := d.run(t, "artisan", "start", "--allow-tool", "Bash"); code != 2 || !strings.Contains(stderr, "allow-tool") {
+		t.Fatalf("raw artisan grant: exit %d, stderr %s", code, stderr)
+	}
+	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
