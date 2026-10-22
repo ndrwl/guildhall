@@ -34,7 +34,7 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 			recordSession(t, path, false, states...)
 			inv := t.TempDir()
 			cmd := artisantest.Command(inv, c.w)
-			u, err := startRuntime(cmd, 1)
+			u, err := startRuntime(cmd, 1, path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -120,5 +120,32 @@ func TestSessionEndReportsASurvivingProcess(t *testing.T) {
 	_, _, err := app.waitSession(u, &exec.Cmd{}, make(chan os.Signal), &w)
 	if !errors.Is(err, errRuntimeOutlived) || !strings.Contains(err.Error(), "42") {
 		t.Fatalf("waitSession = %v, want errRuntimeOutlived naming process 42", err)
+	}
+}
+
+// TestARuntimeWhoseUnitCannotBeRecordedEnds: a runtime whose unit the session record refuses, here because the
+// store has no session 1, is ended with its unit and startRuntime fails, so no runtime runs that the record does not
+// name (docs/director.md#the-runtimes-record).
+func TestARuntimeWhoseUnitCannotBeRecordedEnds(t *testing.T) {
+	path := emptyStore(t)
+	inv := t.TempDir()
+	cmd := artisantest.Command(inv, artisantest.Worker{Grandchildren: 1, IgnoreInterrupt: true})
+	u, err := startRuntime(cmd, 1, path)
+	if err == nil {
+		_ = u.Close()
+		t.Fatal("startRuntime with no session to record it on succeeded")
+	}
+	if !strings.Contains(err.Error(), "record") {
+		t.Errorf("startRuntime = %v, want it to name the failed record", err)
+	}
+	entries, err := artisantest.Inventory(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if lv, err := artisan.Probe(e.Identity); lv != artisan.Gone {
+			_ = artisan.Kill(e.Identity)
+			t.Errorf("%s %d is %v (%v) after the failed record", e.Role, e.PID, lv, err)
+		}
 	}
 }

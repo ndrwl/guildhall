@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -296,8 +297,9 @@ var errStopSweeping = errors.New("director: stop sweeping")
 
 // checkSupersede returns the newest session's number, 0 when there is none, refusing with errStopSweeping while
 // that session's stop has not finished its sweep, it is sweeping or stopping with its supervisor gone, and with
-// errDirectorLive while it is not stopped and its supervisor is alive or cannot be shown gone. A session whose
-// supervisor is gone is superseded when the next one is recorded.
+// errDirectorLive while it is not stopped and its supervisor is alive or cannot be shown gone, or while its recorded
+// runtime unit is not proven empty (runtimeEnded). A session whose supervisor is gone is superseded when the next one
+// is recorded.
 func checkSupersede(s *store.Store) (int, error) {
 	d, err := s.LatestDirectorSession()
 	sweeping := func() error {
@@ -311,6 +313,9 @@ func checkSupersede(s *store.Store) (int, error) {
 	case d.Sweeping:
 		return 0, sweeping()
 	case d.State == store.DirectorStopped:
+		if err := runtimeEnded(d); err != nil {
+			return 0, err
+		}
 		return d.Number, nil
 	}
 	switch live, err := artisan.Probe(artisan.Identity(d.Identity)); live {
@@ -318,12 +323,38 @@ func checkSupersede(s *store.Store) (int, error) {
 		if d.State == store.DirectorStopping {
 			return 0, sweeping()
 		}
+		if err := runtimeEnded(d); err != nil {
+			return 0, err
+		}
 		return d.Number, nil
 	case artisan.Alive:
 		return 0, fmt.Errorf("%w: session %d is %s under its supervisor, pid %d", errDirectorLive, d.Number, d.State, d.Identity.PID)
 	default:
 		return 0, fmt.Errorf("%w: session %d is %s and its supervisor, pid %d, cannot be shown gone: %v", errDirectorLive, d.Number, d.State, d.Identity.PID, err)
 	}
+}
+
+// runtimeEnded refuses with errDirectorLive while session d's recorded runtime unit is not proven empty, such as
+// when its supervisor died and left the runtime's processes running, naming them and director stop, which ends them.
+// A session with no runtime recorded has none to wait for.
+func runtimeEnded(d store.DirectorSession) error {
+	c := d.Runtime
+	if c == (store.Containment{}) {
+		return nil
+	}
+	left, err := artisan.Contained(artisan.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}, artisan.Identity(c.Worker))
+	switch {
+	case err != nil:
+		return fmt.Errorf("%w: session %d's runtime unit cannot be shown empty: %v; run guildhall director stop to end it", errDirectorLive, d.Number, err)
+	case len(left) > 0:
+		pids := make([]string, len(left))
+		for i, id := range left {
+			pids[i] = strconv.Itoa(id.PID)
+		}
+		return fmt.Errorf("%w: session %d's runtime left %d processes running, pid %s; run guildhall director stop to end them",
+			errDirectorLive, d.Number, len(left), strings.Join(pids, ", "))
+	}
+	return nil
 }
 
 // directorStartWait bounds the wrapper's wait for the session record; directorStartPoll is the interval

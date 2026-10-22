@@ -30,6 +30,7 @@ const (
 	opRequestDirectorStop  = "request-director-stop"
 	opEndDirectorSession   = "end-director-session"
 	opFinishDirectorStop   = "finish-director-stop"
+	opRecordRuntime        = "record-director-runtime"
 )
 
 // MaxWakeReasonBytes bounds a wake's reason.
@@ -92,6 +93,9 @@ type DirectorSession struct {
 	// Sweeping is set by RequestDirectorStop and cleared by FinishDirectorStop once director stop has swept the
 	// session's attempts; while it is set the session holds new attempts (Holds), stopped or not.
 	Sweeping bool `json:"sweeping,omitempty"`
+	// Runtime is the containment unit the session's runtime runs in, with the runtime as its worker, once
+	// RecordDirectorRuntime has recorded it; it is empty until then.
+	Runtime Containment `json:"runtime,omitzero"`
 	// EndReason is the reason EndDirectorSession recorded, such as "superseded" for a gone supervisor, or
 	// EndSuperseded when StartDirectorSession recorded a newer session over a session not yet stopped.
 	EndReason string `json:"end_reason,omitempty"`
@@ -272,6 +276,43 @@ func (s *Store) FinishDirectorStop(n int, from uint64) (Receipt, error) {
 		}
 		d.Sweeping = false
 		return nil
+	})
+}
+
+// RecordDirectorRuntime records c, the containment unit the runtime of the newest session, number n, runs in, with
+// the runtime as its worker, on the session with the mutation id "director-runtime:<n>". c must be Recoverable and
+// name its worker. It changes neither the session's state nor its StateSequence. It is refused with ErrInvalid when n
+// is not the newest session or is stopped, and ErrNotFound when there is no session n; a different c for the same
+// session conflicts with ErrMutationConflict. Replaying returns the original receipt.
+func (s *Store) RecordDirectorRuntime(n int, c Containment) (Receipt, error) {
+	if n < 1 {
+		return Receipt{}, invalid("director session number %d must be positive", n)
+	}
+	if err := c.Recoverable(); err != nil {
+		return Receipt{}, invalid("director session %d runtime: %v", n, err)
+	}
+	if c.Worker == (ProcessIdentity{}) {
+		return Receipt{}, invalid("director session %d runtime: a %s needs the runtime as its worker", n, c.Kind)
+	}
+	req := struct {
+		Number  int         `json:"number"`
+		Runtime Containment `json:"runtime"`
+	}{n, c}
+	return s.mutate("director-runtime:"+strconv.Itoa(n), opRecordRuntime, req, func(tx *bolt.Tx, r *Receipt) error {
+		r.Record = directorSessionRecord(n)
+		sessions := directorBucket(tx, bucketSessions)
+		var d DirectorSession
+		if err := getJSON(sessions, sessionKey(n), &d); err != nil {
+			return fmt.Errorf("director session %d: %w", n, err)
+		}
+		switch k, _ := sessions.Cursor().Last(); {
+		case string(k) != string(sessionKey(n)):
+			return invalid("director session %d is superseded by a newer session", n)
+		case d.State == DirectorStopped:
+			return invalid("director session %d is stopped", n)
+		}
+		d.Runtime = c
+		return putJSON(sessions, sessionKey(n), d)
 	})
 }
 
@@ -526,6 +567,8 @@ func validateSession(d DirectorSession) error {
 		return invalid("director session pid %d must be positive", d.Identity.PID)
 	case !d.StartedAt.IsZero() || !d.ReadyAt.IsZero() || !d.EndedAt.IsZero() || d.StateSequence != 0 || d.EndReason != "":
 		return invalid("director session times, end reason and state sequence are set by the store")
+	case d.Runtime != (Containment{}):
+		return invalid("a director session's runtime is recorded by RecordDirectorRuntime once it runs")
 	}
 	if err := validateText("director session token", d.Identity.Token, 256); err != nil {
 		return err

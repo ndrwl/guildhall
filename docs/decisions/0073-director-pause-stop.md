@@ -9,6 +9,7 @@ The captain fixed the semantics: pause stops new work only and running attempts 
 - **Pause holds launches, not work.**
   A `paused` session starts no new attempt.
   `task start` and `step retry` check first and print `{"wait":"paused"}` with exit 0, recording nothing.
+  Superseded by [director-runtime-record](director-runtime-record.md): they no longer check first, and wait `paused` with the held step in `next.json` as every other advance does.
   `task start --decision` does not check first, so the Guildmaster's answer is still fed; `step done` still takes its result, and the engine's new `Engine.Hold` stops the next attempt from starting, so a launcher advancing its task during a pause does not start new work behind it.
   That advance waits `paused`, which its `next.json` records, and `needs_me` lists the task with the `task start` that starts the held attempt after resume.
   Running attempts, results, decisions and the Guildmaster's answers are unaffected.

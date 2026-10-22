@@ -172,8 +172,9 @@ func waitingKinds(items []needsMeItem) map[string]int {
 }
 
 // directorStop runs `guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]`: the newest
-// session is recorded stopping, holding new attempts, every running attempt is stopped and, once all are, the hold
-// is lifted, a session whose supervisor is gone is recorded stopped as superseded, and the session is printed
+// session is recorded stopping, holding new attempts, every running attempt is stopped, and so is every process
+// left in the recorded runtime unit of a session whose supervisor is gone, and, once all are, the hold is lifted, a
+// session whose supervisor is gone is recorded stopped as superseded, and the session is printed
 // (docs/director.md#stop). A stop whose sweep did not finish is finished by running it again.
 func (a *App) directorStop(args []string) int {
 	var now bool
@@ -202,7 +203,9 @@ func (a *App) directorStop(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("director stop: %w", err))
 	}
-	stopped := a.stopAttempts(path, state)
+	// A gone supervisor's runtime is ended first, so it starts nothing while its attempts are stopped.
+	stopped := !gone || a.sweepRuntime(d)
+	stopped = a.stopAttempts(path, state) && stopped
 	if stopped {
 		if d, err = withStore(path, false, func(s *store.Store) (store.DirectorSession, error) { return finishStop(s, d.Number, gone) }); err != nil {
 			return a.fail(fmt.Errorf("director stop: finish: %w", err))
@@ -238,6 +241,20 @@ func finishStop(s *store.Store, n int, gone bool) (store.DirectorSession, error)
 		}
 	}
 	return s.DirectorSession(n)
+}
+
+// sweepRuntime ends every process left in the recorded runtime unit of session d, whose supervisor is proven gone,
+// as a gone launcher's unit is swept (launch.SweepOwner), reporting on stderr what it cannot prove ended, and reports
+// whether the unit is proven empty. A session with no runtime recorded has none to sweep.
+func (a *App) sweepRuntime(d store.DirectorSession) bool {
+	if d.Runtime == (store.Containment{}) {
+		return true
+	}
+	if _, err := launch.SweepOwner(context.Background(), store.Ownership{LauncherIdentity: d.Identity, Containment: d.Runtime}); err != nil {
+		a.notef("guildhall: director stop: session %d's runtime: %v\n", d.Number, err)
+		return false
+	}
+	return true
 }
 
 // stopAttempts stops every attempt in the store with no outcome, reporting each that is not proven stopped on
@@ -337,21 +354,12 @@ func held(s *store.Store) (bool, error) {
 	return d.Holds(), err
 }
 
-// heldNow is held over the store file at path, opened read-only; a missing store holds nothing, and is left to the
-// advance to refuse.
-func heldNow(path string) (bool, error) {
-	return heldWithRecords(storeRecords{path: path})
-}
-
 func heldWithRecords(records storeRecords) (bool, error) {
 	if _, err := os.Stat(records.path); err != nil {
 		return false, nil
 	}
 	return withRecords(records, true, nil, held)
 }
-
-// pausedWait is what `task start` and `step retry` print when the Director holds new attempts.
-const pausedWait = `{"wait":"paused"}`
 
 // testHookStopWaitsForTask, when set, is called as director stop starts waiting for a task's lock to stop an attempt
 // nothing owns.

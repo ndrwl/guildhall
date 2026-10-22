@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -221,40 +220,53 @@ func TestDirectorResumeListsHeldTasks(t *testing.T) {
 	}
 }
 
-// TestTaskStartWhilePausedLaunchesNothing: while the Director is paused, task start and step retry print
-// {"wait":"paused"} and record nothing; after resume, task start launches the task's first attempt.
-func TestTaskStartWhilePausedLaunchesNothing(t *testing.T) {
+// TestHeldStartsLeaveTheirWait: while the Director is paused, task start of a task never started and step retry of
+// a stopped attempt start nothing, print {"wait":"paused","step":"plan"} and leave it in the task's next.json, so
+// resume lists both tasks paused; after resume, task start launches the first task's first attempt.
+func TestHeldStartsLeaveTheirWait(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, false, store.DirectorRunning)
+	d.recordUnlaunched(t, "t-2")
+	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+		return s.StopUnownedAttempt("stopped-before-the-pause", "app", "t-2", "plan", 1)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if code, out, stderr := d.run(t, "director", "pause", "--store", d.store); code != 0 {
 		t.Fatalf("pause: exit %d, %s %s", code, out, stderr)
 	}
-	_, seq := latestSession(t, d.store)
-	for _, args := range [][]string{
-		append([]string{"task", "start"}, d.flags("t-1")...),
-		append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1")...),
+	const held = `{"wait":"paused","step":"plan"}` + "\n"
+	for _, c := range []struct {
+		task string
+		args []string
+	}{
+		{"t-1", append([]string{"task", "start"}, d.flags("t-1")...)},
+		{"t-2", append([]string{"step", "retry"}, d.flags("--task", "t-2", "--step", "plan", "--attempt", "1")...)},
 	} {
-		if code, out, stderr := d.run(t, args...); code != 0 || out != `{"wait":"paused"}`+"\n" {
-			t.Fatalf("%s %s while paused: exit %d, %q, stderr %s", args[0], args[1], code, out, stderr)
+		if code, out, stderr := d.run(t, c.args...); code != 0 || out != held {
+			t.Fatalf("%s %s while paused: exit %d, %q, stderr %s; want %q", c.args[0], c.args[1], code, out, stderr, held)
+		}
+		if b, err := os.ReadFile(filepath.Join(d.state, "app", c.task, "next.json")); err != nil || string(b) != held {
+			t.Errorf("%s next.json while paused = %q, %v; want %q", c.task, b, err, held)
 		}
 	}
 	if got := d.attempts(t); len(got) != 0 {
-		t.Fatalf("attempts while paused = %+v", got)
+		t.Fatalf("t-1's attempts while paused = %+v; want none", got)
 	}
-	if _, after := latestSession(t, d.store); after != seq {
-		t.Fatalf("the store moved from sequence %d to %d while paused", seq, after)
+	code, out, stderr := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	var doc struct {
+		NeedsMe []needsMeItem `json:"needs_me"`
 	}
-	if _, err := os.Stat(filepath.Join(d.state, "app", "t-1", "next.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("next.json while paused: %v, want none", err)
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
+		t.Fatalf("resume: exit %d, %v, %s", code, err, stderr)
 	}
-	if code, out, stderr := d.run(t, "director", "resume", "--store", d.store, "--state", d.state); code != 0 {
-		t.Fatalf("resume: exit %d, %s %s", code, out, stderr)
+	for _, task := range []string{"t-1", "t-2"} {
+		if !slices.ContainsFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == task }) {
+			t.Errorf("resume needs_me = %+v; want %s paused", doc.NeedsMe, task)
+		}
 	}
 	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start after resume: exit %d, %q, stderr %s", code, out, stderr)
-	}
-	if got := d.attempts(t); len(got) != 1 {
-		t.Fatalf("attempts after resume = %+v", got)
 	}
 	d.waitResult(t, "plan", 1)
 }

@@ -109,11 +109,6 @@ func (a *App) taskStart(args []string) int {
 	if *decision != "" {
 		ev.Kind, ev.Decision = interp.DecisionAnswered, *decision
 	}
-	if *decision == "" {
-		if hold, err := heldWithRecords(storeRecords{path: f.store, wait: f.wait}); err != nil || hold {
-			return a.paused("task start", err)
-		}
-	}
 	if err := newWorkAdmitted(storeRecords{path: f.store, wait: f.wait}, f.repo, ev.Task); err != nil {
 		return a.fail(fmt.Errorf("task start: %w", err))
 	}
@@ -183,19 +178,7 @@ func (a *App) stepRetry(args []string) int {
 	if err := f.listed(); err != nil {
 		return a.fail(fmt.Errorf("step retry: %w", err))
 	}
-	if hold, err := heldWithRecords(storeRecords{path: f.store, wait: f.wait}); err != nil || hold {
-		return a.paused("step retry", err)
-	}
 	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptRetried, Repository: f.repo, Task: *task, Step: *step, Attempt: n, Reason: *reason}))
-}
-
-// paused prints pausedWait for a command the Director's paused or stopping session holds, or fails with err.
-func (a *App) paused(cmd string, err error) int {
-	if err != nil {
-		return a.fail(fmt.Errorf("%s: %w", cmd, err))
-	}
-	_, _ = fmt.Fprintln(a.Stdout, pausedWait)
-	return 0
 }
 
 // stepDone runs `guildhall step done`: it validates the attempt's result file and feeds attempt-result (docs/running.md).
