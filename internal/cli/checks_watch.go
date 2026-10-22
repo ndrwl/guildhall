@@ -27,7 +27,7 @@ type taskRef struct{ repo, task string }
 // reporting each failure with report; the advance itself sends the Director what changed, and its messages wake
 // the Director only for what is new. tick starts a round when none is running and every has passed since the last
 // round ended, by now, so each read a round makes is at least every old by the next and the checks are read once
-// per every, the config's checks_refresh; the first tick starts one at once. A failed advance is tried again in
+// per every, the config's checks_refresh or checksWatchFloor; the first tick starts one at once. A failed advance is tried again in
 // the next round. wait waits for a running round to end.
 type checksWatch struct {
 	every   time.Duration
@@ -115,14 +115,15 @@ func checksWaiting(path, state string) func() ([]taskRef, error) {
 	}
 }
 
-// watchChecks is session n's checks watcher: every checks_refresh of the session's config it advances each task
-// waiting for checks as `task start` does, over the copy's store, config and state, with the advance's output and
-// each failure appended to checks.log in the session directory dir.
+// watchChecks is session n's checks watcher: every checks_refresh of the session's config, and at least every
+// checksWatchFloor, it advances each task waiting for checks as `task start` does, over the copy's store, config
+// and state, with the advance's output and each failure appended to checks.log in the session directory dir.
 func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
 	every, err := p.cfg.ChecksRefresh()
 	if err != nil {
 		return nil, err
 	}
+	every = max(every, checksWatchFloor)
 	logPath := filepath.Join(dir, checksLog)
 	logf := func(format string, args ...any) {
 		f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
@@ -158,6 +159,10 @@ func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state str
 		},
 	}, nil
 }
+
+// checksWatchFloor is the shortest time between a checks watcher's rounds, whatever checks_refresh is, so a short
+// or "0s" refresh does not read the forge at every supervisor tick (docs/director.md#checks).
+const checksWatchFloor = 30 * time.Second
 
 // checksLog is the file in a session's directory its checks watcher logs to (docs/director.md#checks).
 const checksLog = "checks.log"

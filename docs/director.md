@@ -125,7 +125,7 @@ A paused session starts no new attempt, while attempts already running finish:
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works, such as the `task start` of each held task.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
-A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director and the session has a bound pane, it types one line of counts by kind, never any text, and prints `"wake":{"decision":"woke"}` in its line:
+A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks` and `decision` items, and the session has a bound pane, it types one line of counts by kind, never any text, and prints `"wake":{"decision":"woke"}` in its line:
 
 ```text
 guildhall: resumed, 2 waiting (messages 1, paused 1)
@@ -133,7 +133,7 @@ guildhall: resumed, 2 waiting (messages 1, paused 1)
 
 Otherwise it types nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session and pane reasons, and the work waits for the Director's next turn.
 The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/director-checks-watch.md)).
-A `checks` item is the supervisor's, so it neither counts nor wakes.
+A `checks` item is the supervisor's and a `decision` item the Guildmaster's, so neither counts nor wakes.
 
 A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0, with no `wake` and nothing typed.
 Both are exit 1 for no session, a session that is `recovering` (run `director ready`), `stopping` or `stopped`, and a session whose supervisor is gone, naming `director stop`.
@@ -141,7 +141,7 @@ Both are exit 1 for no session, a session that is `recovering` (run `director re
 ## Checks
 
 A task whose validate step waits for its published head's checks, `next.json` `{"wait":"checks","step":"validate"}`, is moved on by the session supervisor, not by the Director ([decision](decisions/director-checks-watch.md)).
-Every [`checks_refresh`](configuration.md#settings) (default one minute), while the session is `recovering` or `running`, the supervisor's checks watcher lists the open tasks waiting for checks and advances each in turn as `task start` does, in its own process and with no model turn.
+Every [`checks_refresh`](configuration.md#settings) (default one minute, and never more often than every 30 seconds, so a shorter `checks_refresh`, `"0s"` included, rounds every 30 seconds), while the session is `recovering` or `running`, the supervisor's checks watcher lists the open tasks waiting for checks and advances each in turn as `task start` does, in its own process and with no model turn.
 The advance reads the checks under the [validate step's pacing](interpreter.md#validate): checks still pending send nothing new, since a head's `checks-pending` message is sent once, and checks that finish send `checks-passed` or `checks-failed` and take the task on, which [wakes](messaging.md#waking-the-director) the Director as any send does.
 A repository with [`no_ci`](configuration.md#repositories) passes at its first read, so only a repository with CI waits here.
 While the session is `paused` or `stopping` the watcher advances nothing.

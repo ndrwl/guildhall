@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
@@ -112,6 +113,41 @@ func TestChecksWatchPacesRoundsFromTheirEnd(t *testing.T) {
 	w.wait()
 	if got, _ := d.got(); !slices.Equal(got, []taskRef{t1, t1}) {
 		t.Fatalf("a refresh after the round ended advanced %v, want a second round", got)
+	}
+}
+
+// TestChecksWatchRefreshHasAFloor: a session's watcher rounds at its config's checks_refresh, but a refresh under
+// 30 seconds, "0s" included, rounds every 30 seconds, not at every tick.
+func TestChecksWatchRefreshHasAFloor(t *testing.T) {
+	for _, c := range []struct {
+		refresh string
+		quiet   time.Duration
+		every   time.Duration
+	}{
+		{"0s", 29 * time.Second, 30 * time.Second},
+		{"1s", 29 * time.Second, 30 * time.Second},
+		{"2m", 119 * time.Second, 2 * time.Minute},
+	} {
+		t.Run(c.refresh, func(t *testing.T) {
+			app, _, _ := newTestApp(nil, nil)
+			p := startPlan{cfg: &config.Config{Local: map[string]string{config.ChecksRefreshKey: c.refresh}}}
+			dir := t.TempDir()
+			w, err := app.watchChecks(p, 1, dir, dir, filepath.Join(dir, "store.db"), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			at := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+			d := &watchDouble{tasks: []taskRef{t1}, ended: at}
+			dw := d.watch(0)
+			w.waiting, w.advance, w.report, w.now = dw.waiting, dw.advance, dw.report, dw.now
+			for _, after := range []time.Duration{0, time.Second, c.quiet, c.every} {
+				w.tick(at.Add(after))
+				w.wait()
+			}
+			if got, _ := d.got(); !slices.Equal(got, []taskRef{t1, t1}) {
+				t.Errorf("ticks at 0, 1s, %v and %v advanced %v, want a round at 0 and at %v", c.quiet, c.every, got, c.every)
+			}
+		})
 	}
 }
 

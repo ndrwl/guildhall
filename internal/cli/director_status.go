@@ -166,6 +166,9 @@ type needsMeItem struct {
 	Command    string `json:"command"`
 }
 
+// decisionKind is the needs_me kind of an open decision, which waits on the Guildmaster.
+const decisionKind = "decision"
+
 // checksKind is the needs_me kind of a task waiting for its checks, which the session supervisor advances
 // (docs/director.md#checks).
 const checksKind = "checks"
@@ -393,7 +396,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		}
 		out.Decisions = append(out.Decisions, statusDecision{Repository: d.Repository, TaskID: d.TaskID, ID: d.ID, Kind: d.Kind, Subject: d.Subject,
 			Options: d.Options, Question: d.Question, OpenedAt: opened})
-		decisions = append(decisions, needsMeItem{Kind: "decision", Repository: d.Repository, TaskID: d.TaskID, Decision: d.ID, Reason: d.Question,
+		decisions = append(decisions, needsMeItem{Kind: decisionKind, Repository: d.Repository, TaskID: d.TaskID, Decision: d.ID, Reason: d.Question,
 			Command: fmt.Sprintf("guildhall decide show --repo %s --task %s --decision %s", d.Repository, d.TaskID, d.ID)})
 	}
 	others := 0

@@ -155,12 +155,12 @@ func (a *App) directorResume(args []string) int {
 }
 
 // waitingKinds counts the needs_me items that wait on the Director by kind, the messages item by its count; a task
-// waiting for its checks waits on the session supervisor, not the Director.
+// waiting for its checks waits on the session supervisor and an open decision on the Guildmaster, not the Director.
 func waitingKinds(items []needsMeItem) map[string]int {
 	n := map[string]int{}
 	for _, it := range items {
 		switch {
-		case it.Kind == checksKind:
+		case it.Kind == checksKind, it.Kind == decisionKind:
 		case it.Count > 0:
 			n[it.Kind] += it.Count
 		default:

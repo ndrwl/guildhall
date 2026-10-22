@@ -661,3 +661,31 @@ func TestDirectorResumeWithNothingWaitingTypesNothing(t *testing.T) {
 		t.Errorf("resume printed wake %+v and typed %q; want queued: nothing waiting", doc.Wake, panes.lines)
 	}
 }
+
+// TestDirectorResumeWithOnlyDecisionsTypesNothing: an open decision waits on the Guildmaster, so a resume whose
+// needs_me holds only that decision types nothing and prints that it queued nothing waiting.
+func TestDirectorResumeWithOnlyDecisionsTypesNothing(t *testing.T) {
+	d := newRunDirector(t)
+	pausedInPane(t, d.store)
+	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+		return s.OpenDecision("m-1", store.Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept?"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	panes := &typedPanes{}
+	d.panes = panes
+	code, out, se := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+	var doc struct {
+		NeedsMe []needsMeItem         `json:"needs_me"`
+		Wake    *messaging.ResumeWake `json:"wake"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
+		t.Fatalf("resume: exit %d, %q (%v), stderr %s", code, out, err, se)
+	}
+	if len(doc.NeedsMe) != 1 || doc.NeedsMe[0].Kind != "decision" {
+		t.Fatalf("needs_me = %+v, want the one decision", doc.NeedsMe)
+	}
+	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}) || len(panes.lines) != 0 {
+		t.Errorf("resume printed wake %+v and typed %q; want queued: nothing waiting", doc.Wake, panes.lines)
+	}
+}
