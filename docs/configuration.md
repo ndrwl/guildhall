@@ -42,7 +42,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 
 | Key | Meaning |
 |---|---|
-| `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before an advance sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off, and `config.StallInterval` reads it. |
+| `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before its launcher, or an advance, sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off, and `config.StallInterval` reads it. |
 | `checks_refresh` | How long a [validate](interpreter.md#validate) step waiting on a head's checks waits after reading them before an advance reads them again: a Go duration, default 1 minute; `"0s"` reads them at every advance, and `config.ChecksRefresh` reads it. Something must still advance the task, such as `task start`; the per-task watcher that will do so on a timer is later work. |
 
 ### Repositories

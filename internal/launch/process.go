@@ -104,6 +104,9 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	if p.Copy != "" {
 		cmd.Args = append(cmd.Args, "--copy", p.Copy, "--advance")
 	}
+	if p.StallInterval > 0 {
+		cmd.Args = append(cmd.Args, "--stall-interval", p.StallInterval.String())
+	}
 	cmd.Env = append(os.Environ(), p.Env...)
 	cmd.Stdout, cmd.Stderr = log, log
 	detach(cmd)

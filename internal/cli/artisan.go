@@ -188,7 +188,7 @@ func (a *App) artisanStart(args []string) int {
 		adapterName, prompt, result, workdir string
 		session, workspace, label            string
 		herdrExec                            stringList
-		timeout                              time.Duration
+		timeout, stall                       time.Duration
 		stopOnTimeout, advance               bool
 		id                                   adapter.Identity
 		owned                                attemptFlags
@@ -204,6 +204,7 @@ func (a *App) artisanStart(args []string) int {
 	fl.Var(&herdrExec, "herdr-exec", "Herdr program, then leading arguments (repeat per word)")
 	fl.StringVar(&label, "tab-label", "", "tab label")
 	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
+	fl.DurationVar(&stall, "stall-interval", 0, "send the Director worker-stalled when the worker is silent this long; zero observes nothing")
 	fl.BoolVar(&stopOnTimeout, "stop-on-timeout", false, "stop the owned Windows worker, or request Ctrl+C on other platforms, when the wait times out")
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan start: " + err.Error())
@@ -218,6 +219,8 @@ func (a *App) artisanStart(args []string) int {
 		return a.usageError(fmt.Sprintf("artisan start: --adapter %s runs only as an owned attempt, not in a Herdr tab", adapterName))
 	case timeout < 0:
 		return a.usageError("artisan start: --timeout must not be negative")
+	case stall < 0:
+		return a.usageError("artisan start: --stall-interval must not be negative")
 	case session == "":
 		if result != "" || workspace != "" || len(herdrExec) > 0 || label != "" || stopOnTimeout {
 			return a.usageError("artisan start: --result, --herdr-workspace, --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
@@ -244,9 +247,9 @@ func (a *App) artisanStart(args []string) int {
 			}
 			advanceArgv = []string{exe, "--copy", dir}
 		}
-		return a.runOwned(at, adapterName, prompt, workdir, timeout, advanceArgv)
-	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance:
-		return a.usageError("artisan start: --store, --state, --repo, --step, --copy and --advance do not apply in a Herdr tab")
+		return a.runOwned(at, adapterName, prompt, workdir, timeout, stall, advanceArgv)
+	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0:
+		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance and --stall-interval do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):
@@ -298,8 +301,9 @@ func (a *App) artisanStart(args []string) int {
 // Artisan runs in a containment unit with this process's terminal, its output on
 // stderr so stdout carries only the report, and the exit code is the store
 // outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error. A non-nil
-// advance is launch.Config.Advance, the task's advance once the attempt is recorded.
-func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, timeout time.Duration, advance []string) int {
+// advance is launch.Config.Advance, the task's advance once the attempt is recorded. A positive stall is
+// launch.Config.StallInterval, its sends going through the store and waking the Director as the engine's outbox does.
+func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, timeout, stall time.Duration, advance []string) int {
 	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile}
 	for _, p := range []struct {
 		dst *string
@@ -324,7 +328,10 @@ func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir string, t
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, artisan.StopSignals...)
 	defer signal.Stop(signals)
-	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals, Advance: advance})
+	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals, Advance: advance,
+		// A failed wake is not written to stderr: that is the worker's output file, so the line would restart its
+		// stall clock. The message stays stored and the next advance's replay tries the wake again.
+		StallInterval: stall, Outbox: wakingOutbox{storeRecords(at.Store), a.directorPane(), io.Discard}})
 	if rep.Outcome.State != "" {
 		if code := a.printJSON(rep); code != 0 {
 			return code

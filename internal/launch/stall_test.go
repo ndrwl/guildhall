@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,8 +101,9 @@ func stallEvents(t *testing.T, a launch.Attempt) []time.Time {
 }
 
 // speaker starts the speaker worker for a with the stall interval, its output appended to a regular file as
-// launch.Process appends it to launcher.log, and returns its directory.
-func speaker(t *testing.T, a launch.Attempt, interval time.Duration) (string, <-chan ran) {
+// launch.Process appends it to launcher.log, and returns its directory and finish, which ends the worker and
+// returns Run's result; the case's cleanup finishes it too.
+func speaker(t *testing.T, a launch.Attempt, interval time.Duration) (string, func() ran) {
 	t.Helper()
 	dir := t.TempDir()
 	out, err := os.OpenFile(filepath.Join(t.TempDir(), "launcher.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
@@ -122,11 +124,14 @@ func speaker(t *testing.T, a launch.Attempt, interval time.Duration) (string, <-
 			HeartbeatInterval: 50 * time.Millisecond, StallInterval: interval, Outbox: storeOutbox(a.Store)})
 		done <- ran{r, err}
 	}()
-	t.Cleanup(func() {
-		_ = os.WriteFile(filepath.Join(dir, "done"), nil, 0o600)
-		wait(t, done)
+	finish := sync.OnceValue(func() ran {
+		if err := os.WriteFile(filepath.Join(dir, "done"), nil, 0o600); err != nil {
+			t.Error(err)
+		}
+		return wait(t, done)
 	})
-	return dir, done
+	t.Cleanup(func() { finish() })
+	return dir, finish
 }
 
 // waitStalls waits until a's inbox holds n worker-stalled messages, then checks it still holds n after a few
@@ -152,7 +157,7 @@ func waitStalls(t *testing.T, a launch.Attempt, n int, interval time.Duration) [
 func TestLauncherSendsOneStallPerCrossing(t *testing.T) {
 	a := newAttempt(t)
 	const interval = 400 * time.Millisecond
-	dir, done := speaker(t, a, interval)
+	dir, finish := speaker(t, a, interval)
 	first := waitStalls(t, a, 1, interval)
 	if err := os.WriteFile(filepath.Join(dir, "speak-1"), nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -171,10 +176,7 @@ func TestLauncherSendsOneStallPerCrossing(t *testing.T) {
 			t.Errorf("stall %d = %+v, want %+v", i, m, want)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "done"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if r := wait(t, done); r.err != nil || r.r.AttemptOutcome != store.AttemptFailed {
+	if r := finish(); r.err != nil || r.r.AttemptOutcome != store.AttemptFailed {
 		t.Fatalf("Run = %+v, %v", r.r, r.err)
 	}
 	if got := stalls(t, a); len(got) != 2 {

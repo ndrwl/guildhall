@@ -606,6 +606,11 @@ func (l *Launcher) heartbeat() {
 		Sequence: l.seq, Time: now.UTC(), WorkerState: phase, LastOutputAt: out.UTC()}
 	if err := WriteHeartbeat(l.c.Dir, h); err != nil {
 		l.event(eventHeartbeatFailed, map[string]any{"sequence": l.seq, "error": err.Error()})
+		return
+	}
+	if l.c.Beat != nil {
+		h.Schema = HeartbeatSchema
+		l.c.Beat(h)
 	}
 }
 

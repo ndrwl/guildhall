@@ -101,7 +101,13 @@ func (n eventName) String() string {
 // silent since lastOutput, or failed to with err when err is not nil. It
 // returns the error of the write.
 func LogStall(dir, id string, lastOutput time.Time, err error) error {
-	return nil
+	fields := map[string]any{"message": id, "last_output_at": lastOutput.UTC()}
+	if err != nil {
+		fields["error"] = err.Error()
+	}
+	l := &Launcher{c: LauncherConfig{Dir: dir}}
+	l.event(eventWorkerStalled, fields)
+	return l.logErr
 }
 
 // LogAdvance appends an "advance" event to EventsFile in the attempt

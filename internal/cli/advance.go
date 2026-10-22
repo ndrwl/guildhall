@@ -277,7 +277,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	}
 	e := &interp.Engine{
 		Records:  storeRecords(f.store),
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir},
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   wakingOutbox{storeRecords(f.store), a.directorPane(), a.Stderr},
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
