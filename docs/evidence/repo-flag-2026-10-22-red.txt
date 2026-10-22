@@ -8,24 +8,24 @@ panic: runtime error: invalid memory address or nil pointer dereference [recover
 
 goroutine 3 [running]:
 testing.tRunner.func1.2({0xa96288, 0xaf20b0})
-	/home/andrew/.local/go/src/testing/testing.go:2125 +0x232
+	$GOROOT/src/testing/testing.go:2125 +0x232
 testing.tRunner.func1()
-	/home/andrew/.local/go/src/testing/testing.go:2128 +0x329
+	$GOROOT/src/testing/testing.go:2128 +0x329
 panic({0xa96288?, 0xaf20b0?})
-	/home/andrew/.local/go/src/runtime/panic.go:859 +0x125
+	$GOROOT/src/runtime/panic.go:859 +0x125
 github.com/ndrwl/guildhall/internal/cli.(*App).runOwned(0x1be950cd3e58, {{0x1be950f921c0, 0x64}, {0x1be950be44f8, 0x11}, {{0x78e19f, 0x3}, {0x78e1a2, 0x3}, {0x78e713, ...}, ...}}, ...)
-	/home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/cli/artisan.go:294 +0x4bc
+	internal/cli/artisan.go:294 +0x4bc
 github.com/ndrwl/guildhall/internal/cli.(*App).artisanStart(0x1be950cd3e58, {0x1be951026020, 0x12, 0x1a})
-	/home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/cli/artisan.go:224 +0xa37
+	internal/cli/artisan.go:224 +0xa37
 github.com/ndrwl/guildhall/internal/cli.(*App).artisan(0x1c0?, {0x1be951026010?, 0x1be951026000?, 0x1be950cd3c98?})
-	/home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/cli/artisan.go:82 +0x111
+	internal/cli/artisan.go:82 +0x111
 github.com/ndrwl/guildhall/internal/cli.(*App).Run(0x1be950cd3e58, {0x1be951026000?, 0x1?, 0x46e8ae?})
-	/home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/cli/cli.go:148 +0x385
+	internal/cli/cli.go:148 +0x385
 github.com/ndrwl/guildhall/internal/cli.TestRepositoryFlagSpelling(0x1be950fa2488)
-	/home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/cli/cli_test.go:261 +0x7ca
+	internal/cli/cli_test.go:261 +0x7ca
 testing.tRunner(0x1be950fa2488, 0xad6790)
-	/home/andrew/.local/go/src/testing/testing.go:2195 +0xea
+	$GOROOT/src/testing/testing.go:2195 +0xea
 created by testing.(*T).Run in goroutine 1
-	/home/andrew/.local/go/src/testing/testing.go:2260 +0x4d4
+	$GOROOT/src/testing/testing.go:2260 +0x4d4
 FAIL	github.com/ndrwl/guildhall/internal/cli	0.311s
 FAIL
