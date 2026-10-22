@@ -105,7 +105,7 @@ The end reason is set only by the store: a session its supervisor recorded `stop
 The first move to `running` sets the ready time and the move to `stopped` the end time.
 A move names the state sequence it read, the receipt sequence that recorded the current state, and is refused with `ErrInvalid` when the session has moved since, so racing moves cannot overwrite each other; moving backward, staying put and moving a superseded session are refused the same way.
 
-[`director stop`](director.md#stop) records its two moves with their own methods, under the same rules.
+[`director stop`](director.md#stop) records its moves with their own methods, under the same rules.
 `RequestDirectorStop` moves a `recovering`, `running` or `paused` session to `stopping`, setting `StopNow` for `stop --now`; a `stopping` session without `StopNow` takes it, staying `stopping`, and any other repeat is refused as staying put.
 Its mutation id is `director-stop:<n>:<turn|now>:<from>`.
 Every stop request sets `Sweeping`, which holds new attempts, the session's state aside, until `FinishDirectorStop` clears it once `director stop` has stopped every attempt, with the mutation id `director-swept:<n>:<from>`; it finishes a `stopped` session too, keeping its end time, and is refused when no stop is sweeping.
