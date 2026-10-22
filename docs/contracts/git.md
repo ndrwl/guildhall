@@ -3,7 +3,7 @@
 ## Contract
 
 The boundary to the git program: each question the Director asks of a repository is answered by running git with an argument list, never through a shell.
-It answers two: `Program.Ensure`, which makes a task's working directory a worktree of its repository ([workspaces](#workspaces)), and `Program.Classify(ctx, repo, last, next)`, run as `git --literal-pathspecs -C <repo>`: whether a task's new commit range `next` is a rebase of the range `last` that was reviewed, for rebase-aware re-review (director slice S6b part 3).
+It answers two: `Program.Ensure`, which makes a task's working directory a worktree of its repository ([workspaces](#workspaces)), and `Program.Classify(ctx, repo, last, next)`, run as `git -C <repo> --literal-pathspecs`: whether a task's new commit range `next` is a rebase of the range `last` that was reviewed, for rebase-aware re-review (director slice S6b part 3).
 
 `ScopeRebase` is returned only when all of these hold:
 
@@ -47,11 +47,16 @@ Directories are compared by file identity, not by path text, so symbolic links s
 `w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/0011-repository-paths-are-absolute-in-the.md), is `ErrInvalidWorkspace` there.
 Paths with spaces are passed as single arguments, never through a shell.
 
+Every git run of `Classify`, `Ensure` and `Retire` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
+A run past its bound is ended and is a plain error naming git's command and the bound; for `Classify` that is a full scope with that reason, since its context did not end.
+`forge.GitHub` keeps the same rule for `gh` and `git` ([forge](forge.md)); the shared runner both would use waits for a third consumer that runs a program under a bound, and is done when `exec.CommandContext` in `internal/forge`, `internal/git` and `internal/herdr` is found only in it.
+
 ## Tests
 
 [`internal/git/gittest`](git-gittest.md) defines `RunClassifierContract` and the scripted double `Script`, shared with the interpreter's tests.
 `git_test.go` runs the suite against `Program` over histories built with real git in temporary repositories, with global and system configuration excluded during history setup, on every CI platform, and against `Script`.
 The cases are an identical-patch rebase (rebase, with a diff), a rebase that also edits a task file, a base change to a file the task touches that leaves the task's patches identical, a new head on the same base and an unknown commit (all full), a repeated call giving the same answer, and an ended context (an error).
+`TestClassifyTimeout`, red first against the classifier's own runner without a bound ([red run](../evidence/h11-one-runner-2026-10-22-red.txt)), runs this test binary as a git that never answers under a 200 ms `Timeout`: the classification is full with a reason naming `merge-base` and the bound, and `Classify` does not fail.
 Submodule histories with both diff-wide and per-submodule ignore settings enabled cover a valid rebase whose reviewer diff includes the pointer and a base/task gitlink overlap requiring full review.
 `gittest.RunWorkspaceContract` runs against `Program`, over a bare remote whose default branch `trunk` has moved past what the repository fetched (`gittest.Repository`), and against the double `gittest.Workspaces`: creation at the remote's default branch, reuse across attempts keeping a commit and an uncommitted file with the commit a commit of the repository, an empty directory, a refused plain directory left untouched, a directory with spaces, two independent workspaces of one repository, invalid workspaces creating nothing and an ended context creating nothing.
 `workspace_test.go`'s `TestEnsureProgram` covers what only git shows: a registered and an unregistered leftover `<dir>.partial` finished, a removed worktree and one deleted without git (the latter case added with its fix during review, with no recorded red run) each created again on its branch's commits, an agent's own branch kept on reuse, another repository's worktree and subdirectories of checkouts refused, an unreachable remote creating nothing, and the edge publish needs, the worktree's commit found in and pushed from the repository exactly as `forge.GitHub.Publish` pushes it.

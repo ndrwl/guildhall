@@ -1,15 +1,50 @@
 package git_test
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 )
+
+// hangingGitEnv makes this test binary a git that never answers in time.
+const hangingGitEnv = "GUILDHALL_TEST_HANGING_GIT"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(hangingGitEnv) != "" {
+		time.Sleep(time.Minute)
+		fmt.Fprintln(os.Stderr, "hanging git: not ended at its timeout")
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
+// TestClassifyTimeout: a git run of the classifier that outlasts Program.Timeout is ended, and the review is full
+// with a reason naming git and the timeout; Classify itself does not fail, since its context did not end.
+func TestClassifyTimeout(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(hangingGitEnv, "1")
+	p := git.Program{Path: exe, Timeout: 200 * time.Millisecond}
+	last := git.Range{Base: strings.Repeat("a", 40), Head: strings.Repeat("b", 40)}
+	next := git.Range{Base: strings.Repeat("c", 40), Head: strings.Repeat("d", 40)}
+	got, err := p.Classify(context.Background(), t.TempDir(), last, next)
+	if err != nil {
+		t.Fatalf("Classify = %v, want a full classification", err)
+	}
+	if got.Scope != git.ScopeFull || got.Diff != nil || !strings.Contains(got.Reason, "merge-base") || !strings.Contains(got.Reason, "200ms") {
+		t.Errorf("Classify past its timeout = %q (%s), want full with a reason naming git merge-base and 200ms", got.Scope, got.Reason)
+	}
+}
 
 func TestClassifierContract(t *testing.T) {
 	t.Run("program", func(t *testing.T) {

@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ndrwl/guildhall/internal/digest"
 )
@@ -37,9 +35,6 @@ var (
 	// Nothing in it was changed.
 	ErrNotWorkspace = errors.New("working directory is not a worktree of the repository")
 )
-
-// DefaultTimeout is how long one git run of a workspace operation may take when Program.Timeout is zero.
-const DefaultTimeout = 5 * time.Minute
 
 // Ensure makes w.Dir a worktree of w.Repository, creating it when it does not exist and reusing it when it does.
 //
@@ -162,39 +157,6 @@ func (p Program) create(ctx context.Context, w Workspace) error {
 	}
 	_, err := p.git(ctx, w.Repository, "worktree", "move", partial, w.Dir)
 	return err
-}
-
-// git runs git in dir, or in the current directory when dir is empty, bounded by the timeout and never prompting,
-// and returns its standard output.
-func (p Program) git(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	timeout := p.Timeout
-	if timeout == 0 {
-		timeout = DefaultTimeout
-	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	path := p.Path
-	if path == "" {
-		path = "git"
-	}
-	if dir != "" {
-		args = append([]string{"-C", dir}, args...)
-	}
-	cmd := exec.CommandContext(runCtx, path, args...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	cmd.WaitDelay = 5 * time.Second
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	switch {
-	case err == nil:
-		return out, nil
-	case ctx.Err() != nil:
-		return nil, ctx.Err()
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
-		return nil, fmt.Errorf("git %s: no answer within %v: %w", strings.Join(args, " "), timeout, context.DeadlineExceeded)
-	}
-	return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 }
 
 // Retirement is a task workspace whose change was merged, to be removed.
