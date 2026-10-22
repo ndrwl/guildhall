@@ -16,18 +16,20 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // advanceEnv makes the test binary play `guildhall step done` and `guildhall task start` for Run's advance:
 // it appends what it saw (advanceSeen) to the record file the JSON advanceDouble in the variable names, prints a
-// line on each output and exits with the double's code.
+// line on each output and exits with the double's code. With Until set it first waits up to 30 seconds, as long
+// as the real command waits for the task lock, for that file to exist.
 const advanceEnv = "GUILDHALL_LAUNCH_TEST_ADVANCE"
 
 type advanceDouble struct {
-	Record, Dir, Store string
-	Exit               int
+	Record, Dir, Store, Until string
+	Exit                      int
 }
 
 // advanceSeen is one advance child's view: its arguments, the attempt's outcome.json state, and the store's
@@ -38,6 +40,8 @@ type advanceSeen struct {
 	Outcome      store.AttemptOutcome `json:"outcome"`
 	Owner        store.OwnershipState `json:"owner"`
 	ObservedErrs []string             `json:"errors,omitempty"`
+	// Unblocked is whether the Until file appeared in time.
+	Unblocked bool `json:"unblocked,omitempty"`
 }
 
 func mainIfAdvance() {
@@ -50,6 +54,12 @@ func mainIfAdvance() {
 		os.Exit(1)
 	}
 	seen := advanceSeen{Argv: os.Args[1:]}
+	for end := time.Now().Add(30 * time.Second); d.Until != "" && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(d.Until); err == nil {
+			seen.Unblocked = true
+			break
+		}
+	}
 	o, err := artisan.ReadOutcome(d.Dir)
 	seen.Decided = o.State
 	if err != nil {
@@ -261,5 +271,64 @@ func TestRunWithoutAdvanceRunsNone(t *testing.T) {
 	}
 	if got := advances(t, record); len(got) != 0 {
 		t.Errorf("advances %+v, want none", got)
+	}
+}
+
+// TestProcessLaunchReturnsOnceItsStoppedLauncherReleases is a review regression written red first: a Process
+// from a copy whose launcher does not record its endpoint within StartTimeout stops that launcher and returns
+// once it releases the stopped attempt, not once it exits. The launcher's advance, task start, waits for the
+// task lock Launch's caller holds, which the double plays by waiting for a file the test writes after Launch
+// returns; Launch waiting for the launcher to exit stalled until the advance gave up.
+func TestProcessLaunchReturnsOnceItsStoppedLauncherReleases(t *testing.T) {
+	dir, err := os.MkdirTemp("", "lc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	p := newProcess(t)
+	p.Copy, p.Store, p.StateDir, p.StartTimeout = dir, filepath.Join(dir, "director.store"), filepath.Join(dir, "state"), time.Millisecond
+	spec := prepared(t, p, fixtureSpec(t, instructions[interptest.Hangs]))
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
+	record, unlocked := filepath.Join(t.TempDir(), "advances.jsonl"), filepath.Join(t.TempDir(), "unlocked")
+	b, err := json.Marshal(advanceDouble{Record: record, Dir: k.Dir(p.StateDir), Store: p.Store, Until: unlocked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(advanceEnv, string(b))
+	begun := time.Now()
+	_, err = p.Launch(context.Background(), spec)
+	took := time.Since(begun)
+	if werr := os.WriteFile(unlocked, nil, 0o600); werr != nil {
+		t.Fatal(werr)
+	}
+	if err == nil {
+		t.Fatal("Launch succeeded past its StartTimeout")
+	}
+	if took > 10*time.Second {
+		t.Errorf("Launch took %v to stop its launcher; want no wait for the launcher's advance", took)
+	}
+	s, err := store.Open(p.Store, store.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, oerr := s.Ownership(k.Repository, k.TaskID, k.Step, k.Attempt)
+	as, aerr := s.Attempts(k.Repository, k.TaskID)
+	_ = s.Close()
+	if oerr != nil || aerr != nil || o.State != store.OwnerReleased || len(as) != 1 || as[0].Outcome != store.AttemptStopped {
+		t.Fatalf("ownership %+v, %v; attempts %+v, %v; want released and stopped", o, oerr, as, aerr)
+	}
+	id := artisan.Identity(o.LauncherIdentity)
+	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+		if lv, err := artisan.Probe(id); err == nil && lv == artisan.Gone {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("launcher %d did not exit within a minute", id.PID)
+		}
+	}
+	got := advances(t, record)
+	want := []string{"task", "start", "--copy", dir, "--repo", "app", "t7"}
+	if len(got) != 1 || !slices.Equal(got[0].Argv, want) || !got[0].Unblocked {
+		t.Errorf("advances %+v; want one %q run after Launch returned", got, want)
 	}
 }

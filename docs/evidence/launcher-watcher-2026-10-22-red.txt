@@ -91,3 +91,11 @@ $ go test ./internal/cli -run TestTheWatcherReportsASetupFailure -count=1   # re
 FAIL
 FAIL	github.com/ndrwl/guildhall/internal/cli	90.149s
 FAIL
+
+$ go test ./internal/launch -run TestProcessLaunchReturnsOnceItsStoppedLauncherReleases -count=1   # review regression, before Launch's stop returned on the release
+--- FAIL: TestProcessLaunchReturnsOnceItsStoppedLauncherReleases (30.19s)
+    advance_test.go:308: Launch took 30.135256178s to stop its launcher; want no wait for the launcher's advance
+    advance_test.go:332: advances [{Argv:[task start --copy /tmp/lc3699064119 --repo app t7] Decided:cancelled Outcome: Owner: ObservedErrs:[] Unblocked:false}]; want one ["task" "start" "--copy" "/tmp/lc3699064119" "--repo" "app" "t7"] run after Launch returned
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	30.199s
+FAIL

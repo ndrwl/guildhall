@@ -39,7 +39,8 @@ const LogFile = "launcher.log"
 // endpoint, so a Stop reaches it, and never waits for the attempt to finish;
 // a process that exits first is an error, one that finishes the attempt
 // before recording its endpoint is an error at once, and one that does not
-// get there within StartTimeout is stopped and is an error.
+// get there within StartTimeout or before ctx ends is stopped and is an
+// error, Launch waiting only until it releases the attempt, not for it to exit.
 //
 // Stop asks only the process Launch started to stop through its endpoint and
 // waits for that process to exit. It refuses a handle this Process did
@@ -115,7 +116,7 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	h := interp.Handle{Identity: as.Identity, Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
 	if err := errors.Join(identityErr, p.owned(ctx, c)); err != nil {
 		if !errors.Is(err, errReleased) {
-			_ = p.stop(c)
+			_ = p.stop(c, true)
 		}
 		return interp.Handle{}, fmt.Errorf("launch: %s: %w; see %s", k, err, filepath.Join(at.Dir(), LogFile))
 	}
@@ -174,21 +175,27 @@ func (p *Process) Stop(h interp.Handle) error {
 	if !ok {
 		return fmt.Errorf("launch: handle %s was not returned by this launcher", h.Ref)
 	}
-	return p.stop(c)
+	return p.stop(c, false)
 }
 
-// stop asks c's endpoint to stop and waits for its process to exit.
-func (p *Process) stop(c *child) error {
+// stop asks c's endpoint to stop and waits for its process to exit or, with released, for it to release its
+// attempt: Launch's caller holds the task lock the launcher's advance then waits for.
+func (p *Process) stop(c *child, released bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	called := false
 	for {
 		o, err := c.at.owner()
 		if err != nil {
 			return err
 		}
+		mine := o != nil && artisan.Identity(o.LauncherIdentity) == c.identity
+		if released && mine && o.State == store.OwnerReleased {
+			return nil
+		}
 		select {
 		case <-c.exited:
-			if o != nil && artisan.Identity(o.LauncherIdentity) == c.identity {
+			if mine {
 				if live, err := ProbeOwner(*o); err != nil || live != store.ProbeGone {
 					return errors.Join(ErrNotStopped, err)
 				}
@@ -196,8 +203,12 @@ func (p *Process) stop(c *child) error {
 			return nil
 		default:
 		}
-		if o != nil && artisan.Identity(o.LauncherIdentity) == c.identity && o.Endpoint != "" {
+		if mine && o.Endpoint != "" && !called {
 			_, err := artisan.Call(ctx, o.Endpoint, c.at.Key, c.identity, artisan.OpStop)
+			if released {
+				called = true
+				continue
+			}
 			select {
 			case <-c.exited:
 				if err != nil && !errors.Is(err, artisan.ErrEndpointRequest) {
