@@ -234,6 +234,9 @@ func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h
 	if err := r.notify("merged."+d.ID, "merged", fmt.Sprintf("Merged head %s (decision %s); the task is done.", h, d.ID)); err != nil {
 		return false, Next{}, err
 	}
+	if err := r.retire(d, repo, h); err != nil {
+		return false, Next{}, err
+	}
 	if _, err := r.e.Records.SetTaskState(r.mutation("task-state", string(store.TaskDone)), r.task.Repository, r.task.ID, store.TaskDone); err != nil {
 		return false, Next{}, err
 	}

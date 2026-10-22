@@ -18,6 +18,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
+	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -262,6 +263,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if a.Forge != nil {
 		fg = a.Forge
 	}
+	var ws interp.Workspaces = git.Program{}
+	if a.Workspaces != nil {
+		ws = a.Workspaces
+	}
 	e := &interp.Engine{
 		Records:  storeRecords(f.store),
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state},
@@ -270,6 +275,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
+		Workspaces: ws,
 	}
 	// An interrupt ends the advance and releases the task lock; the next advance replays it.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

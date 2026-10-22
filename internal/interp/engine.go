@@ -167,8 +167,12 @@ type Engine struct {
 	// DocumentDir is the absolute Director document directory every recorded document path is relative to.
 	DocumentDir string
 	// StateDir is the absolute directory holding attempt directories, <repo>/<task>/<step>-<n>, and each
-	// task's working directory, <repo>/<task>/work, until worktree custody is defined.
+	// task's working directory, <repo>/<task>/work.
 	StateDir string
+	// Workspaces makes a task's working directory a worktree of its repository on branch guildhall/<task> before
+	// each attempt launches (docs/interpreter.md#the-working-directory); nil leaves it a plain directory, from
+	// which publish cannot push an Artisan's commit.
+	Workspaces Workspaces
 	// StallInterval enables worker-stalled observations when positive: an advance that reaches a launched,
 	// unfinished attempt sends the Director a worker-stalled message once its heartbeat is within the
 	// interval and its worker's last output older than it (docs/interpreter.md#worker-stalled-observations).
@@ -511,9 +515,9 @@ const launchedFile = "launched.json"
 
 // launch launches attempt n from its published preparation, rendering and publishing it first when none was.
 func (r *run) launch(s workflow.Step, n int, adapterName string, inputs []render.Input) error {
-	work := filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		return err
+	work, err := r.workDir()
+	if err != nil {
+		return fmt.Errorf("working directory: %w", err)
 	}
 	p, err := r.preparation(s, n, inputs)
 	if err != nil {
@@ -585,8 +589,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	if len(outputs) == 0 {
 		return fmt.Errorf("a succeeded result lists no output for port %s", port.Name)
 	}
-	work := filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, "work")
-	root, err := os.OpenRoot(work)
+	root, err := os.OpenRoot(r.workPath())
 	if err != nil {
 		return err
 	}

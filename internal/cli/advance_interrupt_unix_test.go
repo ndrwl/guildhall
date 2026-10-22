@@ -36,7 +36,7 @@ func TestInterruptedAdvanceReleasesTheTask(t *testing.T) {
 	const remote, head = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
 	f := forgetest.NewFake()
 	f.SetBranch(remote, "main", strings.Repeat("a", 40))
-	f.AddCommit("/srv/app", head)
+	f.AddCommit(appRepo, head)
 	d.forge = f
 	step := func(args ...string) string {
 		t.Helper()

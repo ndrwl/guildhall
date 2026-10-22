@@ -7,7 +7,7 @@ It follows `changes_requested` and `failed` loop rules with their `max`, asks th
 
 ## Seams
 
-The engine consumes six narrow interfaces, declared in `internal/interp` beside the code that calls them.
+The engine consumes seven narrow interfaces, declared in `internal/interp` beside the code that calls them.
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
@@ -17,6 +17,7 @@ The engine consumes six narrow interfaces, declared in `internal/interp` beside 
 | `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 | `Forge`: [publish and deliver](#publish-and-deliver), [validate](#validate) | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunForgeContract` |
+| `Workspaces`: [the working directory](#the-working-directory) | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
@@ -80,7 +81,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
-Publishing, validating and merging send `published`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused` and `merged` messages, described below.
+Publishing, validating and merging send `published`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, described below.
 
 ## Publish and deliver
 
@@ -92,7 +93,7 @@ Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts
 When the step's latest round already published that head, the step is complete and nothing is called.
 Otherwise round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, the task's title and a body naming the task, step and head.
 The forge pushes the head to that branch, replacing whatever the task branch held but never touching another branch, and opens a pull request against the remote's default branch or updates the open one.
-A head that is not a commit of the repository at `path` is refused with `forge.ErrUnknownHead` and records nothing.
+A head that is not a commit of the repository at `path` is refused with `forge.ErrUnknownHead` and records nothing; a commit an Artisan made in the task's [working directory](#the-working-directory) is one, because that directory is a worktree of the repository.
 The engine then records, in order:
 
 1. `publish-<k>-pr` (`tasks/<repo>/<task>/publish-<k>/pull-request.json`), a `guildhall.pull-request/1` document: the remote, number, URL, branch, head and state;
@@ -105,7 +106,7 @@ A new head, such as a build round after review findings, publishes the next roun
 A `hold` answer merges nothing: the task waits for the Director (`director`, naming the decision) and the Director is told as `<repo>.<task>.merge-held.<decision>`.
 A `merge` answer calls `Forge.Merge` for the recorded remote and pull request number at the decision's head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
 A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
-When the forge merges, the engine records `<decision>-merge` (`tasks/<repo>/<task>/<decision>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<decision>`, type `merged`, marks the task `done` and returns the wait `done`.
+When the forge merges, the engine records `<decision>-merge` (`tasks/<repo>/<task>/<decision>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<decision>`, type `merged`, [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
 A later advance of a done task is refused with `ErrTaskClosed`.
 
 When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is merged.
@@ -224,7 +225,24 @@ The first output is the step's output port, named `<step>-<n>-<port>`; later out
 A code-head output must hold a 40 or 64 lowercase hex object id, and a review outcome must parse, or nothing is recorded.
 Every review outcome, including human review and loop-exit acceptance, projects findings and dispositions in its document reference for inspection.
 An input `step.port` resolves to that port's document of the latest round, and its file is checked against the recorded digest before it is used.
-The working directory is `<state>/<repo>/<task>/work` until worktree custody is defined.
+
+## The working directory
+
+Every Artisan attempt of a task runs in one working directory, `<state>/<repo>/<task>/work`, a git worktree of the repository's configured `path` ([decision](decisions/worktree-custody.md)).
+Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`internal/git`](contracts/git.md#workspaces), with that path, the repository's `path` and `remote`, and branch `guildhall/<task>`, the branch publish pushes to:
+
+- the first attempt creates the worktree on a new local branch `guildhall/<task>` at the commit the remote's default branch is at then, or on an existing local branch of that name as it is;
+- every later attempt, including a retry, a loop round and a relaunch, reuses it unchanged: Guildhall never resets, cleans or checks out over it, so an Artisan uses git freely inside it and its commits, branches and uncommitted files carry to the next attempt;
+- outputs are files in it, so they sit beside the code; an Artisan that commits should leave them out.
+
+Ensure is replay safe: the worktree is built beside the working directory and moved into place only when complete, so a crash leaves no working directory or a complete one, and the attempt, recorded but not marked launched, is launched by the next advance.
+When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.
+When a merge closes the task, the engine calls `Workspaces.Retire` with the merged head and the task's recorded documents, before marking the task `done`, so a replay retires it again.
+It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.
+Otherwise it removes nothing, and the Director is sent `<repo>.<task>.workspace-kept.<decision>.<digest>`, type `workspace-kept`, naming the directory, the branch and what they hold, where `<digest>` is the first 12 hex digits of the text's sha256; the Director decides what happens to them.
+A retirement that fails, such as git refusing to remove the worktree, is reported the same way and never fails the merge or keeps the task open.
+A retirement cut short by an interrupt is not: the advance fails before the task is marked `done`, no `workspace-kept` message is sent, and running the command again replays the merge and retires the working directory again.
+With no `Engine.Workspaces` the working directory is a plain directory, which is how the engine's own tests run; publish cannot push from one.
 
 ## History
 

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/digest"
 )
@@ -39,10 +40,13 @@ type Classification struct {
 	Diff []byte
 }
 
-// Program classifies by running the git program.
+// Program answers by running the git program.
 type Program struct {
 	// Path is the git executable; empty means "git" found on PATH.
 	Path string
+	// Timeout bounds each git run of a workspace operation; zero means DefaultTimeout. A run past it is ended
+	// and is an error naming git and the timeout.
+	Timeout time.Duration
 }
 
 // Classify classifies a new range of a task against the range last reviewed, in the repository at repo.
