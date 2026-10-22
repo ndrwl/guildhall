@@ -301,14 +301,14 @@ func baselinePrompter(cfg *config.Config, cfgDir, release, skills string) interp
 	}
 }
 
-// baselineSource is the named baseline file from the copy's baseline directory when it is there, else from the release's;
-// a file in neither is left to the renderer to refuse.
+// baselineSource is the named baseline file from the copy's baseline directory unless it does not exist there, else from
+// the release's; a file in neither, or a copy file that cannot be read, is left to the renderer to refuse.
 func baselineSource(copyDir, release, name string) render.Source {
 	path := filepath.Join(copyDir, filepath.FromSlash(name))
-	if _, err := os.Stat(path); err == nil {
-		return render.Source{Name: name, Path: path, Root: "copy"}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return render.Source{Name: name, Path: filepath.Join(release, filepath.FromSlash(name)), Root: "release"}
 	}
-	return render.Source{Name: name, Path: filepath.Join(release, filepath.FromSlash(name)), Root: "release"}
+	return render.Source{Name: name, Path: path, Root: "copy"}
 }
 
 // storeRecords is the engine's Records and Outbox over the store file it names, opened for each operation

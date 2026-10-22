@@ -13,8 +13,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// bareCopy is a Director copy holding only its config file, and an installed release baseline.
-func bareCopy(t *testing.T) (cfg *config.Config, cfgDir, release string) {
+// configOnlyCopy is a Director copy holding only its config file, and an installed release baseline.
+func configOnlyCopy(t *testing.T) (cfg *config.Config, cfgDir, release string) {
 	t.Helper()
 	cfgDir = t.TempDir()
 	data, err := os.ReadFile(filepath.Join("testdata", "run", "config.toml"))
@@ -40,7 +40,7 @@ func renderStep(t *testing.T, p func(render.Stage, []render.Input) (render.Rende
 }
 
 func TestBareCopyRendersEveryDefaultArtisanStage(t *testing.T) {
-	cfg, cfgDir, release := bareCopy(t)
+	cfg, cfgDir, release := configOnlyCopy(t)
 	def, err := workflow.Default()
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestBareCopyRendersEveryDefaultArtisanStage(t *testing.T) {
 }
 
 func TestCopyBaselineWinsOverRelease(t *testing.T) {
-	cfg, cfgDir, release := bareCopy(t)
+	cfg, cfgDir, release := configOnlyCopy(t)
 	for name, text := range map[string]string{"roles/artisan.md": "Copy role.\n", "standards/go.md": "Go.\n"} {
 		path := filepath.Join(cfgDir, "baseline", filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -89,12 +89,26 @@ func TestCopyBaselineWinsOverRelease(t *testing.T) {
 }
 
 func TestKindWithoutAGuideIsRefused(t *testing.T) {
-	cfg, cfgDir, release := bareCopy(t)
+	cfg, cfgDir, release := configOnlyCopy(t)
 	if err := os.Remove(filepath.Join(release, "stages", "build.md")); err != nil {
 		t.Fatal(err)
 	}
 	_, err := renderStep(t, baselinePrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("render without a guide: %v, want not exist", err)
+	}
+}
+
+func TestUnreadableCopyFileIsRefusedNotReplaced(t *testing.T) {
+	cfg, cfgDir, release := configOnlyCopy(t)
+	if err := os.MkdirAll(filepath.Join(cfgDir, "baseline"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "baseline", "roles"), []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := renderStep(t, baselinePrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
+	if err == nil {
+		t.Errorf("render over an unreadable copy role: role %+v, want refused", r.Manifest.Role)
 	}
 }
