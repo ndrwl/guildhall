@@ -93,28 +93,35 @@ func TestShellCommandRoundTrips(t *testing.T) {
 	for _, sh := range shells {
 		t.Run(sh.name, func(t *testing.T) {
 			path := sh.find(t)
-			for _, arg := range sh.args {
+			// One run of the shell types every argument's line in turn, as a user would, so the shell starts
+			// once rather than once per argument; each line's echo child writes its own file.
+			dir := t.TempDir()
+			lines := make([]string, len(sh.args))
+			for i, arg := range sh.args {
+				out := filepath.Join(dir, fmt.Sprintf("argv-%d.json", i))
+				argv := []string{self, "-test.run=^TestArgvEchoHelper$", "--", "argv-echo", out, "first", arg, "last"}
+				line, err := ShellCommand(sh.name, argv)
+				if err != nil {
+					t.Fatalf("ShellCommand(%q) refused %q: %v", sh.name, arg, err)
+				}
+				lines[i] = line
+			}
+			script := strings.Join(lines, "\n")
+			if b, err := sh.run(path, script).CombinedOutput(); err != nil {
+				t.Errorf("%s ran the lines: %v\n%s", sh.name, err, b)
+			}
+			for i, arg := range sh.args {
 				t.Run(fmt.Sprintf("%q", arg), func(t *testing.T) {
-					out := filepath.Join(t.TempDir(), "argv.json")
-					argv := []string{self, "-test.run=^TestArgvEchoHelper$", "--", "argv-echo", out, "first", arg, "last"}
-					line, err := ShellCommand(sh.name, argv)
+					data, err := os.ReadFile(filepath.Join(dir, fmt.Sprintf("argv-%d.json", i)))
 					if err != nil {
-						t.Fatalf("ShellCommand(%q) refused %q: %v", sh.name, arg, err)
-					}
-					cmd := sh.run(path, line)
-					if b, err := cmd.CombinedOutput(); err != nil {
-						t.Fatalf("%s ran %s: %v\n%s", sh.name, line, err, b)
-					}
-					data, err := os.ReadFile(out)
-					if err != nil {
-						t.Fatalf("echo child wrote nothing for line %s: %v", line, err)
+						t.Fatalf("echo child wrote nothing for line %s: %v", lines[i], err)
 					}
 					var got []string
 					if err := json.Unmarshal(data, &got); err != nil {
 						t.Fatal(err)
 					}
 					if want := []string{"first", arg, "last"}; !slices.Equal(got, want) {
-						t.Errorf("%s passed %q, want %q (line %s)", sh.name, got, want, line)
+						t.Errorf("%s passed %q, want %q (line %s)", sh.name, got, want, lines[i])
 					}
 				})
 			}
