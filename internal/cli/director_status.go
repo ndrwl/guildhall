@@ -166,6 +166,10 @@ type needsMeItem struct {
 	Command    string `json:"command"`
 }
 
+// checksKind is the needs_me kind of a task waiting for its checks, which the session supervisor advances
+// (docs/director.md#checks).
+const checksKind = "checks"
+
 // directorStatusCmd runs `guildhall director status` (docs/director.md#status).
 func (a *App) directorStatusCmd(args []string) int {
 	fl := flag.NewFlagSet("director status", flag.ContinueOnError)
@@ -291,7 +295,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		spend[at.Repository+"/"+at.TaskID] = task
 	}
 
-	var advance, retry, resume, wait, held []needsMeItem
+	var advance, retry, resume, wait, held, checks []needsMeItem
 	for _, t := range v.Tasks {
 		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}, Spend: store.NoSpend}
 		if total, ok := spend[t.Repository+"/"+t.ID]; ok {
@@ -372,6 +376,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			case interp.WaitPaused:
 				held = append(held, needsMeItem{Kind: "paused", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance was held while the Director was paused",
 					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
+			case interp.WaitChecks:
+				checks = append(checks, needsMeItem{Kind: checksKind, Repository: t.Repository, TaskID: t.ID, Step: waits.Step,
+					Reason:  fmt.Sprintf("step %s waits for the checks of its published head; the session supervisor reads them again every checks_refresh and wakes you when they finish", waits.Step),
+					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
 			}
 		}
 		out.Tasks = append(out.Tasks, st)
@@ -412,7 +420,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "messages", Count: others, Reason: fmt.Sprintf("%d unread Director message%s", others, plural),
 			Command: "guildhall messages list director"})
 	}
-	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held); out.NeedsMe == nil {
+	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks); out.NeedsMe == nil {
 		out.NeedsMe = []needsMeItem{}
 	}
 	return out, nil

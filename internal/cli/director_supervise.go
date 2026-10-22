@@ -217,6 +217,10 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
 	// way the supervisor outlives the runtime to record the end.
+	checks, err := a.watchChecks(p, n, dir, copyDir, storePath, state)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
 	if err := c.Start(); err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
 	}
@@ -225,11 +229,12 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	w := sessionWatch{storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, now: a.Now}
+		idleAfter: idleAfter, now: a.Now, checks: checks}
 	if ep != nil {
 		w.turns = ep.Turns()
 	}
 	ended, ending, err := a.waitSession(c, signals, &w)
+	checks.wait()
 	var exit *exec.ExitError
 	switch {
 	case ending == endForStop:
@@ -267,6 +272,8 @@ type sessionWatch struct {
 	now func() time.Time
 	// turns receives the session endpoint's turn signals; nil without an endpoint.
 	turns <-chan session.Turn
+	// checks is the session's checks watcher, ticked at every poll; nil without one.
+	checks *checksWatch
 
 	// wanted is when an end now wanted was first seen, zero while none is, and signalled when the newest turn
 	// signal or wake arrived, or the first decision was made.
@@ -279,8 +286,8 @@ type sessionWatch struct {
 
 // waitSession waits for the started runtime c to end, passing it each termination among signals, and returns the
 // last termination passed on, if any, why the supervisor ended the runtime, if it did, and c's end.
-// Every App.SessionPoll, and at each turn signal, it decides with decideEnd whether to end the runtime;
-// once it has, it kills the runtime if it has not exited stopKill later.
+// Every App.SessionPoll it ticks the checks watcher, and every poll and at each turn signal it decides with
+// decideEnd whether to end the runtime; once it has, it kills the runtime if it has not exited stopKill later.
 func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch) (os.Signal, endAction, error) {
 	waited := make(chan error, 1)
 	go func() { waited <- c.Wait() }()
@@ -313,6 +320,9 @@ func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, w *sessionWatch
 		case t := <-w.turns:
 			decide(t)
 		case <-tick.C:
+			if w.checks != nil {
+				w.checks.tick(time.Now())
+			}
 			decide("")
 		case err := <-waited:
 			return ended, ending, err
