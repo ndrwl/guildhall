@@ -1,8 +1,11 @@
 package claude
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 
@@ -25,8 +28,8 @@ var readOnlyGit = []string{"status", "log", "diff", "show", "rev-parse", "ls-fil
 // Settings is the session's Claude Code settings for the Director copy dir: Bash may run guildhall, the
 // read-only git commands and `git remote -v` without asking but no git command writing an --output file, no
 // edit tool may change the copy's config.toml or managed.toml, the UserPromptSubmit hook runs TurnStartCommand
-// at the start of every turn, and the Stop and StopFailure hooks TurnEndCommand at the end of every turn, the
-// second when a turn ends in an API error. It is JSON with a trailing newline, the same bytes for the same copy.
+// at the start of every turn, the Stop and StopFailure hooks TurnEndCommand at the end of every turn, the second
+// when a turn ends in an API error, and the status line runs ContextReportCommand. It is JSON with a trailing newline, the same bytes for the same copy.
 func Settings(copyDir string) []byte {
 	allow := []string{"Bash(guildhall)", "Bash(guildhall *)"}
 	for _, g := range readOnlyGit {
@@ -51,11 +54,12 @@ func Settings(copyDir string) []byte {
 	b, _ := json.MarshalIndent(struct {
 		Permissions permissions          `json:"permissions"`
 		Hooks       map[string][]matcher `json:"hooks"`
+		StatusLine  command              `json:"statusLine"`
 	}{permissions{allow, deny}, map[string][]matcher{
 		"UserPromptSubmit": {{[]command{{"command", TurnStartCommand}}}},
 		"Stop":             {{[]command{{"command", TurnEndCommand}}}},
 		"StopFailure":      {{[]command{{"command", TurnEndCommand}}}},
-	}}, "", "  ")
+	}, command{"command", ContextReportCommand}}, "", "  ")
 	return append(b, '\n')
 }
 
@@ -109,4 +113,34 @@ const (
 // the session directory: Settings at SettingsFile.
 func (Adapter) SessionFiles(copyDir string) map[string][]byte {
 	return map[string][]byte{SettingsFile: Settings(copyDir)}
+}
+
+// ContextReportCommand is the status-line command of a Director session: Claude Code runs it after each
+// assistant message with the session's status as JSON on standard input.
+const ContextReportCommand = "guildhall director context-report"
+
+// ContextReport reports true: Settings registers ContextReportCommand as the session's status line.
+func (Adapter) ContextReport() bool { return true }
+
+// ParseStatusLine reads the share of the context window in use from the JSON Claude Code passes a status-line
+// command: context_window.used_percentage, rounded to the nearest whole percent and clamped to 0 to 100. It
+// reports false, with no error, when the input has no used percentage yet, such as before the first message, and
+// an error for input that is not a JSON object.
+func ParseStatusLine(data []byte) (int, bool, error) {
+	var in struct {
+		ContextWindow *struct {
+			UsedPercentage *float64 `json:"used_percentage"`
+		} `json:"context_window"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&in); err != nil {
+		return 0, false, fmt.Errorf("claude adapter: status line input: %w", err)
+	}
+	if dec.More() {
+		return 0, false, errors.New("claude adapter: status line input: data after the object")
+	}
+	if in.ContextWindow == nil || in.ContextWindow.UsedPercentage == nil {
+		return 0, false, nil
+	}
+	return int(min(max(math.Round(*in.ContextWindow.UsedPercentage), 0), 100)), true, nil
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/reconcile"
+	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -78,6 +79,8 @@ type statusSession struct {
 	// HandoffNote and Reload are the newest handoff note and reload request, whichever session recorded them.
 	HandoffNote *store.HandoffNote    `json:"handoff_note,omitempty"`
 	Reload      *store.DirectorReload `json:"reload,omitempty"`
+	// Context is the newest context use the session's runtime reported, absent when it reported none.
+	Context *session.Context `json:"context,omitempty"`
 }
 
 // statusGuardRails is the config's guard rails, when the copy has a config, beside the attempt caps' counts.
@@ -255,6 +258,12 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.Session = statusSession{GuardRails: usage, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release, Pane: d.Pane,
 			StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
 			HandoffNote: v.Handoff, Reload: v.Reload}
+		// A missing or unreadable report is no report: the status line rewrites it after the next message.
+		if f := d.Handoff.ContextFile; f != "" {
+			if c, err := session.ReadContext(f); err == nil {
+				out.Session.Context = &c
+			}
+		}
 		if d.State == store.DirectorRecovering {
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",
 				Reason: fmt.Sprintf("Director session %d is recovering and starts no new work until it is ready", d.Number), Command: "guildhall director ready"})

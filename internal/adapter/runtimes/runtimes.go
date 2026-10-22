@@ -40,6 +40,9 @@ type Session interface {
 	// director turn-started` and `guildhall director turn-ended`, as its SessionFiles register
 	// (docs/director.md#the-end-of-a-turn).
 	TurnEndHook() bool
+	// ContextReport reports whether the runtime reports its context use by running `guildhall director
+	// context-report`, as its SessionFiles register, an optional capability (docs/director.md#automatic-handoff).
+	ContextReport() bool
 }
 
 // all builds each runtime over the guildhall executable.

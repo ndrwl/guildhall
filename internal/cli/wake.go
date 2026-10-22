@@ -117,4 +117,16 @@ func (p storeRecords) RecordWake(w store.Wake) (store.Receipt, error) {
 	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.RecordWake(w) })
 }
 
+func (p storeRecords) HandoffDues(n int) ([]store.HandoffDue, error) {
+	return withStore(string(p), true, func(s *store.Store) ([]store.HandoffDue, error) { return s.HandoffDues(n) })
+}
+
+func (p storeRecords) FinishedTasks(n int) (int, error) {
+	return withStore(string(p), true, func(s *store.Store) (int, error) { return s.FinishedTasks(n) })
+}
+
+func (p storeRecords) RecordHandoffDue(d store.HandoffDue) (store.Receipt, error) {
+	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.RecordHandoffDue(d) })
+}
+
 var _ messaging.WakeStore = storeRecords("")

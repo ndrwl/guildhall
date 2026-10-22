@@ -56,5 +56,9 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "guildhall director context-report"
   }
 }

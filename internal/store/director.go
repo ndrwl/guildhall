@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -94,6 +95,9 @@ type DirectorSession struct {
 	// EndReason is the reason EndDirectorSession recorded, such as "superseded" for a gone supervisor, or
 	// EndSuperseded when StartDirectorSession recorded a newer session over a session not yet stopped.
 	EndReason string `json:"end_reason,omitempty"`
+	// Handoff is the automatic handoff policy the wakes of this session read; zero turns every trigger a wake
+	// reads off.
+	Handoff HandoffPolicy `json:"handoff,omitzero"`
 }
 
 // Holds reports whether the session holds new attempts: while it is paused or stopping, and while a stop's sweep
@@ -507,6 +511,16 @@ func validateSession(d DirectorSession) error {
 	}
 	if _, err := digest.Parse(d.ConfigDigest); err != nil {
 		return invalid(`director session config digest %q must be "sha256:<64 lowercase hex>"`, d.ConfigDigest)
+	}
+	switch p := d.Handoff; {
+	case p.AfterTasks < 0:
+		return invalid("director session handoff after %d tasks must not be negative", p.AfterTasks)
+	case p.ContextPercent < 0 || p.ContextPercent > 100:
+		return invalid("director session handoff context percent %d must be between 0 and 100", p.ContextPercent)
+	case p.ContextFile != "" && !filepath.IsAbs(p.ContextFile):
+		return invalid("director session context report %q must be an absolute path", p.ContextFile)
+	case len(p.ContextFile) > 4096:
+		return invalid("director session context report path is %d bytes; the limit is 4096", len(p.ContextFile))
 	}
 	if d.Pane != (DirectorPane{}) {
 		for name, v := range map[string]string{"session": d.Pane.Session, "workspace": d.Pane.Workspace, "tab": d.Pane.Tab, "pane": d.Pane.Pane} {

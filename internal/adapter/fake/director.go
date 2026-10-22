@@ -161,3 +161,6 @@ func (Adapter) TurnEndHook() bool { return false }
 
 // SessionFiles are the files a fake Director session needs beside its skills: none.
 func (Adapter) SessionFiles(string) map[string][]byte { return nil }
+
+// ContextReport reports false: the fake runtime reports no context use, so a session's context trigger never fires.
+func (Adapter) ContextReport() bool { return false }

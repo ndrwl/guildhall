@@ -1,0 +1,145 @@
+Red run for the automatic handoff triggers and the context reporter (D11b), 2026-10-22, on 377c166 with the branch's tests against stub bodies:
+RecordHandoffDue, HandoffDues and FinishedTasks returning an error and the session's handoff policy unvalidated; config Handoff, session WriteContext and ReadContext, claude ParseStatusLine,
+messaging DueHandoffs and WakeIdle returning an error and HandoffLine adding nothing; director context-report failing as not implemented, handoffPolicy returning an error, the supervisor without the idle timer;
+the Claude settings without the status line. session's TestContextReportRefusals passed against the stubs, which refuse everything. The matching green run is the branch's go test ./...
+
+--- FAIL: TestHandoffDueIsRecordedOncePerCrossing (0.02s)
+    director_handoff_due_test.go:16: dues of a session with none = [], store: HandoffDues: not implemented; want an empty list
+--- FAIL: TestRecordHandoffDueRefusals (0.01s)
+    director_handoff_due_test.go:65: no session = store: RecordHandoffDue: not implemented, want ErrNotFound
+--- FAIL: TestFinishedTasksCountsSinceTheSessionStarted (0.01s)
+    director_handoff_due_test.go:96: no session = store: FinishedTasks: not implemented, want ErrNotFound
+--- FAIL: TestDirectorSessionRecordsItsHandoffPolicy (0.01s)
+    director_handoff_due_test.go:141: percent over 100: err = <nil>, want ErrInvalid
+    director_handoff_due_test.go:141: negative percent: err = store: start-director-session director-session:1: mutation id was already used for a different request: "director-session:1" was start-director-session, want ErrInvalid
+    director_handoff_due_test.go:141: relative file: err = store: start-director-session director-session:1: mutation id was already used for a different request: "director-session:1" was start-director-session, want ErrInvalid
+    director_handoff_due_test.go:141: negative tasks: err = store: start-director-session director-session:1: mutation id was already used for a different request: "director-session:1" was start-director-session, want ErrInvalid
+    director_handoff_due_test.go:146: StartDirectorSession(1): store: start-director-session director-session:1: mutation id was already used for a different request: "director-session:1" was start-director-session
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.072s
+--- FAIL: TestDirectorHandoffTriggers (0.00s)
+    director_test.go:66: no table: Handoff = {AfterTasks:0 ContextPercent:0 Idle:0s}, config: Handoff: not implemented; want only the context trigger at 70%
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.011s
+--- FAIL: TestContextReportRoundTrips (0.00s)
+    context_test.go:18: no report = session: ReadContext: not implemented, want fs.ErrNotExist
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/session	0.014s
+--- FAIL: TestSessionSettingsGolden (0.00s)
+    session_test.go:78: settings differ from testdata/session-settings.json:
+        {
+          "permissions": {
+            "allow": [
+              "Bash(guildhall)",
+              "Bash(guildhall *)",
+              "Bash(git status)",
+              "Bash(git status *)",
+              "Bash(git log)",
+              "Bash(git log *)",
+              "Bash(git diff)",
+              "Bash(git diff *)",
+              "Bash(git show)",
+              "Bash(git show *)",
+              "Bash(git rev-parse)",
+              "Bash(git rev-parse *)",
+              "Bash(git ls-files)",
+              "Bash(git ls-files *)",
+              "Bash(git branch --list)",
+              "Bash(git branch --list *)",
+              "Bash(git remote -v)"
+            ],
+            "deny": [
+              "Bash(git *--output*)",
+              "Edit(//home/g/copy/config.toml)",
+              "Edit(//home/g/copy/managed.toml)"
+            ]
+          },
+          "hooks": {
+            "Stop": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "guildhall director turn-ended"
+                  }
+                ]
+              }
+            ],
+            "StopFailure": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "guildhall director turn-ended"
+                  }
+                ]
+              }
+            ],
+            "UserPromptSubmit": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "guildhall director turn-started"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+--- FAIL: TestParseStatusLine (0.00s)
+    session_test.go:184: statusline.json: ParseStatusLine = 0, false, claude adapter: ParseStatusLine: not implemented; want 72, true
+    session_test.go:184: statusline-fresh.json: ParseStatusLine = 0, false, claude adapter: ParseStatusLine: not implemented; want 0, false
+    session_test.go:195: {"context_window":{"used_percentage":100.4}}: ParseStatusLine = 0, false, claude adapter: ParseStatusLine: not implemented; want 100
+    session_test.go:195: {"context_window":{"used_percentage":130}}: ParseStatusLine = 0, false, claude adapter: ParseStatusLine: not implemented; want 100
+    session_test.go:195: {"context_window":{"used_percentage":-2}}: ParseStatusLine = 0, false, claude adapter: ParseStatusLine: not implemented; want 0
+    session_test.go:195: {"context_window":{"used_percentage":0}}: ParseStatusLine = 0, false, claude adapter: ParseStatusLine: not implemented; want 0
+    session_test.go:195: {"context_window":{"used_percentage":49.5}}: ParseStatusLine = 0, false, claude adapter: ParseStatusLine: not implemented; want 50
+    session_test.go:200: {}: ok false, err claude adapter: ParseStatusLine: not implemented; want no percent and no error
+    session_test.go:200: {"context_window":null}: ok false, err claude adapter: ParseStatusLine: not implemented; want no percent and no error
+    session_test.go:200: {"context_window":{}}: ok false, err claude adapter: ParseStatusLine: not implemented; want no percent and no error
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	0.008s
+--- FAIL: TestWakeCarriesTheTaskTriggerOncePerCrossing (0.02s)
+    handoff_test.go:83: two tasks finished: typed "guildhall: 2 unread (note 2)"
+--- FAIL: TestWakeCarriesTheContextTriggerOncePerSession (0.02s)
+    handoff_test.go:109: session: WriteContext: not implemented
+--- FAIL: TestWakeJoinsTriggersThatHoldTogether (0.02s)
+    handoff_test.go:139: session: WriteContext: not implemented
+--- FAIL: TestTriggersThatAreOffNeverHold (0.02s)
+    handoff_test.go:159: session: WriteContext: not implemented
+--- FAIL: TestAFailedWakeLeavesTheCrossingForTheNext (0.02s)
+    handoff_test.go:179: store: HandoffDues: not implemented
+--- FAIL: TestWakeIdleTypesTheIdleCrossing (0.02s)
+    handoff_test.go:194: WakeIdle = [], "", messaging: WakeIdle: not implemented
+--- FAIL: TestHandoffLine (0.00s)
+    handoff_test.go:240: two dues: "guildhall: 1 unread (note 1)"
+    handoff_test.go:243: WakeLine of nothing = "guildhall: 0 unread ()"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/messaging	0.125s
+--- FAIL: TestContextReportWritesTheSessionsReport (0.00s)
+    director_triggers_test.go:54: context-report = 1, "", stderr guildhall: director context-report: not implemented
+        ; want the percent
+--- FAIL: TestContextReportRefusals (0.00s)
+    director_triggers_test.go:98: no copy: exit 1, "", stderr "guildhall: director context-report: not implemented\n"; want exit 1 naming "--copy is required, or GUILDHALL_COPY"
+    director_triggers_test.go:98: no session: exit 1, "", stderr "guildhall: director context-report: not implemented\n"; want exit 1 naming "GUILDHALL_SESSION"
+    director_triggers_test.go:98: bad session: exit 1, "", stderr "guildhall: director context-report: not implemented\n"; want exit 1 naming "GUILDHALL_SESSION"
+    director_triggers_test.go:98: not json: exit 1, "", stderr "guildhall: director context-report: not implemented\n"; want exit 1 naming "status line"
+    director_triggers_test.go:98: argument: exit 1, "", stderr "guildhall: director context-report: not implemented\n"; want exit 1 naming "unexpected argument \"extra\""
+--- FAIL: TestHandoffPolicyNamesTheReportOnlyForARuntimeWithOne (0.00s)
+    director_triggers_test.go:116: claude: policy = {AfterTasks:0 ContextPercent:0 ContextFile:}, not implemented
+    director_triggers_test.go:119: fake: policy = {AfterTasks:0 ContextPercent:0 ContextFile:}, not implemented; want no report path
+--- FAIL: TestDirectorStartRecordsTheHandoffPolicy (0.13s)
+    --- FAIL: TestDirectorStartRecordsTheHandoffPolicy/fake (0.06s)
+        director_triggers_test.go:140: sessions = [{Number:1 State:stopped Identity:{PID:1677103 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:32046696} Release:dev ConfigDigest:sha256:d3873304564cb6fb6b4ba550e62151e50863be2d21210e9eb14c471f3a362ed0 Pane:{Session: Workspace: Tab: Pane:} StartedAt:2026-10-22 21:23:03.45929233 +0000 UTC ReadyAt:2026-10-22 21:23:03.476553997 +0000 UTC EndedAt:2026-10-22 21:23:03.483989182 +0000 UTC StateSequence:4 StopNow:false EndReason: Handoff:{AfterTasks:0 ContextPercent:0 ContextFile:}}]; want the policy {AfterTasks:4 ContextPercent:70 ContextFile:}
+    --- FAIL: TestDirectorStartRecordsTheHandoffPolicy/claude (0.08s)
+        director_triggers_test.go:140: sessions = [{Number:1 State:stopped Identity:{PID:1677103 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:32046696} Release:dev ConfigDigest:sha256:881506dbece2d88bdf5d8b8932a941bfbe078690220570f4abf254b2bede82e8 Pane:{Session: Workspace: Tab: Pane:} StartedAt:2026-10-22 21:23:03.5258468 +0000 UTC ReadyAt:2026-10-22 21:23:03.553833807 +0000 UTC EndedAt:2026-10-22 21:23:03.562182969 +0000 UTC StateSequence:4 StopNow:false EndReason: Handoff:{AfterTasks:0 ContextPercent:0 ContextFile:}}]; want the policy {AfterTasks:4 ContextPercent:70 ContextFile:<tmp>/TestDirectorStartRecordsTheHandoffPolicyclaude3463688488/001/director/session-1/context.json}
+--- FAIL: TestIdleTimerTypesTheLineOncePerQuietPeriod (0.02s)
+    director_triggers_test.go:190: at handoff_idle typed [], want "w1:p2 guildhall: 0 unread; handoff due (idle 30m0s)"
+--- FAIL: TestIdleTimerWaitsForTheTurnAndIsOffAtZero (0.02s)
+    director_triggers_test.go:224: past idle_after typed []; want the idle line
+--- FAIL: TestDirectorStatusCarriesTheContextReport (0.02s)
+    director_triggers_test.go:268: session: WriteContext: not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.226s
+FAIL

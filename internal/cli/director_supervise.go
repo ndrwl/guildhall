@@ -9,11 +9,13 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -97,7 +99,9 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 		return a.fail(err)
 	}
 	for {
-		n, err := recordNextSession(storePath, self, p.cfg, pane)
+		n, err := recordNextSession(storePath, self, p.cfg, pane, func(n int) (store.HandoffPolicy, error) {
+			return handoffPolicy(p.cfg, p.runtime, sessionDir(copyDir, n))
+		})
 		if err != nil {
 			return a.fail(fmt.Errorf("director start: record session: %w", err))
 		}
@@ -127,9 +131,11 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 	}
 }
 
-// recordNextSession records the next session as recovering for supervisor self under cfg in pane and returns its
-// number. A reload requested before it started is recorded applied by it.
-func recordNextSession(storePath string, self artisan.Identity, cfg any, pane store.DirectorPane) (int, error) {
+// recordNextSession records the next session as recovering for supervisor self under cfg in pane, with the
+// handoff policy policy gives for its number, and returns its number. A reload requested before it started is
+// recorded applied by it.
+func recordNextSession(storePath string, self artisan.Identity, cfg any, pane store.DirectorPane,
+	policy func(n int) (store.HandoffPolicy, error)) (int, error) {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return 0, err
@@ -142,6 +148,9 @@ func recordNextSession(storePath string, self artisan.Identity, cfg any, pane st
 			return 0, err
 		}
 		d.Number = newest + 1
+		if d.Handoff, err = policy(d.Number); err != nil {
+			return 0, err
+		}
 		if _, err := s.StartDirectorSession(d); err != nil {
 			return 0, err
 		}
@@ -189,14 +198,14 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		}
 		model, effort = d.Model, d.Effort
 	}
-	dir := filepath.Join(copyDir, "director", fmt.Sprintf("session-%d", n))
+	dir := sessionDir(copyDir, n)
 	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
 		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Handoff: handoff}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	cmd, err := p.runtime.Session(adapter.SessionSpec{Dir: dir, Copy: copyDir, RolePrompt: r.RolePath,
-		FirstMessage: render.StartupMessage, Model: model, Effort: effort})
+		FirstMessage: render.StartupMessage, Model: model, Effort: effort, Env: []string{session.NumberEnv + "=" + strconv.Itoa(n)}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
@@ -225,8 +234,12 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
+	triggers, err := p.cfg.Handoff()
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
 	w := sessionWatch{storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, now: a.Now}
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now}
 	if ep != nil {
 		w.turns = ep.Turns()
 	}
@@ -317,6 +330,9 @@ type sessionWatch struct {
 	n                int
 	grace, idleAfter time.Duration
 	hook             bool
+	// handoffIdle is [director] handoff_idle, 0 for off, and pane the Director's pane the idle line is typed into.
+	handoffIdle time.Duration
+	pane        messaging.DirectorPane
 	// now is the clock; nil means wall time.
 	now func() time.Time
 	// turns receives the session endpoint's turn signals; nil without an endpoint.
@@ -325,6 +341,8 @@ type sessionWatch struct {
 	// wanted is when an end now wanted was first seen, zero while none is, and signalled when the newest turn
 	// signal or wake arrived, or the first decision was made.
 	wanted, signalled time.Time
+	// idled is the signalled time of the quiet period the idle line was last typed in.
+	idled time.Time
 	// wakes is the newest wake sequence read, woke the newest wake that typed into the pane, and turnWake the
 	// newest wake sequence when the last turn ended; turned is set while the last turn signal is a turn end.
 	wakes, woke, turnWake uint64
@@ -430,6 +448,7 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 	if err != nil {
 		return keepRunning
 	}
+	w.idleTrigger(in)
 	if in.Session.State != store.DirectorStopping && in.Reload == nil {
 		w.wanted = time.Time{}
 		return keepRunning
@@ -451,6 +470,21 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 	}
 	in.StageRunning = running
 	return decideEnd(in)
+}
+
+// idleTrigger types the idle line (docs/director.md#automatic-handoff) once per quiet period: when handoff_idle is
+// set, the session is running or recovering with no reload pending, the Director has been quiet for handoff_idle
+// and, with a hook, its turn is over. A line that could not be typed is not tried again in the same quiet period.
+func (w *sessionWatch) idleTrigger(in endInput) {
+	live := in.Session.State == store.DirectorRunning || in.Session.State == store.DirectorRecovering
+	turnOver := !w.hook || in.Idle || in.Quiet >= w.idleAfter
+	if w.handoffIdle <= 0 || !live || in.Reload != nil || w.idled.Equal(w.signalled) || in.Quiet < w.handoffIdle || !turnOver {
+		return
+	}
+	w.idled = w.signalled
+	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+	defer cancel()
+	_, _, _ = messaging.WakeIdle(ctx, storeRecords(w.storePath), w.pane, w.handoffIdle)
 }
 
 // stopSession records session n stopped unless it already is or a newer session superseded it.

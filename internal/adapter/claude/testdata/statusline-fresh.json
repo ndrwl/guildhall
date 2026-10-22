@@ -1,0 +1,22 @@
+{
+  "hook_event_name": "Status",
+  "session_id": "0b5c1f7e-3d2a-4c8e-9f61-2a7d4e9b1c05",
+  "cwd": "/home/g/copy/director/session-1",
+  "model": {
+    "id": "claude-opus-5-5",
+    "display_name": "Opus 5.5"
+  },
+  "workspace": {
+    "current_dir": "/home/g/copy/director/session-1",
+    "project_dir": "/home/g/copy/director/session-1"
+  },
+  "version": "2.1.308",
+  "context_window": {
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "context_window_size": 200000,
+    "current_usage": null,
+    "used_percentage": null,
+    "remaining_percentage": null
+  }
+}
