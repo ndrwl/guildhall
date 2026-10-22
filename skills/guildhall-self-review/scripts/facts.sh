@@ -50,7 +50,7 @@ function removed(s) {
 	if (go && test) {
 		if (s ~ /time\.Sleep\(/) sleeps_removed++
 		if (s ~ /\.Skip(f|Now)?\(|SkipUnlessRequired\(/) skips_removed++
-		if (s ~ /\.(Error|Errorf|Fatal|Fatalf|Fail|FailNow)\(/) { assertions_removed++; item("assertion-removed", oldn) }
+		if (s ~ /\.(Error|Errorf|Fatal|Fatalf)\([^)]|\.(Fail|FailNow)\(\)/) { assertions_removed++; item("assertion-removed", oldn) }
 	}
 }
 function setpath(p) { path = p; test = testfile(p); go = p ~ /\.go$/; workflow = p ~ /^\.github\/workflows\// }

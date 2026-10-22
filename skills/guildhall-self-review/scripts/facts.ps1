@@ -27,7 +27,7 @@ $secretPatterns = @(
 $assignment = '(api_?key|secret|token|passw(or)?d)["'']?[ \t]*[:=]+[ \t]*["''][^"'']{8}'
 $sleep = 'time\.Sleep\('
 $skip = '\.Skip(f|Now)?\(|SkipUnlessRequired\('
-$assertion = '\.(Error|Errorf|Fatal|Fatalf|Fail|FailNow)\('
+$assertion = '\.(Error|Errorf|Fatal|Fatalf)\([^)]|\.(Fail|FailNow)\(\)'
 
 $facts = [ordered]@{
     files = 0; test_files = 0; nontest_lines = 0; sleeps_added = 0; sleeps_removed = 0
