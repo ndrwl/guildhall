@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -9,8 +11,9 @@ import (
 // The quality settings (docs/configuration.md#quality-settings) switch the engineering-quality practices of
 // docs/quality.md on or off and size them. They are settings read through Setting, so a Steward's managed value is
 // read-only to the Director and a standalone copy sets them under [local]. Every practice is optional.
-// Today only the self-review switch and the size budget are read, by the guildhall-self-review skill through
-// director status; the audit, reference-run, judge and skill-edit settings are parsed and validated for later work.
+// The self-review switch and the size budget are read by the guildhall-self-review skill through director status,
+// and the audit sample by deliver through Audits; the reference-run, judge and skill-edit settings are parsed and
+// validated for later work.
 const (
 	// QualitySelfReviewKey switches the guildhall-self-review skill after each delivered task: "on" or "off".
 	QualitySelfReviewKey = "quality_self_review"
@@ -18,7 +21,8 @@ const (
 	// flagged, never blocked; "0" turns that half of the flag off.
 	QualitySizeBudgetLinesKey = "quality_size_budget_lines"
 	QualitySizeBudgetFilesKey = "quality_size_budget_files"
-	// QualityAuditSampleKey queues one in this many delivered tasks for the Guildmaster's audit; "0" turns it off.
+	// QualityAuditSampleKey queues one in this many delivered tasks for the Guildmaster's audit;
+	// "0" turns it off.
 	QualityAuditSampleKey = "quality_audit_sample"
 	// QualityReferenceRunsKey chooses when the reference set runs on a real model: "off" or "on-change-and-release".
 	QualityReferenceRunsKey = "quality_reference_runs"
@@ -91,6 +95,17 @@ func (c *Config) Quality() (Quality, error) {
 		return Quality{}, fmt.Errorf("%s %q needs %s set", QualityReferenceRunsKey, q.ReferenceRuns, QualityReferenceCostCapKey)
 	}
 	return q, nil
+}
+
+// Audits reports whether the delivered task repository/task is sampled for the Guildmaster's audit.
+// Sampling depends only on task identity so retries need no counter and choose the same task;
+// docs/contracts/config.md owns the sampling contract.
+func (q Quality) Audits(repository, task string) bool {
+	if q.AuditSample == 0 {
+		return false
+	}
+	sum := sha256.Sum256([]byte(repository + "/" + task))
+	return binary.BigEndian.Uint64(sum[:8])%uint64(q.AuditSample) == 0
 }
 
 // qualitySettings parses each quality setting's value into its field of Quality.

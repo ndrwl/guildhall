@@ -121,6 +121,9 @@ const (
 	DecisionLoopExit DecisionKind = "loop-exit"
 	DecisionMerge    DecisionKind = "merge"
 	DecisionQuestion DecisionKind = "question"
+	// DecisionAudit is the Guildmaster's three-question audit of a delivered task (docs/quality.md, G4), bound to
+	// the head that merged; answering it records the answer only, as for every kind.
+	DecisionAudit DecisionKind = "audit"
 )
 
 // SubjectKind names what a decision's answer binds to.
@@ -635,13 +638,13 @@ func validateDecision(d Decision) error {
 		return err
 	}
 	switch d.Kind {
-	case DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge:
+	case DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge, DecisionAudit:
 		if d.Subject == nil {
 			return invalid("a %s decision needs a subject", d.Kind)
 		}
 	case DecisionQuestion:
 	default:
-		return invalid("decision kind %q must be one of approval, review, loop-exit, merge or question", d.Kind)
+		return invalid("decision kind %q must be one of approval, review, loop-exit, merge, question or audit", d.Kind)
 	}
 	if sub := d.Subject; sub != nil {
 		_, err := digest.Parse(sub.Digest)

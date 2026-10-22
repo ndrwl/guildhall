@@ -351,7 +351,7 @@ The criteria read these records:
 - Agreement between the model judge's scores and these answers is tracked, with the judge's consistency when the order of a pair is swapped.
 - The sample is one in `quality_audit_sample` delivered tasks, five by default, plus every reference run.
 - Source: Zheng and colleagues 2023 (Strong); Wang and colleagues 2025 on code judges (Moderate).
-- Guildhall today: nothing; it is the only criterion that needs the Guildmaster on a schedule.
+- Guildhall today: independently of `quality_self_review`, deliver opens the `audit` decision, bound to the head that merged, for each sampled task as it closes ([interpreter](interpreter.md#publish-and-deliver)); the answer's first line is `yes` or `no` to the first question and the note holds the other two; agreement with the judge is not yet computed, and reference runs are not yet sampled because they do not exist yet; it is the only criterion that needs the Guildmaster on a schedule.
 
 ### Process efficiency and Director judgement (H)
 
@@ -409,7 +409,8 @@ The criteria read these records:
 The Director runs the [`guildhall-self-review`](../skills/guildhall-self-review/SKILL.md) skill after a task merges, when `quality_self_review` is `on`; it is `off` by default.
 The skill writes one `self-review-<n>.json` document per task under the copy's `quality/<repo>/<task>/` directory, with the facts its script prints, the gates and trends the records show, and each model-judged score left pending for a judge session that is neither the Director nor the builder.
 The self-review is for learning and for evaluating workflow changes; it never re-gates a merged task.
-Launching the judge session, the Guildmaster's audit decision, the lesson-proposal shape that applies `quality_skill_edits_need_approval`, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
+Independently of self-review, deliver opens the Guildmaster's `audit` decision for one in `quality_audit_sample` delivered tasks, chosen by the task's identity; the default is 5, 0 disables audits, and 1 audits every task ([decision](decisions/quality-audit.md)).
+Launching the judge session, the lesson-proposal shape that applies `quality_skill_edits_need_approval`, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
 
 ## Sources
 
