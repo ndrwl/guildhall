@@ -48,6 +48,8 @@ func TestSessionUnitContract(t *testing.T) {
 		return u
 	})
 	platformHarness(t, &h)
+	// A session unit's Job Object allows breakaway, so a detached launcher can leave it.
+	h.BreakawayRefused = false
 	artisantest.RunUnitContract(t, h)
 }
 
