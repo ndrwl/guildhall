@@ -36,7 +36,13 @@ func Settings(copyDir string) []byte {
 		allow = append(allow, "Bash(git "+g+")", "Bash(git "+g+" *)")
 	}
 	allow = append(allow, "Bash(git remote -v)")
-	deny := []string{"Bash(git *--output*)"}
+	deny := []string{
+		"Bash(git *--output*)",
+		"Bash(guildhall claude-artisan:*)",
+		"Bash(guildhall fake-artisan:*)",
+		"Bash(guildhall fake-director:*)",
+		"Bash(guildhall artisan start:*)",
+	}
 	for _, name := range []string{"config.toml", "managed.toml"} {
 		deny = append(deny, "Edit("+absoluteRule(filepath.Join(copyDir, name))+")")
 	}

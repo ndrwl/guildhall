@@ -21,6 +21,10 @@
     ],
     "deny": [
       "Bash(git *--output*)",
+      "Bash(guildhall claude-artisan:*)",
+      "Bash(guildhall fake-artisan:*)",
+      "Bash(guildhall fake-director:*)",
+      "Bash(guildhall artisan start:*)",
       "Edit(//home/g/copy/config.toml)",
       "Edit(//home/g/copy/managed.toml)"
     ]
