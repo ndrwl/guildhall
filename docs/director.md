@@ -154,7 +154,7 @@ The note is read from the file, or from standard input for `-`, with the rules o
 It must not be blank and is at most 64 KiB after that.
 The note is a document, not a store record (R1.13): it is written to `<state>/documents/director/handoff-<seq>.md`, and the store records a [handoff note](store.md#handoff-notes) naming the newest session, the path relative to the document directory and the note's sha256.
 It prints the record as one JSON line.
-No session, or a newest session that is `stopped`, is exit 1 and records nothing; recording the same note again in the same session prints the first record.
+No session, or a newest session that is `stopped`, is exit 1 and records nothing; recording the same note twice in a row in the same session prints the first record, and recording it again after another note records it anew as the newest.
 Each new session's `startup.md` names the newest note, and the [status feed](#status)'s session section carries it as `handoff_note`.
 
 ## Reload

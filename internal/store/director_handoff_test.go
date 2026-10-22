@@ -26,7 +26,7 @@ func TestHandoffNoteIsRecordedAndReadBack(t *testing.T) {
 	if want := "director/handoff-" + itoa(r.Sequence) + ".md"; n.Path != want || len(wrote) != 1 || wrote[0] != want {
 		t.Fatalf("path %q, wrote %q; want %q written once", n.Path, wrote, want)
 	}
-	if r.MutationID != "handoff:1:"+noteDigest || r.Operation != "record-handoff-note" || r.Record != "director/handoff/"+itoa(r.Sequence) {
+	if r.MutationID != "handoff:1:"+noteDigest+":0" || r.Operation != "record-handoff-note" || r.Record != "director/handoff/"+itoa(r.Sequence) {
 		t.Fatalf("receipt = %+v", r)
 	}
 	again, ar, err := s.RecordHandoffNote(1, noteDigest, write)
@@ -46,6 +46,33 @@ func TestHandoffNoteIsRecordedAndReadBack(t *testing.T) {
 	}
 	if v, err := s.DirectorView(); err != nil || v.Handoff == nil || *v.Handoff != second || v.Reload != nil {
 		t.Fatalf("DirectorView handoff %+v, reload %+v, %v; want the second note and no reload", v.Handoff, v.Reload, err)
+	}
+}
+
+// TestHandoffNoteRecordedAgainAfterAnotherIsTheNewest: notes A, B, then A again in one session record A anew,
+// with a new sequence and path, as the newest note.
+func TestHandoffNoteRecordedAgainAfterAnotherIsTheNewest(t *testing.T) {
+	s, _ := newStore(t)
+	mustStartSession(t, s, sampleSession(1))
+	var wrote []string
+	write := func(p string) error { wrote = append(wrote, p); return nil }
+	a, _, err := s.RecordHandoffNote(1, noteDigest, write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := s.RecordHandoffNote(1, strings.Repeat("e", 64), write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, r, err := s.RecordHandoffNote(1, noteDigest, write)
+	if err != nil || again.Sequence <= b.Sequence || again.Path == a.Path || again.SHA256 != noteDigest || len(wrote) != 3 {
+		t.Fatalf("A again = %+v, %v, wrote %q; want A recorded anew after B", again, err, wrote)
+	}
+	if r.MutationID != "handoff:1:"+noteDigest+":"+itoa(b.Sequence) {
+		t.Fatalf("mutation id = %q", r.MutationID)
+	}
+	if got, err := s.LatestHandoffNote(); err != nil || got != again {
+		t.Fatalf("latest = %+v, %v; want A recorded again", got, err)
 	}
 }
 

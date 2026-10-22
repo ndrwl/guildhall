@@ -82,7 +82,9 @@ func reloadRecord(seq uint64) string  { return "director/reload/" + strconv.Form
 func HandoffPath(seq uint64) string { return fmt.Sprintf("director/handoff-%d.md", seq) }
 
 // RecordHandoffNote records a handoff note of session n whose content has the lowercase hex sha256, with the
-// mutation id "handoff:<n>:<sha256>". The store sets the note's Sequence, Path and RecordedAt and, before
+// mutation id "handoff:<n>:<sha256>:<after>", where after is the sequence of the newest other note before it, or 0,
+// so the same note recorded twice in a row is one record and a note recorded again after another becomes the newest
+// anew. The store sets the note's Sequence, Path and RecordedAt and, before
 // committing, calls write with Path, which writes the note's file there; an error from write records nothing,
 // so a recorded note's file was written first. Session n must be the newest session and not stopped, otherwise
 // ErrInvalid, or ErrNotFound when there is no session n. Replaying returns the original note and receipt
@@ -94,11 +96,44 @@ func (s *Store) RecordHandoffNote(n int, sha256 string, write func(path string) 
 	if _, err := digest.ParseHex(sha256); err != nil {
 		return HandoffNote{}, Receipt{}, invalid("handoff note sha256 %q must be 64 lowercase hex characters", sha256)
 	}
+	var after uint64
+	if err := s.view(func(tx *bolt.Tx) error {
+		b := directorBucket(tx, bucketHandoffs)
+		if b == nil {
+			return nil
+		}
+		c := b.Cursor()
+		k, data := c.Last()
+		if k == nil {
+			return nil
+		}
+		var newest HandoffNote
+		if err := decode(k, data, &newest); err != nil {
+			return err
+		}
+		after = newest.Sequence
+		if newest.Session != n || newest.SHA256 != sha256 {
+			return nil
+		}
+		after = 0
+		if k, data = c.Prev(); k == nil {
+			return nil
+		}
+		var before HandoffNote
+		if err := decode(k, data, &before); err != nil {
+			return err
+		}
+		after = before.Sequence
+		return nil
+	}); err != nil {
+		return HandoffNote{}, Receipt{}, fmt.Errorf("store: newest handoff note: %w", err)
+	}
 	req := struct {
 		Session int    `json:"session"`
 		SHA256  string `json:"sha256"`
-	}{n, sha256}
-	r, err := s.mutate(fmt.Sprintf("handoff:%d:%s", n, sha256), opRecordHandoffNote, req, func(tx *bolt.Tx, r *Receipt) error {
+		After   uint64 `json:"after"`
+	}{n, sha256, after}
+	r, err := s.mutate(fmt.Sprintf("handoff:%d:%s:%d", n, sha256, after), opRecordHandoffNote, req, func(tx *bolt.Tx, r *Receipt) error {
 		r.Record = handoffRecord(r.Sequence)
 		d, err := latestSession(tx)
 		switch {

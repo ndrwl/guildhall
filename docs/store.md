@@ -112,7 +112,7 @@ Its mutation id is `director-stop:<n>:<turn|now>:<from>`.
 
 ### Handoff notes
 
-[`director handoff`](director.md#handoff) records a note with `RecordHandoffNote`, naming the newest session and the note's sha256, under the mutation id `handoff:<n>:<sha256>`, so the same note recorded twice in one session is one record.
+[`director handoff`](director.md#handoff) records a note with `RecordHandoffNote`, naming the newest session and the note's sha256, under the mutation id `handoff:<n>:<sha256>:<after>`, where `after` is the sequence of the newest note before it or 0, so the same note recorded twice in a row in one session is one record, and a note recorded again after another is recorded anew as the newest.
 The note itself is a document file, not a store blob (R1.13): the store chooses its path, `director/handoff-<sequence>.md`, from the receipt sequence and has the caller write the file before the record commits, so a recorded note's file was written first and a failed write records nothing.
 A session that is not the newest, or is `stopped`, is refused with `ErrInvalid`.
 `LatestHandoffNote` returns the newest note, and `DirectorView.Handoff` the same in the view's transaction.
