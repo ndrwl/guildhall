@@ -198,6 +198,23 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 				break
 			}
 		}
+		// The recorded launcher outlives its released attempt while it runs the task's advance (--advance), a
+		// child it waits for, so the test binary that plays both is in use until that launcher is gone.
+		if s, err := store.Open(d.store, store.Options{ReadOnly: true}); err == nil {
+			o, err := s.Ownership("app", "t-1", a.Step, a.Number)
+			_ = s.Close()
+			id := artisan.Identity(o.LauncherIdentity)
+			for end := time.Now().Add(time.Minute); err == nil && id.PID != 0; time.Sleep(50 * time.Millisecond) {
+				lv, perr := artisan.Probe(id)
+				if perr == nil && lv == artisan.Gone {
+					break
+				}
+				if time.Now().After(end) {
+					out = append(out, fmt.Sprintf("%s-%d: recorded launcher %d is %v (%v)", a.Step, a.Number, id.PID, lv, perr))
+					break
+				}
+			}
+		}
 		settle := time.Now().Add(10 * time.Second)
 		for _, p := range procs {
 			id := artisan.Identity{PID: p.PID, Token: p.Token}
