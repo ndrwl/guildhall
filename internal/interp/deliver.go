@@ -25,6 +25,9 @@ const refusalSchema = "guildhall.merge-refusal/1"
 // branchPrefix starts every task branch publish pushes: a task's branch is branchPrefix + its id.
 const branchPrefix = "guildhall/"
 
+// TaskBranch is the branch of task id: the branch its worktree is on and publish pushes to.
+func TaskBranch(id string) string { return branchPrefix + id }
+
 // pullRequestDoc is a recorded pull request: publish's <step>-<round>-pr and deliver's <decision>-merge.
 type pullRequestDoc struct {
 	Schema string `json:"schema"`

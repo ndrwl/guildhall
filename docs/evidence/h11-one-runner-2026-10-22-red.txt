@@ -1,0 +1,6 @@
+# F37: the classifier before it ran through the one git runner (go test ./internal/git -run TestClassifyTimeout)
+--- FAIL: TestClassifyTimeout (60.06s)
+    git_test.go:45: Classify past its timeout = "full" (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa is not an ancestor of bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), want full with a reason naming git merge-base and 200ms
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/git	60.069s
+FAIL

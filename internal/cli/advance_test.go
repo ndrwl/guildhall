@@ -296,6 +296,12 @@ func TestTaskStartAndStepDone(t *testing.T) {
 // director.store and a short state directory, returned with the copy.
 func newRunCopy(t *testing.T) (runDirector, string) {
 	t.Helper()
+	return newRunCopyOn(t, "fake-straight")
+}
+
+// newRunCopyOn is newRunCopy with repository app on the workflow named workflow in testdata/run/workflows.
+func newRunCopyOn(t *testing.T, workflow string) (runDirector, string) {
+	t.Helper()
 	t.Setenv(roleEnv, "guildhall")
 	dir, err := os.MkdirTemp("", "gc")
 	if err != nil {
@@ -313,6 +319,7 @@ func newRunCopy(t *testing.T) (runDirector, string) {
 	}
 	b = bytes.Replace(b, []byte(`path = "/srv/app"`), []byte("path = '"+repository+"'"), 1)
 	b = bytes.Replace(b, []byte(`remote = "git@github.com:example/app.git"`), []byte("remote = '"+remote+"'"), 1)
+	b = bytes.Replace(b, []byte(`workflow = "fake-straight"`), []byte(`workflow = "`+workflow+`"`), 1)
 	if err := os.WriteFile(d.config, b, 0o600); err != nil {
 		t.Fatal(err)
 	}

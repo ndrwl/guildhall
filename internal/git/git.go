@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -44,10 +45,13 @@ type Classification struct {
 type Program struct {
 	// Path is the git executable; empty means "git" found on PATH.
 	Path string
-	// Timeout bounds each git run of a workspace operation; zero means DefaultTimeout. A run past it is ended
-	// and is an error naming git and the timeout.
+	// Timeout bounds each git run; zero means DefaultTimeout. A run past it is ended and is an error naming git
+	// and the timeout.
 	Timeout time.Duration
 }
+
+// DefaultTimeout is how long one git run may take when Program.Timeout is zero.
+const DefaultTimeout = 5 * time.Minute
 
 // Classify classifies a new range of a task against the range last reviewed, in the repository at repo.
 //
@@ -76,9 +80,6 @@ func (p Program) Classify(ctx context.Context, repo string, last, next Range) (C
 	return Classification{Scope: ScopeRebase, Diff: diff}, nil
 }
 
-// errNotAncestor is git merge-base --is-ancestor answering no.
-var errNotAncestor = errors.New("not an ancestor")
-
 // classify returns why next is not a rebase of last, or the resolution diff when it is; an error is a git failure.
 func (p Program) classify(ctx context.Context, repo string, last, next Range) (string, []byte, error) {
 	for _, id := range []string{last.Base, last.Head, next.Base, next.Head} {
@@ -90,13 +91,14 @@ func (p Program) classify(ctx context.Context, repo string, last, next Range) (s
 		return "the base did not move", nil, nil
 	}
 	for _, pair := range [][2]string{{last.Base, last.Head}, {next.Base, next.Head}, {last.Base, next.Base}} {
-		if _, err := p.run(ctx, repo, "merge-base", "--is-ancestor", pair[0], pair[1]); errors.Is(err, errNotAncestor) {
+		var exit *exec.ExitError
+		if _, err := p.read(ctx, repo, "merge-base", "--is-ancestor", pair[0], pair[1]); errors.As(err, &exit) && exit.ExitCode() == 1 {
 			return fmt.Sprintf("%s is not an ancestor of %s", pair[0], pair[1]), nil, nil
 		} else if err != nil {
 			return "", nil, err
 		}
 	}
-	out, err := p.run(ctx, repo, "range-diff", "--ignore-submodules=none", "--no-color", "--no-patch", last.Base+".."+last.Head, next.Base+".."+next.Head)
+	out, err := p.read(ctx, repo, "range-diff", "--ignore-submodules=none", "--no-color", "--no-patch", last.Base+".."+last.Head, next.Base+".."+next.Head)
 	if err != nil {
 		return "", nil, err
 	}
@@ -139,7 +141,7 @@ func (p Program) classify(ctx context.Context, repo string, last, next Range) (s
 	if ok, err := same(next.Base, next.Head, moved); err != nil || !ok {
 		return "a file the base changed differs from the new base", nil, err
 	}
-	diff, err := p.run(ctx, repo, "diff", "--ignore-submodules=none", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", next.Base, next.Head)
+	diff, err := p.read(ctx, repo, "diff", "--ignore-submodules=none", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", next.Base, next.Head)
 	if err != nil {
 		return "", nil, err
 	}
@@ -152,7 +154,7 @@ func (p Program) classify(ctx context.Context, repo string, last, next Range) (s
 // files lists the paths that differ between commits a and b, limited to paths when any are given, sorted.
 func (p Program) files(ctx context.Context, repo, a, b string, paths ...string) ([]string, error) {
 	args := []string{"diff", "--ignore-submodules=none", "--name-only", "-z", "--no-renames", "--no-ext-diff", a, b, "--"}
-	out, err := p.run(ctx, repo, append(args, paths...)...)
+	out, err := p.read(ctx, repo, append(args, paths...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -164,22 +166,40 @@ func (p Program) files(ctx context.Context, repo, a, b string, paths ...string) 
 	return names, nil
 }
 
-// run runs git in repo with literal pathspecs and returns its standard output.
-func (p Program) run(ctx context.Context, repo string, args ...string) ([]byte, error) {
+// read runs git in repo with literal pathspecs, through the one runner, and returns its standard output.
+func (p Program) read(ctx context.Context, repo string, args ...string) ([]byte, error) {
+	return p.git(ctx, repo, append([]string{"--literal-pathspecs"}, args...)...)
+}
+
+// git runs git in dir, or in the current directory when dir is empty, bounded by the timeout and never prompting,
+// and returns its standard output.
+func (p Program) git(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	timeout := p.Timeout
+	if timeout == 0 {
+		timeout = DefaultTimeout
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	path := p.Path
 	if path == "" {
 		path = "git"
 	}
-	cmd := exec.CommandContext(ctx, path, append([]string{"--literal-pathspecs", "-C", repo}, args...)...)
+	if dir != "" {
+		args = append([]string{"-C", dir}, args...)
+	}
+	cmd := exec.CommandContext(runCtx, path, args...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.WaitDelay = 5 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
-	var exit *exec.ExitError
-	if args[0] == "merge-base" && errors.As(err, &exit) && exit.ExitCode() == 1 {
-		return nil, errNotAncestor
+	switch {
+	case err == nil:
+		return out, nil
+	case ctx.Err() != nil:
+		return nil, ctx.Err()
+	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+		return nil, fmt.Errorf("git %s: no answer within %v: %w", strings.Join(args, " "), timeout, context.DeadlineExceeded)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("git %s: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
-	}
-	return out, nil
+	return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 }

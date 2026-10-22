@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ndrwl/guildhall/internal/digest"
 )
@@ -38,9 +36,6 @@ var (
 	ErrNotWorkspace = errors.New("working directory is not a worktree of the repository")
 )
 
-// DefaultTimeout is how long one git run of a workspace operation may take when Program.Timeout is zero.
-const DefaultTimeout = 5 * time.Minute
-
 // Ensure makes w.Dir a worktree of w.Repository, creating it when it does not exist and reusing it when it does.
 //
 // A new worktree is on branch w.Branch: an existing local branch of that name is checked out as it is, so a
@@ -48,6 +43,10 @@ const DefaultTimeout = 5 * time.Minute
 // remote's default branch (its HEAD) is at now, fetched from w.Remote. A missing or empty w.Dir is created; a
 // worktree of w.Repository is reused unchanged, whatever branch or commit it is at and whatever it holds, so
 // every attempt of a task works in the same tree. Ensure never resets, cleans or checks out over a reused tree.
+//
+// Every Ensure also records the commit the remote's default branch is at now as DefaultRef(w.Branch), which Base
+// reads: a new branch's fetch records it, and otherwise it is fetched on its own, where a failure is not an error
+// and leaves the ref as it was, so a reused worktree needs no remote.
 //
 // Ensure is idempotent and replay safe: the worktree is built beside w.Dir and moved into place only once it is
 // complete, so an Ensure interrupted at any point leaves either no w.Dir or a complete one, and repeating it
@@ -67,8 +66,10 @@ func (p Program) Ensure(ctx context.Context, w Workspace) error {
 		return err
 	case ok:
 		// A move interrupted between renaming the directory and updating git's records is mended here.
-		_, err := p.git(ctx, w.Repository, "worktree", "repair", w.Dir)
-		return err
+		if _, err := p.git(ctx, w.Repository, "worktree", "repair", w.Dir); err != nil {
+			return err
+		}
+		return p.fetchDefault(ctx, w)
 	}
 	switch entries, err := os.ReadDir(w.Dir); {
 	case errors.Is(err, fs.ErrNotExist):
@@ -91,14 +92,20 @@ func (p Program) validate(ctx context.Context, w Workspace) error {
 		return fmt.Errorf("%w: repository %q and directory %q must be absolute", ErrInvalidWorkspace, w.Repository, w.Dir)
 	case w.Remote == "":
 		return fmt.Errorf("%w: no remote", ErrInvalidWorkspace)
-	case w.Branch == "" || strings.HasPrefix(w.Branch, "-"):
-		return fmt.Errorf("%w: branch %q", ErrInvalidWorkspace, w.Branch)
 	}
-	if _, err := p.git(ctx, "", "check-ref-format", "refs/heads/"+w.Branch); err != nil {
+	return p.validBranch(ctx, w.Branch)
+}
+
+// validBranch refuses a branch name that is empty, starts with "-" or that git would not accept.
+func (p Program) validBranch(ctx context.Context, branch string) error {
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("%w: branch %q", ErrInvalidWorkspace, branch)
+	}
+	if _, err := p.git(ctx, "", "check-ref-format", "refs/heads/"+branch); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("%w: branch %q is not a valid branch name", ErrInvalidWorkspace, w.Branch)
+		return fmt.Errorf("%w: branch %q is not a valid branch name", ErrInvalidWorkspace, branch)
 	}
 	return nil
 }
@@ -153,9 +160,11 @@ func (p Program) create(ctx context.Context, w Workspace) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if _, err := p.git(ctx, w.Repository, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", w.Remote, "HEAD:"+ref); err != nil {
+		if _, err := p.git(ctx, w.Repository, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", w.Remote, "HEAD:"+ref, "+HEAD:"+DefaultRef(w.Branch)); err != nil {
 			return err
 		}
+	} else if err := p.fetchDefault(ctx, w); err != nil {
+		return err
 	}
 	if _, err := p.git(ctx, w.Repository, "worktree", "add", "--quiet", partial, w.Branch); err != nil {
 		return err
@@ -164,37 +173,28 @@ func (p Program) create(ctx context.Context, w Workspace) error {
 	return err
 }
 
-// git runs git in dir, or in the current directory when dir is empty, bounded by the timeout and never prompting,
-// and returns its standard output.
-func (p Program) git(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	timeout := p.Timeout
-	if timeout == 0 {
-		timeout = DefaultTimeout
+// DefaultRef is the ref a workspace on branch records the remote's default branch at, refs/guildhall/default/<branch>.
+func DefaultRef(branch string) string { return "refs/guildhall/default/" + branch }
+
+// fetchDefault records the commit the remote's default branch is at as DefaultRef(w.Branch). Only ctx ending is
+// an error: an unreachable remote leaves the ref as it was.
+func (p Program) fetchDefault(ctx context.Context, w Workspace) error {
+	_, _ = p.git(ctx, w.Repository, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", w.Remote, "+HEAD:"+DefaultRef(w.Branch))
+	return ctx.Err()
+}
+
+// Base returns the base of the task on branch in the repository at repository: the merge base of the branch and
+// the remote's default branch as Ensure last recorded it, read without the remote. A branch that does not exist,
+// a workspace never ensured or retired, and an invalid branch name are errors.
+func (p Program) Base(ctx context.Context, repository, branch string) (string, error) {
+	if err := p.validBranch(ctx, branch); err != nil {
+		return "", err
 	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	path := p.Path
-	if path == "" {
-		path = "git"
+	out, err := p.git(ctx, repository, "merge-base", "refs/heads/"+branch, DefaultRef(branch))
+	if err != nil {
+		return "", err
 	}
-	if dir != "" {
-		args = append([]string{"-C", dir}, args...)
-	}
-	cmd := exec.CommandContext(runCtx, path, args...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	cmd.WaitDelay = 5 * time.Second
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	switch {
-	case err == nil:
-		return out, nil
-	case ctx.Err() != nil:
-		return nil, ctx.Err()
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
-		return nil, fmt.Errorf("git %s: no answer within %v: %w", strings.Join(args, " "), timeout, context.DeadlineExceeded)
-	}
-	return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	return strings.TrimSpace(string(out)), nil
 }
 
 // Retirement is a task workspace whose change was merged, to be removed.
@@ -249,7 +249,8 @@ func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err e
 		return nil, ctx.Err()
 	}
 	if !ok && tip == "" {
-		return nil, nil
+		_, err := p.git(ctx, r.Repository, "update-ref", "-d", DefaultRef(r.Branch))
+		return nil, err
 	}
 	if _, err := p.git(ctx, r.Repository, "cat-file", "-e", r.Head+"^{commit}"); err != nil {
 		return nil, err
@@ -283,7 +284,8 @@ func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err e
 			return nil, err
 		}
 	}
-	return nil, nil
+	_, err = p.git(ctx, r.Repository, "update-ref", "-d", DefaultRef(r.Branch))
+	return nil, err
 }
 
 // unmerged lists what in the worktree r.Dir would be lost: a HEAD that is not r.Head or behind it, a changed or
