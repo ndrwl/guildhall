@@ -107,6 +107,7 @@ In a standalone copy they are the copy's own config, which the Guildmaster edits
 - Attempt caps: [`max_running_attempts`](configuration.md#settings), default 4, and `max_attempts_per_day`, default 40, across all the Director's repositories.
   An attempt runs from its start to its finish, and a day is a UTC day.
   The caps count attempts, not tokens or cost, since no runtime reports cost to Guildhall yet.
+  Logging or estimating each attempt's token use and cost is a follow-up and is not built.
 
 An advance whose next attempt would pass a cap, from `task start`, `step done`, `step finish`, `step retry` or a launcher's own advance, records and launches nothing and exits 1 naming the rail, such as `guard rail max_running_attempts: ... 4 attempts are running, the cap is 4`.
 It also sends the Director a `budget-refused` message, once per task and UTC day.
