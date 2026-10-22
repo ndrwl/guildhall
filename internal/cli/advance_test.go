@@ -105,7 +105,8 @@ func (d runDirector) stopAll(t *testing.T) {
 // so. The processes come from artisan harness inventory, with the fake's
 // inventory directory inv when it is not empty, taken before the stop, since
 // stop may settle the attempt and its record then names no worker; each must
-// probe gone afterwards.
+// probe gone within a few seconds afterwards, well inside the orphaning fake's
+// lifetime, so a process still exiting is not a leftover and an orphan is.
 func (d runDirector) leftovers(t *testing.T, inv string) []string {
 	t.Helper()
 	s, err := store.Open(d.store, store.Options{ReadOnly: true})
@@ -149,8 +150,15 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 				break
 			}
 		}
+		settle := time.Now().Add(10 * time.Second)
 		for _, p := range procs {
-			if lv, err := artisan.Probe(artisan.Identity{PID: p.PID, Token: p.Token}); err != nil || lv != artisan.Gone {
+			id := artisan.Identity{PID: p.PID, Token: p.Token}
+			lv, err := artisan.Probe(id)
+			for err == nil && lv != artisan.Gone && time.Now().Before(settle) {
+				time.Sleep(50 * time.Millisecond)
+				lv, err = artisan.Probe(id)
+			}
+			if err != nil || lv != artisan.Gone {
 				out = append(out, fmt.Sprintf("%s-%d: %s %d is %v (%v)", a.Step, a.Number, p.Role, p.PID, lv, err))
 			}
 		}
