@@ -1,6 +1,9 @@
 package interp
 
 import (
+	"context"
+
+	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -19,7 +22,9 @@ import (
 // FinishAttempt finishes a running attempt once and the first finish stands: finishing it again with the same
 // outcome under another mutation id returns the first finish's receipt, and another outcome is store.ErrInvalid.
 // A document or decision is recorded once per name or id and an existing one is refused with store.ErrExists. ContestRuling contests a recorded ruling once: an unknown
-// one is store.ErrNotFound and a contested one store.ErrInvalid. Implementations are safe for concurrent use.
+// one is store.ErrNotFound and a contested one store.ErrInvalid. SetTaskState closes an open task as done or
+// cancelled: another state, or a task already closed, is store.ErrInvalid, and an unknown one store.ErrNotFound.
+// Implementations are safe for concurrent use.
 // Rulings are recorded by the Director (guildhall task finding rule), never by the engine.
 //
 // Workflow approvals are not read here: enforcing them at task creation is separate work (S10).
@@ -36,6 +41,7 @@ type Records interface {
 	ContestRuling(mutationID, repository, taskID, document, finding, by string) (store.Receipt, error)
 	FullReviews(repository, taskID string) ([]store.FullReview, error)
 	ConsumeFullReview(mutationID, repository, taskID string, number int, by string) (store.Receipt, error)
+	SetTaskState(mutationID, repository, taskID string, state store.TaskState) (store.Receipt, error)
 }
 
 var _ Records = (*store.Store)(nil)
@@ -61,3 +67,12 @@ type PromptFunc func(stage render.Stage, inputs []render.Input) (render.Rendered
 func (f PromptFunc) Prompt(stage render.Stage, inputs []render.Input) (render.Rendered, error) {
 	return f(stage, inputs)
 }
+
+// Forge is the pull-request boundary publish and deliver call (docs/interpreter.md#publish-and-deliver).
+// forge.GitHub implements it and forgetest.Fake is its double; both pass forgetest.RunForgeContract.
+type Forge interface {
+	Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error)
+	Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, error)
+}
+
+var _ Forge = forge.GitHub{}

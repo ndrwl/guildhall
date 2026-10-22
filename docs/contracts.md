@@ -70,6 +70,8 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/cli`](contracts/cli.md)
 - [`internal/config`](contracts/config.md)
 - [`internal/digest`](contracts/digest.md)
+- [`internal/forge/forgetest`](contracts/forge-forgetest.md)
+- [`internal/forge`](contracts/forge.md)
 - [`internal/git/gittest`](contracts/git-gittest.md)
 - [`internal/git`](contracts/git.md)
 - [`internal/herdr`](contracts/herdr.md)

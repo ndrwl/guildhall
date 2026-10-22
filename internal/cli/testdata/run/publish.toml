@@ -1,0 +1,15 @@
+# The Director the delivery test runs: one repository on a workflow that
+# publishes its head before delivery, with the fake adapter as its Artisan.
+schema_version = 1
+mode = "director"
+name = "alpha"
+
+[local]
+standards_revision = "standards-1"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+workflow = "fake-publish"

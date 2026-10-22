@@ -50,7 +50,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 |---|---|
 | `id` | Unique lowercase identifier. |
 | `path` | Absolute path of the repository on the owner machine. |
-| `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. |
+| `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. `publish` pushes task branches there, and the [GitHub forge](contracts/forge.md) supports only `github.com` remotes. |
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
 | `merge_policy` | `approval` (default) or `auto`. |
 | `workflow` | Name of the Director's workflow definition; defaults to `default`. |

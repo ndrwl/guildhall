@@ -18,6 +18,7 @@ guildhall step done --store <file> --config <director.toml> --state <dir> --repo
 | Profiles, merge policy | The Director config; a step without a profile runs the `fake` adapter, and a profile may name `fake` or `claude`, the [runtimes](adapters.md#running-an-attempt) `artisan start` runs owned |
 | Standards revision | The config setting `standards_revision` |
 | Stall interval | The config setting [`stall_interval`](configuration.md#settings), default 15 minutes, `0s` off: an advance that finds a launched attempt waiting sends the Director one [`worker-stalled`](interpreter.md#worker-stalled-observations) message when its heartbeat is fresh and its worker silent for longer |
+| Forge | [`forge.GitHub`](contracts/forge.md): `git` pushes from the repository's `path` to its `remote`, and `gh`, found on `PATH` and signed in with its own credentials, opens and merges pull requests; only `github.com` remotes are supported |
 | Baseline | `baseline/` beside the config file: the role `roles/artisan.md`, the guide `stages/<kind>.md`, and every `standards/*.md` in name order; a step profile's `role` overrides the default role and is resolved relative to the config directory |
 | Skills | The embedded release skills, installed into a temporary root for the advance |
 | Attempts | `<state>/<repository>/<task>/<step>-<n>`, laid out by `artisan.AttemptKey`; the task's working directory is `<state>/<repository>/<task>/work` |
@@ -43,7 +44,7 @@ The [interpreter's recovery contract](interpreter.md#replay-and-recovery) define
 
 ## Output and exit status
 
-Both print one JSON line, what the task waits for: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}` or `{"wait":"director","step":"build","attempt":2}`.
+Both print one JSON line, what the task waits for: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`) or, once the merge landed, `{"wait":"done","step":"deliver"}`.
 
 | Exit status | Meaning |
 |---|---|
