@@ -196,6 +196,8 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			return lv != artisan.Gone
 		}
 		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
+			// Probed before the stop, so a launcher that exits while stop probes it gets one more stop.
+			live := exiting()
 			code, stdout, stderr := d.run(t, append([]string{"artisan", "stop"}, at...)...)
 			if code == 0 {
 				break
@@ -211,7 +213,7 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 				rep.Classification.State == "exited" && rep.Classification.Launcher == "gone" {
 				break
 			}
-			if !exiting() || time.Now().After(end) {
+			if !live || time.Now().After(end) {
 				out = append(out, fmt.Sprintf("artisan stop %s-%d: exit %d, %s %s", a.Step, a.Number, code, stdout, stderr))
 				break
 			}
