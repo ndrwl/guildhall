@@ -57,6 +57,7 @@ The [test environment contract](contracts/testenv.md) defines which missing-tool
 Each package's contract and its tests are in its own file under `docs/contracts/`, named after the package path without a leading `internal/` and with `/` replaced by `-`.
 A pull request that adds or changes a package's contract edits only that package's file, and a new package adds its file and one line here in package order.
 
+- [`baseline`](contracts/baseline.md)
 - [`cmd/guildhall`](contracts/cmd-guildhall.md)
 - [`internal/adapter/adaptertest`](contracts/adapter-adaptertest.md)
 - [`internal/adapter/claude/claudetest`](contracts/adapter-claude-claudetest.md)

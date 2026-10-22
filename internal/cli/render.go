@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/strictjson"
@@ -12,7 +13,7 @@ import (
 
 func (a *App) renderPrompt(args []string) int {
 	if len(args) == 1 && args[0] == "--help" {
-		_, err := fmt.Fprintln(a.Stdout, "Usage: guildhall render <request.json>\nRender an Artisan prompt; request fields: Stage, Inputs, Baseline, Managed, Director.\nExample: guildhall render attempt.json\nWrites the prompt manifest as JSON to stdout.")
+		_, err := fmt.Fprintln(a.Stdout, "Usage: guildhall render <request.json>\nRender an Artisan prompt; request fields: Stage, Inputs, Baseline, Managed, Director.\nA Baseline without a Role or Guide path uses the release role or stage guide.\nExample: guildhall render attempt.json\nWrites the prompt manifest as JSON to stdout.")
 		if err != nil {
 			return 1
 		}
@@ -48,6 +49,26 @@ func (a *App) renderPrompt(args []string) int {
 	defer func() { _ = os.RemoveAll(dir) }()
 	if err := a.InstallSkills(dir); err != nil {
 		return a.fail(err)
+	}
+	if request.Baseline.Role.Path == "" || request.Baseline.Guide.Path == "" {
+		if a.InstallBaseline == nil {
+			return a.fail(fmt.Errorf("release baseline installer is not configured"))
+		}
+		release, err := os.MkdirTemp("", "guildhall-baseline-*")
+		if err != nil {
+			return a.fail(err)
+		}
+		defer func() { _ = os.RemoveAll(release) }()
+		if err := a.InstallBaseline(release); err != nil {
+			return a.fail(err)
+		}
+		fill := func(src *render.Source, name string) {
+			if src.Path == "" {
+				*src = render.Source{Name: name, Path: filepath.Join(release, filepath.FromSlash(name)), Root: "release"}
+			}
+		}
+		fill(&request.Baseline.Role, "roles/artisan.md")
+		fill(&request.Baseline.Guide, "stages/"+request.Stage.Step.Type+".md")
 	}
 	roots := []render.SkillRoot{{Name: "release", Dir: dir}}
 	for _, root := range []render.SkillRoot{{Name: "managed", Dir: request.Managed}, {Name: "director", Dir: request.Director}} {

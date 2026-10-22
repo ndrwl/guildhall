@@ -9,3 +9,6 @@ internal/messaging/testdata/*.json binary
 
 # Skills ship with exact LF bytes because their tree digests pin them.
 skills/** text eol=lf
+
+# The release baseline ships with exact LF bytes because its digest golden pins them.
+baseline/** text eol=lf

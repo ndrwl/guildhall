@@ -1,0 +1,52 @@
+# Red run at 2f5570f plus the contract stubs and tests of this change, 2026-10-22T07:44Z, linux/amd64
+$ go test ./baseline ./internal/render ./internal/cli ./cmd/guildhall
+--- FAIL: TestReleaseHoldsTheRolesAndAGuidePerArtisanKind (0.00s)
+panic: not implemented [recovered, repanicked]
+
+goroutine 19 [running]:
+testing.tRunner.func1.2({0x6bb2a0, 0x566a20})
+	/home/andrew/.local/go/src/testing/testing.go:2125 +0x232
+testing.tRunner.func1()
+	/home/andrew/.local/go/src/testing/testing.go:2128 +0x329
+panic({0x6bb2a0?, 0x566a20?})
+	/home/andrew/.local/go/src/runtime/panic.go:859 +0x125
+github.com/ndrwl/guildhall/baseline.Release(...)
+	/home/andrew/.treehouse/guildhall-6b8e12/3/guildhall/baseline/baseline.go:20
+github.com/ndrwl/guildhall/baseline_test.files(0x56b660?)
+	/home/andrew/.treehouse/guildhall-6b8e12/3/guildhall/baseline/baseline_test.go:29 +0x29
+github.com/ndrwl/guildhall/baseline_test.TestReleaseHoldsTheRolesAndAGuidePerArtisanKind(0x3ec2a0d42248)
+	/home/andrew/.treehouse/guildhall-6b8e12/3/guildhall/baseline/baseline_test.go:50 +0x2d2
+testing.tRunner(0x3ec2a0d42248, 0x6dc2f8)
+	/home/andrew/.local/go/src/testing/testing.go:2195 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/andrew/.local/go/src/testing/testing.go:2260 +0x4d4
+FAIL	github.com/ndrwl/guildhall/baseline	0.030s
+--- FAIL: TestManifestRecordsBaselineRoots (0.00s)
+    render_test.go:484: roots: role "", guide "", standard "", prompt ""
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/render	0.275s
+--- FAIL: TestBareCopyRendersEveryDefaultArtisanStage (0.00s)
+    baseline_test.go:43: baseline: not implemented
+--- FAIL: TestCopyBaselineWinsOverRelease (0.00s)
+    baseline_test.go:71: baseline: not implemented
+--- FAIL: TestKindWithoutAGuideIsRefused (0.00s)
+    baseline_test.go:92: baseline: not implemented
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	23.882s
+--- FAIL: TestBinaryVersionFromLinkerFlag (2.08s)
+        main_test.go:39: render: exit status 1
+            guildhall: render: role name "" must be a relative slash-separated path
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	6.124s
+FAIL
+ok  	github.com/ndrwl/guildhall/baseline	0.006s
+--- FAIL: TestBareCopyRendersEveryDefaultArtisanStage (0.01s)
+    baseline_test.go:57: research: render: role roles/artisan.md: open /tmp/fm-guildhall-d8a-baseline/gotmp/TestBareCopyRendersEveryDefaultArtisanStage2835194328/001/baseline/roles/artisan.md: no such file or directory
+    baseline_test.go:57: plan: render: role roles/artisan.md: open /tmp/fm-guildhall-d8a-baseline/gotmp/TestBareCopyRendersEveryDefaultArtisanStage2835194328/001/baseline/roles/artisan.md: no such file or directory
+    baseline_test.go:57: build: render: role roles/artisan.md: open /tmp/fm-guildhall-d8a-baseline/gotmp/TestBareCopyRendersEveryDefaultArtisanStage2835194328/001/baseline/roles/artisan.md: no such file or directory
+    baseline_test.go:57: review: render: role roles/artisan.md: open /tmp/fm-guildhall-d8a-baseline/gotmp/TestBareCopyRendersEveryDefaultArtisanStage2835194328/001/baseline/roles/artisan.md: no such file or directory
+--- FAIL: TestCopyBaselineWinsOverRelease (0.01s)
+    baseline_test.go:83: render: stage guide stages/build.md: open /tmp/fm-guildhall-d8a-baseline/gotmp/TestCopyBaselineWinsOverRelease1902959045/001/baseline/stages/build.md: no such file or directory
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.033s
+FAIL

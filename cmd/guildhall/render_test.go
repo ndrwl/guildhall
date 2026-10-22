@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/workflow"
 	"github.com/ndrwl/guildhall/skills"
@@ -91,5 +92,44 @@ func testReleaseRenderingKind(t *testing.T, bin, kind string) {
 	out, err = exec.Command(bin, "render", request).CombinedOutput()
 	if err == nil {
 		t.Fatalf("replaced existing attempt: %s", out)
+	}
+}
+
+// testReleaseBaseline renders a request that names no baseline: the built binary uses its release role and guide.
+func testReleaseBaseline(t *testing.T, bin string) {
+	t.Helper()
+	tmp := t.TempDir()
+	stage := render.Stage{Repository: "repo", Task: "task", Attempt: 1, Dir: filepath.Join(tmp, "attempt"), Step: workflow.Step{ID: "build", Type: "build", Version: 1}}
+	data, err := json.Marshal(map[string]any{"Stage": stage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := filepath.Join(tmp, "request.json")
+	if err := os.WriteFile(request, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(bin, "render", request).CombinedOutput()
+	if err != nil {
+		t.Fatalf("render: %v\n%s", err, out)
+	}
+	var m render.Manifest
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Role.Path != "roles/artisan.md" || m.Role.Root != "release" || m.Guide.Path != "stages/build.md" || m.Guide.Root != "release" {
+		t.Errorf("role %+v, guide %+v", m.Role, m.Guide)
+	}
+	prompt, err := os.ReadFile(filepath.Join(stage.Dir, "prompt.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"roles/artisan.md", "stages/build.md"} {
+		want, err := fs.ReadFile(baseline.Release(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(prompt, bytes.TrimRight(want, "\n")) {
+			t.Errorf("prompt omits the release %s", name)
+		}
 	}
 }

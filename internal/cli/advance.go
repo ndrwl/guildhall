@@ -227,8 +227,8 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, err
 	}
-	if a.InstallSkills == nil {
-		return interp.Next{}, errors.New("release skills installer is not configured")
+	if a.InstallSkills == nil || a.InstallBaseline == nil {
+		return interp.Next{}, errors.New("release skills and baseline installers are not configured")
 	}
 	taskDir := filepath.Join(state, ev.Repository, ev.Task)
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
@@ -249,6 +249,14 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err := a.InstallSkills(skills); err != nil {
 		return interp.Next{}, err
 	}
+	releaseBaseline, err := os.MkdirTemp("", "guildhall-baseline-*")
+	if err != nil {
+		return interp.Next{}, err
+	}
+	defer func() { _ = os.RemoveAll(releaseBaseline) }()
+	if err := a.InstallBaseline(releaseBaseline); err != nil {
+		return interp.Next{}, err
+	}
 	standards, _ := cfg.Setting("standards_revision")
 	var fg interp.Forge = forge.GitHub{}
 	if a.Forge != nil {
@@ -257,7 +265,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	e := &interp.Engine{
 		Records:  storeRecords(f.store),
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state},
-		Prompter: baselinePrompter(cfg, cfgDir, skills),
+		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   storeRecords(f.store),
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
@@ -270,17 +278,15 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	return e.Advance(ctx, ev)
 }
 
-// baselinePrompter renders from baseline/ beside the config file and the release skills root (docs/running.md).
-func baselinePrompter(cfg *config.Config, cfgDir, skills string) interp.PromptFunc {
+// baselinePrompter renders from baseline/ beside the config file, falling back file by file to the installed
+// release baseline, and the release skills root (docs/running.md).
+func baselinePrompter(cfg *config.Config, cfgDir, release, skills string) interp.PromptFunc {
 	return func(stage render.Stage, inputs []render.Input) (render.Rendered, error) {
 		base := filepath.Join(cfgDir, "baseline")
-		src := func(dir, name string) render.Source {
-			return render.Source{Name: name, Path: filepath.Join(dir, filepath.FromSlash(name))}
-		}
-		b := render.Baseline{Role: src(base, "roles/artisan.md"), Guide: src(base, "stages/"+stage.Step.Type+".md")}
+		b := render.Baseline{Role: baselineSource(base, release, "roles/artisan.md"), Guide: baselineSource(base, release, "stages/"+stage.Step.Type+".md")}
 		if name := stage.Step.Profile(); name != "" {
 			if p, err := cfg.Profile(name); err == nil && p.Role != "" {
-				b.Role = src(cfgDir, p.Role)
+				b.Role = render.Source{Name: p.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(p.Role)), Root: "copy"}
 			}
 		}
 		files, err := filepath.Glob(filepath.Join(base, "standards", "*.md"))
@@ -289,10 +295,20 @@ func baselinePrompter(cfg *config.Config, cfgDir, skills string) interp.PromptFu
 		}
 		slices.Sort(files)
 		for _, f := range files {
-			b.Standards = append(b.Standards, src(base, "standards/"+filepath.Base(f)))
+			b.Standards = append(b.Standards, render.Source{Name: "standards/" + filepath.Base(f), Path: f, Root: "copy"})
 		}
 		return render.Prompt(stage, inputs, b, []render.SkillRoot{{Name: "release", Dir: skills}})
 	}
+}
+
+// baselineSource is the named baseline file from the copy's baseline directory unless it does not exist there, else from
+// the release's; a file in neither, or a copy file that cannot be read, is left to the renderer to refuse.
+func baselineSource(copyDir, release, name string) render.Source {
+	path := filepath.Join(copyDir, filepath.FromSlash(name))
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return render.Source{Name: name, Path: filepath.Join(release, filepath.FromSlash(name)), Root: "release"}
+	}
+	return render.Source{Name: name, Path: path, Root: "copy"}
 }
 
 // storeRecords is the engine's Records and Outbox over the store file it names, opened for each operation

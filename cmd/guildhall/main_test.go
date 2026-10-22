@@ -36,6 +36,7 @@ func TestBinaryVersionFromLinkerFlag(t *testing.T) {
 	}
 
 	testReleaseRendering(t, bin)
+	t.Run("release baseline", func(t *testing.T) { testReleaseBaseline(t, bin) })
 
 	// An empty PATH keeps doctor from running whatever tools the host has.
 	doctor := exec.Command(bin, "doctor")

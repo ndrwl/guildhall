@@ -22,7 +22,7 @@ Start a role through Guildhall rather than running the agent directly, so it get
 ## 2. Give it work
 
 The `task new` and `task start` lines need the copy's Director config, `demo/config.toml`, to declare a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](configuration.md) name other repositories, so change one to `app` before using it.
-`task start` also needs a `baseline/` directory beside the config, `demo/baseline/`, holding `roles/artisan.md` and `stages/<kind>.md`; see [what an advance runs over](running.md#what-an-advance-runs-over).
+`task start` uses the role prompt and stage guides shipped in the binary unless a `baseline/` directory beside the config, `demo/baseline/`, overrides them file by file; see [what an advance runs over](running.md#what-an-advance-runs-over).
 
 ```sh
 ./guildhall task new --copy demo --repo app --title "Add a health check" t-1

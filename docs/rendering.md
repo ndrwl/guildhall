@@ -40,6 +40,7 @@ The JSON request contains `Stage`, `Inputs` and `Baseline` using the [renderer t
 Strict JSON decoding, request validation and refusal behavior are specified in the [CLI contract](contracts/cli.md).
 The command writes the manifest as JSON to stdout and leaves the self-contained prompt at `Stage.Dir/prompt.md`, ready for `artisan start --prompt`.
 The temporary release root is removed on success or failure.
+A request whose `Baseline` has no `Role` or `Guide` path takes the [release baseline](contracts/baseline.md)'s `roles/artisan.md` or `stages/<kind>.md`, installed temporarily and recorded with root `release`.
 Each adapted skill includes its own `CREDITS.md`, preserving the upstream MIT notice in the attempt.
 Release embedding is delivered here; Steward distribution of skill bundles follows in a later slice.
 Every file is copied, scripts included, byte for byte and with the permission bits the platform supports, so a POSIX script stays executable.
@@ -58,7 +59,7 @@ Every digest is `sha256:<64 lowercase hex>`.
 |---|---|
 | `identity` | `repository`, `task`, `step`, `kind`, `kind_version`, `attempt` and, when set, `profile`. |
 | `prompt` | `prompt.md` and the digest of its bytes. |
-| `role`, `guide` | The source name and the digest of its normalised text. |
+| `role`, `guide` | The source name, the digest of its normalised text and, when the caller names one, the baseline `root` it came from, such as `copy` or `release`. |
 | `standards[]` | The same, in rendering order. |
 | `inputs[]` | `port`, the recorded `path` and the digest of the file's bytes. |
 | `skills[]` | `name`, the `root` it was resolved from, `path` (`skills/<name>`), the tree `digest` and every file with its digest. |
