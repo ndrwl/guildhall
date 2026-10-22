@@ -19,6 +19,14 @@ import (
 // review a rebase round: its binding records scope rebase over the new range and the resolution document is
 // recorded, with Base and Rebases from git.Program over the repository's configured path.
 func TestReviewAfterARebaseReviewsTheResolution(t *testing.T) {
+	// Every git here, the test's and guildhall's alike, runs without the user's or system's configuration, so the
+	// worktree guildhall checks out (CRLF under Windows' system core.autocrlf) is clean to the test's git.
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(global, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	d, dir := newRunCopyOn(t, "fake-review")
 	cfg, err := config.Load(d.config)
 	if err != nil {
@@ -28,14 +36,9 @@ func TestReviewAfterARebaseReviewsTheResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	global := filepath.Join(t.TempDir(), "gitconfig")
-	if err := os.WriteFile(global, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
 	gitIn := func(dir string, args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+global)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
