@@ -12,6 +12,9 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/forge"
+	"github.com/ndrwl/guildhall/internal/forge/forgetest"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -19,6 +22,8 @@ import (
 // its config and a short state directory, with every launcher it starts played by this test binary.
 type runDirector struct {
 	store, config, state string
+	// forge, when set, is the App's forge.
+	forge interp.Forge
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -61,6 +66,7 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Executable = os.Executable
 	app.InstallSkills = func(string) error { return nil }
+	app.Forge = d.forge
 	code := app.Run(args)
 	return code, stdout.String(), stderr.String()
 }
@@ -219,5 +225,53 @@ func TestTaskStartAndStepDoneUsage(t *testing.T) {
 		if code, out, _ := d.run(t, args...); code != 2 || out != "" {
 			t.Errorf("%s: exit %d, %q; want 2", name, code, out)
 		}
+	}
+}
+
+// TestTaskDelivers: on a workflow with publish, the sign-off's answer pushes the build's head to guildhall/t-1
+// through the App's forge and opens the merge decision; answering merge squash-merges it and the task is done.
+func TestTaskDelivers(t *testing.T) {
+	d := newRunDirectorWith(t, "publish.toml")
+	const remote, head = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
+	f := forgetest.NewFake()
+	f.SetBranch(remote, "main", strings.Repeat("a", 40))
+	f.AddCommit("/srv/app", head)
+	d.forge = f
+	step := func(args ...string) string {
+		t.Helper()
+		code, out, stderr := d.run(t, args...)
+		if code != 0 {
+			t.Fatalf("guildhall %q: exit %d, %s", args, code, stderr)
+		}
+		return strings.TrimSpace(out)
+	}
+	done := func(name string) string {
+		d.waitResult(t, name, 1)
+		return step(append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", name, "--attempt", "1", "--result", d.result(name, 1))...)...)
+	}
+	answer := func(decision, words string) string {
+		t.Helper()
+		file := filepath.Join(t.TempDir(), "answer")
+		if err := os.WriteFile(file, []byte(words), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", decision, "--answer-file", file)
+		return step(append([]string{"task", "start"}, d.flags("--decision", decision, "t-1")...)...)
+	}
+	step(append([]string{"task", "start"}, d.flags("t-1")...)...)
+	done("plan")
+	answer("accept-1", "approved\n")
+	done("build")
+	if got := answer("sign-off-1", "approved\n"); got != `{"wait":"decision","step":"deliver","decision":"deliver-1"}` {
+		t.Fatalf("after sign-off: %s", got)
+	}
+	if prs := f.PullRequests(remote); len(prs) != 1 || prs[0].Branch != "guildhall/t-1" || prs[0].Head != head {
+		t.Fatalf("pull requests = %+v", prs)
+	}
+	if got := answer("deliver-1", "merge\n"); got != `{"wait":"done","step":"deliver"}` {
+		t.Fatalf("after the merge answer: %s", got)
+	}
+	if prs := f.PullRequests(remote); prs[0].State != forge.Merged {
+		t.Errorf("pull request = %+v, want merged", prs[0])
 	}
 }

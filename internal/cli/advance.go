@@ -15,6 +15,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -195,6 +196,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		return interp.Next{}, err
 	}
 	standards, _ := cfg.Setting("standards_revision")
+	var fg interp.Forge = forge.GitHub{}
+	if a.Forge != nil {
+		fg = a.Forge
+	}
 	e := &interp.Engine{
 		Records:  storeRecords(f.store),
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state},
@@ -202,7 +207,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Outbox:   storeRecords(f.store),
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards,
-		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall,
+		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, Forge: fg,
 	}
 	return e.Advance(context.Background(), ev)
 }
@@ -292,6 +297,10 @@ func (p storeRecords) ContestRuling(m, repo, id, doc, finding, by string) (store
 
 func (p storeRecords) ConsumeFullReview(m, repo, id string, n int, by string) (store.Receipt, error) {
 	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.ConsumeFullReview(m, repo, id, n, by) })
+}
+
+func (p storeRecords) SetTaskState(m, repo, id string, state store.TaskState) (store.Receipt, error) {
+	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.SetTaskState(m, repo, id, state) })
 }
 
 func (p storeRecords) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {

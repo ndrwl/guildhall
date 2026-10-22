@@ -1,0 +1,20 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "publish",
+  "description": "The straight path with a publish step: plan, Guildmaster acceptance, build, an Artisan review, a Guildmaster sign-off, publish and delivery of the published head under the repository's merge policy.",
+  "steps": [
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
+    {"id": "sign-off", "type": "review", "version": 1, "settings": {"actor": "guildmaster"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome", "sign-off.outcome"]}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["publish.head"], "review": ["review.outcome", "sign-off.outcome"]}}
+  ]
+}

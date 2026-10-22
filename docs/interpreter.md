@@ -2,12 +2,12 @@
 
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
-It follows `changes_requested` loop rules with their `max`, asks the Guildmaster at a loop's exit and checks the review gate before `deliver`; the checks gate, `publish`, `validate`, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
+It follows `changes_requested` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review gate before `deliver`, and [publishes and merges](#publish-and-deliver) through the forge; the checks gate, `validate`, automatic merging, Director stages and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
 [`task start` and `step done`](running.md) run it from the command line; the per-task watcher is later work.
 
 ## Seams
 
-The engine consumes five narrow interfaces, declared in `internal/interp` beside the code that calls them.
+The engine consumes six narrow interfaces, declared in `internal/interp` beside the code that calls them.
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
@@ -16,11 +16,12 @@ The engine consumes five narrow interfaces, declared in `internal/interp` beside
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
+| `Forge`: [publish and deliver](#publish-and-deliver) | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunForgeContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
 `Engine.Workflow` returns the definition a task's revision names, and the engine refuses one whose name or digest differs (`ErrRevision`).
-`Engine.Config` gives each profile's adapter and each repository's merge policy; a step without a profile runs `Engine.DefaultAdapter`.
+`Engine.Config` gives each profile's adapter and each repository's path, remote and merge policy; a step without a profile runs `Engine.DefaultAdapter`.
 `Engine.StandardsRevision` must name the central standards revision presented for human reviews.
 A blank revision refuses to open a human review decision.
 The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
@@ -59,9 +60,10 @@ After intake, the engine walks the steps in order, from the records, and stops a
   An `approved` answer completes the step; a Guildmaster approval then records the approved document as the accepted spec, `<step>-<round>-spec`.
   On approval, both human review kinds persist the shared `ReviewOutcome` as `<step>-<round>-outcome`, with reviewer `human` and the revisions captured when the decision opened.
   File and record writes are replay-safe.
+- **Publish.** The engine pushes the head to the task branch and records its pull request; see [publish and deliver](#publish-and-deliver).
 - **Deliver.** The [review gate](#review-gate) is checked first.
   Under the `approval` merge policy the engine then opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits; a head that moved since the last merge decision opens the next round.
-  Merging after the answer, and the `auto` policy, are later work.
+  The answer is acted on as in [publish and deliver](#publish-and-deliver); the `auto` policy is refused with `ErrUnsupported`.
 
 A `rejected` outcome, or any Guildmaster answer other than `approved` and `changes_requested`, fails with `ErrUnsupported`.
 
@@ -74,6 +76,39 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
+Publishing and merging send `published`, `merge-held`, `merge-refused` and `merged` messages, described below.
+
+## Publish and deliver
+
+Guildhall prescribes only the edges of delivery: what is pushed where, the pull request, and merging under the repository's merge policy without bypassing the forge's protection ([decision](decisions/delivery-stage.md)).
+Inside its task copy an Artisan uses git as it likes, and the Director decides how to recover from anything the forge refuses.
+Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts/forge.md); with no `Engine.Forge`, publishing and merging are refused with `ErrUnsupported`.
+
+**Publish** reads its `head` input.
+When the step's latest round already published that head, the step is complete and nothing is called.
+Otherwise round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, the task's title and a body naming the task, step and head.
+The forge pushes the head to that branch, replacing whatever the task branch held but never touching another branch, and opens a pull request against the remote's default branch or updates the open one.
+A head that is not a commit of the repository at `path` is refused with `forge.ErrUnknownHead` and records nothing.
+The engine then records, in order:
+
+1. `publish-<k>-pr` (`tasks/<repo>/<task>/publish-<k>/pull-request.json`), a `guildhall.pull-request/1` document: the remote, number, URL, branch, head and state;
+2. message `<repo>.<task>.published.publish-<k>`, type `published`, naming the head, branch and pull request URL;
+3. `publish-<k>-head`, the step's output port, the head as a line of text.
+
+A new head, such as a build round after review findings, publishes the next round and updates the same open pull request.
+
+**Deliver** finds the pull request through its `head` input: when that input is a publish step's output, the merge decision's question names the pull request URL.
+A `hold` answer merges nothing: the task waits for the Director (`director`, naming the decision) and the Director is told as `<repo>.<task>.merge-held.<decision>`.
+A `merge` answer calls `Forge.Merge` for the recorded remote and pull request number at the decision's head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
+A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
+When the forge merges, the engine records `<decision>-merge` (`tasks/<repo>/<task>/<decision>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<decision>`, type `merged`, marks the task `done` and returns the wait `done`.
+A later advance of a done task is refused with `ErrTaskClosed`.
+
+When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is recorded: the task waits for the Director and the Director is sent `<repo>.<task>.merge-refused.<decision>.<digest>`, type `merge-refused`, with the forge's reason, where `<digest>` is the first 12 hex digits of the reason's sha256, so a repeated refusal for the same reason sends nothing new.
+There is no automatic rebase or retry: each later advance, such as `task start` once the Director has dealt with the reason, asks the forge to merge again.
+Any other forge error fails the advance and records nothing.
+
+Replay follows the general rule: a crash before `publish-<k>-head` publishes the same head again, and the forge returns the same pull request; a crash after the forge merged but before `<decision>-merge` asks again, and the forge returns the merge it already made.
 
 ## Rounds and loops
 
@@ -198,6 +233,8 @@ A newer manifest also matches `strictjson.ErrNewerSchema`, which tells a Guildha
 Changes to the role, guide, standards, skills or inputs after preparation reach only a later attempt, which has its own identity.
 
 ## Tests
+
+`deliver_test.go`, red first against the engine that refused `publish` (`publish steps run by the engine`; see the [interpreter contract tests](contracts/interp.md#tests) for the two cases that were not red), runs `testdata/workflows/publish.json`, the straight workflow with a publish step, over `forgetest.Fake` on both backends: publish pushes `guildhall/t7` and records the pull request and head, the merge question names the pull request, a `merge` answer merges it, records `deliver-1-merge` and closes the task, `hold` and a forge refusal wait for the Director with their messages and a later advance retries a refused merge, a missing forge or an unknown head records nothing, an unpublished head cannot be merged, and a failure before or after each of the three records replays to one pull request and the right number of merges.
 
 `internal/interp/engine_test.go` runs the straight workflow, `testdata/workflows/straight.json` (plan, Guildmaster acceptance, build, Artisan review, Guildmaster sign-off, deliver), twice: against the scripted mock with the in-memory records and `messagingtest.Fake`, and against the same mock with a real store file and its mailbox.
 It checks each event's effect on the records, the approval bound to the plan document's digest, the spec gate, a crash between recording and launching an attempt, the zero-model guard, a failed attempt, mismatched events and a changed revision.

@@ -1,0 +1,68 @@
+# Delivery stage red runs, 2026-10-22, before the implementation (Linux)
+
+## go test ./internal/forge/... against stub GitHub, Fake and GitHubRepository returning zero values
+--- FAIL: TestForgeContract (2.15s)
+    --- FAIL: TestForgeContract/fake (0.00s)
+        --- FAIL: TestForgeContract/fake/opens_a_pull_request_for_the_pushed_head_and_replays_it (0.00s)
+        --- FAIL: TestForgeContract/fake/updates_the_open_pull_request_with_a_new_and_a_rewritten_head (0.00s)
+        --- FAIL: TestForgeContract/fake/refuses_an_unknown_head_and_pushes_nothing (0.00s)
+        --- FAIL: TestForgeContract/fake/refuses_the_base_branch_and_invalid_changes (0.00s)
+        --- FAIL: TestForgeContract/fake/merges_only_at_the_approved_head_and_replays_the_merge (0.00s)
+        --- FAIL: TestForgeContract/fake/reports_a_forge_refusal_with_its_reason (0.00s)
+    --- FAIL: TestForgeContract/github (2.15s)
+        --- FAIL: TestForgeContract/github/opens_a_pull_request_for_the_pushed_head_and_replays_it (0.34s)
+        --- FAIL: TestForgeContract/github/updates_the_open_pull_request_with_a_new_and_a_rewritten_head (0.37s)
+        --- FAIL: TestForgeContract/github/refuses_an_unknown_head_and_pushes_nothing (0.33s)
+        --- FAIL: TestForgeContract/github/refuses_the_base_branch_and_invalid_changes (0.33s)
+        --- FAIL: TestForgeContract/github/merges_only_at_the_approved_head_and_replays_the_merge (0.39s)
+        --- FAIL: TestForgeContract/github/reports_a_forge_refusal_with_its_reason (0.38s)
+--- FAIL: TestGitHubArguments (0.46s)
+--- FAIL: TestGitHubRemotes (0.36s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/forge	2.970s
+FAIL
+
+## go test -run TestRecordsContract ./internal/interp/ against a stub SetTaskState in interptest.Records
+--- FAIL: TestRecordsContract (2.69s)
+    --- FAIL: TestRecordsContract/double (0.01s)
+        --- FAIL: TestRecordsContract/double/closes_a_task_once (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	2.692s
+FAIL
+
+## go test -run 'TestPublish|TestMerge' ./internal/interp/ against the engine that refused publish
+--- FAIL: TestPublishAndMerge (0.34s)
+    --- FAIL: TestPublishAndMerge/double (0.08s)
+        Advance(decision-answered sign-off-1) = interp: app/t7 step publish: not supported by the engine: publish steps run by the engine
+    --- FAIL: TestPublishAndMerge/store (0.26s)
+--- FAIL: TestMergeRefusedWaitsForTheDirector (0.30s)
+    --- FAIL: TestMergeRefusedWaitsForTheDirector/double (0.05s)
+    --- FAIL: TestMergeRefusedWaitsForTheDirector/store (0.25s)
+--- FAIL: TestMergeHeld (0.30s)
+    --- FAIL: TestMergeHeld/double (0.06s)
+    --- FAIL: TestMergeHeld/store (0.23s)
+--- FAIL: TestPublishRefusals (0.09s)
+    --- FAIL: TestPublishRefusals/unknown_head (0.05s)
+        deliver_test.go:233: publish of an unknown head = interp: app/t7 step publish: not supported by the engine: publish steps run by the engine, want ErrUnknownHead
+--- FAIL: TestPublishAndMergeReplay (1.70s)
+    --- FAIL: TestPublishAndMergeReplay/double/publish-1-pr/before (0.05s)
+    --- FAIL: TestPublishAndMergeReplay/double/publish-1-pr/after (0.05s)
+    --- FAIL: TestPublishAndMergeReplay/double/publish-1-head/before (0.05s)
+    --- FAIL: TestPublishAndMergeReplay/double/publish-1-head/after (0.05s)
+    --- FAIL: TestPublishAndMergeReplay/double/deliver-1-merge/before (0.05s)
+    --- FAIL: TestPublishAndMergeReplay/double/deliver-1-merge/after (0.05s)
+    --- FAIL: TestPublishAndMergeReplay/store/publish-1-pr/before (0.23s)
+    --- FAIL: TestPublishAndMergeReplay/store/publish-1-pr/after (0.23s)
+    --- FAIL: TestPublishAndMergeReplay/store/publish-1-head/before (0.24s)
+    --- FAIL: TestPublishAndMergeReplay/store/publish-1-head/after (0.23s)
+    --- FAIL: TestPublishAndMergeReplay/store/deliver-1-merge/before (0.24s)
+    --- FAIL: TestPublishAndMergeReplay/store/deliver-1-merge/after (0.23s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	2.811s
+
+## go test -run TestTaskDelivers ./internal/cli/ against the CLI that passed no forge
+--- FAIL: TestTaskDelivers (0.38s)
+    advance_test.go:257: task start --decision sign-off-1: exit 1, guildhall: interp: app/t-1 step publish: not supported by the engine: publishing without a forge
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.381s
+FAIL

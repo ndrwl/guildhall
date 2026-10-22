@@ -57,8 +57,11 @@ const (
 	WaitAttempt Wait = "attempt"
 	// WaitDecision: a decision is open for the Guildmaster.
 	WaitDecision Wait = "decision"
-	// WaitDirector: an attempt failed or stopped; the Director decides what happens next.
+	// WaitDirector: an attempt failed or stopped, or the forge refused or the Guildmaster held a merge; the
+	// Director decides what happens next.
 	WaitDirector Wait = "director"
+	// WaitDone: deliver merged the task's pull request and the task is done.
+	WaitDone Wait = "done"
 )
 
 // Next is where a task stands after an advance.
@@ -74,7 +77,7 @@ type Next struct {
 
 var (
 	// ErrUnsupported reports a step, actor or outcome the engine does not run yet, such as an engine
-	// step other than deliver, a Director stage, a rejected outcome or a loop back to a non-Artisan step.
+	// step other than publish and deliver, a Director stage, a rejected outcome or a loop back to a non-Artisan step.
 	ErrUnsupported = errors.New("not supported by the engine")
 	// ErrSpecGate reports an accepted spec whose digest is not the one the Guildmaster approved.
 	ErrSpecGate = errors.New("spec gate")
@@ -104,7 +107,10 @@ var (
 //   - an Artisan step records a new attempt, renders its prompt (Prompter) and launches it (Launcher),
 //     then waits for its result;
 //   - a Guildmaster step opens a typed decision bound to its subject and waits for the answer;
-//   - deliver under the "approval" merge policy opens the merge decision and waits.
+//   - publish pushes the head to the task branch and records its pull request (Forge);
+//   - deliver under the "approval" merge policy opens the merge decision and waits; a merge answer merges the
+//     published pull request through Forge and closes the task, and a hold answer or a refused merge waits for
+//     the Director (docs/interpreter.md#publish-and-deliver).
 //
 // A succeeded result copies the attempt's outputs into DocumentDir and records them as documents, the
 // first under the step's output port; a failed or stopped attempt waits for the Director.
@@ -130,7 +136,7 @@ var (
 // recorded binding, and refuses one that fails with ErrPreparation, launching and removing nothing.
 // Only an unpublished prompt.partial, which no launch was given, is removed and rendered again.
 //
-// The checks gate, publish, validate, automatic merging, Director stages and loops back to a step not run
+// The checks gate, validate, automatic merging, Director stages and loops back to a step not run
 // by an Artisan are refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
 type Engine struct {
 	Records  Records
@@ -160,6 +166,8 @@ type Engine struct {
 	// is full. Rebases classifies a new head against the last reviewed range (docs/interpreter.md#rebase-aware-review).
 	Base    func(repository string) (string, error)
 	Rebases Rebases
+	// Forge publishes and merges a repository's task branches; nil refuses publish and merging with ErrUnsupported.
+	Forge Forge
 }
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
@@ -284,6 +292,8 @@ func (r *run) step(s workflow.Step) (done bool, next Next, err error) {
 		return r.artisan(s)
 	case actor == workflow.GuildmasterActor:
 		return r.guildmaster(s)
+	case actor == workflow.EngineActor && s.Type == "publish":
+		return r.publish(s)
 	case actor == workflow.EngineActor && s.Type == "deliver":
 		return r.deliver(s)
 	default:
@@ -752,51 +762,6 @@ func (r *run) accept(s workflow.Step, d store.Decision) error {
 	r.addDocument(doc)
 	return nil
 }
-
-// deliver opens the merge decision under the approval policy; merging itself is later work.
-func (r *run) deliver(s workflow.Step) (bool, Next, error) {
-	i := slices.IndexFunc(r.e.Config.Repositories, func(c config.Repository) bool { return c.ID == r.task.Repository })
-	if i < 0 {
-		return false, Next{}, fmt.Errorf("repository %s is not configured", r.task.Repository)
-	}
-	if policy := r.e.Config.Repositories[i].MergePolicy; policy != config.MergeApproval {
-		return false, Next{}, fmt.Errorf("%w: merge policy %q", ErrUnsupported, policy)
-	}
-	inputs, err := r.inputs(s)
-	if err != nil {
-		return false, Next{}, err
-	}
-	in, err := r.input(s, "head")
-	if err != nil {
-		return false, Next{}, err
-	}
-	h, err := r.head(in)
-	if err != nil {
-		return false, Next{}, err
-	}
-	if err := r.gate(s, h); err != nil {
-		return false, Next{}, err
-	}
-	d := r.latestDecision(s.ID)
-	switch {
-	case d == nil || d.Subject == nil || d.Subject.Digest != h:
-		k := r.nextRound(s.ID)
-		ask := render.Ask{
-			Question: fmt.Sprintf("Merge needed for %s/%s, step %s, attempt %d: head %s.\n\nAnswer with one of: %s.\n",
-				r.task.Repository, r.task.ID, s.ID, k, h, strings.Join(mergeOptions, ", ")),
-			Options: mergeOptions,
-		}
-		next, err := r.open(s, k, inputs, ask)
-		return false, next, err
-	case !d.Answered:
-		return false, Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(*d, s.ID)
-	default:
-		return false, Next{}, fmt.Errorf("%w: delivering after the merge decision", ErrUnsupported)
-	}
-}
-
-// mergeOptions are the answers the merge decision offers.
-var mergeOptions = []string{"merge", "hold"}
 
 // inputs resolves every wired input of s, in the kind's port order, to its latest recorded document,
 // applying the spec gate to accepted specs.

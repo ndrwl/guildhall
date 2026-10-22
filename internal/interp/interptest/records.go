@@ -229,6 +229,27 @@ func list[T any](r *Records, repository, taskID string, all []T, key func(T) (st
 	return out, nil
 }
 
+// SetTaskState implements interp.Records.
+func (r *Records) SetTaskState(mutationID, repository, taskID string, state store.TaskState) (store.Receipt, error) {
+	if state != store.TaskDone && state != store.TaskCancelled {
+		return store.Receipt{}, fmt.Errorf("%w: task state %q", store.ErrInvalid, state)
+	}
+	req := store.Task{Repository: repository, ID: taskID, State: state}
+	return r.mutate(mutationID, "set-task-state", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, "task"
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		}
+		t.State = state
+		r.tasks[[2]string{repository, taskID}] = t
+		return nil
+	})
+}
+
 // StartAttempt implements interp.Records.
 func (r *Records) StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error) {
 	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
@@ -601,5 +622,27 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if got, err := h.Records.FullReviews("app", "t7"); err != nil || !slices.Equal(got, wantList) {
 			t.Errorf("FullReviews = %+v, %v", got, err)
 		}
+	})
+
+	t.Run("closes a task once", func(t *testing.T) {
+		h := setup(t)
+		_, err := h.Records.SetTaskState("close-x", "app", "t8", store.TaskDone)
+		want(t, "SetTaskState of an unknown task", err, store.ErrNotFound)
+		_, err = h.Records.SetTaskState("close-open", "app", "t7", store.TaskOpen)
+		want(t, "SetTaskState to open", err, store.ErrInvalid)
+		rc, err := h.Records.SetTaskState("close-1", "app", "t7", store.TaskDone)
+		if err != nil || rc.Record != "task" || rc.Repository != "app" || rc.TaskID != "t7" {
+			t.Fatalf("SetTaskState = %+v, %v", rc, err)
+		}
+		if replay, err := h.Records.SetTaskState("close-1", "app", "t7", store.TaskDone); err != nil || replay != rc {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		if got, err := h.Records.Task("app", "t7"); err != nil || got.State != store.TaskDone {
+			t.Errorf("Task after closing = %+v, %v", got, err)
+		}
+		_, err = h.Records.SetTaskState("close-2", "app", "t7", store.TaskCancelled)
+		want(t, "SetTaskState of a closed task", err, store.ErrInvalid)
+		_, err = h.Records.StartAttempt("start-closed", "app", "t7", "plan")
+		want(t, "StartAttempt on a closed task", err, store.ErrInvalid)
 	})
 }

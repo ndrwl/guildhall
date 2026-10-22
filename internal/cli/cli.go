@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"io"
 	"os"
 	"os/exec"
@@ -81,6 +82,9 @@ type App struct {
 	Executable func() (string, error)
 	// Copier reaches enrolled machines for steward rollouts; nil means scp, found with LookPath.
 	Copier steward.Copier
+	// Forge publishes and merges task branches for task start and step done; nil means forge.GitHub over git
+	// and gh found on PATH.
+	Forge interp.Forge
 }
 
 // New returns an App wired to the real process environment.
