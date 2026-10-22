@@ -132,7 +132,7 @@ func TestRuntimeWaitsForRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer u.Close()
+	defer func() { _ = u.Close() }()
 	cmd := artisantest.Command(inv, artisantest.Worker{Grandchildren: 1})
 	_, err = artisan.StartRecorded(u, cmd, func(id artisan.Identity) error {
 		time.Sleep(200 * time.Millisecond)
