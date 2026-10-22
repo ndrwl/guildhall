@@ -604,8 +604,8 @@ func TestSafetyCrashRecovery(t *testing.T) {
 }
 
 // TestSafetyZeroIdleTurns: with one open decision and nothing else, a ready Director takes no turn and is sent no
-// wake over a 30 s hold; a Guildmaster note then records exactly one wake, which a foreground session with no pane
-// queues (docs/director.md#safety-checks).
+// wake over a 30 s hold; a Guildmaster note then records exactly one wake, which a session started without --tab
+// queues for no pane (docs/director.md#safety-checks).
 func TestSafetyZeroIdleTurns(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "", "")
@@ -646,7 +646,7 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 				got = append(got, w)
 			}
 		}
-		// A foreground session binds no pane yet, so the one wake is recorded queued and types nothing; the note
+		// A session started without --tab binds no pane, so the one wake is recorded queued and types nothing; the note
 		// waits for the Director's next turn.
 		if len(got) != 1 || got[0].Decision != store.WakeQueued || got[0].Reason != "no pane" {
 			t.Errorf("wakes for the note %+v, want exactly one, queued for no pane", got)

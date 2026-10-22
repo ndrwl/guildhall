@@ -188,7 +188,7 @@ Each check counts the stand-in's turns, one for its first message and one for ea
   The watcher then takes the task through the rest of the fake-straight workflow, the check answering each decision as the Director would, with the same `decide answer` and `task start --decision` commands, to the build attempt, the sign-off and the deliver step's merge decision, the workflow's final wait.
 - Zero idle turns: with one open decision and nothing else, a ready Director takes no turn and is sent no wake over a 30 s hold.
   A Guildmaster note then records exactly one wake.
-  A foreground session binds no pane, so that wake is queued and types nothing; the check that the wake types one line, which the runtime takes as one turn, comes with the Director's Herdr tab.
+  A session started without `--tab` binds no pane, so that wake is queued and types nothing; that the wake types one line, which the runtime takes as one turn, is not checked because CI runners have no Herdr host.
 
 A managed copy's guard rails, a Director-edited `managed.toml` refused with an alert, are checked when managed mode lands.
 
