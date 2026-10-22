@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // SessionRuntime is what the Director session supervisor needs from a runtime adapter.
@@ -214,7 +215,7 @@ func runSession(t *testing.T, s SessionSubject, spec adapter.SessionSpec, stdin 
 	go func() { done <- c.Wait() }()
 	select {
 	case err = <-done:
-	case <-time.After(time.Minute):
+	case <-time.After(testenv.Ceiling(time.Minute)):
 		_ = c.Process.Kill()
 		t.Fatalf("session did not end:\n%s", out.String())
 	}

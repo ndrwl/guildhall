@@ -14,6 +14,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // The resume command a pane registers starts with a plain command name, as
@@ -72,12 +73,12 @@ func launcherProcess(t *testing.T, o ownedAttempt) (*exec.Cmd, chan struct{}, *b
 	t.Cleanup(func() {
 		select {
 		case <-exited:
-		case <-time.After(30 * time.Second):
+		case <-time.After(testenv.Ceiling(30 * time.Second)):
 			_ = run.Process.Kill()
 			t.Errorf("the launcher did not exit; stderr %s", runErr.String())
 		}
 	})
-	for end := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(30 * time.Second)); ; time.Sleep(100 * time.Millisecond) {
 		if time.Now().After(end) {
 			t.Fatalf("the launcher did not record a running attempt; stderr %s", runErr.String())
 		}
@@ -96,7 +97,7 @@ func launcherProcess(t *testing.T, o ownedAttempt) (*exec.Cmd, chan struct{}, *b
 // inventoryOf waits for n processes recorded in inv and returns them.
 func inventoryOf(t *testing.T, inv string, n int) []artisan.Identity {
 	t.Helper()
-	for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(30 * time.Second)); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		recs, _ := artisan.ReadProcessRecords(inv)
 		var ids []artisan.Identity
 		for _, r := range recs {

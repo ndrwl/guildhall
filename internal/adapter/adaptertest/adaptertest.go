@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // Runtime is what the launcher needs from a runtime adapter: its declared
@@ -149,7 +150,7 @@ func RunConformance(t *testing.T, newSubject func(t *testing.T) Subject) {
 		}
 		select {
 		case <-p.Exited():
-		case <-time.After(30 * time.Second):
+		case <-time.After(testenv.Ceiling(30 * time.Second)):
 			t.Fatal("runtime did not exit after Stop")
 		}
 		if _, err := os.Stat(spec.ResultFile); !errors.Is(err, fs.ErrNotExist) {
@@ -170,7 +171,7 @@ func RunConformance(t *testing.T, newSubject func(t *testing.T) Subject) {
 		p := start(t, s, spec)
 		select {
 		case <-p.Exited():
-		case <-time.After(time.Minute):
+		case <-time.After(testenv.Ceiling(time.Minute)):
 			t.Fatal("second run did not exit")
 		}
 		after, err := os.ReadFile(spec.ResultFile)

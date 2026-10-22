@@ -16,6 +16,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // ResultBody is the result a Worker publishes; Files counts only it as valid.
@@ -312,7 +313,7 @@ func (h Harness) launch(t *testing.T, worker func(StopFiles) Worker) *launch {
 	w := worker(files)
 	w.ResultBody = files.Body
 	if w.Lifetime == 0 {
-		w.Lifetime = 30 * time.Second
+		w.Lifetime = testenv.Ceiling(30 * time.Second)
 	}
 	ladder := h.Ladder
 	if ladder == (artisan.Ladder{}) {

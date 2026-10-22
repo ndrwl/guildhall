@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // Client.run is the client's process boundary: it runs argv with exactly env
@@ -114,10 +116,10 @@ func testRunner(t *testing.T, newRunner func(t *testing.T) runnerUnderTest) {
 			_, _, exit, err := r.run(ctx, argv, minimalEnv())
 			done <- ret{exit, err}
 		}()
-		deadline := time.Now().Add(30 * time.Second)
+		deadline := time.Now().Add(testenv.Ceiling(30 * time.Second))
 		for !r.started() {
 			if time.Now().After(deadline) {
-				t.Fatal("hung program did not start within 30s")
+				t.Fatalf("hung program did not start within %v", testenv.Ceiling(30*time.Second))
 			}
 			select {
 			case got := <-done:
@@ -131,8 +133,8 @@ func testRunner(t *testing.T, newRunner func(t *testing.T) runnerUnderTest) {
 			if !errors.Is(got.err, context.Canceled) {
 				t.Errorf("run after cancellation = exit %d, %v; want an error matching context.Canceled", got.exit, got.err)
 			}
-		case <-time.After(10 * time.Second):
-			t.Fatal("run did not return within 10s of cancellation")
+		case <-time.After(testenv.Ceiling(10 * time.Second)):
+			t.Fatalf("run did not return within %v of cancellation", testenv.Ceiling(10*time.Second))
 		}
 	})
 }

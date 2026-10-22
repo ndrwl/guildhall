@@ -21,6 +21,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/strictjson"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // childEnv makes the test binary act as a worker that reads one copied input once released.
@@ -37,7 +38,7 @@ func TestMain(m *testing.M) {
 // child waits for the release file, then copies the input it was given to out.
 func child(args []string) int {
 	input, release, out := args[0], args[1], args[2]
-	for deadline := time.Now().Add(time.Minute); !exists(release); time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(testenv.Ceiling(time.Minute)); !exists(release); time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			return 2
 		}

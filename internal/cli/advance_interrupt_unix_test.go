@@ -17,6 +17,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // hangingMerge is a forge whose merge answers only when its context ends, as a hung gh does.
@@ -75,7 +76,7 @@ func TestInterruptedAdvanceReleasesTheTask(t *testing.T) {
 		select {
 		case <-merging:
 			_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
-		case <-time.After(time.Minute):
+		case <-time.After(testenv.Ceiling(time.Minute)):
 		}
 	}()
 	if code, out, _ := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "deliver-1", "t-1")...)...); code == 0 {
@@ -125,7 +126,7 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 	interrupted := make(chan time.Time, 1)
 	go func() {
 		defer release()
-		for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		for end := time.Now().Add(testenv.Ceiling(time.Minute)); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
 			if _, err := os.Stat(filepath.Join(k.Dir(d.state), launch.LogFile)); err == nil {
 				interrupted <- time.Now()
 				_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
@@ -146,7 +147,7 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 		t.Fatal("task start returned before it launched the plan attempt")
 	}
 	var msg store.Message
-	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err == nil {
 			msg, err = s.Message("app.t-1.attempt-failed.plan-1")
@@ -157,7 +158,7 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 		}
 		if time.Now().After(end) {
 			log, _ := os.ReadFile(filepath.Join(k.Dir(d.state), launch.LogFile))
-			t.Fatalf("no attempt-failed message within a minute: %v; plan-1 launcher log:\n%s", err, log)
+			t.Fatalf("no attempt-failed message within %v: %v; plan-1 launcher log:\n%s", testenv.Ceiling(time.Minute), err, log)
 		}
 	}
 	if msg.Type != "attempt-failed" {

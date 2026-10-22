@@ -18,6 +18,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -129,7 +130,7 @@ func listen(t *testing.T, path string, h artisan.EndpointHandler) *artisan.Endpo
 
 func call(t *testing.T, path string, op artisan.EndpointOp) (artisan.EndpointState, error) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 	defer cancel()
 	return artisan.Call(ctx, path, testKey, mustSelf(t), op)
 }
@@ -182,8 +183,8 @@ func startHolder(t *testing.T, path string) *exec.Cmd {
 		if err != nil {
 			t.Fatalf("holder did not bind %s: %v", path, err)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatalf("holder did not report ready within 10s for %s", path)
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
+		t.Fatalf("holder did not report ready within %v for %s", testenv.Ceiling(10*time.Second), path)
 	}
 	return cmd
 }
@@ -325,7 +326,7 @@ func TestEndpointServesStatusStopAndCancel(t *testing.T) {
 		t.Errorf("unknown op: %v, want ErrEndpointRequest", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 	defer cancel()
 	self := mustSelf(t)
 	other := testKey
@@ -365,7 +366,7 @@ func TestEndpointRejectsMismatchedTargetsBeforeDispatch(t *testing.T) {
 			{"wrong attempt", other, replacement},
 		} {
 			t.Run(string(op)+"/"+target.name, func(t *testing.T) {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 				defer cancel()
 				if _, err := artisan.Call(ctx, path, target.key, target.launcher, op); !errors.Is(err, artisan.ErrEndpointMismatch) {
 					t.Errorf("Call = %v, want ErrEndpointMismatch", err)
@@ -390,7 +391,7 @@ func TestEndpointRejectsMismatchedTargetsBeforeDispatch(t *testing.T) {
 		t.Fatalf("rejected requests reached handlers: status=%d stop=%d cancel=%d", s, p, c)
 	}
 	for _, op := range []artisan.EndpointOp{artisan.OpStatus, artisan.OpStop, artisan.OpCancel} {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(10*time.Second))
 		_, err := artisan.Call(ctx, path, testKey, replacement, op)
 		cancel()
 		if err != nil {
@@ -419,7 +420,7 @@ func rawExchange(t *testing.T, path, request string) map[string]any {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
-	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+	_ = c.SetDeadline(time.Now().Add(testenv.Ceiling(10 * time.Second)))
 	// Requests stay within the server's read budget so closing the socket
 	// with unread bytes cannot reset the connection and discard its reply.
 	_, writeErr := c.Write([]byte(request))
@@ -482,8 +483,8 @@ func TestEndpointAnswersStatusDuringBlockedStop(t *testing.T) {
 	}()
 	select {
 	case <-h.entered:
-	case <-time.After(10 * time.Second):
-		t.Fatal("stop did not reach the handler within 10s")
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
+		t.Fatalf("stop did not reach the handler within %v", testenv.Ceiling(10*time.Second))
 	}
 	if st, err := call(t, path, artisan.OpStatus); err != nil || st.Phase != "running" {
 		t.Errorf("status during a blocked stop = %+v, %v", st, err)
@@ -499,8 +500,8 @@ func TestEndpointAnswersStatusDuringBlockedStop(t *testing.T) {
 		if err != nil {
 			t.Errorf("released stop: %v", err)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("released stop was not answered within 10s")
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
+		t.Fatalf("released stop was not answered within %v", testenv.Ceiling(10*time.Second))
 	}
 }
 

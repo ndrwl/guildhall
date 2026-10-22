@@ -19,6 +19,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // advanceEnv makes the test binary play `guildhall step done` and `guildhall task start` for Run's advance:
@@ -54,7 +55,7 @@ func mainIfAdvance() {
 		os.Exit(1)
 	}
 	seen := advanceSeen{Argv: os.Args[1:]}
-	for end := time.Now().Add(30 * time.Second); d.Until != "" && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(deadline); d.Until != "" && time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if _, err := os.Stat(d.Until); err == nil {
 			seen.Unblocked = true
 			break
@@ -65,7 +66,7 @@ func mainIfAdvance() {
 	if err != nil {
 		seen.ObservedErrs = append(seen.ObservedErrs, err.Error())
 	}
-	if s, err := store.Open(d.Store, store.Options{ReadOnly: true}); err != nil {
+	if s, err := store.Open(d.Store, store.Options{ReadOnly: true, LockTimeout: storeWait}); err != nil {
 		seen.ObservedErrs = append(seen.ObservedErrs, err.Error())
 	} else {
 		if as, err := s.Attempts(key.Repository, key.TaskID); err == nil && len(as) == 1 {
@@ -304,10 +305,10 @@ func TestProcessLaunchReturnsOnceItsStoppedLauncherReleases(t *testing.T) {
 	if err == nil {
 		t.Fatal("Launch succeeded past its StartTimeout")
 	}
-	if took > 10*time.Second {
+	if took > testenv.Ceiling(10*time.Second) {
 		t.Errorf("Launch took %v to stop its launcher; want no wait for the launcher's advance", took)
 	}
-	s, err := store.Open(p.Store, store.Options{ReadOnly: true})
+	s, err := store.Open(p.Store, store.Options{ReadOnly: true, LockTimeout: storeWait})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,12 +319,12 @@ func TestProcessLaunchReturnsOnceItsStoppedLauncherReleases(t *testing.T) {
 		t.Fatalf("ownership %+v, %v; attempts %+v, %v; want released and stopped", o, oerr, as, aerr)
 	}
 	id := artisan.Identity(o.LauncherIdentity)
-	for end := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(deadline); ; time.Sleep(50 * time.Millisecond) {
 		if lv, err := artisan.Probe(id); err == nil && lv == artisan.Gone {
 			break
 		}
 		if time.Now().After(end) {
-			t.Fatalf("launcher %d did not exit within a minute", id.PID)
+			t.Fatalf("launcher %d did not exit within %v", id.PID, deadline)
 		}
 	}
 	got := advances(t, record)

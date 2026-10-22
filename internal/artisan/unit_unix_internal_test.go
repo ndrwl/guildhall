@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"golang.org/x/sys/unix"
 )
 
@@ -69,7 +70,7 @@ func TestStartRollbackKillsDescendants(t *testing.T) {
 	u.lookupGroup = func(pid int) (Identity, int, error) {
 		select {
 		case <-u.done:
-		case <-time.After(10 * time.Second):
+		case <-time.After(testenv.Ceiling(10 * time.Second)):
 			return Identity{}, 0, errors.New("worker did not exit")
 		}
 		b, err := os.ReadFile(pidFile)
@@ -94,7 +95,7 @@ func TestStartRollbackKillsDescendants(t *testing.T) {
 	if child.PID == 0 {
 		t.Fatal("child identity was not recorded")
 	}
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if lv, _ := Probe(child); lv == Gone {
 			return
 		}
@@ -155,7 +156,7 @@ func exitedBeforeLookup(t *testing.T) *groupUnit {
 	u.lookupGroup = func(pid int) (Identity, int, error) {
 		select {
 		case <-u.done:
-		case <-time.After(10 * time.Second):
+		case <-time.After(testenv.Ceiling(10 * time.Second)):
 			return Identity{}, 0, errors.New("worker did not exit")
 		}
 		return lookupGroup(pid)
@@ -177,7 +178,7 @@ func TestStartWorkerExitedBeforeLookup(t *testing.T) {
 	}
 	select {
 	case <-u.Exited():
-	case <-time.After(10 * time.Second):
+	case <-time.After(testenv.Ceiling(10 * time.Second)):
 		t.Fatal("Exited did not close")
 	}
 	if lv, err := Probe(id); lv != Gone || err != nil {

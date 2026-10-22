@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/steward"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // Harness gives the contract suite a fresh Copier and the enrolled machines it reaches.
@@ -144,7 +145,7 @@ func RunCopierContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 					if !errors.Is(err, context.DeadlineExceeded) {
 						t.Errorf("hung %s: error %v, want context.DeadlineExceeded", name, err)
 					}
-				case <-time.After(30 * time.Second):
+				case <-time.After(testenv.Ceiling(30 * time.Second)):
 					t.Fatalf("hung %s did not return after its deadline", name)
 				}
 				cancel()

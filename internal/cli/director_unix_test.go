@@ -13,6 +13,7 @@ import (
 
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/skills"
 )
 
@@ -39,7 +40,7 @@ func TestDirectorStartRecordsATerminatedSessionStopped(t *testing.T) {
 	done := make(chan int, 1)
 	go func() { done <- app.Run([]string{"director", "start", "--foreground", "--copy", dir}) }()
 	var code int
-	deadline := time.After(time.Minute)
+	deadline := time.After(testenv.Ceiling(time.Minute))
 	for ended := false; !ended; {
 		select {
 		case code = <-done:
