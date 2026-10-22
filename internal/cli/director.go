@@ -200,8 +200,12 @@ func admitConfig(copyDir, cfgPath string) (*config.Config, error) {
 }
 
 // superviseSession records a new session as recovering, renders it, runs the runtime in it as this process's
-// child and records the session stopped when the runtime ends.
+// child and records the session stopped when the runtime ends. From before the session is recorded until it is
+// recorded stopped the supervisor handles the session signals rather than dying of them.
 func (a *App) superviseSession(p startPlan, copyDir, storePath, state string) int {
+	signals := make(chan os.Signal, 4)
+	signal.Notify(signals, sessionSignals...)
+	defer signal.Stop(signals)
 	self, err := artisan.Self()
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err))
@@ -225,15 +229,16 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string) in
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: record session: %w", err))
 	}
-	code := a.runSession(p, session.Number, copyDir, storePath, state)
+	code := a.runSession(p, session.Number, copyDir, storePath, state, signals)
 	if err := stopSession(storePath, session.Number); err != nil {
 		return a.fail(fmt.Errorf("director start: record session %d stopped: %w", session.Number, err))
 	}
 	return code
 }
 
-// runSession renders session n and runs its runtime to the end, returning the supervisor's exit status.
-func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string) int {
+// runSession renders session n and runs its runtime to the end, returning the supervisor's exit status. A signal
+// received before the runtime starts ends the session with no runtime started.
+func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, signals <-chan os.Signal) int {
 	status, err := readDirectorStatus(context.Background(), storePath, state)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: in-flight snapshot: %w", err))
@@ -266,11 +271,13 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string) i
 	c := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
 	c.Dir, c.Env = cmd.Dir, append(os.Environ(), cmd.Env...)
 	c.Stdin, c.Stdout, c.Stderr = a.Stdin, a.Stdout, a.Stderr
+	select {
+	case s := <-signals:
+		return a.fail(fmt.Errorf("director start: ended by %v before the runtime started", s))
+	default:
+	}
 	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
 	// way the supervisor outlives the runtime to record the end.
-	signals := make(chan os.Signal, 4)
-	signal.Notify(signals, sessionSignals...)
-	defer signal.Stop(signals)
 	if err := c.Start(); err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err))
 	}
