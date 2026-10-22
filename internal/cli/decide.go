@@ -159,29 +159,36 @@ func findDecision(s *store.Store, repo, task, id string) (store.Decision, error)
 	return store.Decision{}, fmt.Errorf("decision %q of %s/%s: %w", id, repo, task, store.ErrNotFound)
 }
 
-// readAnswer reads an answer from a file, or from standard input for "-".
-// As for message envelopes, a leading UTF-8 byte order mark is dropped and UTF-16 is refused;
-// CRLF line endings become LF, so the same words record the same answer on every platform.
+// readAnswer reads an answer from a file, or from standard input for "-", with readText's rules; the store
+// enforces its limit on the result.
 func (a *App) readAnswer(name string) (string, error) {
+	return a.readText("answer", name, store.MaxTextBytes)
+}
+
+// readText reads the text named what from a file, or from standard input for "-".
+// As for message envelopes, a leading UTF-8 byte order mark is dropped and UTF-16 is refused;
+// CRLF line endings become LF, so the same words record the same text on every platform.
+// It reads at most enough for limit bytes of LF text; the caller checks the result's size.
+func (a *App) readText(what, name string, limit int) (string, error) {
 	r := a.Stdin
 	if name != "-" {
 		f, err := os.Open(name)
 		if err != nil {
-			return "", fmt.Errorf("answer: %w", err)
+			return "", fmt.Errorf("%s: %w", what, err)
 		}
 		defer func() { _ = f.Close() }()
 		r = f
 	}
-	// CRLF endings may double the size the store accepts; the store enforces the limit on the result.
-	limit := 2*store.MaxTextBytes + 3
-	data, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
+	// CRLF endings may double the size the limit allows.
+	most := 2*limit + 3
+	data, err := io.ReadAll(io.LimitReader(r, int64(most)+1))
 	switch {
 	case err != nil:
-		return "", fmt.Errorf("answer: %w", err)
-	case len(data) > limit:
-		return "", fmt.Errorf("answer is larger than the limit of %d bytes", store.MaxTextBytes)
+		return "", fmt.Errorf("%s: %w", what, err)
+	case len(data) > most:
+		return "", fmt.Errorf("%s is larger than the limit of %d bytes", what, limit)
 	case bytes.HasPrefix(data, []byte{0xff, 0xfe}) || bytes.HasPrefix(data, []byte{0xfe, 0xff}):
-		return "", errors.New("answer is UTF-16; write it as UTF-8, for example with Set-Content -Encoding utf8")
+		return "", fmt.Errorf("%s is UTF-16; write it as UTF-8, for example with Set-Content -Encoding utf8", what)
 	}
 	data = bytes.TrimPrefix(data, []byte("\ufeff"))
 	return string(bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))), nil

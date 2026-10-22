@@ -155,5 +155,9 @@ func parseScript(prefix, text string) ([][]string, error) {
 	return steps, nil
 }
 
+// TurnEndHook reports false: the fake Director session has no end-of-turn hook; its script runs `guildhall
+// director turn-ended` itself where a test needs a turn to end.
+func (Adapter) TurnEndHook() bool { return false }
+
 // SessionFiles are the files a fake Director session needs beside its skills: none.
 func (Adapter) SessionFiles(string) map[string][]byte { return nil }

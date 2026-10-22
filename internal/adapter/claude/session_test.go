@@ -47,13 +47,13 @@ func TestSessionCommand(t *testing.T) {
 		t.Errorf("relative claude: %+v, %v", cmd, err)
 	}
 	a := claude.Adapter{}
-	if a.Program() != "claude" || a.SkillsDir() != ".claude/skills" {
-		t.Errorf("Program, SkillsDir = %q, %q", a.Program(), a.SkillsDir())
+	if a.Program() != "claude" || a.SkillsDir() != ".claude/skills" || !a.TurnEndHook() {
+		t.Errorf("Program, SkillsDir, TurnEndHook = %q, %q, %v; want the Stop hook", a.Program(), a.SkillsDir(), a.TurnEndHook())
 	}
 }
 
-// TestSessionSettingsGolden pins the session's Claude Code settings: guildhall and read-only git allowed, and
-// no edit of the copy's config.toml or managed.toml.
+// TestSessionSettingsGolden pins the session's Claude Code settings: guildhall and read-only git allowed, no
+// edit of the copy's config.toml or managed.toml, and the Stop hook running guildhall director turn-ended.
 func TestSessionSettingsGolden(t *testing.T) {
 	files := claude.Adapter{}.SessionFiles("/home/g/copy")
 	if len(files) != 1 {

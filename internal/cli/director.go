@@ -2,14 +2,12 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -20,13 +18,12 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
-	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/herdr"
-	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// director runs `guildhall director status|start|ready|pause|resume|stop` (docs/director.md).
+// director runs `guildhall director status|start|ready|pause|resume|stop|handoff|reload|turn-ended`
+// (docs/director.md).
 func (a *App) director(args []string) int {
 	if len(args) > 0 {
 		switch args[0] {
@@ -42,9 +39,15 @@ func (a *App) director(args []string) int {
 			return a.directorResume(args[1:])
 		case "stop":
 			return a.directorStop(args[1:])
+		case "handoff":
+			return a.directorHandoff(args[1:])
+		case "reload":
+			return a.directorReload(args[1:])
+		case "turn-ended":
+			return a.directorTurnEnded(args[1:])
 		}
 	}
-	return a.usageError("director: the commands are status, start, ready, pause, resume and stop")
+	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, handoff, reload and turn-ended")
 }
 
 // fakeDirector runs the fake Director session: `guildhall fake-director --role <file> <first message>`.
@@ -401,169 +404,6 @@ func admitConfig(copyDir, cfgPath string) (*config.Config, error) {
 		return nil, errors.New("inline [managed] settings: managed mode is not built yet, so a managed copy cannot start (guildhall director enrol)")
 	}
 	return cfg, nil
-}
-
-// superviseSession records a new session as recovering, renders it, runs the runtime in it as this process's
-// child and records the session stopped when the runtime ends. From before the session is recorded until it is
-// recorded stopped the supervisor handles the session signals rather than dying of them.
-func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pane store.DirectorPane) int {
-	signals := make(chan os.Signal, 4)
-	signal.Notify(signals, sessionSignals...)
-	defer signal.Stop(signals)
-	self, err := artisan.Self()
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
-	}
-	data, err := json.Marshal(p.cfg)
-	if err != nil {
-		return a.fail(err)
-	}
-	session, err := withStore(storePath, false, func(s *store.Store) (store.DirectorSession, error) {
-		d := store.DirectorSession{State: store.DirectorRecovering, Identity: store.ProcessIdentity(self),
-			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: pane}
-		newest, err := checkSupersede(s)
-		if err != nil {
-			return d, err
-		}
-		d.Number = newest + 1
-		_, err = s.StartDirectorSession(d)
-		return d, err
-	})
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: record session: %w", err))
-	}
-	code := a.runSession(p, session.Number, copyDir, storePath, state, signals)
-	if err := stopSession(storePath, session.Number); err != nil {
-		return a.fail(fmt.Errorf("director start: record session %d stopped: %w", session.Number, err))
-	}
-	return code
-}
-
-// runSession renders session n and runs its runtime to the end, returning the supervisor's exit status. A signal
-// received before the runtime starts ends the session with no runtime started.
-func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, signals <-chan os.Signal) int {
-	status, err := readDirectorStatus(context.Background(), storePath, state, a.Now)
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: in-flight snapshot: %w", err))
-	}
-	var inFlight []string
-	for _, it := range status.NeedsMe {
-		inFlight = append(inFlight, fmt.Sprintf("%s: %s; run `%s`", it.Kind, oneLine(it.Reason), it.Command))
-	}
-	cfgDir := filepath.Dir(p.cfgPath)
-	role := baselineSource(filepath.Join(cfgDir, "baseline"), p.baseline, "roles/director.md")
-	var model, effort string
-	if d := p.cfg.Director; d != nil {
-		if d.Role != "" {
-			role = render.Source{Name: d.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(d.Role)), Root: "copy"}
-		}
-		model, effort = d.Model, d.Effort
-	}
-	dir := filepath.Join(copyDir, "director", fmt.Sprintf("session-%d", n))
-	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
-		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
-	}
-	cmd, err := p.runtime.Session(adapter.SessionSpec{Dir: dir, Copy: copyDir, RolePrompt: r.RolePath,
-		FirstMessage: render.StartupMessage, Model: model, Effort: effort})
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
-	}
-	_, _ = fmt.Fprintf(a.Stdout, "session: %d (%s)\n", n, dir)
-	c := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
-	c.Dir, c.Env = cmd.Dir, append(os.Environ(), cmd.Env...)
-	c.Stdin, c.Stdout, c.Stderr = a.Stdin, a.Stdout, a.Stderr
-	select {
-	case s := <-signals:
-		return a.fail(fmt.Errorf("director start: ended by %v before the runtime started", s))
-	default:
-	}
-	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
-	// way the supervisor outlives the runtime to record the end.
-	if err := c.Start(); err != nil {
-		return a.fail(fmt.Errorf("director start: run the runtime: %w", err))
-	}
-	ended, stopped, err := a.waitSession(c, signals, storePath, n)
-	var exit *exec.ExitError
-	switch {
-	case stopped:
-		_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by director stop\n", n)
-		return 0
-	case ended != nil:
-		return a.fail(fmt.Errorf("director start: ended by %v", ended))
-	case errors.As(err, &exit):
-		return a.fail(fmt.Errorf("director start: the runtime exited with status %d", exit.ExitCode()))
-	case err != nil:
-		return a.fail(fmt.Errorf("director start: run the runtime: %w", err))
-	}
-	return 0
-}
-
-// stopKill is how long a runtime the supervisor ended for a stop has to exit before it is killed.
-const stopKill = 10 * time.Second
-
-// waitSession waits for the started runtime c of session n to end, passing it each termination among signals,
-// and returns the last termination passed on, if any, and whether it ended the runtime for a stop, with c's end.
-// Every App.SessionPoll it reads the session from the store at storePath: once `director stop` has recorded it
-// stopping, it ends the runtime after App.StopGrace, or at once for stop --now, and kills it if it has not exited
-// stopKill later.
-func (a *App) waitSession(c *exec.Cmd, signals <-chan os.Signal, storePath string, n int) (os.Signal, bool, error) {
-	waited := make(chan error, 1)
-	go func() { waited <- c.Wait() }()
-	poll, grace := a.SessionPoll, a.StopGrace
-	if poll <= 0 {
-		poll = time.Second
-	}
-	if grace <= 0 {
-		grace = 60 * time.Second
-	}
-	tick := time.NewTicker(poll)
-	defer tick.Stop()
-	var ended os.Signal
-	var stopping, stopped time.Time
-	for {
-		select {
-		case s := <-signals:
-			if terminate(c.Process, s) {
-				ended = s
-			}
-		case <-tick.C:
-			if !stopped.IsZero() {
-				if time.Since(stopped) >= stopKill {
-					_ = c.Process.Kill()
-				}
-				continue
-			}
-			d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) { return s.DirectorSession(n) })
-			if err != nil || d.State != store.DirectorStopping {
-				continue
-			}
-			if stopping.IsZero() {
-				stopping = time.Now()
-			}
-			// A plain stop followed by stop --now shortens the grace.
-			if d.StopNow || time.Since(stopping) >= grace {
-				endRuntime(c.Process)
-				stopped = time.Now()
-			}
-		case err := <-waited:
-			return ended, !stopped.IsZero(), err
-		}
-	}
-}
-
-// stopSession records session n stopped unless it already is or a newer session superseded it.
-func stopSession(storePath string, n int) error {
-	_, err := withStore(storePath, false, func(s *store.Store) (struct{}, error) {
-		d, err := s.LatestDirectorSession()
-		if err != nil || d.Number != n || d.State == store.DirectorStopped {
-			return struct{}{}, err
-		}
-		_, err = s.SetDirectorState(n, store.DirectorStopped, d.StateSequence)
-		return struct{}{}, err
-	})
-	return err
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

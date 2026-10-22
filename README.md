@@ -127,7 +127,7 @@ It needs a small Director config naming your repository; see [configuration and 
 | Advancing a task stage by stage and launching an agent for each stage | Built, with a test-only fake agent and a minimal Claude adapter whose live acceptance is pending |
 | Publishing a task's pull request, waiting for its CI checks and merging it through `gh` | Built, exercised in CI against a stand-in `gh`; live GitHub behaviour is not claimed |
 | Steward rollouts of shared settings over SSH | Built, preview and apply |
-| The conversational Director (`guildhall director start`) | Built in its own Herdr tab or the foreground, exercised in CI against a stand-in Claude Code and a stand-in terminal; pause, resume and stop are built; the tab's lab checklist is not yet run, and handoff is planned |
+| The conversational Director (`guildhall director start`) | Built in its own Herdr tab or the foreground, exercised in CI against a stand-in Claude Code and a stand-in terminal; pause, resume, stop, handoff notes and reload are built; the tab's lab checklist is not yet run, and automatic handoff is planned |
 | Running stages that the Director itself performs, and background watching of running agents | Planned |
 | Docker isolation for agents | Planned |
 | Any runtime or platform supported for real work | Not yet: each needs to pass live acceptance first |
@@ -145,6 +145,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall director status --json`: everything in flight and what needs the Director or you, in one JSON document; see [the Director](docs/director.md#status).
 - `guildhall director start` and `guildhall director ready`: run a Director session in its own Herdr tab or your terminal, and let a recovering session start new work; see [the Director](docs/director.md#start).
 - `guildhall director pause`, `guildhall director resume` and `guildhall director stop`: hold new work while running attempts finish, lift the hold, and end the session and its attempts; see [the Director](docs/director.md#pause-and-resume).
+- `guildhall director handoff`, `guildhall director reload` and `guildhall director turn-ended`: record a handoff note for the next session, restart the session at a quiet point or the end of the turn, and the runtime's end-of-turn hook; see [the Director](docs/director.md#handoff).
 - `guildhall artisan start|stop|status|resume`: control one agent attempt; `guildhall fake-artisan` and `guildhall claude-artisan` are the fake and Claude wrappers; see [Artisan commands](docs/artisan.md#commands) and [adapters](docs/adapters.md).
 - `guildhall messages send|list|read|ack`: informational messages between the Director and its agents; see [messaging](docs/messaging.md).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).

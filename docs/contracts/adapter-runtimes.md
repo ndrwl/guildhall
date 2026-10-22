@@ -6,7 +6,7 @@ The one owner of the runtimes Guildhall can launch ([running an attempt](../adap
 `Names` lists them in sorted order, `claude` and `fake`; `Lookup` returns the runtime called a name, its commands running the given guildhall executable, and refuses any other name, including the interpreter's test-only `mock`, with an error wrapping `ErrUnknown` that names it and lists `Names`.
 It is keyed by `adapter.FakeName` and `adapter.ClaudeName`, the names' one spelling, which `interp.FakeAdapter` and `interp.ClaudeAdapter` also refer to.
 `Runtime` is the consumer's narrow view of an adapter: its attempt command, refused with no command for an invalid spec.
-`Session` is the supervisor's narrow view of a runtime's Director session: the program it needs on `PATH` (none for the fake, which is the guildhall executable), its skills directory, its own session files and its session command; `LookupSession` returns it for every name `Names` lists and refuses any other as `Lookup` does.
+`Session` is the supervisor's narrow view of a runtime's Director session: the program it needs on `PATH` (none for the fake, which is the guildhall executable), its skills directory, its own session files, its session command and whether it has a turn-end hook, `TurnEndHook`; `LookupSession` returns it for every name `Names` lists and refuses any other as `Lookup` does.
 `artisan start` is the consumer, in both of its modes; `launch.Process` passes names through to it, and the interpreter's test-binary guard, `interp.CheckAdapter`, is unchanged.
 
 ## Tests

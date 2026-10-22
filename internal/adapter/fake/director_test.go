@@ -46,8 +46,8 @@ func TestFakeDirectorSessionCommand(t *testing.T) {
 	if cmd, err := (Adapter{}).Session(spec); err == nil || len(cmd.Argv) > 0 {
 		t.Errorf("no executable: %+v, %v", cmd, err)
 	}
-	if got := (Adapter{}).SessionFiles("/c"); len(got) != 0 {
-		t.Errorf("SessionFiles = %v, want none", got)
+	if got := (Adapter{}).SessionFiles("/c"); len(got) != 0 || (Adapter{}).TurnEndHook() {
+		t.Errorf("SessionFiles = %v, TurnEndHook %v; want none and no hook", got, (Adapter{}).TurnEndHook())
 	}
 }
 

@@ -71,6 +71,12 @@ Commands:
                  lift the hold and print what needs the Director
   director stop [--now] --copy <dir>
                  stop the Director session and its running attempts
+  director handoff --note-file <path|-> --copy <dir>
+                 record a handoff note for the Director's next session
+  director reload [--now] --copy <dir>
+                 restart the Director session at a quiet point, or at the end of the turn
+  director turn-ended --copy <dir>
+                 tell the session supervisor the runtime's turn has ended (its end-of-turn hook)
   help           print this help
 `
 

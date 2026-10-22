@@ -36,6 +36,9 @@ type Session interface {
 	SessionFiles(copyDir string) map[string][]byte
 	// Session returns the session's command for a valid spec and refuses an invalid one with no command.
 	Session(spec adapter.SessionSpec) (adapter.Command, error)
+	// TurnEndHook reports whether the runtime signals the end of each turn by running `guildhall director
+	// turn-ended`, as its SessionFiles register (docs/director.md#the-end-of-a-turn).
+	TurnEndHook() bool
 }
 
 // all builds each runtime over the guildhall executable.

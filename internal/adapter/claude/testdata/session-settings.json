@@ -24,5 +24,17 @@
       "Edit(//home/g/copy/config.toml)",
       "Edit(//home/g/copy/managed.toml)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "guildhall director turn-ended"
+          }
+        ]
+      }
+    ]
   }
 }

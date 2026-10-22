@@ -23,9 +23,9 @@ func (Adapter) Program() string { return Program }
 var readOnlyGit = []string{"status", "log", "diff", "show", "rev-parse", "ls-files", "branch --list"}
 
 // Settings is the session's Claude Code settings for the Director copy dir: Bash may run guildhall, the
-// read-only git commands and `git remote -v` without asking but no git command writing an --output file, and
-// no edit tool may change the copy's config.toml or managed.toml. It is JSON with a trailing newline, the same
-// bytes for the same copy.
+// read-only git commands and `git remote -v` without asking but no git command writing an --output file, no
+// edit tool may change the copy's config.toml or managed.toml, and the Stop hook runs TurnEndCommand at the end
+// of every turn. It is JSON with a trailing newline, the same bytes for the same copy.
 func Settings(copyDir string) []byte {
 	allow := []string{"Bash(guildhall)", "Bash(guildhall *)"}
 	for _, g := range readOnlyGit {
@@ -40,9 +40,17 @@ func Settings(copyDir string) []byte {
 		Allow []string `json:"allow"`
 		Deny  []string `json:"deny"`
 	}
+	type command struct {
+		Type    string `json:"type"`
+		Command string `json:"command"`
+	}
+	type matcher struct {
+		Hooks []command `json:"hooks"`
+	}
 	b, _ := json.MarshalIndent(struct {
-		Permissions permissions `json:"permissions"`
-	}{permissions{allow, deny}}, "", "  ")
+		Permissions permissions          `json:"permissions"`
+		Hooks       map[string][]matcher `json:"hooks"`
+	}{permissions{allow, deny}, map[string][]matcher{"Stop": {{[]command{{"command", TurnEndCommand}}}}}}, "", "  ")
 	return append(b, '\n')
 }
 
@@ -79,6 +87,13 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	}
 	return adapter.Command{Argv: append(argv, spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
 }
+
+// TurnEndHook reports true: Settings registers TurnEndCommand as the session's Stop hook.
+func (Adapter) TurnEndHook() bool { return true }
+
+// TurnEndCommand is the Stop hook of a Director session. It names no copy: the hook inherits the session's
+// GUILDHALL_COPY, so no path crosses the shell Claude Code runs hooks in.
+const TurnEndCommand = "guildhall director turn-ended"
 
 // SessionFiles are the files a Claude Code Director session needs beside its skills, by slash path relative to
 // the session directory: Settings at SettingsFile.
