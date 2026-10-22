@@ -19,6 +19,10 @@ import (
 // Every write names a mutation id: repeating it with the same request returns the original receipt and
 // changes nothing, and reusing it for a different request fails with store.ErrMutationConflict.
 // StartAttempt numbers attempts of a step from 1 and refuses, with store.ErrInvalid, while one is running;
+// StartCappedAttempt is StartAttempt refused with a *store.CapRefusal (store.ErrAttemptCap), recording nothing,
+// when the store is at one of its caps: caps.MaxRunning attempts started and not finished, or caps.MaxPerDay
+// attempts started in the current UTC day, in any task; zero is no cap. The count and the start are one write, and
+// a replayed mutation id returns its receipt whatever the caps are now.
 // FinishAttempt finishes a running attempt once and the first finish stands: finishing it again with the same
 // outcome under another mutation id returns the first finish's receipt, and another outcome is store.ErrInvalid.
 // A document or decision is recorded once per name or id and an existing one is refused with store.ErrExists. ContestRuling contests a recorded ruling once: an unknown
@@ -35,6 +39,7 @@ type Records interface {
 	Decisions(repository, taskID string) ([]store.Decision, error)
 	Rulings(repository, taskID string) ([]store.Ruling, error)
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
+	StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error)
 	FinishAttempt(mutationID, repository, taskID, step string, number int, outcome store.AttemptOutcome) (store.Receipt, error)
 	PutDocument(mutationID string, d store.DocumentRef) (store.Receipt, error)
 	OpenDecision(mutationID string, d store.Decision) (store.Receipt, error)

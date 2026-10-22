@@ -264,6 +264,18 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	for _, key := range []string{MaxRunningAttemptsKey, MaxAttemptsPerDayKey} {
+		if m, ok := c.Managed[key]; ok {
+			if _, err := parseCap(key, m.Value); err != nil {
+				add("managed %v", err)
+			}
+		}
+		if v, ok := c.Local[key]; ok {
+			if _, err := parseCap(key, v); err != nil {
+				add("local %v", err)
+			}
+		}
+	}
 	if m, ok := c.Managed[ChecksRefreshKey]; ok {
 		if _, err := parseChecksRefresh(m.Value); err != nil {
 			add("managed %v", err)

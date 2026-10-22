@@ -54,6 +54,17 @@ func (f *advanceFlags) resolve(getenv func(string) string) error {
 	return nil
 }
 
+// listed refuses, before anything else is read or written, a repository the config does not list: the
+// repositories guard rail (docs/director.md#guard-rails). A config that cannot be loaded is left to the advance.
+func (f *advanceFlags) listed() error {
+	cfg, err := config.Load(f.config)
+	if err != nil {
+		return nil
+	}
+	_, err = cfg.ListedRepository(f.repo)
+	return err
+}
+
 // next is what `task start`, `step done`, `step finish` and `step retry` print: interp.Next as JSON.
 type next struct {
 	Wait     interp.Wait `json:"wait"`
@@ -78,6 +89,9 @@ func (a *App) taskStart(args []string) int {
 	}
 	if fl.NArg() != 1 || !workflow.ValidID(fl.Arg(0)) {
 		return a.taskUsage("task start takes one task id")
+	}
+	if err := f.listed(); err != nil {
+		return a.fail(fmt.Errorf("task start: %w", err))
 	}
 	ev := interp.Event{Kind: interp.TaskCreated, Repository: f.repo, Task: fl.Arg(0)}
 	if *decision != "" {
@@ -154,6 +168,9 @@ func (a *App) stepRetry(args []string) int {
 	case err != nil || n < 1:
 		return a.usageError(fmt.Sprintf("step retry: --attempt %q must be a positive attempt number", *attempt))
 	}
+	if err := f.listed(); err != nil {
+		return a.fail(fmt.Errorf("step retry: %w", err))
+	}
 	if hold, err := heldNow(f.store); err != nil || hold {
 		return a.paused("step retry", err)
 	}
@@ -192,6 +209,9 @@ func (a *App) stepDone(args []string) int {
 		return a.usageError("step done: --task, --step, --attempt and --result are required")
 	case err != nil || n < 1:
 		return a.usageError(fmt.Sprintf("step done: --attempt %q must be a positive attempt number", *attempt))
+	}
+	if err := f.listed(); err != nil {
+		return a.fail(fmt.Errorf("step done: %w", err))
 	}
 	state, err := filepath.Abs(f.state)
 	if err != nil {
@@ -250,9 +270,13 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
-	r, ok := cfg.Repository(f.repo)
-	if !ok {
-		return interp.Next{}, fmt.Errorf("config %s has no repository %q", f.config, f.repo)
+	rails, err := cfg.GuardRails()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
+	r, err := cfg.ListedRepository(f.repo)
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config %s: %w", f.config, err)
 	}
 	cfgDir := filepath.Dir(f.config)
 	def, err := effectiveWorkflow(filepath.Join(cfgDir, "workflows"), r)
@@ -327,6 +351,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
 		Workspaces: ws,
 		Hold:       func() (bool, error) { return withStore(f.store, true, held) },
+		Caps:       store.AttemptCaps{MaxRunning: rails.MaxRunningAttempts, MaxPerDay: rails.MaxAttemptsPerDay},
 	}
 	// An interrupt ends the advance and releases the task lock; the next advance replays it.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -395,7 +420,12 @@ func baselineSource(copyDir, release, name string) render.Source {
 type storeRecords string
 
 func withStore[T any](path string, readOnly bool, fn func(*store.Store) (T, error)) (T, error) {
-	s, err := store.Open(string(path), store.Options{ReadOnly: readOnly, RequireStore: true, LockTimeout: storeWait})
+	return withStoreClock(path, readOnly, nil, fn)
+}
+
+// withStoreClock is withStore with the store's clock; nil is wall time.
+func withStoreClock[T any](path string, readOnly bool, now func() time.Time, fn func(*store.Store) (T, error)) (T, error) {
+	s, err := store.Open(string(path), store.Options{ReadOnly: readOnly, RequireStore: true, LockTimeout: storeWait, Now: now})
 	if err != nil {
 		var zero T
 		return zero, err
@@ -430,6 +460,10 @@ func (p storeRecords) FullReviews(repo, id string) ([]store.FullReview, error) {
 
 func (p storeRecords) StartAttempt(m, repo, id, step string) (store.Receipt, error) {
 	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
+}
+
+func (p storeRecords) StartCappedAttempt(m, repo, id, step string, caps store.AttemptCaps) (store.Receipt, error) {
+	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.StartCappedAttempt(m, repo, id, step, caps) })
 }
 
 func (p storeRecords) FinishAttempt(m, repo, id, step string, n int, o store.AttemptOutcome) (store.Receipt, error) {

@@ -3,6 +3,7 @@ package store
 import (
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestDirectorViewOfAnEmptyStore(t *testing.T) {
@@ -109,5 +110,9 @@ func TestDirectorView(t *testing.T) {
 	}
 	if n := len(v.Receipts); n == 0 || v.Receipts[n-1].MutationID != "message-ack:q-acked" {
 		t.Fatalf("receipts end %+v, want the acknowledgement last", v.Receipts)
+	}
+	day := time.Date(testTime.Year(), testTime.Month(), testTime.Day(), 0, 0, 0, 0, time.UTC)
+	if want := (AttemptUsage{Running: 2, Today: 3, Day: day}); v.Usage != want {
+		t.Errorf("Usage = %+v, want %+v: two attempts running, three started today", v.Usage, want)
 	}
 }

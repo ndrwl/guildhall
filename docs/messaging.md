@@ -96,8 +96,9 @@ Flags come before the positional arguments.
 Each command prints one JSON document on success and exits 0; it exits 1 when the store is missing, locked, refuses the request or fails, and 2 on a usage error, printing the reason on standard error.
 No messages command creates a store; [`store init`](store.md#guildhall-store-init) does.
 
-- `guildhall messages send --store <path> <recipient> <envelope-file|->` stores a message and prints its receipt.
+- `guildhall messages send --store <path> [--config <path>] <recipient> <envelope-file|->` stores a message and prints its receipt.
   `-` reads the envelope from standard input.
+  With a config, the copy's or one given with `--config`, a message about a repository the config does not list is refused by the [repositories guard rail](director.md#guard-rails).
 - `guildhall messages list --store <path> [--after <sequence>] [--limit <n>] <recipient>` prints `{"messages": [...], "more": <bool>}`: at most `--limit` unacknowledged messages, 20 by default and 100 at most, in send order, with a sequence greater than `--after`.
   To read the next page, pass the last message's `sequence` as `--after`.
 - `guildhall messages read --store <path> <message-id>` prints one message, acknowledged or not, without acknowledging it.
@@ -138,7 +139,7 @@ guildhall: 3 unread (attempt-failed 1, question 2)
 ```
 
 The line counts the Director's unread messages by type, in type order, and never carries message text, so no sender can type instructions into the Director's session.
-Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine sends (`attempt-failed`, `attempt-retried`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`.
+Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine sends (`attempt-failed`, `attempt-retried`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`.
 Otherwise nothing is typed and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
 
 | Reason | When |

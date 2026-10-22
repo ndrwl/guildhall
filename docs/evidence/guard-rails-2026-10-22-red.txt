@@ -1,0 +1,120 @@
+# Guard rails (D12): red runs, 2026-10-22
+
+Each run is the new tests against contract stubs, before the implementation.
+
+## config
+
+--- FAIL: TestGuardRails (0.00s)
+    --- FAIL: TestGuardRails/unset_are_the_defaults (0.00s)
+        guard_rails_test.go:32: caps = 0 running, 0 a day; want 4, 40
+        guard_rails_test.go:35: Repositories = [], want the listed ids in config order
+        guard_rails_test.go:38: MergePolicies = map[]
+    --- FAIL: TestGuardRails/local_caps (0.00s)
+        guard_rails_test.go:32: caps = 0 running, 0 a day; want 2, 10
+        guard_rails_test.go:35: Repositories = [], want the listed ids in config order
+        guard_rails_test.go:38: MergePolicies = map[]
+    --- FAIL: TestGuardRails/a_managed_cap (0.00s)
+        guard_rails_test.go:32: caps = 0 running, 0 a day; want 4, 5
+        guard_rails_test.go:35: Repositories = [], want the listed ids in config order
+        guard_rails_test.go:38: MergePolicies = map[]
+    --- FAIL: TestGuardRails/an_overridable_managed_cap_replaced_locally (0.00s)
+        guard_rails_test.go:32: caps = 0 running, 0 a day; want 1, 40
+        guard_rails_test.go:35: Repositories = [], want the listed ids in config order
+        guard_rails_test.go:38: MergePolicies = map[]
+--- FAIL: TestGuardRailsRefuseAnInvalidCap (0.00s)
+    guard_rails_test.go:62: "[local]\nmax_running_attempts = \"0\"": Parse error <nil>, want one naming max_running_attempts
+    guard_rails_test.go:62: "[local]\nmax_running_attempts = \"-1\"": Parse error <nil>, want one naming max_running_attempts
+    guard_rails_test.go:62: "[local]\nmax_running_attempts = \"four\"": Parse error <nil>, want one naming max_running_attempts
+    guard_rails_test.go:62: "[local]\nmax_attempts_per_day = \"2.5\"": Parse error <nil>, want one naming max_attempts_per_day
+    guard_rails_test.go:62: "[local]\nmax_attempts_per_day = \" 3\"": Parse error <nil>, want one naming max_attempts_per_day
+    guard_rails_test.go:62: "[managed.max_attempts_per_day]\nvalue = \"many\"\n[local]": Parse error <nil>, want one naming max_attempts_per_day
+    guard_rails_test.go:67: GuardRails of an unparsed invalid cap = <nil>
+--- FAIL: TestListedRepository (0.00s)
+    guard_rails_test.go:77: ListedRepository(site) = {ID: Path: Remote: OwnerMachine: MergePolicy: Workflow: WorkflowOverrides:map[] NoCI:false}, <nil>
+    guard_rails_test.go:81: ListedRepository(elsewhere) = <nil>, want ErrRepositoryNotListed naming the rail and the id
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.015s
+FAIL
+
+## store
+
+--- FAIL: TestRunningCapRefusesAndAdmitsAfterAFinish (0.10s)
+    caps_test.go:45: fifth start = <nil>, want a running cap refusal at 4 of 4
+--- FAIL: TestDailyCapCountsTheUTCDayByTheStoreClock (0.09s)
+    caps_test.go:86: fourth start of the day = <nil>, want a daily cap refusal at 3 of 3
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.234s
+FAIL
+
+## records-contract
+
+--- FAIL: TestRecordsContract (5.20s)
+    --- FAIL: TestRecordsContract/double (0.01s)
+        --- FAIL: TestRecordsContract/double/refuses_a_start_at_a_cap_and_admits_it_after_a_finish (0.00s)
+            records.go:532: start past the running cap = <nil>, want a running cap refusal at 2 of 2
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	5.240s
+FAIL
+
+## engine
+
+--- FAIL: TestRunningCapRefusesALaunchUntilOneFinishes (0.18s)
+    --- FAIL: TestRunningCapRefusesALaunchUntilOneFinishes/double (0.02s)
+        budget_test.go:57: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: <nil>
+        budget_test.go:59: fifth launch = <nil>, want a refusal naming guard rail max_running_attempts
+    --- FAIL: TestRunningCapRefusesALaunchUntilOneFinishes/store (0.16s)
+        budget_test.go:57: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: <nil>
+        budget_test.go:59: fifth launch = <nil>, want a refusal naming guard rail max_running_attempts
+--- FAIL: TestDailyCapRefusesUntilTheNextDay (0.02s)
+    budget_test.go:103: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: <nil>
+    budget_test.go:104: third start of the day = <nil>, want a refusal naming guard rail max_attempts_per_day
+--- FAIL: TestRetryPastACapSendsNoReason (0.04s)
+    budget_test.go:129: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+    budget_test.go:130: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:director Step:plan Attempt:1 Decision:}
+    budget_test.go:133: Advance({Kind:attempt-retried Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:first reason}) refused: <nil>
+    budget_test.go:134: retry at the cap = <nil>
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.234s
+FAIL
+
+## cli
+
+--- FAIL: TestUnlistedRepositoryRefusedByEveryCommand (0.25s)
+    --- FAIL: TestUnlistedRepositoryRefusedByEveryCommand/task_new (0.00s)
+        guard_rails_test.go:56: exit 1, stdout , stderr guildhall: task new: config internal/cli/testdata/run/config.toml has no repository "other"
+            ; want exit 1 naming the repositories guard rail
+    --- FAIL: TestUnlistedRepositoryRefusedByEveryCommand/task_start (0.00s)
+        guard_rails_test.go:56: exit 1, stdout , stderr guildhall: config internal/cli/testdata/run/config.toml has no repository "other"
+            ; want exit 1 naming the repositories guard rail
+    --- FAIL: TestUnlistedRepositoryRefusedByEveryCommand/step_done (0.00s)
+        guard_rails_test.go:56: exit 1, stdout , stderr guildhall: step done: result internal/cli/result.json is not attempt other/t-9/plan/1's result file <state>/other/t-9/plan-1/result.json
+            ; want exit 1 naming the repositories guard rail
+    --- FAIL: TestUnlistedRepositoryRefusedByEveryCommand/step_retry (0.00s)
+        guard_rails_test.go:56: exit 1, stdout , stderr guildhall: config internal/cli/testdata/run/config.toml has no repository "other"
+            ; want exit 1 naming the repositories guard rail
+    --- FAIL: TestUnlistedRepositoryRefusedByEveryCommand/messages_send (0.00s)
+        guard_rails_test.go:56: exit 2, stdout , stderr guildhall: flag provided but not defined: -config
+            usage:
+              guildhall messages send --store <path> <recipient> <envelope-file|->
+              guildhall messages list --store <path> [--after <sequence>] [--limit <n>] <recipient>
+              guildhall messages read --store <path> <message-id>
+              guildhall messages ack --store <path> <recipient> <message-id>
+            a recipient is "director" or "artisan:<repository>/<task>/<step>/<attempt>"
+            --copy <dir>, or GUILDHALL_COPY, may stand in for --store: the copy's director.store
+            ; want exit 1 naming the repositories guard rail
+--- FAIL: TestRunningCapRefusesTheFifthLaunch (0.65s)
+    guard_rails_test.go:91: fifth launch: exit 0, "{\"wait\":\"attempt\",\"step\":\"plan\",\"attempt\":1}\n", stderr ; want exit 1 naming guard rail max_running_attempts
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.908s
+FAIL
+
+## store-view
+
+    director_view_test.go:116: Usage = {Running:0 Today:0 Day:0001-01-01 00:00:00 +0000 UTC}, want {Running:2 Today:3 Day:2026-01-02 00:00:00 +0000 UTC}: two attempts running, three started today
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.830s
+FAIL
+
+## store-unread
+
+TestDirectorUnreadCountsByType failed against the type list without budget-refused; only the FAIL lines were captured.

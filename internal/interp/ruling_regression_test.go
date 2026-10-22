@@ -19,12 +19,12 @@ type failReviewStart struct {
 	failed bool
 }
 
-func (r *failReviewStart) StartAttempt(id, repo, task, step string) (store.Receipt, error) {
+func (r *failReviewStart) StartCappedAttempt(id, repo, task, step string, caps store.AttemptCaps) (store.Receipt, error) {
 	if step == "review" && !r.failed {
 		r.failed = true
 		return store.Receipt{}, errInjected
 	}
-	return r.Records.StartAttempt(id, repo, task, step)
+	return r.Records.StartCappedAttempt(id, repo, task, step, caps)
 }
 
 func TestRulingAfterBindingDoesNotReachReplay(t *testing.T) {

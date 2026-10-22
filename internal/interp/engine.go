@@ -208,7 +208,16 @@ type Engine struct {
 	// are never held, nor is the relaunch of an attempt already recorded. `task start`, `step done` and `step retry`
 	// hold while the Director's session is paused or stopping (docs/director.md#pause-and-resume).
 	Hold func() (bool, error)
+	// Caps are the attempt caps every new attempt starts under (Records.StartCappedAttempt); zero fields are no cap.
+	// An advance whose next attempt is refused at a cap records and launches nothing, sends the Director one
+	// BudgetRefused message per task and UTC day, and returns an error wrapping store.ErrAttemptCap that names the
+	// guard rail's setting; advancing the task again once capacity returns starts it (docs/director.md#guard-rails).
+	// `task start`, `step done` and `step retry` set them from the config's guard rails.
+	Caps store.AttemptCaps
 }
+
+// BudgetRefused is the type of the Director message an advance sends when an attempt cap refuses its next attempt.
+const BudgetRefused = "budget-refused"
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
 func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
@@ -547,7 +556,10 @@ func (r *run) start(s workflow.Step) (Next, error) {
 		return Next{}, err
 	}
 	inputs = r.boundInputs(b)
-	rc, err := r.e.Records.StartAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID)
+	rc, err := r.e.Records.StartCappedAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID, r.e.Caps)
+	if refusal, ok := errors.AsType[*store.CapRefusal](err); ok {
+		return Next{}, r.budgetRefused(s, n, refusal, err)
+	}
 	if err != nil {
 		return Next{}, err
 	}
@@ -556,6 +568,27 @@ func (r *run) start(s workflow.Step) (Next, error) {
 	}
 	r.addAttempt(store.StageAttempt{Repository: r.task.Repository, TaskID: r.task.ID, Step: s.ID, Number: n})
 	return Next{Wait: waitFor(s), Step: s.ID, Attempt: n}, r.launch(s, n, name, inputs)
+}
+
+// budgetRefused tells the Director that a cap refused attempt n of step s, once per task and UTC day: a later
+// refusal that day, at either cap, conflicts with the message already sent and sends nothing. The message names
+// the command that starts the refused attempt: step retry for a refused retry, task start otherwise. It returns
+// the refusal named by its guard rail's setting.
+func (r *run) budgetRefused(s workflow.Step, n int, refusal *store.CapRefusal, err error) error {
+	rail := config.MaxRunningAttemptsKey
+	if refusal.Cap == store.CapDaily {
+		rail = config.MaxAttemptsPerDayKey
+	}
+	err = fmt.Errorf("guard rail %s: %w", rail, err)
+	again := "guildhall task start for the task"
+	if r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt+1 == n {
+		again = fmt.Sprintf("guildhall step retry for step %s attempt %d", s.ID, r.retry.Attempt)
+	}
+	text := fmt.Sprintf("Step %s was not started: guard rail %s, %v. Run %s again when capacity returns.", s.ID, rail, refusal, again)
+	if serr := r.notify(BudgetRefused+"."+refusal.Day.Format(time.DateOnly), BudgetRefused, text); serr != nil && !errors.Is(serr, store.ErrMutationConflict) {
+		return errors.Join(err, serr)
+	}
+	return err
 }
 
 // launchedFile marks an attempt directory whose attempt Launch accepted.

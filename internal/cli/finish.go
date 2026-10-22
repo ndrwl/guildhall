@@ -94,9 +94,9 @@ func finishStage(f advanceFlags, k artisan.AttemptKey, summary string, outputs s
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	r, ok := cfg.Repository(f.repo)
-	if !ok {
-		return fmt.Errorf("config %s has no repository %q", f.config, f.repo)
+	r, err := cfg.ListedRepository(f.repo)
+	if err != nil {
+		return err
 	}
 	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(f.config), "workflows"), r)
 	if err != nil {
