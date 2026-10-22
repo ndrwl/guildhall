@@ -1,13 +1,14 @@
 # The Director's session supervisor
 
-`guildhall director start [runtime] --foreground` is the first way to run the Director as a Guildhall session rather than a bare `claude`, as the [role grammar](0053-cli-role-grammar.md) requires.
+`guildhall director start [runtime]` is the first way to run the Director as a Guildhall session rather than a bare `claude`, as the [role grammar](0053-cli-role-grammar.md) requires.
 It is the session supervisor the [session record](director-session-record.md) was designed for: it records the session, renders what the runtime reads, runs the runtime as its child and records the end.
 
 ## Decisions
 
 - **Foreground first.**
   The session runs as the supervisor's child in the current terminal, with the terminal's input and output.
-  `--foreground` names that, so its meaning did not change when the session's own [Herdr tab](director-tab.md) landed: without it, `director start` opens the tab and runs the foreground supervisor there.
+  It is the default, because it is what a user typing the command most likely wants; the session's own [Herdr tab](director-tab.md) is opt-in with `--tab`, which runs this same supervisor in the tab.
+  The pre-release `--foreground` flag is gone, with no alias.
 - **Recovering starts no new work.**
   A new session is `recovering` until the Director runs `guildhall director ready`, which follows the captain's rule that a restarted Director handles what is in flight before starting anything.
   The binary enforces it at the two commands that start new work, `task new` and `task start` of a task with no attempt, and nowhere else, so recovery itself (`step done`, `step retry`, `decide answer`, `messages`, every read, and advancing a task already under way) is never blocked.

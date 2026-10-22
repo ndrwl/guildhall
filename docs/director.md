@@ -2,17 +2,17 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-`director status`, the [session record](store.md#director-sessions), the session supervisor `director start --foreground` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop` and the standalone [guard rails](#guard-rails) are built; the handoff and reload commands are designed in the slice 4 plan and land later.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop` and the standalone [guard rails](#guard-rails) are built; the handoff and reload commands are designed in the slice 4 plan and land later.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Start
 
 ```sh
-guildhall director start [runtime] --foreground [--check] [--copy <dir>]
+guildhall director start [runtime] [--check] [--copy <dir>]
 ```
 
-`director start --foreground` is the session supervisor: it runs one Director session in the current terminal and records it ([decision](decisions/director-start.md)).
-Without `--foreground`, `director start` opens the Director's own [Herdr tab](#the-directors-tab) and runs the supervisor there.
+`director start` is the session supervisor: it runs one Director session in the current terminal and records it ([decision](decisions/director-start.md)).
+With `--tab`, `director start` instead opens the Director's own [Herdr tab](#the-directors-tab) and runs the supervisor there.
 It follows the [role grammar](decisions/0053-cli-role-grammar.md): the runtime is the positional argument, else the config's [`[director] adapter`](configuration.md#the-director-table), and a copy without either is refused with exit 1 listing the adapters.
 It needs a [copy](running.md#copies), from `--copy` or `GUILDHALL_COPY`, because the session lives in it.
 
@@ -30,7 +30,7 @@ A start is refused with exit 1, naming `director: live` and recording nothing, w
 A session whose supervisor is gone, such as one whose machine restarted, is superseded instead.
 
 Then it records session `<n>`, one more than the newest, as `recovering` with its own process identity, release and config digest, which records an earlier session still recorded live as `stopped` with the end reason `superseded`.
-`--herdr-session`, `--herdr-workspace`, `--herdr-tab` and `--herdr-pane`, given all together and only with `--foreground`, are the pane binding the [tab wrapper](#the-directors-tab) passes; the session records them, and a [wake](messaging.md#waking-the-director) types into that pane.
+`--herdr-session`, `--herdr-workspace`, `--herdr-tab` and `--herdr-pane`, given all together and never with `--tab`, are the pane binding the [tab wrapper](#the-directors-tab) passes; the session records them, and a [wake](messaging.md#waking-the-director) types into that pane.
 It renders the session into `<copy>/director/session-<n>/` with [`render.Session`](rendering.md#director-sessions):
 
 - `role.md`: the role prompt, from `[director] role` relative to the config directory, else the copy's `baseline/roles/director.md`, else the release's;
@@ -64,16 +64,16 @@ The handoff and reload commands they name are designed and land later.
 ## The Director's tab
 
 ```sh
-guildhall director start [runtime] [--check] [--copy <dir>]
+guildhall director start [runtime] --tab [--check] [--copy <dir>]
 ```
 
-Without `--foreground`, `director start` is the wrapper the Guildmaster runs: it opens the Director's tab in Herdr and runs the session supervisor there, so the Director has its own visible tab (R1.37) that firstmate can reach remotely ([decision](decisions/director-tab.md)).
+With `--tab`, `director start` is the wrapper the Guildmaster runs: it opens the Director's tab in Herdr and runs the session supervisor there, so the Director has its own visible tab (R1.37) that firstmate can reach remotely ([decision](decisions/director-tab.md)).
 
 - It runs the same preflight, then a `herdr` check: the config's [`herdr_session`](configuration.md#settings) setting names the Herdr session, and `herdr status` must report that session's server running, Herdr 0.9.5 or newer ([Herdr access](adapters.md#herdr-access)).
-  With no `herdr_session` the check is refused, naming the setting and `--foreground`; `--check` exits 0 after it.
+  With no `herdr_session` the check is refused, naming the setting and running without `--tab`; `--check` exits 0 after it.
 - A live session is refused, `director: live`, before any tab opens.
 - It finds the workspace labelled with the Director's `name` in that session, or creates one without focus, and creates a tab labelled `director <name>` in it, without focus, in the copy directory.
-- Once the tab's shell is at its prompt, it types `guildhall director start [runtime] --copy <dir> --foreground --herdr-session <s> --herdr-workspace <w> --herdr-tab <t> --herdr-pane <p>`, with the running executable's absolute path, quoted for the pane's shell as [`herdr.ShellCommand`](contracts/herdr.md) quotes it (POSIX shells and PowerShell; any other shell is refused with nothing typed).
+- Once the tab's shell is at its prompt, it types `guildhall director start [runtime] --copy <dir> --herdr-session <s> --herdr-workspace <w> --herdr-tab <t> --herdr-pane <p>`, with the running executable's absolute path, quoted for the pane's shell as [`herdr.ShellCommand`](contracts/herdr.md) quotes it (POSIX shells and PowerShell; any other shell is refused with nothing typed).
 - It waits until a new session record carries that pane, prints a `tab:` line naming it and then the session as one JSON line, and exits 0.
   If the typed command ends first, as a refused preflight in the tab would, or no such session appears within two minutes, it exits 1 naming the tab.
 

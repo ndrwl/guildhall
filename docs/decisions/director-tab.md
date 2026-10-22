@@ -6,11 +6,11 @@ The [session supervisor](director-start.md) already runs a session in the foregr
 ## Decisions
 
 - **The wrapper types the supervisor into the tab.**
-  `director start` without `--foreground` opens the tab and types `guildhall director start --copy <dir> --foreground` with the tab's pane binding, quoted for the pane's shell by `herdr.ShellCommand` ([D20](0020-typing-the-launch-command-into-a.md)), as `artisan start --herdr-session` types an Artisan.
+  `director start --tab` opens the tab and types `guildhall director start --copy <dir>` with the tab's pane binding, quoted for the pane's shell by `herdr.ShellCommand` ([D20](0020-typing-the-launch-command-into-a.md)), as `artisan start --herdr-session` types an Artisan.
   The supervisor is then the tab's own foreground process, with the tab's terminal for the runtime, and nothing Herdr-specific runs inside it except recording the binding it was given.
   The wrapper waits for the session record that carries the pane, as `launch.Process` waits for ownership, and fails once the tab's shell, seen running the command, is back at its prompt with no such record, so a refused preflight in the tab is reported rather than waited out.
 - **The pane binding is passed, not discovered.**
-  The supervisor records the session, workspace, tab and pane the wrapper passes on four flags, which go together and only with `--foreground`.
+  The supervisor records the session, workspace, tab and pane the wrapper passes on four flags, which go together and never with `--tab`.
   A pane cannot reliably name itself across Herdr versions and shells, and the wrapper already holds the ids from creating the tab.
 - **One workspace per Director, found by label.**
   The workspace is the one labelled with the Director's `name`, created without focus when the session has none, so restarts reuse it.
@@ -25,7 +25,9 @@ The [session supervisor](director-start.md) already runs a session in the foregr
   R1.54 allows Guildhall to close tabs it created, but a failed start's output is the evidence of what went wrong, and whether `director stop` closes the tab is its own decision.
 - **The Herdr session is configured, never `default`.**
   `[local] herdr_session` names it, refused when it is `default` or not a Herdr session name, so the wrapper never opens tabs in the Guildmaster's own terminal session by accident.
-  Without it the wrapper is refused, naming the setting and `--foreground`.
+  Without it the wrapper is refused, naming the setting and the session in the current terminal.
+- **The tab is opt-in.**
+  The Guildmaster chose the current terminal as `director start`'s default, since that is what a user typing it is likely to want; `--tab` opts into the wrapper, and the line it types needs no flag of its own because the default is the supervisor in the tab's terminal.
 
 ## Not yet
 

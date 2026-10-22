@@ -61,8 +61,8 @@ Commands:
                  list open decisions, show one and record the Guildmaster's answer
   director status --json --store <path> --state <dir>
                  print the Director's status feed and what needs the Director or Guildmaster
-  director start [runtime] [--foreground] [--check] --copy <dir>
-                 open the Director's Herdr tab and run its session there, or in this terminal with --foreground
+  director start [runtime] [--tab] [--check] --copy <dir>
+                 run a Director session in this terminal, or with --tab in its own Herdr tab
   director ready --copy <dir>
                  say the recovering Director session is ready to start new work
   director pause --copy <dir>

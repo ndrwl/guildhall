@@ -41,7 +41,7 @@ func TestDirectorStartRecordsATerminatedSessionStopped(t *testing.T) {
 	app.InstallBaseline = baseline.Install
 	app.Stdin = stdin
 	done := make(chan int, 1)
-	go func() { done <- app.Run([]string{"director", "start", "--foreground", "--copy", dir}) }()
+	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()
 	var code int
 	deadline := time.After(time.Minute)
 	for ended := false; !ended; {
@@ -70,7 +70,7 @@ func TestDirectorStartRecordsATerminatedSessionStopped(t *testing.T) {
 func TestDirectorStartRunsTheSessionInAShellPane(t *testing.T) {
 	dir := tabCopy(t)
 	panes := adaptertest.NewShellPanes(t, "lab", "w1")
-	code, out, stderr := runWrapper(t, panes, "--copy", dir)
+	code, out, stderr := runWrapper(t, panes, "--tab", "--copy", dir)
 	if code != 0 {
 		t.Fatalf("exit %d\nstdout %s\nstderr %s", code, out, stderr)
 	}
@@ -82,7 +82,7 @@ func TestDirectorStartRunsTheSessionInAShellPane(t *testing.T) {
 	if err != nil || !slices.Contains(ws, herdr.Workspace{ID: d.Pane.Workspace, Label: "alpha"}) {
 		t.Errorf("workspaces = %+v, %v; want %s labelled alpha", ws, err, d.Pane.Workspace)
 	}
-	if sent := panes.Sent(); len(sent) != 1 || !strings.Contains(sent[0], "'--foreground'") {
+	if sent := panes.Sent(); len(sent) != 1 || !strings.Contains(sent[0], "'--herdr-pane'") || strings.Contains(sent[0], "'--tab'") {
 		t.Errorf("sent = %q", sent)
 	}
 }

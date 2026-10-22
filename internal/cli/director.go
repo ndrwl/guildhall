@@ -55,15 +55,15 @@ func (a *App) fakeDirector(args []string) int {
 // errStartRefused is a failed preflight check, already printed on its own line.
 var errStartRefused = errors.New("director start: preflight failed")
 
-// directorStart runs `guildhall director start [runtime] [--foreground] [--check] [--copy <dir>]`: with
-// --foreground the session supervisor (docs/director.md#start), else the wrapper that opens the Director's
+// directorStart runs `guildhall director start [runtime] [--tab] [--check] [--copy <dir>]`: the session
+// supervisor in this terminal (docs/director.md#start), or with --tab the wrapper that opens the Director's
 // Herdr tab and runs the supervisor in it (docs/director.md#the-directors-tab).
 func (a *App) directorStart(args []string) int {
 	fl := flag.NewFlagSet("director start", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
 	cp.register(fl)
-	foreground := fl.Bool("foreground", false, "run the session in this terminal")
+	tab := fl.Bool("tab", false, "open the Director's Herdr tab and run the session there")
 	check := fl.Bool("check", false, "run the preflight only")
 	var pane store.DirectorPane
 	fl.StringVar(&pane.Session, "herdr-session", "", "the Herdr session of the tab the session runs in")
@@ -83,8 +83,8 @@ func (a *App) directorStart(args []string) int {
 		return a.usageError("director start: --copy is required, or GUILDHALL_COPY")
 	case pane != (store.DirectorPane{}) && (pane.Session == "" || pane.Workspace == "" || pane.Tab == "" || pane.Pane == ""):
 		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane go together")
-	case pane != (store.DirectorPane{}) && !*foreground:
-		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane bind a --foreground session to its tab")
+	case pane != (store.DirectorPane{}) && *tab:
+		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane bind a session in this terminal to its tab, so they do not go with --tab")
 	}
 	copyDir, err := filepath.Abs(cp.dir)
 	if err != nil {
@@ -95,7 +95,7 @@ func (a *App) directorStart(args []string) int {
 		defer p.cleanup()
 	}
 	var host adapter.TabHost
-	if err == nil && !*foreground {
+	if err == nil && *tab {
 		host, err = a.herdrPreflight(p)
 	}
 	if err != nil {
@@ -107,10 +107,10 @@ func (a *App) directorStart(args []string) int {
 	if *check {
 		return 0
 	}
-	if *foreground {
-		return a.superviseSession(p, copyDir, storePath, state, pane)
+	if *tab {
+		return a.openDirectorTab(host, p, copyDir, storePath, fl.Arg(0))
 	}
-	return a.openDirectorTab(host, p, copyDir, storePath, fl.Arg(0))
+	return a.superviseSession(p, copyDir, storePath, state, pane)
 }
 
 // startPlan is what the preflight resolved for a session.
@@ -220,7 +220,7 @@ func (a *App) herdrPreflight(p startPlan) (adapter.TabHost, error) {
 	case err != nil:
 		return nil, a.refuseCheck("herdr", err)
 	case session == "":
-		return nil, a.refuseCheck("herdr", fmt.Errorf("no [local] %s names the Herdr session the Director's tab opens in; set it, or pass --foreground", config.HerdrSessionKey))
+		return nil, a.refuseCheck("herdr", fmt.Errorf("no [local] %s names the Herdr session the Director's tab opens in; set it, or run the session in this terminal without --tab", config.HerdrSessionKey))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), herdrTimeout)
 	defer cancel()
@@ -308,7 +308,7 @@ func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storeP
 	if runtime != "" {
 		argv = append(argv, runtime)
 	}
-	argv = append(argv, "--copy", copyDir, "--foreground",
+	argv = append(argv, "--copy", copyDir,
 		"--herdr-session", tab.Session, "--herdr-workspace", tab.WorkspaceID, "--herdr-tab", tab.TabID, "--herdr-pane", tab.PaneID)
 	if err := l.Type(ctx, tab, shell, argv); err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err))

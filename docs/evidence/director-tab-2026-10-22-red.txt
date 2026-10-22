@@ -78,3 +78,27 @@ FAIL
 FAIL
 FAIL	github.com/ndrwl/guildhall/internal/cli	1.699s
 FAIL
+
+## cli, current terminal by default: go test ./internal/cli -run 'DirectorStart|RecoveringSession|DirectorReady', with the tests passing --tab for the wrapper and no --foreground, against the build where --foreground was still the supervisor's required flag
+--- FAIL: TestDirectorStartOpensTheDirectorTab (0.05s)
+--- FAIL: TestDirectorStartFailsWhenTheTabCommandEnds (0.05s)
+--- FAIL: TestDirectorStartRefusesALiveSession (0.15s)
+    --- FAIL: TestDirectorStartRefusesALiveSession/recovering (0.07s)
+    --- FAIL: TestDirectorStartRefusesALiveSession/running (0.08s)
+--- FAIL: TestDirectorStartSupersedesADeadSession (0.07s)
+--- FAIL: TestDirectorStartRecordsItsPane (0.04s)
+--- FAIL: TestDirectorStartRunsASession (0.11s)
+    --- FAIL: TestDirectorStartRunsASession/fake (0.05s)
+    --- FAIL: TestDirectorStartRunsASession/claude (0.06s)
+--- FAIL: TestDirectorStartStartupNamesWhatIsInFlight (0.05s)
+--- FAIL: TestDirectorStartCheckRecordsNothing (0.05s)
+--- FAIL: TestDirectorStartRefusals (0.49s)
+    --- FAIL: TestDirectorStartRefusals/a_tab_without_a_herdr_session (0.03s)
+    --- FAIL: TestDirectorStartRefusals/a_pane_binding_for_a_tab (0.04s)
+    --- FAIL: TestDirectorStartRefusals/foreground_is_the_default,_not_a_flag (0.10s)
+--- FAIL: TestDirectorStartRecordsACrashedRuntimeStopped (0.04s)
+--- FAIL: TestDirectorStartRecordsATerminatedSessionStopped (0.05s)
+--- FAIL: TestDirectorStartRunsTheSessionInAShellPane (0.04s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	1.405s
+FAIL

@@ -168,7 +168,7 @@ func supervisorArgv(t *testing.T, dir string, tab adapter.TabRef) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return []string{exe, "director", "start", "--copy", dir, "--foreground",
+	return []string{exe, "director", "start", "--copy", dir,
 		"--herdr-session", tab.Session, "--herdr-workspace", tab.WorkspaceID, "--herdr-tab", tab.TabID, "--herdr-pane", tab.PaneID}
 }
 
@@ -204,7 +204,7 @@ func TestDirectorStartOpensTheDirectorTab(t *testing.T) {
 		}
 	}
 	for n := 1; n <= 2; n++ {
-		code, out, stderr := runWrapper(t, host, "--copy", dir)
+		code, out, stderr := runWrapper(t, host, "--tab", "--copy", dir)
 		host.runs.Wait()
 		if code != 0 {
 			t.Fatalf("start %d: exit %d\nstdout %s\nstderr %s", n, code, out, stderr)
@@ -241,7 +241,7 @@ func TestDirectorStartFailsWhenTheTabCommandEnds(t *testing.T) {
 	dir := tabCopy(t, "/exit")
 	host := newDirectorTabs()
 	host.busyReads = 1
-	code, out, stderr := runWrapper(t, host, "--copy", dir)
+	code, out, stderr := runWrapper(t, host, "--tab", "--copy", dir)
 	host.runs.Wait()
 	if code != 1 || !strings.Contains(stderr, "ended before") || !strings.Contains(stderr, host.tabs[0].TabID) {
 		t.Fatalf("exit %d, stdout %q, stderr %q; want exit 1 naming the tab whose command ended", code, out, stderr)
@@ -270,7 +270,7 @@ func TestDirectorStartRefusesALiveSession(t *testing.T) {
 				return s.SetDirectorState(1, state, r.Sequence)
 			})
 			host := newDirectorTabs()
-			for _, args := range [][]string{{"--copy", dir}, {"--copy", dir, "--foreground"}} {
+			for _, args := range [][]string{{"--tab", "--copy", dir}, {"--copy", dir}} {
 				code, out, stderr := runWrapper(t, host, args...)
 				if code != 1 || !strings.Contains(stderr, "director: live") {
 					t.Errorf("%q: exit %d, stdout %q, stderr %q; want exit 1 naming director: live", args, code, out, stderr)
@@ -299,7 +299,7 @@ func TestDirectorStartSupersedesADeadSession(t *testing.T) {
 		}
 		return s.SetDirectorState(1, store.DirectorRunning, r.Sequence)
 	})
-	if code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir); code != 0 {
+	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
 	}
 	got := sessions(t, dir)
@@ -312,7 +312,7 @@ func TestDirectorStartSupersedesADeadSession(t *testing.T) {
 // TestDirectorStartRecordsItsPane records the pane binding the wrapper passes on the session.
 func TestDirectorStartRecordsItsPane(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
-	code, out, stderr := runDirectorCmd(t, "start", "--foreground", "--copy", dir,
+	code, out, stderr := runDirectorCmd(t, "start", "--copy", dir,
 		"--herdr-session", "lab", "--herdr-workspace", "w2", "--herdr-tab", "w2:t3", "--herdr-pane", "w2:p3")
 	if code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
