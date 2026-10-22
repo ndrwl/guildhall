@@ -290,7 +290,7 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject, dispute strin
 		}
 		nd := store.Decision{
 			Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionLoopExit, Subject: subject, Options: options,
-			Question: boundedQuestion(why),
+			Question: boundedQuestion(why, options),
 		}
 		if _, err := r.e.Records.OpenDecision(r.mutation("decision", id), nd); err != nil {
 			return false, Next{}, err

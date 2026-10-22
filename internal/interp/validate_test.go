@@ -215,6 +215,9 @@ func TestValidateLoopExit(t *testing.T) {
 				!strings.Contains(d.Question, "ci") {
 				t.Errorf("loop exit = %+v, want continue or reject on head 2 naming the failing check", d)
 			}
+			if !strings.HasSuffix(d.Question, "Answer with one of: continue (one more round), reject.\n") {
+				t.Errorf("loop exit question = %q, want it to offer only continue or reject", d.Question)
+			}
 			if got := e.validationDoc(t, "validate-2-result"); !equalResult(got, failed2) {
 				t.Errorf("validate-2-result = %+v, want %+v", got, failed2)
 			}

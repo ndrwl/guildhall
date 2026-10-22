@@ -331,7 +331,8 @@ func TestMaxOpensLoopExit(t *testing.T) {
 		want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), interp.Next{Wait: interp.WaitDecision, Step: "review", Decision: "review-x2"})
 		d := e.decision(t, "review-x2")
 		if d.Kind != store.DecisionLoopExit || d.Subject == nil || *d.Subject != (store.Subject{Kind: store.SubjectHead, Digest: head2}) ||
-			!slices.Equal(d.Options, []string{"continue", "accept", "reject"}) {
+			!slices.Equal(d.Options, []string{"continue", "accept", "reject"}) ||
+			!strings.HasSuffix(d.Question, "Answer with one of: continue (one more round), accept (record your approval as the step's outcome), reject.\n") {
 			t.Fatalf("loop-exit decision = %+v", d)
 		}
 		if _, ok := e.messages(t)["app.t7.decision.review-x2"]; !ok {
