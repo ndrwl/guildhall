@@ -169,24 +169,38 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		}
 	})
 
-	t.Run("reports every check of the head sorted by name", func(t *testing.T) {
+	t.Run("reports every check of the head with its run id sorted by name", func(t *testing.T) {
 		h := newHarness(t)
 		if h.SetChecks == nil {
 			t.Skip("this forge cannot be given checks")
 		}
 		publish(t, h, h.Heads[0])
 		h.SetChecks(t, h.Heads[0], []forge.Check{
-			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test"},
-			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build"},
-			{Name: "lint", State: forge.CheckPassed},
+			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test", ID: "run-3"},
+			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1"},
+			{Name: "lint", State: forge.CheckPassed, ID: "run-2"},
 		})
 		want := []forge.Check{
-			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build"},
-			{Name: "lint", State: forge.CheckPassed},
-			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test"},
+			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1"},
+			{Name: "lint", State: forge.CheckPassed, ID: "run-2"},
+			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test", ID: "run-3"},
 		}
 		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, want) {
 			t.Errorf("Checks = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("reports a re-run check as its new run", func(t *testing.T) {
+		h := newHarness(t)
+		if h.SetChecks == nil {
+			t.Skip("this forge cannot be given checks")
+		}
+		publish(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-1"}})
+		checks(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2"}})
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2"}}) {
+			t.Errorf("Checks after a re-run = %+v, want the new run", got)
 		}
 	})
 

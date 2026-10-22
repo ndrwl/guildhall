@@ -104,7 +104,7 @@ func newGitHub(t *testing.T) *gh {
 		SetChecks: func(t *testing.T, head string, checks []forge.Check) {
 			var nodes []map[string]any
 			for _, c := range checks {
-				node := map[string]any{"__typename": "CheckRun", "name": c.Name, "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": c.URL}
+				node := map[string]any{"__typename": "CheckRun", "id": c.ID, "name": c.Name, "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": c.URL}
 				switch c.State {
 				case forge.CheckPending:
 					node["status"], node["conclusion"] = "IN_PROGRESS", nil
@@ -212,10 +212,10 @@ func TestGitHubCheckStates(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := func(name, status string, conclusion any) map[string]any {
-		return map[string]any{"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion, "detailsUrl": "https://ci.invalid/" + name}
+		return map[string]any{"__typename": "CheckRun", "id": "CR_" + name, "name": name, "status": status, "conclusion": conclusion, "detailsUrl": "https://ci.invalid/" + name}
 	}
 	status := func(context, state string) map[string]any {
-		return map[string]any{"__typename": "StatusContext", "context": context, "state": state, "targetUrl": nil}
+		return map[string]any{"__typename": "StatusContext", "id": "SC_" + context, "context": context, "state": state, "targetUrl": nil}
 	}
 	nodes := []map[string]any{
 		run("queued", "QUEUED", nil), run("in-progress", "IN_PROGRESS", nil), run("waiting", "WAITING", nil),
@@ -243,6 +243,13 @@ func TestGitHubCheckStates(t *testing.T) {
 	for _, c := range got {
 		if c.State != want[c.Name] {
 			t.Errorf("check %s is %s, want %s", c.Name, c.State, want[c.Name])
+		}
+		id := "CR_" + c.Name
+		if strings.HasPrefix(c.Name, "s-") {
+			id = "SC_" + c.Name
+		}
+		if c.ID != id {
+			t.Errorf("check %s has id %q, want %q", c.Name, c.ID, id)
 		}
 		if strings.HasPrefix(c.Name, "s-") != (c.URL == "") || !strings.HasPrefix(c.Name, "s-") && c.URL != "https://ci.invalid/"+c.Name {
 			t.Errorf("check %s has URL %q", c.Name, c.URL)

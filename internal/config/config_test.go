@@ -42,6 +42,7 @@ remote = "https://github.com/example/site.git"
 owner_machine = "workstation"
 merge_policy = "auto"
 workflow = "careful"
+no_ci = true
 
 [repository.workflow_overrides.review]
 actor = "guildmaster"
@@ -62,6 +63,9 @@ func TestDirectorConfig(t *testing.T) {
 	}
 	if tool.Workflow != DefaultWorkflow {
 		t.Errorf("default workflow = %q", tool.Workflow)
+	}
+	if tool.NoCI || !site.NoCI {
+		t.Errorf("no_ci = %v and %v, want false by default and true when set", tool.NoCI, site.NoCI)
 	}
 	if site.MergePolicy != MergeAuto || site.Workflow != "careful" {
 		t.Errorf("explicit repository settings lost: %+v", site)

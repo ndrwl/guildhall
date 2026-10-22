@@ -21,7 +21,7 @@ A pull request already merged at that head is returned as it is, so repeating a 
 A forge refusal (required checks, protection, a branch behind its base, a pull request no longer at the head), a closed pull request, one merged at another head, or one not merged after the forge answered, is `ErrRefused` with the forge's reason in the error text; nothing was merged.
 A merge the forge fails is checked by viewing the pull request again: merged at the head, it is returned; still open, closed or at another head, the failure is the forge's refusal, `ErrRefused` with its reason.
 A malformed merge is `ErrInvalid`; a failure that leaves the forge's answer unknown, such as a missing program, a failed sign-in, or a view that fails after the merge failed, is returned as a plain error and is not `ErrRefused`.
-`Checks(ctx, Commit)` returns every check and commit status the forge reports for `Commit.Head`, sorted by name and then URL, each `pending`, `passed` or `failed` with its details URL when the forge gives one ([decision](../decisions/validate-stage.md)).
+`Checks(ctx, Commit)` returns every check and commit status the forge reports for `Commit.Head`, sorted by name, URL and then id, each `pending`, `passed` or `failed` with its details URL when the forge gives one and `ID`, the forge's id of that run of the check, which a re-run replaces ([decision](../decisions/validate-stage.md)); `forge.GitHub` reports a check run's or commit status's GraphQL node id.
 It reads the checks of that commit, not of whatever a pull request is at now, so a later push cannot answer for an earlier head.
 No checks is an empty list.
 A malformed commit is `ErrInvalid`; a head the remote does not hold is `ErrUnknownHead`.
@@ -46,4 +46,5 @@ Platform differences: none in the contract.
 `TestValidBranch` pins the branch-name rule.
 `TestGitHubLive` runs the suite, without the refusal case, against a real sandbox repository only when `GUILDHALL_LIVE_FORGE_REMOTE` names one; CI never sets it, and it has not been run.
 The contract and `GitHub` suites were written red first against stubs returning zero values ([red run](../evidence/delivery-stage-2026-10-22-red.txt)): every contract case of both the fake and GitHub, `TestGitHubArguments` and `TestGitHubRemotes` failed; `TestValidBranch` was written with `ValidBranch` and was not red.
+`TestGitHubCheckStates` also pins that a check run's and a commit status's node id is the check's `ID`; the run ids, the contract's re-run case included, were added after the implementation, extending its cases, and were not run red.
 The checks cases, `TestGitHubCheckStates` and the checks call in `TestGitHubArguments` were written red first against `Checks` stubs returning no checks and no error ([red run](../evidence/validate-stage-2026-10-22-red.txt)); the no-checks case passed against the stubs and pins rather than proves the empty answer.

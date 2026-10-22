@@ -56,6 +56,13 @@ const StallIntervalKey = "stall_interval"
 // DefaultStallInterval is the stall interval of a config that does not set StallIntervalKey.
 const DefaultStallInterval = 15 * time.Minute
 
+// ChecksRefreshKey is the setting that sets how long a waiting validate step waits between reads of the same
+// head's checks (docs/configuration.md#settings).
+const ChecksRefreshKey = "checks_refresh"
+
+// DefaultChecksRefresh is the checks refresh of a config that does not set ChecksRefreshKey.
+const DefaultChecksRefresh = time.Minute
+
 // Config is one copy's parsed configuration.
 type Config struct {
 	SchemaVersion int  `toml:"schema_version"`
@@ -111,6 +118,8 @@ type Repository struct {
 	Workflow string `toml:"workflow"`
 	// WorkflowOverrides chooses step actors for this repository only, keyed by step id (workflow.ApplyOverrides).
 	WorkflowOverrides map[string]workflow.Override `toml:"workflow_overrides"`
+	// NoCI declares that the repository runs no checks, so validate passes a head its forge reports none for.
+	NoCI bool `toml:"no_ci" json:",omitempty"`
 }
 
 var (
@@ -236,6 +245,16 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	if m, ok := c.Managed[ChecksRefreshKey]; ok {
+		if _, err := parseChecksRefresh(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[ChecksRefreshKey]; ok {
+		if _, err := parseChecksRefresh(v); err != nil {
+			add("local %v", err)
+		}
+	}
 
 	for _, name := range slices.Sorted(maps.Keys(c.Profiles)) {
 		p := c.Profiles[name]
@@ -354,6 +373,25 @@ func parseStallInterval(v string) (time.Duration, error) {
 	d, err := time.ParseDuration(v)
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"15m\", or \"0s\" to disable", StallIntervalKey, v)
+	}
+	return d, nil
+}
+
+// ChecksRefresh returns the effective ChecksRefreshKey setting as a duration: DefaultChecksRefresh when it is
+// not set, and zero, which reads the checks at every advance, for "0s".
+// A value that is not a nonnegative Go duration is an error; Parse refuses one already.
+func (c *Config) ChecksRefresh() (time.Duration, error) {
+	v, ok := c.Setting(ChecksRefreshKey)
+	if !ok {
+		return DefaultChecksRefresh, nil
+	}
+	return parseChecksRefresh(v)
+}
+
+func parseChecksRefresh(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"1m\", or \"0s\" to read at every advance", ChecksRefreshKey, v)
 	}
 	return d, nil
 }

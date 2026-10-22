@@ -174,7 +174,11 @@ type Engine struct {
 	// interval and its worker's last output older than it (docs/interpreter.md#worker-stalled-observations).
 	// Zero or negative disables them; `task start` and `step done` set it from the config's stall_interval.
 	StallInterval time.Duration
-	// Now is the clock the observations read; nil is wall time.
+	// ChecksRefresh is how long a waiting validate step waits after reading a head's checks before an advance
+	// reads that head's checks again; zero or negative reads them at every advance (docs/interpreter.md#validate).
+	// `task start` and `step done` set it from the config's checks_refresh.
+	ChecksRefresh time.Duration
+	// Now is the clock the observations and ChecksRefresh read; nil is wall time.
 	Now func() time.Time
 	// Base returns the commit a repository's tasks are based on now; nil or an error means every code review
 	// is full. Rebases classifies a new head against the last reviewed range (docs/interpreter.md#rebase-aware-review).

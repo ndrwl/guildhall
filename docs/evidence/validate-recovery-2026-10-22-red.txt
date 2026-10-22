@@ -1,0 +1,29 @@
+# validate recovery red run: the new validate tests against cbaa3af's internal/interp/validate.go, with the rest of the working tree (2026-10-22)
+$ go test ./internal/interp/ -run 'TestValidate(FailedSameHead|WithoutLoopRule|LoopExit|NoCI|ChecksRefresh)$'
+--- FAIL: TestValidateLoopExit (0.24s)
+    --- FAIL: TestValidateLoopExit/reject (0.10s)
+        validate_test.go:230: next = {Wait:director Step:validate Attempt:0 Decision:validate-x2}, want {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+--- FAIL: TestValidateFailedSameHead (0.94s)
+    --- FAIL: TestValidateFailedSameHead/double/re-run_passes (0.10s)
+        validate_test.go:262: next = {Wait:decision Step:validate Attempt:0 Decision:validate-x2}, want {Wait:checks Step:validate Attempt:0 Decision:}
+    --- FAIL: TestValidateFailedSameHead/double/re-run_fails (0.09s)
+        validate_test.go:262: next = {Wait:decision Step:validate Attempt:0 Decision:validate-x2}, want {Wait:checks Step:validate Attempt:0 Decision:}
+    --- FAIL: TestValidateFailedSameHead/store/re-run_passes (0.36s)
+        validate_test.go:262: next = {Wait:decision Step:validate Attempt:0 Decision:validate-x2}, want {Wait:checks Step:validate Attempt:0 Decision:}
+    --- FAIL: TestValidateFailedSameHead/store/re-run_fails (0.39s)
+        validate_test.go:262: next = {Wait:decision Step:validate Attempt:0 Decision:validate-x2}, want {Wait:checks Step:validate Attempt:0 Decision:}
+--- FAIL: TestValidateWithoutLoopRule (0.06s)
+    validate_test.go:307: next = {Wait:director Step:validate Attempt:0 Decision:}, want {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+--- FAIL: TestValidateNoCI (0.46s)
+    --- FAIL: TestValidateNoCI/double (0.05s)
+        validate_test.go:320: next = {Wait:checks Step:validate Attempt:0 Decision:}, want {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+    --- FAIL: TestValidateNoCI/store (0.27s)
+        validate_test.go:320: next = {Wait:checks Step:validate Attempt:0 Decision:}, want {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+--- FAIL: TestValidateChecksRefresh (0.35s)
+    --- FAIL: TestValidateChecksRefresh/double (0.07s)
+        validate_test.go:352: next = {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}, want {Wait:checks Step:validate Attempt:0 Decision:}
+    --- FAIL: TestValidateChecksRefresh/store (0.28s)
+        validate_test.go:352: next = {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}, want {Wait:checks Step:validate Attempt:0 Decision:}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	2.052s
+FAIL

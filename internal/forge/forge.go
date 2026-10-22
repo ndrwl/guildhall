@@ -162,9 +162,12 @@ type Check struct {
 	State CheckState `json:"state"`
 	// URL links to the check's details, when the forge gives one.
 	URL string `json:"url,omitempty"`
+	// ID is the forge's id of this run of the check: a re-run of the check reports a new one. Empty when the
+	// forge gives none.
+	ID string `json:"id,omitempty"`
 }
 
-// CompareChecks orders checks by name and then URL, the order Checks returns them in.
+// CompareChecks orders checks by name, URL and then ID, the order Checks returns them in.
 func CompareChecks(a, b Check) int {
-	return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.URL, b.URL))
+	return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.URL, b.URL), strings.Compare(a.ID, b.ID))
 }

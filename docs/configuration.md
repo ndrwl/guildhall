@@ -43,6 +43,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 | Key | Meaning |
 |---|---|
 | `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before an advance sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off, and `config.StallInterval` reads it. |
+| `checks_refresh` | How long a [validate](interpreter.md#validate) step waiting on a head's checks waits after reading them before an advance reads them again: a Go duration, default 1 minute; `"0s"` reads them at every advance, and `config.ChecksRefresh` reads it. Something must still advance the task, such as `task start`; the per-task watcher that will do so on a timer is later work. |
 
 ### Repositories
 
@@ -54,6 +55,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
 | `merge_policy` | `approval` (default) or `auto`. |
 | `workflow` | Name of the Director's workflow definition; defaults to `default`. |
+| `no_ci` | `true` declares that the repository runs no CI, so [validate](interpreter.md#validate) passes a published head its forge reports no checks for, recording that it had no CI; default `false`, where no checks reported waits as pending. |
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 
 Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.

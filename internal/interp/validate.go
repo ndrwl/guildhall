@@ -2,11 +2,17 @@ package interp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -38,6 +44,8 @@ type validationDoc struct {
 	Checks  []forge.Check `json:"checks"`
 	// Failing names the failed checks, in the order of Checks.
 	Failing []string `json:"failing,omitempty"`
+	// NoCI marks a passed result for a head the forge reports no checks for, in a repository configured no_ci.
+	NoCI bool `json:"no_ci,omitempty"`
 }
 
 // parseValidation decodes a recorded validation result and refuses one of another schema or verdict.
@@ -60,9 +68,11 @@ func loopOutcome(s workflow.Step) string {
 	return changesRequested
 }
 
-// validate reads the forge's checks of the published head at each advance until they finish. Pending checks, or
-// none reported yet, wait; finished checks are recorded as the next round's result. A passed result for the head
-// completes the step; a failed one follows the failed loop rule (docs/interpreter.md#validate).
+// validate reads the forge's checks of the published head until they finish. Pending checks, or none reported yet,
+// wait; finished checks are recorded as the next round's result. A passed result for the head completes the step;
+// a failed one follows the failed loop rule. While the step waits on the head's checks, an advance reads them only
+// once ChecksRefresh has passed since the last read, and a failed read spends a round only when its failed check
+// runs differ from the latest result's (docs/interpreter.md#validate).
 func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	in, err := r.input(s, "head")
 	if err != nil {
@@ -86,6 +96,8 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		return false, Next{}, err
 	}
 	k := 1
+	wait := Next{Wait: WaitChecks, Step: s.ID}
+	var last *validationDoc
 	if doc, source, err := r.output(s.ID, "result"); err == nil {
 		data, err := r.read(doc)
 		if err != nil {
@@ -99,23 +111,31 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 			if v.Verdict == validationPassed {
 				return true, Next{}, r.notifyValidation(s, source, *v)
 			}
-			// A failed result whose loop target already ran and left the head unchanged has its checks read again.
-			if done, next, again, err := r.validationFailed(s, source, *v); !again || err != nil {
+			done, next, again, err := r.validationFailed(s, source, *v)
+			if !again || err != nil {
 				return done, next, err
 			}
+			wait, last = next, v
 		}
 		p, _ := parseDecision(source)
 		k = p.round + 1
 	}
+	if due, err := r.checksDue(s, h); err != nil || !due {
+		return false, wait, err
+	}
 	checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h})
 	if err != nil {
+		return false, Next{}, err
+	}
+	if err := r.checksRead(s, h); err != nil {
 		return false, Next{}, err
 	}
 	v := validationDoc{Schema: validationSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: h, Verdict: validationPassed, Checks: checks}
 	if v.Checks == nil {
 		v.Checks = []forge.Check{}
 	}
-	finished := len(checks) > 0
+	finished := len(checks) > 0 || repo.NoCI
+	v.NoCI = len(checks) == 0 && repo.NoCI
 	for _, c := range checks {
 		switch c.State {
 		case forge.CheckFailed:
@@ -128,6 +148,9 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		// The text names no check, so a wait that sees other pending checks replays the same message.
 		return false, Next{Wait: WaitChecks, Step: s.ID}, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), "checks-pending",
 			fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL))
+	}
+	if last != nil && v.Verdict == validationFailed && slices.Equal(failedRuns(v.Checks), failedRuns(last.Checks)) {
+		return false, wait, nil
 	}
 	id := decisionID(s.ID, k, false)
 	data, err := json.Marshal(v)
@@ -143,6 +166,58 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	}
 	done, next, _, err := r.validationFailed(s, id, v)
 	return done, next, err
+}
+
+// failedRuns returns the failed checks of checks: the evidence a failed result gives its loop.
+func failedRuns(checks []forge.Check) []forge.Check {
+	return slices.DeleteFunc(slices.Clone(checks), func(c forge.Check) bool { return c.State != forge.CheckFailed })
+}
+
+// checksRead is when validate step s last read the checks of Head, kept in <state>/<repo>/<task>/<step>.checks.json.
+type checksRead struct {
+	Head   string    `json:"head"`
+	ReadAt time.Time `json:"read_at"`
+}
+
+func (r *run) checksReadPath(s workflow.Step) string {
+	return filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, s.ID+".checks.json")
+}
+
+// checksDue reports whether validate step s may read the checks of head h: always without a ChecksRefresh, and
+// otherwise unless it read them less than ChecksRefresh ago.
+func (r *run) checksDue(s workflow.Step, h string) (bool, error) {
+	if r.e.ChecksRefresh <= 0 {
+		return true, nil
+	}
+	data, err := atomicfile.Read(r.checksReadPath(s))
+	if errors.Is(err, fs.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var c checksRead
+	if err := json.Unmarshal(data, &c); err != nil {
+		return false, fmt.Errorf("%s: %w", r.checksReadPath(s), err)
+	}
+	now := r.now()
+	return c.Head != h || c.ReadAt.After(now) || now.Sub(c.ReadAt) >= r.e.ChecksRefresh, nil
+}
+
+// checksRead records that validate step s read the checks of head h now, when a ChecksRefresh paces the reads.
+func (r *run) checksRead(s workflow.Step, h string) error {
+	if r.e.ChecksRefresh <= 0 {
+		return nil
+	}
+	data, err := json.Marshal(checksRead{Head: h, ReadAt: r.now().UTC()})
+	if err != nil {
+		return err
+	}
+	p := r.checksReadPath(s)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	return atomicfile.Write(p, data)
 }
 
 // replayValidation resends the message of validate step s's latest result. A failed result sends the task back
@@ -166,6 +241,9 @@ func (r *run) replayValidation(s workflow.Step) error {
 
 // notifyValidation tells the Director the result recorded as round id of step s.
 func (r *run) notifyValidation(s workflow.Step, id string, v validationDoc) error {
+	if v.NoCI {
+		return r.notify("checks-passed."+id, "checks-passed", fmt.Sprintf("Head %s on pull request %s has no CI to wait for: repository %s is configured with no_ci (step %s, %s).", v.Head, v.URL, r.task.Repository, s.ID, id))
+	}
 	if v.Verdict == validationPassed {
 		return r.notify("checks-passed."+id, "checks-passed", fmt.Sprintf("The checks of head %s on pull request %s passed (step %s, %s).", v.Head, v.URL, s.ID, id))
 	}
@@ -179,14 +257,15 @@ func (r *run) notifyValidation(s workflow.Step, id string, v validationDoc) erro
 
 // validationFailed follows the failed result v, recorded as round id of step s: without a loop rule the Director
 // decides; past the rule's max the loop-exit decision is asked; within it the loop's target runs with the result as
-// feedback. again reports a target that already served the result, so the head's checks are read again.
+// feedback. again reports that the step then waits on the head's checks, so they are read again: without a rule,
+// after a rejected loop exit, or once the target served the result and left the head unchanged; next is that wait.
 func (r *run) validationFailed(s workflow.Step, id string, v validationDoc) (done bool, next Next, again bool, err error) {
 	if err := r.notifyValidation(s, id, v); err != nil {
 		return false, Next{}, false, err
 	}
 	rule, ok := s.On[validationFailedOutcome]
 	if !ok {
-		return false, Next{Wait: WaitDirector, Step: s.ID}, false, nil
+		return false, Next{Wait: WaitDirector, Step: s.ID}, true, nil
 	}
 	fs, err := r.firings(s)
 	if err != nil {
@@ -196,7 +275,7 @@ func (r *run) validationFailed(s workflow.Step, id string, v validationDoc) (don
 	subject := &store.Subject{Kind: store.SubjectHead, Digest: v.Head}
 	if n > r.allowed(s) {
 		done, next, err := r.exit(s, n, subject, "failing checks: "+strings.Join(v.Failing, ", "))
-		return done, next, false, err
+		return done, next, next.Wait == WaitDirector, err
 	}
 	i := slices.IndexFunc(r.def.Steps, func(t workflow.Step) bool { return t.ID == rule.Goto })
 	target := r.def.Steps[i]
@@ -204,8 +283,11 @@ func (r *run) validationFailed(s workflow.Step, id string, v validationDoc) (don
 		return false, Next{}, false, fmt.Errorf("%w: loops back to steps run by the %s", ErrUnsupported, actor)
 	}
 	served, err := r.served(target.ID, fs[n-1])
-	if err != nil || served {
-		return false, Next{}, served, err
+	switch {
+	case err != nil:
+		return false, Next{}, false, err
+	case served:
+		return false, Next{Wait: WaitChecks, Step: s.ID}, true, nil
 	}
 	next, err = r.start(target)
 	return false, next, false, err

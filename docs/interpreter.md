@@ -124,18 +124,27 @@ Otherwise each advance calls `Forge.Checks` for the repository's `path`, the rem
 
 - **Pending.** Some check is pending, none has failed, or no check is reported yet: nothing is recorded and the task waits with `{"wait":"checks","step":"<step>"}`.
   The Director is told once per head as `<repo>.<task>.checks-pending.<step>.<first 12 hex digits of the head>`, type `checks-pending`.
-  Nothing waits in the background: a later advance, such as `task start`, reads the checks again.
-- **Finished.** Every check has passed, or at least one has failed even while others are pending: round `k` (1, or one more than the latest) records `<step>-<k>-result` (`tasks/<repo>/<task>/<step>-<k>/result.json`), the step's output port, a `guildhall.validation-result/1` document holding the remote, pull request number and URL, the head, the verdict `passed` or `failed`, every check with its name, state and URL, sorted as the forge returned them, and the names of the failed ones as `failing`.
+  A repository configured [`no_ci`](configuration.md#repositories) has no checks to wait for: there, no check reported is finished and passes, with the result marked `"no_ci": true` and the `checks-passed` message saying the head has no CI; checks the forge does report still count.
+- **Finished.** Every check has passed, or at least one has failed even while others are pending: round `k` (1, or one more than the latest) records `<step>-<k>-result` (`tasks/<repo>/<task>/<step>-<k>/result.json`), the step's output port, a `guildhall.validation-result/1` document holding the remote, pull request number and URL, the head, the verdict `passed` or `failed`, every check with its name, state, URL and the forge's id of that run of the check, sorted as the forge returned them, the names of the failed ones as `failing`, and `no_ci` when set.
   The Director is told as `<repo>.<task>.checks-passed.<step>-<k>` or `.checks-failed.<step>-<k>`, naming the head, the pull request and the failing checks; each advance sends the latest result's message again, so one lost to a crash after its result was recorded is sent by the replay.
 
 A `passed` result completes the step.
 A `failed` result is a blocking result of the step's `on.failed` [loop rule](#rounds-and-loops): within `max` the rule's target, which must be an Artisan step, runs again with the result as `feedback`; the new head is then reviewed, published and validated in the next round.
-When the target has run and left the head unchanged, the head's checks are read again, so a check the Director re-ran counts; each further failure is a new round.
 Past `max` the loop exit `<step>-x<round>`, bound to the head and naming the failing checks, offers only `continue` and `reject`: red checks cannot be accepted.
 Without a rule, the task waits for the Director (`director`, naming the step).
 
+**Waiting on a failed head.** Three states leave the step waiting on the checks of a head whose latest result failed: no `on.failed` rule (`director`), a loop exit answered `reject` (`director`, naming the decision), and a loop target that ran and left the head unchanged (`checks`).
+In each, an advance reads the head's checks again, so a check the Director re-ran counts.
+A read records a new round only when it is new evidence: a pass, or failed check runs (name, state, URL and run id) that differ from the latest result's; the same failed runs keep the step waiting and spend no round of `max`, so a build that leaves the head unchanged launches nothing more until a check re-runs.
+A pass completes the step; a new failure follows the loop rule as any failed round does, so after a rejected exit it opens the next loop exit.
+A forge that gives no run ids cannot show a re-run that failed the same way, which then reads as unchanged.
+
+**Pacing.** `Engine.ChecksRefresh`, the config's [`checks_refresh`](configuration.md#settings) (default one minute), paces the reads: once a validate step has read a head's checks, an advance reads that head's checks again only after `ChecksRefresh` has passed, and otherwise returns the same wait without calling the forge.
+The time of the last read is kept in `<state>/<repo>/<task>/<step>.checks.json`; a new head is read at once, and zero reads at every advance.
+Nothing reads the checks in the background: an advance does, such as `task start`; the per-task watcher that advances a waiting task on a timer (R1.29) is later work, slice 4's D3 and D5.
+
 The **validation gate**: when `deliver`'s `validation` input is wired, its document must be a `passed` result for the head being delivered, or `deliver` is refused with `ErrValidationGate`.
-Because validate only completes on a passed result for its current head, the gate holds whenever the walk reaches `deliver`; it guards a workflow and records that disagree.
+Because validate only completes on a passed result for its current head, the gate holds whenever the walk reaches `deliver`; it is kept deliberately as defence in depth, as the review gate is, and guards a workflow and records that disagree.
 
 ## Rounds and loops
 

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
@@ -27,6 +28,7 @@ type validationResult struct {
 	Verdict string        `json:"verdict"`
 	Checks  []forge.Check `json:"checks"`
 	Failing []string      `json:"failing,omitempty"`
+	NoCI    bool          `json:"no_ci,omitempty"`
 }
 
 // digest is the digest of the document the engine records for v.
@@ -49,6 +51,11 @@ var (
 	ciPassed = []forge.Check{{Name: "ci", State: forge.CheckPassed}, {Name: "lint", State: forge.CheckPassed}}
 	ciFailed = []forge.Check{{Name: "ci", State: forge.CheckFailed, URL: "https://ci.invalid/ci"}, {Name: "lint", State: forge.CheckPassed}}
 )
+
+// rerun is ciFailed after the Director re-ran its ci check as run-2, which now stands at state.
+func rerun(state forge.CheckState) []forge.Check {
+	return []forge.Check{{Name: "ci", State: state, URL: "https://ci.invalid/ci", ID: "run-2"}, {Name: "lint", State: forge.CheckPassed}}
+}
 
 // newValidateEnv is validate.json over a fake forge holding heads 1 to 3, scripted through review 1.
 func newValidateEnv(t *testing.T, b backend) (*env, *forgetest.Fake) {
@@ -143,7 +150,7 @@ func TestValidateWaitsForChecks(t *testing.T) {
 
 func equalResult(a, b validationResult) bool {
 	return a.Schema == b.Schema && a.Remote == b.Remote && a.Number == b.Number && a.URL == b.URL && a.Head == b.Head &&
-		a.Verdict == b.Verdict && slices.Equal(a.Checks, b.Checks) && slices.Equal(a.Failing, b.Failing)
+		a.Verdict == b.Verdict && slices.Equal(a.Checks, b.Checks) && slices.Equal(a.Failing, b.Failing) && a.NoCI == b.NoCI
 }
 
 // TestValidateFailedLoopsToBuild: a failed check records a failed result and takes the failed loop to build
@@ -215,7 +222,15 @@ func TestValidateLoopExit(t *testing.T) {
 
 			e.answer(t, "validate-x2", choice)
 			if choice == "reject" {
-				want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "validate-x2"}), interp.Next{Wait: interp.WaitDirector, Step: "validate", Decision: "validate-x2"})
+				rejected := interp.Next{Wait: interp.WaitDirector, Step: "validate", Decision: "validate-x2"}
+				want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "validate-x2"}), rejected)
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), rejected)
+				// The Director re-ran the failing check, which now passes: the rejected step reads it again.
+				f.SetChecks(repoRemote, head2, rerun(forge.CheckPassed)...)
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+				if got := e.validationDoc(t, "validate-3-result"); !equalResult(got, result(head2, "passed", rerun(forge.CheckPassed))) {
+					t.Errorf("validate-3-result = %+v", got)
+				}
 				return
 			}
 			e.script.Expect(buildExp(t, 3, head3, failed2.digest(t)),
@@ -228,40 +243,52 @@ func TestValidateLoopExit(t *testing.T) {
 	}
 }
 
-// TestValidateFailedSameHead: a build round that answers failed checks with the same head has its checks read
-// again: still failing records the next failed round, past max the loop exit, and once they pass the task
-// reaches the merge decision, with the unchanged head published once.
+// TestValidateFailedSameHead: a build round that answers failed checks with the same head spends no round while
+// the head's failed check runs are unchanged, launching nothing; a re-run of the failing check is new evidence:
+// passing, it reaches the merge decision with the unchanged head published once, and failing again, it is the
+// next round, here past max 1, so the loop exit opens.
 func TestValidateFailedSameHead(t *testing.T) {
-	e, f := newValidateEnv(t, backends[0])
-	failed := result(head, "failed", ciFailed, "ci")
-	approved := bound(t, workflow.VerdictApproved, head, nil)
-	// Build 2's head document is another revision of build.head, so review 2 reviews the same head again.
-	e.script.Expect(buildExp(t, 2, head, failed.digest(t)), reviewExp(t, "review", "reviewer", 2, head, &approved, approved))
-	f.SetChecks(repoRemote, head, ciFailed...)
-	want(t, e.toValidate(t), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
-	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "review", Attempt: 2})
-	// Still failing: the next failed round is past max 1, so the loop exit opens.
-	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), interp.Next{Wait: interp.WaitDecision, Step: "validate", Decision: "validate-x2"})
-	if got := e.validationDoc(t, "validate-2-result"); !equalResult(got, failed) {
-		t.Errorf("validate-2-result = %+v, want %+v", got, failed)
-	}
-	// The Director re-ran the failing check, which now passes; continue takes the loop once more.
-	f.SetChecks(repoRemote, head, ciPassed...)
-	// Round 2's result has round 1's content, so build 3's feedback has the same digest.
-	e.script.Expect(buildExp(t, 3, head, failed.digest(t)), reviewExp(t, "review", "reviewer", 3, head, &approved, approved))
-	e.answer(t, "validate-x2", "continue")
-	want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "validate-x2"}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 3})
-	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 3})
-	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 3}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
-	if got := e.validationDoc(t, "validate-3-result"); !equalResult(got, result(head, "passed", ciPassed)) {
-		t.Errorf("validate-3-result = %+v", got)
-	}
-	if publishes, _ := f.Calls(); publishes != 1 {
-		t.Errorf("publishes = %d, want 1 for the unchanged head", publishes)
+	for _, b := range backends {
+		for _, passes := range []bool{true, false} {
+			t.Run(b.name+map[bool]string{true: "/re-run passes", false: "/re-run fails"}[passes], func(t *testing.T) {
+				e, f := newValidateEnv(t, b)
+				failed := result(head, "failed", ciFailed, "ci")
+				approved := bound(t, workflow.VerdictApproved, head, nil)
+				// Build 2's head document is another revision of build.head, so review 2 reviews the same head again.
+				e.script.Expect(buildExp(t, 2, head, failed.digest(t)), reviewExp(t, "review", "reviewer", 2, head, &approved, approved))
+				f.SetChecks(repoRemote, head, ciFailed...)
+				want(t, e.toValidate(t), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+				want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "review", Attempt: 2})
+				want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), waitChecks)
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+				if _, ok := e.documents(t)["validate-2-result"]; ok {
+					t.Error("unchanged failed checks recorded validate-2-result")
+				}
+				f.SetChecks(repoRemote, head, rerun(forge.CheckPending)...)
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+				if !passes {
+					f.SetChecks(repoRemote, head, rerun(forge.CheckFailed)...)
+					want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "validate", Decision: "validate-x2"})
+					if got, w := e.validationDoc(t, "validate-2-result"), result(head, "failed", rerun(forge.CheckFailed), "ci"); !equalResult(got, w) {
+						t.Errorf("validate-2-result = %+v, want %+v", got, w)
+					}
+					return
+				}
+				f.SetChecks(repoRemote, head, rerun(forge.CheckPassed)...)
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+				if got := e.validationDoc(t, "validate-2-result"); !equalResult(got, result(head, "passed", rerun(forge.CheckPassed))) {
+					t.Errorf("validate-2-result = %+v", got)
+				}
+				if publishes, _ := f.Calls(); publishes != 1 {
+					t.Errorf("publishes = %d, want 1 for the unchanged head", publishes)
+				}
+			})
+		}
 	}
 }
 
-// TestValidateWithoutLoopRule: failed checks without a failed rule wait for the Director, telling it once.
+// TestValidateWithoutLoopRule: failed checks without a failed rule wait for the Director, telling it once, and are
+// read again, so a re-run that passes completes the step.
 func TestValidateWithoutLoopRule(t *testing.T) {
 	def := editValidate(t, func(s *workflow.Step) { s.On = nil })
 	e, f := newValidateEnvDefinition(t, backends[0], def)
@@ -275,6 +302,63 @@ func TestValidateWithoutLoopRule(t *testing.T) {
 	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), director)
 	if got := len(e.inbox(t)); got != n {
 		t.Errorf("waiting again sent %d messages", got-n)
+	}
+	f.SetChecks(repoRemote, head, rerun(forge.CheckPassed)...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+	if got := e.validationDoc(t, "validate-2-result"); !equalResult(got, result(head, "passed", rerun(forge.CheckPassed))) {
+		t.Errorf("validate-2-result = %+v", got)
+	}
+}
+
+// TestValidateNoCI: in a repository configured no_ci, a head the forge reports no checks for passes with a result
+// marked no_ci, while checks the forge does report still count.
+func TestValidateNoCI(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, _ := newValidateEnv(t, b)
+			e.eng.Config.Repositories[0].NoCI = true
+			want(t, e.toValidate(t), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			w := result(head, "passed", []forge.Check{})
+			w.NoCI = true
+			if got := e.validationDoc(t, "validate-1-result"); !equalResult(got, w) {
+				t.Errorf("validate-1-result = %+v, want %+v", got, w)
+			}
+			if msg := e.messages(t)["app.t7.checks-passed.validate-1"]; !strings.Contains(msg, "no CI") || !strings.Contains(msg, head) {
+				t.Errorf("checks-passed message = %q, want it naming no CI and the head", msg)
+			}
+		})
+	}
+	t.Run("reported checks count", func(t *testing.T) {
+		e, f := newValidateEnv(t, backends[0])
+		e.eng.Config.Repositories[0].NoCI = true
+		e.script.Expect(buildExp(t, 2, head2, result(head, "failed", ciFailed, "ci").digest(t)))
+		f.SetChecks(repoRemote, head, ciFailed...)
+		want(t, e.toValidate(t), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+	})
+}
+
+// TestValidateChecksRefresh: with a checks refresh, a waiting validate step reads the same head's checks again
+// only once the refresh has passed since its last read.
+func TestValidateChecksRefresh(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, f := newValidateEnv(t, b)
+			now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+			e.eng.Now = func() time.Time { return now }
+			e.eng.ChecksRefresh = time.Minute
+			want(t, e.toValidate(t), waitChecks)
+			f.SetChecks(repoRemote, head, ciPassed...)
+			now = now.Add(59 * time.Second)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+			if _, ok := e.documents(t)["validate-1-result"]; ok {
+				t.Error("an advance within the refresh read the checks")
+			}
+			now = now.Add(time.Second)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			if got := e.validationDoc(t, "validate-1-result"); !equalResult(got, result(head, "passed", ciPassed)) {
+				t.Errorf("validate-1-result = %+v", got)
+			}
+		})
 	}
 }
 

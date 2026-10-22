@@ -151,8 +151,8 @@ const checksQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!) 
             pageInfo { hasNextPage }
             nodes {
               __typename
-              ... on CheckRun { name status conclusion detailsUrl }
-              ... on StatusContext { context state targetUrl }
+              ... on CheckRun { id name status conclusion detailsUrl }
+              ... on StatusContext { id context state targetUrl }
             }
           }
         }
@@ -164,6 +164,7 @@ const checksQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!) 
 // ghContext is one check run or commit status of a rollup.
 type ghContext struct {
 	Typename   string  `json:"__typename"`
+	ID         string  `json:"id"`
 	Name       string  `json:"name"`
 	Status     string  `json:"status"`
 	Conclusion *string `json:"conclusion"`
@@ -177,7 +178,7 @@ type ghContext struct {
 func (c ghContext) check() (Check, error) {
 	switch c.Typename {
 	case "CheckRun":
-		out := Check{Name: c.Name, URL: deref(c.DetailsURL)}
+		out := Check{Name: c.Name, URL: deref(c.DetailsURL), ID: c.ID}
 		switch c.Status {
 		case "QUEUED", "IN_PROGRESS", "WAITING", "PENDING", "REQUESTED":
 			out.State = CheckPending
@@ -196,7 +197,7 @@ func (c ghContext) check() (Check, error) {
 		}
 		return out, nil
 	case "StatusContext":
-		out := Check{Name: c.Context, URL: deref(c.TargetURL)}
+		out := Check{Name: c.Context, URL: deref(c.TargetURL), ID: c.ID}
 		switch c.State {
 		case "EXPECTED", "PENDING":
 			out.State = CheckPending
@@ -219,8 +220,9 @@ func deref(s *string) string {
 	return *s
 }
 
-// Checks returns every check run and commit status github.com reports for c.Head, sorted by name and then URL,
-// read in one GraphQL call bound to the commit, so a pull request that moved since cannot answer for it.
+// Checks returns every check run and commit status github.com reports for c.Head, with its node id, sorted by
+// name, URL and then id, read in one GraphQL call bound to the commit, so a pull request that moved since cannot
+// answer for it.
 // A head the remote does not hold is ErrUnknownHead; no checks is an empty list. More than one page of checks,
 // or a state this implementation does not know, is an error rather than a partial or guessed answer.
 func (g GitHub) Checks(ctx context.Context, c Commit) ([]Check, error) {
