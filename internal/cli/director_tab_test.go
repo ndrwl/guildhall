@@ -24,22 +24,25 @@ import (
 // directorTabs is the terminal host double for the Director's wrapper: workspace w1, labelled guildmaster,
 // exists from the start; each tab's shell is bash; and onRun sees each typed line after the pane turns busy.
 // After onRun returns the pane reports busy for busyReads more reads and then idle, as a shell whose command
-// has ended.
+// has ended. With startupReads set, the shell is still reading its startup files when the line is typed: the
+// pane reports a startup sleep for that many reads and then idle once before the typed program starts.
 type directorTabs struct {
-	onRun     func(tab adapter.TabRef, line string)
-	busyReads int
+	onRun        func(tab adapter.TabRef, line string)
+	busyReads    int
+	startupReads int
 
 	mu         sync.Mutex
 	workspaces []herdr.Workspace
 	created    []herdr.TabSpec
 	tabs       []adapter.TabRef
 	busy       map[string]int
+	startup    map[string]func()
 	sent       []string
 	runs       sync.WaitGroup
 }
 
 func newDirectorTabs() *directorTabs {
-	return &directorTabs{workspaces: []herdr.Workspace{{ID: "w1", Label: "guildmaster"}}, busy: map[string]int{}}
+	return &directorTabs{workspaces: []herdr.Workspace{{ID: "w1", Label: "guildmaster"}}, busy: map[string]int{}, startup: map[string]func(){}}
 }
 
 func (d *directorTabs) Workspaces(ctx context.Context) ([]herdr.Workspace, error) {
@@ -91,12 +94,27 @@ func (d *directorTabs) PaneProcessInfo(ctx context.Context, ref adapter.TabRef) 
 	if !slices.Contains(d.tabs, ref) {
 		return herdr.ProcessInfo{}, errors.New("not a tab of this host")
 	}
+	exe, err := os.Executable()
+	if err != nil {
+		return herdr.ProcessInfo{}, err
+	}
+	typed := herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 11, Name: filepath.Base(exe), Argv: []string{exe}}}}
+	if start := d.startup[ref.PaneID]; start != nil {
+		if d.busy[ref.PaneID] > 0 {
+			d.busy[ref.PaneID]--
+			return herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 12, Name: "sleep", Argv: []string{"sleep", "0.5"}}}}, nil
+		}
+		delete(d.startup, ref.PaneID)
+		d.busy[ref.PaneID] = -1
+		start()
+		return herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 10, Name: "bash"}}}, nil
+	}
 	switch n := d.busy[ref.PaneID]; {
 	case n < 0:
-		return herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 11, Name: "guildhall"}}}, nil
+		return typed, nil
 	case n > 0:
 		d.busy[ref.PaneID]--
-		return herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 11, Name: "guildhall"}}}, nil
+		return typed, nil
 	}
 	return herdr.ProcessInfo{ShellPID: 10, Foreground: []herdr.Process{{PID: 10, Name: "bash"}}}, nil
 }
@@ -111,17 +129,24 @@ func (d *directorTabs) RunInTab(ctx context.Context, ref adapter.TabRef, line st
 		return errors.New("not a tab of this host")
 	}
 	d.sent = append(d.sent, line)
-	d.busy[ref.PaneID] = -1
 	d.runs.Add(1)
-	go func() {
-		defer d.runs.Done()
-		if d.onRun != nil {
-			d.onRun(ref, line)
-		}
-		d.mu.Lock()
-		d.busy[ref.PaneID] = d.busyReads
-		d.mu.Unlock()
-	}()
+	start := func() {
+		go func() {
+			defer d.runs.Done()
+			if d.onRun != nil {
+				d.onRun(ref, line)
+			}
+			d.mu.Lock()
+			d.busy[ref.PaneID] = d.busyReads
+			d.mu.Unlock()
+		}()
+	}
+	if d.startupReads > 0 {
+		d.busy[ref.PaneID], d.startup[ref.PaneID] = d.startupReads, start
+		return nil
+	}
+	d.busy[ref.PaneID] = -1
+	start()
 	return nil
 }
 
@@ -232,6 +257,28 @@ func TestDirectorStartOpensTheDirectorTab(t *testing.T) {
 	}
 	if got := sessions(t, dir); len(got) != 2 || got[0].Pane.Tab != host.tabs[0].TabID || got[1].Pane.Tab != host.tabs[1].TabID {
 		t.Errorf("sessions = %+v", got)
+	}
+}
+
+// TestDirectorStartWaitsOutTheShellsStartup types the line while the tab's shell is still running a
+// subprocess from its startup files: that subprocess ending is not the typed command ending, so the wrapper
+// waits for the supervisor and prints its session.
+func TestDirectorStartWaitsOutTheShellsStartup(t *testing.T) {
+	dir := tabCopy(t, "/exit")
+	host := newDirectorTabs()
+	host.startupReads = 2
+	host.onRun = func(tab adapter.TabRef, line string) {
+		if code, out, stderr := runDirectorCmd(t, supervisorArgv(t, dir, tab)[2:]...); code != 0 {
+			t.Errorf("supervisor in the tab: exit %d\n%s\n%s", code, out, stderr)
+		}
+	}
+	code, out, stderr := runWrapper(t, host, "--tab", "--copy", dir)
+	host.runs.Wait()
+	if code != 0 {
+		t.Fatalf("exit %d\nstdout %s\nstderr %s", code, out, stderr)
+	}
+	if d := lastSession(t, out); d.Number != 1 || d.Pane.Tab != host.tabs[0].TabID {
+		t.Errorf("printed %+v; want session 1 in %+v", d, host.tabs[0])
 	}
 }
 

@@ -314,7 +314,7 @@ func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storeP
 		return a.fail(fmt.Errorf("director start: %w", err))
 	}
 	a.preflightLine("tab", "director %s (workspace %s, tab %s, pane %s)", name, tab.WorkspaceID, tab.TabID, tab.PaneID)
-	d, err := waitTabSession(ctx, host, tab, storePath, newest)
+	d, err := waitTabSession(ctx, host, tab, exe, storePath, newest)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err))
 	}
@@ -322,9 +322,10 @@ func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storeP
 }
 
 // waitTabSession waits for a session after the one numbered after that records tab's pane, as launch.Process
-// waits for ownership. It fails once the tab's shell, having been seen running the typed command, is idle again
-// with no such session, and after directorStartWait.
-func waitTabSession(ctx context.Context, host adapter.TabHost, tab adapter.TabRef, storePath string, after int) (store.DirectorSession, error) {
+// waits for ownership. It fails once the tab's shell, having been seen running exe, the typed program, is idle
+// again with no such session, and after directorStartWait. Another foreground process, such as one the shell's
+// startup files run before the typed line is read, is not the typed command.
+func waitTabSession(ctx context.Context, host adapter.TabHost, tab adapter.TabRef, exe, storePath string, after int) (store.DirectorSession, error) {
 	want := store.DirectorPane{Session: tab.Session, Workspace: tab.WorkspaceID, Tab: tab.TabID, Pane: tab.PaneID}
 	deadline := time.Now().Add(directorStartWait)
 	busy := false
@@ -351,9 +352,9 @@ func waitTabSession(ctx context.Context, host adapter.TabHost, tab adapter.TabRe
 		switch {
 		case err != nil:
 			return store.DirectorSession{}, fmt.Errorf("tab %s: %w", tab.TabID, err)
-		case !info.ShellIdle():
+		case runsProgram(info, exe):
 			busy = true
-		case busy:
+		case busy && info.ShellIdle():
 			return store.DirectorSession{}, fmt.Errorf("the command typed into tab %s ended before it recorded a session; the tab is left open with its output", tab.TabID)
 		}
 		if time.Now().After(deadline) {
@@ -365,6 +366,22 @@ func waitTabSession(ctx context.Context, host adapter.TabHost, tab adapter.TabRe
 		case <-time.After(directorStartPoll):
 		}
 	}
+}
+
+// runsProgram reports whether a foreground process of the pane other than its shell is exe, matched by its
+// process name or argv[0] against exe's base name, ignoring case and a .exe suffix.
+func runsProgram(info herdr.ProcessInfo, exe string) bool {
+	base := func(s string) string {
+		s = s[strings.LastIndexAny(s, `/\`)+1:]
+		return strings.TrimSuffix(strings.ToLower(s), ".exe")
+	}
+	want := base(exe)
+	for _, p := range info.Foreground {
+		if p.PID != info.ShellPID && (base(p.Name) == want || len(p.Argv) > 0 && base(p.Argv[0]) == want) {
+			return true
+		}
+	}
+	return false
 }
 
 // admitConfig loads the copy's config for a standalone Director: a managed copy, with managed.toml beside the
