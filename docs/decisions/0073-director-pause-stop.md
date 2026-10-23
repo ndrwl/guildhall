@@ -23,8 +23,7 @@ The captain fixed the semantics: pause stops new work only and running attempts 
   `stop --now` records the same with `stop_now`, and the supervisor ends the runtime at its next read.
   A plain stop followed by `stop --now` shortens the grace.
 - **A gone supervisor is recorded honestly.**
-  When the session's supervisor identity is gone, `stop` records the session `stopped` with the end reason `superseded`, then stops its attempts.
-  Since [director-stop-admission](0084-director-stop-admission.md) it records the session `stopping` first and `stopped` only after the sweep.
+  Cleanup ordering, admission holds and recovery when the supervisor is gone follow the [stop recovery rules](../director.md#stop).
   `pause` and `resume` are refused for it and name `director stop`.
 - **The end of the turn waits for the handoff slice.**
   The planned end-of-turn signal, the handoff note and the `stop-requested` message that asks the Director to write one are the handoff slice's.
