@@ -12,6 +12,15 @@ import (
 	"time"
 )
 
+// delayedRequest lets the write deadline expire before the encoder writes, without
+// relying on a payload exceeding the platform's socket buffer capacity.
+type delayedRequest struct{}
+
+func (delayedRequest) MarshalJSON() ([]byte, error) {
+	time.Sleep(2 * exchangeTimeout)
+	return []byte(`{}`), nil
+}
+
 func TestCallRequestWriteBound(t *testing.T) {
 	old := exchangeTimeout
 	exchangeTimeout = 100 * time.Millisecond
@@ -35,7 +44,7 @@ func TestCallRequestWriteBound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	start := time.Now()
-	_, err = Call[string, struct{}](ctx, path, Protocol{}, strings.Repeat("x", 8<<20), func(struct{}) bool { return true })
+	_, err = Call[delayedRequest, struct{}](ctx, path, Protocol{}, delayedRequest{}, func(struct{}) bool { return true })
 	if c := <-accepted; c != nil {
 		defer func() { _ = c.Close() }() // Cleanup only; connection-close errors are not under test.
 	}
