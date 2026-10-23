@@ -100,7 +100,8 @@ type Config struct {
 type Director struct {
 	// Adapter names the runtime adapter, such as "claude"; a positional runtime overrides it for one command.
 	Adapter string `toml:"adapter"`
-	// Model and Effort are passed to the adapter as given; empty means the adapter's default.
+	// Model is passed as given; empty means the adapter's default.
+	// Effort is explicit when set; otherwise EffectiveEffort supplies the config fallback.
 	Model  string `toml:"model"`
 	Effort string `toml:"effort"`
 	// Role is a slash-separated path relative to the config file's directory; empty keeps the copy's
@@ -140,7 +141,8 @@ var ErrUnknownProfile = errors.New("unknown profile")
 type Profile struct {
 	// Adapter names the runtime adapter, such as "claude"; required.
 	Adapter string `toml:"adapter"`
-	// Model and Effort are passed to the adapter as given; empty means the adapter's default.
+	// Model is passed as given; empty means the adapter's default.
+	// Effort is explicit when set; otherwise EffectiveEffort supplies the config fallback.
 	Model  string `toml:"model"`
 	Effort string `toml:"effort"`
 	// Role is a slash-separated path relative to the config file's directory; empty keeps the release role.
@@ -358,6 +360,16 @@ func (c *Config) validate() []string {
 	}
 	if v, ok := c.Local[LockWaitKey]; ok {
 		if _, err := parseLockWait(v); err != nil {
+			add("local %v", err)
+		}
+	}
+	if m, ok := c.Managed[DefaultEffortKey]; ok {
+		if err := checkDefaultEffort(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[DefaultEffortKey]; ok {
+		if err := checkDefaultEffort(v); err != nil {
 			add("local %v", err)
 		}
 	}

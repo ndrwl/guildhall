@@ -2,16 +2,19 @@ package fake
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // DirectorSubcommand is the guildhall subcommand that runs the fake Director session.
@@ -31,7 +34,8 @@ func (Adapter) SkillsDir() string { return "skills" }
 func (Adapter) Program() string { return "" }
 
 // Session returns the fake Director session for spec: `guildhall fake-director --role <role prompt>
-// <first message>` in the session directory with the session's environment. It refuses an invalid spec or an
+// [--model <model>] [--effort <effort>] <first message>` in the session directory with the session's environment.
+// It passes settings unchanged for recording beside the role prompt. It refuses an invalid spec or an
 // unset Executable, returning no command; it writes nothing.
 func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
@@ -40,18 +44,37 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	if a.Executable == "" {
 		return adapter.Command{}, errors.New("fake adapter: guildhall executable is not set")
 	}
-	return adapter.Command{Argv: []string{a.Executable, DirectorSubcommand, "--role", spec.RolePrompt, spec.FirstMessage},
+	argv := []string{a.Executable, DirectorSubcommand, "--role", spec.RolePrompt}
+	if spec.Model != "" {
+		argv = append(argv, "--model", spec.Model)
+	}
+	if spec.Effort != "" {
+		argv = append(argv, "--effort", spec.Effort)
+	}
+	return adapter.Command{Argv: append(argv, spec.FirstMessage),
 		Dir: spec.Dir, Env: spec.SessionEnv()}, nil
 }
 
-// DirectorMain runs `guildhall fake-director --role <file> <first message>`: it plays the role prompt's
-// SessionDirective lines with RunScript and returns its exit status, or 2 for refused arguments.
+// DirectorMain runs `guildhall fake-director --role <file> [--model <model>] [--effort <effort>] <first message>`:
+// it records settings beside the role prompt, then plays its SessionDirective lines with RunScript.
+// It returns the script's exit status, or 2 for refused arguments or a settings record failure.
 func DirectorMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fl := flag.NewFlagSet(DirectorSubcommand, flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	role := fl.String("role", "", "role prompt file")
+	var settings adapter.Settings
+	fl.StringVar(&settings.Model, "model", "", "model to record")
+	fl.StringVar(&settings.Effort, "effort", "", "effort to record")
 	if err := fl.Parse(args); err != nil || *role == "" || fl.NArg() != 1 || strings.TrimSpace(fl.Arg(0)) == "" {
 		_, _ = fmt.Fprintf(stderr, "guildhall: %s: want --role <file> and one first message\n", DirectorSubcommand)
+		return 2
+	}
+	data, err := json.Marshal(settings)
+	if err == nil {
+		err = atomicfile.Write(filepath.Join(filepath.Dir(*role), SettingsFile), data)
+	}
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guildhall: %s: settings record: %v\n", DirectorSubcommand, err)
 		return 2
 	}
 	text, err := os.ReadFile(*role)

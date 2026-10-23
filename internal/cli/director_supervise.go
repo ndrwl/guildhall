@@ -210,7 +210,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	cmd, err := p.runtime.Session(adapter.SessionSpec{Dir: dir, Copy: copyDir, RolePrompt: r.RolePath,
-		FirstMessage: render.StartupMessage, Model: model, Effort: effort, Env: []string{session.NumberEnv + "=" + strconv.Itoa(n)}})
+		FirstMessage: render.StartupMessage, Model: model, Effort: p.cfg.EffectiveEffort(effort), Env: []string{session.NumberEnv + "=" + strconv.Itoa(n)}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}

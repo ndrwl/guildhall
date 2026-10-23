@@ -37,17 +37,24 @@ func TestSessionCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--model", "opus", "--", "You are starting up."}
+	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--model", "opus", "--effort", "high", "--", "You are starting up."}
 	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
 		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
 	}
-	spec.Model = ""
+	spec.Model, spec.Effort = "", ""
 	named := filepath.Join(c, "claude")
 	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--", "You are starting up."}) {
 		t.Errorf("named claude, no model: %+v, %v", cmd, err)
 	}
 	if cmd, err := (claude.Adapter{Claude: "bin/claude"}).Session(spec); err == nil || len(cmd.Argv) > 0 {
 		t.Errorf("relative claude: %+v, %v", cmd, err)
+	}
+	for _, bad := range []adapter.Settings{{Model: "--bad"}, {Effort: "extreme"}, {Effort: "High"}} {
+		spec.Model, spec.Effort = bad.Model, bad.Effort
+		cmd, err := (claude.Adapter{}).Session(spec)
+		if !errors.Is(err, adapter.ErrUnsupportedSetting) || len(cmd.Argv) != 0 {
+			t.Errorf("Session with %+v = %+v, %v", bad, cmd, err)
+		}
 	}
 	a := claude.Adapter{}
 	if a.Program() != "claude" || a.SkillsDir() != ".claude/skills" || !a.TurnEndHook() {

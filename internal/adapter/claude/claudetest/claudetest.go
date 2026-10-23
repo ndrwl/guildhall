@@ -422,8 +422,26 @@ func session(args []string) int {
 		return fail("want --append-system-prompt-file <role> --add-dir <copy> [--model <m>] -- <first message>, got %q", args)
 	}
 	role, copyDir, rest := args[1], args[3], args[4:]
-	if len(rest) == 4 && rest[0] == "--model" && rest[1] != "" {
-		rest = rest[2:]
+	separator := slices.Index(rest, "--")
+	if separator < 0 {
+		return fail("want -- followed by one first message line last, got %q", rest)
+	}
+	given, err := settingsFlags(rest[:separator])
+	if err != nil {
+		return fail("session settings flags: %v", err)
+	}
+	for i := 0; i < separator; i += 2 {
+		if i+1 >= separator || (rest[i] != "--model" && rest[i] != "--effort") {
+			return fail("unknown session flag: %q", rest[i:separator])
+		}
+	}
+	rest = rest[separator:]
+	data, err := json.Marshal(given)
+	if err != nil {
+		return fail("settings record: %v", err)
+	}
+	if err := os.WriteFile(fake.SettingsFile, data, 0o600); err != nil {
+		return fail("settings record: %v", err)
 	}
 	if len(rest) != 2 || rest[0] != "--" || strings.TrimSpace(rest[1]) == "" || strings.ContainsAny(rest[1], "\r\n") {
 		return fail("want -- followed by one first message line last, got %q", rest)

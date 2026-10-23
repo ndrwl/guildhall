@@ -253,7 +253,7 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 func checkProfileSettings(cfg *config.Config, names []string) error {
 	for _, name := range names {
 		p := cfg.Profiles[name]
-		if err := runtimeSettings(p.Adapter, adapter.Settings{Model: p.Model, Effort: p.Effort}); err != nil {
+		if err := runtimeSettings(p.Adapter, adapter.Settings{Model: p.Model, Effort: cfg.EffectiveEffort(p.Effort)}); err != nil {
 			return fmt.Errorf("profile %s: %w", name, err)
 		}
 	}
@@ -514,6 +514,14 @@ func (a *App) resolveRuntime(p *startPlan) (string, error) {
 		if p.name == "" {
 			err = fmt.Errorf("no runtime: name one, or set [director] adapter; the adapters are %s", strings.Join(runtimes.Names(), ", "))
 		}
+		return "", err
+	}
+	settings := adapter.Settings{}
+	if d := p.cfg.Director; d != nil {
+		settings.Model, settings.Effort = d.Model, d.Effort
+	}
+	settings.Effort = p.cfg.EffectiveEffort(settings.Effort)
+	if err := runtimeSettings(p.name, settings); err != nil {
 		return "", err
 	}
 	if prog := p.runtime.Program(); prog != "" {
