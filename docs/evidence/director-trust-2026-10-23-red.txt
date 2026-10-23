@@ -1,0 +1,25 @@
+--- FAIL: TestDirectorClaudeReusesTrustedWorkspace (0.10s)
+    director_trust_test.go:21: start 1: exit 1
+        config: admitted (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/config.toml)
+        runtime: claude (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/001/claude)
+        guildhall: /tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/003/guildhall
+        store: opens (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/director.store)
+        skills: 13 release skills install
+        artisans: Director alpha's config /tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/config.toml: no profile runs the claude adapter
+        session: 1 (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/director/session-1)
+        session: 1 has no turn-end endpoint, so it waits 1m0s for a turn to end: session: session endpoint path is unusable: "/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/director/session-1/supervisor.sock" is 135 bytes, limit 107
+        
+        Is this a project you created or one you trust?
+        guildhall: director start: the runtime exited with status 1
+--- FAIL: TestDirectorClaudePreflightNamesTrust (0.06s)
+    director_trust_test.go:36: preflight: exit 0
+        config: admitted (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/002/config.toml)
+        runtime: claude (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/001/claude)
+        guildhall: /tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/003/guildhall
+        store: opens (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/002/director.store)
+        skills: 13 release skills install
+        artisans: Director alpha's config /tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/002/config.toml: no profile runs the claude adapter
+        
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.165s
+FAIL

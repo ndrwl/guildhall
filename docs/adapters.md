@@ -122,6 +122,12 @@ Work ended by an interrupt or the cancel marker writes none.
 
 ## Claude adapter
 
+For interactive [Director sessions](director.md#start), Claude runs in the stable per-copy directory `<copy>/director/claude`, not in a fresh numbered directory.
+Claude's native folder-trust dialog needs approval once at the first start; starts, reloads and handoffs then reuse that identity.
+The current numbered record supplies the generated `.claude` settings and release skills, and absolute role/startup paths retain session identity.
+The pre-approved permission rules are unchanged; this does not select a bypass permission mode, suppress ordinary tool prompts or edit Claude-owned trust state.
+Startup preflight prints a read-only, advisory trust indication, including a warning when approval cannot be confirmed; effective trust remains Claude's decision ([decision](decisions/director-stable-claude-workspace.md)).
+
 The Claude adapter runs one attempt as a non-interactive Claude Code session, with no optional capabilities.
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--model <model>] [--effort <level>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 

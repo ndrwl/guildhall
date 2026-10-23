@@ -1,0 +1,196 @@
+Live Claude 2.1.309 / Haiku 5.5, 2026-10-23
+Named Herdr lab: fm-lab-guildhall-direct-217574-2938
+All Herdr calls went through fm-herdr-lab.sh; no tmux primary.
+The isolated copy and native Claude config were under /tmp/gh-trust-_zbzigcg.
+A preliminary copy under the task data directory inherited ancestor repository customizations; it was terminated before using the isolated /tmp copy for the acceptance check.
+Only sign-in/onboarding preferences were copied to the isolated config; native Claude recorded trust through its dialog.
+Temporary credential copies were removed after the check.
+
+=== First-start native trust gate ===
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+Resume this session with:
+claude --resume 90238cfc-17be-4a23-9226-35cec84883a5
+guildhall: director start: ended by terminated
+➜  lab git:(main) cd /tmp/gh-trust-_zbzigcg; export PATH=/home/andrew/firstmate/data/guildhall-director-trust-prompt:$P
+ATH CLAUDE_CONFIG_DIR=/tmp/gh-trust-_zbzigcg/claude-config; guildhall director start --copy /tmp/gh-trust-_zbzigcg/copy
+
+config: admitted (/tmp/gh-trust-_zbzigcg/copy/config.toml)
+runtime: claude (/home/andrew/.local/bin/claude)
+trust: /tmp/gh-trust-_zbzigcg/copy/director/claude: trust not confirmed; first start may require one folder-trust appro
+val in Claude; effective ancestor/project trust is resolved by Claude (docs/director.md)
+guildhall: /home/andrew/firstmate/data/guildhall-director-trust-prompt/guildhall
+store: opens (/tmp/gh-trust-_zbzigcg/copy/director.store)
+skills: 13 release skills install
+artisans: Director alpha's config /tmp/gh-trust-_zbzigcg/copy/config.toml: no profile runs the claude adapter
+session: 1 (/tmp/gh-trust-_zbzigcg/copy/director/session-1)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /tmp/gh-trust-_zbzigcg/copy/director/claude
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ ⚠ This folder pre-approves 17 tool permissions in .claude/settings.json:
+   Bash(guildhall), Bash(guildhall *), Bash(git status), Bash(git status *), Bash(git log), Bash(git log *), Bash(git
+ diff), Bash(git diff *), and 9 more
+ These will apply without asking. Only proceed if you trust this configuration.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+=== First startup after one native approval ===
+val in Claude; effective ancestor/project trust is resolved by Claude (docs/director.md)
+guildhall: /home/andrew/firstmate/data/guildhall-director-trust-prompt/guildhall
+store: opens (/tmp/gh-trust-_zbzigcg/copy/director.store)
+skills: 13 release skills install
+artisans: Director alpha's config /tmp/gh-trust-_zbzigcg/copy/config.toml: no profile runs the claude adapter
+session: 1 (/tmp/gh-trust-_zbzigcg/copy/director/session-1)
+ ▐▛███▛█   Claude Code v2.1.309
+▝▜██████▀  Haiku 5.5 · Claude Max
+ ▝▝   ▝▝   /tmp/gh-trust-_zbzigcg/copy/director/claude
+
+▎ Auto mode is now Claude Code's default permission mode.
+▎ Auto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky actions and
+▎ prompt injection before executing, runs the ones it assesses as lower-risk, and blocks the rest.
+▎ https://code.claude.com/docs/en/permission-modes
+  1 more notice hidden
+
+❯ You are starting up: read "/tmp/gh-trust-_zbzigcg/copy/director/session-1/startup.md" and follow it.
+
+  Read 1 file (ctrl+o to expand)
+  ⎿  1 skill available
+
+● Bash(guildhall director ready)
+  ⎿  {
+       "number": 1,
+       "state": "running",
+     … +25 lines (ctrl+o to expand)
+
+● TRUST-LAB-STARTUP-OK
+
+  Director session 1 is marked ready (state: running). The handoff note was empty and there were no other in-flight
+  items. I'm waiting for input and have not started any tasks or looked at other directories.
+
+✻ Cooked for 9s · done 11:08 PM
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  context 4%
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+=== Fresh restart, no further approval ===
+
+ ▐▛███▛█   Claude Code v2.1.309
+▝▜██████▀  Haiku 5.5 · Claude Max
+ ▝▝   ▝▝   /tmp/gh-trust-_zbzigcg/copy/director/claude
+
+  Get to finished work sooner with Opus 5.5. Switch anytime with /model.
+
+❯ You are starting up: read "/tmp/gh-trust-_zbzigcg/copy/director/session-2/startup.md" and follow it.
+
+● Skill(guildhall-director-startup)
+  ⎿  Successfully loaded skill
+
+  Read 1 file, ran 2 shell commands
+
+● TRUST-LAB-STARTUP-OK
+
+  Recovery is done. Director session 2 is now running, and guildhall director ready returned state running.
+
+  Nothing was in flight. The handoff note was empty, and the only needs_me item was the session's own recovering state,
+  which ready cleared. There are no tasks, decisions or messages waiting on you.
+
+  Waiting for input.
+
+✻ Cogitated for 11s · done 11:08 PM
+
+
+
+
+
+
+
+
+
+
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  context 4%
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+=== Handoff and reload, no further approval ===
+
+ ▐▛███▛█   Claude Code v2.1.309
+▝▜██████▀  Haiku 5.5 · Claude Max
+ ▝▝   ▝▝   /tmp/gh-trust-_zbzigcg/copy/director/claude
+
+  Get to finished work sooner with Opus 5.5. Switch anytime with /model.
+
+❯ You are starting up: read "/tmp/gh-trust-_zbzigcg/copy/director/session-3/startup.md" and follow it.
+
+  Read 1 file, ran 1 shell command
+
+● TRUST-LAB-STARTUP-OK
+
+  Director session 3 is ready (guildhall director ready returned state running, ready at 2026-10-23T21:09:13Z). I did
+  not read the handoff note at /tmp/gh-trust-_zbzigcg/copy/state/documents/director/handoff-8.md because the startup
+  instructions for this smoke test scoped the run to the startup file and the ready command. No tasks are in flight, so
+  I'm waiting for input.
+
+✻ Churned for 11s · done 11:09 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  context 4%
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+=== Post-approval read-only preflight ===
+config: admitted (/tmp/gh-trust-_zbzigcg/copy/config.toml)
+runtime: claude (/home/andrew/.local/bin/claude)
+trust: /tmp/gh-trust-_zbzigcg/copy/director/claude: exact folder-trust approval recorded; Claude resolves effective trust at startup
+guildhall: /home/andrew/firstmate/data/guildhall-director-trust-prompt/guildhall
+store: opens (/tmp/gh-trust-_zbzigcg/copy/director.store)
+skills: 13 release skills install
+artisans: Director alpha's config /tmp/gh-trust-_zbzigcg/copy/config.toml: no profile runs the claude adapter
+
+All three numbered settings files had identical SHA256:
+4ccaf02670d73a602062aef7924387bd439817198088b4c7d6c1adc38d77a33b
+The exact stable-directory hasTrustDialogAccepted was true after native approval.
+
+=== Guarded teardown ===
+fm-herdr-lab: session stop 'fm-lab-guildhall-direct-217574-2938' exit=0
+fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
+{"session":{"default":false,"name":"fm-lab-guildhall-direct-217574-2938","running":false,"session_dir":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938","socket_path":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938/herdr.sock"},"stopped":true}
+fm-herdr-lab: session delete 'fm-lab-guildhall-direct-217574-2938' exit=0
+fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
+{"deleted":true,"session":{"default":false,"name":"fm-lab-guildhall-direct-217574-2938","running":false,"session_dir":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938","socket_path":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938/herdr.sock"}}
+
+The helper removed its tripwire record after verifying unchanged default-session state; no lab server remained.

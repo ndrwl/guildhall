@@ -452,6 +452,19 @@ func session(args []string) int {
 	if got := os.Getenv(adapter.CopyEnv); got != copyDir {
 		return fail("%s = %q, want the added copy %q", adapter.CopyEnv, got, copyDir)
 	}
+	// Opt-in trust gate: a fresh working directory cannot consume the startup message.
+	// The test supplies the one directory whose approval a person has already saved.
+	if trusted := os.Getenv("GUILDHALL_TEST_CLAUDE_TRUSTED_DIR"); trusted != "" {
+		cwd, err := os.Getwd()
+		trusted, trustErr := filepath.EvalSymlinks(trusted)
+		if err == nil {
+			cwd, err = filepath.EvalSymlinks(cwd)
+		}
+		if err != nil || trustErr != nil || cwd != trusted {
+			fmt.Fprintln(os.Stderr, "Is this a project you created or one you trust?")
+			return 1
+		}
+	}
 	settings, err := os.ReadFile(filepath.Join(".claude", "settings.json"))
 	if err != nil || !json.Valid(settings) {
 		return fail("session settings: %v", err)
