@@ -102,3 +102,4 @@ Until then a new decision is cited by its file path rather than a number.
 - [D86. The supervisor's checks watcher and the resume wake](decisions/0086-director-checks-watch.md)
 - [D87. Deliver opens the Guildmaster's audit of a sampled task](decisions/0087-quality-audit.md)
 - [D88. One registry of the message types Guildhall sends](decisions/0088-message-type-registry.md)
+- [D89. Each Director grants its Claude Artisans narrow tool permissions per profile](decisions/0089-artisan-allow-rules.md)
