@@ -43,7 +43,7 @@ These are the kinds of jobs Guildhall is designed for:
 
 You will talk to your Director, and never need to type a command to give work, answer a decision or approve a merge.
 This is the standing rule, recorded in [plain English to the Director](docs/decisions/0057-director-conversation-first.md).
-The session below is illustrative: it shows the intended experience, which is not built yet.
+The session below is illustrative, not a transcript of a real task: the conversational Director is built, but live acceptance of this experience is still pending.
 
 > **You:** Add a health check endpoint to the app repository.
 >
