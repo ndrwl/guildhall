@@ -2,7 +2,7 @@
 // Windows as on Unix, serving a versioned JSON line protocol, one request line answered by one reply line. Its
 // consumers, the attempt control endpoint (artisan.Listen and artisan.Call) and the Director session's turn signals
 // (session.Listen and session.Signal), each name their protocol and their owner; the endpoint owns binding, the
-// stale-file rule, permissions, strict decoding, the peer check, the exchange bound and removal.
+// stale-file rule, permissions, strict decoding, the peer check, transport bounds and removal.
 //
 // The endpoint does not authenticate its peers: access control is the directory's. Its directory is created 0700
 // and, on Unix, its socket made 0600.
