@@ -95,7 +95,7 @@ The fake adapter is a test-only runtime with no optional capabilities; it grants
 It runs `guildhall fake-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--model <model>] [--effort <effort>]`, which reads the prompt, prints its progress, and writes a result whose summary records the prompt's size and SHA-256 digest.
 It honours every [runtime setting](#runtime-settings): before reading the prompt the worker records the model and effort it was given, either empty, as `fake-settings.json` beside the result file, which `fake.RecordedSettings` reads, so tests can see what reached the runtime.
 
-Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; each key may appear once, and an unknown key or value is refused before anything is written.
+Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; each key may appear once, and an unknown key or value is refused before any directive is applied or result is written, though the worker has already recorded its settings.
 
 | Directive | Effect |
 |---|---|
