@@ -178,7 +178,8 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 
 The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
-The registry declares which kinds accept `profile`, a [profile](#profiles) name, and `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
+`research` accepts only optional `profile`, a [profile](#profiles) name; it does not accept `skills`.
+`plan`, `build`, `document-review` and `review` accept optional `profile` and `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 
 Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a step:

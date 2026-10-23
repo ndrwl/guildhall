@@ -461,6 +461,44 @@ func TestCrashBetweenRecordAndLaunchReplays(t *testing.T) {
 	}
 }
 
+func TestResearchProfileReachesTheLaunch(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			def, err := workflow.Parse([]byte(`{"schema":"guildhall.workflow/1","name":"research-profile","steps":[{"id":"research","type":"research","version":1,"settings":{"profile":"researcher"}}]}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := workflow.Validate(def); err != nil {
+				t.Fatalf("research profile refused: %v", err)
+			}
+			e := newEnvDefinition(t, b, def, interptest.Expectation{
+				Step: "research", Attempt: 1, Profile: "researcher", Inputs: map[string]string{},
+				Standards: []string{"standards/go.md"}, Respond: interptest.Succeed("researched"),
+			})
+			e.eng.Config.Profiles["researcher"] = config.Profile{Adapter: interp.MockAdapter, Model: "research-model", Effort: "high"}
+			e.eng.Copy = t.TempDir()
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
+			launched := e.script.Launched()
+			if len(launched) != 1 {
+				t.Fatalf("launches = %d, want 1", len(launched))
+			}
+			got := launched[0]
+			settings := adapter.Settings{Model: "research-model", Effort: "high"}
+			if got.Profile != "researcher" || got.Adapter != interp.MockAdapter || got.Settings != settings || got.Copy != e.eng.Copy {
+				t.Fatalf("research launch = %+v", got)
+			}
+			mapped := got.AdapterSpec()
+			if mapped.Profile != "researcher" || mapped.Settings != settings || mapped.Copy != e.eng.Copy {
+				t.Fatalf("research adapter spec = %+v", mapped)
+			}
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			if len(e.script.Launched()) != 1 || len(e.attempts(t)) != 1 {
+				t.Fatal("replayed task creation duplicated research")
+			}
+		})
+	}
+}
+
 func TestProfileAllowedToolsReachTheLaunch(t *testing.T) {
 	for name, rules := range map[string][]string{"none": nil, "granted": {"Bash(go test:*)", "Bash(git commit:*)"}} {
 		t.Run(name, func(t *testing.T) {

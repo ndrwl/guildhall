@@ -1,0 +1,20 @@
+=== RUN   TestProfileAndSkillsAcceptedOnArtisanKinds
+--- PASS: TestProfileAndSkillsAcceptedOnArtisanKinds (0.00s)
+=== RUN   TestProfileAndSkillsSurviveHumanReviewOverride
+--- PASS: TestProfileAndSkillsSurviveHumanReviewOverride (0.00s)
+=== RUN   TestProfileAndSkillsMustBeNames
+--- PASS: TestProfileAndSkillsMustBeNames (0.00s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/workflow	0.007s
+=== RUN   TestResearchProfileReachesTheLaunch
+=== RUN   TestResearchProfileReachesTheLaunch/double
+    engine_test.go:465: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:research Attempt:1 Decision:}
+    engine_test.go:479: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:research Attempt:1 Decision:}
+=== RUN   TestResearchProfileReachesTheLaunch/store
+    engine_test.go:465: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:research Attempt:1 Decision:}
+    engine_test.go:479: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:research Attempt:1 Decision:}
+--- PASS: TestResearchProfileReachesTheLaunch (0.07s)
+    --- PASS: TestResearchProfileReachesTheLaunch/double (0.02s)
+    --- PASS: TestResearchProfileReachesTheLaunch/store (0.04s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/interp	0.069s

@@ -13,6 +13,9 @@ func withSettings(step, settings string) string {
 	if err != nil {
 		panic(err)
 	}
+	if step == "research" {
+		def.Steps = append([]Step{{ID: "research", Type: "research", Version: 1}}, def.Steps...)
+	}
 	s := &def.Steps[def.stepIndex(step)]
 	if err := json.Unmarshal([]byte(settings), &s.Settings); err != nil {
 		panic(err)
@@ -37,6 +40,50 @@ func TestProfileAndSkillsAcceptedOnArtisanKinds(t *testing.T) {
 		if got := s.Skills(); !slices.Equal(got, []string{"go-tdd", "guildhall-contributing"}) {
 			t.Fatalf("%s: Skills() = %q", step, got)
 		}
+	}
+}
+
+func TestResearchAcceptsOnlyProfile(t *testing.T) {
+	for _, tc := range []struct {
+		settings string
+		want     string
+	}{
+		{`{}`, ""},
+		{`{"profile":"researcher"}`, ""},
+		{`{"profile":3}`, `setting "profile" must be a name`},
+		{`{"profile":"Reviewer"}`, `setting "profile" must be a name`},
+		{`{"profile":""}`, `setting "profile" must be a name`},
+		{`{"skills":["go-tdd"]}`, `unknown setting "skills"`},
+		{`{"profile":"researcher","skills":["go-tdd"]}`, `unknown setting "skills"`},
+	} {
+		t.Run(tc.settings, func(t *testing.T) {
+			def, err := Parse([]byte(withSettings("research", tc.settings)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := def.Steps[def.stepIndex("research")]
+			for name, err := range map[string]error{
+				"workflow": Validate(def),
+				"step":     ValidateStepSettings(s),
+			} {
+				if tc.want == "" {
+					if err != nil {
+						t.Fatalf("%s: %v", name, err)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("%s: err = %v, want %q", name, err, tc.want)
+				}
+			}
+			if tc.want == "" {
+				want := ""
+				if tc.settings != `{}` {
+					want = "researcher"
+				}
+				if s.Profile() != want || s.Skills() != nil {
+					t.Fatalf("Profile() = %q, Skills() = %q", s.Profile(), s.Skills())
+				}
+			}
+		})
 	}
 }
 
