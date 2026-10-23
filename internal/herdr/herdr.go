@@ -3,8 +3,8 @@
 //
 // Every call names its session explicitly; the ambient HERDR_SESSION,
 // HERDR_SOCKET_PATH and pane context variables never choose the target.
-// The client creates workspaces and tabs, reads them, runs a command in a tab it
-// created, interrupts that command, closes only tabs it created, and reports
+// The client creates workspaces and tabs, reads them, runs a command in an
+// owned tab, interrupts that command, closes only owned tabs, and reports
 // a pane's agent with its resume command.
 // It never starts, stops or deletes Herdr servers or sessions.
 package herdr
@@ -542,7 +542,7 @@ func (c *Client) CheckOwnedPane(ctx context.Context, t OwnedTab) error {
 	return nil
 }
 
-// CloseOwnedTab closes a tab this client created. Closing does not prove
+// CloseOwnedTab closes a tab with ownership proof. Closing does not prove
 // process termination; callers must establish separately when closure is safe.
 func (c *Client) CloseOwnedTab(ctx context.Context, t OwnedTab) error {
 	if err := c.checkOwned(t); err != nil {

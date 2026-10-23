@@ -281,9 +281,7 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
   For a POSIX shell, a program named by a Windows drive path is written with `/` separators, because `dash` under Git for Windows cannot start it with `\`.
   Arguments PowerShell would alter are refused for PowerShell: empty arguments, arguments containing `"` or typographic single quotes, and arguments containing whitespace that end in `\`, which Windows PowerShell 5.1 merges with the next argument.
 - A tab Guildhall creates or durably records is the only kind it can type into, interrupt or close, and the close rule of R1.54 applies; `artisan start` never closes its running attempt tab.
-  Workspace creation also grants ownership of the exact starting shell returned by Herdr; Guildhall closes that shell after creating its replacement, not a shell inferred from an existing workspace's label.
-  The [Director wrapper](director.md#the-directors-tab) retires recorded stopped Director tabs only after the replacement session starts, with the old runtime proven empty and one idle shell pane still in its recorded tab; reload stays in the same tab.
-  Tab cleanup is presentation only, and never changes task or session state.
+  See the [adapter contract](contracts/adapter.md) for workspace starting-shell ownership and idle-tab cleanup, and [the Director's tab](director.md#the-directors-tab) for the replacement lifecycle.
 
 ## Verification status
 

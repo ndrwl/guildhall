@@ -94,7 +94,7 @@ type TabHost interface {
 var errNotOwned = errors.New("tab was not created by this host")
 
 // HerdrTabs is the TabHost backed by a Herdr client. It keeps the client's
-// ownership proof for each tab it created and accepts only those tabs.
+// ownership proof for created or durably adopted tabs and accepts only those.
 type HerdrTabs struct {
 	client   *herdr.Client
 	mu       sync.Mutex

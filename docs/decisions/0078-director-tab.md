@@ -21,8 +21,8 @@ The [session supervisor](0071-director-start.md) already runs a session in the f
   Both the wrapper, before it opens a tab, and the supervisor, in the transaction that records the new session, refuse with `director: live` while the newest session is not stopped and its supervisor's identity probes alive or cannot be shown gone.
   The contract names `running` and `recovering`; `paused` and `stopping` are refused the same way, because their supervisor and runtime still run.
   A session whose supervisor is gone is recorded `stopped` with the store-set end reason `superseded`, so `director status` and the Guildmaster can tell a crash from a clean end.
-- **The tab is never closed here.**
-  R1.54 allows Guildhall to close tabs it created, but a failed start's output is the evidence of what went wrong, and whether `director stop` closes the tab is its own decision.
+- **Tab retention was superseded by [Director tab replacement](director-tab-replacement.md).**
+  See [the current lifecycle](../director.md#the-directors-tab) for output retention and cleanup.
 - **The Herdr session is configured, never `default`.**
   `[local] herdr_session` names it, refused when it is `default` or not a Herdr session name, so the wrapper never opens tabs in the Guildmaster's own terminal session by accident.
   Without it the wrapper is refused, naming the setting and the session in the current terminal.
@@ -31,8 +31,5 @@ The [session supervisor](0071-director-start.md) already runs a session in the f
 
 ## Not yet
 
-The lab checklist in [the Director](../director.md#the-directors-tab) (zsh on WSL, Git Bash and PowerShell 5.1 on native Windows, in an isolated named Herdr session) is the acceptance and has not been run.
-A live Claude Code Director has not been run in a tab.
-R1.37 asks for the Director's session to be its workspace's first tab, but Herdr gives a new workspace a first tab of its own, so on a new workspace the Director's tab comes second.
-Closing that first tab once the Director's exists would meet R1.37, and R1.54 allows it because Guildhall created the workspace, but what Herdr does on closing a workspace's first tab is unproven, so it waits for the lab.
+See [the Director's tab](../director.md#the-directors-tab) for current lab acceptance status and the replacement of Herdr's initial shell.
 `director status` does not yet probe the supervisor's liveness.
