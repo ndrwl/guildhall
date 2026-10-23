@@ -88,24 +88,25 @@ func TestQualityJudgeEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if slices.ContainsFunc(docs, func(doc store.DocumentRef) bool { return doc.Name == workflow.JudgeStep+"-1-judgement" }) {
+		msgs, err := withStore(d.store, true, func(s *store.Store) ([]store.Message, error) {
+			m, _, err := s.Inbox(store.Recipient{Role: store.RecipientDirector}, 0, 100)
+			return m, err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.ContainsFunc(docs, func(doc store.DocumentRef) bool { return doc.Name == workflow.JudgeStep+"-1-judgement" }) &&
+			slices.ContainsFunc(msgs, func(m store.Message) bool {
+				return m.Repository == "app" && m.TaskID == "t-1" && m.Type == "judgement" && strings.Contains(m.Text, "would merge it as is: no")
+			}) {
 			break
 		}
 		select {
 		case <-ctx.Done():
 			log, _ := os.ReadFile(filepath.Join(d.state, "app", "t-1", workflow.JudgeStep+"-1", "launcher.log"))
-			t.Fatalf("no judgement recorded; documents %+v; launcher log:\n%s", docs, log)
+			t.Fatalf("judgement document and notification not both observed; documents %+v; Director messages %+v; launcher log:\n%s", docs, msgs, log)
 		case <-time.After(50 * time.Millisecond):
 		}
-	}
-	msgs, err := withStore(d.store, true, func(s *store.Store) ([]store.Message, error) {
-		m, _, err := s.Inbox(store.Recipient{Role: store.RecipientDirector}, 0, 100)
-		return m, err
-	})
-	if err != nil || !slices.ContainsFunc(msgs, func(m store.Message) bool {
-		return m.Type == "judgement" && strings.Contains(m.Text, "would merge it as is: no")
-	}) {
-		t.Errorf("Director messages %+v, %v; want a judgement saying no", msgs, err)
 	}
 	task, err := withStore(d.store, true, func(s *store.Store) (store.Task, error) { return s.Task("app", "t-1") })
 	if err != nil || task.State != store.TaskDone {
