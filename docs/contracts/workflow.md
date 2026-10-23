@@ -6,6 +6,9 @@
 
 `JudgeStep`, `quality-judge`, is reserved for a delivered task's [judge attempts](../decisions/quality-judge.md): `Validate` refuses it as a step id.
 The `profile` and `skills` settings and their `Step` accessors.
+Research, plan and build accept the same optional Artisan settings: `profile` is a valid identifier and `skills` is a list of distinct valid identifiers.
+Document-review and review also accept these settings, retaining them on a Guildmaster actor override.
+Invalid types, invalid names, duplicate skills and undeclared settings are refused during validation; omitted settings remain valid.
 Grill steps accept optional `skills` with the shared distinct-name-list validation for either allowed actor, without adding `profile` or `instructions` ([decision](../decisions/0029-grill-step-skills.md)).
 The release skills for a grill follow its actor: `guildhall-grill` with `guildhall-domain-model` for the Director, `guildhall-grill-unattended` for an Artisan ([decision](../decisions/0061-grill-live-interview.md)); the registry does not bind skills to actors, so a step lists the ones it renders, and the shipped default's Director grill lists `guildhall-grill` and `guildhall-domain-model` (`TestDefaultGrillIsTheDirectorsLiveGrill`, red first against the default with no skills, [red run](../evidence/director-stages-2026-10-22-red.txt)).
 `ValidateStepSettings` checks an isolated step's kind, version and settings with the same actor, allowed-key, required-setting, type, name and duplicate rules as `Validate`, without requiring the surrounding workflow's input and loop wiring.
@@ -18,6 +21,8 @@ Review outcome findings carry a required stable `id` and an optional cited `rule
 ## Tests
 
 `workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`
+
+The research cases in `TestProfileAndSkillsAcceptedOnArtisanKinds` and `TestProfileAndSkillsMustBeNames` were added before the registry fix and failed on unknown settings ([red run](../evidence/research-profile-2026-10-23-red.txt)); they pass with the shared Artisan settings ([green run](../evidence/research-profile-2026-10-23-green.txt)).
 
 `authority_test.go` was written red first against stub bodies ([red run](../evidence/s10-approval-enforcement-2026-10-21-red.txt)): which kinds are guarded, each weakening and non-weakening edit of the shipped default, the floor on the shipped and example workflows and on edits below it, and admission and refusal for each basis.
 The reserved-id case of `TestValidationRefusals` was written red first ([red run](../evidence/quality-judge-2026-10-23-red.txt)).

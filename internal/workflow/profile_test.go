@@ -13,6 +13,9 @@ func withSettings(step, settings string) string {
 	if err != nil {
 		panic(err)
 	}
+	if step == "research" {
+		def.Steps = append([]Step{{ID: "research", Type: "research", Version: 1}}, def.Steps...)
+	}
 	s := &def.Steps[def.stepIndex(step)]
 	if err := json.Unmarshal([]byte(settings), &s.Settings); err != nil {
 		panic(err)
@@ -25,7 +28,7 @@ func withSettings(step, settings string) string {
 }
 
 func TestProfileAndSkillsAcceptedOnArtisanKinds(t *testing.T) {
-	for _, step := range []string{"plan", "build", "review"} {
+	for _, step := range []string{"research", "plan", "build", "review"} {
 		def, err := load(t, withSettings(step, `{"profile": "reviewer-astra", "skills": ["go-tdd", "guildhall-contributing"]}`))
 		if err != nil {
 			t.Fatalf("%s: profile and skills refused: %v", step, err)
@@ -82,9 +85,11 @@ func TestProfileAndSkillsMustBeNames(t *testing.T) {
 		`{"skills": ["go-tdd"], "x": true}`: `unknown setting "x"`,
 	}
 	for settings, want := range cases {
-		_, err := load(t, withSettings("build", settings))
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%s: err = %v, want %q", settings, err, want)
+		for _, step := range []string{"research", "build"} {
+			_, err := load(t, withSettings(step, settings))
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%s %s: err = %v, want %q", step, settings, err, want)
+			}
 		}
 	}
 }

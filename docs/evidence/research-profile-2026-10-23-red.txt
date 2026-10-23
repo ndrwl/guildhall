@@ -1,0 +1,28 @@
+=== RUN   TestProfileAndSkillsAcceptedOnArtisanKinds
+    profile_test.go:34: research: profile and skills refused: invalid workflow: step "research": unknown setting "profile" for research; step "research": unknown setting "skills" for research
+--- FAIL: TestProfileAndSkillsAcceptedOnArtisanKinds (0.00s)
+=== RUN   TestProfileAndSkillsSurviveHumanReviewOverride
+--- PASS: TestProfileAndSkillsSurviveHumanReviewOverride (0.00s)
+=== RUN   TestProfileAndSkillsMustBeNames
+    profile_test.go:91: research {"profile": 3}: err = invalid workflow: step "research": unknown setting "profile" for research, want "setting \"profile\" must be a name"
+    profile_test.go:91: research {"profile": "Reviewer"}: err = invalid workflow: step "research": unknown setting "profile" for research, want "setting \"profile\" must be a name"
+    profile_test.go:91: research {"skills": "go-tdd"}: err = invalid workflow: step "research": unknown setting "skills" for research, want "setting \"skills\" must be a list of names"
+    profile_test.go:91: research {"profile": ""}: err = invalid workflow: step "research": unknown setting "profile" for research, want "setting \"profile\" must be a name"
+    profile_test.go:91: research {"skills": ["go-tdd", 1]}: err = invalid workflow: step "research": unknown setting "skills" for research, want "setting \"skills\" must be a list of names"
+    profile_test.go:91: research {"skills": ["../escape"]}: err = invalid workflow: step "research": unknown setting "skills" for research, want "setting \"skills\" must be a list of names"
+    profile_test.go:91: research {"skills": ["go-tdd", "go-tdd"]}: err = invalid workflow: step "research": unknown setting "skills" for research, want "setting \"skills\" names \"go-tdd\" twice"
+    profile_test.go:91: research {"skills": ["a/b"]}: err = invalid workflow: step "research": unknown setting "skills" for research, want "setting \"skills\" must be a list of names"
+--- FAIL: TestProfileAndSkillsMustBeNames (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/workflow	0.008s
+=== RUN   TestResearchProfileReachesTheLaunch
+=== RUN   TestResearchProfileReachesTheLaunch/double
+    engine_test.go:457: research profile refused: invalid workflow: step "research": unknown setting "profile" for research
+=== RUN   TestResearchProfileReachesTheLaunch/store
+    engine_test.go:457: research profile refused: invalid workflow: step "research": unknown setting "profile" for research
+--- FAIL: TestResearchProfileReachesTheLaunch (0.00s)
+    --- FAIL: TestResearchProfileReachesTheLaunch/double (0.00s)
+    --- FAIL: TestResearchProfileReachesTheLaunch/store (0.00s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.004s
+FAIL
