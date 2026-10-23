@@ -153,8 +153,9 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return err
 	}
-	outbox := &deferredOutbox{records: storeRecords(f.store)}
-	defer outbox.wakeAll(wakingOutbox{storeRecords(f.store), a.directorPane(), a.Stderr})
+	records := storeRecords{path: f.store}
+	outbox := &deferredOutbox{records: records}
+	defer outbox.wakeAll(wakingOutbox{records, a.directorPane(), a.Stderr})
 	ctx, cancel := context.WithTimeout(context.Background(), storeWait)
 	unlock, err := artisan.LockAttempt(ctx, taskDir)
 	cancel()
@@ -163,7 +164,7 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 	}
 	defer unlock()
 	return fn(&quality.Judge{
-		Records:  storeRecords(f.store),
+		Records:  records,
 		Outbox:   outbox,
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall},
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter,

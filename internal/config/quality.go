@@ -244,12 +244,10 @@ func parseCount(key, v string) (int, error) {
 	return n, nil
 }
 
-// ErrNoJudge reports that every judge profile listed failed for the self-review being judged.
 var ErrNoJudge = errors.New("no judge profile is left")
 
 // JudgeChoice is who judges a delivered task's self-review (docs/decisions/quality-judge.md).
 type JudgeChoice struct {
-	// Profile is the chosen profile, or "" for the default adapter when no profile is listed.
 	Profile string `json:"profile,omitempty"`
 	// Adapter is the judge's runtime adapter, which is its family.
 	Adapter string `json:"adapter"`
@@ -261,9 +259,7 @@ type JudgeChoice struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// Judge chooses the judge of a self-review whose builder ran on adapter builder ("" when unknown), passing over the
-// profiles in failed; with no profile listed it is defaultAdapter. See docs/contracts/config.md.
-func (q Quality) Judge(profiles map[string]Profile, builder, defaultAdapter string, failed []string) (JudgeChoice, error) {
+func (q Quality) Judge(profiles map[string]Profile, builder, builderProfile string, failed []string) (JudgeChoice, error) {
 	choose := func(profile, adapter, reason string) JudgeChoice {
 		c := JudgeChoice{Profile: profile, Adapter: adapter, Builder: builder}
 		switch {
@@ -277,18 +273,21 @@ func (q Quality) Judge(profiles map[string]Profile, builder, defaultAdapter stri
 		return c
 	}
 	if len(q.JudgeProfiles) == 0 {
-		return choose("", defaultAdapter, "no judge profile is listed in "+QualityJudgeProfilesKey), nil
+		return JudgeChoice{}, fmt.Errorf("%w: no profile is listed in %s", ErrNoJudge, QualityJudgeProfilesKey)
 	}
 	var usable []string
 	otherFamily := false
 	for _, name := range q.JudgeProfiles {
+		if name == builderProfile {
+			continue
+		}
 		otherFamily = otherFamily || profiles[name].Adapter != builder
 		if !slices.Contains(failed, name) {
 			usable = append(usable, name)
 		}
 	}
 	if len(usable) == 0 {
-		return JudgeChoice{}, fmt.Errorf("%w: every profile in %s failed for this self-review", ErrNoJudge, QualityJudgeProfilesKey)
+		return JudgeChoice{}, fmt.Errorf("%w: every profile in %s is the builder's profile or failed for this self-review", ErrNoJudge, QualityJudgeProfilesKey)
 	}
 	if !q.JudgeSeparateFamily {
 		return choose(usable[0], profiles[usable[0]].Adapter, QualityJudgeSeparateFamilyKey+" is off"), nil

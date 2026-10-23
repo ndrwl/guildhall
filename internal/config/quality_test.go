@@ -204,12 +204,13 @@ func TestQualityJudge(t *testing.T) {
 		"judge-claude": {Adapter: "claude"}, "judge-claude-b": {Adapter: "claude"}, "judge-fake": {Adapter: "fake"},
 	}
 	for _, tc := range []struct {
-		name     string
-		q        Quality
-		builder  string
-		failed   []string
-		want     JudgeChoice
-		wantNone bool
+		name           string
+		q              Quality
+		builderProfile string
+		builder        string
+		failed         []string
+		want           JudgeChoice
+		wantNone       bool
 	}{
 		{name: "another family first", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude", "judge-fake"}},
 			builder: "claude", want: JudgeChoice{Profile: "judge-fake", Adapter: "fake", Builder: "claude", SeparateFamily: true}},
@@ -224,17 +225,20 @@ func TestQualityJudge(t *testing.T) {
 				Reason: QualityJudgeSeparateFamilyKey + " is off"}},
 		{name: "off but the first is another family", q: Quality{JudgeSeparateFamily: false, JudgeProfiles: []string{"judge-fake"}},
 			builder: "claude", want: JudgeChoice{Profile: "judge-fake", Adapter: "fake", Builder: "claude", SeparateFamily: true}},
-		{name: "no profile listed", q: Quality{JudgeSeparateFamily: true}, builder: "claude",
-			want: JudgeChoice{Adapter: "fake", Builder: "claude", SeparateFamily: true}},
-		{name: "no profile listed, same family", q: Quality{JudgeSeparateFamily: true}, builder: "fake",
-			want: JudgeChoice{Adapter: "fake", Builder: "fake", Reason: "no judge profile is listed in " + QualityJudgeProfilesKey}},
+		{name: "no profile listed", q: Quality{JudgeSeparateFamily: true}, builder: "claude", wantNone: true},
+		{name: "only builder listed", q: Quality{JudgeProfiles: []string{"judge-claude"}}, builder: "claude", builderProfile: "judge-claude", wantNone: true},
+		{name: "skip builder with preference off", q: Quality{JudgeProfiles: []string{"judge-claude", "judge-fake"}}, builder: "claude", builderProfile: "judge-claude",
+			want: JudgeChoice{Profile: "judge-fake", Adapter: "fake", Builder: "claude", SeparateFamily: true}},
+		{name: "skip builder with preference on", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude", "judge-claude-b"}}, builder: "claude", builderProfile: "judge-claude",
+			want: JudgeChoice{Profile: "judge-claude-b", Adapter: "claude", Builder: "claude", Reason: "no judge profile of another family than the builder's is listed"}},
+		{name: "distinct profile failed", q: Quality{JudgeProfiles: []string{"judge-claude", "judge-fake"}}, builder: "claude", builderProfile: "judge-claude", failed: []string{"judge-fake"}, wantNone: true},
 		{name: "unknown builder", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude"}},
 			want: JudgeChoice{Profile: "judge-claude", Adapter: "claude", Reason: "the builder's family is unknown"}},
 		{name: "every profile failed", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude", "judge-fake"}},
 			builder: "claude", failed: []string{"judge-fake", "judge-claude"}, wantNone: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tc.q.Judge(profiles, tc.builder, "fake", tc.failed)
+			got, err := tc.q.Judge(profiles, tc.builder, tc.builderProfile, tc.failed)
 			if tc.wantNone {
 				if !errors.Is(err, ErrNoJudge) {
 					t.Errorf("Judge() = %+v, %v; want ErrNoJudge", got, err)

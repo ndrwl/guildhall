@@ -31,7 +31,7 @@ func shortCopy(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	if err := os.CopyFS(dir, os.DirFS(filepath.Dir(writeDirector(t, directorTOML)))); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(filepath.Dir(writeDirector(t, directorTOML+"\n[local]\nquality_judge_profiles = \"judge-fake\"\n\n[profile.judge-fake]\nadapter = \"fake\"\n")))); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(dir, "state"), 0o700); err != nil {
@@ -77,8 +77,8 @@ func TestQualityJudgeEndToEnd(t *testing.T) {
 		t.Fatalf("quality judge: exit %d, stdout %q, stderr %q; launcher log:\n%s", code, out, stderr, log)
 	}
 	started := decodeJSON[quality.Started](t, out)
-	if started.Attempt != 1 || started.Review != 1 || started.Judge.Adapter != "fake" || started.Judge.Profile != "" {
-		t.Errorf("quality judge printed %+v, want attempt 1 on the default fake adapter", started)
+	if started.Attempt != 1 || started.Review != 1 || started.Judge.Adapter != "fake" || started.Judge.Profile != "judge-fake" {
+		t.Errorf("quality judge printed %+v, want attempt 1 on profile judge-fake", started)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(2*time.Minute))

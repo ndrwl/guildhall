@@ -64,7 +64,7 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_reference_runs` | When the reference task set runs on a real model: `off`, the default, or `on-change-and-release`, for each workflow-change proposal and each release tag. |
 | `quality_reference_runs_per_task` | How many times each reference task runs per workflow version: a positive whole number, default 3. |
 | `quality_reference_cost_cap_usd` | The cap on one reference evaluation's cost in US dollars, such as `"25"` or `"12.50"`; unset by default, and required while `quality_reference_runs` is not `off`. |
-| `quality_judge_profiles` | The declared [profiles](#profiles) a [judge session](quality.md#running-it) may run as, in order of preference, separated by commas, such as `"judge-codex, judge-opus"`; a profile whose judge of the same self-review failed is passed over, so a judge out of quota falls back to the next; unset, the judge runs on the default adapter with no profile; a name the config does not declare, or one named twice, is refused. |
+| `quality_judge_profiles` | The declared [profiles](#profiles) a [judge session](quality.md#running-it) may run as, in order of preference, separated by commas, such as `"judge-codex, judge-opus"`; a profile whose judge of the same self-review failed is passed over, so a judge out of quota falls back to the next; the builder's profile is excluded, and an unset list or no eligible profile refuses the judge with `ErrNoJudge`; a name the config does not declare, or one named twice, is refused. |
 | `quality_judge_separate_family` | `on`, the default, chooses the first listed judge profile of a different model family from the builder's, a family being a profile's adapter, and the first listed otherwise; `off` takes the first listed profile, which may share the builder's family, though never its session. |
 | `quality_skill_edits_need_approval` | `on`, the default for the first cycle, treats an edit to the review, build or spec skill text as a design change that needs the Guildmaster's approval; `off` treats it as any other lesson. |
 
@@ -95,6 +95,7 @@ No workflow can change a repository's merge policy.
 ### Profiles
 
 A profile chooses who runs an Artisan stage whose `profile` setting names it.
+A judge profile currently selects only its adapter and role. Its model and effort are not yet passed to the runtime, as for every Artisan launch.
 Names are lowercase identifiers, so three review stages can name `reviewer-opus`, `reviewer-opus-b` and `reviewer-astra` and no model name appears in a repository's workflow.
 
 | Key | Meaning |

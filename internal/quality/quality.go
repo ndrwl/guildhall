@@ -215,7 +215,11 @@ type Launcher interface {
 
 // Judge starts and takes the judge attempts of delivered tasks.
 type Judge struct {
-	Records  interp.Records
+	Records interface {
+		interp.Records
+		TaskHistory(string, string) (store.TaskHistory, error)
+		LatestDirectorSession() (store.DirectorSession, error)
+	}
 	Outbox   interp.Outbox
 	Launcher Launcher
 	// Config gives the quality settings and the profiles.
@@ -359,20 +363,33 @@ func (j *Judge) choose(repository, task string, review int, attempts []store.Sta
 		if a.Step != workflow.JudgeStep || a.Outcome != store.AttemptFailed {
 			continue
 		}
-		if p, err := readPrepared(j.key(repository, task, a.Number).Dir(j.StateDir)); err == nil && p.Review == review && p.Judge.Profile != "" {
+		if p, err := readPrepared(j.key(repository, task, a.Number).Dir(j.StateDir)); err == nil && p.Review == review {
 			failed = append(failed, p.Judge.Profile)
 		}
 	}
-	return q.Judge(j.Config.Profiles, j.builder(repository, task, attempts), j.DefaultAdapter, failed)
+	profile, adapter, err := j.builder(repository, task)
+	if err != nil {
+		return config.JudgeChoice{}, err
+	}
+	return q.Judge(j.Config.Profiles, adapter, profile, failed)
 }
 
-// builder is the adapter of the task's latest succeeded build attempt, from the profile its prompt manifest names,
-// or "" when no such attempt or profile is found.
-func (j *Judge) builder(repository, task string, attempts []store.StageAttempt) string {
-	for _, a := range slices.Backward(attempts) {
-		if a.Outcome != store.AttemptSucceeded || a.Step == workflow.JudgeStep {
+func (j *Judge) builder(repository, task string) (string, string, error) {
+	h, err := j.Records.TaskHistory(repository, task)
+	if err != nil {
+		return "", "", err
+	}
+	for _, r := range slices.Backward(h.Receipts) {
+		if r.Operation != "finish-attempt" {
 			continue
 		}
+		i := slices.IndexFunc(h.Attempts, func(a store.StageAttempt) bool {
+			return a.Outcome == store.AttemptSucceeded && a.Step != workflow.JudgeStep && r.Record == fmt.Sprintf("attempt/%s/%d", a.Step, a.Number)
+		})
+		if i < 0 {
+			continue
+		}
+		a := h.Attempts[i]
 		k := artisan.AttemptKey{Repository: repository, TaskID: task, Step: a.Step, Attempt: a.Number}
 		data, err := os.ReadFile(filepath.Join(k.Dir(j.StateDir), promptDir, "manifest.json"))
 		if err != nil {
@@ -383,11 +400,11 @@ func (j *Judge) builder(repository, task string, attempts []store.StageAttempt) 
 			continue
 		}
 		if m.Identity.Profile == "" {
-			return j.DefaultAdapter
+			return "", j.DefaultAdapter, nil
 		}
-		return j.Config.Profiles[m.Identity.Profile].Adapter
+		return m.Identity.Profile, j.Config.Profiles[m.Identity.Profile].Adapter, nil
 	}
-	return ""
+	return "", "", nil
 }
 
 func readPrepared(dir string) (prepared, error) {
@@ -438,7 +455,7 @@ func (j *Judge) prepare(k artisan.AttemptKey, review int, choose func() (config.
 		}
 	}
 	role := j.Role
-	if choice.Profile != "" && j.ProfileRole != nil {
+	if j.ProfileRole != nil {
 		if r := j.ProfileRole(choice.Profile); r != "" {
 			role = r
 		}
@@ -493,6 +510,15 @@ func prompt(sr SelfReview, role, brief []byte) []byte {
 
 // launch launches attempt k from its preparation in its empty working directory and marks it launched.
 func (j *Judge) launch(ctx context.Context, k artisan.AttemptKey, p prepared) (Started, error) {
+	if j.Caps.Hold {
+		d, err := j.Records.LatestDirectorSession()
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return Started{}, err
+		}
+		if err == nil && d.Holds() {
+			return Started{}, store.ErrDirectorHeld
+		}
+	}
 	dir := k.Dir(j.StateDir)
 	work := filepath.Join(dir, workDir)
 	if err := os.MkdirAll(work, 0o755); err != nil {
@@ -547,17 +573,26 @@ func (j *Judge) Take(repository, task string, attempt int) (Taken, error) {
 	if err != nil {
 		return Taken{}, err
 	}
-	if slices.ContainsFunc(docs, func(d store.DocumentRef) bool { return d.Name == name }) {
+	if i := slices.IndexFunc(docs, func(d store.DocumentRef) bool { return d.Name == name }); i >= 0 {
+		data, err := os.ReadFile(filepath.Join(j.DocumentDir, filepath.FromSlash(docs[i].Path)))
+		if err != nil {
+			return Taken{}, err
+		}
+		if digest.Of(data).Hex() != docs[i].SHA256 {
+			return Taken{}, fmt.Errorf("judgement document %s digest mismatch", name)
+		}
+		rec, err := ParseJudgement(data)
+		if err != nil {
+			return Taken{}, err
+		}
 		taken.Document = name
-		return taken, nil
+		return taken, j.notifyJudgement(k, name, rec)
 	}
 	who := fmt.Sprintf("judge attempt %d of self-review %d of %s/%s, %s", attempt, p.Review, repository, task, describe(p.Judge))
 	if a.Outcome != store.AttemptSucceeded {
 		taken.Refused = fmt.Sprintf("the attempt ended %s", a.Outcome)
 		text := fmt.Sprintf("The %s ended %s and recorded no judgement; guildhall quality judge --repo %s --review %d %s starts the next judge", who, a.Outcome, repository, p.Review, task)
-		if p.Judge.Profile != "" {
-			text += ", passing over profile " + p.Judge.Profile
-		}
+		text += ", passing over profile " + p.Judge.Profile
 		return taken, j.notify(repository, task, "judge-failed."+k.AttemptID(), "judge-failed", text+".")
 	}
 	answer, sr, err := j.answer(k)
@@ -582,9 +617,19 @@ func (j *Judge) Take(repository, task string, attempt int) (Taken, error) {
 		return Taken{}, err
 	}
 	taken.Document = name
-	return taken, j.notify(repository, task, "judgement."+k.AttemptID(), "judgement",
+	return taken, j.notifyJudgement(k, name, rec)
+}
+
+func (j *Judge) notifyJudgement(k artisan.AttemptKey, name string, rec Judgement) error {
+	ids := make([]string, 0, len(rec.Criteria))
+	for _, c := range rec.Criteria {
+		ids = append(ids, c.ID)
+	}
+	slices.Sort(ids)
+	who := fmt.Sprintf("judge attempt %d of self-review %d of %s/%s, %s", rec.Attempt, rec.Review, rec.Repository, rec.Task, describe(rec.Judge))
+	return j.notify(k.Repository, k.TaskID, "judgement."+k.AttemptID(), "judgement",
 		fmt.Sprintf("The %s would merge it as is: %s; it judged %s. The judgement is document %s.",
-			who, answer.MergeAsIs, strings.Join(sr.pendingIDs(), ", "), name))
+			who, rec.MergeAsIs, strings.Join(ids, ", "), name))
 }
 
 // answer reads and checks the judge's answer against the self-review it was given.
@@ -615,10 +660,7 @@ func (j *Judge) answer(k artisan.AttemptKey) (Answer, SelfReview, error) {
 
 // describe names the judge and whether its family was separate.
 func describe(c config.JudgeChoice) string {
-	who := "on the default adapter " + c.Adapter
-	if c.Profile != "" {
-		who = fmt.Sprintf("profile %s on adapter %s", c.Profile, c.Adapter)
-	}
+	who := fmt.Sprintf("profile %s on adapter %s", c.Profile, c.Adapter)
 	if c.SeparateFamily {
 		return who + ", a separate family from the builder's"
 	}

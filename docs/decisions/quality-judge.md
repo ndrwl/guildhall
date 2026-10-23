@@ -16,13 +16,14 @@ It is an attempt rather than a workflow step because the self-review is a Direct
 ## The judge's family
 
 A profile's family is its adapter: today the `fake` and `claude` adapters, and every model behind one adapter shares its family.
-The new setting `quality_judge_profiles` names the profiles a judge may run as, in order of preference; unset, the judge runs on the engine's default adapter with no profile.
+The new setting `quality_judge_profiles` names the profiles a judge may run as, in order of preference; the builder's profile is excluded, and an unset list or no eligible profile refuses the judge with `ErrNoJudge`.
+A judge profile currently selects its adapter and role only; its model and effort are not yet passed to the runtime, as for every Artisan launch.
 With `quality_judge_separate_family` on, the first listed profile whose adapter is not the builder's is chosen, and the first listed profile otherwise; with it off, the first listed profile.
-The builder is the profile the task's latest build attempt was rendered for, read from that attempt's prompt manifest.
+The builder is the profile the task's latest succeeded build attempt was rendered for, read from that attempt's prompt manifest; finish receipts establish execution order rather than step names.
 "When quota allows" is measured, not guessed: a profile whose earlier judge attempt for the same self-review failed is passed over, so running `quality judge` again after a judge ran out of quota falls back to the next profile, and every choice records whether the judge's family was separate and why not.
 
 `quality_judge_profiles` is a setting rather than a switch because the existing switches say whether to judge and how independently, and only the copy knows which of its profiles are fit to judge.
-A copy that leaves it unset keeps the behaviour of its other settings and its config digest.
+A copy that leaves it unset keeps the behaviour of its other settings and its config digest, but cannot start a judge until it lists an eligible profile.
 
 ## Agreement
 

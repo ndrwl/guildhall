@@ -461,6 +461,10 @@ func (p storeRecords) Task(repo, id string) (store.Task, error) {
 	return withRecords(p, true, nil, func(s *store.Store) (store.Task, error) { return s.Task(repo, id) })
 }
 
+func (p storeRecords) TaskHistory(repo, id string) (store.TaskHistory, error) {
+	return withRecords(p, true, nil, func(s *store.Store) (store.TaskHistory, error) { return s.TaskHistory(repo, id) })
+}
+
 func (p storeRecords) Attempts(repo, id string) ([]store.StageAttempt, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts(repo, id) })
 }

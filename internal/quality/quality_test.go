@@ -158,11 +158,15 @@ func (r *recorder) LaunchFiles(_ context.Context, k artisan.AttemptKey, adapterN
 type outbox struct {
 	mu   sync.Mutex
 	sent []messaging.Envelope
+	err  error
 }
 
 func (o *outbox) Send(_ store.Recipient, e messaging.Envelope) (store.Receipt, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.err != nil {
+		return store.Receipt{}, o.err
+	}
 	for _, s := range o.sent {
 		if s.ID == e.ID {
 			return store.Receipt{}, store.ErrMutationConflict
@@ -214,7 +218,7 @@ adapter = "claude"
 adapter = "fake"
 `
 
-func newEnv(t *testing.T, cfgText string) *env {
+func newEnv(t *testing.T, cfgText string, beforeDelivery ...func(*env)) *env {
 	t.Helper()
 	root := t.TempDir()
 	s, err := store.Open(filepath.Join(root, "director.store"), store.Options{LockTimeout: 10 * time.Second})
@@ -236,6 +240,9 @@ func newEnv(t *testing.T, cfgText string) *env {
 		QualityDir: filepath.Join(root, "quality"), Role: e.write(filepath.Join(root, "judge.md"), "You are the judge.\n"),
 		ProfileRole: func(string) string { return "" }}
 	e.build("builder-claude")
+	for _, prepare := range beforeDelivery {
+		prepare(e)
+	}
 	if _, err := s.SetTaskState("done", "app", "t-1", store.TaskDone); err != nil {
 		t.Fatal(err)
 	}
@@ -479,6 +486,14 @@ func TestTakeRecordsTheJudgement(t *testing.T) {
 		t.Errorf("Take of a running attempt: err = %v, want ErrJudgeRunning", err)
 	}
 	e.finish(1, adapter.StatusSucceeded, answer)
+	e.o.err = errors.New("notification unavailable")
+	if _, err := e.judge.Take("app", "t-1", 1); !errors.Is(err, e.o.err) {
+		t.Fatalf("Take notification failure = %v", err)
+	}
+	e.o.err = nil
+	if err := os.RemoveAll(filepath.Join(e.key(1).Dir(e.judge.StateDir), "work")); err != nil {
+		t.Fatal(err)
+	}
 	for range 2 {
 		got, err := e.judge.Take("app", "t-1", 1)
 		if err != nil || got.Document != "quality-judge-1-judgement" || got.Refused != "" {
