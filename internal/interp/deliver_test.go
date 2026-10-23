@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/config"
@@ -44,7 +45,13 @@ func publishDefinition(t *testing.T) *workflow.Definition {
 // newPublishEnv is the straight path with a publish step over a fake forge holding the build's head.
 func newPublishEnv(t *testing.T, b backend) (*env, *forgetest.Fake) {
 	t.Helper()
-	e := newEnvDefinition(t, b, publishDefinition(t), straightScript(t)...)
+	return newPublishEnvTask(t, b, nil)
+}
+
+// newPublishEnvTask is newPublishEnv with app/t7 changed by edit, after an earlier task app/t3, when edit is not nil.
+func newPublishEnvTask(t *testing.T, b backend, edit func(*store.Task)) (*env, *forgetest.Fake) {
+	t.Helper()
+	e := newEnvTasks(t, b, publishDefinition(t), edit, straightScript(t)...)
 	f := forgetest.NewFake()
 	f.SetBranch(repoRemote, "main", baseHead)
 	f.AddCommit(repoPath, head)
@@ -92,6 +99,43 @@ func (e *env) task(t *testing.T) store.Task {
 		t.Fatal(err)
 	}
 	return got
+}
+
+// bodies is a forge that records the body of each change published.
+type bodies struct {
+	*forgetest.Fake
+	mu   sync.Mutex
+	seen []string
+}
+
+func (b *bodies) Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error) {
+	b.mu.Lock()
+	b.seen = append(b.seen, c.Body)
+	b.mu.Unlock()
+	return b.Fake.Publish(ctx, c)
+}
+
+// TestPublishNamesTheFixedTask: a task created to fix an earlier task's defect has the fix line in its pull request
+// body, the line rework and change failure count from; a task that fixes nothing has none.
+func TestPublishNamesTheFixedTask(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			const line = "Fixes a defect introduced by task `app/t3`.\n"
+			for _, fixes := range []bool{true, false} {
+				e, f := newPublishEnvTask(t, b, func(task *store.Task) {
+					if fixes {
+						task.Fixes = &store.TaskRef{Repository: "app", ID: "t3"}
+					}
+				})
+				rec := &bodies{Fake: f}
+				e.eng.Forge = rec
+				want(t, e.toSignOff(t), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+				if len(rec.seen) != 1 || strings.Contains(rec.seen[0], line) != fixes || !strings.HasPrefix(rec.seen[0], "Guildhall task app/t7, published by step publish at ") {
+					t.Errorf("fixes %v: published bodies %q, want one with the fix line only when the task fixes one", fixes, rec.seen)
+				}
+			}
+		})
+	}
 }
 
 // TestPublishAndMerge: publish pushes the reviewed head to guildhall/<task> and records its pull request;

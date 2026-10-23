@@ -149,6 +149,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall director context-report`: Claude Code's status line in a Director session, recording the context used for the [automatic handoff](docs/director.md#automatic-handoff) trigger.
 - `guildhall artisan start|stop|status|resume`: control one agent attempt; `guildhall fake-artisan` and `guildhall claude-artisan` are the fake and Claude wrappers; see [Artisan commands](docs/artisan.md#commands) and [adapters](docs/adapters.md).
 - `guildhall messages send|list|read|ack`: informational messages between the Director and its agents; see [messaging](docs/messaging.md).
+- `guildhall quality judge|judged|agreement`: judge a delivered task's self-review in a separate session, take its judgement, and measure the judge against your audits; see [the quality rubric](docs/quality.md#running-it).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall steward rollout`: preview and apply shared settings to enrolled machines; see [Steward rollouts](docs/steward.md).
 - `guildhall render <request.json>`: render an agent prompt with its skills; see [prompt rendering](docs/rendering.md).

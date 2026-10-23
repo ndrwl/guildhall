@@ -255,6 +255,23 @@ func (r *Records) SetTaskState(mutationID, repository, taskID string, state stor
 	})
 }
 
+// attemptTask refuses a task an attempt of step does not start on, as the store does: an unknown task, and one that
+// is not open, or for the judge step one that is not done.
+func (r *Records) attemptTask(repository, taskID, step string) error {
+	t, ok := r.tasks[[2]string{repository, taskID}]
+	want := store.TaskOpen
+	if step == workflow.JudgeStep {
+		want = store.TaskDone
+	}
+	switch {
+	case !ok:
+		return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+	case t.State != want:
+		return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+	}
+	return nil
+}
+
 // StartAttempt implements interp.Records.
 func (r *Records) StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error) {
 	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
@@ -263,12 +280,8 @@ func (r *Records) StartAttempt(mutationID, repository, taskID, step string) (sto
 
 func (r *Records) startAttempt(rc *store.Receipt, repository, taskID, step string) error {
 	rc.Repository, rc.TaskID = repository, taskID
-	t, ok := r.tasks[[2]string{repository, taskID}]
-	switch {
-	case !ok:
-		return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
-	case t.State != store.TaskOpen:
-		return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+	if err := r.attemptTask(repository, taskID, step); err != nil {
+		return err
 	}
 	n := 0
 	for _, a := range r.attempts {
@@ -326,11 +339,8 @@ func (r *Records) StartCappedAttempt(mutationID, repository, taskID, step string
 			return fmt.Errorf("%w: the double is paused", store.ErrDirectorHeld)
 		}
 		if caps.MaxRunning > 0 || caps.MaxPerDay > 0 {
-			switch t, ok := r.tasks[[2]string{repository, taskID}]; {
-			case !ok:
-				return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
-			case t.State != store.TaskOpen:
-				return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+			if err := r.attemptTask(repository, taskID, step); err != nil {
+				return err
 			}
 			receipts := func(yield func(store.Receipt) bool) {
 				for _, prior := range r.receipts {
@@ -563,6 +573,20 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if n := writers * operations; len(a) != n || len(d) != n || len(q) != n {
 			t.Fatalf("counts = %d, %d, %d", len(a), len(d), len(q))
 		}
+	})
+
+	t.Run("starts the judge step on a done task only, and no other step there", func(t *testing.T) {
+		h := setup(t)
+		_, err := h.Records.StartAttempt("judge-open", "app", "t7", workflow.JudgeStep)
+		want(t, "a judge attempt on an open task", err, store.ErrInvalid)
+		if _, err := h.Records.SetTaskState("done", "app", "t7", store.TaskDone); err != nil {
+			t.Fatal(err)
+		}
+		if r, err := h.Records.StartCappedAttempt("judge", "app", "t7", workflow.JudgeStep, store.AttemptCaps{MaxRunning: 4, MaxPerDay: 40}); err != nil || r.Attempt != 1 {
+			t.Fatalf("a judge attempt on a done task = %+v, %v", r, err)
+		}
+		_, err = h.Records.StartAttempt("plan-done", "app", "t7", "plan")
+		want(t, "a plan attempt on a done task", err, store.ErrInvalid)
 	})
 
 	t.Run("reads a task and refuses an unknown one", func(t *testing.T) {

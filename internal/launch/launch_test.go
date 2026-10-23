@@ -59,6 +59,36 @@ func newAttempt(t *testing.T) launch.Attempt {
 	return a
 }
 
+// newJudgeAttempt is newAttempt for the judge attempt of a delivered task: app/t-1 is done and its first
+// quality-judge attempt running.
+func newJudgeAttempt(t *testing.T) launch.Attempt {
+	t.Helper()
+	state, err := os.MkdirTemp("", "ln")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(state) })
+	a := launch.Attempt{Store: filepath.Join(t.TempDir(), "guildhall.store"), StateDir: state,
+		Key: artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: workflow.JudgeStep, Attempt: 1}}
+	withStore(t, a, func(s *store.Store) {
+		digest := "sha256:" + strings.Repeat("a", 64)
+		task := store.Task{Repository: "app", ID: "t-1", Title: "Task", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}
+		if _, err := s.CreateTask("task", task); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.SetTaskState("done", "app", "t-1", store.TaskDone); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.StartAttempt("start", "app", "t-1", workflow.JudgeStep); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := os.MkdirAll(a.Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
 func withStore(t *testing.T, a launch.Attempt, fn func(*store.Store)) {
 	t.Helper()
 	s, err := store.Open(a.Store, store.Options{LockTimeout: storeWait})

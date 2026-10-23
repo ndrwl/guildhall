@@ -64,11 +64,12 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_reference_runs` | When the reference task set runs on a real model: `off`, the default, or `on-change-and-release`, for each workflow-change proposal and each release tag. |
 | `quality_reference_runs_per_task` | How many times each reference task runs per workflow version: a positive whole number, default 3. |
 | `quality_reference_cost_cap_usd` | The cap on one reference evaluation's cost in US dollars, such as `"25"` or `"12.50"`; unset by default, and required while `quality_reference_runs` is not `off`. |
-| `quality_judge_separate_family` | `on`, the default, asks for a judge of a different model family from the builder when quota allows; `off` lets the judge share the builder's family, though never its session. |
+| `quality_judge_profiles` | The declared [profiles](#profiles) a [judge session](quality.md#running-it) may run as, in order of preference, separated by commas, such as `"judge-codex, judge-opus"`; a profile whose judge of the same self-review failed is passed over, so a judge out of quota falls back to the next; unset, the judge runs on the default adapter with no profile; a name the config does not declare, or one named twice, is refused. |
+| `quality_judge_separate_family` | `on`, the default, chooses the first listed judge profile of a different model family from the builder's, a family being a profile's adapter, and the first listed otherwise; `off` takes the first listed profile, which may share the builder's family, though never its session. |
 | `quality_skill_edits_need_approval` | `on`, the default for the first cycle, treats an edit to the review, build or spec skill text as a design change that needs the Guildmaster's approval; `off` treats it as any other lesson. |
 
-`quality_self_review` and the size budget are read by the self-review skill, and `quality_audit_sample` by deliver as it closes a merged task; the other settings are read by nothing yet.
-The reference-run, judge and skill-edit settings are parsed and validated so a copy can set them now; the reference runner, the judge session and the lesson-proposal shape that will read them are later work.
+`quality_self_review` and the size budget are read by the self-review skill, `quality_audit_sample` by deliver as it closes a merged task, and the judge settings by [`quality judge`](quality.md#running-it) ([decision](decisions/quality-judge.md)); the other settings are read by nothing yet.
+The reference-run and skill-edit settings are parsed and validated so a copy can set them now; the reference runner and the lesson-proposal shape that will read them are later work.
 
 ### Repositories
 

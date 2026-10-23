@@ -16,7 +16,7 @@ Every criterion is one of three kinds:
 Every criterion names who judges it:
 
 - `script`: deterministic, with no model call, runnable in CI or by the [`guildhall-self-review`](../skills/guildhall-self-review/SKILL.md) skill.
-- `model`: a fresh judge session with the rubric inlined, quoting its evidence.
+- `model`: a fresh [judge session](#running-it), neither the builder nor the Director, quoting its evidence.
 - `Guildmaster`: a sampled human audit.
 
 Script facts outrank executed tests and CI, which outrank the model judge, which the Guildmaster audit calibrates.
@@ -351,7 +351,7 @@ The criteria read these records:
 - Agreement between the model judge's scores and these answers is tracked, with the judge's consistency when the order of a pair is swapped.
 - The sample is one in `quality_audit_sample` delivered tasks, five by default, plus every reference run.
 - Source: Zheng and colleagues 2023 (Strong); Wang and colleagues 2025 on code judges (Moderate).
-- Guildhall today: independently of `quality_self_review`, deliver opens the `audit` decision, bound to the head that merged, for each sampled task as it closes ([interpreter](interpreter.md#publish-and-deliver)); the answer's first line is `yes` or `no` to the first question and the note holds the other two; agreement with the judge is not yet computed, and reference runs are not yet sampled because they do not exist yet; it is the only criterion that needs the Guildmaster on a schedule.
+- Guildhall today: independently of `quality_self_review`, deliver opens the `audit` decision, bound to the head that merged, for each sampled task as it closes ([interpreter](interpreter.md#publish-and-deliver)); the answer's first line is `yes` or `no` to the first question and the note holds the other two; `guildhall quality agreement` counts how often the judge's yes or no to the same question matches it, overall and by whether the judge's family was separate; position-swap consistency is not yet computed, because only reference evaluations compare pairs, and reference runs are not yet sampled because they do not exist yet; it is the only criterion that needs the Guildmaster on a schedule.
 
 ### Process efficiency and Director judgement (H)
 
@@ -408,9 +408,14 @@ The criteria read these records:
 
 The Director runs the [`guildhall-self-review`](../skills/guildhall-self-review/SKILL.md) skill after a task merges, when `quality_self_review` is `on`; it is `off` by default.
 The skill writes one `self-review-<n>.json` document per task under the copy's `quality/<repo>/<task>/` directory, with the facts its script prints, the gates and trends the records show, and each model-judged score left pending for a judge session that is neither the Director nor the builder.
+`guildhall quality judge --repo <id> --review <n> <task>` launches that judge as an owned attempt of the reserved step `quality-judge` on the delivered task, under the guard rails and the pause hold, with the self-review, its brief, diff and facts beside its prompt ([decision](decisions/quality-judge.md)).
+The judge runs as the first profile in `quality_judge_profiles` of another family than the builder's while `quality_judge_separate_family` is `on`, and a profile whose judge of the same self-review failed is passed over, so running it again after a judge ran out of quota falls back to the next; every choice records whether the family was separate and why not.
+When the judge's attempt ends, its launcher runs `guildhall quality judged`, which records an accepted `judgement.json` as the task document `quality-judge-<n>-judgement` and tells the Director with a `judgement` message, or tells it `judge-failed` or `judgement-refused` and records nothing; the task stays done.
+The skill then copies the judge's scores into the self-review with `judge: model`.
 The self-review is for learning and for evaluating workflow changes; it never re-gates a merged task.
 Independently of self-review, deliver opens the Guildmaster's `audit` decision for one in `quality_audit_sample` delivered tasks, chosen by the task's identity; the default is 5, 0 disables audits, and 1 audits every task ([decision](decisions/0087-quality-audit.md)).
-Launching the judge session, the lesson-proposal shape that applies `quality_skill_edits_need_approval`, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
+A task created with `guildhall task new --fixes <repository>/<task>` carries "Fixes a defect introduced by task `<repository>/<task>`." in its pull request body, the line rework (C5) and change failure (E2) count from.
+The lesson-proposal shape that applies `quality_skill_edits_need_approval`, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
 
 ## Sources
 

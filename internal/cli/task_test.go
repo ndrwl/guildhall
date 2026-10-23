@@ -437,6 +437,24 @@ func TestTaskNewDependencies(t *testing.T) {
 	}
 }
 
+// TestTaskNewFixes: --fixes names the earlier task whose defect the new one fixes, which must exist, and is kept on
+// the task.
+func TestTaskNewFixes(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	path := emptyStore(t)
+	newTask(t, path, cfg, "app", "Schema", "t-1")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--fixes", "app/t-9", "t-2")
+	if code != 1 || out != "" || !strings.Contains(stderr, "app/t-9") || !strings.Contains(stderr, store.ErrNotFound.Error()) {
+		t.Fatalf("an unknown fixed task: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	if code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--fixes", "app/t-1", "t-2"); code != 0 {
+		t.Fatalf("task new --fixes: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	if got := readTask(t, path, "app", "t-2").Fixes; got == nil || *got != (store.TaskRef{Repository: "app", ID: "t-1"}) {
+		t.Fatalf("fixes = %+v, want app/t-1", got)
+	}
+}
+
 func TestTaskUsageErrors(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
@@ -452,6 +470,8 @@ func TestTaskUsageErrors(t *testing.T) {
 		"new without title":      {"new", "--store", path, "--config", cfg, "--repo", "app", "t-1"},
 		"new without task":       {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T"},
 		"bad dependency":         {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--depends-on", "t-1", "t-2"},
+		"bad fixed task":         {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--fixes", "t-1", "t-2"},
+		"fixes on show":          {"show", "--store", path, "--repo", "app", "--fixes", "app/t-1", "--json", "t-1"},
 		"show without json":      {"show", "--store", path, "--repo", "app", "t-1"},
 		"show without repo":      {"show", "--store", path, "--json", "t-1"},
 		"show with title":        {"show", "--store", path, "--repo", "app", "--title", "T", "--json", "t-1"},

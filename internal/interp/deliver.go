@@ -100,9 +100,13 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 		title = r.task.ID
 	}
 	branch := branchPrefix + r.task.ID
+	body := fmt.Sprintf("Guildhall task %s/%s, published by step %s at %s.\n", r.task.Repository, r.task.ID, s.ID, h)
+	if f := r.task.Fixes; f != nil {
+		// The fix line that rework (C5) and change failure (E2) count from (docs/quality.md).
+		body += fmt.Sprintf("\nFixes a defect introduced by task `%s/%s`.\n", f.Repository, f.ID)
+	}
 	pr, err := r.e.Forge.Publish(r.ctx, forge.Change{
-		Repository: repo.Path, Remote: repo.Remote, Branch: branch, Head: h, Title: title,
-		Body: fmt.Sprintf("Guildhall task %s/%s, published by step %s at %s.\n", r.task.Repository, r.task.ID, s.ID, h),
+		Repository: repo.Path, Remote: repo.Remote, Branch: branch, Head: h, Title: title, Body: body,
 	})
 	if err != nil {
 		return false, Next{}, err

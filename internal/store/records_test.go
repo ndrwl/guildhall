@@ -27,6 +27,8 @@ func TestCreateTaskValidates(t *testing.T) {
 		{"preset state", func(t *Task) { t.State = TaskDone }},
 		{"bad dependency", func(t *Task) { t.DependsOn = []TaskRef{{Repository: "app", ID: "Bad"}} }},
 		{"self dependency", func(t *Task) { t.DependsOn = []TaskRef{{Repository: "app", ID: "t-1"}} }},
+		{"bad fixed task", func(t *Task) { t.Fixes = &TaskRef{Repository: "app", ID: "Bad"} }},
+		{"fixes itself", func(t *Task) { t.Fixes = &TaskRef{Repository: "app", ID: "t-1"} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -117,6 +119,52 @@ func TestTaskStateTransitions(t *testing.T) {
 	}
 	if _, err := s.StartAttempt("m-5", "app", "t-1", "build"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("attempt on a finished task: err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestJudgeAttempts: the judge step is the one step started on a task that is not open, and only on a done one;
+// every other step still needs an open task.
+func TestJudgeAttempts(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	if _, err := s.StartAttempt("m-2", "app", "t-1", workflow.JudgeStep); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("judge attempt on an open task: err = %v, want ErrInvalid", err)
+	}
+	if _, err := s.SetTaskState("m-3", "app", "t-1", TaskDone); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.StartCappedAttempt("m-4", "app", "t-1", workflow.JudgeStep, AttemptCaps{MaxRunning: 4, MaxPerDay: 40})
+	if err != nil || r.Attempt != 1 {
+		t.Fatalf("judge attempt on a done task = %+v, %v", r, err)
+	}
+	if _, err := s.FinishAttempt("m-5", "app", "t-1", workflow.JudgeStep, 1, AttemptSucceeded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartAttempt("m-6", "app", "t-1", "build"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("build attempt on a done task: err = %v, want ErrInvalid", err)
+	}
+	mustCreate(t, s, "m-7", sampleTask("app", "t-2"))
+	if _, err := s.SetTaskState("m-8", "app", "t-2", TaskCancelled); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartAttempt("m-9", "app", "t-2", workflow.JudgeStep); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("judge attempt on a cancelled task: err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestCreateTaskFixes: a task may name the earlier task whose defect it fixes, which must exist, and it is kept.
+func TestCreateTaskFixes(t *testing.T) {
+	s, _ := newStore(t)
+	task := sampleTask("app", "t-2")
+	task.Fixes = &TaskRef{Repository: "app", ID: "t-1"}
+	if _, err := s.CreateTask("m-1", task); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("fixing a missing task: err = %v, want ErrNotFound", err)
+	}
+	mustCreate(t, s, "m-2", sampleTask("app", "t-1"))
+	mustCreate(t, s, "m-3", task)
+	got, err := s.Task("app", "t-2")
+	if err != nil || got.Fixes == nil || *got.Fixes != *task.Fixes {
+		t.Fatalf("Task = %+v, %v; want it to fix app/t-1", got, err)
 	}
 }
 

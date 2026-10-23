@@ -55,6 +55,9 @@ type Task struct {
 	ConfigDigest string `json:"config_digest"`
 	// DependsOn lists tasks that existed when this task was created.
 	DependsOn []TaskRef `json:"depends_on,omitempty"`
+	// Fixes is the earlier task whose defect this one fixes, which existed when this task was created; publish
+	// names it in the pull request body.
+	Fixes *TaskRef `json:"fixes,omitempty"`
 	// State is set by the store: CreateTask always records TaskOpen.
 	State TaskState `json:"state"`
 }
@@ -189,6 +192,11 @@ func (s *Store) CreateTask(mutationID string, t Task) (Receipt, error) {
 				return fmt.Errorf("dependency: %w", err)
 			}
 		}
+		if f := t.Fixes; f != nil {
+			if _, err := getTask(tx, f.Repository, f.ID); err != nil {
+				return fmt.Errorf("fixed task: %w", err)
+			}
+		}
 		tasks, err := createRepoBucket(tx, t.Repository, bucketTasks)
 		if err != nil {
 			return err
@@ -236,7 +244,7 @@ func (s *Store) StartAttempt(mutationID, repository, taskID, step string) (Recei
 // startAttempt writes the next running attempt of step and fills the receipt's record fields.
 func startAttempt(tx *bolt.Tx, r *Receipt, repository, taskID, step string) (StageAttempt, error) {
 	r.Repository, r.TaskID = repository, taskID
-	if _, err := openTask(tx, repository, taskID); err != nil {
+	if _, err := attemptTask(tx, repository, taskID, step); err != nil {
 		return StageAttempt{}, err
 	}
 	attempts, err := createRepoBucket(tx, repository, bucketAttempts)
@@ -548,6 +556,19 @@ func getTask(tx *bolt.Tx, repository, taskID string) (Task, error) {
 	return t, nil
 }
 
+// attemptTask returns the task an attempt of step starts on: an open task, or a done one for the judge step
+// (docs/decisions/quality-judge.md).
+func attemptTask(tx *bolt.Tx, repository, taskID, step string) (Task, error) {
+	if step != workflow.JudgeStep {
+		return openTask(tx, repository, taskID)
+	}
+	t, err := getTask(tx, repository, taskID)
+	if err == nil && t.State != TaskDone {
+		err = invalid("a judge attempt needs a done task; task %s/%s is %s", repository, taskID, t.State)
+	}
+	return t, err
+}
+
 func openTask(tx *bolt.Tx, repository, taskID string) (Task, error) {
 	t, err := getTask(tx, repository, taskID)
 	if err == nil && t.State != TaskOpen {
@@ -628,6 +649,14 @@ func validateTask(t Task) error {
 		}
 		if dep == (TaskRef{Repository: t.Repository, ID: t.ID}) {
 			return invalid("task %s/%s depends on itself", t.Repository, t.ID)
+		}
+	}
+	if f := t.Fixes; f != nil {
+		if err := validateIDs(f.Repository, f.ID); err != nil {
+			return err
+		}
+		if *f == (TaskRef{Repository: t.Repository, ID: t.ID}) {
+			return invalid("task %s/%s fixes itself", t.Repository, t.ID)
 		}
 	}
 	return nil

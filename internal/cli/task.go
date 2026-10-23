@@ -20,7 +20,7 @@ import (
 )
 
 const taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... <task>
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] <task>
   guildhall task show --store <path> --repo <id> <task> --json
   guildhall task list --store <path> [--repo <id>] --json
   guildhall task timeline --store <path> --repo <id> <task> --json
@@ -42,6 +42,20 @@ func (d *dependsOn) Set(v string) error {
 		return fmt.Errorf("--depends-on %q must be <repository>/<task>", v)
 	}
 	*d = append(*d, store.TaskRef{Repository: repo, ID: task})
+	return nil
+}
+
+// fixes is the --fixes flag: the earlier task whose defect the new one fixes.
+type fixes struct{ ref *store.TaskRef }
+
+func (f *fixes) String() string { return fmt.Sprint(f.ref) }
+
+func (f *fixes) Set(v string) error {
+	repo, task, ok := strings.Cut(v, "/")
+	if !ok || !workflow.ValidID(repo) || !workflow.ValidID(task) {
+		return fmt.Errorf("--fixes %q must be <repository>/<task>", v)
+	}
+	f.ref = &store.TaskRef{Repository: repo, ID: task}
 	return nil
 }
 
@@ -89,13 +103,15 @@ func (a *App) task(args []string) int {
 	full := flags.Bool("full", false, "request a full review")
 	var deps dependsOn
 	flags.Var(&deps, "depends-on", "task this one depends on")
+	var fixed fixes
+	flags.Var(&fixed, "fixes", "earlier task whose defect this one fixes")
 	var cp copyFlags
 	cp.register(flags)
 	var want int
 	var allowed map[string]bool
 	switch sub {
 	case "new":
-		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "depends-on": true}
+		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "depends-on": true, "fixes": true}
 	case "show", "timeline", "files":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "json": true}
 	case "list":
@@ -175,7 +191,7 @@ func (a *App) task(args []string) int {
 		if task, accepted, err = acceptTask(*cfgPath, *repo); err != nil {
 			return fail(err)
 		}
-		task.ID, task.Title, task.DependsOn = positional[0], *title, deps
+		task.ID, task.Title, task.DependsOn, task.Fixes = positional[0], *title, deps, fixed.ref
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(noStore(*path))

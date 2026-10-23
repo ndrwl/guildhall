@@ -2,7 +2,7 @@
 
 ## Contract
 
-The release baseline: `roles/director.md`, `roles/artisan.md` and one `stages/<kind>.md` for every registry kind an Artisan may run, embedded in the binary and returned by `Release`.
+The release baseline: `roles/director.md`, `roles/artisan.md`, `roles/judge.md` for a delivered task's [judge](quality.md) and one `stages/<kind>.md` for every registry kind an Artisan may run, embedded in the binary and returned by `Release`.
 It ships no standards: standards are the Guildmaster's, kept in a copy's own `baseline/standards`.
 `Install(dir)` writes the root into a directory that must not exist or must be empty (`ErrNotEmpty`) and leaves nothing behind on error.
 An advance resolves each role and guide from the copy's `baseline/` first and then this root, and the manifest records which ([running a task](../running.md#what-an-advance-runs-over)); `guildhall render` uses it for a request that names no role or guide.

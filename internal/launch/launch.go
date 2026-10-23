@@ -29,7 +29,8 @@
 //  6. with Config.Advance, once the store outcome is recorded it advances the
 //     attempt's task as its watcher (advance): step done after a finished
 //     attempt with a valid result, otherwise task start, so the engine sends
-//     the Director attempt-failed. A failed advance is logged and run once
+//     the Director attempt-failed; a judge attempt (workflow.JudgeStep) of a
+//     delivered task runs quality judged instead, whatever its end. A failed advance is logged and run once
 //     more; when that fails too the Director is sent advance-failed through
 //     Config.Outbox (interp.AdvanceFailedMessage). Neither changes the outcome
 //     or Run's result: both commands are idempotent, and the Director's next
@@ -71,6 +72,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // ErrNotStopped reports that Stop could not verify termination.
@@ -350,8 +352,8 @@ func Run(ctx context.Context, c Config) (Report, error) {
 }
 
 // advance runs c.Advance for the attempt rep recorded: the program, then step done with the attempt's identity
-// and result file after a finished attempt with a valid result, otherwise task start with its task, then the
-// rest of c.Advance and the identity. The child's output is appended to LogFile in the attempt directory and each
+// and result file after a finished attempt with a valid result, otherwise task start with its task, or for a judge
+// attempt quality judged with its task and attempt number, then the rest of c.Advance and the identity. The child's output is appended to LogFile in the attempt directory and each
 // run's end is logged as an advance event. A run that fails is run once more, which waits the task lock's wait
 // again; when that run fails too, the Director is sent interp.AdvanceFailedMessage through c.Outbox, which needs no
 // task lock and wakes it as any send does. Neither a failure nor the log's changes the attempt.
@@ -362,7 +364,12 @@ func (c Config) advance(rep Report) {
 	k := c.Key
 	command := []string{"task", "start"}
 	identity := []string{"--repo", k.Repository, k.TaskID}
-	if rep.Outcome.State == artisan.Finished && rep.Result != nil {
+	switch {
+	case k.Step == workflow.JudgeStep:
+		// A judge attempt's task is done, which step done and task start refuse; quality judged takes either end.
+		command = []string{"quality", "judged"}
+		identity = []string{"--repo", k.Repository, "--task", k.TaskID, "--attempt", strconv.Itoa(k.Attempt)}
+	case rep.Outcome.State == artisan.Finished && rep.Result != nil:
 		command = []string{"step", "done"}
 		identity = []string{"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt), "--result", c.Files().ResultFile}
 	}
