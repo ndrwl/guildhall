@@ -597,12 +597,12 @@ func (j *Judge) Take(repository, task string, attempt int) (Taken, error) {
 		} else {
 			text += "; a stopped attempt does not exclude profile " + p.Judge.Profile + ", so unchanged settings choose it again"
 		}
-		return taken, j.notify(repository, task, "judge-failed."+k.AttemptID(), "judge-failed", text+".")
+		return taken, j.notify(repository, task, "judge-failed."+k.AttemptID(), store.MessageJudgeFailed, text+".")
 	}
 	answer, sr, err := j.answer(k)
 	if err != nil {
 		taken.Refused = err.Error()
-		return taken, j.notify(repository, task, "judgement-refused."+k.AttemptID(), "judgement-refused",
+		return taken, j.notify(repository, task, "judgement-refused."+k.AttemptID(), store.MessageJudgementRefused,
 			fmt.Sprintf("The %s wrote a judgement Guildhall refused, so nothing was recorded: %v.", who, err))
 	}
 	rec := Judgement{Schema: JudgementSchema, Repository: repository, Task: task, Review: p.Review, Head: sr.Head, Attempt: attempt,
@@ -631,7 +631,7 @@ func (j *Judge) notifyJudgement(k artisan.AttemptKey, name string, rec Judgement
 	}
 	slices.Sort(ids)
 	who := fmt.Sprintf("judge attempt %d of self-review %d of %s/%s, %s", rec.Attempt, rec.Review, rec.Repository, rec.Task, describe(rec.Judge))
-	return j.notify(k.Repository, k.TaskID, "judgement."+k.AttemptID(), "judgement",
+	return j.notify(k.Repository, k.TaskID, "judgement."+k.AttemptID(), store.MessageJudgement,
 		fmt.Sprintf("The %s would merge it as is: %s; it judged %s. The judgement is document %s.",
 			who, rec.MergeAsIs, strings.Join(ids, ", "), name))
 }
