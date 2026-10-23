@@ -17,7 +17,7 @@ It is an attempt rather than a workflow step because the self-review is a Direct
 
 A profile's family is its adapter: today the `fake` and `claude` adapters, and every model behind one adapter shares its family.
 The new setting `quality_judge_profiles` names the profiles a judge may run as, in order of preference; the builder's profile is excluded, and an unset list or no eligible profile refuses the judge with `ErrNoJudge`.
-A judge profile currently selects its adapter and role only; its model and effort are not yet passed to the runtime, as for every Artisan launch.
+A judge profile currently selects its adapter and role only; its model and effort are not passed to the runtime by the judge's `LaunchFiles` path. Ordinary workflow Artisan launches through `Process.Launch` do pass their profile's model and effort.
 With `quality_judge_separate_family` on and a known builder adapter, the first listed eligible profile whose adapter is not the builder's is chosen; otherwise the first listed eligible profile is chosen. The build manifest currently proves only the profile name, not the historical adapter, so the builder's family is unknown and never classified as separate; today's configuration cannot establish historical execution identity.
 The builder is the profile the task's latest succeeded build attempt was rendered for, read from that attempt's prompt manifest; finish receipts establish execution order rather than step names.
 "When quota allows" is measured, not guessed: a profile whose earlier judge attempt for the same self-review failed is passed over, so running `quality judge` again after a judge ran out of quota falls back to the next profile, and every choice records whether the judge's family was separate and why not.
