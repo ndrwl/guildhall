@@ -389,8 +389,12 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 				wait = append(wait, needsMeItem{Kind: "director", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance waits for the Director",
 					Command: fmt.Sprintf("guildhall task timeline --repo %s --json %s", t.Repository, t.ID)})
 			case interp.WaitPaused:
-				held = append(held, needsMeItem{Kind: "paused", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance was held while the Director was paused",
-					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
+				item := needsMeItem{Kind: "paused", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance was held while the Director was paused",
+					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)}
+				if at, ok := latest[prefix+waits.Step]; ok && (at.Outcome == store.AttemptFailed || at.Outcome == store.AttemptStopped) {
+					item.Command = fmt.Sprintf("guildhall step retry --repo %s --task %s --step %s --attempt %d", t.Repository, t.ID, at.Step, at.Number)
+				}
+				held = append(held, item)
 			case interp.WaitChecks:
 				checks = append(checks, needsMeItem{Kind: checksKind, Repository: t.Repository, TaskID: t.ID, Step: waits.Step,
 					Reason:  fmt.Sprintf("step %s waits for the checks of its published head; the session supervisor reads them again every checks_refresh, never more often than every 30 seconds, and wakes you when they finish", waits.Step),

@@ -123,6 +123,21 @@ func Resume(ctx context.Context, a Attempt) (ResumeReport, error) {
 	return classify(err)
 }
 
+// SweepOwner sweeps the unit recorded for o, an owner recorded outside an attempt such as a Director session whose
+// supervisor is gone: it repeats artisan.Sweep until the owner-gone rule (reconcile.ProbeOwner) proves the unit
+// empty, within ctx and SweepTimeout, then sweeps the emptied unit once more to remove what it leaves, such as a
+// cgroup, and returns the processes it swept. A unit that does not empty returns artisan.ErrNotEmpty naming the
+// survivors, and an owner not proven gone store.ErrOwnerUnknown, with nothing swept.
+func SweepOwner(ctx context.Context, o store.Ownership) ([]artisan.Identity, error) {
+	var rep ResumeReport
+	if err := sweepUnit(ctx, o, &rep); err != nil {
+		return rep.Swept, err
+	}
+	w := reconcile.ProbeOwner(o)
+	_, _ = artisan.Sweep(w.Unit, w.Worker)
+	return rep.Swept, nil
+}
+
 // sweepUnit repeats artisan.Sweep until the owner-gone rule
 // (reconcile.ProbeOwner) proves the owner o's unit empty, within ctx and
 // SweepTimeout, recording what it swept.

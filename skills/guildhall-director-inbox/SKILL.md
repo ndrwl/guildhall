@@ -46,7 +46,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `merge-refused` | The forge refused the merge, with its reason: give an Artisan the fix, such as a rebase, and run `guildhall task start` once it is done so the merge is asked again. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |
 
-`director resume` wakes you with `guildhall: resumed, <n> waiting (...)` after a pause: run the loop as for any wake line, starting each held `paused` task with the `task start` its item names.
+`director resume` wakes you with `guildhall: resumed, <n> waiting (...)` after a pause: run the loop as for any wake line, following the recovery command each held `paused` item names.
 
 A wake line that ends `; handoff due (<reason>)` asks you to hand off: finish the message you are on, then run `guildhall-handoff`.
 

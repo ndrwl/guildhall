@@ -289,7 +289,7 @@ Every write uses a mutation id derived from the task and the record, such as `at
 The engine derives its position from the records, not from the event, so repeating any advance after a crash at any point replays its writes and records nothing twice.
 An advance is several writes, one per record, each committed on its own; the ordering (outputs before the attempt's outcome, the attempt before its launch) makes every partial advance one that a repeat completes.
 Once `Launch` returns, the engine marks the attempt directory with `launched.json`.
-An attempt recorded but neither marked launched nor holding a result is launched again with the same identity from its published preparation, never recorded again and never rendered again once prepared.
+An attempt recorded but neither marked launched nor holding a result is launched again with the same identity from its published preparation, subject to the [recovery hold](contracts/interp.md#contract), never recorded again and never rendered again once prepared.
 A lost acknowledgement, or a crash after `Launch` returns but before the mark, relaunches the same identity with the same files; refusing a live duplicate belongs to the launcher's ownership record.
 An attempt's binding is recorded before the attempt, and a relaunch uses the recorded binding, so a replayed launch is given exactly the inputs of the first.
 Result intake publishes `intake.json` atomically in the attempt directory only after every output document, ruling contest and stall notification succeeds and the attempt outcome is recorded or reconciled.

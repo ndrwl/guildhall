@@ -32,6 +32,9 @@ func TestMain(m *testing.M) {
 	runStewardSCPStub()
 	switch os.Getenv(roleEnv) {
 	case "guildhall":
+		if len(os.Args) > 1 && os.Args[1] == runtimeTreeCommand {
+			os.Exit(runRuntimeTree())
+		}
 		// As cmd/guildhall assembles it, with an empty release skills root and the release baseline: a launcher's advance installs them.
 		app := New()
 		app.InstallSkills = func(string) error { return nil }

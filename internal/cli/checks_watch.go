@@ -145,7 +145,7 @@ func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state str
 			if err := f.listed(); err != nil {
 				return err
 			}
-			if hold, err := heldWithRecords(storeRecords{path: storePath, wait: f.wait}); err != nil || hold {
+			if hold, err := withRecords(storeRecords{path: storePath, wait: f.wait}, true, nil, held); err != nil || hold {
 				return err
 			}
 			b := *a

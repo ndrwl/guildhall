@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -234,7 +235,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
-	u, err := startRuntime(c, n)
+	u, err := startRuntime(c, n, storePath)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
 	}
@@ -287,9 +288,12 @@ type runtimeUnit interface {
 
 // startRuntime starts c, the runtime of session n, in a unit of its own (artisan.NewSessionUnit), so the
 // supervisor can end every process the runtime starts, such as its shell and tool children, with it, except the
-// attempts' launchers, which leave it (artisan.SessionEnv).
-func startRuntime(c *exec.Cmd, n int) (runtimeUnit, error) {
-	u, err := artisan.NewSessionUnit(fmt.Sprintf("director-%d-session-%d", os.Getpid(), n))
+// attempts' launchers, which leave it (artisan.SessionEnv). The runtime stays gated or suspended until its unit is
+// recorded on session n in the store at storePath, so director stop can sweep it once the supervisor is gone;
+// a failed record ends the runtime with its unit without letting its program execute.
+func startRuntime(c *exec.Cmd, n int, storePath string) (runtimeUnit, error) {
+	// Session numbers are store-local; one supervisor process can serve multiple stores.
+	u, err := artisan.NewSessionUnit(fmt.Sprintf("director-%d-session-%d-%s", os.Getpid(), n, rand.Text()))
 	if err != nil {
 		return nil, err
 	}
@@ -298,8 +302,14 @@ func startRuntime(c *exec.Cmd, n int) (runtimeUnit, error) {
 	}
 	// The attempts' launchers the runtime starts leave the unit, under their own ownership and stop.
 	c.Env = append(c.Env, artisan.SessionEnv(u)...)
-	if _, err := u.Start(c); err != nil {
-		return nil, errors.Join(err, u.Close())
+	_, err = artisan.StartRecorded(u, c, func(id artisan.Identity) error {
+		uc := u.Containment()
+		rec := store.Containment{Kind: uc.Kind, Name: uc.Name, Reason: uc.Reason, Worker: store.ProcessIdentity(id)}
+		_, err := withStore(storePath, false, func(s *store.Store) (store.Receipt, error) { return s.RecordDirectorRuntime(n, rec) })
+		return err
+	})
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("start recorded runtime: %w", err), u.Close())
 	}
 	return u, nil
 }
@@ -506,6 +516,12 @@ func stopSession(storePath string, n int) error {
 	_, err := withStore(storePath, false, func(s *store.Store) (struct{}, error) {
 		d, err := s.LatestDirectorSession()
 		if err != nil || d.Number != n || d.State == store.DirectorStopped {
+			return struct{}{}, err
+		}
+		if runtimeEnded(d) != nil {
+			if !d.Sweeping && d.State != store.DirectorStopping {
+				_, err = s.RequestDirectorStop(n, false, d.StateSequence)
+			}
 			return struct{}{}, err
 		}
 		_, err = s.SetDirectorState(n, store.DirectorStopped, d.StateSequence)

@@ -22,7 +22,11 @@ func TestAdvancePreflightLockWait(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			d.config = filepath.Join(t.TempDir(), "config.toml")
+			dir := t.TempDir()
+			if err := os.CopyFS(dir, os.DirFS(filepath.Dir(d.config))); err != nil {
+				t.Fatal(err)
+			}
+			d.config = filepath.Join(dir, "config.toml")
 			b = []byte(strings.Replace(string(b), "[local]", "[local]\nlock_wait = \"1s\"", 1))
 			if err := os.WriteFile(d.config, b, 0o600); err != nil {
 				t.Fatal(err)

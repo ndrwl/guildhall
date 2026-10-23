@@ -1,0 +1,59 @@
+# Red runs for the Director runtime's record and held starts' waits (F42, F47), 2026-10-22, Linux (WSL, cgroup v2 unit)
+
+## store, against a stub RecordDirectorRuntime
+
+--- FAIL: TestDirectorRuntimeIsRecordedOnTheSession (0.01s)
+    director_runtime_test.go:26: RecordDirectorRuntime: store: RecordDirectorRuntime is not implemented
+--- FAIL: TestDirectorRuntimeRecordRefusals (0.04s)
+    director_runtime_test.go:61: no session = store: RecordDirectorRuntime is not implemented, want ErrNotFound
+    director_runtime_test.go:83: a superseded session = store: RecordDirectorRuntime is not implemented, want ErrInvalid
+    director_runtime_test.go:87: a stopped session = store: RecordDirectorRuntime is not implemented, want ErrInvalid
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.069s
+FAIL
+
+## cli, against main's pre-advance hold, a startRuntime that records nothing and a stub launch.SweepOwner
+
+--- FAIL: TestDirectorStopEndsAGoneSupervisorsRuntime (0.17s)
+    director_orphan_test.go:159: session 1 records no runtime unit: {Number:1 State:running Identity:{PID:3899932 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:32558835} Release:dev ConfigDigest:sha256:754f01332c71e0b0d53290f7b595cb439b28727d55914a6c2b05b2a026424433 Pane:{Session: Workspace: Tab: Pane:} StartedAt:2026-10-22 22:48:24.823933879 +0000 UTC ReadyAt:2026-10-22 22:48:24.835397009 +0000 UTC EndedAt:0001-01-01 00:00:00 +0000 UTC StateSequence:3 StopNow:false Sweeping:false Runtime:{Kind: Name: Reason: Worker:{PID:0 Token:}} EndReason:}
+    director_orphan_test.go:185: director start beside the orphaned runtime: exit 0, stdout config: admitted ($TMPDIR/TestDirectorStopEndsAGoneSupervisorsRuntime477777125/001/config.toml)
+        runtime: fake ($TMPDIR/go-build3475725178/b001/cli.test)
+        store: opens ($TMPDIR/TestDirectorStopEndsAGoneSupervisorsRuntime477777125/001/director.store)
+        skills: 13 release skills install
+        artisans: no profile runs the claude adapter
+        session: 2 ($TMPDIR/TestDirectorStopEndsAGoneSupervisorsRuntime477777125/001/director/session-2)
+        session: 2 has no turn-end endpoint, so it waits 1h0m0s for a turn to end: session: session endpoint path is unusable: "$TMPDIR/TestDirectorStopEndsAGoneSupervisorsRuntime477777125/001/director/session-2/supervisor.sock" is 127 bytes, limit 107
+        {"number":2,"state":"running","identity":{"pid":3899910,"token":"c7658af8-7e27-4243-9d17-45a5a885c5d1:32558832"},"release":"dev","config_digest":"sha256:754f01332c71e0b0d53290f7b595cb439b28727d55914a6c2b05b2a026424433","started_at":"2026-10-22T22:48:24.905271055Z","ready_at":"2026-10-22T22:48:24.940855216Z","state_sequence":5}
+        , stderr test-runtime-tree: GUILDHALL_TEST_RUNTIME_TREE is not set
+        session script: guildhall test-runtime-tree: exit status 2
+        ; want director: live naming process 3899979 and director stop
+    director_orphan_test.go:189: the refused start recorded sessions [{Number:1 State:stopped Identity:{PID:3899932 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:32558835} Release:dev ConfigDigest:sha256:754f01332c71e0b0d53290f7b595cb439b28727d55914a6c2b05b2a026424433 Pane:{Session: Workspace: Tab: Pane:} StartedAt:2026-10-22 22:48:24.823933879 +0000 UTC ReadyAt:2026-10-22 22:48:24.835397009 +0000 UTC EndedAt:2026-10-22 22:48:24.905271055 +0000 UTC StateSequence:4 StopNow:false Sweeping:false Runtime:{Kind: Name: Reason: Worker:{PID:0 Token:}} EndReason:superseded} {Number:2 State:stopped Identity:{PID:3899910 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:32558832} Release:dev ConfigDigest:sha256:754f01332c71e0b0d53290f7b595cb439b28727d55914a6c2b05b2a026424433 Pane:{Session: Workspace: Tab: Pane:} StartedAt:2026-10-22 22:48:24.905271055 +0000 UTC ReadyAt:2026-10-22 22:48:24.940855216 +0000 UTC EndedAt:2026-10-22 22:48:24.949704775 +0000 UTC StateSequence:6 StopNow:false Sweeping:false Runtime:{Kind: Name: Reason: Worker:{PID:0 Token:}} EndReason:}]
+--- FAIL: TestDirectorStartAndStopOverARecordedRuntimeUnit (0.13s)
+    director_orphan_test.go:231: director start over the live unit: exit 0, stdout config: admitted ($TMPDIR/TestDirectorStartAndStopOverARecordedRuntimeUnit761174633/001/config.toml)
+        runtime: fake ($TMPDIR/go-build3475725178/b001/cli.test)
+        store: opens ($TMPDIR/TestDirectorStartAndStopOverARecordedRuntimeUnit761174633/001/director.store)
+        skills: 13 release skills install
+        artisans: no profile runs the claude adapter
+        session: 2 ($TMPDIR/TestDirectorStartAndStopOverARecordedRuntimeUnit761174633/001/director/session-2)
+        session: 2 has no turn-end endpoint, so it waits 1h0m0s for a turn to end: session: session endpoint path is unusable: "$TMPDIR/TestDirectorStartAndStopOverARecordedRuntimeUnit761174633/001/director/session-2/supervisor.sock" is 132 bytes, limit 107
+        , stderr ; want director: live naming process 3900065 and director stop
+    director_orphan_test.go:235: the refused start changed the sessions: [{Number:1 State:stopped Identity:{PID:3899910 Token:a supervisor that has exited} Release:test ConfigDigest:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc Pane:{Session: Workspace: Tab: Pane:} StartedAt:2026-10-22 22:48:24.98415972 +0000 UTC ReadyAt:2026-10-22 22:48:24.984366342 +0000 UTC EndedAt:2026-10-22 22:48:25.062260873 +0000 UTC StateSequence:5 StopNow:false Sweeping:false Runtime:{Kind:cgroup Name:/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/fm-guildhall-h12-f42-f47-03689cb6013a72d9.scope/guildhall-test-runtime-3899910-1792709304994918931 Reason:cgroup v2 delegated by the systemd user manager at /user.slice/user-1000.slice/user@1000.service/app.slice/fm-guildhall-h12-f42-f47-03689cb6013a72d9.scope (WSL) Worker:{PID:3900065 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:32558853}} EndReason:superseded} {Number:2 State:stopped Identity:{PID:3899910 Token:c7658af8-7e27-4243-9d17-45a5a885c5d1:32558832} Release:dev ConfigDigest:sha256:754f01332c71e0b0d53290f7b595cb439b28727d55914a6c2b05b2a026424433 Pane:{Session: Workspace: Tab: Pane:} StartedAt:2026-10-22 22:48:25.062260873 +0000 UTC ReadyAt:0001-01-01 00:00:00 +0000 UTC EndedAt:2026-10-22 22:48:25.087519153 +0000 UTC StateSequence:6 StopNow:false Sweeping:false Runtime:{Kind: Name: Reason: Worker:{PID:0 Token:}} EndReason:}]
+--- FAIL: TestHeldStartsLeaveTheirWait (0.02s)
+    director_pause_test.go:242: task start while paused: exit 0, "{\"wait\":\"paused\"}\n", stderr ; want "{\"wait\":\"paused\",\"step\":\"plan\"}\n"
+--- FAIL: TestARuntimeWhoseUnitCannotBeRecordedEnds (0.02s)
+    director_runtime_test.go:129: startRuntime with no session to record it on succeeded
+--- FAIL: TestDirectorStopOfAGoneSupervisorHoldsUntilItsSweepEnds (0.09s)
+    director_stop_test.go:231: task start during the sweep: exit 0, "{\"wait\":\"paused\"}\n", stderr 
+--- FAIL: TestDirectorStopNowHoldsUntilItsSweepEnds (0.38s)
+    director_stop_test.go:266: task start after the runtime ended, during the sweep: exit 0, "{\"wait\":\"paused\"}\n", stderr 
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.837s
+FAIL
+
+## launch, against SweepOwner stubbed back after its body was written
+
+--- FAIL: TestSweepOwnerEndsAGoneOwnersUnit (0.02s)
+    resume_test.go:238: SweepOwner of a live owner = [], launch: SweepOwner is not implemented; want ErrOwnerUnknown and nothing swept
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	0.029s
+FAIL

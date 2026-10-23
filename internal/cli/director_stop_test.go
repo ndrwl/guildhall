@@ -227,7 +227,7 @@ func TestDirectorStopOfAGoneSupervisorHoldsUntilItsSweepEnds(t *testing.T) {
 		if got, _ := latestSession(t, d.store); got.State != store.DirectorStopping || !got.Sweeping {
 			t.Errorf("session during the sweep = %+v; want stopping and sweeping", got)
 		}
-		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != pausedWait+"\n" {
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
 			t.Errorf("task start during the sweep: exit %d, %q, stderr %s", code, out, stderr)
 		}
 	})
@@ -262,7 +262,7 @@ func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
 				t.Fatalf("the supervisor never recorded the session stopped: %+v", sessions(t, dir))
 			}
 		}
-		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != pausedWait+"\n" {
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
 			t.Errorf("task start after the runtime ended, during the sweep: exit %d, %q, stderr %s", code, out, stderr)
 		}
 		startRefused(t, dir)
@@ -278,7 +278,7 @@ func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
 	if got := d.attempts(t); len(got) != 0 {
 		t.Fatalf("attempts of t-1 after the held start = %+v", got)
 	}
-	if hold, err := heldNow(d.store); err != nil || hold {
+	if hold, err := withStore(d.store, true, held); err != nil || hold {
 		t.Errorf("held after the sweep = %v, %v; want the hold lifted", hold, err)
 	}
 	if code, _, stderr := d.run(t, "director", "stop", "--copy", dir); code != 1 || !strings.Contains(stderr, "is stopped") {
@@ -349,7 +349,7 @@ func TestDirectorStopFinishesAnInterruptedSweep(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, false, store.DirectorRunning, store.DirectorStopping, store.DirectorStopped)
 	d.recordUnlaunched(t, "t-2")
-	if hold, err := heldNow(d.store); err != nil || !hold {
+	if hold, err := withStore(d.store, true, held); err != nil || !hold {
 		t.Fatalf("held before the sweep = %v, %v; want held", hold, err)
 	}
 	code, out, stderr := d.run(t, "director", "stop", "--store", d.store, "--state", d.state)
@@ -357,7 +357,7 @@ func TestDirectorStopFinishesAnInterruptedSweep(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || printed.State != store.DirectorStopped || printed.Sweeping {
 		t.Fatalf("director stop: exit %d, %q (%v), stderr %s", code, out, err, stderr)
 	}
-	if hold, err := heldNow(d.store); err != nil || hold {
+	if hold, err := withStore(d.store, true, held); err != nil || hold {
 		t.Errorf("held after the sweep = %v, %v; want the hold lifted", hold, err)
 	}
 }

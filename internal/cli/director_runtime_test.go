@@ -34,7 +34,7 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 			recordSession(t, path, false, states...)
 			inv := t.TempDir()
 			cmd := artisantest.Command(inv, c.w)
-			u, err := startRuntime(cmd, 1)
+			u, err := startRuntime(cmd, 1, path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -80,19 +80,45 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 			if ending != want {
 				t.Errorf("ending = %v, want %v", ending, want)
 			}
-			for _, id := range tree {
-				// Windows job termination can remove a member before its process handle
-				// becomes signalled. As in artisantest's assertGone, await that transition.
-				lv, err := artisan.Probe(id)
-				for end := time.Now().Add(stopKill); lv != artisan.Gone && time.Now().Before(end); {
-					time.Sleep(20 * time.Millisecond)
-					lv, err = artisan.Probe(id)
-				}
-				if lv != artisan.Gone {
-					t.Errorf("process %d of the runtime's tree is %v (%v) after the session ended", id.PID, lv, err)
-				}
-			}
+			waitGone(t, "after the session ended", tree...)
 		})
+	}
+}
+
+// Separate stores can both have session 1 in the same supervisor process. Their
+// recorded units must remain independently startable and stoppable.
+func TestRuntimeUnitsAreIsolatedAcrossStores(t *testing.T) {
+	var units []runtimeUnit
+	var trees [][]artisan.Identity
+	var records []store.DirectorSession
+	for range 2 {
+		path := emptyStore(t)
+		recordSession(t, path, false, store.DirectorRunning)
+		inv := t.TempDir()
+		u, err := startRuntime(artisantest.Command(inv, artisantest.Worker{Grandchildren: 1}), 1, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = u.Close() })
+		units = append(units, u)
+		trees = append(trees, runtimeTree(t, inv))
+		rec, _ := latestSession(t, path)
+		records = append(records, rec)
+	}
+	if records[0].Runtime.Name != "" && records[0].Runtime.Name == records[1].Runtime.Name {
+		t.Fatalf("separate stores recorded the same runtime unit: %+v", records)
+	}
+	if err := units[0].Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := empty(units[0], 10*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	waitGone(t, "after ending only the first runtime", trees[0]...)
+	for _, id := range trees[1] {
+		if lv, err := artisan.Probe(id); err != nil || lv != artisan.Alive {
+			t.Errorf("second runtime process %d = %v, %v; want alive", id.PID, lv, err)
+		}
 	}
 }
 
@@ -120,5 +146,60 @@ func TestSessionEndReportsASurvivingProcess(t *testing.T) {
 	_, _, err := app.waitSession(u, &exec.Cmd{}, make(chan os.Signal), &w)
 	if !errors.Is(err, errRuntimeOutlived) || !strings.Contains(err.Error(), "42") {
 		t.Fatalf("waitSession = %v, want errRuntimeOutlived naming process 42", err)
+	}
+}
+
+// TestARuntimeWhoseUnitCannotBeRecordedEnds: a runtime whose unit the session record refuses, here because the
+// store has no session 1, is ended with its unit and startRuntime fails, so no runtime runs that the record does not
+// name (docs/director.md#the-runtimes-record).
+func TestRuntimeWaitsForRecord(t *testing.T) {
+	inv := t.TempDir()
+	u, err := artisan.NewSessionUnit("test-record-gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = u.Close() }()
+	cmd := artisantest.Command(inv, artisantest.Worker{Grandchildren: 1})
+	_, err = artisan.StartRecorded(u, cmd, func(id artisan.Identity) error {
+		time.Sleep(200 * time.Millisecond)
+		entries, err := artisantest.Inventory(inv)
+		if err != nil {
+			return err
+		}
+		if len(entries) != 0 {
+			t.Errorf("runtime executed before record: %+v", entries)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTree(t, inv)
+}
+
+func TestARuntimeWhoseUnitCannotBeRecordedEnds(t *testing.T) {
+	path := emptyStore(t)
+	inv := t.TempDir()
+	cmd := artisantest.Command(inv, artisantest.Worker{Grandchildren: 1, IgnoreInterrupt: true})
+	u, err := startRuntime(cmd, 1, path)
+	if err == nil {
+		_ = u.Close()
+		t.Fatal("startRuntime with no session to record it on succeeded")
+	}
+	if !strings.Contains(err.Error(), "record") {
+		t.Errorf("startRuntime = %v, want it to name the failed record", err)
+	}
+	entries, err := artisantest.Inventory(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("unrecorded runtime executed: %+v", entries)
+	}
+	for _, e := range entries {
+		if lv, err := artisan.Probe(e.Identity); lv != artisan.Gone {
+			_ = artisan.Kill(e.Identity)
+			t.Errorf("%s %d is %v (%v) after the failed record", e.Role, e.PID, lv, err)
+		}
 	}
 }
