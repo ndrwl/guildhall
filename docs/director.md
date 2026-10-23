@@ -61,10 +61,10 @@ On Linux the runtime is also killed if the supervisor dies.
 
 ### The runtime's record
 
-Once the unit reports the gated or suspended runtime process created, before its program can execute, the supervisor records the unit on the session, as an Artisan's [ownership](artisan.md) records its worker: its kind, its name (the Job Object's name or the cgroup's directory; a process group has none), the Linux detection reason, and the runtime's process identity ([decision](decisions/director-runtime-record.md)).
+Once the unit reports the gated or suspended runtime process created, before its program can execute, the supervisor records the unit on the session, as an Artisan's [ownership](artisan.md) records its worker: its kind, its name (the Job Object's name or the cgroup's directory; a process group has none), the Linux detection reason, and the runtime's process identity ([decision](decisions/0090-director-runtime-record.md)).
 A record that fails ends the runtime and its unit, and the supervisor exits 1 naming the failure, so no runtime runs that the record does not name.
 The record is what lets the session's processes be found after the supervisor has died, such as when its terminal is closed with `kill -9` or a crash: [`director stop`](#stop) sweeps the recorded unit and `director start` refuses while it holds a process.
-The [record-before-run decision](decisions/director-runtime-record.md) describes the Unix gate and Windows suspension that enforce this guarantee.
+The [record-before-run decision](decisions/0090-director-runtime-record.md) describes the Unix gate and Windows suspension that enforce this guarantee.
 
 ## Skills
 
