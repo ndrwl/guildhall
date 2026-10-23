@@ -134,7 +134,7 @@ Green boxes are on `main`; grey dashed boxes are designed but not built, and dot
 - The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; see [Artisan commands](artisan.md#commands) for the implemented fake-adapter integration.
   `guildhall task start` launches a real agent through the minimal Claude adapter; delivering stored messages to it is not wired yet.
 - A **runtime adapter** launches an agent's session with a prompt file and working directory; an attempt completes only when the Artisan writes a valid result file, not when a process exits or a terminal closes.
-  The only built runtime adapter, the [Claude adapter](adapters.md#claude-adapter), runs a print-mode session under a wrapper; the designed interactive session, including the Director's, is not built.
+  The only built runtime adapter, the [Claude adapter](adapters.md#claude-adapter), runs a print-mode session under a wrapper for Artisans, and the Director's interactive session runs under `guildhall director start` (see [the Director](director.md)).
   See [adapters](adapters.md) for the fake adapter and the session mode each adapter runs.
 - The **execution environment** is the local machine first; a Docker environment is a planned separate boundary and is not built.
 - **Herdr**, a terminal multiplexer, shows each Director and Artisan in its own tab.

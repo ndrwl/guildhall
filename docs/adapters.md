@@ -279,4 +279,4 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
 | [Conformance](#conformance) of the Claude adapter over the stub `claude`: direct child, inside the Artisan launcher (stop at rung 1) and on interpreter-rendered attempts; `artisan start --adapter claude` outcomes | CI on Linux, Windows and macOS | Run on every change |
 | Claude adapter with Claude Code 2.1.306: `TestLiveClaude` (a file written and a succeeded result listing it), and an interrupt ending a working session in under a second with no result | Linux (WSL) | Passed on the earlier wrapper, before the model directory (Claude read the original prompt and wrote `<result>.draft`); pending a re-run on the current wrapper |
 
-Reconciling an attempt after a restart is [`artisan resume`](artisan.md#resume); the per-task watcher is the owned launcher's [advance](running.md#the-watcher), and recording pane bindings is not built yet.
+Reconciling an attempt after a restart is [`artisan resume`](artisan.md#resume); the per-task watcher is the owned launcher's [advance](running.md#the-watcher), and the Director's session records its pane binding (see [the Director](director.md)).

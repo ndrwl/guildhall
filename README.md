@@ -12,8 +12,8 @@ Everything is written down as it happens, so closing a terminal or restarting yo
 
 > **Status: early, not ready for real work.**
 > Guildhall builds and its tests pass in CI on Linux, Windows and macOS, but no agent runtime or platform is supported for real work yet.
-> The conversational Director described below is **planned, not built**.
-> What you can try today is driving the same steps by hand with the `guildhall` commands; see [Try it today](#try-it-today) and [What works today](#what-works-today).
+> The conversational Director is built and exercised in CI against stand-ins, but has not yet run a real task; see [What works today](#what-works-today).
+> What you can also try today is driving the same steps by hand with the `guildhall` commands; see [Try it today](#try-it-today).
 
 ## Why Guildhall
 
@@ -31,7 +31,7 @@ Guildhall is for when you want several of them working while you don't:
 
 ## What you could use it for
 
-Once the Director is built, these are the kinds of jobs Guildhall is designed for:
+These are the kinds of jobs Guildhall is designed for:
 
 - **Hand off a backlog.** "Add a health check endpoint, fix the flaky login test, and update the README."
   Each becomes its own task; independent tasks run in parallel.
@@ -102,7 +102,7 @@ Prebuilt binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, will b
 
 ## Try it today
 
-Until the Director exists, you can run the steps it will run yourself.
+You can also run the steps the Director runs yourself.
 A Director's copy is a directory holding its `config.toml`, its store `director.store` and its `state/` directory.
 The quickest look needs nothing but the binary: create an empty store with `store init`, which refuses anything already at that path, and inspect it.
 
