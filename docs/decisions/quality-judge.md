@@ -11,14 +11,15 @@ It is an attempt rather than a workflow step because the self-review is a Direct
 - `quality-judge` is a reserved step id that `workflow.Validate` refuses, so it can never be one of a workflow's steps, and it is the only step the store starts on a task that is not open, and only on a `done` one; every other step still needs an open task.
 - The judge reads the self-review document and judge brief the skill wrote, the diff and the facts, copied beside its prompt, and writes `judgement.json`: a yes or no to "would you merge this as is", and a score or a pass for each pending criterion, each with the evidence it quotes.
 - When the attempt ends, its launcher runs `guildhall quality judged` instead of `step done` or `task start`: a valid judgement becomes the task document `quality-judge-<n>-judgement`, with the judge's profile, adapter and family recorded beside it, and the Director is told; a failed attempt or a refused judgement is told to the Director and records nothing.
-- The task stays `done`: a judge attempt never reopens, re-gates or changes a delivered task. Director status still offers `artisan resume` for an orphaned judge and `quality judged` for each settled attempt until its intake notification is durably recorded, even after newer judge attempts exist.
+- The task stays `done`: a judge attempt never reopens, re-gates or changes a delivered task.
+  [Director status](../director.md#status) exposes recovery for interrupted judges and unfinished intake.
 
 ## The judge's family
 
 A profile's family is its adapter: today the `fake` and `claude` adapters, and every model behind one adapter shares its family.
 The new setting `quality_judge_profiles` names the profiles a judge may run as, in order of preference; the builder's profile is excluded, and an unset list or no eligible profile refuses the judge with `ErrNoJudge`.
-A judge profile currently selects its adapter and role only; its model and effort are not passed to the runtime by the judge's `LaunchFiles` path. Ordinary workflow Artisan launches through `Process.Launch` do pass their profile's model and effort.
-With `quality_judge_separate_family` on and a known builder adapter, the first listed eligible profile whose adapter is not the builder's is chosen; otherwise the first listed eligible profile is chosen. The build manifest currently proves only the profile name, not the historical adapter, so the builder's family is unknown and never classified as separate; today's configuration cannot establish historical execution identity.
+For the judge's current runtime-setting limitations and conservative treatment of the builder's historical family, see [Running it](../quality.md#running-it).
+The general profile-selection rule is owned by [`config.Quality.Judge`](../contracts/config.md).
 The builder is the profile the task's latest succeeded build attempt was rendered for, read from that attempt's prompt manifest; finish receipts establish execution order rather than step names.
 "When quota allows" is measured, not guessed: a profile whose earlier judge attempt for the same self-review failed is passed over, so running `quality judge` again after a judge ran out of quota falls back to the next profile, and every choice records whether the judge's family was separate and why not.
 
