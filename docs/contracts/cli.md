@@ -49,7 +49,13 @@ It returns the prompt manifest as JSON, retains the rendered attempt, removes th
 A request without a baseline role or guide path takes it from `App.InstallBaseline`'s temporary release baseline.
 `cmd/guildhall` supplies the embedded release skills and baseline installers; an unconfigured installer is an error, in `render` and in every advance.
 
+Director preflight checks its own model and effective effort at the `runtime` check before recording a session, using the profile runtime refusal rules.
+Director session specs and interpreter-launched profile attempts resolve empty effort through `config.EffectiveEffort`, defaulting to medium; explicit effort wins, and no model fallback is introduced.
+
 ## Tests
+
+Effort-default tests were run red before implementation: `TestTaskStartRunsTheProfilesModelAndEffort` expected medium for an unset profile; `TestDirectorRefusesOwnEffort` expected a preflight refusal; and the first case of `TestDirectorEffortReachesRuntime` expected the fake's recorded medium effort.
+The full Director inheritance matrix (both real child-process fake and strict Claude stub), configured profile fallback and explicit override checks were completed after implementation and passed; all use zero model calls.
 
 `TestDirectorStartRequiresGuildhallOnPATH` failed before the startup fix for both start and `--check`, and passes afterward: a real empty `PATH` refuses on the `guildhall` line, leaves the store byte-identical and writes no session directory, even though the fake runtime resolves by absolute executable path.
 `TestDirectorStartCheckRecordsNothing` also requires the successful `guildhall` check line.

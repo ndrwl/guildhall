@@ -627,7 +627,7 @@ func TestCrashBetweenRecordAndLaunchReplaysWhilePaused(t *testing.T) {
 }
 
 // TestProfileModelAndEffortReachTheLaunch: the model and effort of the stage's profile reach the launch spec and its
-// AdapterSpec as given, and a stage whose profile sets neither launches with the runtime's defaults.
+// AdapterSpec as given, and a stage whose profile sets neither launches with medium effort.
 func TestProfileModelAndEffortReachTheLaunch(t *testing.T) {
 	for name, s := range map[string]adapter.Settings{"none": {}, "both": {Model: "opus", Effort: "high"}} {
 		t.Run(name, func(t *testing.T) {
@@ -637,6 +637,9 @@ func TestProfileModelAndEffortReachTheLaunch(t *testing.T) {
 			launched := e.script.Launched()
 			if len(launched) != 1 {
 				t.Fatalf("launched %d attempts, want 1", len(launched))
+			}
+			if s.Effort == "" {
+				s.Effort = "medium"
 			}
 			if got := launched[0].Settings; got != s {
 				t.Errorf("launch settings = %+v, want %+v", got, s)

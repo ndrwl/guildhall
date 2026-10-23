@@ -24,8 +24,14 @@ A repository's `NoCI` is its `no_ci` setting, `false` by default.
 `IdleAfter` returns the effective `[director] idle_after`, `DefaultIdleAfter` (5 minutes) when unset.
 `Handoff` returns the effective [automatic handoff](../director.md#automatic-handoff) triggers: `handoff_after_tasks` (0, off, when unset), `handoff_context_percent` (`DefaultHandoffContextPercent`, 70, when unset; 0 is off) and `handoff_idle` (`0s`, off, when unset); `Parse` refuses a negative task count, a percent outside 0 to 100 and an idle period that is not a non-negative duration.
 
+`EffectiveEffort(explicit)` returns a nonempty explicit Director/profile effort unchanged, otherwise the effective `default_effort` managed/local setting, or `medium` when absent.
+It does not mutate the config or inject defaults into its digest; it is for validated configs.
+`Parse` and `ParseCombined` refuse either section's `default_effort` unless it is exactly `low`, `medium`, `high`, `xhigh` or `max`, even if overridden; normal managed/local precedence applies.
+Explicit session/profile settings remain runtime-validated, so fake accepts any value while Claude refuses unsupported settings before launch.
+
 ## Tests
 
+`effort_test.go` was written before implementation: default/local/managed/overridden effort, explicit override, malformed values and separate managed-file precedence; its first run failed to compile because `EffectiveEffort` did not yet exist, then passed with the implementation.
 `config_test.go`, `managed_test.go`, `profile_test.go`; real temporary files: `load_test.go`.
 `TestProfileAllowedTools` and `TestInvalidAllowedToolsRefused` were written red first against a `CheckAllowedTool` that accepted everything ([red run](../evidence/artisan-allow-rules-2026-10-22-red.txt)); the parse, duplicate and wrong-type cases passed against it.
 `stall_test.go` was written red first against a stub `StallInterval` ([red run](../evidence/stall-adapter-choice-2026-10-22-red.txt)): the default, local, zero, managed and overridden values, and refusal of values that are not nonnegative durations.

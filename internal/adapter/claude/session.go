@@ -81,12 +81,15 @@ func absoluteRule(path string) string {
 }
 
 // Session returns the Claude Code Director session for spec: `claude --append-system-prompt-file <role prompt>
-// --add-dir <copy> [--model <model>] -- <first message>` in the session directory with the session's environment,
-// the interactive command shape beside the Artisan's print mode. Effort is not passed: Claude Code takes it from
-// its own settings. Session refuses an invalid spec with no command and writes nothing; the caller writes
+// --add-dir <copy> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
+// the interactive command shape beside the Artisan's print mode. Session refuses invalid specs and settings
+// with no command and writes nothing; the caller writes
 // Settings at SettingsFile before starting it.
 func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
+		return adapter.Command{}, err
+	}
+	if err := a.CheckSettings(adapter.Settings{Model: spec.Model, Effort: spec.Effort}); err != nil {
 		return adapter.Command{}, err
 	}
 	prog := a.Claude
@@ -97,9 +100,7 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 		return adapter.Command{}, errors.New("claude adapter: Claude must be an absolute path")
 	}
 	argv := []string{prog, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", spec.Copy}
-	if spec.Model != "" {
-		argv = append(argv, "--model", spec.Model)
-	}
+	argv = append(argv, settingsArgs(adapter.Settings{Model: spec.Model, Effort: spec.Effort})...)
 	return adapter.Command{Argv: append(argv, "--", spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
 }
 

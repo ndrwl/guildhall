@@ -499,7 +499,7 @@ func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 		if !ok {
 			return artisanRuntime{}, nil, fmt.Errorf("%w: %q", config.ErrUnknownProfile, p)
 		}
-		rt = artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: profile.Effort}}
+		rt = artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: r.e.Config.EffectiveEffort(profile.Effort)}}
 	}
 	if err := CheckAdapter(rt.adapter); err != nil {
 		return artisanRuntime{}, nil, err

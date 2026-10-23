@@ -34,12 +34,12 @@ func TestFakeDirectorSessionCommand(t *testing.T) {
 	c := t.TempDir()
 	dir := filepath.Join(c, "director", "session-1")
 	spec := adapter.SessionSpec{Dir: dir, Copy: c, RolePrompt: filepath.Join(dir, "role.md"),
-		FirstMessage: "Start.", Model: "m", Env: []string{"A=1"}}
+		FirstMessage: "Start.", Model: "m", Effort: "high", Env: []string{"A=1"}}
 	cmd, err := Adapter{Executable: "/bin/guildhall"}.Session(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/bin/guildhall", DirectorSubcommand, "--role", spec.RolePrompt, "Start."}
+	want := []string{"/bin/guildhall", DirectorSubcommand, "--role", spec.RolePrompt, "--model", "m", "--effort", "high", "Start."}
 	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
 		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
 	}
