@@ -61,7 +61,8 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
 
     It prints the attempt and the judge chosen, with `separate_family` and, when that is false, the reason.
     When its `judgement` message arrives, read the `quality-judge-<k>-judgement` document from `guildhall task files`, copy each criterion's `score` or `pass` and `evidence` into the self-review with `judge: model`, and rewrite `lowest_pillar`; never change a score the judge gave.
-    A `judgement-refused` message names what was wrong with the judge's answer; a `judge-failed` one reports a failed or stopped attempt. Running `quality judge` again passes over only a failed judge's profile; a stopped judge's profile is chosen again with unchanged settings.
+    A `judgement-refused` message names what was wrong with the judge's answer; a `judge-failed` one reports a failed or stopped attempt.
+    Running `quality judge` again passes over only a failed judge's profile; a stopped judge's profile is chosen again with unchanged settings.
 
 ## The document
 
