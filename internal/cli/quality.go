@@ -60,7 +60,7 @@ func (a *App) qualityJudge(args []string) int {
 		return err
 	})
 	if errors.Is(err, store.ErrDirectorHeld) {
-		return a.paused("quality judge", nil)
+		return a.printJSON(map[string]string{"wait": "paused"})
 	}
 	if err != nil {
 		return a.fail(fmt.Errorf("quality judge: %w", err))
