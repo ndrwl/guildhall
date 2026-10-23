@@ -1,4 +1,4 @@
-# Recording the Director runtime's containment and leaving every held start's wait
+# D90. Recording the Director runtime's containment and leaving every held start's wait
 
 Sustainability review 12 found that a Director runtime could not be found again once its supervisor died (F42).
 The session record named the supervisor and nothing else, so after a `kill -9` of `director start` the runtime ran on, `director stop` recorded the session `superseded` and ended nothing, and the next `director start` ran a second Director beside the first on one copy.

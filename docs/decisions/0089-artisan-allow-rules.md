@@ -1,4 +1,4 @@
-# Each Director grants its Claude Artisans narrow tool permissions per profile
+# D89. Each Director grants its Claude Artisans narrow tool permissions per profile
 
 The Guildmaster accepted that Guildhall should pass narrow permissions to the Claude builder from a per-profile config setting, empty by default, with a documented suggested set, and added that the permission set should vary by Director.
 This supersedes, for this narrow case, [D55](0055-claude-adapter-wrapper.md)'s assignment of widening the Artisan's permissions to the Director's managed settings: a standalone Director can now grant them before managed mode exists.
@@ -6,7 +6,7 @@ This supersedes, for this narrow case, [D55](0055-claude-adapter-wrapper.md)'s a
 ## The setting
 
 A profile's `allowed_tools` ([profiles](../configuration.md#profiles)) lists Claude Code permission rules, such as `Bash(go test:*)`, that the stage's print-mode session is granted beyond `acceptEdits`.
-It is empty by default, and empty grants nothing, so a Director's first build runs its checks and commits on any machine only once its config says so, and never by accident.
+It is empty by default, and empty grants nothing through Guildhall; Claude Code's own settings still apply, as described under [Artisan permissions](../adapters.md#artisan-permissions).
 `config.Parse` refuses a rule that is not a tool name with an optional parenthesised specifier, a duplicate, and a rule allowing every shell command (`Bash`, `Bash(*)`, `Bash(:*)`), so a grant always names its commands.
 The suggested set for a Go builder, `claude.SuggestedGoAllowedTools`, is `go test`, `go vet`, `git add` and `git commit`, plus `git status` and `git diff`, deliberately included as read-only helpers ([Artisan permissions](../adapters.md#artisan-permissions)).
 

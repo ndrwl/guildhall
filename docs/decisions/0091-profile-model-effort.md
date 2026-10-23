@@ -1,4 +1,4 @@
-# A profile's model and effort reach its runtime by value, and a runtime refuses what it cannot honour
+# D91. A profile's model and effort reach its runtime by value, and a runtime refuses what it cannot honour
 
 A Director's `[profile.<name>]` already chose a `model` and `effort`, but `launch.Process` built `artisan start` without them, so every Artisan a step launched, builders, reviewers and the judge alike, ran on its runtime's defaults whatever the profile said.
 The Director's first real task needs its builders to run the model and effort the profile asks for.

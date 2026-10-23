@@ -1,4 +1,4 @@
-# One registry of the message types Guildhall sends
+# D88. One registry of the message types Guildhall sends
 
 Sustainability review 11 (F40) found the types of the Director messages Guildhall sends enumerated twice: as literals at each send in `internal/interp` and as a hand-kept list in `internal/store` that the wake line and `DirectorUnread` counted by.
 `store` cannot import `interp`, so the list could be kept only by reading the engine; one review round had already added `workspace-kept` to it after the fact, and `director-stage` was missing, so the wake counted it as `other`.
