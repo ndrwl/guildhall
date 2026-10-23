@@ -288,9 +288,9 @@ type runtimeUnit interface {
 
 // startRuntime starts c, the runtime of session n, in a unit of its own (artisan.NewSessionUnit), so the
 // supervisor can end every process the runtime starts, such as its shell and tool children, with it, except the
-// attempts' launchers, which leave it (artisan.SessionEnv). Once the unit reports the runtime it records the unit on
-// session n in the store at storePath, so a director stop can sweep it once the supervisor is gone; a failed record
-// ends the runtime with its unit.
+// attempts' launchers, which leave it (artisan.SessionEnv). The runtime stays gated or suspended until its unit is
+// recorded on session n in the store at storePath, so director stop can sweep it once the supervisor is gone;
+// a failed record ends the runtime with its unit without letting its program execute.
 func startRuntime(c *exec.Cmd, n int, storePath string) (runtimeUnit, error) {
 	// Session numbers are store-local; one supervisor process can serve multiple stores.
 	u, err := artisan.NewSessionUnit(fmt.Sprintf("director-%d-session-%d-%s", os.Getpid(), n, rand.Text()))

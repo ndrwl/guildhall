@@ -112,7 +112,7 @@ Its mutation id is `director-stop:<n>:<turn|now>:<from>`.
 Every stop request sets `Sweeping`, which holds new attempts, the session's state aside, until `FinishDirectorStop` clears it once `director stop` has completed the [runtime and attempt sweeps](director.md#stop), with the mutation id `director-swept:<n>:<from>`; it finishes a `stopped` session too, keeping its end time, and is refused when no stop is sweeping.
 `EndDirectorSession` moves a session that has not stopped to `stopped` with a non-blank one-line end reason of at most 256 bytes, such as `superseded` for a session whose supervisor is gone, with the mutation id `director-end:<n>:<from>`.
 
-`RecordDirectorRuntime` records the [containment unit](director.md#the-runtimes-record) the session's runtime runs in on the newest session, number `<n>`, once the supervisor has started it, with the mutation id `director-runtime:<n>`: a containment as an [ownership record](#containment-record) carries it, which must be recoverable and name the runtime as its worker.
+`RecordDirectorRuntime` records the [containment unit](director.md#the-runtimes-record) the session's runtime runs in on the newest session, number `<n>`, at the [record-before-run boundary](director.md#the-runtimes-record), with the mutation id `director-runtime:<n>`: a containment as an [ownership record](#containment-record) carries it, which must be recoverable and name the runtime as its worker.
 It does not change the session's state or state sequence, so it never races a state move.
 It is refused with `ErrInvalid` for a session that is not the newest or is `stopped`, and a second record for the session with a different unit conflicts with `ErrMutationConflict`; replaying the same record returns the original receipt.
 
