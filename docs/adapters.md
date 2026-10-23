@@ -156,7 +156,7 @@ The default workflow's build stage asks its Artisan to run the repository's chec
 Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/0089-artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` reference and settings file above.
 Raw rule flags are not accepted; an undeclared profile is refused.
 Without both reference fields, the wrapper grants nothing.
-The list is empty by default, and an empty list grants nothing, so nothing is granted unless a Director's config says so.
+The list is empty by default.
 The rules come only from the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
 
 The suggested set for a Go repository's builder profile, `claude.SuggestedGoAllowedTools`, runs its checks, stages and commits, and reads its status and diff:
