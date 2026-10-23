@@ -20,13 +20,13 @@ func TestCallRequestWriteBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }() // Best-effort temporary socket directory cleanup.
 	path := filepath.Join(dir, "s.sock")
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }() // Cleanup only; listener-close errors are not under test.
 	accepted := make(chan net.Conn, 1)
 	go func() {
 		c, _ := ln.Accept()
@@ -37,7 +37,7 @@ func TestCallRequestWriteBound(t *testing.T) {
 	start := time.Now()
 	_, err = Call[string, struct{}](ctx, path, Protocol{}, strings.Repeat("x", 8<<20), func(struct{}) bool { return true })
 	if c := <-accepted; c != nil {
-		defer c.Close()
+		defer func() { _ = c.Close() }() // Cleanup only; connection-close errors are not under test.
 	}
 	var timeout net.Error
 	if !errors.As(err, &timeout) || !timeout.Timeout() || ctx.Err() != nil {

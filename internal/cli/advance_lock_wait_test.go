@@ -31,7 +31,7 @@ func TestAdvancePreflightLockWait(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer holder.Close()
+			defer func() { _ = holder.Close() }() // Cleanup only; lock-release errors are not under test.
 			start := time.Now()
 			code, _, stderr := d.run(t, append(command, d.flags()...)...)
 			elapsed := time.Since(start)

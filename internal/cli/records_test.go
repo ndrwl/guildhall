@@ -154,19 +154,19 @@ func (h *storeOutboxHarness) Restart(*testing.T) {}
 type storeOutbox struct{ storeRecords }
 
 func (b storeOutbox) List(to store.Recipient, after uint64, limit int) (messaging.Page, error) {
-	return withStore(b.storeRecords.path, true, func(s *store.Store) (messaging.Page, error) {
+	return withStore(b.path, true, func(s *store.Store) (messaging.Page, error) {
 		return (&messaging.StoreMailbox{Store: s}).List(to, after, limit)
 	})
 }
 
 func (b storeOutbox) Read(id string) (messaging.Stored, error) {
-	return withStore(b.storeRecords.path, true, func(s *store.Store) (messaging.Stored, error) {
+	return withStore(b.path, true, func(s *store.Store) (messaging.Stored, error) {
 		return (&messaging.StoreMailbox{Store: s}).Read(id)
 	})
 }
 
 func (b storeOutbox) Ack(to store.Recipient, id string) (store.Receipt, error) {
-	return withStore(b.storeRecords.path, false, func(s *store.Store) (store.Receipt, error) {
+	return withStore(b.path, false, func(s *store.Store) (store.Receipt, error) {
 		return (&messaging.StoreMailbox{Store: s}).Ack(to, id)
 	})
 }

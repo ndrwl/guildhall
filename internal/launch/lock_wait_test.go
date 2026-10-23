@@ -15,7 +15,7 @@ func TestOwnershipLockWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer holder.Close()
+	defer func() { _ = holder.Close() }() // Cleanup only; lock-release errors are not under test.
 	a := Attempt{Store: path, LockWait: 100 * time.Millisecond}
 	start := time.Now()
 	_, err = a.owner()
