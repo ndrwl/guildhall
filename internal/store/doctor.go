@@ -85,6 +85,7 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketWakes, &rep.Wakes, func() any { return new(Wake) }},
 			{bucketHandoffs, nil, func() any { return new(HandoffNote) }},
 			{bucketReloads, nil, func() any { return new(DirectorReload) }},
+			{bucketHandoffDues, nil, func() any { return new(HandoffDue) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {

@@ -379,10 +379,10 @@ func TestDoctorCountsDirectorRecords(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsDamagedDirectorRecords shows a session, wake, handoff note or reload request that does not
-// decode is a problem, not a clean store.
+// TestDoctorReportsDamagedDirectorRecords shows a session, wake, handoff note, reload request or handoff due that
+// does not decode is a problem, not a clean store.
 func TestDoctorReportsDamagedDirectorRecords(t *testing.T) {
-	for _, bucket := range []string{"sessions", "wakes", "handoffs", "reloads"} {
+	for _, bucket := range []string{"sessions", "wakes", "handoffs", "reloads", "handoff-dues"} {
 		t.Run(bucket, func(t *testing.T) {
 			s, path := messagingStore(t)
 			mustStartSession(t, s, sampleSession(1))
