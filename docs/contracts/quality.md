@@ -23,7 +23,7 @@ Its seams are the interpreter's, and it adds no interface but `Launcher`: `inter
 
 - a still-running attempt or one that is not a judge attempt of the task is refused with `ErrJudgeRunning` or `ErrNotJudge`;
 - a succeeded attempt whose result names `judgement.json` as its first output and whose answer `ParseAnswer` accepts is recorded as the document `quality-judge-<n>-judgement`, a `guildhall.judgement/1` record with the self-review's identity and head, the attempt, the choice and the answer, and the Director is sent a `judgement` message;
-- a refused answer records nothing and sends `judgement-refused` with the reason; a failed or stopped attempt records nothing and sends `judge-failed`, naming the profile a later `Start` passes over;
+- a refused answer records nothing and sends `judgement-refused` with the reason; a failed or stopped attempt records nothing and sends `judge-failed`; its retry guidance says a later `Start` passes over only a failed judge's profile, while a stopped judge's profile is chosen again with unchanged settings;
 - every write and message id is derived from the attempt; taking a recorded judgement again verifies its document digest and retries the deterministic notification from that record, so interrupted delivery recovers and delivered messages are deduplicated.
 
 `Agreement(records, documentDir, repositories)` pairs each task's latest judgement with its answered `audit` decision and reports, overall and split by whether the judge's family was separate, how many tasks were audited, judged and paired and how many pairs agreed, where a pair agrees when the judge's `merge_as_is` equals the audit's choice; a judgement file whose digest is not its recorded one is an error.

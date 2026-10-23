@@ -545,19 +545,44 @@ func TestTakeRefusesAnAnswer(t *testing.T) {
 	}
 }
 
-// TestTakeTellsAFailedJudge: a failed judge attempt records nothing and tells the Director, naming its profile.
-func TestTakeTellsAFailedJudge(t *testing.T) {
-	e := newEnv(t, judgeConfig)
-	if _, err := e.judge.Start(context.Background(), "app", "t-1", 1); err != nil {
-		t.Fatal(err)
-	}
-	e.finish(1, adapter.StatusFailed, "")
-	got, err := e.judge.Take("app", "t-1", 1)
-	if err != nil || got.Document != "" || got.Refused == "" {
-		t.Fatalf("Take = %+v, %v; want nothing recorded and a reason", got, err)
-	}
-	if len(e.o.sent) != 1 || e.o.sent[0].Type != "judge-failed" || !strings.Contains(e.o.sent[0].Text, "judge-fake") {
-		t.Errorf("messages %+v, want one judge-failed naming judge-fake", e.o.sent)
+func TestTakeRetryGuidance(t *testing.T) {
+	for _, tc := range []struct {
+		outcome     store.AttemptOutcome
+		guidance    string
+		nextProfile string
+	}{
+		{store.AttemptFailed, "passing over profile judge-fake", "judge-claude"},
+		{store.AttemptStopped, "a stopped attempt does not exclude profile judge-fake, so unchanged settings choose it again", "judge-fake"},
+	} {
+		t.Run(string(tc.outcome), func(t *testing.T) {
+			e := newEnv(t, judgeConfig)
+			if _, err := e.judge.Start(context.Background(), "app", "t-1", 1); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.s.FinishAttempt("finish-judge", "app", "t-1", workflow.JudgeStep, 1, tc.outcome); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				got, err := e.judge.Take("app", "t-1", 1)
+				if err != nil || got.Document != "" || got.Refused != "the attempt ended "+string(tc.outcome) {
+					t.Fatalf("Take = %+v, %v", got, err)
+				}
+			}
+			if len(e.o.sent) != 1 || e.o.sent[0].Type != "judge-failed" || !strings.Contains(e.o.sent[0].Text, tc.guidance) {
+				t.Fatalf("messages %+v, want retry guidance %q", e.o.sent, tc.guidance)
+			}
+			if tc.outcome == store.AttemptStopped && strings.Contains(e.o.sent[0].Text, "passing over") {
+				t.Fatal("stopped judge promises to pass over its profile")
+			}
+			docs, err := e.s.Documents("app", "t-1")
+			if err != nil || len(docs) != 0 {
+				t.Fatalf("documents = %+v, %v", docs, err)
+			}
+			next, err := e.judge.Start(context.Background(), "app", "t-1", 1)
+			if err != nil || next.Attempt != 2 || next.Judge.Profile != tc.nextProfile {
+				t.Fatalf("retry = %+v, %v; want profile %s", next, err, tc.nextProfile)
+			}
+		})
 	}
 }
 

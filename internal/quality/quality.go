@@ -592,7 +592,11 @@ func (j *Judge) Take(repository, task string, attempt int) (Taken, error) {
 	if a.Outcome != store.AttemptSucceeded {
 		taken.Refused = fmt.Sprintf("the attempt ended %s", a.Outcome)
 		text := fmt.Sprintf("The %s ended %s and recorded no judgement; guildhall quality judge --repo %s --review %d %s starts the next judge", who, a.Outcome, repository, p.Review, task)
-		text += ", passing over profile " + p.Judge.Profile
+		if a.Outcome == store.AttemptFailed {
+			text += ", passing over profile " + p.Judge.Profile
+		} else {
+			text += "; a stopped attempt does not exclude profile " + p.Judge.Profile + ", so unchanged settings choose it again"
+		}
 		return taken, j.notify(repository, task, "judge-failed."+k.AttemptID(), "judge-failed", text+".")
 	}
 	answer, sr, err := j.answer(k)
