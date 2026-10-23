@@ -402,6 +402,11 @@ func (j *Judge) builder(repository, task string) (string, error) {
 	return "", nil
 }
 
+func PreparedReview(dir string) (int, error) {
+	p, err := readPrepared(dir)
+	return p.Review, err
+}
+
 func readPrepared(dir string) (prepared, error) {
 	var p prepared
 	data, err := os.ReadFile(filepath.Join(dir, promptDir, choiceFile))

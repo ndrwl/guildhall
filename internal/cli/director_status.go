@@ -368,7 +368,17 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			case "":
 				c := launch.Classify(ctx, launch.Attempt{Store: path, StateDir: stateDir, Key: key}, owners[key])
 				ss.Live = &statusLive{State: c.State, Reason: c.Reason}
-				if (open || judge) && (c.State == reconcile.Stuck || c.State == reconcile.Exited || c.State == reconcile.Unknown ||
+				_, launchedErr := os.Stat(filepath.Join(key.Dir(stateDir), "launched.json"))
+				if judge && owners[key] == nil && errors.Is(launchedErr, fs.ErrNotExist) {
+					item.Kind, item.Retryable = "retry", true
+					item.Command = fmt.Sprintf("guildhall quality judge --repo %s %s", t.Repository, t.ID)
+					item.Reason = fmt.Sprintf("judge attempt %d was not launched; supply its self-review number with --review to retry", at.Number)
+					if review, err := quality.PreparedReview(key.Dir(stateDir)); err == nil && review > 0 {
+						item.Command = fmt.Sprintf("guildhall quality judge --repo %s --review %d %s", t.Repository, review, t.ID)
+						item.Reason = fmt.Sprintf("judge attempt %d of self-review %d was prepared but not launched", at.Number, review)
+					}
+					retry = append(retry, item)
+				} else if (open || judge) && (c.State == reconcile.Stuck || c.State == reconcile.Exited || c.State == reconcile.Unknown ||
 					(judge && (c.State == reconcile.Finished || c.State == reconcile.Failed || c.State == reconcile.Cancelled))) {
 					item.Kind, item.Resume, item.Reason, item.Command = "resume", true, string(c.State)+": "+c.Reason, "guildhall artisan resume "+flags
 					resume = append(resume, item)
