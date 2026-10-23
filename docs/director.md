@@ -97,10 +97,10 @@ With `--tab`, `director start` is the wrapper the Guildmaster runs: it opens the
   If the typed command ends first, as a refused preflight in the tab would, or no such session appears within two minutes, it exits 1 naming the tab.
 
 Normal operation leaves one Director tab in the workspace ([decision](decisions/director-tab-replacement.md)).
-When Guildhall creates the workspace, it records Herdr's starting shell identity from the creation response and closes that shell after creating the Director tab.
+When Guildhall creates the workspace, it replaces Herdr's starting shell under the [adapter's starting-shell cleanup contract](contracts/adapter.md#contract); a cleanup failure aborts the launch before typing input and names both tabs.
 After a successful start, it retires earlier Director tabs only when a persisted session binding proves ownership, the session is stopped or superseded, its runtime unit is empty, and the tab contains one idle shell pane.
 A failed runtime leaves its output visible until the next successful start replaces its tab; a command that fails before recording a session leaves an unrecorded tab that Guildhall cannot safely reclaim.
-Busy, split, foreign or ambiguous tabs are left untouched, with cleanup failures reported on stderr without failing the new session.
+Busy, split, foreign or ambiguous older tabs are left untouched; failures while retiring them are reported on stderr without failing the new session.
 Closing tabs is presentation cleanup only and never changes a task or session record.
 A reload, including `director reload --now` after a handoff note, starts the next runtime under the same supervisor in the same tab and pane, without opening another tab.
 Guildhall never closes the session's own starting workspace or shells in an existing workspace whose identities it did not record, including shells left by older versions.

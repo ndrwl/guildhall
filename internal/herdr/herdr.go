@@ -382,8 +382,8 @@ type TabSpec struct {
 	Env []string
 }
 
-// OwnedTab is a tab this client created. Only TabCreate and RecordedTab make
-// one, so a value is proof that the caller's session created that tab.
+// OwnedTab proves ownership in the caller's session, obtained from TabCreate,
+// WorkspaceCreate's starting tab, or RecordedTab's durable-record adoption.
 type OwnedTab struct {
 	session     string
 	workspaceID string

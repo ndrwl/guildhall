@@ -25,6 +25,7 @@ The native worker boundary `nativeWorker` stops one verified process and proves 
 
 `TestNewWorkspaceReplacesOnlyItsOwnedStartingShell` crosses the real subprocess boundary with the existing Herdr stand-in and was written red first ([captured run](../evidence/director-tabs-2026-10-23-red.txt)).
 `TestIdleTabCloseRefusesUnsafeIdentity` covers unowned, busy, split, moved-tab, moved-pane and cancelled cleanup; the moved-pane regression and the initial-shell-startup wait were added red first in self-review (same captured run).
+`tabcontract.TestIdleClose` runs shared idle, busy, transient-busy, cancelled, mismatched-identity and already-closed cases against `HerdrTabs` and the CLI's `directorTabs` double through `TestHerdrIdleTabCloseContract` and `TestDirectorIdleTabCloseContract`.
 The workspace listing contract compares workspace identity without creation-only tab ownership and allows the owned starting-shell close, but no typed input.
 
 The workspace cases of the shared contract test (`testWorkspaces`, run against `HerdrTabs`, `fakeTabs` and `ShellPanes`) and `TestTabLauncherOpensThenTypes` were written red first against stubs ([red run](../evidence/director-tab-2026-10-22-red.txt)).
