@@ -36,7 +36,7 @@ func TestDirectorStoppedRuntimeRecoveryHoldsAdmission(t *testing.T) {
 	visited := false
 	duringSweep(t, func() {
 		visited = true
-		assertGone(t, "before the attempt sweep", tree...)
+		waitGone(t, "before the attempt sweep", tree...)
 		current, _ := latestSession(t, d.store)
 		if !current.Sweeping || current.State != store.DirectorStopped || current.EndedAt != before.EndedAt || current.EndReason != before.EndReason {
 			t.Errorf("recovery hold changed end metadata or is absent: %+v", current)

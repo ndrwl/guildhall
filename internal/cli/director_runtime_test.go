@@ -80,18 +80,7 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 			if ending != want {
 				t.Errorf("ending = %v, want %v", ending, want)
 			}
-			for _, id := range tree {
-				// Windows job termination can remove a member before its process handle
-				// becomes signalled. As in artisantest's assertGone, await that transition.
-				lv, err := artisan.Probe(id)
-				for end := time.Now().Add(stopKill); lv != artisan.Gone && time.Now().Before(end); {
-					time.Sleep(20 * time.Millisecond)
-					lv, err = artisan.Probe(id)
-				}
-				if lv != artisan.Gone {
-					t.Errorf("process %d of the runtime's tree is %v (%v) after the session ended", id.PID, lv, err)
-				}
-			}
+			waitGone(t, "after the session ended", tree...)
 		})
 	}
 }
@@ -125,7 +114,7 @@ func TestRuntimeUnitsAreIsolatedAcrossStores(t *testing.T) {
 	if err := empty(units[0], 10*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	assertGone(t, "after ending only the first runtime", trees[0]...)
+	waitGone(t, "after ending only the first runtime", trees[0]...)
 	for _, id := range trees[1] {
 		if lv, err := artisan.Probe(id); err != nil || lv != artisan.Alive {
 			t.Errorf("second runtime process %d = %v, %v; want alive", id.PID, lv, err)

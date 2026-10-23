@@ -87,16 +87,6 @@ func waitGone(t *testing.T, what string, ids ...artisan.Identity) {
 	}
 }
 
-// assertGone checks every identity in ids is proven gone now.
-func assertGone(t *testing.T, what string, ids ...artisan.Identity) {
-	t.Helper()
-	for _, id := range ids {
-		if lv, err := artisan.Probe(id); lv != artisan.Gone {
-			t.Errorf("process %d is %v (%v) %s", id.PID, lv, err, what)
-		}
-	}
-}
-
 // stopCopy runs director stop over dir in this process and returns its exit status, the session it printed and its
 // standard error.
 func stopCopy(t *testing.T, dir string) (int, store.DirectorSession, string) {
@@ -196,10 +186,10 @@ func TestDirectorStopEndsAGoneSupervisorsRuntime(t *testing.T) {
 	if code != 0 || printed.State != store.DirectorStopped || printed.EndReason != store.EndSuperseded || printed.Sweeping {
 		t.Fatalf("director stop: exit %d, %+v, stderr %s; want session 1 stopped as superseded", code, printed, stderr)
 	}
-	assertGone(t, "after director stop", tree...)
+	waitGone(t, "after director stop", tree...)
 	t.Logf("verified orphan tree gone: %v", tree)
 	if rt.PID != 0 {
-		assertGone(t, "after director stop", rt)
+		waitGone(t, "after director stop", rt)
 	}
 }
 
@@ -268,7 +258,7 @@ func checkRecordedRuntimeRecovery(t *testing.T, stopped bool) {
 	if code != 0 || printed.State != store.DirectorStopped || printed.EndReason != store.EndSuperseded || printed.Sweeping {
 		t.Fatalf("director stop: exit %d, %+v, stderr %s; want session 1 stopped as superseded", code, printed, errs)
 	}
-	assertGone(t, "after director stop", tree...)
+	waitGone(t, "after director stop", tree...)
 	if newest, err := withStore(path, true, checkSupersede); err != nil || newest != 1 {
 		t.Errorf("director start's check after the stop = %d, %v; want it admitted after session 1", newest, err)
 	}
