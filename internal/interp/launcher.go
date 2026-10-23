@@ -52,6 +52,8 @@ type Spec struct {
 	Manifest render.Manifest
 	Copy     string
 	Profile  string
+	// Settings are the model and effort of the stage's profile, the zero Settings for a stage with none.
+	Settings adapter.Settings
 }
 
 // Validate checks the identity, that the working directory, prompt and result paths are absolute,
@@ -78,12 +80,12 @@ func (s Spec) Validate() error {
 }
 
 // AdapterSpec returns the adapter.Spec for s that the adapter conformance suite runs runtimes on and
-// launch.Process starts the attempt from: the same identity, working directory, prompt file and result
-// file, and no extra environment. The adapter name and manifest stay with the launcher, which passes
+// launch.Process starts the attempt from: the same identity, working directory, prompt file, result
+// file, copy/profile reference and settings, and no extra environment. The adapter name and manifest stay with the launcher, which passes
 // the name to the runtime's owner and has already checked the prompt against its manifest.
 // A spec Validate accepts maps to one adapter.Spec.Validate accepts.
 func (s Spec) AdapterSpec() adapter.Spec {
-	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile, Copy: s.Copy, Profile: s.Profile}
+	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile, Copy: s.Copy, Profile: s.Profile, Settings: s.Settings}
 }
 
 // Handle names one launched attempt. It carries no authority: only the launcher that returned it accepts it.

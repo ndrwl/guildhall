@@ -40,7 +40,19 @@ type Spec struct {
 	Env     []string
 	Copy    string
 	Profile string
+	// Settings are the profile's model and effort, which the runtime runs the attempt on.
+	Settings
 }
+
+// Settings are a profile's model and effort for one attempt (docs/configuration.md#profiles), passed to the
+// runtime as given; an empty one is the runtime's default. A runtime that cannot honour a non-empty one refuses
+// it, before it starts anything, with an error wrapping ErrUnsupportedSetting, rather than ignoring it.
+type Settings struct {
+	Model, Effort string
+}
+
+// ErrUnsupportedSetting reports a model or effort the runtime cannot honour.
+var ErrUnsupportedSetting = errors.New("the runtime cannot honour the setting")
 
 // Validate checks the identity, that the working directory, prompt and result paths
 // are absolute, and that the result file is distinct from the prompt file.

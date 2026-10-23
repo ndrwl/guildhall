@@ -24,7 +24,7 @@ It first runs a preflight and prints one line per check, as `doctor` prints, sto
 - `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.
 - `skills`: the release skills and baseline install.
 - `artisans`: names this Director and its config file, then what that config grants each profile that runs the claude adapter: its [`allowed_tools`](configuration.md#profiles), or nothing, when print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings ([Artisan permissions](adapters.md#artisan-permissions)), as in `artisans: Director tools's config /srv/guildhall/config.toml: profile builder grants Bash(go test:*), Bash(git commit:*); profile reviewer grants nothing, so ...`.
-  It refuses only a profile of another adapter that sets `allowed_tools`, since only the claude adapter grants them.
+  It refuses a profile of another adapter that sets `allowed_tools`, since only the claude adapter grants them, and a profile whose `model` or `effort` its runtime cannot honour, naming the profile and the setting ([runtime settings](adapters.md#runtime-settings)).
 
 A failed check is exit 1 with nothing recorded and nothing written in the copy, and `--check` exits 0 after the preflight, also recording nothing.
 
@@ -45,7 +45,7 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - `manifest.json`: the digest of every file above.
 
 It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory, inside a containment unit of its own ([runtime containment](decisions/0084-director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
-For Claude Code that is `claude --append-system-prompt-file role.md --add-dir <copy> [--model <model>] "<first message>"`; `[director] effort` is not passed, since Claude Code reads effort from its own settings.
+For Claude Code that is `claude --append-system-prompt-file role.md --add-dir <copy> [--model <model>] "<first message>"`; see [runtime settings](adapters.md#runtime-settings) for the current limitation on Director effort.
 The terminal's interrupt reaches the runtime, which handles it; the supervisor waits for the runtime to end, records the session `stopped`, and exits 0, or 1 naming the status when the runtime exited nonzero.
 On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime's unit as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.

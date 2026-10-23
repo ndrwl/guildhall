@@ -29,8 +29,9 @@ const LogFile = "launcher.log"
 // artisan.AttemptKey.AttemptID, or a result file other than
 // artisan.ResultFile in artisan.AttemptKey.Dir. The attempt must already be
 // recorded running in Store, as the interpreter records it before launch.
-// The process gets the adapter name unchanged and the prompt file and working
-// directory of interp.Spec.AdapterSpec, the mapping the adapter conformance
+// The process gets the adapter name unchanged and the prompt file, working
+// directory, copy/profile reference and settings (as --model and --effort, each
+// only when set) of interp.Spec.AdapterSpec, the mapping the adapter conformance
 // suite runs runtimes on; `artisan start` looks the name up in package
 // runtimes, and a name it refuses, like every other startup failure, is the
 // process exiting before it owns the attempt.
@@ -107,6 +108,12 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 		}
 		if as.Profile != "" {
 			cmd.Args = append(cmd.Args, "--profile", as.Profile)
+		}
+		if as.Model != "" {
+			cmd.Args = append(cmd.Args, "--model", as.Model)
+		}
+		if as.Effort != "" {
+			cmd.Args = append(cmd.Args, "--effort", as.Effort)
 		}
 		cmd.Env = append(os.Environ(), p.Env...)
 		cmd.Stdout, cmd.Stderr = log, log

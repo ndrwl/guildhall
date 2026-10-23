@@ -189,6 +189,7 @@ func (a *App) artisanStart(args []string) int {
 		session, workspace, label            string
 		herdrExec                            stringList
 		profile                              string
+		settings                             adapter.Settings
 		timeout, stall                       time.Duration
 		stopOnTimeout, advance               bool
 		id                                   adapter.Identity
@@ -207,6 +208,8 @@ func (a *App) artisanStart(args []string) int {
 	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
 	fl.DurationVar(&stall, "stall-interval", 0, "send the Director worker-stalled when the worker is silent this long; zero observes nothing")
 	fl.StringVar(&profile, "profile", "", "profile declared by the Director copy")
+	fl.StringVar(&settings.Model, "model", "", "model the runtime runs the attempt on; empty is its default")
+	fl.StringVar(&settings.Effort, "effort", "", "effort the runtime runs the attempt at; empty is its default")
 	fl.BoolVar(&stopOnTimeout, "stop-on-timeout", false, "stop the owned Windows worker, or request Ctrl+C on other platforms, when the wait times out")
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan start: " + err.Error())
@@ -249,9 +252,9 @@ func (a *App) artisanStart(args []string) int {
 			}
 			advanceArgv = []string{exe, "--copy", dir}
 		}
-		return a.runOwned(at, adapterName, prompt, workdir, owned.copy.dir, profile, timeout, stall, advanceArgv)
-	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0 || profile != "":
-		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance, --stall-interval and --profile do not apply in a Herdr tab")
+		return a.runOwned(at, adapterName, prompt, workdir, owned.copy.dir, profile, settings, timeout, stall, advanceArgv)
+	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0 || profile != "" || settings != adapter.Settings{}:
+		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance, --stall-interval, --profile, --model and --effort do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):
@@ -305,8 +308,10 @@ func (a *App) artisanStart(args []string) int {
 // outcome: 0 succeeded, 4 failed, 5 stopped, and 1 on any error. A non-nil
 // advance is launch.Config.Advance, the task's advance once the attempt is recorded. A positive stall is
 // launch.Config.StallInterval, its sends going through the store and waking the Director as the engine's outbox does.
-func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir, copyDir, profile string, timeout, stall time.Duration, advance []string) int {
-	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile, Copy: copyDir, Profile: profile}
+// The runtime runs the attempt on settings, and one it cannot honour (adapter.ErrUnsupportedSetting) is exit 1
+// before the attempt is owned.
+func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir, copyDir, profile string, settings adapter.Settings, timeout, stall time.Duration, advance []string) int {
+	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile, Copy: copyDir, Profile: profile, Settings: settings}
 	for _, p := range []struct {
 		dst *string
 		src string

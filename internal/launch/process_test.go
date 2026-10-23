@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
@@ -298,5 +299,43 @@ func TestProcessPassesTheProfilesAllowedTools(t *testing.T) {
 		"--copy", spec.Copy, "--advance", "--profile", spec.Profile}
 	if !slices.Equal(got, want) {
 		t.Errorf("argv = %q\nwant %q", got, want)
+	}
+}
+
+// TestProcessPassesTheProfilesModelAndEffort: the spec's settings reach `artisan start` as --model and --effort,
+// each only when set, so the runtime runs the attempt on the profile's model and effort.
+func TestProcessPassesTheProfilesModelAndEffort(t *testing.T) {
+	for name, s := range map[string]adapter.Settings{"none": {}, "model": {Model: "opus"}, "both": {Model: "opus", Effort: "high"}} {
+		t.Run(name, func(t *testing.T) {
+			p := newProcess(t)
+			argv := filepath.Join(t.TempDir(), "argv.json")
+			p.Env = []string{argvEnv + "=" + argv}
+			spec := prepared(t, p, fixtureSpec(t, ""))
+			spec.Settings = s
+			if _, err := p.Launch(context.Background(), spec); err == nil {
+				t.Fatal("Launch of a refusing launcher succeeded")
+			}
+			b, err := os.ReadFile(argv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			if err := json.Unmarshal(b, &got); err != nil {
+				t.Fatal(err)
+			}
+			as := spec.AdapterSpec()
+			want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
+				"--repo", "app", "--task", "t7", "--step", "build", "--attempt", "1",
+				"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir}
+			if s.Model != "" {
+				want = append(want, "--model", s.Model)
+			}
+			if s.Effort != "" {
+				want = append(want, "--effort", s.Effort)
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("argv = %q\nwant %q", got, want)
+			}
+		})
 	}
 }

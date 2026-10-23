@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -50,7 +51,27 @@ type Adapter struct {
 // Capabilities reports the fake adapter's optional capabilities: none.
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
-// Command returns the fake Artisan invocation for spec. It refuses a spec
+// CheckSettings honours every model and effort: the fake runs no model, and records the settings it was given
+// (SettingsFile) so tests can see what reached the runtime.
+func (Adapter) CheckSettings(adapter.Settings) error { return nil }
+
+// SettingsFile is the record, beside the result file, of the settings a fake worker was started with: the JSON
+// of its adapter.Settings, written before the worker reads its prompt.
+const SettingsFile = "fake-settings.json"
+
+// RecordedSettings returns the settings the fake worker for the result file result recorded (SettingsFile).
+func RecordedSettings(result string) (adapter.Settings, error) {
+	data, err := atomicfile.Read(filepath.Join(filepath.Dir(result), SettingsFile))
+	if err != nil {
+		return adapter.Settings{}, err
+	}
+	var s adapter.Settings
+	err = json.Unmarshal(data, &s)
+	return s, err
+}
+
+// Command returns the fake Artisan invocation for spec, passing spec's
+// settings as --model and --effort, each only when set. It refuses a spec
 // referencing a profile that grants allowed tools, since the fake grants none.
 func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
@@ -66,13 +87,16 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if len(rules) > 0 {
 		return adapter.Command{}, errors.New("fake adapter: it grants no allowed tools")
 	}
-	return adapter.Command{
-		Argv: []string{a.Executable, Subcommand,
-			"--task", spec.TaskID, "--attempt", spec.AttemptID,
-			"--prompt", spec.PromptFile, "--result", spec.ResultFile},
-		Dir: spec.WorkDir,
-		Env: append([]string(nil), spec.Env...),
-	}, nil
+	argv := []string{a.Executable, Subcommand,
+		"--task", spec.TaskID, "--attempt", spec.AttemptID,
+		"--prompt", spec.PromptFile, "--result", spec.ResultFile}
+	if spec.Model != "" {
+		argv = append(argv, "--model", spec.Model)
+	}
+	if spec.Effort != "" {
+		argv = append(argv, "--effort", spec.Effort)
+	}
+	return adapter.Command{Argv: argv, Dir: spec.WorkDir, Env: append([]string(nil), spec.Env...)}, nil
 }
 
 // Roles a fake Artisan process plays.
@@ -111,9 +135,11 @@ type Args struct {
 	Role string
 	// Stdin is what the interactive directive echoes; nil reads nothing.
 	Stdin io.Reader
+	// Settings are the --model and --effort the worker records (SettingsFile).
+	adapter.Settings
 }
 
-// ParseArgs parses `--task --attempt --prompt --result`, all required.
+// ParseArgs parses `--task --attempt --prompt --result`, all required, and the optional `--model` and `--effort`.
 func ParseArgs(argv []string) (Args, error) {
 	fs := flag.NewFlagSet(Subcommand, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -125,6 +151,8 @@ func ParseArgs(argv []string) (Args, error) {
 	fs.StringVar(&a.ControlAddress, "worker-control", "", "attempt owner loopback address")
 	fs.StringVar(&a.ControlToken, "worker-token", "", "attempt ownership token")
 	fs.StringVar(&a.Role, "role", RoleWorker, "worker or grandchild")
+	fs.StringVar(&a.Model, "model", "", "model to record")
+	fs.StringVar(&a.Effort, "effort", "", "effort to record")
 	if err := fs.Parse(argv); err != nil {
 		return Args{}, err
 	}
@@ -289,8 +317,8 @@ func Sleep(ctx context.Context, d time.Duration) error {
 // Claude adapter reports them.
 var ReportedUsage = adapter.Usage{Tokens: adapter.Measured, InputTokens: 100, OutputTokens: 20, CacheCreationInputTokens: 300, CacheReadInputTokens: 4000, Cost: adapter.Estimated, CostUSD: 0.01}
 
-// Run is the fake Artisan: it reads the prompt, applies its directives, and
-// writes the result file. Progress lines go to out so a Herdr tab shows them.
+// Run is the fake Artisan: a worker records its settings (SettingsFile), then
+// it reads the prompt, applies its directives, and writes the result file. Progress lines go to out so a Herdr tab shows them.
 // Once its work ends, before any result, it writes ReportedUsage as the
 // attempt's usage file (adapter.WriteUsage); work ended by an interrupt or the
 // cancel marker reports none.
@@ -306,6 +334,15 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 	if a.ControlAddress != "" {
 		if err := adapter.JoinOwnedWorker(ctx, a.ControlAddress, a.ControlToken, a.Identity, a.ResultFile); err != nil {
 			return fmt.Errorf("worker ownership handshake: %w", err)
+		}
+	}
+	if a.Role != RoleGrandchild {
+		data, err := json.Marshal(a.Settings)
+		if err != nil {
+			return err
+		}
+		if err := atomicfile.Write(filepath.Join(filepath.Dir(a.ResultFile), SettingsFile), data); err != nil {
+			return fmt.Errorf("settings record: %w", err)
 		}
 	}
 	f, err := os.Open(a.PromptFile)

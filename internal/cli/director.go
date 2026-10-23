@@ -206,8 +206,12 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 // artisanPermissions says what this Director's config at cfgPath grants each profile that runs the claude adapter:
 // its allowed_tools, or nothing, when claude print mode allows edits only, so a build's checks and commits depend on
 // Claude's own settings allowing Bash (docs/adapters.md#artisan-permissions). A profile of another adapter with
-// allowed_tools is refused, since only the claude adapter grants them.
+// allowed_tools is refused, since only the claude adapter grants them, and so is a profile whose model or effort
+// its runtime cannot honour (checkProfileSettings).
 func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
+	if err := checkProfileSettings(cfg, slices.Sorted(maps.Keys(cfg.Profiles))); err != nil {
+		return "", err
+	}
 	var grants, bare []string
 	for _, name := range slices.Sorted(maps.Keys(cfg.Profiles)) {
 		p := cfg.Profiles[name]
@@ -234,6 +238,29 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 			strings.Join(bare, ", ")))
 	}
 	return whose + strings.Join(grants, "; ") + "; wrappers load grants by copy/profile reference, never raw rule flags", nil
+}
+
+// checkProfileSettings refuses the first of the named profiles whose runtime cannot honour its model and effort
+// (runtimes.Runtime.CheckSettings), naming the profile; a profile of an adapter Guildhall does not know is left to
+// the checks that refuse that adapter.
+func checkProfileSettings(cfg *config.Config, names []string) error {
+	for _, name := range names {
+		p := cfg.Profiles[name]
+		if err := runtimeSettings(p.Adapter, adapter.Settings{Model: p.Model, Effort: p.Effort}); err != nil {
+			return fmt.Errorf("profile %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// runtimeSettings is interp.Engine.CheckSettings over package runtimes: the named runtime's CheckSettings, or no
+// refusal for a name that is not a runtime, which the adapter checks refuse.
+func runtimeSettings(name string, s adapter.Settings) error {
+	rt, err := runtimes.Lookup(name, "")
+	if err != nil {
+		return nil
+	}
+	return rt.CheckSettings(s)
 }
 
 // preflightLine prints one preflight check's line.
