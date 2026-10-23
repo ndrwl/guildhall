@@ -224,8 +224,6 @@ type Judge struct {
 	Launcher Launcher
 	// Config gives the quality settings and the profiles.
 	Config *config.Config
-	// DefaultAdapter identifies the adapter of a build attempt rendered for no profile.
-	DefaultAdapter string
 	// StateDir holds attempt directories, <repo>/<task>/<step>-<n>, and DocumentDir the recorded documents.
 	StateDir, DocumentDir string
 	// QualityDir holds the self-review documents, <repo>/<task>/self-review-<n>.json, and their brief, diff and facts.
@@ -367,17 +365,17 @@ func (j *Judge) choose(repository, task string, review int, attempts []store.Sta
 			failed = append(failed, p.Judge.Profile)
 		}
 	}
-	profile, adapter, err := j.builder(repository, task)
+	profile, err := j.builder(repository, task)
 	if err != nil {
 		return config.JudgeChoice{}, err
 	}
-	return q.Judge(j.Config.Profiles, adapter, profile, failed)
+	return q.Judge(j.Config.Profiles, "", profile, failed)
 }
 
-func (j *Judge) builder(repository, task string) (string, string, error) {
+func (j *Judge) builder(repository, task string) (string, error) {
 	h, err := j.Records.TaskHistory(repository, task)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	for _, r := range slices.Backward(h.Receipts) {
 		if r.Operation != "finish-attempt" {
@@ -399,12 +397,9 @@ func (j *Judge) builder(repository, task string) (string, string, error) {
 		if json.Unmarshal(data, &m) != nil || m.Identity.Kind != "build" {
 			continue
 		}
-		if m.Identity.Profile == "" {
-			return "", j.DefaultAdapter, nil
-		}
-		return m.Identity.Profile, j.Config.Profiles[m.Identity.Profile].Adapter, nil
+		return m.Identity.Profile, nil
 	}
-	return "", "", nil
+	return "", nil
 }
 
 func readPrepared(dir string) (prepared, error) {
@@ -597,12 +592,12 @@ func (j *Judge) Take(repository, task string, attempt int) (Taken, error) {
 		} else {
 			text += "; a stopped attempt does not exclude profile " + p.Judge.Profile + ", so unchanged settings choose it again"
 		}
-		return taken, j.notify(repository, task, "judge-failed."+k.AttemptID(), store.MessageJudgeFailed, text+".")
+		return taken, j.notify(repository, task, attempt, store.MessageJudgeFailed, text+".")
 	}
 	answer, sr, err := j.answer(k)
 	if err != nil {
 		taken.Refused = err.Error()
-		return taken, j.notify(repository, task, "judgement-refused."+k.AttemptID(), store.MessageJudgementRefused,
+		return taken, j.notify(repository, task, attempt, store.MessageJudgementRefused,
 			fmt.Sprintf("The %s wrote a judgement Guildhall refused, so nothing was recorded: %v.", who, err))
 	}
 	rec := Judgement{Schema: JudgementSchema, Repository: repository, Task: task, Review: p.Review, Head: sr.Head, Attempt: attempt,
@@ -631,7 +626,7 @@ func (j *Judge) notifyJudgement(k artisan.AttemptKey, name string, rec Judgement
 	}
 	slices.Sort(ids)
 	who := fmt.Sprintf("judge attempt %d of self-review %d of %s/%s, %s", rec.Attempt, rec.Review, rec.Repository, rec.Task, describe(rec.Judge))
-	return j.notify(k.Repository, k.TaskID, "judgement."+k.AttemptID(), store.MessageJudgement,
+	return j.notify(k.Repository, k.TaskID, k.Attempt, store.MessageJudgement,
 		fmt.Sprintf("The %s would merge it as is: %s; it judged %s. The judgement is document %s.",
 			who, rec.MergeAsIs, strings.Join(ids, ", "), name))
 }
@@ -671,12 +666,16 @@ func describe(c config.JudgeChoice) string {
 	return who + ", not a separate family: " + c.Reason
 }
 
-// notify sends the Director a message under an id derived from what it is about, so a repeat sends nothing new.
-func (j *Judge) notify(repository, task, what, typ, text string) error {
-	id := fmt.Sprintf("%s.%s.%s", repository, task, what)
+func MessageID(repository, task string, attempt int, typ string) string {
+	id := fmt.Sprintf("%s.%s.%s.%s-%d", repository, task, typ, workflow.JudgeStep, attempt)
 	if len(id) > 100 {
-		id = "quality." + digest.Of([]byte(id)).Hex()
+		return "quality." + digest.Of([]byte(id)).Hex()
 	}
+	return id
+}
+
+func (j *Judge) notify(repository, task string, attempt int, typ, text string) error {
+	id := MessageID(repository, task, attempt, typ)
 	_, err := j.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, messaging.Envelope{
 		Schema: messaging.SchemaPrefix + strconv.Itoa(messaging.SchemaVersion), ID: id, Recipient: store.RecipientDirector,
 		Repository: repository, Task: task, Type: typ, Text: text,

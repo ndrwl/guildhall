@@ -18,6 +18,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/quality"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -310,6 +311,12 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		spend[at.Repository+"/"+at.TaskID] = task
 	}
 
+	sent := map[string]bool{}
+	for _, r := range v.Receipts {
+		if r.Operation == "send-message" {
+			sent[r.Record] = true
+		}
+	}
 	var advance, retry, resume, wait, held, checks []needsMeItem
 	for _, t := range v.Tasks {
 		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}, Spend: store.NoSpend}
@@ -339,8 +346,20 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		if st.Next != nil {
 			_ = json.Unmarshal(st.Next, &waits)
 		}
+		var attempts []store.StageAttempt
 		for _, step := range steps {
-			at := latest[prefix+step]
+			if step != workflow.JudgeStep {
+				attempts = append(attempts, latest[prefix+step])
+				continue
+			}
+			for _, at := range v.Attempts {
+				if at.Repository == t.Repository && at.TaskID == t.ID && at.Step == workflow.JudgeStep {
+					attempts = append(attempts, at)
+				}
+			}
+		}
+		for _, at := range attempts {
+			judge := at.Step == workflow.JudgeStep
 			ss := statusStep{Step: at.Step, Attempt: at.Number, Outcome: at.Outcome}
 			item := needsMeItem{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number}
 			flags := fmt.Sprintf("--repo %s --task %s --step %s --attempt %d", t.Repository, t.ID, at.Step, at.Number)
@@ -349,7 +368,8 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			case "":
 				c := launch.Classify(ctx, launch.Attempt{Store: path, StateDir: stateDir, Key: key}, owners[key])
 				ss.Live = &statusLive{State: c.State, Reason: c.Reason}
-				if open && (c.State == reconcile.Stuck || c.State == reconcile.Exited || c.State == reconcile.Unknown) {
+				if (open || judge) && (c.State == reconcile.Stuck || c.State == reconcile.Exited || c.State == reconcile.Unknown ||
+					(judge && (c.State == reconcile.Finished || c.State == reconcile.Failed || c.State == reconcile.Cancelled))) {
 					item.Kind, item.Resume, item.Reason, item.Command = "resume", true, string(c.State)+": "+c.Reason, "guildhall artisan resume "+flags
 					resume = append(resume, item)
 				}
@@ -365,14 +385,25 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 					}
 				}
 			case store.AttemptFailed, store.AttemptStopped:
-				if open {
+				if open && !judge {
 					it := item
 					it.Kind, it.Retryable, it.Reason, it.Command = "retry", true, fmt.Sprintf("attempt %d of %s %s", at.Number, at.Step, at.Outcome), "guildhall step retry "+flags
 					retry = append(retry, it)
 				}
 			}
+			if judge && at.Outcome != "" {
+				taken := false
+				for _, typ := range []string{store.MessageJudgement, store.MessageJudgeFailed, store.MessageJudgementRefused} {
+					taken = taken || sent["message/"+quality.MessageID(t.Repository, t.ID, at.Number, typ)]
+				}
+				if !taken {
+					item.Kind, item.Reason = "advance", fmt.Sprintf("judge attempt %d ended %s and awaits intake", at.Number, at.Outcome)
+					item.Command = fmt.Sprintf("guildhall quality judged --repo %s --task %s --attempt %d", t.Repository, t.ID, at.Number)
+					advance = append(advance, item)
+				}
+			}
 			// A finished attempt the task's last advance still waits on was not taken, as when its watcher's advance failed.
-			if open && at.Outcome != "" && waits.Wait == interp.WaitAttempt && waits.Step == at.Step && waits.Attempt == at.Number {
+			if open && !judge && at.Outcome != "" && waits.Wait == interp.WaitAttempt && waits.Step == at.Step && waits.Attempt == at.Number {
 				item.Kind, item.Reason = "advance", fmt.Sprintf("attempt %d of %s %s and the task's last advance still waits on it", at.Number, at.Step, at.Outcome)
 				item.Command = fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)
 				result := filepath.Join(key.Dir(stateDir), artisan.ResultFile)
@@ -381,7 +412,9 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 				}
 				advance = append(advance, item)
 			}
-			st.Steps = append(st.Steps, ss)
+			if at.Number == latest[prefix+at.Step].Number {
+				st.Steps = append(st.Steps, ss)
+			}
 		}
 		if open {
 			switch waits.Wait {

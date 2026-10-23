@@ -357,8 +357,9 @@ The document has these sections:
   Items come in this order, and within a kind by repository, task, then step or message order:
   1. `advance`: an open task's step whose latest attempt is finished while the task's `next.json` still says `"wait":"attempt"` for that attempt, as a [watcher](running.md#the-watcher) whose advance failed leaves it; `guildhall step done --repo <r> --task <t> --step <s> --attempt <n> --result <file>` for a `succeeded` attempt whose result file exists, otherwise `guildhall task start --repo <r> <t>`.
      A [Director stage](interpreter.md#director-stages) whose attempt is unfinished but has a published result, as a `step finish` that stopped before its advance leaves it, is also an `advance` item, with that `step done` command, whether or not its stage message was read.
+     Every settled [judge](quality.md#running-it) attempt without a durable intake notification receipt is also an `advance` item, even on a done task or after newer judge attempts: `guildhall quality judged --repo <r> --task <t> --attempt <n>`. An acknowledged intake notification still counts as completed intake.
   2. `retry`, `retryable: true`: an open task's step whose latest attempt finished `failed` or `stopped`; `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`, to which the Director adds `--reason`.
-  3. `resume`, `resume: true`: a running attempt of an open task classified `stuck`, `exited` or `unknown`; `guildhall artisan resume --repo <r> --task <t> --step <s> --attempt <n>`.
+  3. `resume`, `resume: true`: an unfinished attempt of an open task, or a judge attempt even on a done task, classified `stuck`, `exited` or `unknown` (also a judge with terminal files not yet settled in the store); `guildhall artisan resume --repo <r> --task <t> --step <s> --attempt <n>`.
   4. `stalled`: an unread `worker-stalled` message; `guildhall messages read <id>`.
   5. `decision`: an open decision; `guildhall decide show --repo <r> --task <t> --decision <id>`.
   6. `messages`: one item counting the other unread messages; `guildhall messages list director`.

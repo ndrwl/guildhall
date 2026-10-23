@@ -200,7 +200,7 @@ mode = "director"
 name = "alpha"
 
 [local]
-quality_judge_profiles = "judge-claude, judge-fake"
+quality_judge_profiles = "judge-fake, judge-claude"
 
 [[repository]]
 id = "app"
@@ -235,7 +235,7 @@ func newEnv(t *testing.T, cfgText string, beforeDelivery ...func(*env)) *env {
 		t.Fatal(err)
 	}
 	e := &env{t: t, s: s, l: &recorder{}, o: &outbox{}}
-	e.judge = &quality.Judge{Records: s, Outbox: e.o, Launcher: e.l, Config: cfg, DefaultAdapter: "fake",
+	e.judge = &quality.Judge{Records: s, Outbox: e.o, Launcher: e.l, Config: cfg,
 		StateDir: filepath.Join(root, "state"), DocumentDir: filepath.Join(root, "state", "documents"),
 		QualityDir: filepath.Join(root, "quality"), Role: e.write(filepath.Join(root, "judge.md"), "You are the judge.\n"),
 		ProfileRole: func(string) string { return "" }}
@@ -332,16 +332,13 @@ func TestStartRefusals(t *testing.T) {
 	}
 }
 
-// TestStartLaunchesAJudgeOfAnotherFamily: with separate families on, a claude-built task is judged by the first
-// listed fake profile; the attempt is recorded, its preparation published with the brief, the pending criteria and
-// the inputs, and launched in its own empty working directory.
-func TestStartLaunchesAJudgeOfAnotherFamily(t *testing.T) {
+func TestStartLaunchesAJudgeWithUnknownBuilderFamily(t *testing.T) {
 	e := newEnv(t, judgeConfig)
 	got, err := e.judge.Start(context.Background(), "app", "t-1", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config.JudgeChoice{Profile: "judge-fake", Adapter: "fake", Builder: "claude", SeparateFamily: true}
+	want := config.JudgeChoice{Profile: "judge-fake", Adapter: "fake", Reason: "the builder's family is unknown"}
 	if got.Attempt != 1 || got.Review != 1 || got.Judge != want {
 		t.Errorf("Start = %+v, want attempt 1 of review 1 judged by %+v", got, want)
 	}
@@ -392,8 +389,8 @@ func TestStartPassesOverAFailedProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config.JudgeChoice{Profile: "judge-claude", Adapter: "claude", Builder: "claude",
-		Reason: "every judge profile of another family than the builder's failed for this self-review"}
+	want := config.JudgeChoice{Profile: "judge-claude", Adapter: "claude",
+		Reason: "the builder's family is unknown"}
 	if got.Attempt != 2 || got.Judge != want {
 		t.Errorf("Start = %+v, want attempt 2 judged by %+v", got, want)
 	}
@@ -517,7 +514,7 @@ func TestTakeRecordsTheJudgement(t *testing.T) {
 		t.Fatal(err)
 	}
 	if j.Repository != "app" || j.Task != "t-1" || j.Review != 1 || j.Head != head || j.Attempt != 1 ||
-		j.Judge.Profile != "judge-fake" || !j.Judge.SeparateFamily || j.MergeAsIs != "yes" || len(j.Criteria) != 3 {
+		j.Judge.Profile != "judge-fake" || j.Judge.SeparateFamily || j.Judge.Builder != "" || j.MergeAsIs != "yes" || len(j.Criteria) != 3 {
 		t.Errorf("judgement %+v", j)
 	}
 	if got := e.o.types(); !slices.Equal(got, []string{"judgement"}) {

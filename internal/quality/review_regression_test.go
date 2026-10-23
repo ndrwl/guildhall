@@ -37,13 +37,13 @@ func TestJudgeUsesLatestSuccessfulBuildIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Judge.Profile != "judge-claude" || got.Judge.Builder != "fake" || !got.Judge.SeparateFamily {
+	if got.Judge.Profile != "judge-claude" || got.Judge.Builder != "" || got.Judge.SeparateFamily {
 		t.Fatalf("judge = %+v", got.Judge)
 	}
 }
 
 func TestJudgeRefusesBuilderOnlyProfile(t *testing.T) {
-	e := newEnv(t, strings.Replace(judgeConfig, `quality_judge_profiles = "judge-claude, judge-fake"`, `quality_judge_profiles = "builder-claude"`, 1))
+	e := newEnv(t, strings.Replace(judgeConfig, `quality_judge_profiles = "judge-fake, judge-claude"`, `quality_judge_profiles = "builder-claude"`, 1))
 	if _, err := e.judge.Start(context.Background(), "app", "t-1", 1); !errors.Is(err, config.ErrNoJudge) {
 		t.Fatalf("Start = %v", err)
 	}

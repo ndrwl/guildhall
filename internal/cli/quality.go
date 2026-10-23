@@ -12,7 +12,6 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
-	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/quality"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -170,7 +169,7 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 		Records:  records,
 		Outbox:   outbox,
 		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall, LockWait: f.wait},
-		Config:   cfg, DefaultAdapter: interp.FakeAdapter,
+		Config:   cfg,
 		StateDir: state, DocumentDir: filepath.Join(state, "documents"), QualityDir: filepath.Join(copyDir, "quality"),
 		Role: baselineSource(filepath.Join(cfgDir, "baseline"), release, "roles/judge.md").Path,
 		ProfileRole: func(name string) string {
