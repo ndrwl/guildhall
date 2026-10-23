@@ -54,9 +54,6 @@ func (a *App) qualityJudge(args []string) int {
 	case err != nil || n < 1:
 		return a.usageError(fmt.Sprintf("quality judge: --review %q must be a positive self-review number", *review))
 	}
-	if err := f.listed(); err != nil {
-		return a.fail(fmt.Errorf("quality judge: %w", err))
-	}
 	var started quality.Started
 	err = a.withJudge(f, fl.Arg(0), func(j *quality.Judge) error {
 		started, err = j.Start(context.Background(), f.repo, fl.Arg(0), n)
@@ -114,6 +111,12 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	if _, err := cfg.ListedRepository(f.repo); err != nil {
+		return err
+	}
+	if err := f.resolveWait(cfg); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	stall, err := cfg.StallInterval()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -153,10 +156,10 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return err
 	}
-	records := storeRecords{path: f.store}
+	records := storeRecords{path: f.store, wait: f.wait}
 	outbox := &deferredOutbox{records: records}
 	defer outbox.wakeAll(wakingOutbox{records, a.directorPane(), a.Stderr})
-	ctx, cancel := context.WithTimeout(context.Background(), storeWait)
+	ctx, cancel := context.WithTimeout(context.Background(), f.wait)
 	unlock, err := artisan.LockAttempt(ctx, taskDir)
 	cancel()
 	if err != nil {
@@ -166,7 +169,7 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 	return fn(&quality.Judge{
 		Records:  records,
 		Outbox:   outbox,
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall},
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall, LockWait: f.wait},
 		Config:   cfg, DefaultAdapter: interp.FakeAdapter,
 		StateDir: state, DocumentDir: filepath.Join(state, "documents"), QualityDir: filepath.Join(copyDir, "quality"),
 		Role: baselineSource(filepath.Join(cfgDir, "baseline"), release, "roles/judge.md").Path,
