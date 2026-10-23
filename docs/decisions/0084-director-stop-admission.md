@@ -1,4 +1,4 @@
-# Holding admission, stopping unowned attempts and containing the Director's runtime
+# D84. Holding admission, stopping unowned attempts and containing the Director's runtime
 
 A cross-review of the Director found three gaps between `director pause` or `director stop` and the work it should hold or end.
 An advance read the hold, then recorded its attempt in a later transaction, so a pause or stop committed between the two still let it start.

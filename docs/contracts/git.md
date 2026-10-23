@@ -24,7 +24,7 @@ Platform differences: none in the contract; git is found on `PATH` unless `Progr
 
 ### Workspaces
 
-`Program.Ensure(ctx, w)` makes `w.Dir` a git worktree of the repository at `w.Repository`, so that a commit made there is a commit of the repository that `forge.GitHub.Publish` pushes ([the working directory](../interpreter.md#the-working-directory), [decision](../decisions/worktree-custody.md)).
+`Program.Ensure(ctx, w)` makes `w.Dir` a git worktree of the repository at `w.Repository`, so that a commit made there is a commit of the repository that `forge.GitHub.Publish` pushes ([the working directory](../interpreter.md#the-working-directory), [decision](../decisions/0068-worktree-custody.md)).
 
 - **Create.** A missing or empty `w.Dir` becomes a worktree on branch `w.Branch`: an existing local branch of that name as it is, otherwise a new one at the commit `w.Remote`'s HEAD, its default branch, is at now, fetched with `git fetch --no-tags --no-write-fetch-head <remote> HEAD:refs/heads/<branch>`, which writes no shared `FETCH_HEAD`.
 - **Reuse.** A `w.Dir` that is the top of a worktree of the same repository is reused unchanged, on whatever branch or commit it is at and with whatever it holds; only `git worktree repair` runs, which changes nothing unless git's records of the worktree are stale, and the default branch is recorded again.

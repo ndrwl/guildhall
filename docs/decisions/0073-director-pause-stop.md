@@ -1,7 +1,7 @@
-# Pausing, resuming and stopping the Director
+# D73. Pausing, resuming and stopping the Director
 
 `guildhall director pause`, `director resume` and `director stop` are the Guildmaster's and firstmate's controls over a running Director session, following the [role grammar](0053-cli-role-grammar.md).
-Each moves the newest [session record](director-session-record.md) and prints it.
+Each moves the newest [session record](0067-director-session-record.md) and prints it.
 The captain fixed the semantics: pause stops new work only and running attempts finish; stop also stops the Director's Artisan attempts.
 
 ## Decisions
@@ -24,7 +24,7 @@ The captain fixed the semantics: pause stops new work only and running attempts 
   A plain stop followed by `stop --now` shortens the grace.
 - **A gone supervisor is recorded honestly.**
   When the session's supervisor identity is gone, `stop` records the session `stopped` with the end reason `superseded`, then stops its attempts.
-  Since [director-stop-admission](director-stop-admission.md) it records the session `stopping` first and `stopped` only after the sweep.
+  Since [director-stop-admission](0084-director-stop-admission.md) it records the session `stopping` first and `stopped` only after the sweep.
   `pause` and `resume` are refused for it and name `director stop`.
 - **The end of the turn waits for the handoff slice.**
   The planned end-of-turn signal, the handoff note and the `stop-requested` message that asks the Director to write one are the handoff slice's.

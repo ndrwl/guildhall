@@ -375,7 +375,9 @@ func (c Config) advance(rep Report) {
 		}
 	}
 	if c.Outbox != nil {
-		_, _ = c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, interp.AdvanceFailedMessage(k, name, lastErr))
+		if m, err := interp.AdvanceFailedMessage(k, name, lastErr); err == nil {
+			_, _ = c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, m)
+		}
 	}
 }
 
@@ -474,7 +476,11 @@ func (c Config) stalls() *stallSender {
 			if h.Time.Sub(h.LastOutputAt) <= c.StallInterval || h.LastOutputAt.Equal(sent) {
 				continue
 			}
-			if _, err := c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, interp.StalledMessage(h.Key(), h.LastOutputAt)); err == nil {
+			m, err := interp.StalledMessage(h.Key(), h.LastOutputAt)
+			if err != nil {
+				continue
+			}
+			if _, err := c.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, m); err == nil {
 				sent = h.LastOutputAt
 			}
 		}

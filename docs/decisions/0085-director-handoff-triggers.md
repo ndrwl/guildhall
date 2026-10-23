@@ -1,13 +1,13 @@
-# Automatic handoff triggers and the context reporter
+# D85. Automatic handoff triggers and the context reporter
 
 A Director session's context fills up as it works, so the session should hand over before it runs out rather than when the captain notices.
-This is the second half of the slice 4 handoff plan (D11b), after [handoff notes and reload](director-handoff-reload.md): three triggers that tell the Director a handoff is due, and the Claude status-line reporter that gives one of them its input.
+This is the second half of the slice 4 handoff plan (D11b), after [handoff notes and reload](0082-director-handoff-reload.md): three triggers that tell the Director a handoff is due, and the Claude status-line reporter that gives one of them its input.
 
 ## Decisions
 
 - **Three triggers, in `[director]`.**
   `handoff_after_tasks` (0, off, unless set) counts tasks moved to `done` or `cancelled` since the session was recorded; `handoff_context_percent` (70 unless set, 0 off) compares the context the runtime last reported as used; `handoff_idle` (`0s`, off, unless set) is how long the Director may go with no turn signal and no wake.
-  A trigger tells the Director a handoff is due; it never reloads the session itself, because only the Director can write the note and only a note keeps an open grill (the "never mid-grill" rule of [reload `--now`](director-handoff-reload.md)).
+  A trigger tells the Director a handoff is due; it never reloads the session itself, because only the Director can write the note and only a note keeps an open grill (the "never mid-grill" rule of [reload `--now`](0082-director-handoff-reload.md)).
 - **The trigger rides on a wake line, so no extra model turn is spent.**
   When a wake types its line and a trigger holds, the wake appends `; handoff due (<reason>)`, such as `; handoff due (context 72%)` or `; handoff due (3 tasks finished)`, two reasons joined with `, ` when both hold, and records a `HandoffDue` per trigger once the line is typed.
   The idle trigger has no message to ride on: the supervisor's one timer types the same line, the unread counts with the suffix, once the Director has been quiet for `handoff_idle`.

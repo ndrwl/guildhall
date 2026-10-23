@@ -6,18 +6,15 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/messaging"
+	"github.com/ndrwl/guildhall/internal/store"
 )
-
-// AdvanceFailed is the type of the Director message an attempt's launcher sends when its advance of the task
-// failed twice (docs/running.md#the-watcher).
-const AdvanceFailed = "advance-failed"
 
 // maxAdvanceErrorBytes bounds the last error an advance-failed message quotes.
 const maxAdvanceErrorBytes = 1 << 10
 
 // AdvanceFailedMessage is the advance-failed Director message for attempt k, whose launcher's command, such as
 // "step done", failed twice with lastErr the second time. Its id is one per attempt, so a repeated send is a replay.
-func AdvanceFailedMessage(k artisan.AttemptKey, command, lastErr string) messaging.Envelope {
+func AdvanceFailedMessage(k artisan.AttemptKey, command, lastErr string) (messaging.Envelope, error) {
 	lastErr = strings.Join(strings.Fields(lastErr), " ")
 	if len(lastErr) > maxAdvanceErrorBytes {
 		lastErr = strings.ToValidUTF8(lastErr[:maxAdvanceErrorBytes], "")
@@ -25,8 +22,11 @@ func AdvanceFailedMessage(k artisan.AttemptKey, command, lastErr string) messagi
 	if lastErr == "" {
 		lastErr = "no error output"
 	}
-	e := directorMessage(k.Repository, k.TaskID, fmt.Sprintf("advance-failed.%s-%d", k.Step, k.Attempt), AdvanceFailed,
+	e, err := directorMessage(k.Repository, k.TaskID, fmt.Sprintf("advance-failed.%s-%d", k.Step, k.Attempt), store.MessageAdvanceFailed,
 		fmt.Sprintf("The launcher's %s for attempt %d of step %s failed twice, so the task has not taken the attempt; its last error: %s", command, k.Attempt, k.Step, lastErr))
+	if err != nil {
+		return messaging.Envelope{}, err
+	}
 	e.Step, e.Attempt = k.Step, k.Attempt
-	return e
+	return e, nil
 }

@@ -166,8 +166,12 @@ func TestTheLauncherSendsAStallWithoutAnAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m := msgs[len(msgs)-1]; m.ID != interp.StalledMessage(key, hb.LastOutputAt).ID {
-		t.Fatalf("stall %s, want the engine's id for output at %s, %s", m.ID, hb.LastOutputAt, interp.StalledMessage(key, hb.LastOutputAt).ID)
+	sent, err := interp.StalledMessage(key, hb.LastOutputAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := msgs[len(msgs)-1]; m.ID != sent.ID {
+		t.Fatalf("stall %s, want the engine's id for output at %s, %s", m.ID, hb.LastOutputAt, sent.ID)
 	}
 	start()
 	if got := d.stalls(t); got != 1 {

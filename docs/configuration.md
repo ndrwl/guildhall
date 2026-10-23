@@ -50,7 +50,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 
 ### Quality settings
 
-These settings switch the optional practices of the [quality rubric](quality.md) and size them ([decision](decisions/quality-rubric.md)); `config.Quality` reads their effective values and `config.Parse` refuses a value it cannot use, naming the key.
+These settings switch the optional practices of the [quality rubric](quality.md) and size them ([decision](decisions/0083-quality-rubric.md)); `config.Quality` reads their effective values and `config.Parse` refuses a value it cannot use, naming the key.
 A copy that sets none of them gets the defaults below, with self-review and reference runs off.
 [`director status`](director.md#status) shows the effective values as its `quality` section.
 

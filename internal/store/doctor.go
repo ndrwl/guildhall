@@ -13,7 +13,10 @@ type Report struct {
 	Receipts int
 	// WorkflowApprovals counts recorded workflow approvals.
 	WorkflowApprovals int
-	Repositories      []RepositoryCounts
+	// DirectorSessions and Wakes count the Director's session and wake records (docs/store.md#director-sessions).
+	DirectorSessions int
+	Wakes            int
+	Repositories     []RepositoryCounts
 	// Problems lists bbolt integrity errors and undecodable records; empty means none were found.
 	Problems []string
 }
@@ -72,6 +75,29 @@ func (s *Store) Doctor() (Report, error) {
 				}
 				return nil
 			})
+		}
+		for _, d := range []struct {
+			name   []byte
+			n      *int
+			record func() any
+		}{
+			{bucketSessions, &rep.DirectorSessions, func() any { return new(DirectorSession) }},
+			{bucketWakes, &rep.Wakes, func() any { return new(Wake) }},
+			{bucketHandoffs, nil, func() any { return new(HandoffNote) }},
+			{bucketReloads, nil, func() any { return new(DirectorReload) }},
+			{bucketHandoffDues, nil, func() any { return new(HandoffDue) }},
+		} {
+			if b := directorBucket(tx, d.name); b != nil {
+				_ = b.ForEach(func(k, v []byte) error {
+					if d.n != nil {
+						*d.n++
+					}
+					if err := decode(k, v, d.record()); err != nil {
+						problem("director %s: %v", d.name, err)
+					}
+					return nil
+				})
+			}
 		}
 		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
 			counts := RepositoryCounts{Repository: string(repo)}

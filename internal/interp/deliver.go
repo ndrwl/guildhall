@@ -111,7 +111,7 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 	if err := r.putPullRequest(id+"-pr", path.Join("tasks", r.task.Repository, r.task.ID, id, "pull-request.json"), pullRequestDoc{Schema: pullRequestSchema, Remote: repo.Remote, PullRequest: pr}); err != nil {
 		return false, Next{}, err
 	}
-	if err := r.notify("published."+id, "published", fmt.Sprintf("Step %s pushed head %s to branch %s: pull request %s.", s.ID, h, branch, pr.URL)); err != nil {
+	if err := r.notify("published."+id, store.MessagePublished, fmt.Sprintf("Step %s pushed head %s to branch %s: pull request %s.", s.ID, h, branch, pr.URL)); err != nil {
 		return false, Next{}, err
 	}
 	data := []byte(h + "\n")
@@ -205,7 +205,7 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 		return false, Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(*d, s.ID)
 	case d.Choice == "hold":
 		return false, Next{Wait: WaitDirector, Step: s.ID, Decision: d.ID},
-			r.notify("merge-held."+d.ID, "merge-held", fmt.Sprintf("The Guildmaster held the merge of head %s (decision %s); the Director decides what happens next.", h, d.ID))
+			r.notify("merge-held."+d.ID, store.MessageMergeHeld, fmt.Sprintf("The Guildmaster held the merge of head %s (decision %s); the Director decides what happens next.", h, d.ID))
 	case d.Choice != "merge":
 		return false, Next{}, fmt.Errorf("decision %s: %w: outcome %s", d.ID, ErrUnsupported, d.Choice)
 	}
@@ -230,7 +230,7 @@ func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h
 				return false, Next{}, err
 			}
 			return false, Next{Wait: WaitDirector, Step: s.ID, Decision: d.ID},
-				r.notify(fmt.Sprintf("merge-refused.%s.%s", d.ID, digest.Of([]byte(reason)).Hex()[:12]), "merge-refused",
+				r.notify(fmt.Sprintf("merge-refused.%s.%s", d.ID, digest.Of([]byte(reason)).Hex()[:12]), store.MessageMergeRefused,
 					fmt.Sprintf("The forge refused to merge pull request %s at head %s: %s\nThe Director decides how to recover; advancing the task again retries the merge.", pr.URL, h, reason))
 		}
 		if err != nil {
@@ -240,7 +240,7 @@ func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h
 			return false, Next{}, err
 		}
 	}
-	if err := r.notify("merged."+d.ID, "merged", fmt.Sprintf("Merged head %s (decision %s); the task is done.", h, d.ID)); err != nil {
+	if err := r.notify("merged."+d.ID, store.MessageMerged, fmt.Sprintf("Merged head %s (decision %s); the task is done.", h, d.ID)); err != nil {
 		return false, Next{}, err
 	}
 	if err := r.retire(d, repo, h); err != nil {

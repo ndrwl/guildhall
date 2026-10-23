@@ -12,7 +12,7 @@ The Guildmaster chose each product question below from the recommended options o
   There is no automatic rebase or retry; a later advance asks the forge again.
 - **The `auto` policy** stays refused with `ErrUnsupported`: R1.36's "within accepted scope" is not yet defined and automatic merging needs validation results.
 - **Validation (`validate`)** is out of this change and stays refused, so a workflow with `validate`, including the shipped default, still stops there; a follow-up defines it.
-  That follow-up is [validate reads the forge's checks of the published head](validate-stage.md).
+  That follow-up is [validate reads the forge's checks of the published head](0066-validate-stage.md).
 - **Forges and credentials.** GitHub on `github.com` is the only implementation, over the `gh` program, and any other remote is refused naming that limit; credentials stay in `gh`'s own sign-in store and Guildhall reads, stores and passes none (R1.10, R1.28).
 
 A delivered task is closed: the engine records the merged pull request as `<decision>-merge` and marks the task `done`, for which `interp.Records` gains the store's existing `SetTaskState`, and the advance returns the new wait `done`.

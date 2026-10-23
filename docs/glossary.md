@@ -40,3 +40,24 @@ A finished outcome without a readable result is refused, not guessed.
 - A forge is the service that hosts a repository's pull requests, such as GitHub.
 - `interp.Forge` is the interpreter's seam for delivery: it publishes a task branch as a pull request and merges it ([forge contract](contracts/forge.md)).
 - `forge.GitHub` is its only implementation, over the `gh` program; any other remote is refused ([D60](decisions/0060-delivery-stage.md)).
+
+## Copy
+
+- A Director copy is one directory holding `config.toml`, `director.store` and `state/`, selected with `--copy <dir>` or `GUILDHALL_COPY` ([copies](running.md#copies)).
+- `store init --copy <dir>` creates its store; a copy is not a release install, which [release upgrades](releases.md) design.
+
+## Session
+
+- A Director session is one run of the Director's runtime under its supervisor, `director start`, recorded in the store and numbered from 1 ([Director sessions](store.md#director-sessions), [D67](decisions/0067-director-session-record.md)).
+- A Herdr session is the terminal multiplexer's own server session; a Director session records the Herdr session its pane is in.
+- `render.Session` renders a Director session's startup files into `<copy>/director/session-<n>/` ([rendering](rendering.md#director-sessions)).
+
+## Wake
+
+- A wake is the one decision a sender records for each message to the Director: `woke`, when it typed a line of unread counts into the Director's pane, or `queued` with a reason ([waking the Director](messaging.md#waking-the-director), [D69](decisions/0069-director-wake.md)).
+- `store.Wake` is that record; `director status` shows the newest as `last_wake`, `messages list` shows each message's and `store doctor` counts them.
+
+## Worktree
+
+- A task's working directory, `<state>/<repo>/<task>/work`, is a git worktree of the repository's `path` on branch `guildhall/<task>` ([the working directory](interpreter.md#the-working-directory), [D68](decisions/0068-worktree-custody.md)).
+- It is neither the Director copy nor the repository's own checkout at `path`.

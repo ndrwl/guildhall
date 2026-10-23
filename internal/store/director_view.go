@@ -30,6 +30,8 @@ type DirectorView struct {
 	Receipts []Receipt
 	// Session is the newest Director session, or nil when the store has none.
 	Session *DirectorSession
+	// LastWake is the newest wake, or nil when the store has none.
+	LastWake *Wake
 	// Usage is what the attempt caps count (AttemptUsage), by the store's clock.
 	Usage AttemptUsage
 	// Handoff is the newest handoff note and Reload the newest reload request, each nil when there is none.
@@ -103,6 +105,13 @@ func (s *Store) DirectorView() (DirectorView, error) {
 		switch err := lastJSON(directorBucket(tx, bucketReloads), &reload); {
 		case err == nil:
 			v.Reload = &reload
+		case !errors.Is(err, ErrNotFound):
+			return err
+		}
+		var wake Wake
+		switch err := lastJSON(directorBucket(tx, bucketWakes), &wake); {
+		case err == nil:
+			v.LastWake = &wake
 		case !errors.Is(err, ErrNotFound):
 			return err
 		}

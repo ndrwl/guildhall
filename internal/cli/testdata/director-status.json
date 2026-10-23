@@ -6,8 +6,8 @@
       "transcripts",
       "forge state"
     ],
-    "sequence": 33,
-    "committed_at": "2026-10-22T09:34:00Z"
+    "sequence": 35,
+    "committed_at": "2026-10-22T09:38:00Z"
   },
   "session": {
     "state": "running",
@@ -25,6 +25,14 @@
     },
     "started_at": "2026-10-22T09:23:00Z",
     "ready_at": "2026-10-22T09:25:00Z",
+    "last_wake": {
+      "sequence": 35,
+      "message_id": "app.t-2.worker-stalled.plan-1.abc",
+      "sender_type": "guildhall",
+      "decision": "queued",
+      "reason": "runtime not running",
+      "time": "2026-10-22T09:37:00Z"
+    },
     "guard_rails": {
       "repositories": [
         "app",
@@ -393,26 +401,6 @@
   },
   "recent": [
     {
-      "mutation_id": "i-12",
-      "operation": "finish-attempt",
-      "repository": "app",
-      "task_id": "t-3",
-      "attempt": 1,
-      "record": "attempt/build/1",
-      "sequence": 12,
-      "committed_at": "2026-10-22T09:11:00Z"
-    },
-    {
-      "mutation_id": "i-13",
-      "operation": "start-attempt",
-      "repository": "app",
-      "task_id": "t-4",
-      "attempt": 1,
-      "record": "attempt/plan/1",
-      "sequence": 13,
-      "committed_at": "2026-10-22T09:12:00Z"
-    },
-    {
       "mutation_id": "i-14",
       "operation": "finish-attempt",
       "repository": "app",
@@ -584,6 +572,24 @@
       "record": "attempt/build/1",
       "sequence": 33,
       "committed_at": "2026-10-22T09:34:00Z"
+    },
+    {
+      "mutation_id": "wake:q-1",
+      "operation": "record-wake",
+      "repository": "lib",
+      "task_id": "t-1",
+      "record": "wake/q-1",
+      "sequence": 34,
+      "committed_at": "2026-10-22T09:36:00Z"
+    },
+    {
+      "mutation_id": "wake:app.t-2.worker-stalled.plan-1.abc",
+      "operation": "record-wake",
+      "repository": "app",
+      "task_id": "t-2",
+      "record": "wake/app.t-2.worker-stalled.plan-1.abc",
+      "sequence": 35,
+      "committed_at": "2026-10-22T09:38:00Z"
     }
   ],
   "needs_me": [

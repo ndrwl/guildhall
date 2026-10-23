@@ -146,7 +146,7 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	}
 	if v.Verdict == validationPassed && !finished {
 		// The text names no check, so a wait that sees other pending checks replays the same message.
-		return false, Next{Wait: WaitChecks, Step: s.ID}, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), "checks-pending",
+		return false, Next{Wait: WaitChecks, Step: s.ID}, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), store.MessageChecksPending,
 			fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL))
 	}
 	if last != nil && v.Verdict == validationFailed && !newFailure(v.Checks, last.Checks) {
@@ -247,16 +247,16 @@ func (r *run) replayValidation(s workflow.Step) error {
 // notifyValidation tells the Director the result recorded as round id of step s.
 func (r *run) notifyValidation(s workflow.Step, id string, v validationDoc) error {
 	if v.NoCI {
-		return r.notify("checks-passed."+id, "checks-passed", fmt.Sprintf("Head %s on pull request %s has no CI to wait for: repository %s is configured with no_ci (step %s, %s).", v.Head, v.URL, r.task.Repository, s.ID, id))
+		return r.notify("checks-passed."+id, store.MessageChecksPassed, fmt.Sprintf("Head %s on pull request %s has no CI to wait for: repository %s is configured with no_ci (step %s, %s).", v.Head, v.URL, r.task.Repository, s.ID, id))
 	}
 	if v.Verdict == validationPassed {
-		return r.notify("checks-passed."+id, "checks-passed", fmt.Sprintf("The checks of head %s on pull request %s passed (step %s, %s).", v.Head, v.URL, s.ID, id))
+		return r.notify("checks-passed."+id, store.MessageChecksPassed, fmt.Sprintf("The checks of head %s on pull request %s passed (step %s, %s).", v.Head, v.URL, s.ID, id))
 	}
 	then := "the Director decides what happens next."
 	if rule, ok := s.On[validationFailedOutcome]; ok {
 		then = fmt.Sprintf("the failed loop sends the task back to step %s with the result as feedback, at most %d times.", rule.Goto, rule.Max)
 	}
-	return r.notify("checks-failed."+id, "checks-failed", fmt.Sprintf("The checks of head %s on pull request %s failed (step %s, %s): %s; %s",
+	return r.notify("checks-failed."+id, store.MessageChecksFailed, fmt.Sprintf("The checks of head %s on pull request %s failed (step %s, %s): %s; %s",
 		v.Head, v.URL, s.ID, id, strings.Join(v.Failing, ", "), then))
 }
 

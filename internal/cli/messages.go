@@ -101,7 +101,10 @@ func (a *App) messages(args []string) int {
 	case "send":
 		out, err = box.Send(to, env)
 	case "list":
-		out, err = box.List(to, *after, *limit)
+		var page messaging.Page
+		if page, err = box.List(to, *after, *limit); err == nil {
+			out, err = withWakes(s, to, page)
+		}
 	case "read":
 		out, err = box.Read(pos[0])
 	case "ack":
@@ -123,6 +126,35 @@ func (a *App) messages(args []string) int {
 		}
 	}
 	return 0
+}
+
+// listedMessage is a listed message with the wake recorded for it, if any (docs/messaging.md#commands).
+type listedMessage struct {
+	messaging.Stored
+	Wake *store.Wake `json:"wake,omitempty"`
+}
+
+// withWakes adds to a page of the Director's inbox each message's recorded wake; a page of an Artisan's inbox,
+// which nothing wakes, is returned as it is.
+func withWakes(s *store.Store, to store.Recipient, page messaging.Page) (any, error) {
+	if to.Role != store.RecipientDirector {
+		return page, nil
+	}
+	out := struct {
+		Messages []listedMessage `json:"messages"`
+		More     bool            `json:"more"`
+	}{Messages: make([]listedMessage, 0, len(page.Messages)), More: page.More}
+	for _, m := range page.Messages {
+		l := listedMessage{Stored: m}
+		switch w, err := s.WakeFor(m.ID); {
+		case err == nil:
+			l.Wake = &w
+		case !errors.Is(err, store.ErrNotFound):
+			return nil, err
+		}
+		out.Messages = append(out.Messages, l)
+	}
+	return out, nil
 }
 
 // listedEnvelope refuses a message about a repository the config at path does not list: the repositories guard

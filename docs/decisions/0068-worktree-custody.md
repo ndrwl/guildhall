@@ -1,4 +1,4 @@
-# A task's working directory is a git worktree of its repository
+# D68. A task's working directory is a git worktree of its repository
 
 A task's working directory, `<state>/<repo>/<task>/work`, is now a git worktree of the repository's configured `path` ([the working directory](../interpreter.md#the-working-directory)), made by [`git.Program.Ensure`](../contracts/git.md#workspaces) through the interpreter's `Workspaces` seam.
 Until now it was a plain directory, so a commit an Artisan made there was nowhere [delivery](0060-delivery-stage.md) could push from: `publish` pushes the head from the repository's `path` and refuses a head that is not one of its commits.

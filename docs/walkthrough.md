@@ -112,6 +112,7 @@ schema_version: 1 (supported: 1)
 integrity: ok
 receipts: 4
 workflow approvals: 0
+director: sessions 0, wakes 1
 repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 0, rulings 0, owners 0 (0 starting without containment), messages 1 (0 unread)
 ```
 

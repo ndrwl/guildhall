@@ -16,7 +16,7 @@ The skips that use it:
 
 The [CI workflow's matrix](../../.github/workflows/ci.yml) owns the required capabilities for each runner.
 
-`Ceiling(d)` scales the longest a test waits for an event before it fails: `d` times `CISlowdown` (5), but no more than the larger of `d` and `CIMaxCeiling` (2 minutes), when `CI` is set to anything but empty, as on every hosted runner, and `d` unchanged otherwise ([windows-ci-speed](../decisions/windows-ci-speed.md)).
+`Ceiling(d)` scales the longest a test waits for an event before it fails: `d` times `CISlowdown` (5), but no more than the larger of `d` and `CIMaxCeiling` (2 minutes), when `CI` is set to anything but empty, as on every hosted runner, and `d` unchanged otherwise ([windows-ci-speed](../decisions/0081-windows-ci-speed.md)).
 The cap keeps a stuck wait failing with its message inside `go test`'s ten-minute package timeout, which otherwise stops the package and loses the test's messages.
 A wait that ends on its event costs nothing extra, so a slow runner makes a test slow, not red, while a local run still fails promptly.
 It is for ceilings only: a grace a test waits out on purpose, such as `internal/cli`'s `leftovers` settle for a worker it expects to survive, or a duration the code under test observes, such as a stop ladder's rungs or a stall interval, stays unscaled.

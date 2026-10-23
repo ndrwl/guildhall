@@ -1,4 +1,4 @@
-# The launcher observes its own worker's stall
+# D70. The launcher observes its own worker's stall
 
 The engine's `worker-stalled` observation ran only during an advance, so a silent worker was reported only when something else advanced its task (slice 4 plan, D4).
 The launcher already writes a heartbeat every five seconds; it now makes the same observation at each beat and sends the same message, with no new process and no polling by anyone else.

@@ -101,6 +101,7 @@ No messages command creates a store; [`store init`](store.md#guildhall-store-ini
   With a config, the copy's or one given with `--config`, a message about a repository the config does not list is refused by the [repositories guard rail](director.md#guard-rails).
 - `guildhall messages list --store <path> [--after <sequence>] [--limit <n>] <recipient>` prints `{"messages": [...], "more": <bool>}`: at most `--limit` unacknowledged messages, 20 by default and 100 at most, in send order, with a sequence greater than `--after`.
   To read the next page, pass the last message's `sequence` as `--after`.
+  Each listed message to the Director carries `wake`, its recorded [wake](#waking-the-director) (`decision`, `reason` when queued, `sender_type`, `time`), when one is recorded; a message to an Artisan has none.
 - `guildhall messages read --store <path> <message-id>` prints one message, acknowledged or not, without acknowledging it.
 - `guildhall messages ack --store <path> <recipient> <message-id>` acknowledges a message addressed to that recipient and prints the acknowledgement's receipt.
 
@@ -141,7 +142,8 @@ guildhall: 3 unread (attempt-failed 1, question 2)
 ```
 
 The line counts the Director's unread messages by type, in type order, and never carries message text, so no sender can type instructions into the Director's session.
-Because a sender chooses its message's type, the line names only Guildhall's own types: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`.
+Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `director-stage`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`) and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
+The engine and the launcher refuse to send a Director message whose type is not in the registry, so a type is added to the registry by the change that sends it and never by a sender; a local sender's `messages send` still chooses any type, which counts as `other`.
 When an [automatic handoff](director.md#automatic-handoff) trigger holds, the line ends `; handoff due (<reason>)`, such as `; handoff due (context 72%)`, and the wake records the crossing, so the reminder rides on a line the Director reads anyway; the reason is Guildhall's own text, never a sender's.
 Otherwise nothing is typed and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
 

@@ -1,4 +1,4 @@
-# The quality rubric ships as a document and a Director skill, each practice behind a setting
+# D83. The quality rubric ships as a document and a Director skill, each practice behind a setting
 
 The Guildmaster accepted the engineering-quality research's six recommendations, each behind configuration so every practice stays optional.
 This change ships the first two pieces: the [rubric](../quality.md) as the scored and trend layer above the review standard's S1 to S11, and the [`guildhall-self-review`](../../skills/guildhall-self-review/SKILL.md) skill that records a delivered task against it.
@@ -16,7 +16,7 @@ The practices are switched by flat `quality_*` [settings](../configuration.md#qu
 - `quality_skill_edits_need_approval`, `on` by default for the first cycle: an edit to the review, build or spec skill text is a design change that needs the Guildmaster's approval.
 
 This initial increment consumed only the self-review switch and the size budget, through [`director status`](../director.md#status)'s `quality` section.
-See [quality settings](../configuration.md#quality-settings) for the current consumers and [the audit decision](quality-audit.md) for the subsequent delivery-audit increment.
+See [quality settings](../configuration.md#quality-settings) for the current consumers and [the audit decision](0087-quality-audit.md) for the subsequent delivery-audit increment.
 
 ## The facts script
 
@@ -32,5 +32,5 @@ For the remaining quality-practice work after the subsequent audit increment, se
 Pinning actions by SHA also remains later work.
 
 Consequences of this initial increment: the config digest was unchanged, and self-review added a Director step after each merge only when enabled, costing one Director turn and no Artisan attempt.
-The subsequent [audit decision](quality-audit.md) changes the default post-merge behavior independently of self-review.
+The subsequent [audit decision](0087-quality-audit.md) changes the default post-merge behavior independently of self-review.
 A model-judged score stays pending until the judge session lands, so the first self-reviews hold facts, gates and trends only.

@@ -1,4 +1,4 @@
-# The wake ends at its bound and runs outside the task lock
+# D77. The wake ends at its bound and runs outside the task lock
 
 Sustainability review 11 (F36) found the wake's ten-second bound not kept and the wake run under the task lock.
 `herdr` ran with `exec.CommandContext` and no `WaitDelay`, so a killed `herdr` whose child kept its output pipe held the call until that child exited; and the engine's outbox woke the Director inside the advance, so every message the advance sent held the task lock for up to three Herdr calls.

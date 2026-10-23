@@ -45,6 +45,7 @@ func exitedLauncher(t *testing.T) store.ProcessIdentity {
 // worker-stalled message and an acknowledged note. app/t-7's plan attempt succeeded with its result file and app/t-8's
 // was stopped, while each task's next.json still waits on that attempt, as a watcher whose advance failed leaves them.
 // app/t-3's plan attempt reported a measured and estimated spend and its build attempt an unknown one.
+// The question woke the Director and the worker-stalled message, woken last, was queued.
 func statusCopy(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -136,6 +137,12 @@ func statusCopy(t *testing.T) string {
 		},
 		func() (store.Receipt, error) {
 			return s.RecordAttemptSpend("i-33", "app", "t-3", "build", 1, store.UnknownSpend)
+		},
+		func() (store.Receipt, error) {
+			return s.RecordWake(store.Wake{MessageID: "q-1", SenderType: "local", Decision: store.WakeWoke})
+		},
+		func() (store.Receipt, error) {
+			return s.RecordWake(store.Wake{MessageID: "app.t-2.worker-stalled.plan-1.abc", SenderType: "guildhall", Decision: store.WakeQueued, Reason: "runtime not running"})
 		},
 	}
 	for _, step := range steps {

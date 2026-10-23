@@ -65,7 +65,7 @@ func (r *run) retire(d store.Decision, repo config.Repository, head string) erro
 	}
 	text := fmt.Sprintf("Kept the working directory %s and branch %s after merging head %s (decision %s), because %s.\nNothing was removed; the Director decides what happens to them.",
 		w.Dir, w.Branch, head, d.ID, strings.Join(kept, "; "))
-	return r.notify(fmt.Sprintf("workspace-kept.%s.%s", d.ID, digest.Of([]byte(text)).Hex()[:12]), "workspace-kept", text)
+	return r.notify(fmt.Sprintf("workspace-kept.%s.%s", d.ID, digest.Of([]byte(text)).Hex()[:12]), store.MessageWorkspaceKept, text)
 }
 
 // outputs are the task's recorded documents by their path below their record directory, the path an output had

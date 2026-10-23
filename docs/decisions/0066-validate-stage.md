@@ -1,4 +1,4 @@
-# Validate reads the forge's checks of the published head
+# D66. Validate reads the forge's checks of the published head
 
 The engine now runs `validate` (requirements R1.12 and R1.63), the follow-up the [delivery decision](0060-delivery-stage.md) left open, over the same forge boundary: [`internal/forge`](../contracts/forge.md) gains `Checks`, and the interpreter's [validate](../interpreter.md#validate) reads it.
 When the Guildmaster kept validation out of the delivery change, they asked for this follow-up to define it; it takes the shape of option (b) of that delivery question on red or pending CI: validate reads the forge's check state for the pushed head at each advance; pending waits and is advanced again by `task start` or a later watcher; red takes the workflow's `failed` loop back to build with the failing check names as feedback, honouring the loop's `max`; green records the result document.

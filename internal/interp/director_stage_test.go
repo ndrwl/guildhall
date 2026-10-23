@@ -109,8 +109,8 @@ func TestDirectorStageWaitsWithoutLaunching(t *testing.T) {
 				}
 			}
 			m2, err := e.mailbox.Read("app.t7.stage.grill-1")
-			if err != nil || m2.Type != interp.DirectorStage {
-				t.Errorf("stage message type %q, %v; want %q", m2.Type, err, interp.DirectorStage)
+			if err != nil || m2.Type != store.MessageDirectorStage {
+				t.Errorf("stage message type %q, %v; want %q", m2.Type, err, store.MessageDirectorStage)
 			}
 
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), stage)

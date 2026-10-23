@@ -110,6 +110,7 @@ func (a *App) storeDoctor(path string) int {
 		fmt.Fprintf(&b, "integrity: %d problems\n", len(rep.Problems))
 	}
 	fmt.Fprintf(&b, "receipts: %d\nworkflow approvals: %d\n", rep.Receipts, rep.WorkflowApprovals)
+	fmt.Fprintf(&b, "director: sessions %d, wakes %d\n", rep.DirectorSessions, rep.Wakes)
 	for _, r := range rep.Repositories {
 		fmt.Fprintf(&b, "repository %s: tasks %d, attempts %d, documents %d, pane bindings %d, decisions %d, rulings %d, owners %d (%d starting without containment), messages %d (%d unread)\n",
 			r.Repository, r.Tasks, r.Attempts, r.Documents, r.PaneBindings, r.Decisions, r.Rulings, r.Owners, r.UncontainedStarting, r.Messages, r.UnreadMessages)

@@ -76,9 +76,6 @@ const (
 	WaitPaused Wait = "paused"
 )
 
-// DirectorStage is the type of the Director message that hands it a Director stage's attempt.
-const DirectorStage = "director-stage"
-
 // Next is where a task stands after an advance.
 type Next struct {
 	Wait Wait
@@ -212,16 +209,13 @@ type Engine struct {
 	Hold func() (bool, error)
 	// Caps are the attempt caps every new attempt starts under (Records.StartCappedAttempt); zero fields are no cap.
 	// An advance whose next attempt is refused at a cap records and launches nothing, sends the Director one
-	// BudgetRefused message per task and UTC day, and returns an error wrapping store.ErrAttemptCap that names the
+	// budget-refused message per task and UTC day, and returns an error wrapping store.ErrAttemptCap that names the
 	// guard rail's setting; advancing the task again once capacity returns starts it (docs/director.md#guard-rails).
 	// `task start`, `step done` and `step retry` set them from the config's guard rails. With Caps.Hold, a start the
 	// records refuse with store.ErrDirectorHeld records and launches nothing and the advance waits paused, as Hold
 	// holds it; those commands set it with Hold.
 	Caps store.AttemptCaps
 }
-
-// BudgetRefused is the type of the Director message an advance sends when an attempt cap refuses its next attempt.
-const BudgetRefused = "budget-refused"
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
 func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
@@ -449,7 +443,7 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		next, err := r.start(s)
 		return false, next, r.retryLaunched(s.ID, next.Attempt, err)
 	case a.Outcome != store.AttemptSucceeded:
-		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), "attempt-failed",
+		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed,
 			fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome))
 		return false, Next{Wait: WaitDirector, Step: s.ID, Attempt: a.Number}, err
 	}
@@ -511,7 +505,7 @@ func (r *run) retryReason(ev Event) error {
 	if ev.Reason == "" {
 		return nil
 	}
-	err := r.notify(fmt.Sprintf("attempt-retried.%s-%d", ev.Step, ev.Attempt), "attempt-retried", ev.Reason)
+	err := r.notify(fmt.Sprintf("attempt-retried.%s-%d", ev.Step, ev.Attempt), store.MessageAttemptRetried, ev.Reason)
 	if errors.Is(err, store.ErrMutationConflict) {
 		return nil
 	}
@@ -600,7 +594,7 @@ func (r *run) budgetRefused(s workflow.Step, n int, refusal *store.CapRefusal, e
 		again = fmt.Sprintf("guildhall step retry for step %s attempt %d", s.ID, r.retry.Attempt)
 	}
 	text := fmt.Sprintf("Step %s was not started: guard rail %s, %v. Run %s again when capacity returns.", s.ID, rail, refusal, again)
-	if serr := r.notify(BudgetRefused+"."+refusal.Day.Format(time.DateOnly), BudgetRefused, text); serr != nil && !errors.Is(serr, store.ErrMutationConflict) {
+	if serr := r.notify(store.MessageBudgetRefused+"."+refusal.Day.Format(time.DateOnly), store.MessageBudgetRefused, text); serr != nil && !errors.Is(serr, store.ErrMutationConflict) {
 		return errors.Join(err, serr)
 	}
 	return err
@@ -677,7 +671,7 @@ func (r *run) hand(s workflow.Step, n int, p prepared) error {
 	}
 	text := fmt.Sprintf("Step %s (%s version %d), attempt %d, is a Director stage for you to run.\nPrompt: %s\nOutput ports: %s\nFinish it with: guildhall step finish --repo %s --task %s --step %s --attempt %d --summary <text> %s, or --failed to abandon it.",
 		s.ID, s.Type, s.Version, n, p.promptFile, strings.Join(ports, ", "), r.task.Repository, r.task.ID, s.ID, n, strings.Join(outputs, " "))
-	if err := r.notify(fmt.Sprintf("stage.%s-%d", s.ID, n), DirectorStage, text); err != nil {
+	if err := r.notify(fmt.Sprintf("stage.%s-%d", s.ID, n), store.MessageDirectorStage, text); err != nil {
 		return err
 	}
 	data, err := json.Marshal(directorMark{directorLauncher, r.identity(s.ID, n)})
@@ -1080,19 +1074,26 @@ func (r *run) read(d store.DocumentRef) ([]byte, error) {
 }
 
 func (r *run) notifyDecision(d store.Decision, step string) error {
-	return r.notify("decision."+d.ID, "decision", fmt.Sprintf("Decision %s is open for step %s: %s", d.ID, step, d.Kind))
+	return r.notify("decision."+d.ID, store.MessageDecision, fmt.Sprintf("Decision %s is open for step %s: %s", d.ID, step, d.Kind))
 }
 
 // notify sends the Director one message about the task, with an id derived from the task and what
 // happened so resending it replays. It names no attempt, so it is accepted whatever the attempt's state.
 func (r *run) notify(what, typ, text string) error {
-	_, err := r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, directorMessage(r.task.Repository, r.task.ID, what, typ, text))
+	m, err := directorMessage(r.task.Repository, r.task.ID, what, typ, text)
+	if err != nil {
+		return err
+	}
+	_, err = r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, m)
 	return err
 }
 
 // directorMessage is the Director message about task repo/task with an id derived from both and what, hashing
-// ids longer than 100 bytes.
-func directorMessage(repo, task, what, typ, text string) messaging.Envelope {
+// ids longer than 100 bytes. It refuses a type not in store.MessageTypes, the registry the wake line counts by.
+func directorMessage(repo, task, what, typ, text string) (messaging.Envelope, error) {
+	if _, ok := store.MessageTypes[typ]; !ok {
+		return messaging.Envelope{}, fmt.Errorf("interp: director message type %q is not in store.MessageTypes", typ)
+	}
 	id := fmt.Sprintf("%s.%s.%s", repo, task, what)
 	if len(id) > 100 {
 		id = "advance." + digest.Of([]byte(id)).Hex()
@@ -1100,7 +1101,7 @@ func directorMessage(repo, task, what, typ, text string) messaging.Envelope {
 	return messaging.Envelope{
 		Schema: messaging.SchemaPrefix + strconv.Itoa(messaging.SchemaVersion), ID: id, Recipient: store.RecipientDirector,
 		Repository: repo, Task: task, Type: typ, Text: text,
-	}
+	}, nil
 }
 
 // mutation derives a write's mutation id from the task and the record, hashing ids longer than the store allows.
