@@ -151,7 +151,7 @@ The wrapper keeps the result protocol, not the model:
 This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and of a profile it uses only the model and effort, passed by value, and the `allowed_tools`, loaded through the copy/profile reference.
 Transcripts, session resume and the Herdr tab mode are later work.
 
-The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills; that page describes the session's permission settings.
+The same adapter runs the [Director's session](director.md#start) interactively; that page describes its command, rendered skills and permission settings.
 
 ### Artisan permissions
 

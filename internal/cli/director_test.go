@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -180,6 +182,20 @@ func TestDirectorStartRunsASession(t *testing.T) {
 	}
 }
 
+// TestDirectorStartClaudeWithoutModel delivers the startup turn without a model flag, through the strict stub.
+func TestDirectorStartClaudeWithoutModel(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"claude\"\n", "guildhall director ready", "/exit")
+	claudetest.Install(t)
+	code, out, stderr := runDirectorCmd(t, "start", "--copy", dir)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
+	}
+	got := sessions(t, dir)
+	if len(got) != 1 || got[0].ReadyAt.IsZero() || got[0].State != store.DirectorStopped {
+		t.Fatalf("sessions = %+v; want startup turn ready then stopped", got)
+	}
+}
+
 // TestDirectorStartStartupNamesWhatIsInFlight starts a second session over a store with an unread question:
 // its startup instructions list the recovering session and the message, and say there is no handoff note, and list
 // a task waiting for its checks as the supervisor's, with no command for the Director to run.
@@ -215,13 +231,43 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 	}
 }
 
+// TestDirectorStartRequiresGuildhallOnPATH refuses before writing the copy, even though the fake runtime
+// resolves to the running executable without PATH. Both start and --check must perform this check.
+func TestDirectorStartRequiresGuildhallOnPATH(t *testing.T) {
+	for _, check := range []bool{false, true} {
+		t.Run(fmt.Sprintf("check=%t", check), func(t *testing.T) {
+			dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
+			before, err := os.ReadFile(filepath.Join(dir, "director.store"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", t.TempDir())
+			args := []string{"start", "--copy", dir}
+			if check {
+				args = append(args, "--check")
+			}
+			code, out, stderr := runDirectorCmd(t, args...)
+			if code != 1 || !strings.Contains(out, "guildhall: refused") || !strings.Contains(out+stderr, "PATH") {
+				t.Errorf("exit %d\n%s\n%s; want guildhall PATH refusal", code, out, stderr)
+			}
+			after, err := os.ReadFile(filepath.Join(dir, "director.store"))
+			if err != nil || !bytes.Equal(before, after) {
+				t.Errorf("refusal changed store: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "director")); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("refusal wrote session directory: %v", err)
+			}
+		})
+	}
+}
+
 func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
 	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
 	}
-	for _, want := range []string{"config: ", "runtime: fake", "store: ", "skills: "} {
+	for _, want := range []string{"config: ", "runtime: fake", "guildhall: ", "store: ", "skills: "} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}

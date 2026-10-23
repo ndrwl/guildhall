@@ -139,7 +139,8 @@ type startPlan struct {
 	cleanup    func()
 }
 
-// preflight checks, in order, that the config is admitted, the runtime is known and on PATH, the store opens and
+// preflight checks, in order, that the config is admitted, the runtime is known and on PATH, guildhall is on
+// PATH for the session's bare commands, the store opens and
 // the release skills install, printing one doctor-style line per check, then names the Artisan permissions the
 // claude profiles depend on, which refuses nothing. A failed check prints its line, then
 // errStartRefused; nothing is recorded.
@@ -160,6 +161,12 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 		return refuse("runtime", err)
 	}
 	line("runtime", "%s (%s)", p.name, program)
+
+	guildhall, err := a.LookPath("guildhall")
+	if err != nil {
+		return refuse("guildhall", fmt.Errorf("guildhall must be on PATH for session hooks, status line and Director commands; add the running executable's directory to PATH: %w", err))
+	}
+	line("guildhall", "%s", guildhall)
 
 	if _, err := os.Stat(storePath); errors.Is(err, fs.ErrNotExist) {
 		return refuse("store", noStore(storePath))

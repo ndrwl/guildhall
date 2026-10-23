@@ -2,8 +2,11 @@ package claude_test
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -34,13 +37,13 @@ func TestSessionCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--model", "opus", "You are starting up."}
+	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--model", "opus", "--", "You are starting up."}
 	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
 		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
 	}
 	spec.Model = ""
 	named := filepath.Join(c, "claude")
-	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "You are starting up."}) {
+	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--", "You are starting up."}) {
 		t.Errorf("named claude, no model: %+v, %v", cmd, err)
 	}
 	if cmd, err := (claude.Adapter{Claude: "bin/claude"}).Session(spec); err == nil || len(cmd.Argv) > 0 {
@@ -49,6 +52,53 @@ func TestSessionCommand(t *testing.T) {
 	a := claude.Adapter{}
 	if a.Program() != "claude" || a.SkillsDir() != ".claude/skills" || !a.TurnEndHook() {
 		t.Errorf("Program, SkillsDir, TurnEndHook = %q, %q, %v; want the Stop hook", a.Program(), a.SkillsDir(), a.TurnEndHook())
+	}
+}
+
+// TestSessionStubRequiresMessageSeparator exercises the stub as a real process, independently of Session's argv.
+func TestSessionStubRequiresMessageSeparator(t *testing.T) {
+	claudetest.Install(t)
+	for _, model := range []string{"", "opus"} {
+		for _, separator := range []bool{false, true} {
+			t.Run(fmt.Sprintf("model=%s/separator=%t", model, separator), func(t *testing.T) {
+				dir := t.TempDir()
+				role := filepath.Join(dir, "role.md")
+				if err := os.WriteFile(role, []byte(claudetest.Script("/exit")), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				for name, data := range (claude.Adapter{}).SessionFiles(dir) {
+					path := filepath.Join(dir, name)
+					if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, data, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				args := []string{"--append-system-prompt-file", role, "--add-dir", dir}
+				if model != "" {
+					args = append(args, "--model", model)
+				}
+				if separator {
+					args = append(args, "--")
+				}
+				args = append(args, "You are starting up.")
+				cmd := exec.Command("claude", args...)
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "GUILDHALL_COPY="+dir)
+				out, err := cmd.CombinedOutput()
+				if separator {
+					if err != nil {
+						t.Fatalf("valid argv: %v\n%s", err, out)
+					}
+				} else {
+					var exit *exec.ExitError
+					if !errors.As(err, &exit) || exit.ExitCode() != 2 || !strings.Contains(string(out), "--") {
+						t.Fatalf("old argv: %v\n%s; want exit 2 naming separator", err, out)
+					}
+				}
+			})
+		}
 	}
 }
 
