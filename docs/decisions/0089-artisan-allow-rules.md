@@ -1,4 +1,4 @@
-# Each Director grants its Claude Artisans narrow tool permissions per profile
+# D89. Each Director grants its Claude Artisans narrow tool permissions per profile
 
 The Guildmaster accepted that Guildhall should pass narrow permissions to the Claude builder from a per-profile config setting, empty by default, with a documented suggested set, and added that the permission set should vary by Director.
 This supersedes, for this narrow case, [D55](0055-claude-adapter-wrapper.md)'s assignment of widening the Artisan's permissions to the Director's managed settings: a standalone Director can now grant them before managed mode exists.

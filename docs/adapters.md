@@ -153,7 +153,7 @@ The same adapter runs the [Director's session](director.md#start) interactively,
 ### Artisan permissions
 
 The default workflow's build stage asks its Artisan to run the repository's checks and commit its work ([`build.md`](../baseline/stages/build.md)), and both are shell commands, which the wrapper's `acceptEdits` does not allow.
-Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` reference and settings file above.
+Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/0089-artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` reference and settings file above.
 Raw rule flags are not accepted; an undeclared profile is refused.
 Without both reference fields, the wrapper grants nothing.
 The list is empty by default, and an empty list grants nothing, so nothing is granted unless a Director's config says so.
