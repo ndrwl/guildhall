@@ -80,7 +80,11 @@ func TestQualityJudgeConfiguredLockWait(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					defer holder.Close()
+					defer func() {
+						if err := holder.Close(); err != nil {
+							t.Errorf("close store holder: %v", err)
+						}
+					}()
 					want = store.ErrLocked.Error()
 				}
 				start := time.Now()
