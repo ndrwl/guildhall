@@ -274,13 +274,16 @@ Guildhall drives Herdr through its documented command-line API, which prints JSO
   Select a dedicated session provisioned outside Guildhall; a non-default name alone does not establish ownership of the session.
 - Before launching, `herdr status --json` must report a running server for that session, and both the client and the server must be Herdr 0.9.5 or newer.
   Guildhall never starts, stops, restarts or deletes a Herdr server or session.
-- Guildhall uses `status`, `workspace list|create`, `tab create|list|get|close` and `pane process-info|run|send-keys`, always with `--no-focus` when creating.
+- Guildhall uses `status`, `workspace list|create`, `tab create|list|get|close` and `pane get|process-info|run|send-keys`, always with `--no-focus` when creating.
 - The client also supports `pane report-agent`; see [resume](artisan.md#resume) for its registration contract and production wiring status.
 - Herdr's tab creation takes no command, so Guildhall waits until the new tab's shell is the only foreground process, then types the command quoted for that shell with `pane run`.
   POSIX shells (`sh`, `bash`, `dash`, `ksh`, `zsh`) and PowerShell are supported; any other shell is refused.
   For a POSIX shell, a program named by a Windows drive path is written with `/` separators, because `dash` under Git for Windows cannot start it with `\`.
   Arguments PowerShell would alter are refused for PowerShell: empty arguments, arguments containing `"` or typographic single quotes, and arguments containing whitespace that end in `\`, which Windows PowerShell 5.1 merges with the next argument.
-- A tab Guildhall creates is the only kind it can type into, interrupt or close, and the close rule of R1.54 applies; `artisan start` never closes a tab.
+- A tab Guildhall creates or durably records is the only kind it can type into, interrupt or close, and the close rule of R1.54 applies; `artisan start` never closes its running attempt tab.
+  Workspace creation also grants ownership of the exact starting shell returned by Herdr; Guildhall closes that shell after creating its replacement, not a shell inferred from an existing workspace's label.
+  The [Director wrapper](director.md#the-directors-tab) retires recorded stopped Director tabs only after the replacement session starts, with the old runtime proven empty and one idle shell pane still in its recorded tab; reload stays in the same tab.
+  Tab cleanup is presentation only, and never changes task or session state.
 
 ## Verification status
 

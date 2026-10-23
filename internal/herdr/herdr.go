@@ -307,6 +307,9 @@ func parseVersion(v string) ([3]int, string, error) {
 type Workspace struct {
 	ID    string `json:"workspace_id"`
 	Label string `json:"label"`
+	// InitialTab is ownership proof from WorkspaceCreate's response only.
+	// WorkspaceList never grants ownership of a workspace's existing tabs.
+	InitialTab OwnedTab `json:"-"`
 }
 
 // WorkspaceList lists the session's workspaces.
@@ -337,6 +340,12 @@ func (c *Client) WorkspaceCreate(ctx context.Context, label, cwd string) (Worksp
 	}
 	var r struct {
 		Workspace Workspace `json:"workspace"`
+		Tab       Tab       `json:"tab"`
+		RootPane  struct {
+			PaneID      string `json:"pane_id"`
+			TabID       string `json:"tab_id"`
+			WorkspaceID string `json:"workspace_id"`
+		} `json:"root_pane"`
 	}
 	if err := decode(out, &r); err != nil {
 		return Workspace{}, err
@@ -344,6 +353,15 @@ func (c *Client) WorkspaceCreate(ctx context.Context, label, cwd string) (Worksp
 	if err := checkID("workspace", r.Workspace.ID); err != nil {
 		return Workspace{}, err
 	}
+	for kind, id := range map[string]string{"tab": r.Tab.ID, "pane": r.RootPane.PaneID} {
+		if err := checkID(kind, id); err != nil {
+			return Workspace{}, err
+		}
+	}
+	if r.Tab.WorkspaceID != r.Workspace.ID || r.RootPane.WorkspaceID != r.Workspace.ID || r.RootPane.TabID != r.Tab.ID {
+		return Workspace{}, errors.New("herdr workspace creation returned inconsistent starting tab identity")
+	}
+	r.Workspace.InitialTab = OwnedTab{session: c.session, workspaceID: r.Workspace.ID, tabID: r.Tab.ID, paneID: r.RootPane.PaneID}
 	return r.Workspace, nil
 }
 
@@ -495,6 +513,33 @@ func (c *Client) TabGet(ctx context.Context, tabID string) (Tab, error) {
 		return Tab{}, err
 	}
 	return r.Tab, nil
+}
+
+// CheckOwnedPane verifies that an owned tab's recorded pane still belongs to
+// that exact tab and workspace. Pane moves must not turn an old ownership
+// binding into permission to close a tab containing a different pane.
+func (c *Client) CheckOwnedPane(ctx context.Context, t OwnedTab) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	out, err := c.call(ctx, "pane", "get", t.paneID)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		Pane struct {
+			ID        string `json:"pane_id"`
+			Tab       string `json:"tab_id"`
+			Workspace string `json:"workspace_id"`
+		} `json:"pane"`
+	}
+	if err := decode(out, &r); err != nil {
+		return err
+	}
+	if r.Pane.ID != t.paneID || r.Pane.Tab != t.tabID || r.Pane.Workspace != t.workspaceID {
+		return errors.New("herdr recorded pane no longer belongs to its tab and workspace")
+	}
+	return nil
 }
 
 // CloseOwnedTab closes a tab this client created. Closing does not prove

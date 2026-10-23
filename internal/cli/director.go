@@ -397,7 +397,8 @@ var directorStartWait, directorStartPoll = 2 * time.Minute, 200 * time.Milliseco
 
 // openDirectorTab is the wrapper: it opens the Director's tab, labelled with its name, in the workspace labelled
 // with its name, types the supervisor's command into it, waits for the session the supervisor records with
-// that tab's pane and prints it. The tab is never closed here.
+// that tab's pane and prints it. Once recorded, it retires only older recorded,
+// stopped Director tabs whose runtime is empty and pane is an idle shell.
 func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storePath, runtime string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -433,7 +434,54 @@ func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storeP
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err))
 	}
+	a.retireDirectorTabs(ctx, host, storePath, newest, tab)
 	return a.printJSON(d)
+}
+
+// retireDirectorTabs is best-effort presentation cleanup after a successful start.
+// Identity comes only from persisted session bindings, never labels or tab order.
+// A busy, ambiguous or unproven record leaves its tab untouched; no store write
+// belongs to this operation. Earlier records may share the pane after a reload.
+func (a *App) retireDirectorTabs(ctx context.Context, host adapter.TabHost, storePath string, through int, replacement adapter.TabRef) {
+	closer, ok := host.(adapter.IdleTabCloser)
+	if !ok {
+		return
+	}
+	seen := map[adapter.TabRef]bool{}
+	for n := through; n > 0; n-- {
+		d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) { return s.DirectorSession(n) })
+		if err != nil {
+			_, _ = fmt.Fprintf(a.Stderr, "director tab cleanup: session %d: %v\n", n, err)
+			continue
+		}
+		p := d.Pane
+		ref := adapter.TabRef{Session: p.Session, WorkspaceID: p.Workspace, TabID: p.Tab, PaneID: p.Pane}
+		if p == (store.DirectorPane{}) || ref.Session != replacement.Session || ref.WorkspaceID != replacement.WorkspaceID || ref == replacement || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		if d.State != store.DirectorStopped || d.Sweeping {
+			continue
+		}
+		if err := runtimeEnded(d); err != nil {
+			_, _ = fmt.Fprintf(a.Stderr, "director tab cleanup: tab %s left open: %v\n", ref.TabID, err)
+			continue
+		}
+		err = host.AdoptTab(ctx, ref)
+		if err == nil {
+			info, probeErr := host.PaneProcessInfo(ctx, ref)
+			err = probeErr
+			if err == nil && !info.ShellIdle() {
+				err = errors.New("pane is not an idle shell")
+			}
+			if err == nil {
+				err = closer.CloseTab(ctx, ref)
+			}
+		}
+		if err != nil && !herdr.IsNotFound(err) {
+			_, _ = fmt.Fprintf(a.Stderr, "director tab cleanup: tab %s left open: %v\n", ref.TabID, err)
+		}
+	}
 }
 
 // waitTabSession waits for a session after the one numbered after that records tab's pane, as launch.Process

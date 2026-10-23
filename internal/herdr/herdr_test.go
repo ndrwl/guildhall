@@ -205,6 +205,9 @@ func TestWorkspaceCreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if ws.InitialTab.ID() != "w1:t1" || ws.InitialTab.PaneID() != "w1:p1" || ws.InitialTab.WorkspaceID() != ws.ID || ws.InitialTab.Session() != c.Session() {
+		t.Errorf("starting shell ownership = %+v", ws.InitialTab)
+	}
 	if ws.ID != "w1" || ws.Label != "gh-probe" {
 		t.Errorf("workspace = %+v", ws)
 	}
@@ -215,6 +218,19 @@ func TestWorkspaceCreateAndList(t *testing.T) {
 	list, err := c.WorkspaceList(context.Background())
 	if err != nil || len(list) != 0 {
 		t.Errorf("WorkspaceList = %v, %v", list, err)
+	}
+}
+
+func TestWorkspaceCreateRefusesAmbiguousStartingShell(t *testing.T) {
+	for _, wire := range []string{
+		`{"result":{"workspace":{"workspace_id":"w1"}}}`,
+		`{"result":{"workspace":{"workspace_id":"w1"},"tab":{"tab_id":"w1:t1","workspace_id":"w2"},"root_pane":{"pane_id":"w1:p1","tab_id":"w1:t1","workspace_id":"w1"}}}`,
+		`{"result":{"workspace":{"workspace_id":"w1"},"tab":{"tab_id":"w1:t1","workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1","tab_id":"w1:t2","workspace_id":"w1"}}}`,
+	} {
+		c, _ := newTestClient(t, map[string]response{"workspace create": {stdout: wire}})
+		if _, err := c.WorkspaceCreate(context.Background(), "director", "/work"); err == nil {
+			t.Errorf("ambiguous response accepted: %s", wire)
+		}
 	}
 }
 

@@ -35,6 +35,7 @@ type directorTabs struct {
 	workspaces []herdr.Workspace
 	created    []herdr.TabSpec
 	tabs       []adapter.TabRef
+	closed     []adapter.TabRef
 	busy       map[string]int
 	startup    map[string]func()
 	sent       []string
@@ -82,7 +83,22 @@ func (d *directorTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (adapt
 }
 
 func (d *directorTabs) AdoptTab(ctx context.Context, ref adapter.TabRef) error {
-	return errors.New("the wrapper adopts no tab")
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !slices.Contains(d.tabs, ref) || slices.Contains(d.closed, ref) {
+		return &herdr.APIError{Code: "tab_not_found", Message: "tab not found"}
+	}
+	return ctx.Err()
+}
+
+func (d *directorTabs) CloseTab(ctx context.Context, ref adapter.TabRef) error {
+	if err := d.AdoptTab(ctx, ref); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.closed = append(d.closed, ref)
+	return nil
 }
 
 func (d *directorTabs) PaneProcessInfo(ctx context.Context, ref adapter.TabRef) (herdr.ProcessInfo, error) {
@@ -254,6 +270,9 @@ func TestDirectorStartOpensTheDirectorTab(t *testing.T) {
 	}
 	if len(typed) != 2 || len(host.sent) != 2 {
 		t.Errorf("typed %q, sent %q; want one line per start", typed, host.sent)
+	}
+	if len(host.closed) != 1 || host.closed[0] != host.tabs[0] {
+		t.Errorf("closed = %+v; want only the first stopped Director tab", host.closed)
 	}
 	if got := sessions(t, dir); len(got) != 2 || got[0].Pane.Tab != host.tabs[0].TabID || got[1].Pane.Tab != host.tabs[1].TabID {
 		t.Errorf("sessions = %+v", got)
