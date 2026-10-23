@@ -54,6 +54,8 @@ type Process struct {
 	// Store and StateDir are the Director store and the absolute state
 	// directory, as `artisan start --store --state` takes them.
 	Store, StateDir string
+	// Copy is the Director copy for LaunchFiles; Launch uses its adapter spec's copy.
+	Copy string
 	// StallInterval, when positive, is passed as `--stall-interval`, so the launcher sends the Director
 	// worker-stalled from its heartbeat (Config.StallInterval); the engine passes its own.
 	StallInterval time.Duration
