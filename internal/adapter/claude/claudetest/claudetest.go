@@ -418,15 +418,15 @@ func session(args []string) int {
 		fmt.Fprintf(os.Stderr, "claude stub: "+format+"\n", a...)
 		return 2
 	}
-	if len(args) < 5 || args[2] != "--add-dir" {
-		return fail("want --append-system-prompt-file <role> --add-dir <copy> [--model <m>] <first message>, got %q", args)
+	if len(args) < 6 || args[2] != "--add-dir" {
+		return fail("want --append-system-prompt-file <role> --add-dir <copy> [--model <m>] -- <first message>, got %q", args)
 	}
 	role, copyDir, rest := args[1], args[3], args[4:]
-	if len(rest) == 3 && rest[0] == "--model" && rest[1] != "" {
+	if len(rest) == 4 && rest[0] == "--model" && rest[1] != "" {
 		rest = rest[2:]
 	}
-	if len(rest) != 1 || strings.TrimSpace(rest[0]) == "" || strings.ContainsAny(rest[0], "\r\n") {
-		return fail("want one first message line last, got %q", rest)
+	if len(rest) != 2 || rest[0] != "--" || strings.TrimSpace(rest[1]) == "" || strings.ContainsAny(rest[1], "\r\n") {
+		return fail("want -- followed by one first message line last, got %q", rest)
 	}
 	if !filepath.IsAbs(role) || !filepath.IsAbs(copyDir) {
 		return fail("role %q and copy %q must be absolute", role, copyDir)

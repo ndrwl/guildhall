@@ -81,7 +81,7 @@ func absoluteRule(path string) string {
 }
 
 // Session returns the Claude Code Director session for spec: `claude --append-system-prompt-file <role prompt>
-// --add-dir <copy> [--model <model>] <first message>` in the session directory with the session's environment,
+// --add-dir <copy> [--model <model>] -- <first message>` in the session directory with the session's environment,
 // the interactive command shape beside the Artisan's print mode. Effort is not passed: Claude Code takes it from
 // its own settings. Session refuses an invalid spec with no command and writes nothing; the caller writes
 // Settings at SettingsFile before starting it.
@@ -100,7 +100,7 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	if spec.Model != "" {
 		argv = append(argv, "--model", spec.Model)
 	}
-	return adapter.Command{Argv: append(argv, spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
+	return adapter.Command{Argv: append(argv, "--", spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
 }
 
 // TurnEndHook reports true: Settings registers TurnStartCommand as the session's UserPromptSubmit hook and
