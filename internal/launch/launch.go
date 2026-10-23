@@ -83,6 +83,7 @@ type Attempt struct {
 	Store    string
 	StateDir string
 	Key      artisan.AttemptKey
+	LockWait time.Duration
 }
 
 // Dir is the attempt directory, artisan.AttemptKey.Dir of StateDir.
@@ -585,6 +586,7 @@ func (a Attempt) write(fn func(*store.Store) error) error {
 }
 
 func (a Attempt) open(o store.Options, fn func(*store.Store) error) error {
+	o.LockTimeout = a.LockWait
 	s, err := store.Open(a.Store, o)
 	if err != nil {
 		return err
@@ -727,5 +729,7 @@ func Classify(ctx context.Context, a Attempt, o *store.Ownership) reconcile.Clas
 	if _, err := os.Stat(a.Dir()); o == nil && errors.Is(err, fs.ErrNotExist) {
 		return reconcile.Classification{State: reconcile.Absent, Reason: "no attempt directory and no ownership record"}
 	}
-	return reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o}, reconcile.Options{})
+	// A mark that cannot be read is not a hand-over: the attempt is classified as any other.
+	handed, _ := interp.HandedToDirector(a.Dir())
+	return reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o, Handed: handed}, reconcile.Options{})
 }

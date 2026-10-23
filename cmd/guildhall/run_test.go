@@ -370,6 +370,15 @@ func TestTheWatcherTellsTheDirectorOfAFailedAdvance(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
+	// The copy's lock wait bounds each of the launcher's two advance runs (F49), so the lost lock costs seconds.
+	cfg := filepath.Join(dir, "config.toml")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, bytes.Replace(b, []byte("[local]\n"), []byte("[local]\nlock_wait = \"1s\"\n"), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	d := newBinCopy(t, dir)
 	d.newTask()
 	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
@@ -380,6 +389,7 @@ func TestTheWatcherTellsTheDirectorOfAFailedAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	locked := time.Now()
 	var once sync.Once
 	unlock := func() { once.Do(release) }
 	defer unlock()
@@ -404,6 +414,10 @@ func TestTheWatcherTellsTheDirectorOfAFailedAdvance(t *testing.T) {
 	}
 	if msg.Type != "advance-failed" || !strings.Contains(msg.Text, "step done") || !strings.Contains(msg.Text, "lock task app/t-1") {
 		t.Errorf("message %+v, want advance-failed naming step done and the lock error", msg)
+	}
+	// The rest of the fake's delay and two 1 s lock waits, not two of the default 30 s.
+	if took, bound := time.Since(locked), testenv.Ceiling(10*time.Second); took > bound {
+		t.Errorf("the advance-failed message came %v after the lock was taken, over %v: the copy's lock_wait did not bound the advance", took, bound)
 	}
 	var status struct {
 		NeedsMe []struct {

@@ -498,7 +498,7 @@ func (w *sessionWatch) idleTrigger(in endInput) {
 	w.idled = w.signalled
 	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
 	defer cancel()
-	_, _, _ = messaging.WakeIdle(ctx, storeRecords(w.storePath), w.pane, w.handoffIdle)
+	_, _, _ = messaging.WakeIdle(ctx, storeRecords{path: w.storePath}, w.pane, w.handoffIdle)
 }
 
 // stopSession records session n stopped unless it already is or a newer session superseded it.

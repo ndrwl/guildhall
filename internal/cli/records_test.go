@@ -45,7 +45,7 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 	}
 	return interptest.RecordsHarness{
 		Writers: 2, Operations: 20,
-		Records: clockedStoreRecords{storeRecords(path), clock}, Clock: clock,
+		Records: clockedStoreRecords{storeRecords{path: path}, clock}, Clock: clock,
 		CreateTask: func(m string, task store.Task) (store.Receipt, error) {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.CreateTask(m, task) })
 		},
@@ -73,11 +73,11 @@ type clockedStoreRecords struct {
 }
 
 func (p clockedStoreRecords) StartAttempt(m, repo, id, step string) (store.Receipt, error) {
-	return withStoreClock(string(p.storeRecords), false, p.clock.Now, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
+	return withRecords(p.storeRecords, false, p.clock.Now, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
 }
 
 func (p clockedStoreRecords) StartCappedAttempt(m, repo, id, step string, caps store.AttemptCaps) (store.Receipt, error) {
-	return withStoreClock(string(p.storeRecords), false, p.clock.Now, func(s *store.Store) (store.Receipt, error) {
+	return withRecords(p.storeRecords, false, p.clock.Now, func(s *store.Store) (store.Receipt, error) {
 		return s.StartCappedAttempt(m, repo, id, step, caps)
 	})
 }
@@ -107,7 +107,9 @@ func newStoreOutboxHarness(t *testing.T) messagingtest.Harness {
 	return &storeOutboxHarness{path: path}
 }
 
-func (h *storeOutboxHarness) Mailbox() messaging.Mailbox { return storeOutbox{storeRecords(h.path)} }
+func (h *storeOutboxHarness) Mailbox() messaging.Mailbox {
+	return storeOutbox{storeRecords{path: h.path}}
+}
 
 func (h *storeOutboxHarness) mutation() string {
 	h.n++
@@ -152,19 +154,19 @@ func (h *storeOutboxHarness) Restart(*testing.T) {}
 type storeOutbox struct{ storeRecords }
 
 func (b storeOutbox) List(to store.Recipient, after uint64, limit int) (messaging.Page, error) {
-	return withStore(string(b.storeRecords), true, func(s *store.Store) (messaging.Page, error) {
+	return withStore(b.path, true, func(s *store.Store) (messaging.Page, error) {
 		return (&messaging.StoreMailbox{Store: s}).List(to, after, limit)
 	})
 }
 
 func (b storeOutbox) Read(id string) (messaging.Stored, error) {
-	return withStore(string(b.storeRecords), true, func(s *store.Store) (messaging.Stored, error) {
+	return withStore(b.path, true, func(s *store.Store) (messaging.Stored, error) {
 		return (&messaging.StoreMailbox{Store: s}).Read(id)
 	})
 }
 
 func (b storeOutbox) Ack(to store.Recipient, id string) (store.Receipt, error) {
-	return withStore(string(b.storeRecords), false, func(s *store.Store) (store.Receipt, error) {
+	return withStore(b.path, false, func(s *store.Store) (store.Receipt, error) {
 		return (&messaging.StoreMailbox{Store: s}).Ack(to, id)
 	})
 }

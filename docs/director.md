@@ -310,7 +310,7 @@ guildhall director status --json [--copy <dir> | --store <file> --state <dir> [-
 `director status` is the Director's status feed and the Guildmaster's "what needs me" query in one read-only JSON document ([decision](decisions/0065-director-status-feed.md)).
 firstmate's external monitor reads it, the Director's skills run it at every turn, and the session supervisor renders its `needs_me` into a new session's [startup instructions](#start).
 
-It reads the store in one read transaction, opened read-only and waiting up to 30 seconds for a writer's lock as every advance does, so it never writes, never creates a store and succeeds once a writer lets go.
+It reads the store in one read transaction, opened read-only and waiting up to 30 seconds for a writer's lock, the default [`lock_wait`](configuration.md#settings) of an advance, so it never writes, never creates a store and succeeds once a writer lets go.
 It then reads files under the state directory: each task's newest `next.json` and the attempt directories of running attempts, which it classifies with [`reconcile.Classify`](artisan.md#reconcile) and the launcher identity probe; classifying may create an attempt's `attempt.lock`, as `artisan status` does.
 It prints one JSON line and exits 0; a missing store is exit 1 naming `guildhall store init`, a store that cannot be read is exit 1, and a usage error, including a missing `--json`, is exit 2.
 With a [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY` stands in for `--store`, `--state` and `--config`.
@@ -335,6 +335,7 @@ The document has these sections:
     Every `task start`, `step done`, `step finish` and `step retry`, typed or run by the [watcher](running.md#the-watcher), writes it, so it is absent only for a task never advanced.
   - `steps`: for each step with an attempt, in the order the steps first started, its latest `attempt` with its `outcome`, or, while it runs, `live`: the classification `state` and `reason` from `reconcile.Classify`.
     A running attempt with neither an ownership record nor an attempt directory is `absent`, as `artisan status` reports it.
+    A [Director stage](interpreter.md#director-stages)'s attempt, which the engine handed to the Director and which has no ownership record, is `handed`, reason `handed to the Director`, so a stage that is the Director's to run is not read as a lost attempt.
   - `spend`: the [spend total](#spend-totals) of the task's attempts.
 - `decisions`: every open decision in repository, task and id order, with its `kind`, `subject`, `options`, `question` and `opened_at`, the commit time of its opening.
 - `messages`: the Director's `unread` count, the count `by_type`, and the `headers` of at most the 20 oldest unread messages (`id`, `type`, `repository`, `task_id`, `step` and `attempt` when given, `sequence`).

@@ -340,7 +340,7 @@ func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir, copyDir,
 	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals, Advance: advance,
 		// A failed wake is not written to stderr: that is the worker's output file, so the line would restart its
 		// stall clock. The message stays stored and the next advance's replay tries the wake again.
-		StallInterval: stall, Outbox: wakingOutbox{storeRecords(at.Store), a.directorPane(), io.Discard}})
+		StallInterval: stall, Outbox: wakingOutbox{storeRecords{path: at.Store}, a.directorPane(), io.Discard}})
 	if rep.Outcome.State != "" {
 		if code := a.printJSON(rep); code != 0 {
 			return code

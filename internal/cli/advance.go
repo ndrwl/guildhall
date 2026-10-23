@@ -33,6 +33,7 @@ import (
 type advanceFlags struct {
 	store, config, state, repo string
 	copy                       copyFlags
+	wait                       time.Duration
 }
 
 func (f *advanceFlags) register(fl *flag.FlagSet) {
@@ -55,13 +56,24 @@ func (f *advanceFlags) resolve(getenv func(string) string) error {
 }
 
 // listed refuses, before anything else is read or written, a repository the config does not list: the
-// repositories guard rail (docs/director.md#guard-rails). A config that cannot be loaded is left to the advance.
+// repositories guard rail (docs/director.md#guard-rails).
 func (f *advanceFlags) listed() error {
 	cfg, err := config.Load(f.config)
 	if err != nil {
+		return err
+	}
+	if _, err = cfg.ListedRepository(f.repo); err != nil {
+		return err
+	}
+	return f.resolveWait(cfg)
+}
+
+func (f *advanceFlags) resolveWait(cfg *config.Config) error {
+	if f.wait > 0 {
 		return nil
 	}
-	_, err = cfg.ListedRepository(f.repo)
+	var err error
+	f.wait, err = cfg.LockWait()
 	return err
 }
 
@@ -98,11 +110,11 @@ func (a *App) taskStart(args []string) int {
 		ev.Kind, ev.Decision = interp.DecisionAnswered, *decision
 	}
 	if *decision == "" {
-		if hold, err := heldNow(f.store); err != nil || hold {
+		if hold, err := heldWithRecords(storeRecords{path: f.store, wait: f.wait}); err != nil || hold {
 			return a.paused("task start", err)
 		}
 	}
-	if err := newWorkAdmitted(f.store, f.repo, ev.Task); err != nil {
+	if err := newWorkAdmitted(storeRecords{path: f.store, wait: f.wait}, f.repo, ev.Task); err != nil {
 		return a.fail(fmt.Errorf("task start: %w", err))
 	}
 	return a.advanced(a.advance(f, ev))
@@ -110,11 +122,11 @@ func (a *App) taskStart(args []string) int {
 
 // newWorkAdmitted refuses to start a task with no attempt yet while the newest Director session is recovering;
 // a task already under way advances (docs/director.md#ready). A missing store is left to the advance to refuse.
-func newWorkAdmitted(path, repo, task string) error {
-	if _, err := os.Stat(path); err != nil {
+func newWorkAdmitted(records storeRecords, repo, task string) error {
+	if _, err := os.Stat(records.path); err != nil {
 		return nil
 	}
-	_, err := withStore(path, true, func(s *store.Store) (struct{}, error) {
+	_, err := withRecords(records, true, nil, func(s *store.Store) (struct{}, error) {
 		refusal := refuseWhileRecovering(s)
 		if refusal == nil {
 			return struct{}{}, nil
@@ -171,7 +183,7 @@ func (a *App) stepRetry(args []string) int {
 	if err := f.listed(); err != nil {
 		return a.fail(fmt.Errorf("step retry: %w", err))
 	}
-	if hold, err := heldNow(f.store); err != nil || hold {
+	if hold, err := heldWithRecords(storeRecords{path: f.store, wait: f.wait}); err != nil || hold {
 		return a.paused("step retry", err)
 	}
 	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptRetried, Repository: f.repo, Task: *task, Step: *step, Attempt: n, Reason: *reason}))
@@ -253,8 +265,9 @@ func parseInterspersed(fl *flag.FlagSet, args []string) error {
 	return fl.Parse(append([]string{"--"}, positional...))
 }
 
-// storeWait bounds each record operation's wait for the store's lock, which launchers take briefly meanwhile.
-const storeWait = 30 * time.Second
+// storeWait bounds each record operation's wait for the store's lock, which launchers take briefly meanwhile, where
+// no copy's lock wait applies: config.DefaultLockWait, which an advance replaces with its copy's lock_wait.
+const storeWait = config.DefaultLockWait
 
 // advance runs one engine advance of ev's task over f (docs/running.md).
 func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
@@ -274,6 +287,11 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
+	if err := f.resolveWait(cfg); err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
+	wait := f.wait
+	records := storeRecords{path: f.store, wait: wait}
 	r, err := cfg.ListedRepository(f.repo)
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config %s: %w", f.config, err)
@@ -311,9 +329,9 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	}
 	// Deferred before the task lock is taken, so the Director is woken for what the advance sent once the lock is
 	// released (docs/messaging.md#waking-the-director), whether or not the advance succeeded.
-	outbox := &deferredOutbox{records: storeRecords(f.store)}
-	defer outbox.wakeAll(wakingOutbox{storeRecords(f.store), a.directorPane(), a.Stderr})
-	ctx, cancel := context.WithTimeout(context.Background(), storeWait)
+	outbox := &deferredOutbox{records: records}
+	defer outbox.wakeAll(wakingOutbox{records, a.directorPane(), a.Stderr})
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	release, err := artisan.LockAttempt(ctx, taskDir)
 	cancel()
 	if err != nil {
@@ -351,8 +369,8 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	context.AfterFunc(ctx, stop)
 	e := &interp.Engine{
 		Copy:     copyDir,
-		Records:  storeRecords(f.store),
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall},
+		Records:  records,
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall, LockWait: wait},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
@@ -363,7 +381,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		// classifier runs over the same repository.
 		Base:    func(string) (string, error) { return git.Program{}.Base(ctx, r.Path, interp.TaskBranch(ev.Task)) },
 		Rebases: git.Program{},
-		Hold:    func() (bool, error) { return withStore(f.store, true, held) },
+		Hold:    func() (bool, error) { return withRecords(records, true, nil, held) },
 		Caps:    store.AttemptCaps{MaxRunning: rails.MaxRunningAttempts, MaxPerDay: rails.MaxAttemptsPerDay, Hold: true},
 	}
 	n, err := e.Advance(ctx, ev)
@@ -424,9 +442,13 @@ func baselineSource(copyDir, release, name string) render.Source {
 	return render.Source{Name: name, Path: path, Root: "copy"}
 }
 
-// storeRecords is the engine's Records and Outbox over the store file it names, opened for each operation
-// and closed before the next, so an attempt's launcher can write the store while an advance runs.
-type storeRecords string
+// storeRecords is the engine's Records and Outbox over the store file at path, opened for each operation
+// and closed before the next, so an attempt's launcher can write the store while an advance runs. Each open
+// waits at most wait for the store's lock, storeWait when zero; an advance sets its copy's lock wait.
+type storeRecords struct {
+	path string
+	wait time.Duration
+}
 
 func withStore[T any](path string, readOnly bool, fn func(*store.Store) (T, error)) (T, error) {
 	return withStoreClock(path, readOnly, nil, fn)
@@ -434,7 +456,16 @@ func withStore[T any](path string, readOnly bool, fn func(*store.Store) (T, erro
 
 // withStoreClock is withStore with the store's clock; nil is wall time.
 func withStoreClock[T any](path string, readOnly bool, now func() time.Time, fn func(*store.Store) (T, error)) (T, error) {
-	s, err := store.Open(string(path), store.Options{ReadOnly: readOnly, RequireStore: true, LockTimeout: storeWait, Now: now})
+	return withRecords(storeRecords{path: path}, readOnly, now, fn)
+}
+
+// withRecords opens p's store for fn with the store's clock, nil being wall time, waiting p's wait for its lock.
+func withRecords[T any](p storeRecords, readOnly bool, now func() time.Time, fn func(*store.Store) (T, error)) (T, error) {
+	wait := p.wait
+	if wait == 0 {
+		wait = storeWait
+	}
+	s, err := store.Open(p.path, store.Options{ReadOnly: readOnly, RequireStore: true, LockTimeout: wait, Now: now})
 	if err != nil {
 		var zero T
 		return zero, err
@@ -444,68 +475,68 @@ func withStoreClock[T any](path string, readOnly bool, now func() time.Time, fn 
 }
 
 func (p storeRecords) Task(repo, id string) (store.Task, error) {
-	return withStore(string(p), true, func(s *store.Store) (store.Task, error) { return s.Task(repo, id) })
+	return withRecords(p, true, nil, func(s *store.Store) (store.Task, error) { return s.Task(repo, id) })
 }
 
 func (p storeRecords) Attempts(repo, id string) ([]store.StageAttempt, error) {
-	return withStore(string(p), true, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts(repo, id) })
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts(repo, id) })
 }
 
 func (p storeRecords) Documents(repo, id string) ([]store.DocumentRef, error) {
-	return withStore(string(p), true, func(s *store.Store) ([]store.DocumentRef, error) { return s.Documents(repo, id) })
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.DocumentRef, error) { return s.Documents(repo, id) })
 }
 
 func (p storeRecords) Decisions(repo, id string) ([]store.Decision, error) {
-	return withStore(string(p), true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions(repo, id) })
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.Decision, error) { return s.Decisions(repo, id) })
 }
 
 func (p storeRecords) Rulings(repo, id string) ([]store.Ruling, error) {
-	return withStore(string(p), true, func(s *store.Store) ([]store.Ruling, error) { return s.Rulings(repo, id) })
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.Ruling, error) { return s.Rulings(repo, id) })
 }
 
 func (p storeRecords) FullReviews(repo, id string) ([]store.FullReview, error) {
-	return withStore(string(p), true, func(s *store.Store) ([]store.FullReview, error) { return s.FullReviews(repo, id) })
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.FullReview, error) { return s.FullReviews(repo, id) })
 }
 
 func (p storeRecords) StartAttempt(m, repo, id, step string) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
 }
 
 func (p storeRecords) StartCappedAttempt(m, repo, id, step string, caps store.AttemptCaps) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.StartCappedAttempt(m, repo, id, step, caps) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartCappedAttempt(m, repo, id, step, caps) })
 }
 
 func (p storeRecords) FinishAttempt(m, repo, id, step string, n int, o store.AttemptOutcome) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.FinishAttempt(m, repo, id, step, n, o) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.FinishAttempt(m, repo, id, step, n, o) })
 }
 
 func (p storeRecords) PutDocument(m string, d store.DocumentRef) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.PutDocument(m, d) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.PutDocument(m, d) })
 }
 
 func (p storeRecords) OpenDecision(m string, d store.Decision) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.OpenDecision(m, d) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.OpenDecision(m, d) })
 }
 
 func (p storeRecords) ContestRuling(m, repo, id, doc, finding, by string) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.ContestRuling(m, repo, id, doc, finding, by) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.ContestRuling(m, repo, id, doc, finding, by) })
 }
 
 func (p storeRecords) ConsumeFullReview(m, repo, id string, n int, by string) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.ConsumeFullReview(m, repo, id, n, by) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.ConsumeFullReview(m, repo, id, n, by) })
 }
 
 func (p storeRecords) SetTaskState(m, repo, id string, state store.TaskState) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) { return s.SetTaskState(m, repo, id, state) })
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.SetTaskState(m, repo, id, state) })
 }
 
 func (p storeRecords) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
-	return withStore(string(p), false, func(s *store.Store) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) {
 		return (&messaging.StoreMailbox{Store: s}).Send(to, e)
 	})
 }
 
 var (
-	_ interp.Records = storeRecords("")
-	_ interp.Outbox  = storeRecords("")
+	_ interp.Records = storeRecords{}
+	_ interp.Outbox  = storeRecords{}
 )

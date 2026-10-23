@@ -135,6 +135,7 @@ These are reported, not guaranteed:
 
 Each owned attempt has one control endpoint: an AF_UNIX stream socket under the Guildhall state directory, on Windows 10 and later as on Unix ([decision](decisions/0034-attempt-endpoint-af-unix.md)).
 The launcher binds it, records its path in the ownership record with `UpdateOwnership`, and answers `status`, `stop` and `cancel` on it; what `stop` and `cancel` do is the launcher's handler, the [stop ladder](#stop-ladder).
+It is a consumer of Guildhall's one [endpoint](contracts/endpoint.md), which owns binding, the stale-file rule, permissions, strict decoding, the peer check and removal; this section states what the attempt endpoint adds: its path, its ownership check, its owner and its operations.
 
 ### Path
 
@@ -145,17 +146,8 @@ A longer readable path falls back to `<state>/endpoints/<32 hex digits>.sock`, t
 ### Binding
 
 `Listen` binds only when the attempt's ownership record names this launcher and is not released; otherwise it returns `ErrNotOwner` and creates nothing.
-A leftover file at the path follows the stale-file rule:
-
-| Leftover | Result |
-|---|---|
-| None | Bound |
-| Connecting is refused: nothing listens | Removed and bound, because taking the record proved the previous owner exited |
-| Connecting succeeds: an endpoint no record names | `ErrEndpointAnswers`; the file is kept |
-| Anything else, such as access refused or a directory | `ErrEndpointUnknown`; the file is kept |
-
-The endpoint directory is created `0700`, and on Unix the socket is made `0600`; the endpoint does not authenticate peers.
-`Close` stops accepting and removes the socket file; a request already being answered still gets its reply.
+Binding, leftover files, permissions and `Close` follow the [shared endpoint contract](contracts/endpoint.md).
+`ErrEndpointAnswers` and `ErrEndpointUnknown` alias its `ErrAnswers` and `ErrUnknown` respectively; taking the ownership record does not authorize removing a non-socket file.
 
 ### Protocol
 
@@ -183,7 +175,7 @@ Before dispatching status, stop or cancel, the endpoint checks that both identit
 The reply is one JSON line carrying `"schema": "guildhall.attempt-control/1"`, including when refusing a request, and naming the attempt and the launcher, with either the launcher's `state` (its phase and, when listed, the contained members) or an `error`.
 An unknown operation gets an error reply without reaching the handler.
 Requests are answered concurrently, so a `stop` that waits for the attempt to end does not delay a `status`.
-`Call` dials the endpoint within the caller's context and reads a newline-terminated reply of at most 1 MiB; read or framing failures return an exchange error.
+`Call` uses the [shared endpoint's transport and context bounds](contracts/endpoint.md) and reads a newline-terminated reply of at most 1 MiB; read or framing failures return an exchange error.
 Once a complete line is read, it is decoded with the same strict rules: a reply that is malformed, unversioned, carries an unknown or duplicate field or is a newer version is `ErrEndpointProtocol` (a newer one also matches `strictjson.ErrNewerSchema`).
 It refuses a reply naming another attempt or launcher with `ErrEndpointMismatch`; an error reply is `ErrEndpointRequest`.
 A failed call never proves the owner exited: a silent endpoint is unknown until the owner's identity is proven gone.
@@ -322,6 +314,7 @@ The launcher writes `heartbeat.json` in the attempt directory once when `Run` st
 ## Reconcile
 
 `reconcile.Classify` classifies an owned attempt from what outlives its launcher: the attempt directory, the store's ownership record, and the live state of the identity, endpoint and containment the record names.
+`reconcile` cannot read the engine's hand-over mark, so its caller passes it as `Attempt.Handed`: `launch.Classify`, behind `artisan status` and `director status`, sets it from `interp.HandedToDirector`, and a mark that cannot be read is no hand-over.
 Its [doc comments](../internal/reconcile/reconcile.go) own the API contract.
 It never signals, writes attempt state, takes over or relaunches anything; acquiring the lock may create `attempt.lock`.
 
@@ -332,7 +325,7 @@ The first rule that applies decides:
 | 1 | `outcome.json` | its state: `finished`, `cancelled` or `failed`; `unknown` when it cannot be read, a newer schema reported apart from damage |
 | 2 | Cancel marker | `cancelled` |
 | 3 | Valid result | `finished` |
-| 4 | No ownership record | `absent` |
+| 4 | No ownership record | `handed`, reason `handed to the Director`, when `Attempt.Handed` says the engine [handed the attempt to the Director](interpreter.md#director-stages) as a Director stage, which runs no launcher; otherwise `absent` |
 | 5 | Launcher identity gone, and no containment recorded or `Contained` proves the unit empty; a recorded job or cgroup without its worker is checked by name | `exited` |
 | 6 | Launcher identity gone, and contained processes survive or cannot be checked | `unknown`, with the survivors |
 | 7 | Launcher identity live, heartbeat that `ReadHeartbeat` refuses | `unknown`, whatever the endpoint answers |

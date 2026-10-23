@@ -79,6 +79,9 @@ func (a *App) stepFinish(args []string) int {
 	case !*failed && len(outputs) == 0:
 		return a.usageError("step finish: --output <port>=<file> is required unless --failed")
 	}
+	if err := f.listed(); err != nil {
+		return a.fail(fmt.Errorf("step finish: %w", err))
+	}
 	k := artisan.AttemptKey{Repository: f.repo, TaskID: *task, Step: *step, Attempt: n}
 	if err := finishStage(f, k, *summary, outputs, *failed); err != nil {
 		return a.fail(fmt.Errorf("step finish: %w", err))
@@ -94,6 +97,10 @@ func finishStage(f advanceFlags, k artisan.AttemptKey, summary string, outputs s
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	if err := f.resolveWait(cfg); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	wait := f.wait
 	r, err := cfg.ListedRepository(f.repo)
 	if err != nil {
 		return err
@@ -135,14 +142,14 @@ func finishStage(f advanceFlags, k artisan.AttemptKey, summary string, outputs s
 	if _, err := os.Stat(taskDir); err != nil {
 		return fmt.Errorf("task %s/%s has no state: %w", k.Repository, k.TaskID, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), storeWait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	release, err := artisan.LockAttempt(ctx, taskDir)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("lock task %s/%s: %w", k.Repository, k.TaskID, err)
 	}
 	defer release()
-	attempts, err := withStore(f.store, true, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts(k.Repository, k.TaskID) })
+	attempts, err := withRecords(storeRecords{path: f.store, wait: wait}, true, nil, func(s *store.Store) ([]store.StageAttempt, error) { return s.Attempts(k.Repository, k.TaskID) })
 	if err != nil {
 		return err
 	}

@@ -206,6 +206,20 @@ func TestClassifyFiles(t *testing.T) {
 	t.Run("no ownership record is absent", func(t *testing.T) {
 		want(t, classify(t.TempDir(), nil), reconcile.Absent)
 	})
+	// A Director stage runs no launcher, so its attempt has no ownership record and is the Director's (F46).
+	t.Run("a handed attempt with no ownership record is handed", func(t *testing.T) {
+		dir := t.TempDir()
+		c := reconcile.Classify(context.Background(), reconcile.Attempt{Dir: dir, Files: artisantest.NewFiles(dir), Handed: true}, reconcile.Options{StaleAfter: stale})
+		want(t, c, reconcile.Handed)
+		if c.Reason != "handed to the Director" {
+			t.Errorf("reason %q, want handed to the Director", c.Reason)
+		}
+	})
+	t.Run("a handed attempt's valid result is finished", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, artisantest.NewFiles(dir).Result, artisantest.ResultBody)
+		want(t, reconcile.Classify(context.Background(), reconcile.Attempt{Dir: dir, Files: artisantest.NewFiles(dir), Handed: true}, reconcile.Options{StaleAfter: stale}), reconcile.Finished)
+	})
 	// An outcome that cannot be read is unknown and never falls through to
 	// the marker, result or owner; a newer schema says so, apart from damage.
 	for name, c := range map[string]struct{ body, reason string }{
