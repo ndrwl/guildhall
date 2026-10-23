@@ -63,6 +63,23 @@ func tree(t *testing.T, inv string, n int) []artisan.Identity {
 	return nil
 }
 
+func waitForSweptProcesses(t *testing.T, ids []artisan.Identity) {
+	t.Helper()
+	end := time.Now().Add(deadline)
+	for _, id := range ids {
+		for {
+			lv, err := artisan.Probe(id)
+			if err == nil && lv == artisan.Gone {
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatalf("process %v is %v (%v) after waiting %v for the sweep", id, lv, err, deadline)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+}
+
 func resume(t *testing.T, a launch.Attempt) (launch.ResumeReport, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
@@ -187,11 +204,7 @@ func TestResumeSweepsAndSettlesAnExitedOwner(t *testing.T) {
 					}
 				}
 			}
-			for _, id := range running {
-				if lv, _ := artisan.Probe(id); lv != artisan.Gone {
-					t.Errorf("process %v is %v after resume", id, lv)
-				}
-			}
+			waitForSweptProcesses(t, running)
 			if rep.Outcome == nil || rep.Outcome.State != tc.state || rep.AttemptOutcome != tc.outcome {
 				t.Fatalf("Resume = %+v, want %s recorded %s", rep, tc.state, tc.outcome)
 			}
@@ -247,10 +260,8 @@ func TestSweepOwnerEndsAGoneOwnersUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SweepOwner of a gone owner = %v", err)
 	}
+	waitForSweptProcesses(t, running)
 	for _, id := range running {
-		if lv, _ := artisan.Probe(id); lv != artisan.Gone {
-			t.Errorf("process %v is %v after the sweep", id, lv)
-		}
 		if !slices.Contains(swept, id) {
 			t.Errorf("swept %v, want it to name %v", swept, id)
 		}
