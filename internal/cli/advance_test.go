@@ -265,11 +265,11 @@ func TestTaskStartAndStepDone(t *testing.T) {
 // director.store and a short state directory, returned with the copy.
 func newRunCopy(t *testing.T) (runDirector, string) {
 	t.Helper()
-	return newRunCopyOn(t, "fake-straight")
+	return newRunCopyOn(t, "fake-straight", "config.toml")
 }
 
 // newRunCopyOn is newRunCopy with repository app on the workflow named workflow in testdata/run/workflows.
-func newRunCopyOn(t *testing.T, workflow string) (runDirector, string) {
+func newRunCopyOn(t *testing.T, workflow, configFile string) (runDirector, string) {
 	t.Helper()
 	t.Setenv(roleEnv, "guildhall")
 	dir, err := os.MkdirTemp("", "gc")
@@ -282,7 +282,7 @@ func newRunCopyOn(t *testing.T, workflow string) (runDirector, string) {
 	d := runDirector{store: filepath.Join(dir, "director.store"), config: filepath.Join(dir, "config.toml"), state: filepath.Join(dir, "state")}
 	// A launcher's advance runs as guildhall, with real git workspaces, so app is a real repository and remote.
 	repository, remote, _ := gittest.Repository(t)
-	b, err := os.ReadFile(d.config)
+	b, err := os.ReadFile(filepath.Join(dir, configFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,12 +438,34 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 	if err != nil || r.Summary != claudetest.Summary {
 		t.Errorf("plan-1 result %+v, %v; want the stub Claude's", r, err)
 	}
+	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || len(got) != 0 {
+		t.Errorf("plan-1 was granted %q, %v; a profile without allowed_tools grants none", got, err)
+	}
 	// The launcher records the usage the stub's JSON output reported on the attempt.
 	u := claudetest.Usage
 	want := store.Spend{Tokens: store.SpendMeasured, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
 		CacheCreationInputTokens: u.CacheCreationInputTokens, CacheReadInputTokens: u.CacheReadInputTokens, Cost: store.SpendEstimated, CostUSD: u.CostUSD}
 	if a := d.waitSpend(t, "plan", 1); *a.Spend != want {
 		t.Errorf("plan-1 spend = %+v, want the stub's %+v", *a.Spend, want)
+	}
+}
+
+// TestTaskStartGrantsTheProfilesAllowedTools: a Director's profile allowed_tools reach the Claude session its stage
+// runs, exactly and in order, through launch.Process, `artisan start` and the wrapper.
+func TestTaskStartGrantsTheProfilesAllowedTools(t *testing.T) {
+	claudetest.Install(t)
+	d, copyDir := newRunCopyOn(t, "claude-straight", "claude-allowed.toml")
+	if code, _, stderr := d.run(t, "artisan", "start", "--allow-tool", "Bash"); code != 2 || !strings.Contains(stderr, "allow-tool") {
+		t.Fatalf("raw artisan grant: exit %d, stderr %s", code, stderr)
+	}
+	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
+	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitResult(t, "plan", 1)
+	want := []string{"Bash(go test:*)", "Bash(git commit:*)"}
+	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, want) {
+		t.Errorf("plan-1 was granted %q, %v; want %q", got, err, want)
 	}
 }
 

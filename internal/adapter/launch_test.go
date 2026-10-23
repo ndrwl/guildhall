@@ -17,6 +17,9 @@ func TestSpecValidate(t *testing.T) {
 	if err := good.Validate(); err != nil {
 		t.Fatalf("valid spec refused: %v", err)
 	}
+	if granted := (Spec{Identity: testID, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.ResultFile, Copy: dir, Profile: "builder"}); granted.Validate() != nil {
+		t.Errorf("spec with an allowed tool refused: %v", granted.Validate())
+	}
 	bad := []Spec{
 		{Identity: Identity{}, WorkDir: dir, PromptFile: good.PromptFile, ResultFile: good.ResultFile},
 		{Identity: testID, WorkDir: "rel", PromptFile: good.PromptFile, ResultFile: good.ResultFile},

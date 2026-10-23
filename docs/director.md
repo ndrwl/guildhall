@@ -23,7 +23,8 @@ It first runs a preflight and prints one line per check, as `doctor` prints, sto
 - `runtime`: the runtime is one of the adapters, and the program it runs is on `PATH`; the fake runtime is the `guildhall` executable itself.
 - `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.
 - `skills`: the release skills and baseline install.
-- `artisans`: names each profile that runs the claude adapter, whose print mode allows edits only, so a build's checks and commits need Bash allowed by Claude's own settings ([Artisan permissions](adapters.md#artisan-permissions)); it refuses nothing.
+- `artisans`: names this Director and its config file, then what that config grants each profile that runs the claude adapter: its [`allowed_tools`](configuration.md#profiles), or nothing, when print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings ([Artisan permissions](adapters.md#artisan-permissions)), as in `artisans: Director tools's config /srv/guildhall/config.toml: profile builder grants Bash(go test:*), Bash(git commit:*); profile reviewer grants nothing, so ...`.
+  It refuses only a profile of another adapter that sets `allowed_tools`, since only the claude adapter grants them.
 
 A failed check is exit 1 with nothing recorded and nothing written in the copy, and `--check` exits 0 after the preflight, also recording nothing.
 
@@ -37,7 +38,8 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 
 - `role.md`: the role prompt, from `[director] role` relative to the config directory, else the copy's `baseline/roles/director.md`, else the release's;
 - every release skill, byte for byte, in the runtime's skills directory, `.claude/skills/` for Claude Code;
-- the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and `Stop` and `StopFailure` hooks that run `guildhall director turn-ended` at the end of every turn;
+- the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, but denies the internal launch commands `guildhall claude-artisan`, `guildhall fake-artisan`, `guildhall fake-director` and `guildhall artisan start`, with or without arguments (deny takes precedence over the broad `guildhall` allow); task orchestration and `artisan stop/status/resume` remain allowed.
+  It denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and `Stop` and `StopFailure` hooks that run `guildhall director turn-ended` at the end of every turn;
 - `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command, except a `checks` item, which says the session supervisor advances it ([checks](#checks));
 - `manifest.json`: the digest of every file above.
 

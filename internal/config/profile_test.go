@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,7 +32,7 @@ func TestProfilesParse(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Profile{Adapter: "claude", Model: "opus", Effort: "high", Role: "roles/reviewer.md"}
-	if p != want {
+	if !reflect.DeepEqual(p, want) {
 		t.Fatalf("Profile = %+v, want %+v", p, want)
 	}
 	if p, err := cfg.Profile("reviewer-astra"); err != nil || p.Role != "" || p.Adapter != "pi" {
@@ -88,6 +90,53 @@ func TestInvalidProfilesRefused(t *testing.T) {
 		_, err := Parse([]byte(director(t) + extra))
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: err = %v, want %q", extra, err, want)
+		}
+	}
+}
+
+// TestProfileAllowedTools: a profile's allowed_tools are the Director's own grant, read in order from its config;
+// a profile without them grants nothing.
+func TestProfileAllowedTools(t *testing.T) {
+	cfg, err := Parse([]byte(director(t) + `
+[profile.builder]
+adapter = "claude"
+allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status)", "Bash(git diff:*)", "Read", "mcp__docs__search"]
+
+[profile.reviewer]
+adapter = "claude"
+`))
+	if err != nil {
+		t.Fatalf("allowed_tools refused: %v", err)
+	}
+	want := []string{"Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status)", "Bash(git diff:*)", "Read", "mcp__docs__search"}
+	if got := cfg.Profiles["builder"].AllowedTools; !slices.Equal(got, want) {
+		t.Errorf("builder allowed_tools = %q, want %q", got, want)
+	}
+	if got := cfg.Profiles["reviewer"].AllowedTools; len(got) != 0 {
+		t.Errorf("reviewer allowed_tools = %q, want none", got)
+	}
+}
+
+// TestInvalidAllowedToolsRefused: each allowed_tools entry is a narrow rule; a malformed rule, a duplicate or a rule
+// allowing every shell command is refused naming the profile.
+func TestInvalidAllowedToolsRefused(t *testing.T) {
+	cases := map[string]string{
+		`allowed_tools = [""]`:                        `profile "p": allowed_tools: `,
+		`allowed_tools = ["Bash(go test:*"]`:          `profile "p": allowed_tools: `,
+		`allowed_tools = ["go test"]`:                 `profile "p": allowed_tools: `,
+		`allowed_tools = ["Bash()"]`:                  `profile "p": allowed_tools: `,
+		`allowed_tools = ["Bash(go test)x"]`:          `profile "p": allowed_tools: `,
+		`allowed_tools = ["Bash(go test\nrm -rf /)"]`: `profile "p": allowed_tools: `,
+		`allowed_tools = ["Bash"]`:                    `every shell command`,
+		`allowed_tools = ["Bash(*)"]`:                 `every shell command`,
+		`allowed_tools = ["Bash(:*)"]`:                `every shell command`,
+		`allowed_tools = ["Read", "Read"]`:            `profile "p": allowed_tools lists "Read" twice`,
+		`allowed_tools = "Bash(go test:*)"`:           `allowed_tools`,
+	}
+	for extra, want := range cases {
+		_, err := Parse([]byte(director(t) + "[profile.p]\nadapter = \"claude\"\n" + extra + "\n"))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", extra, err, want)
 		}
 	}
 }

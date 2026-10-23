@@ -50,10 +50,12 @@ type Spec struct {
 	ResultFile string
 	// Manifest is the manifest render.Prompt returned for PromptFile.
 	Manifest render.Manifest
+	Copy     string
+	Profile  string
 }
 
-// Validate checks the identity, that every path is absolute, that the result file is distinct
-// from the prompt file, that an adapter is named and that the manifest is a prompt manifest.
+// Validate checks the identity, that the working directory, prompt and result paths are absolute,
+// that the result file differs from the prompt, that an adapter is named and that the manifest is a prompt manifest.
 func (s Spec) Validate() error {
 	if err := s.Identity.Validate(); err != nil {
 		return err
@@ -81,7 +83,7 @@ func (s Spec) Validate() error {
 // the name to the runtime's owner and has already checked the prompt against its manifest.
 // A spec Validate accepts maps to one adapter.Spec.Validate accepts.
 func (s Spec) AdapterSpec() adapter.Spec {
-	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile}
+	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile, Copy: s.Copy, Profile: s.Profile}
 }
 
 // Handle names one launched attempt. It carries no authority: only the launcher that returned it accepts it.

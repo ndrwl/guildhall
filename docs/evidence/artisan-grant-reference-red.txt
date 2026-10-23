@@ -1,0 +1,10 @@
+# Command: go test ./internal/adapter/claude -run '^TestDirectorCannotPassGrantRules$' -count=1
+# Before the transport fix: direct --allow-tool Bash was accepted, not a usage error.
+# This initial reproduction used the ambient claude executable; the retained regression
+# now explicitly installs claudetest to avoid model calls. Empty-profile and missing-profile
+# coverage was added after this reproduction.
+--- FAIL: TestDirectorCannotPassGrantRules (14.90s)
+    authority_test.go:13: raw grant exit = 0, want usage error 2
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	14.903s
+FAIL

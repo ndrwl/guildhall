@@ -1,0 +1,6 @@
+ok  	github.com/ndrwl/guildhall/internal/adapter	0.017s
+ok  	github.com/ndrwl/guildhall/internal/adapter/claude	0.218s
+ok  	github.com/ndrwl/guildhall/internal/adapter/fake	0.010s
+ok  	github.com/ndrwl/guildhall/internal/interp	0.066s
+ok  	github.com/ndrwl/guildhall/internal/launch	1.509s
+ok  	github.com/ndrwl/guildhall/internal/cli	0.513s

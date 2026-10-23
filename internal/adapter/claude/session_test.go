@@ -109,6 +109,12 @@ func allowed(t *testing.T, settings []byte, command string) bool {
 				continue
 			}
 			pattern = strings.TrimSuffix(pattern, ")")
+			if prefix, ok := strings.CutSuffix(pattern, ":*"); ok {
+				if command == prefix || strings.HasPrefix(command, prefix+" ") {
+					return true
+				}
+				continue
+			}
 			glob := strings.ReplaceAll(regexp.QuoteMeta(pattern), `\*`, ".*")
 			if regexp.MustCompile("^" + glob + "$").MatchString(command) {
 				return true
@@ -117,6 +123,31 @@ func allowed(t *testing.T, settings []byte, command string) bool {
 		return false
 	}
 	return !matches(s.Permissions.Deny) && matches(s.Permissions.Allow)
+}
+
+func TestSessionSettingsDenyInternalLaunches(t *testing.T) {
+	settings := claude.Adapter{}.SessionFiles("/home/g/copy")[claude.SettingsFile]
+	for _, command := range []string{
+		"guildhall claude-artisan", "guildhall fake-artisan",
+		"guildhall fake-director", "guildhall artisan start",
+	} {
+		for _, suffix := range []string{"", " --help", " --copy /other/director --profile builder", " --task t --attempt a --prompt /p --result /r --copy /other/director --profile builder"} {
+			if allowed(t, settings, command+suffix) {
+				t.Errorf("internal launch allowed: %s", command+suffix)
+			}
+		}
+	}
+	for _, command := range []string{
+		"guildhall", "guildhall task new", "guildhall task start --repo app t",
+		"guildhall step done --repo app --task t", "guildhall step retry",
+		"guildhall step finish", "guildhall decide answer", "guildhall messages list",
+		"guildhall artisan stop", "guildhall artisan status", "guildhall artisan resume",
+		claude.TurnStartCommand, claude.TurnEndCommand,
+	} {
+		if !allowed(t, settings, command) {
+			t.Errorf("Director command denied: %s", command)
+		}
+	}
 }
 
 // TestSessionSettingsKeepGitReadOnly sees read-only git allowed and git writing a file or changing a remote not.

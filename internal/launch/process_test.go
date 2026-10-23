@@ -147,10 +147,11 @@ func TestProcessStartsArtisanStartOnTheAdapterSpec(t *testing.T) {
 // the copy and --advance, so the launcher advances the task once it records the attempt.
 func TestProcessAsksAnEngineCopysLauncherToAdvance(t *testing.T) {
 	p := newProcess(t)
-	p.Copy = filepath.Join(t.TempDir(), "copy")
+	copyDir := filepath.Join(t.TempDir(), "copy")
 	argv := filepath.Join(t.TempDir(), "argv.json")
 	p.Env = []string{argvEnv + "=" + argv}
 	spec := prepared(t, p, fixtureSpec(t, ""))
+	spec.Copy = copyDir
 	if _, err := p.Launch(context.Background(), spec); err == nil {
 		t.Fatal("Launch of a refusing launcher succeeded")
 	}
@@ -165,7 +166,7 @@ func TestProcessAsksAnEngineCopysLauncherToAdvance(t *testing.T) {
 	as := spec.AdapterSpec()
 	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
 		"--repo", "app", "--task", "t7", "--step", "build", "--attempt", "1",
-		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir, "--copy", p.Copy, "--advance"}
+		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir, "--copy", copyDir, "--advance"}
 	if !slices.Equal(got, want) {
 		t.Errorf("argv = %q\nwant %q", got, want)
 	}
@@ -270,5 +271,32 @@ func TestProcessLaunchFailsWhenTheLauncherExitsFirst(t *testing.T) {
 	log, err := os.ReadFile(filepath.Join(filepath.Dir(spec.ResultFile), launch.LogFile))
 	if err != nil || len(log) == 0 {
 		t.Errorf("launcher log = %q, %v; want the refusal", log, err)
+	}
+}
+
+func TestProcessPassesTheProfilesAllowedTools(t *testing.T) {
+	p := newProcess(t)
+	argv := filepath.Join(t.TempDir(), "argv.json")
+	p.Env = []string{argvEnv + "=" + argv}
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	spec.Copy, spec.Profile = t.TempDir(), "builder"
+	if _, err := p.Launch(context.Background(), spec); err == nil {
+		t.Fatal("Launch of a refusing launcher succeeded")
+	}
+	b, err := os.ReadFile(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	as := spec.AdapterSpec()
+	want := []string{"artisan", "start", "--store", p.Store, "--state", p.StateDir,
+		"--repo", "app", "--task", "t7", "--step", "build", "--attempt", "1",
+		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir,
+		"--copy", spec.Copy, "--advance", "--profile", spec.Profile}
+	if !slices.Equal(got, want) {
+		t.Errorf("argv = %q\nwant %q", got, want)
 	}
 }

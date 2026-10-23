@@ -350,8 +350,9 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	defer stop()
 	context.AfterFunc(ctx, stop)
 	e := &interp.Engine{
+		Copy:     copyDir,
 		Records:  storeRecords(f.store),
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall},
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },

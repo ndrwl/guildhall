@@ -571,7 +571,7 @@ func TestRetryWithAnUnknownAdapterSendsNoReason(t *testing.T) {
 	d.newTask()
 	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
 	d.launched("plan", 1)
-	d.run("", "artisan", "stop", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1")
+	d.stopAll()
 
 	profile("nosuch")
 	retry := append(append([]string{"step", "retry"}, d.flags...), "--task", "t-1", "--step", "plan", "--attempt", "1")

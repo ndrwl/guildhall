@@ -15,7 +15,7 @@ import (
 
 // TestSessionEndEmptiesTheRuntimesUnit runs a real runtime that starts a child and either waits until a stop ends it
 // or exits at once, leaving the child running, as a runtime that does not clean up its tools does. Either way the
-// supervisor's wait returns only once every process the runtime started has gone (docs/director.md#stop).
+// supervisor empties the runtime's unit and every process it started finishes terminating (docs/director.md#stop).
 func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -81,7 +81,14 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 				t.Errorf("ending = %v, want %v", ending, want)
 			}
 			for _, id := range tree {
-				if lv, err := artisan.Probe(id); lv != artisan.Gone {
+				// Windows job termination can remove a member before its process handle
+				// becomes signalled. As in artisantest's assertGone, await that transition.
+				lv, err := artisan.Probe(id)
+				for end := time.Now().Add(stopKill); lv != artisan.Gone && time.Now().Before(end); {
+					time.Sleep(20 * time.Millisecond)
+					lv, err = artisan.Probe(id)
+				}
+				if lv != artisan.Gone {
 					t.Errorf("process %d of the runtime's tree is %v (%v) after the session ended", id.PID, lv, err)
 				}
 			}

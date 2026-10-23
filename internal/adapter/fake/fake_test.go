@@ -38,6 +38,13 @@ func TestAdapterDeclaresNoCapabilitiesAndBuildsArgv(t *testing.T) {
 	if _, err := (Adapter{}).Command(spec); err == nil {
 		t.Error("Command accepted an empty executable")
 	}
+	spec.Copy, spec.Profile = dir, "builder"
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("schema_version = 1\nmode = \"director\"\nname = \"test\"\n[profile.builder]\nadapter = \"fake\"\nallowed_tools = [\"Bash(go test:*)\"]\n[[repository]]\nid = \"app\"\npath = \"/src/app\"\nremote = \"git@example.com:app.git\"\nowner_machine = \"test\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cmd, err := a.Command(spec); err == nil || !strings.Contains(err.Error(), "grants no allowed tools") || len(cmd.Argv) != 0 {
+		t.Errorf("Command with allowed tools = %+v, %v; want a refusal, since the fake grants nothing", cmd, err)
+	}
 }
 
 // setup writes a prompt and returns the run arguments for it.

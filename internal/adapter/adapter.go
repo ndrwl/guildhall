@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
 // The names of the runtime adapters Guildhall can launch: the one spelling that package
@@ -35,11 +37,13 @@ type Spec struct {
 	// ResultFile is the absolute path the Artisan writes its result to.
 	ResultFile string
 	// Env holds extra NAME=VALUE entries for the Artisan's environment.
-	Env []string
+	Env     []string
+	Copy    string
+	Profile string
 }
 
-// Validate checks the identity, that every path is absolute, and that the
-// result file is distinct from the prompt file.
+// Validate checks the identity, that the working directory, prompt and result paths
+// are absolute, and that the result file is distinct from the prompt file.
 func (s Spec) Validate() error {
 	if err := s.Identity.Validate(); err != nil {
 		return err
@@ -58,6 +62,21 @@ func (s Spec) Validate() error {
 		}
 	}
 	return nil
+}
+
+func ProfileTools(copyDir, profile string) ([]string, error) {
+	if copyDir == "" || profile == "" {
+		return nil, nil
+	}
+	cfg, err := config.Load(filepath.Join(copyDir, "config.toml"))
+	if err != nil {
+		return nil, err
+	}
+	p, err := cfg.Profile(profile)
+	if err != nil {
+		return nil, err
+	}
+	return p.AllowedTools, nil
 }
 
 // Capabilities are the optional runtime features an adapter has proven

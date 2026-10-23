@@ -234,10 +234,11 @@ func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 	}
 }
 
-// TestDirectorStartCheckNamesArtisanPermissions: the preflight's artisans line names each profile that runs the
-// claude adapter and the permissions its print mode lacks for a build's checks and commits, without refusing.
+// TestDirectorStartCheckNamesArtisanPermissions: the preflight's artisans line names the Director and the config
+// file whose profiles grant the Artisans' tools, what each claude profile grants, and for one granting none the
+// permissions its print mode lacks for a build's checks and commits, without refusing.
 func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
-	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"claude\"\n", "/exit")
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"claude\"\nallowed_tools = [\"Bash(go test:*)\", \"Bash(git commit:*)\"]\n\n[profile.reviewer]\nadapter = \"claude\"\n", "/exit")
 	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
@@ -248,13 +249,24 @@ func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 			line = l
 		}
 	}
-	for _, want := range []string{"profile builder runs", "edits only", "Bash", "docs/adapters.md#artisan-permissions"} {
+	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants Bash(go test:*), Bash(git commit:*)",
+		"profile reviewer grants nothing", "edits only", "Bash", "docs/adapters.md#artisan-permissions", "copy/profile reference, never raw rule flags"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("artisans line %q lacks %q:\n%s", line, want, out)
 		}
 	}
 	if strings.Contains(line, "refused") {
 		t.Errorf("artisans line %q refuses", line)
+	}
+}
+
+// TestDirectorStartRefusesAllowedToolsARuntimeCannotGrant: a profile whose adapter grants no tools refuses the
+// preflight's artisans check, naming it, rather than silently granting nothing.
+func TestDirectorStartRefusesAllowedToolsARuntimeCannotGrant(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"fake\"\nallowed_tools = [\"Bash(go test:*)\"]\n", "/exit")
+	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
+	if code != 1 || !strings.Contains(out, "artisans: refused") || !strings.Contains(stderr, "profile builder") || !strings.Contains(stderr, "fake") {
+		t.Errorf("exit %d\n%s\n%s; want the artisans check refused naming profile builder and its adapter", code, out, stderr)
 	}
 }
 

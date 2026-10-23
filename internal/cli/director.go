@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -193,29 +194,45 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 		}
 	}
 	line("skills", "%d release skills install", n)
-	line("artisans", "%s", artisanPermissions(cfg))
+	perms, err := artisanPermissions(cfg, cfgPath)
+	if err != nil {
+		return refuse("artisans", err)
+	}
+	line("artisans", "%s", perms)
 	return p, nil
 }
 
-// artisanPermissions says which profiles run the claude adapter, whose print mode allows edits only, so a build's
-// checks and commits depend on Claude's own settings allowing Bash (docs/adapters.md#artisan-permissions).
-func artisanPermissions(cfg *config.Config) string {
-	var names []string
-	for name, p := range cfg.Profiles {
-		if p.Adapter == adapter.ClaudeName {
-			names = append(names, name)
+// artisanPermissions says what this Director's config at cfgPath grants each profile that runs the claude adapter:
+// its allowed_tools, or nothing, when claude print mode allows edits only, so a build's checks and commits depend on
+// Claude's own settings allowing Bash (docs/adapters.md#artisan-permissions). A profile of another adapter with
+// allowed_tools is refused, since only the claude adapter grants them.
+func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
+	var grants, bare []string
+	for _, name := range slices.Sorted(maps.Keys(cfg.Profiles)) {
+		p := cfg.Profiles[name]
+		switch {
+		case p.Adapter != adapter.ClaudeName && len(p.AllowedTools) > 0:
+			return "", fmt.Errorf("profile %s runs the %s adapter, which grants no allowed_tools; only the %s adapter does (docs/adapters.md#artisan-permissions)", name, p.Adapter, adapter.ClaudeName)
+		case p.Adapter != adapter.ClaudeName:
+		case len(p.AllowedTools) > 0:
+			grants = append(grants, fmt.Sprintf("profile %s grants %s", name, strings.Join(p.AllowedTools, ", ")))
+		default:
+			bare = append(bare, name)
 		}
 	}
-	if len(names) == 0 {
-		return "no profile runs the claude adapter"
+	whose := fmt.Sprintf("Director %s's config %s: ", cfg.Name, cfgPath)
+	if len(grants) == 0 && len(bare) == 0 {
+		return whose + "no profile runs the claude adapter", nil
 	}
-	slices.Sort(names)
-	runs := "profile %s runs"
-	if len(names) > 1 {
-		runs = "profiles %s run"
+	if len(bare) > 0 {
+		who := "profile %s grants"
+		if len(bare) > 1 {
+			who = "profiles %s grant"
+		}
+		grants = append(grants, fmt.Sprintf(who+" nothing, so claude print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings (docs/adapters.md#artisan-permissions)",
+			strings.Join(bare, ", ")))
 	}
-	return fmt.Sprintf(runs+" claude print mode, which allows edits only: a build's checks and commits need Bash allowed by Claude's settings (docs/adapters.md#artisan-permissions)",
-		strings.Join(names, ", "))
+	return whose + strings.Join(grants, "; ") + "; wrappers load grants by copy/profile reference, never raw rule flags", nil
 }
 
 // preflightLine prints one preflight check's line.

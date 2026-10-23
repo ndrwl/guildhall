@@ -9,6 +9,7 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `Load` follows the filesystem fallback and error rules in [configuration](../configuration.md).
 
 `Profile` and `CheckProfiles` refuse an unknown profile name (`ErrUnknownProfile`).
+A profile's `AllowedTools` is its `allowed_tools` list in order, empty by default; `Parse` refuses an entry `CheckAllowedTool` refuses, a tool name with an optional non-empty parenthesised specifier and no control characters that does not allow every shell command (`Bash`, `Bash(*)`, `Bash(:*)`), and a duplicate, naming the profile; profiles are read only from the copy's own config, never from `managed.toml`.
 `StallInterval` is the effective `stall_interval` [setting](../configuration.md#settings) as a duration, `DefaultStallInterval` (15 minutes) when unset and zero for `0s`; `Parse` refuses a managed or local value that is not a nonnegative Go duration, and `StallInterval` returns that error for a config built without `Parse`.
 `ChecksRefresh` is the effective `checks_refresh` setting the same way, `DefaultChecksRefresh` (1 minute) when unset and zero for `0s`.
 `GuardRails` returns the [guard rails](../director.md#guard-rails): the listed repositories in config order, their merge policies, and the effective `max_running_attempts` and `max_attempts_per_day` settings, `DefaultMaxRunningAttempts` (4) and `DefaultMaxAttemptsPerDay` (40) when unset; `Parse` refuses a managed or local cap that is not a positive whole number written plainly, and `GuardRails` returns that error, naming the key, for a config built without `Parse`.
@@ -24,6 +25,7 @@ A repository's `NoCI` is its `no_ci` setting, `false` by default.
 ## Tests
 
 `config_test.go`, `managed_test.go`, `profile_test.go`; real temporary files: `load_test.go`.
+`TestProfileAllowedTools` and `TestInvalidAllowedToolsRefused` were written red first against a `CheckAllowedTool` that accepted everything ([red run](../evidence/artisan-allow-rules-2026-10-22-red.txt)); the parse, duplicate and wrong-type cases passed against it.
 `stall_test.go` was written red first against a stub `StallInterval` ([red run](../evidence/stall-adapter-choice-2026-10-22-red.txt)): the default, local, zero, managed and overridden values, and refusal of values that are not nonnegative durations.
 `checks_refresh_test.go` pins the same cases for `ChecksRefresh`, and `TestDirectorConfig` the `no_ci` default and value; they were added with the implementation and were not run red.
 `herdr_session_test.go` was written red first against a stub `HerdrSession` ([red run](../evidence/director-tab-2026-10-22-red.txt)): unset, local and managed values, and refusals of `default` and malformed names.
