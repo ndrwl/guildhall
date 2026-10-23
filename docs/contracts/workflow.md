@@ -5,10 +5,7 @@
 `Parse`, `Validate`, the step registry with each kind's allowed actors, `Step.Actor`, actor overrides and digests, and the review outcome shared by every review and document review, bound to its subject (R1.60, `docs/decisions/0026-actor-as-a-step-setting.md`).
 
 `JudgeStep`, `quality-judge`, is reserved for a delivered task's [judge attempts](../decisions/quality-judge.md): `Validate` refuses it as a step id.
-The `profile` and `skills` settings and their `Step` accessors.
-Research accepts only optional `profile`, a valid identifier, and refuses `skills`.
-Plan and build accept optional Artisan settings: `profile` is a valid identifier and `skills` is a list of distinct valid identifiers.
-Document-review and review also accept these settings, retaining them on a Guildmaster actor override.
+The `profile` and `skills` settings and their `Step` accessors follow the per-kind support described in [configuration](../configuration.md#built-in-step-kinds).
 Invalid types, invalid names, duplicate skills and undeclared settings are refused during validation; omitted settings remain valid.
 Grill steps accept optional `skills` with the shared distinct-name-list validation for either allowed actor, without adding `profile` or `instructions` ([decision](../decisions/0029-grill-step-skills.md)).
 The release skills for a grill follow its actor: `guildhall-grill` with `guildhall-domain-model` for the Director, `guildhall-grill-unattended` for an Artisan ([decision](../decisions/0061-grill-live-interview.md)); the registry does not bind skills to actors, so a step lists the ones it renders, and the shipped default's Director grill lists `guildhall-grill` and `guildhall-domain-model` (`TestDefaultGrillIsTheDirectorsLiveGrill`, red first against the default with no skills, [red run](../evidence/director-stages-2026-10-22-red.txt)).
