@@ -36,7 +36,7 @@ const (
 	// QualityReferenceCostCapKey caps one reference evaluation's cost in US dollars; required while reference runs are on.
 	QualityReferenceCostCapKey = "quality_reference_cost_cap_usd"
 	// QualityJudgeProfilesKey names the profiles a judge session may run as, in order of preference, separated by
-	// commas; unset, a judge runs on the default adapter.
+	// commas; eligibility and refusal rules are defined by Quality.Judge (docs/contracts/config.md).
 	QualityJudgeProfilesKey = "quality_judge_profiles"
 	// QualityJudgeSeparateFamilyKey asks for a judge of a different model family when quota allows: "on" or "off".
 	QualityJudgeSeparateFamilyKey = "quality_judge_separate_family"

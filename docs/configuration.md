@@ -95,7 +95,7 @@ No workflow can change a repository's merge policy.
 ### Profiles
 
 A profile chooses who runs an Artisan stage whose `profile` setting names it.
-A judge profile currently selects only its adapter and role. Its model and effort are not yet passed to the runtime, as for every Artisan launch.
+For the settings a judge profile currently applies at runtime, see [running the judge](quality.md#running-it).
 Names are lowercase identifiers, so three review stages can name `reviewer-opus`, `reviewer-opus-b` and `reviewer-astra` and no model name appears in a repository's workflow.
 
 | Key | Meaning |

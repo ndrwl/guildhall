@@ -6,7 +6,7 @@ This change launches that session and records what it says.
 ## An attempt on the delivered task
 
 `guildhall quality judge` records and launches an attempt of the reserved step `quality-judge` on a task that is `done`, through the same owned launcher, caps and pause hold as every Artisan attempt ([quality](../contracts/quality.md)).
-It is an attempt rather than a workflow step because the self-review is a Director skill first, not a step bound into every workflow digest (the [rubric decision](quality-rubric.md)), and rather than a process of its own because every model process Guildhall starts is owned, contained, counted against the guard rails and has its spend recorded.
+It is an attempt rather than a workflow step because the self-review is a Director skill first, not a step bound into every workflow digest (the [rubric decision](0083-quality-rubric.md)), and rather than a process of its own because every model process Guildhall starts is owned, contained, counted against the guard rails and has its spend recorded.
 
 - `quality-judge` is a reserved step id that `workflow.Validate` refuses, so it can never be one of a workflow's steps, and it is the only step the store starts on a task that is not open, and only on a `done` one; every other step still needs an open task.
 - The judge reads the self-review document and judge brief the skill wrote, the diff and the facts, copied beside its prompt, and writes `judgement.json`: a yes or no to "would you merge this as is", and a score or a pass for each pending criterion, each with the evidence it quotes.

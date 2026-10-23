@@ -224,7 +224,7 @@ type Judge struct {
 	Launcher Launcher
 	// Config gives the quality settings and the profiles.
 	Config *config.Config
-	// DefaultAdapter runs a judge when no judge profile is listed, and ran a build attempt rendered for no profile.
+	// DefaultAdapter identifies the adapter of a build attempt rendered for no profile.
 	DefaultAdapter string
 	// StateDir holds attempt directories, <repo>/<task>/<step>-<n>, and DocumentDir the recorded documents.
 	StateDir, DocumentDir string

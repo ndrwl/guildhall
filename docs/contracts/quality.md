@@ -3,7 +3,7 @@
 ## Contract
 
 The judge session of the [quality rubric](../quality.md#running-it) and its agreement with the Guildmaster's audit ([decision](../decisions/quality-judge.md)).
-Its seams are the interpreter's, and it adds no interface but `Launcher`: `interp.Records` for the store, `interp.Outbox` for Director messages, and `Launcher`, which `launch.Process` implements with `LaunchFiles`.
+Its seams are `interp.Records` extended with `TaskHistory` and `LatestDirectorSession` for the store, `interp.Outbox` for Director messages, `Launcher`, which `launch.Process` implements with `LaunchFiles`, and `AgreementRecords` for the agreement reads.
 
 `ReadSelfReview` reads a `guildhall.self-review/1` document as the [self-review skill](../../skills/guildhall-self-review/SKILL.md) writes it, taking only its repository, task, number, head and the criteria whose `judge` is `pending`, each with its kind; it refuses another schema, a missing identity or number, and a head that is not an object id, with `ErrSelfReview`.
 `ParseAnswer` reads the judge's `judgement.json` against those pending criteria: `merge_as_is` is `yes` or `no`, and `criteria` lists each pending criterion at most once, a score with a whole `score` from 0 to 3 and a gate with a boolean `pass`, never both, each with non-blank `evidence`; an unknown field, an id that is not pending, a duplicate, a missing judgement of a criterion or more than 1 MiB is refused with `ErrAnswer`.
