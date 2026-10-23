@@ -115,7 +115,7 @@ Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts
 
 **Publish** reads its `head` input.
 When the step's latest round already published that head, the step is complete and nothing is called.
-Otherwise round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, the task's title and a body naming the task, step and head.
+Otherwise round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, the task's title and a body naming the task, step and head, followed for a task created with `--fixes` by "Fixes a defect introduced by task `<repository>/<task>`.", the line the [quality rubric](quality.md)'s rework and change failure count from.
 The forge pushes the head to that branch, replacing whatever the task branch held but never touching another branch, and opens a pull request against the remote's default branch or updates the open one.
 A head that is not a commit of the repository at `path` is refused with `forge.ErrUnknownHead` and records nothing; a commit an Artisan made in the task's [working directory](#the-working-directory) is one, because that directory is a worktree of the repository.
 The engine then records, in order:

@@ -64,6 +64,9 @@ func (v *validator) check() {
 		if !ValidID(s.ID) {
 			v.addf("step %d: invalid step id %q", i+1, s.ID)
 		}
+		if s.ID == JudgeStep {
+			v.addf("step %d: step id %q is reserved for the judge attempts of delivered tasks", i+1, s.ID)
+		}
 		if _, dup := v.index[s.ID]; dup {
 			v.addf("duplicate step id %q", s.ID)
 			continue

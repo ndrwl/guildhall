@@ -158,7 +158,7 @@ func (s *Store) StartCappedAttempt(mutationID, repository, taskID, step string, 
 			}
 		}
 		if caps.MaxRunning > 0 || caps.MaxPerDay > 0 {
-			if _, err := openTask(tx, repository, taskID); err != nil {
+			if _, err := attemptTask(tx, repository, taskID, step); err != nil {
 				return err
 			}
 			u, err := attemptUsage(tx, s.now())

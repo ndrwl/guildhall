@@ -107,6 +107,7 @@ func TestValidationRefusals(t *testing.T) {
 		{"unsupported version", `"id": "build", "type": "build", "version": 1`, `"id": "build", "type": "build", "version": 9`, `does not support version 9`},
 		{"duplicate id", `"id": "deliver"`, `"id": "build"`, `duplicate step id "build"`},
 		{"invalid id", `"id": "deliver"`, `"id": "Deliver Now"`, `invalid step id`},
+		{"reserved id", `"id": "deliver"`, `"id": "quality-judge"`, `step id "quality-judge" is reserved`},
 		{"missing required input", `"inputs": {"spec": ["accept.spec"]}}`, `"inputs": {}}`, `required input "spec" is not wired`},
 		{"unknown input", `"inputs": {"spec": ["accept.spec"]}}`, `"inputs": {"spec": ["accept.spec"], "extra": ["plan.spec"]}}`, `unknown input "extra"`},
 		{"unknown reference step", `"head": ["build.head"], "review"`, `"head": ["built.head"], "review"`, `unknown step "built"`},

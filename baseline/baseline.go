@@ -1,7 +1,8 @@
 // Package baseline is Guildhall's release baseline: the role prompts and stage guides every Director ships with,
 // embedded in the binary beside the release skills.
 //
-// The root holds roles/director.md, roles/artisan.md and one stages/<kind>.md for every step kind an Artisan may run.
+// The root holds roles/director.md, roles/artisan.md, roles/judge.md for a delivered task's judge, and one
+// stages/<kind>.md for every step kind an Artisan may run.
 // It holds no standards: standards are the Guildmaster's, kept in the copy's own baseline/standards.
 // A Director copy's baseline/ directory overrides it file by file; see docs/running.md.
 package baseline

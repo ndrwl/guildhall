@@ -3,17 +3,22 @@ package config
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
+	"strings"
+
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // The quality settings (docs/configuration.md#quality-settings) switch the engineering-quality practices of
 // docs/quality.md on or off and size them. They are settings read through Setting, so a Steward's managed value is
 // read-only to the Director and a standalone copy sets them under [local]. Every practice is optional.
 // The self-review switch and the size budget are read by the guildhall-self-review skill through director status,
-// and the audit sample by deliver through Audits; the reference-run, judge and skill-edit settings are parsed and
-// validated for later work.
+// the audit sample by deliver through Audits, and the judge settings by the judge session through Judge
+// (docs/decisions/quality-judge.md); the reference-run and skill-edit settings are parsed and validated for later work.
 const (
 	// QualitySelfReviewKey switches the guildhall-self-review skill after each delivered task: "on" or "off".
 	QualitySelfReviewKey = "quality_self_review"
@@ -30,6 +35,9 @@ const (
 	QualityReferenceRunsPerTaskKey = "quality_reference_runs_per_task"
 	// QualityReferenceCostCapKey caps one reference evaluation's cost in US dollars; required while reference runs are on.
 	QualityReferenceCostCapKey = "quality_reference_cost_cap_usd"
+	// QualityJudgeProfilesKey names the profiles a judge session may run as, in order of preference, separated by
+	// commas; eligibility and refusal rules are defined by Quality.Judge (docs/contracts/config.md).
+	QualityJudgeProfilesKey = "quality_judge_profiles"
 	// QualityJudgeSeparateFamilyKey asks for a judge of a different model family when quota allows: "on" or "off".
 	QualityJudgeSeparateFamilyKey = "quality_judge_separate_family"
 	// QualitySkillEditsNeedApprovalKey treats an edit to the review, build or spec skill text as a design change
@@ -71,9 +79,11 @@ type Quality struct {
 	ReferenceRuns        ReferenceRuns `json:"reference_runs"`
 	ReferenceRunsPerTask int           `json:"reference_runs_per_task"`
 	// ReferenceCostCapUSD is the setting exactly as written, or "" when it is unset.
-	ReferenceCostCapUSD    string `json:"reference_cost_cap_usd,omitempty"`
-	JudgeSeparateFamily    bool   `json:"judge_separate_family"`
-	SkillEditsNeedApproval bool   `json:"skill_edits_need_approval"`
+	ReferenceCostCapUSD string `json:"reference_cost_cap_usd,omitempty"`
+	JudgeSeparateFamily bool   `json:"judge_separate_family"`
+	// JudgeProfiles are the declared profiles a judge may run as, in order of preference; nil when unset.
+	JudgeProfiles          []string `json:"judge_profiles,omitempty"`
+	SkillEditsNeedApproval bool     `json:"skill_edits_need_approval"`
 }
 
 // Quality returns the effective quality settings, each its default when unset.
@@ -93,6 +103,11 @@ func (c *Config) Quality() (Quality, error) {
 	}
 	if q.ReferenceRuns != ReferenceRunsOff && q.ReferenceCostCapUSD == "" {
 		return Quality{}, fmt.Errorf("%s %q needs %s set", QualityReferenceRunsKey, q.ReferenceRuns, QualityReferenceCostCapKey)
+	}
+	for _, name := range q.JudgeProfiles {
+		if _, ok := c.Profiles[name]; !ok {
+			return Quality{}, fmt.Errorf("%s names %q, which is not a declared profile", QualityJudgeProfilesKey, name)
+		}
 	}
 	return q, nil
 }
@@ -151,6 +166,21 @@ var qualitySettings = []struct {
 	{QualityJudgeSeparateFamilyKey, func(q *Quality, v string) (err error) {
 		q.JudgeSeparateFamily, err = parseSwitch(QualityJudgeSeparateFamilyKey, v)
 		return
+	}},
+	{QualityJudgeProfilesKey, func(q *Quality, v string) error {
+		var names []string
+		for name := range strings.SplitSeq(v, ",") {
+			name = strings.TrimSpace(name)
+			switch {
+			case !workflow.ValidID(name):
+				return fmt.Errorf("%s %q must list profile names separated by commas", QualityJudgeProfilesKey, v)
+			case slices.Contains(names, name):
+				return fmt.Errorf("%s %q names %q twice", QualityJudgeProfilesKey, v, name)
+			}
+			names = append(names, name)
+		}
+		q.JudgeProfiles = names
+		return nil
 	}},
 	{QualitySkillEditsNeedApprovalKey, func(q *Quality, v string) (err error) {
 		q.SkillEditsNeedApproval, err = parseSwitch(QualitySkillEditsNeedApprovalKey, v)
@@ -212,4 +242,64 @@ func parseCount(key, v string) (int, error) {
 		return 0, fmt.Errorf("%s %q must be a whole number, or \"0\" to turn it off", key, v)
 	}
 	return n, nil
+}
+
+var ErrNoJudge = errors.New("no judge profile is left")
+
+// JudgeChoice is who judges a delivered task's self-review (docs/decisions/quality-judge.md).
+type JudgeChoice struct {
+	Profile string `json:"profile,omitempty"`
+	// Adapter is the judge's runtime adapter, which is its family.
+	Adapter string `json:"adapter"`
+	// Builder is the builder's adapter, or "" when it is unknown.
+	Builder string `json:"builder_adapter,omitempty"`
+	// SeparateFamily is true when the judge's family is known to differ from the builder's.
+	SeparateFamily bool `json:"separate_family"`
+	// Reason says why the family is not separate; empty when it is.
+	Reason string `json:"reason,omitempty"`
+}
+
+func (q Quality) Judge(profiles map[string]Profile, builder, builderProfile string, failed []string) (JudgeChoice, error) {
+	choose := func(profile, adapter, reason string) JudgeChoice {
+		c := JudgeChoice{Profile: profile, Adapter: adapter, Builder: builder}
+		switch {
+		case builder == "":
+			c.Reason = "the builder's family is unknown"
+		case adapter != builder:
+			c.SeparateFamily = true
+		default:
+			c.Reason = reason
+		}
+		return c
+	}
+	if len(q.JudgeProfiles) == 0 {
+		return JudgeChoice{}, fmt.Errorf("%w: no profile is listed in %s", ErrNoJudge, QualityJudgeProfilesKey)
+	}
+	var usable []string
+	otherFamily := false
+	for _, name := range q.JudgeProfiles {
+		if name == builderProfile {
+			continue
+		}
+		otherFamily = otherFamily || profiles[name].Adapter != builder
+		if !slices.Contains(failed, name) {
+			usable = append(usable, name)
+		}
+	}
+	if len(usable) == 0 {
+		return JudgeChoice{}, fmt.Errorf("%w: every profile in %s is the builder's profile or failed for this self-review", ErrNoJudge, QualityJudgeProfilesKey)
+	}
+	if !q.JudgeSeparateFamily {
+		return choose(usable[0], profiles[usable[0]].Adapter, QualityJudgeSeparateFamilyKey+" is off"), nil
+	}
+	for _, name := range usable {
+		if builder != "" && profiles[name].Adapter != builder {
+			return choose(name, profiles[name].Adapter, ""), nil
+		}
+	}
+	reason := "no judge profile of another family than the builder's is listed"
+	if otherFamily {
+		reason = "every judge profile of another family than the builder's failed for this self-review"
+	}
+	return choose(usable[0], profiles[usable[0]].Adapter, reason), nil
 }

@@ -61,6 +61,7 @@ Once the launcher has published the attempt's outcome, recorded its store outcom
 |---|---|
 | Finished with a valid result, succeeded or failed | `guildhall step done --copy <dir> --repo <repo> --task <task> --step <step> --attempt <n> --result <attempt dir>/result.json` |
 | Anything else: failed without a result, stopped, or failed at setup | `guildhall task start --copy <dir> --repo <repo> <task>`, which sends the Director `attempt-failed` |
+| Any end of a delivered task's [judge](quality.md#running-it) attempt, step `quality-judge` | `guildhall quality judged --copy <dir> --repo <repo> --task <task> --attempt <n>`, because the task is done |
 
 The advance's output is appended to the attempt's `launcher.log` and an `advance` event with its exit status to its `events.jsonl` ([events](artisan.md#events)).
 An advance that exits unsuccessfully, such as one that waited its `lock_wait` for a task lock another advance held, is run once more, which waits the lock wait again.

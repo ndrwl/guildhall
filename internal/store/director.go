@@ -493,6 +493,9 @@ const (
 	MessageChecksPending    = "checks-pending"
 	MessageDecision         = "decision"
 	MessageDirectorStage    = "director-stage"
+	MessageJudgeFailed      = "judge-failed"
+	MessageJudgement        = "judgement"
+	MessageJudgementRefused = "judgement-refused"
 	MessageLoopExitRejected = "loop-exit-rejected"
 	MessageMergeHeld        = "merge-held"
 	MessageMergeRefused     = "merge-refused"
@@ -517,6 +520,7 @@ var MessageTypes = map[string]string{
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
 	MessageQuestion: "local", MessageNote: "local",
+	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 }
 
 // DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the types in

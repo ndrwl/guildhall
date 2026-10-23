@@ -81,6 +81,9 @@ Commands:
                  tell the session supervisor the runtime's turn has ended (its end-of-turn hook)
   director context-report --copy <dir>
                  record the context a Director session's runtime reports (its status line)
+  quality judge|judged|agreement --copy <dir> ...
+                 judge a delivered task's self-review in a separate session, take a finished judge
+                 attempt as its launcher does, and print the judge's agreement with the audits
   help           print this help
 `
 
@@ -220,6 +223,8 @@ func (a *App) Run(args []string) int {
 		return a.decide(rest)
 	case "director":
 		return a.director(rest)
+	case "quality":
+		return a.qualityCmd(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

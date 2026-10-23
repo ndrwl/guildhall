@@ -21,7 +21,7 @@ guildhall task start --repo app t-12
 ```
 
 Choose a short task id of lowercase letters, digits and hyphens that is new in the repository, and a title in the Guildmaster's words.
-Add `--depends-on <repo>/<task>` when the work must wait for another task.
+Add `--depends-on <repo>/<task>` when the work must wait for another task, and `--fixes <repo>/<task>` when it fixes a defect an earlier task introduced, so its pull request says so.
 Pick the repository from what they said; when the copy has several and it is unclear, ask.
 `guildhall task start` prints what the task waits for, such as `{"wait":"director-stage","step":"grill","attempt":1}`, which means the first stage is yours: run it with `guildhall-director-stage`.
 While the session is `recovering`, both commands are refused until `guildhall director ready`.
@@ -75,6 +75,8 @@ The repository's merge policy and the forge's protection always apply: a refused
 
 An `audit` decision is the Guildmaster's three-question audit of a task that has already merged, opened for a sample of delivered tasks independently of self-review: `quality_audit_sample` defaults to 5, 0 disables audits, and 1 audits every task.
 Put its three questions to them as asked, record `yes` or `no` to the first as the answer's first line and their words on the other two as the note, and do not run `task start` afterwards: the task is done and the answer only records their view.
+When they ask for a merged task to be judged, run `guildhall-self-review` for it, which ends by starting the judge with `guildhall quality judge`; never judge a task yourself.
+When they ask how far the judge can be trusted, run `guildhall quality agreement` and tell them how many audited tasks the judge also judged and how often it agreed, overall and when its family was separate.
 
 ## Retrying, stopping and resuming attempts
 

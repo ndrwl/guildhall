@@ -50,7 +50,7 @@ type advanceSeen struct {
 
 func mainIfAdvance() {
 	v := os.Getenv(advanceEnv)
-	if v == "" || len(os.Args) < 2 || (os.Args[1] != "step" && os.Args[1] != "task") {
+	if v == "" || len(os.Args) < 2 || (os.Args[1] != "step" && os.Args[1] != "task" && os.Args[1] != "quality") {
 		return
 	}
 	var d advanceDouble
@@ -74,9 +74,9 @@ func mainIfAdvance() {
 	} else {
 		if as, err := s.Attempts(key.Repository, key.TaskID); err == nil && len(as) == 1 {
 			seen.Outcome = as[0].Outcome
-		}
-		if own, err := s.Ownership(key.Repository, key.TaskID, key.Step, key.Attempt); err == nil {
-			seen.Owner = own.State
+			if own, err := s.Ownership(as[0].Repository, as[0].TaskID, as[0].Step, as[0].Number); err == nil {
+				seen.Owner = own.State
+			}
 		}
 		_ = s.Close()
 	}
@@ -214,6 +214,36 @@ func TestRunAdvancesAFinishedAttemptWithItsResult(t *testing.T) {
 				t.Fatalf("Run() = %+v, %v", r.r, r.err)
 			}
 			checkOneAdvance(t, a, record, append(slices.Clone(stepDone), "--result", a.Files().ResultFile), artisan.Finished, store.AttemptOutcome(status))
+		})
+	}
+}
+
+// TestRunAdvancesAJudgeAttemptWithQualityJudged: a judge attempt of a delivered task, whatever its end, is advanced
+// once with quality judged for its attempt, never with step done or task start, which a done task refuses.
+func TestRunAdvancesAJudgeAttemptWithQualityJudged(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		w       func(a launch.Attempt) artisantest.Worker
+		state   artisan.OutcomeState
+		outcome store.AttemptOutcome
+	}{
+		{"succeeded", func(a launch.Attempt) artisantest.Worker {
+			return artisantest.Worker{Result: a.Files().ResultFile, ResultBody: resultBody(t, a.Identity(), adapter.StatusSucceeded), ResultAfter: 200 * time.Millisecond}
+		}, artisan.Finished, store.AttemptSucceeded},
+		{"no result", func(launch.Attempt) artisantest.Worker { return artisantest.Worker{Lifetime: 200 * time.Millisecond} },
+			artisan.Failed, store.AttemptFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newJudgeAttempt(t)
+			record, advance := advanced(t, a, 0)
+			cmd, _ := worker(t, a, tc.w(a))
+			done, cancel := startAdvancing(a, cmd, advance)
+			defer cancel()
+			if r := wait(t, done); r.err != nil || r.r.AttemptOutcome != tc.outcome {
+				t.Fatalf("Run() = %+v, %v", r.r, r.err)
+			}
+			judged := []string{"quality", "judged", "--copy", "/the/copy", "--repo", "app", "--task", "t-1", "--attempt", "1"}
+			checkOneAdvance(t, a, record, judged, tc.state, tc.outcome)
 		})
 	}
 }

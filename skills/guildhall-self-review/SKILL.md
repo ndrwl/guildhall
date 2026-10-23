@@ -53,6 +53,16 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
 8. Leave every model-judged score `pending` with `score: null`, for a judge session that is neither you nor the task's builder; D1 is always one of them, with the facts script's `nontest_lines`, `files` and `size_over` as its evidence, and `size_over: yes` is also a flag.
    Write the judge's brief beside the document as `self-review-<n>-judge.md`: the criteria to score, G2 and any other gate left pending, the anchors from `docs/quality.md`, and the files it reads.
 9. Write `self-review-<n>.json` in the shape below, then tell the Guildmaster in one or two sentences: the lowest pillar, any flag, and any gate the records could not show.
+10. Start the judge, a separate session that is neither you nor the builder, and go on with other work while it runs:
+
+    ```sh
+    guildhall quality judge --repo app --review 1 t-12
+    ```
+
+    It prints the attempt and the judge chosen, with `separate_family` and, when that is false, the reason.
+    When its `judgement` message arrives, read the `quality-judge-<k>-judgement` document from `guildhall task files`, copy each criterion's `score` or `pass` and `evidence` into the self-review with `judge: model`, and rewrite `lowest_pillar`; never change a score the judge gave.
+    A `judgement-refused` message names what was wrong with the judge's answer; a `judge-failed` one reports a failed or stopped attempt.
+    Running `quality judge` again passes over only a failed judge's profile; a stopped judge's profile is chosen again with unchanged settings.
 
 ## The document
 

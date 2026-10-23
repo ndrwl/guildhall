@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -51,7 +53,7 @@ func TestQuality(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got, err := cfg.Quality(); got != tc.want || err != nil {
+			if got, err := cfg.Quality(); !reflect.DeepEqual(got, tc.want) || err != nil {
 				t.Errorf("Quality() = %+v, %v; want %+v", got, err, tc.want)
 			}
 		})
@@ -139,5 +141,113 @@ func TestQualityAudits(t *testing.T) {
 	}
 	if chosen < 300 || chosen > 500 {
 		t.Errorf("one in 5 chose %d of 2000 tasks, want about 400", chosen)
+	}
+}
+
+// judgeProfiles is the director config with three profiles: two of the claude family and one of the fake.
+func judgeProfiles(t *testing.T, local string) string {
+	t.Helper()
+	data := strings.Replace(director(t), "[local]", "[local]\n"+local, 1)
+	return data + `
+[profile.judge-claude]
+adapter = "claude"
+model = "opus"
+
+[profile.judge-claude-b]
+adapter = "claude"
+
+[profile.judge-fake]
+adapter = "fake"
+`
+}
+
+// TestQualityJudgeProfiles: quality_judge_profiles names declared profiles in order of preference, separated by
+// commas with optional spaces; unset names none, and a name the config does not declare, a repeated or empty name,
+// or one that is not a profile name is refused naming the key.
+func TestQualityJudgeProfiles(t *testing.T) {
+	cfg, err := Parse([]byte(judgeProfiles(t, "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q, err := cfg.Quality(); err != nil || q.JudgeProfiles != nil {
+		t.Errorf("unset: Quality() = %+v, %v; want no judge profiles", q, err)
+	}
+	cfg, err = Parse([]byte(judgeProfiles(t, `quality_judge_profiles = "judge-fake, judge-claude"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q, err := cfg.Quality(); err != nil || !reflect.DeepEqual(q.JudgeProfiles, []string{"judge-fake", "judge-claude"}) {
+		t.Errorf("set: Quality() = %+v, %v; want judge-fake then judge-claude", q, err)
+	}
+	for _, bad := range []string{
+		`quality_judge_profiles = "judge-missing"`,
+		`quality_judge_profiles = "judge-fake,judge-fake"`,
+		`quality_judge_profiles = "judge-fake,,judge-claude"`,
+		`quality_judge_profiles = ""`,
+		`quality_judge_profiles = "Judge-Fake"`,
+	} {
+		if _, err := Parse([]byte(judgeProfiles(t, bad))); err == nil || !strings.Contains(err.Error(), QualityJudgeProfilesKey) {
+			t.Errorf("%s: Parse error %v, want one naming %s", bad, err, QualityJudgeProfilesKey)
+		}
+	}
+	unparsed := &Config{Local: map[string]string{QualityJudgeProfilesKey: "judge-missing"}}
+	if _, err := unparsed.Quality(); err == nil {
+		t.Error("Quality of an unparsed config naming an undeclared profile succeeded")
+	}
+}
+
+// TestQualityJudge: the judge is the first usable listed profile of another family than the builder's when
+// separate families are asked for, else the first usable listed one; a failed profile is passed over; with no
+// profile listed it is the default adapter; and every choice says whether its family is separate and why not.
+func TestQualityJudge(t *testing.T) {
+	profiles := map[string]Profile{
+		"judge-claude": {Adapter: "claude"}, "judge-claude-b": {Adapter: "claude"}, "judge-fake": {Adapter: "fake"},
+	}
+	for _, tc := range []struct {
+		name           string
+		q              Quality
+		builderProfile string
+		builder        string
+		failed         []string
+		want           JudgeChoice
+		wantNone       bool
+	}{
+		{name: "another family first", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude", "judge-fake"}},
+			builder: "claude", want: JudgeChoice{Profile: "judge-fake", Adapter: "fake", Builder: "claude", SeparateFamily: true}},
+		{name: "only the same family", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude", "judge-claude-b"}},
+			builder: "claude", want: JudgeChoice{Profile: "judge-claude", Adapter: "claude", Builder: "claude",
+				Reason: "no judge profile of another family than the builder's is listed"}},
+		{name: "another family failed", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-fake", "judge-claude"}},
+			builder: "claude", failed: []string{"judge-fake"}, want: JudgeChoice{Profile: "judge-claude", Adapter: "claude", Builder: "claude",
+				Reason: "every judge profile of another family than the builder's failed for this self-review"}},
+		{name: "separate families off", q: Quality{JudgeSeparateFamily: false, JudgeProfiles: []string{"judge-claude", "judge-fake"}},
+			builder: "claude", want: JudgeChoice{Profile: "judge-claude", Adapter: "claude", Builder: "claude",
+				Reason: QualityJudgeSeparateFamilyKey + " is off"}},
+		{name: "off but the first is another family", q: Quality{JudgeSeparateFamily: false, JudgeProfiles: []string{"judge-fake"}},
+			builder: "claude", want: JudgeChoice{Profile: "judge-fake", Adapter: "fake", Builder: "claude", SeparateFamily: true}},
+		{name: "no profile listed", q: Quality{JudgeSeparateFamily: true}, builder: "claude", wantNone: true},
+		{name: "only builder listed", q: Quality{JudgeProfiles: []string{"judge-claude"}}, builder: "claude", builderProfile: "judge-claude", wantNone: true},
+		{name: "skip builder with preference off", q: Quality{JudgeProfiles: []string{"judge-claude", "judge-fake"}}, builder: "claude", builderProfile: "judge-claude",
+			want: JudgeChoice{Profile: "judge-fake", Adapter: "fake", Builder: "claude", SeparateFamily: true}},
+		{name: "skip builder with preference on", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude", "judge-claude-b"}}, builder: "claude", builderProfile: "judge-claude",
+			want: JudgeChoice{Profile: "judge-claude-b", Adapter: "claude", Builder: "claude", Reason: "no judge profile of another family than the builder's is listed"}},
+		{name: "distinct profile failed", q: Quality{JudgeProfiles: []string{"judge-claude", "judge-fake"}}, builder: "claude", builderProfile: "judge-claude", failed: []string{"judge-fake"}, wantNone: true},
+		{name: "unknown builder", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude"}},
+			want: JudgeChoice{Profile: "judge-claude", Adapter: "claude", Reason: "the builder's family is unknown"}},
+		{name: "every profile failed", q: Quality{JudgeSeparateFamily: true, JudgeProfiles: []string{"judge-claude", "judge-fake"}},
+			builder: "claude", failed: []string{"judge-fake", "judge-claude"}, wantNone: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.q.Judge(profiles, tc.builder, tc.builderProfile, tc.failed)
+			if tc.wantNone {
+				if !errors.Is(err, ErrNoJudge) {
+					t.Errorf("Judge() = %+v, %v; want ErrNoJudge", got, err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Errorf("Judge(builder %q, failed %v) = %+v, %v; want %+v", tc.builder, tc.failed, got, err, tc.want)
+			}
+		})
 	}
 }

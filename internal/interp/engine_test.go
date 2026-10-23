@@ -77,8 +77,23 @@ func newEnv(t *testing.T, b backend, exps ...interptest.Expectation) *env {
 
 func newEnvDefinition(t *testing.T, b backend, def *workflow.Definition, exps ...interptest.Expectation) *env {
 	t.Helper()
+	return newEnvTasks(t, b, def, nil, exps...)
+}
+
+// newEnvTasks is newEnvDefinition with the tasks before app/t7 created first, and app/t7 changed by edit when it is
+// not nil.
+func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*store.Task), exps ...interptest.Expectation) *env {
+	t.Helper()
 	h, mailbox := b.new(t)
 	task := store.Task{Repository: "app", ID: "t7", Title: "Straight path", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)}
+	if edit != nil {
+		earlier := task
+		earlier.ID, earlier.Title = "t3", "An earlier task"
+		if _, err := h.CreateTask("task:app:t3", earlier); err != nil {
+			t.Fatal(err)
+		}
+		edit(&task)
+	}
 	if _, err := h.CreateTask("task:app:t7", task); err != nil {
 		t.Fatal(err)
 	}

@@ -54,6 +54,8 @@ type Process struct {
 	// Store and StateDir are the Director store and the absolute state
 	// directory, as `artisan start --store --state` takes them.
 	Store, StateDir string
+	// Copy is the Director copy for LaunchFiles; Launch uses its adapter spec's copy.
+	Copy string
 	// StallInterval, when positive, is passed as `--stall-interval`, so the launcher sends the Director
 	// worker-stalled from its heartbeat (Config.StallInterval); the engine passes its own.
 	StallInterval time.Duration
@@ -88,6 +90,25 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	if as.Identity != at.Identity() || filepath.Clean(as.ResultFile) != at.Files().ResultFile {
 		return interp.Handle{}, fmt.Errorf("launch: spec for %s, result %s, is not attempt %s laid out under %s", as.Identity, as.ResultFile, at.Key, p.StateDir)
 	}
+	return p.launchFiles(ctx, at.Key, spec.Adapter, as.PromptFile, as.WorkDir, as.Copy, as.Profile, as.Model, as.Effort)
+}
+
+// LaunchFiles is Launch for attempt k given as its adapter name, absolute prompt file and absolute working directory
+// rather than an interpreter spec, for an attempt the interpreter does not render, such as a delivered task's judge
+// (docs/contracts/quality.md); it refuses an adapter interp.CheckAdapter refuses, a relative path and an ended
+// context, starting nothing, and is otherwise Launch.
+func (p *Process) LaunchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, promptFile, workDir string) (interp.Handle, error) {
+	return p.launchFiles(ctx, k, adapterName, promptFile, workDir, p.Copy, "", "", "")
+}
+
+func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, promptFile, workDir, copyDir, profile, model, effort string) (interp.Handle, error) {
+	if err := interp.CheckAdapter(adapterName); err != nil {
+		return interp.Handle{}, fmt.Errorf("launch: %w", err)
+	}
+	if !filepath.IsAbs(promptFile) || !filepath.IsAbs(workDir) {
+		return interp.Handle{}, fmt.Errorf("launch: prompt file %q and working directory %q must be absolute", promptFile, workDir)
+	}
+	at := Attempt{Store: p.Store, StateDir: p.StateDir, LockWait: p.LockWait, Key: k}
 	if err := ctx.Err(); err != nil {
 		return interp.Handle{}, err
 	}
@@ -95,25 +116,24 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	if err != nil {
 		return interp.Handle{}, err
 	}
-	k := at.Key
 	build := func() *exec.Cmd {
 		cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
 			"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
-			"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir)
-		if as.Copy != "" {
-			cmd.Args = append(cmd.Args, "--copy", as.Copy, "--advance")
+			"--adapter", adapterName, "--prompt", promptFile, "--workdir", workDir)
+		if copyDir != "" {
+			cmd.Args = append(cmd.Args, "--copy", copyDir, "--advance")
 		}
 		if p.StallInterval > 0 {
 			cmd.Args = append(cmd.Args, "--stall-interval", p.StallInterval.String())
 		}
-		if as.Profile != "" {
-			cmd.Args = append(cmd.Args, "--profile", as.Profile)
+		if profile != "" {
+			cmd.Args = append(cmd.Args, "--profile", profile)
 		}
-		if as.Model != "" {
-			cmd.Args = append(cmd.Args, "--model", as.Model)
+		if model != "" {
+			cmd.Args = append(cmd.Args, "--model", model)
 		}
-		if as.Effort != "" {
-			cmd.Args = append(cmd.Args, "--effort", as.Effort)
+		if effort != "" {
+			cmd.Args = append(cmd.Args, "--effort", effort)
 		}
 		cmd.Env = append(os.Environ(), p.Env...)
 		cmd.Stdout, cmd.Stderr = log, log
@@ -128,7 +148,7 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	id, identityErr := artisan.Lookup(cmd.Process.Pid)
 	c := &child{at: at, identity: id, exited: make(chan struct{})}
 	go func() { _ = cmd.Wait(); close(c.exited) }()
-	h := interp.Handle{Identity: as.Identity, Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
+	h := interp.Handle{Identity: at.Identity(), Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
 	if err := errors.Join(identityErr, p.owned(ctx, c)); err != nil {
 		if !errors.Is(err, errReleased) {
 			_ = p.stop(c, true)

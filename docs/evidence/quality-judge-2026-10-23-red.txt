@@ -1,0 +1,138 @@
+# Judge session and fix line red runs, 2026-10-23, before the implementation (Linux)
+
+## go test -run TestQualityJudge ./internal/config, against a stub Quality.Judge returning nothing and no quality_judge_profiles setting
+--- FAIL: TestQualityJudgeProfiles (<t>s)
+    quality_test.go:180: set: Quality() = {SelfReview:false SizeBudgetLines:400 SizeBudgetFiles:15 AuditSample:5 ReferenceRuns:off ReferenceRunsPerTask:3 ReferenceCostCapUSD: JudgeSeparateFamily:true JudgeProfiles:[] SkillEditsNeedApproval:true}, <nil>; want judge-fake then judge-claude
+    quality_test.go:190: quality_judge_profiles = "judge-missing": Parse error <nil>, want one naming quality_judge_profiles
+    quality_test.go:190: quality_judge_profiles = "judge-fake,judge-fake": Parse error <nil>, want one naming quality_judge_profiles
+    quality_test.go:190: quality_judge_profiles = "judge-fake,,judge-claude": Parse error <nil>, want one naming quality_judge_profiles
+    quality_test.go:190: quality_judge_profiles = "": Parse error <nil>, want one naming quality_judge_profiles
+    quality_test.go:190: quality_judge_profiles = "Judge-Fake": Parse error <nil>, want one naming quality_judge_profiles
+    quality_test.go:195: Quality of an unparsed config naming an undeclared profile succeeded
+--- FAIL: TestQualityJudge (<t>s)
+    --- FAIL: TestQualityJudge/another_family_first (<t>s)
+        quality_test.go:245: Judge(builder "claude", failed []) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile:judge-fake Adapter:fake Builder:claude SeparateFamily:true Reason:}
+    --- FAIL: TestQualityJudge/only_the_same_family (<t>s)
+        quality_test.go:245: Judge(builder "claude", failed []) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile:judge-claude Adapter:claude Builder:claude SeparateFamily:false Reason:no judge profile of another family than the builder's is listed}
+    --- FAIL: TestQualityJudge/another_family_failed (<t>s)
+        quality_test.go:245: Judge(builder "claude", failed [judge-fake]) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile:judge-claude Adapter:claude Builder:claude SeparateFamily:false Reason:every judge profile of another family than the builder's failed for this self-review}
+    --- FAIL: TestQualityJudge/separate_families_off (<t>s)
+        quality_test.go:245: Judge(builder "claude", failed []) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile:judge-claude Adapter:claude Builder:claude SeparateFamily:false Reason:quality_judge_separate_family is off}
+    --- FAIL: TestQualityJudge/off_but_the_first_is_another_family (<t>s)
+        quality_test.go:245: Judge(builder "claude", failed []) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile:judge-fake Adapter:fake Builder:claude SeparateFamily:true Reason:}
+    --- FAIL: TestQualityJudge/no_profile_listed (<t>s)
+        quality_test.go:245: Judge(builder "claude", failed []) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile: Adapter:fake Builder:claude SeparateFamily:true Reason:}
+    --- FAIL: TestQualityJudge/no_profile_listed,_same_family (<t>s)
+        quality_test.go:245: Judge(builder "fake", failed []) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile: Adapter:fake Builder:fake SeparateFamily:false Reason:no judge profile is listed in quality_judge_profiles}
+    --- FAIL: TestQualityJudge/unknown_builder (<t>s)
+        quality_test.go:245: Judge(builder "", failed []) = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want {Profile:judge-claude Adapter:claude Builder: SeparateFamily:false Reason:the builder's family is unknown}
+    --- FAIL: TestQualityJudge/every_profile_failed (<t>s)
+        quality_test.go:240: Judge() = {Profile: Adapter: Builder: SeparateFamily:false Reason:}, <nil>; want ErrNoJudge
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	<t>s
+FAIL
+
+## go test -run 'TestCreateTaskValidates|TestJudgeAttempts|TestCreateTaskFixes|TestValidationRefusals' ./internal/store ./internal/workflow, against Task.Fixes and workflow.JudgeStep added with no rule
+--- FAIL: TestCreateTaskValidates (<t>s)
+    --- FAIL: TestCreateTaskValidates/bad_fixed_task (<t>s)
+        records_test.go:39: err = <nil>, want ErrInvalid
+    --- FAIL: TestCreateTaskValidates/fixes_itself (<t>s)
+        records_test.go:39: err = <nil>, want ErrInvalid
+--- FAIL: TestJudgeAttempts (<t>s)
+    records_test.go:131: judge attempt on an open task: err = <nil>, want ErrInvalid
+--- FAIL: TestCreateTaskFixes (<t>s)
+    records_test.go:161: fixing a missing task: err = <nil>, want ErrNotFound
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	<t>s
+--- FAIL: TestValidationRefusals (<t>s)
+    --- FAIL: TestValidationRefusals/reserved_id (<t>s)
+        workflow_test.go:135: accepted
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/workflow	<t>s
+FAIL
+
+## go test -run TestRunAdvancesAJudgeAttempt ./internal/launch, after the store rule, against the launcher's step done and task start advance
+--- FAIL: TestRunAdvancesAJudgeAttemptWithQualityJudged (<t>s)
+    --- FAIL: TestRunAdvancesAJudgeAttemptWithQualityJudged/succeeded (<t>s)
+        advance_test.go:246: advance argv ["step" "done" "--copy" "/the/copy" "--repo" "app" "--task" "t-1" "--step" "quality-judge" "--attempt" "1" "--result" "<state>/app/t-1/quality-judge-1/result.json"]
+            want ["quality" "judged" "--copy" "/the/copy" "--repo" "app" "--task" "t-1" "--attempt" "1"]
+        advance_test.go:246: advance events [map[at:<time> command:step done event:advance exit:0]], want one naming quality judged
+    --- FAIL: TestRunAdvancesAJudgeAttemptWithQualityJudged/no_result (<t>s)
+        advance_test.go:246: advance argv ["task" "start" "--copy" "/the/copy" "--repo" "app" "t-1"]
+            want ["quality" "judged" "--copy" "/the/copy" "--repo" "app" "--task" "t-1" "--attempt" "1"]
+        advance_test.go:246: advance events [map[at:<time> command:task start event:advance exit:0]], want one naming quality judged
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	<t>s
+FAIL
+
+## go test ./internal/quality, against the package's stub bodies
+--- FAIL: TestReadSelfReview (<t>s)
+    quality_test.go:64: ReadSelfReview = {Repository: Task: Number:0 Head: Pending:map[]}, want {Repository:app Task:t-1 Number:1 Head:9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b Pending:map[B2:score D1:score G2:gate]}
+    quality_test.go:74: another schema: err = <nil>, want ErrSelfReview
+    quality_test.go:74: no task: err = <nil>, want ErrSelfReview
+    quality_test.go:74: no number: err = <nil>, want ErrSelfReview
+    quality_test.go:74: a short head: err = <nil>, want ErrSelfReview
+    quality_test.go:74: not json: err = <nil>, want ErrSelfReview
+--- FAIL: TestParseAnswer (<t>s)
+    quality_test.go:105: ParseAnswer = {MergeAsIs: Criteria:[]}
+    quality_test.go:124: a criterion not due: err = <nil>, want ErrAnswer
+    quality_test.go:124: a missing one: err = <nil>, want ErrAnswer
+    quality_test.go:124: a negative score: err = <nil>, want ErrAnswer
+    quality_test.go:124: a score on a gate: err = <nil>, want ErrAnswer
+    quality_test.go:124: two objects: err = <nil>, want ErrAnswer
+    quality_test.go:124: a duplicate: err = <nil>, want ErrAnswer
+    quality_test.go:124: a score above 3: err = <nil>, want ErrAnswer
+    quality_test.go:124: a fractional one: err = <nil>, want ErrAnswer
+    quality_test.go:124: a pass on a score: err = <nil>, want ErrAnswer
+    quality_test.go:124: both: err = <nil>, want ErrAnswer
+    quality_test.go:124: blank evidence: err = <nil>, want ErrAnswer
+    quality_test.go:124: merge maybe: err = <nil>, want ErrAnswer
+    quality_test.go:124: an unknown field: err = <nil>, want ErrAnswer
+    quality_test.go:128: an answer over 1 MiB: err = <nil>, want ErrAnswer
+--- FAIL: TestStartRefusals (<t>s)
+    quality_test.go:300: an open task: err = <nil>, want ErrNotDelivered
+    quality_test.go:303: a missing self-review: err = <nil>, want ErrSelfReview
+    quality_test.go:308: a self-review numbered 1 read as 3: err = <nil>, want ErrSelfReview
+    quality_test.go:312: nothing pending: err = <nil>, want ErrSelfReview
+    quality_test.go:321: a second start while the first runs: err = <nil>, want ErrJudgeRunning
+    quality_test.go:324: launches [], want the first only
+--- FAIL: TestStartLaunchesAJudgeOfAnotherFamily (<t>s)
+    quality_test.go:339: Start = {Attempt:0 Review:0 Judge:{Profile: Adapter: Builder: SeparateFamily:false Reason:}}, want attempt 1 of review 1 judged by {Profile:judge-fake Adapter:fake Builder:claude SeparateFamily:true Reason:}
+    quality_test.go:342: judge attempts [], want one running
+    quality_test.go:346: launches [], want one
+--- FAIL: TestStartPassesOverAFailedProfile (<t>s)
+    quality_test.go:382: store: finish-attempt fail: attempt 1 of app/t-1 step "quality-judge": record not found
+--- FAIL: TestStartReplaysAnUnlaunchedAttempt (<t>s)
+    quality_test.go:412: a failed launch was not an error
+--- FAIL: TestStartUnderACap (<t>s)
+    quality_test.go:439: Start over the daily cap: err = <nil>, want the daily cap's refusal
+--- FAIL: TestTakeRecordsTheJudgement (<t>s)
+    quality_test.go:473: Take of no attempt: err = <nil>, want ErrNotJudge
+    quality_test.go:479: Take of a running attempt: err = <nil>, want ErrJudgeRunning
+    quality_test.go:481: store: finish-attempt finish-quality-judge-1: attempt 1 of app/t-1 step "quality-judge": record not found
+--- FAIL: TestTakeRefusesAnAnswer (<t>s)
+    quality_test.go:519: store: finish-attempt finish-quality-judge-1: attempt 1 of app/t-1 step "quality-judge": record not found
+--- FAIL: TestTakeTellsAFailedJudge (<t>s)
+    quality_test.go:539: open <state>/app/t-1/quality-judge-1/.result.json.457276925.tmp: no such file or directory
+--- FAIL: TestAgreement (<t>s)
+    quality_test.go:618: Agreement = {Audited:0 Judged:0 Pairs:[] Total:{Paired:0 Agreed:0} SeparateFamily:{Paired:0 Agreed:0} SameFamily:{Paired:0 Agreed:0}}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/quality	<t>s
+FAIL
+
+## go test -run TestPublishNamesTheFixedTask ./internal/interp, against the publish body without the fix line (Advance trace lines omitted)
+--- FAIL: TestPublishNamesTheFixedTask (<t>s)
+    --- FAIL: TestPublishNamesTheFixedTask/double (<t>s)
+        deliver_test.go:134: fixes true: published bodies ["Guildhall task app/t7, published by step publish at 0123456789abcdef0123456789abcdef01234567.\n"], want one with the fix line only when the task fixes one
+    --- FAIL: TestPublishNamesTheFixedTask/store (<t>s)
+        deliver_test.go:134: fixes true: published bodies ["Guildhall task app/t7, published by step publish at 0123456789abcdef0123456789abcdef01234567.\n"], want one with the fix line only when the task fixes one
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	<t>s
+FAIL
+
+## go test -run 'TestTaskNewFixes|TestTaskUsageErrors' ./internal/cli, before task new took --fixes (usage text cut)
+--- FAIL: TestTaskNewFixes (<t>s)
+    task_test.go:448: an unknown fixed task: exit 2, stdout "", stderr "guildhall: flag provided but not defined: -fixes\n…"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	<t>s
+FAIL

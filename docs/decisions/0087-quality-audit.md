@@ -26,8 +26,7 @@ It is about one in N rather than exactly every Nth: a counter of delivered tasks
 ## Not yet
 
 Reference runs are not sampled, because the reference runner does not exist yet; it will open the same decision for each of its runs.
-Agreement between the judge and these answers is not computed yet, because the judge session is later work.
-The report's fix-PR link line, which C5 and E2 read, is not part of this change.
+Agreement between the judge and these answers was not computed by this change, because the judge session was later work; [the judge decision](quality-judge.md) computes it and adds the report's fix-PR link line, which C5 and E2 read.
 
 Consequences: by default a copy gains, for about one in five merged tasks, one decision after the merge and one `decision` message to the Director, even with self-review off.
 Setting `quality_audit_sample` to 0 disables those audits; the default values and the config digest of a copy that sets nothing are unchanged.

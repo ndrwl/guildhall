@@ -40,7 +40,7 @@ func files(t *testing.T) []string {
 }
 
 func TestReleaseHoldsTheRolesAndAGuidePerArtisanKind(t *testing.T) {
-	want := []string{"roles/artisan.md", "roles/director.md"}
+	want := []string{"roles/artisan.md", "roles/director.md", "roles/judge.md"}
 	for _, k := range workflow.Kinds() {
 		if slices.Contains(k.Actors, workflow.ArtisanActor) {
 			want = append(want, "stages/"+k.Type+".md")

@@ -342,7 +342,7 @@ The document has these sections:
   A config that exists but cannot be read gives `config_error` in place of the rails.
   The identity's liveness is not probed yet.
 - `mode`: `{"name":"standalone"}` until managed mode lands.
-- `quality`: the effective [quality settings](configuration.md#quality-settings), `self_review`, `size_budget_lines`, `size_budget_files`, `audit_sample`, `reference_runs`, `reference_runs_per_task`, `reference_cost_cap_usd` when set, `judge_separate_family` and `skill_edits_need_approval`, when the copy has a config; absent when it has none or its config cannot be read, which `guard_rails` reports as `config_error`.
+- `quality`: the effective [quality settings](configuration.md#quality-settings), `self_review`, `size_budget_lines`, `size_budget_files`, `audit_sample`, `reference_runs`, `reference_runs_per_task`, `reference_cost_cap_usd` when set, `judge_separate_family`, `judge_profiles` when set and `skill_edits_need_approval`, when the copy has a config; absent when it has none or its config cannot be read, which `guard_rails` reports as `config_error`.
 - `tasks`: every task in repository then id order, with its `state` (`open`, `done` or `cancelled`), bound `workflow`, and:
   - `next`: the `next.json` the task's last advance wrote beside its task lock, at `<state>/<repo>/<task>/next.json`, copied as JSON exactly as written; absent when there is none.
     A file that is not JSON is reported as `next_error` instead.
@@ -358,8 +358,12 @@ The document has these sections:
   Items come in this order, and within a kind by repository, task, then step or message order:
   1. `advance`: an open task's step whose latest attempt is finished while the task's `next.json` still says `"wait":"attempt"` for that attempt, as a [watcher](running.md#the-watcher) whose advance failed leaves it; `guildhall step done --repo <r> --task <t> --step <s> --attempt <n> --result <file>` for a `succeeded` attempt whose result file exists, otherwise `guildhall task start --repo <r> <t>`.
      A [Director stage](interpreter.md#director-stages) whose attempt is unfinished but has a published result, as a `step finish` that stopped before its advance leaves it, is also an `advance` item, with that `step done` command, whether or not its stage message was read.
+     Every settled [judge](quality.md#running-it) attempt without a durable intake notification receipt is also an `advance` item, even on a done task or after newer judge attempts: `guildhall quality judged --repo <r> --task <t> --attempt <n>`.
+     An acknowledged intake notification still counts as completed intake.
   2. `retry`, `retryable: true`: an open task's step whose latest attempt finished `failed` or `stopped`; `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`, to which the Director adds `--reason`.
-  3. `resume`, `resume: true`: a running attempt of an open task classified `stuck`, `exited` or `unknown`; `guildhall artisan resume --repo <r> --task <t> --step <s> --attempt <n>`.
+     An unfinished judge without ownership or a launch marker is also a `retry` item, even on a done task: `guildhall quality judge --repo <r> --review <n> <t>` uses the published preparation's review number.
+     Without a readable published review number, the command omits `--review` and the reason explicitly requests that the Director supply it; partial preparation is not used.
+  3. `resume`, `resume: true`: an unfinished attempt of an open task, or a judge attempt even on a done task, classified `stuck`, `exited` or `unknown` (also a judge with terminal files not yet settled in the store); `guildhall artisan resume --repo <r> --task <t> --step <s> --attempt <n>`.
   4. `stalled`: an unread `worker-stalled` message; `guildhall messages read <id>`.
   5. `decision`: an open decision; `guildhall decide show --repo <r> --task <t> --decision <id>`.
   6. `messages`: one item counting the other unread messages; `guildhall messages list director`.

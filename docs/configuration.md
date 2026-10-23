@@ -64,11 +64,12 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_reference_runs` | When the reference task set runs on a real model: `off`, the default, or `on-change-and-release`, for each workflow-change proposal and each release tag. |
 | `quality_reference_runs_per_task` | How many times each reference task runs per workflow version: a positive whole number, default 3. |
 | `quality_reference_cost_cap_usd` | The cap on one reference evaluation's cost in US dollars, such as `"25"` or `"12.50"`; unset by default, and required while `quality_reference_runs` is not `off`. |
-| `quality_judge_separate_family` | `on`, the default, asks for a judge of a different model family from the builder when quota allows; `off` lets the judge share the builder's family, though never its session. |
+| `quality_judge_profiles` | The declared [profiles](#profiles) a [judge session](quality.md#running-it) may run as, in order of preference, separated by commas, such as `"judge-codex, judge-opus"`; a profile whose judge of the same self-review failed is passed over, so a judge out of quota falls back to the next; the builder's profile is excluded, and an unset list or no eligible profile refuses the judge with `ErrNoJudge`; a name the config does not declare, or one named twice, is refused. |
+| `quality_judge_separate_family` | `on`, the default, prefers the first eligible listed judge profile of a different model family from the builder's when the builder's historical adapter is known, a family being a profile's adapter; otherwise it takes the first eligible profile. See [running the judge](quality.md#running-it) for the current historical-family limitation. `off` takes the first eligible listed profile, never the builder's session. |
 | `quality_skill_edits_need_approval` | `on`, the default for the first cycle, treats an edit to the review, build or spec skill text as a design change that needs the Guildmaster's approval; `off` treats it as any other lesson. |
 
-`quality_self_review` and the size budget are read by the self-review skill, and `quality_audit_sample` by deliver as it closes a merged task; the other settings are read by nothing yet.
-The reference-run, judge and skill-edit settings are parsed and validated so a copy can set them now; the reference runner, the judge session and the lesson-proposal shape that will read them are later work.
+`quality_self_review` and the size budget are read by the self-review skill, `quality_audit_sample` by deliver as it closes a merged task, and the judge settings by [`quality judge`](quality.md#running-it) ([decision](decisions/quality-judge.md)); the other settings are read by nothing yet.
+The reference-run and skill-edit settings are parsed and validated so a copy can set them now; the reference runner and the lesson-proposal shape that will read them are later work.
 
 ### Repositories
 
@@ -94,6 +95,7 @@ No workflow can change a repository's merge policy.
 ### Profiles
 
 A profile chooses who runs an Artisan stage whose `profile` setting names it.
+For the settings a judge profile currently applies at runtime, see [running the judge](quality.md#running-it).
 Names are lowercase identifiers, so three review stages can name `reviewer-opus`, `reviewer-opus-b` and `reviewer-astra` and no model name appears in a repository's workflow.
 
 | Key | Meaning |

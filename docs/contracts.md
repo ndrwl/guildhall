@@ -84,6 +84,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/launch/launchtest`](contracts/launch-launchtest.md)
 - [`internal/messaging/messagingtest`](contracts/messaging-messagingtest.md)
 - [`internal/messaging`](contracts/messaging.md)
+- [`internal/quality`](contracts/quality.md)
 - [`internal/reconcile`](contracts/reconcile.md)
 - [`internal/render`](contracts/render.md)
 - [`internal/session`](contracts/session.md)
