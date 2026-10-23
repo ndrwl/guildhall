@@ -15,6 +15,7 @@ import (
 
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/tabcontract"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -40,6 +41,39 @@ type directorTabs struct {
 	startup    map[string]func()
 	sent       []string
 	runs       sync.WaitGroup
+}
+
+func TestDirectorIdleTabCloseContract(t *testing.T) {
+	tabcontract.TestIdleClose(t, func(t *testing.T, scenario string) tabcontract.CloseFixture {
+		h := newDirectorTabs()
+		ref, err := h.CreateTab(context.Background(), herdr.TabSpec{WorkspaceID: "w1", Label: "director"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := ref
+		switch scenario {
+		case "busy":
+			h.busy[ref.PaneID] = -1
+		case "transient-busy":
+			h.busy[ref.PaneID] = 1
+		case "session":
+			ref.Session = "other"
+		case "workspace":
+			ref.WorkspaceID = "w2"
+		case "tab":
+			ref.TabID = "w1:t999"
+		case "pane":
+			ref.PaneID = "w1:p999"
+		}
+		return tabcontract.CloseFixture{
+			Close: func(ctx context.Context) error { return h.CloseTab(ctx, ref) },
+			Present: func() bool {
+				h.mu.Lock()
+				defer h.mu.Unlock()
+				return !slices.Contains(h.closed, original)
+			},
+		}
+	})
 }
 
 func newDirectorTabs() *directorTabs {
@@ -92,11 +126,17 @@ func (d *directorTabs) AdoptTab(ctx context.Context, ref adapter.TabRef) error {
 }
 
 func (d *directorTabs) CloseTab(ctx context.Context, ref adapter.TabRef) error {
-	if err := d.AdoptTab(ctx, ref); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if !slices.Contains(d.tabs, ref) || slices.Contains(d.closed, ref) {
+		return &herdr.APIError{Code: "tab_not_found", Message: "tab not found"}
+	}
+	if d.busy[ref.PaneID] != 0 || d.startup[ref.PaneID] != nil {
+		return errors.New("pane is not an idle shell; tab left open")
+	}
 	d.closed = append(d.closed, ref)
 	return nil
 }

@@ -7,8 +7,58 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/adapter/tabcontract"
 	"github.com/ndrwl/guildhall/internal/herdr"
 )
+
+func TestHerdrIdleTabCloseContract(t *testing.T) {
+	tabcontract.TestIdleClose(t, func(t *testing.T, scenario string) tabcontract.CloseFixture {
+		dir := t.TempDir()
+		t.Setenv(tabsStubEnv, dir)
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := herdr.New(herdr.Options{Session: "lab", Command: []string{exe}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := NewHerdrTabs(c)
+		ref, err := h.CreateTab(context.Background(), herdr.TabSpec{WorkspaceID: "w1", Label: "director"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "lab-tab-"+strings.ReplaceAll(ref.TabID, ":", "_"))
+		switch scenario {
+		case "busy", "transient-busy":
+			state := "busy"
+			if scenario == "transient-busy" {
+				state = "startup"
+			}
+			if err := os.WriteFile(filepath.Join(dir, "lab-pane-"+strings.ReplaceAll(ref.PaneID, ":", "_")), []byte(state), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		case "session":
+			ref.Session = "other"
+		case "workspace":
+			ref.WorkspaceID = "w2"
+		case "tab":
+			ref.TabID = "w1:t999"
+		case "pane":
+			ref.PaneID = "w1:p999"
+		}
+		return tabcontract.CloseFixture{
+			Close: func(ctx context.Context) error { return h.CloseTab(ctx, ref) },
+			Present: func() bool {
+				_, err := os.Stat(path)
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+				return err == nil
+			},
+		}
+	})
+}
 
 func TestIdleTabCloseRefusesUnsafeIdentity(t *testing.T) {
 	for _, kind := range []string{"unowned", "busy", "split", "moved", "moved-pane", "cancelled"} {
