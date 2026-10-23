@@ -6,7 +6,7 @@ The Director's first real task needs its builders to run the model and effort th
 ## By value, beside the grant reference
 
 The interpreter puts the profile's model and effort on `interp.Spec` as an `adapter.Settings`, mapped unchanged to `adapter.Spec`; `launch.Process` passes them to `artisan start` as `--model` and `--effort`, each only when set, and the runtime's command passes them on: the Claude wrapper to Claude Code's own `--model` and `--effort`, the fake to a record tests read ([runtime settings](../adapters.md#runtime-settings)).
-An unset one is not passed, so it stays the runtime's own default rather than a value Guildhall invents.
+For current defaults and inheritance, see [configuration settings](../configuration.md#settings) and [runtime settings](../adapters.md#runtime-settings).
 
 [Allowed tools travel by reference](0089-artisan-allow-rules.md) so that no argv can widen what a session may do.
 A model and effort widen nothing, so they need no such indirection, and taking them from the profile the engine already resolved, rather than reloading the copy's `config.toml` in the wrapper, keeps the launch the engine checked the launch that runs.
@@ -19,5 +19,5 @@ The supported values and admission points belong to [runtime settings](../adapte
 Claude model validation prevents a model from being read as another flag but leaves resolving aliases and names to Claude Code itself.
 Config parsing does not check them, because what is valid is each runtime's.
 
-The Director's own session passes `[director] model` but still not its `effort`, as before; carrying that through is a separate change.
+The Director's own session now follows [runtime settings](../adapters.md#runtime-settings), extended by the [effort-default decision](effort-default.md).
 The quality judge's selection rules are out of scope here.

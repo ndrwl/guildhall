@@ -129,7 +129,7 @@ Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <fi
 claude --print <instruction> --output-format json --permission-mode acceptEdits [--model <model>] [--effort <level>] [--settings <settings file>] --add-dir <model directory>
 ```
 
-- `--model` and `--effort` are the profile's effective [runtime settings](#runtime-settings), each passed only when nonempty: an unset model uses Claude Code's default, while unset profile effort inherits Guildhall's `default_effort` (`medium` by default).
+- `--model` and `--effort` are the profile's effective [runtime settings](#runtime-settings), each passed only when nonempty.
 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
@@ -194,7 +194,7 @@ Neither mode has been run yet; they are part of the live acceptance before the D
 
 A profile's [`model` and `effort`](configuration.md#profiles) travel by value with each attempt the profile runs: the interpreter puts them on `interp.Spec`, mapped unchanged to `adapter.Spec`, and `launch.Process` passes them to `artisan start` as `--model` and `--effort`, each only when set, which gives them to the runtime.
 An unset model is the runtime's own default.
-Before validation and launch, an unset or empty profile effort inherits the config's effective [`default_effort`](configuration.md#settings), `medium` when absent; explicit profile effort wins.
+Before validation and launch, the interpreter resolves profile effort using the [configuration fallback rules](configuration.md#settings).
 Low-level adapter specs and direct `artisan start` flags do not resolve configuration defaults themselves; empty settings there still mean the runtime's defaults.
 Each runtime says which settings it can honour, `runtimes.Runtime.CheckSettings`, and refuses any other with `adapter.ErrUnsupportedSetting` and the reason, never running on a default instead:
 
@@ -205,7 +205,7 @@ Each runtime says which settings it can honour, `runtimes.Runtime.CheckSettings`
 
 `task new` checks the workflow's named profiles before recording the task; each interpreter advance (`task start`, `step done` or `step retry`) checks an Artisan step's profile before recording or launching that step's attempt, rather than prechecking every profile in the workflow.
 `director start`'s preflight checks every profile on its `artisans` line, and the runtime's command checks again, so `artisan start` exits 1 for unsupported settings before it owns the attempt.
-The Director's own session takes `[director] model` and `effort`, inheriting the same `default_effort` when effort is empty or the table is absent.
+The Director's own session takes `[director] model` and `effort`, using the same [configuration fallback rules](configuration.md#settings).
 Its preflight's `runtime` line checks those effective settings with the same runtime refusal rules before recording a session, and Claude session construction checks them again.
 Claude passes them as `--model` and `--effort`; the fake Director accepts both and records them as `fake-settings.json` beside its role prompt in the session directory before playing its script.
 

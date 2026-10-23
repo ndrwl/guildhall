@@ -42,7 +42,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 
 | Key | Meaning |
 |---|---|
-| `default_effort` | Fallback effort for the Director session and every Artisan profile with no explicit `effort`: `low`, `medium`, `high`, `xhigh` or `max`, default `medium`; `config.EffectiveEffort` resolves it. Normal managed/local precedence applies, and empty, padded or unknown values in either section are refused even if overridden. An explicit `[director] effort` or profile `effort` replaces this fallback and is checked by its runtime. |
+| `default_effort` | Fallback effort for the Director session (including a positional runtime with no `[director]` table) and workflow Artisan stages whose profile has unset or empty `effort`: `low`, `medium`, `high`, `xhigh` or `max`, default `medium`; `config.EffectiveEffort` resolves it. Normal managed/local precedence applies, and empty, padded or unknown values in either section are refused even if overridden. An explicit `[director] effort` or profile `effort` replaces this fallback and is checked by its runtime. |
 | `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before its launcher, or an advance, sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off, and `config.StallInterval` reads it. |
 | `max_running_attempts` | The [guard rail](director.md#guard-rails) capping how many Artisan attempts may run at once across the Director's repositories: a positive whole number such as `"4"`, the default 4; `config.GuardRails` reads it. |
 | `max_attempts_per_day` | The guard rail capping how many Artisan attempts the Director may start in one UTC day: a positive whole number, the default 40. |
@@ -122,7 +122,7 @@ It belongs to a Director config; a Steward config with one is refused.
 | Key | Meaning |
 |---|---|
 | `adapter` | The runtime adapter, such as `claude`; required to start a session, and a positional runtime overrides it for one command. |
-| `model`, `effort` | Session settings passed to the adapter; an unset `model` uses the runtime's default, and unset or empty `effort` inherits `default_effort` (`medium` by default). See [runtime settings](adapters.md#runtime-settings) for supported values and refusals. |
+| `model`, `effort` | Session [runtime settings](adapters.md#runtime-settings), with effort fallback defined under [settings](#settings). |
 | `role` | A role prompt replacing the copy's `baseline/roles/director.md` and the release's Director role: a relative slash-separated path inside the config file's directory. |
 | `idle_after` | How long a session whose runtime has turn hooks may go with no turn signal and no wake before the supervisor counts the Director as [idle](director.md#the-end-of-a-turn), such as after a turn the captain interrupted: a positive Go duration, `5m` when unset. |
 | `handoff_after_tasks` | [Automatic handoff](director.md#automatic-handoff) every that many tasks finished in a session: a non-negative integer, `0` (off) when unset. |
