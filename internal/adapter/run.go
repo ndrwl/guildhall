@@ -77,8 +77,8 @@ type TabRef struct {
 // there in the host's session and the recorded workspace; it types nothing.
 // Workspaces lists the session's workspaces, in the terminal's order, and
 // CreateWorkspace creates one without taking focus; a created workspace is
-// listed from then on and accepts tabs. Workspaces carry no ownership: any
-// host on the terminal lists and uses them.
+// listed from then on and accepts tabs. Listing workspaces grants no tab
+// ownership: any host on the terminal lists and uses them.
 // Every operation honours its context.
 type TabHost interface {
 	Workspaces(ctx context.Context) ([]herdr.Workspace, error)
@@ -94,16 +94,17 @@ type TabHost interface {
 var errNotOwned = errors.New("tab was not created by this host")
 
 // HerdrTabs is the TabHost backed by a Herdr client. It keeps the client's
-// ownership proof for each tab it created and accepts only those tabs.
+// ownership proof for created or durably adopted tabs and accepts only those.
 type HerdrTabs struct {
-	client *herdr.Client
-	mu     sync.Mutex
-	owned  map[TabRef]herdr.OwnedTab
+	client   *herdr.Client
+	mu       sync.Mutex
+	owned    map[TabRef]herdr.OwnedTab
+	starting map[string]TabRef
 }
 
 // NewHerdrTabs returns a TabHost for client.
 func NewHerdrTabs(client *herdr.Client) *HerdrTabs {
-	return &HerdrTabs{client: client, owned: map[TabRef]herdr.OwnedTab{}}
+	return &HerdrTabs{client: client, owned: map[TabRef]herdr.OwnedTab{}, starting: map[string]TabRef{}}
 }
 
 // Workspaces lists the session's workspaces.
@@ -111,9 +112,20 @@ func (h *HerdrTabs) Workspaces(ctx context.Context) ([]herdr.Workspace, error) {
 	return h.client.WorkspaceList(ctx)
 }
 
-// CreateWorkspace creates a workspace without taking focus.
+// CreateWorkspace creates a workspace without taking focus and captures its
+// starting shell's identity, which the next CreateTab in it will replace.
 func (h *HerdrTabs) CreateWorkspace(ctx context.Context, label, cwd string) (herdr.Workspace, error) {
-	return h.client.WorkspaceCreate(ctx, label, cwd)
+	w, err := h.client.WorkspaceCreate(ctx, label, cwd)
+	if err != nil {
+		return w, err
+	}
+	t := w.InitialTab
+	ref := TabRef{Session: t.Session(), WorkspaceID: t.WorkspaceID(), TabID: t.ID(), PaneID: t.PaneID()}
+	h.mu.Lock()
+	h.owned[ref] = t
+	h.starting[w.ID] = ref
+	h.mu.Unlock()
+	return w, nil
 }
 
 // EnsureWorkspace returns the id of h's first workspace labelled label,
@@ -136,7 +148,10 @@ func EnsureWorkspace(ctx context.Context, h TabHost, label, cwd string) (string,
 	return w.ID, nil
 }
 
-// CreateTab creates a tab without taking focus.
+// CreateTab creates a tab without taking focus. In a workspace this host just
+// created, it waits for the owned starting shell's prompt and closes that shell
+// after the replacement exists. A cleanup failure returns the new tab and an
+// error naming both tabs, leaving the shells open and typing nothing.
 func (h *HerdrTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, error) {
 	t, err := h.client.TabCreate(ctx, spec)
 	if err != nil {
@@ -144,8 +159,19 @@ func (h *HerdrTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, 
 	}
 	ref := TabRef{Session: t.Session(), WorkspaceID: t.WorkspaceID(), TabID: t.ID(), PaneID: t.PaneID()}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.owned[ref] = t
+	starter, ok := h.starting[spec.WorkspaceID]
+	delete(h.starting, spec.WorkspaceID)
+	h.mu.Unlock()
+	if ok {
+		// As for the replacement, allow the starting shell to finish startup.
+		if _, err := (TabLauncher{Host: h}).waitShell(ctx, starter); err != nil {
+			return ref, fmt.Errorf("replacement tab %s created, but starting shell %s left open: %w", ref.TabID, starter.TabID, err)
+		}
+		if err := h.CloseTab(ctx, starter); err != nil {
+			return ref, fmt.Errorf("replacement tab %s created, but starting shell %s left open: %w", ref.TabID, starter.TabID, err)
+		}
+	}
 	return ref, nil
 }
 
@@ -228,6 +254,50 @@ func (h *HerdrTabs) InterruptTab(ctx context.Context, ref TabRef) error {
 		return err
 	}
 	return h.client.InterruptOwnedTab(ctx, t)
+}
+
+// IdleTabCloser is the presentation-only terminal cleanup boundary.
+// CloseTab accepts only a created or durably adopted identity, revalidates it,
+// and refuses a pane whose shell is not idle. Callers must separately prove
+// that any recorded Director session is stopped before invoking it.
+// Closing never updates a task, attempt or session record.
+type IdleTabCloser interface {
+	CloseTab(context.Context, TabRef) error
+}
+
+// CloseTab closes an owned idle shell, never an arbitrary tab selected by label.
+func (h *HerdrTabs) CloseTab(ctx context.Context, ref TabRef) error {
+	if _, err := h.lookup(ref); err != nil {
+		return err
+	}
+	t, err := h.client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID)
+	if err != nil {
+		return err
+	}
+	tab, err := h.client.TabGet(ctx, ref.TabID)
+	if err != nil {
+		return err
+	}
+	if tab.ID != ref.TabID || tab.PaneCount != 1 {
+		return errors.New("tab identity changed or tab has multiple panes; tab left open")
+	}
+	if err := h.client.CheckOwnedPane(ctx, t); err != nil {
+		return err
+	}
+	info, err := h.client.PaneProcessInfo(ctx, ref.PaneID)
+	if err != nil {
+		return err
+	}
+	if !info.ShellIdle() {
+		return errors.New("pane is not an idle shell; tab left open")
+	}
+	if err := h.client.CloseOwnedTab(ctx, t); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	delete(h.owned, ref)
+	h.mu.Unlock()
+	return nil
 }
 
 // TabLauncher starts an Artisan in a new, visible Herdr tab (R1.38).

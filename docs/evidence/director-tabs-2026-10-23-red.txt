@@ -1,0 +1,36 @@
+Contract regression runs, before implementation (2026-10-23).
+
+$ go test ./internal/cli -run '^TestDirectorStartOpensTheDirectorTab$' -count=1
+--- FAIL: TestDirectorStartOpensTheDirectorTab (0.45s)
+    director_tab_test.go:275: closed = []; want only the first stopped Director tab
+FAIL
+FAIL github.com/ndrwl/guildhall/internal/cli 0.457s
+FAIL
+
+$ go test ./internal/adapter -run '^TestNewWorkspaceReplacesOnlyItsOwnedStartingShell$' -count=1
+--- FAIL: TestNewWorkspaceReplacesOnlyItsOwnedStartingShell (0.02s)
+    director_tabs_test.go:26: starting shell still exists: <nil>
+    director_tabs_test.go:29: mutations = []
+    director_tabs_test.go:33: closed an existing workspace's tab: []
+FAIL
+FAIL github.com/ndrwl/guildhall/internal/adapter 0.019s
+FAIL
+
+Self-review added moved-pane and initial-shell-startup regressions before their respective fixes:
+
+$ go test ./internal/adapter -run '^TestIdleTabCloseRefusesUnsafeIdentity/moved-pane$' -count=1
+--- FAIL: TestIdleTabCloseRefusesUnsafeIdentity (0.02s)
+    --- FAIL: TestIdleTabCloseRefusesUnsafeIdentity/moved-pane (0.02s)
+        director_tabs_test.go:58: unsafe close succeeded
+        director_tabs_test.go:61: unsafe close removed tab
+FAIL
+
+$ go test ./internal/adapter -run '^TestNewWorkspaceReplacesOnlyItsOwnedStartingShell$' -count=1
+--- FAIL: TestNewWorkspaceReplacesOnlyItsOwnedStartingShell (0.02s)
+    director_tabs_test.go:93: replacement tab w2:t2 created, but starting shell w2:t1 left open: pane is not an idle shell; tab left open
+FAIL
+FAIL github.com/ndrwl/guildhall/internal/adapter 0.028s
+FAIL
+
+The shared workspace test was subsequently updated to compare listed workspace identity without creation-only tab ownership, and to allow the newly contracted starting-shell close but no typed input.
+Reload assertions retrofit already-correct same-supervisor/same-pane behavior; they passed initially and are not claimed as regression red evidence.

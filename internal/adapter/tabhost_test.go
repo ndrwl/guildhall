@@ -263,6 +263,8 @@ func testWorkspaces(t *testing.T, newHost func(t *testing.T) tabHostUnderTest) {
 		if w.ID == "" || w.Label != "ada" {
 			t.Errorf("created workspace = %+v", w)
 		}
+		// Listing preserves workspace identity, not creation-only tab ownership.
+		w.InitialTab = herdr.OwnedTab{}
 		after, err := h.host.Workspaces(ctx)
 		if err != nil || len(after) != len(before)+1 || !slices.Contains(after, w) {
 			t.Errorf("workspaces = %+v, %v; want %+v and %d before it", after, err, w, len(before))
@@ -274,8 +276,10 @@ func testWorkspaces(t *testing.T, newHost func(t *testing.T) tabHostUnderTest) {
 		if err != nil || ref.WorkspaceID != w.ID {
 			t.Errorf("tab in the new workspace = %+v, %v", ref, err)
 		}
-		if sent := h.sent(); len(sent) != 0 {
-			t.Errorf("workspace operations reached the terminal: %q", sent)
+		for _, sent := range h.sent() {
+			if sent != "close "+w.ID+":t1" {
+				t.Errorf("workspace operations typed into a terminal: %q", sent)
+			}
 		}
 	})
 	t.Run("ensure creates a workspace once and reuses it by label", func(t *testing.T) {
@@ -443,6 +447,10 @@ func stubHerdr(dir string, args []string) int {
 		if errors.Join(err, f.Close()) != nil {
 			return 2
 		}
+		p, _ := pane(id + ":p1")
+		if os.WriteFile(p, []byte("idle"), 0o600) != nil || os.WriteFile(tabFile(id+":t1"), []byte(id), 0o600) != nil {
+			return 2
+		}
 		fmt.Printf(`{"id":"cli:workspace:create","result":{"root_pane":{"agent_status":"unknown","focused":false,"pane_id":"%[1]s:p1","tab_id":"%[1]s:t1","workspace_id":%[1]q},"tab":{"agent_status":"unknown","focused":false,"label":"1","number":1,"pane_count":1,"tab_id":"%[1]s:t1","workspace_id":%[1]q},"type":"workspace_created","workspace":{"active_tab_id":"%[1]s:t1","agent_status":"unknown","focused":false,"label":%[2]q,"number":%[3]d,"pane_count":1,"tab_count":1,"workspace_id":%[1]q}}}`, id, label, len(workspaces()))
 		return 0
 	case "tab create":
@@ -464,12 +472,34 @@ func stubHerdr(dir string, args []string) int {
 		}
 		fmt.Printf(`{"id":"cli:tab:create","result":{"root_pane":{"pane_id":%[2]q,"tab_id":%[1]q,"workspace_id":%[3]q},"tab":{"label":"x","tab_id":%[1]q,"workspace_id":%[3]q,"pane_count":1},"type":"tab_created"}}`, tab, paneID, ws)
 		return 0
+	case "tab close":
+		if err := os.Remove(tabFile(args[2])); err != nil {
+			return fail("tab_not_found", "tab not found")
+		}
+		logSent("close " + args[2])
+		fmt.Print(`{"id":"cli:tab:close","result":{"type":"tab_closed"}}`)
+		return 0
 	case "tab get":
 		ws, err := os.ReadFile(tabFile(args[2]))
 		if err != nil {
 			return fail("tab_not_found", "tab "+args[2]+" not found")
 		}
-		fmt.Printf(`{"id":"cli:tab:get","result":{"tab":{"agent_status":"unknown","focused":false,"label":"x","number":2,"pane_count":1,"tab_id":%q,"workspace_id":%q},"type":"tab_info"}}`, args[2], ws)
+		count := 1
+		if _, err := os.Stat(tabFile(args[2]) + "-split"); err == nil {
+			count = 2
+		}
+		fmt.Printf(`{"id":"cli:tab:get","result":{"tab":{"agent_status":"unknown","focused":false,"label":"x","number":2,"pane_count":%d,"tab_id":%q,"workspace_id":%q},"type":"tab_info"}}`, count, args[2], ws)
+		return 0
+	case "pane get":
+		if _, ok := pane(args[2]); !ok {
+			return fail("pane_not_found", "pane not found")
+		}
+		ws, suffix, _ := strings.Cut(args[2], ":p")
+		tabID := ws + ":t" + suffix
+		if _, err := os.Stat(tabFile(tabID) + "-moved-pane"); err == nil {
+			tabID = ws + ":t999"
+		}
+		fmt.Printf(`{"id":"cli:pane:get","result":{"pane":{"pane_id":%q,"tab_id":%q,"workspace_id":%q},"type":"pane_info"}}`, args[2], tabID, ws)
 		return 0
 	case "pane process-info":
 		p, ok := pane(args[3])
@@ -478,8 +508,13 @@ func stubHerdr(dir string, args []string) int {
 		}
 		state, _ := os.ReadFile(p)
 		fg := `{"pid":10,"name":"bash","argv":["bash"]}`
-		if string(state) == "busy" {
+		if string(state) == "busy" || string(state) == "startup" {
 			fg = `{"pid":11,"name":"sleep","argv":["sleep","60"]}`
+		}
+		if string(state) == "startup" {
+			if err := os.WriteFile(p, []byte("idle"), 0o600); err != nil {
+				return 2
+			}
 		}
 		fmt.Printf(`{"id":"cli:pane:process_info","result":{"process_info":{"pane_id":%q,"shell_pid":10,"foreground_processes":[%s]},"type":"pane_process_info"}}`, args[3], fg)
 		return 0

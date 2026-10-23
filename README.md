@@ -127,7 +127,7 @@ It needs a small Director config naming your repository; see [configuration and 
 | Advancing a task stage by stage and launching an agent for each stage | Built, with a test-only fake agent and a minimal Claude adapter whose live acceptance is pending |
 | Publishing a task's pull request, waiting for its CI checks and merging it through `gh` | Built, exercised in CI against a stand-in `gh`; live GitHub behaviour is not claimed |
 | Steward rollouts of shared settings over SSH | Built, preview and apply |
-| The conversational Director (`guildhall director start`) | Built in its own Herdr tab or the foreground, exercised in CI against a stand-in Claude Code and a stand-in terminal; pause, resume, stop, handoff notes, reload and the automatic handoff triggers are built; the tab's lab checklist is not yet run |
+| The conversational Director (`guildhall director start`) | Built in its own Herdr tab or the foreground, exercised in CI against a stand-in Claude Code and a stand-in terminal; pause, resume, stop, handoff notes, reload and the automatic handoff triggers are built; see [tab acceptance status](docs/director.md#the-directors-tab) |
 | Running stages that the Director itself performs, and background watching of running agents | Built: the Director finishes its own stages with `step finish`, and each attempt's launcher advances its task when the attempt ends and reports a stalled worker |
 | Docker isolation for agents | Planned |
 | Any runtime or platform supported for real work | Not yet: each needs to pass live acceptance first |

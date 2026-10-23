@@ -7,6 +7,8 @@ Its process boundary, `Client.run`, passes argv and env exactly, keeps stdout an
 Every run ends when its context ends: the program is killed and its output pipes, which a child of the program may still hold, are closed five seconds later at most (`WaitDelay`), so a call is bounded by its caller's context.
 `ReportAgent` reports a pane's agent with `pane report-agent`, passing the resume command after `--` and refusing, before any call, a malformed pane, source, agent or state and a resume command that starts with a path or an option (`ErrResumeArgv`).
 `RecordedTab` makes an `OwnedTab` from a durable Guildhall record once `tab get` shows the tab still in the recorded workspace, refusing malformed ids before any call; a closed tab is not found.
+`CheckOwnedPane` reads `pane get` and refuses a recorded pane moved out of its tab or workspace before presentation cleanup.
+`WorkspaceCreate` validates the workspace, starting tab and root pane from the same creation response and returns the initial tab's ownership proof; `WorkspaceList` never grants tab ownership.
 `ShellCommand` renders argv so the named shell starts exactly that argv, or refuses (D20).
 
 ## Tests

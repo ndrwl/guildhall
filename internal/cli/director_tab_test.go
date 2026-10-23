@@ -15,6 +15,7 @@ import (
 
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/tabcontract"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -35,10 +36,44 @@ type directorTabs struct {
 	workspaces []herdr.Workspace
 	created    []herdr.TabSpec
 	tabs       []adapter.TabRef
+	closed     []adapter.TabRef
 	busy       map[string]int
 	startup    map[string]func()
 	sent       []string
 	runs       sync.WaitGroup
+}
+
+func TestDirectorIdleTabCloseContract(t *testing.T) {
+	tabcontract.TestIdleClose(t, func(t *testing.T, scenario string) tabcontract.CloseFixture {
+		h := newDirectorTabs()
+		ref, err := h.CreateTab(context.Background(), herdr.TabSpec{WorkspaceID: "w1", Label: "director"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := ref
+		switch scenario {
+		case "busy":
+			h.busy[ref.PaneID] = -1
+		case "transient-busy":
+			h.busy[ref.PaneID] = 1
+		case "session":
+			ref.Session = "other"
+		case "workspace":
+			ref.WorkspaceID = "w2"
+		case "tab":
+			ref.TabID = "w1:t999"
+		case "pane":
+			ref.PaneID = "w1:p999"
+		}
+		return tabcontract.CloseFixture{
+			Close: func(ctx context.Context) error { return h.CloseTab(ctx, ref) },
+			Present: func() bool {
+				h.mu.Lock()
+				defer h.mu.Unlock()
+				return !slices.Contains(h.closed, original)
+			},
+		}
+	})
 }
 
 func newDirectorTabs() *directorTabs {
@@ -82,7 +117,28 @@ func (d *directorTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (adapt
 }
 
 func (d *directorTabs) AdoptTab(ctx context.Context, ref adapter.TabRef) error {
-	return errors.New("the wrapper adopts no tab")
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !slices.Contains(d.tabs, ref) || slices.Contains(d.closed, ref) {
+		return &herdr.APIError{Code: "tab_not_found", Message: "tab not found"}
+	}
+	return ctx.Err()
+}
+
+func (d *directorTabs) CloseTab(ctx context.Context, ref adapter.TabRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !slices.Contains(d.tabs, ref) || slices.Contains(d.closed, ref) {
+		return &herdr.APIError{Code: "tab_not_found", Message: "tab not found"}
+	}
+	if d.busy[ref.PaneID] != 0 || d.startup[ref.PaneID] != nil {
+		return errors.New("pane is not an idle shell; tab left open")
+	}
+	d.closed = append(d.closed, ref)
+	return nil
 }
 
 func (d *directorTabs) PaneProcessInfo(ctx context.Context, ref adapter.TabRef) (herdr.ProcessInfo, error) {
@@ -254,6 +310,9 @@ func TestDirectorStartOpensTheDirectorTab(t *testing.T) {
 	}
 	if len(typed) != 2 || len(host.sent) != 2 {
 		t.Errorf("typed %q, sent %q; want one line per start", typed, host.sent)
+	}
+	if len(host.closed) != 1 || host.closed[0] != host.tabs[0] {
+		t.Errorf("closed = %+v; want only the first stopped Director tab", host.closed)
 	}
 	if got := sessions(t, dir); len(got) != 2 || got[0].Pane.Tab != host.tabs[0].TabID || got[1].Pane.Tab != host.tabs[1].TabID {
 		t.Errorf("sessions = %+v", got)

@@ -96,18 +96,26 @@ With `--tab`, `director start` is the wrapper the Guildmaster runs: it opens the
 - It waits until a new session record carries that pane, prints a `tab:` line naming it and then the session as one JSON line, and exits 0.
   If the typed command ends first, as a refused preflight in the tab would, or no such session appears within two minutes, it exits 1 naming the tab.
 
-Guildhall never closes the Director's tab: a failed start leaves it open with its output, and closing it at stop is `director stop`'s decision.
-Herdr gives a new workspace a first tab of its own, which is left open, so on a new workspace the Director's tab is the second, not the first R1.37 asks for ([decision](decisions/0078-director-tab.md#not-yet)).
+Normal operation leaves one Director tab in the workspace ([decision](decisions/director-tab-replacement.md)).
+When Guildhall creates the workspace, it replaces Herdr's starting shell under the [adapter's starting-shell cleanup contract](contracts/adapter.md#contract); a cleanup failure aborts the launch before typing input and names both tabs.
+After a successful start, it retires earlier Director tabs only when a persisted session binding proves ownership, the session is stopped or superseded, its runtime unit is empty, and the tab contains one idle shell pane.
+A failed runtime leaves its output visible until the next successful start replaces its tab; a command that fails before recording a session leaves an unrecorded tab that Guildhall cannot safely reclaim.
+Busy, split, foreign or ambiguous older tabs are left untouched; failures while retiring them are reported on stderr without failing the new session.
+Closing tabs is presentation cleanup only and never changes a task or session record.
+A reload, including `director reload --now` after a handoff note, starts the next runtime under the same supervisor in the same tab and pane, without opening another tab.
+Guildhall never closes the session's own starting workspace or shells in an existing workspace whose identities it did not record, including shells left by older versions.
+Those unrecorded shells need manual cleanup.
 
 CI runs the wrapper over a terminal double whose panes run each typed line with `sh` on Linux and macOS, and over an in-process double on every platform; the [recorded Herdr responses](contracts/adapter.md) prove the Herdr client's side.
 The acceptance is this lab checklist, not CI, in an isolated named Herdr session:
 
 - zsh on WSL, Git Bash on native Windows, and PowerShell 5.1 on native Windows: `director start --tab` creates the workspace labelled with the Director's name once and reuses it, opens the `director <name>` tab without taking focus, the typed line starts the supervisor, and the printed session carries that tab's pane;
 - a second `director start --tab` while that session runs is refused with `director: live`;
-- after the supervisor is killed, `director start --tab` supersedes the old session and opens a new tab;
+- after the supervisor is killed and its runtime is proven ended, `director start --tab` supersedes the old session and replaces its idle tab;
+- first start, a start after a failed or stopped runtime, and plain reload or `reload --now` each leave exactly one Director tab;
 - a message to the Director types its wake line into the new tab.
 
-The checklist has not been run yet; macOS stays CI-only (R1.30).
+The tab lifecycle has been checked in a guarded named Herdr lab with the fake runtime; cross-shell acceptance above remains separate, and macOS stays CI-only (R1.30).
 
 ## Ready
 
