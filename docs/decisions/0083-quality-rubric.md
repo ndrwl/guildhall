@@ -27,10 +27,10 @@ Duplication, complexity and vulnerability tools such as `dupl`, `gocognit` and `
 ## Not yet
 
 The self-review document is written under the copy's `quality/` directory rather than recorded as a task document reference, because no command records a Director document for a delivered task.
-Model-judged scores are left pending with a judge brief, because nothing launches a judge session outside a workflow step yet; the Director never scores its own task.
+This initial increment left model-judged scores pending with a judge brief; for the subsequent judge session, see [Running it](../quality.md#running-it).
 For the remaining quality-practice work after the subsequent audit increment, see [Running it](../quality.md#running-it).
 Pinning actions by SHA also remains later work.
 
 Consequences of this initial increment: the config digest was unchanged, and self-review added a Director step after each merge only when enabled, costing one Director turn and no Artisan attempt.
 The subsequent [audit decision](0087-quality-audit.md) changes the default post-merge behavior independently of self-review.
-A model-judged score stays pending until the judge session lands, so the first self-reviews hold facts, gates and trends only.
+The first self-reviews held facts, gates and trends only.

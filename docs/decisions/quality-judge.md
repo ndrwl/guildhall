@@ -36,5 +36,5 @@ Position-swap consistency needs pairwise comparisons, which only reference evalu
 `task new --fixes <repository>/<task>` records the earlier task whose defect the new one fixes, and publish adds "Fixes a defect introduced by task `<repository>/<task>`." to the pull request body, the line rework (C5) and change failure (E2) count from.
 The task must already exist; the line is recorded with the task, so a republished head carries it unchanged.
 
-Consequences: a judge costs one Artisan attempt per self-review, counted against the guard rails and recorded in the delivered task's spend, so a task's E5 cost includes its judging; a copy that never runs `quality judge` gains nothing and its config digest is unchanged.
+Consequences: judging consumes Artisan attempts, including retries, counted against the guard rails and recorded in the delivered task's spend, so a task's E5 cost includes its judging; a copy that never runs `quality judge` gains nothing and its config digest is unchanged.
 A workflow that names a step `quality-judge` is now refused by `workflow.Validate`; the shipped default and examples name none.
