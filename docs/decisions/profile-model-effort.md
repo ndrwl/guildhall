@@ -15,10 +15,8 @@ The Director's session settings still deny its direct calls to `artisan start` a
 ## Refused, never ignored
 
 Each runtime declares what it can honour, `runtimes.Runtime.CheckSettings`, and refuses anything else with `adapter.ErrUnsupportedSetting` and the reason.
-The Claude adapter takes a model as one word not starting with `-`, so it is never read as another flag, and an effort among the levels Claude Code 2.1.309's `--effort` lists, `low`, `medium`, `high`, `xhigh` and `max`; it does not check that a model exists, since Claude Code resolves aliases and names itself.
-The fake honours everything and records it.
-
-The refusal comes before anything is recorded wherever the setting is known: `task new` for the workflow's profiles, the interpreter's `Engine.CheckSettings` on each launch, which `task start`, `step done` and `step retry` set, and `director start`'s preflight for every profile on its `artisans` line; the runtime's command refuses again, so `artisan start` exits before owning the attempt.
+The supported values and admission points belong to [runtime settings](../adapters.md#runtime-settings).
+Claude model validation prevents a model from being read as another flag but leaves resolving aliases and names to Claude Code itself.
 Config parsing does not check them, because what is valid is each runtime's.
 
 The Director's own session passes `[director] model` but still not its `effort`, as before; carrying that through is a separate change.

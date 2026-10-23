@@ -201,7 +201,8 @@ Each runtime says which settings it can honour, `runtimes.Runtime.CheckSettings`
 | `claude` | One word, not starting with `-`, passed to Claude Code's `--model` as given; Claude Code resolves aliases such as `opus` and full names, and a session on a model it does not know ends with no result | `low`, `medium`, `high`, `xhigh` or `max`, the levels Claude Code 2.1.309's `--effort` takes |
 | `fake` | Any, recorded | Any, recorded |
 
-The refusal comes as early as the setting is known: `task new` and `task start` refuse a workflow whose profile names one before anything is recorded, `director start`'s preflight refuses it in any profile on its `artisans` line, and the runtime's command refuses it again, so `artisan start` exits 1 before it owns the attempt.
+`task new` checks the workflow's named profiles before recording the task; each interpreter advance (`task start`, `step done` or `step retry`) checks an Artisan step's profile before recording or launching that step's attempt, rather than prechecking every profile in the workflow.
+`director start`'s preflight checks every profile on its `artisans` line, and the runtime's command checks again, so `artisan start` exits 1 for unsupported settings before it owns the attempt.
 The Director's own session takes `[director] model` but not yet its `effort` ([Claude adapter](#claude-adapter)).
 
 ## Conformance
