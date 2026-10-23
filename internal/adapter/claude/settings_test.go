@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -17,7 +18,7 @@ import (
 func TestSettingsReachClaude(t *testing.T) {
 	spec := testSpec(t)
 	spec.Settings = adapter.Settings{Model: "opus", Effort: "high"}
-	program := "/opt/claude"
+	program := filepath.Join(t.TempDir(), "claude")
 	cmd, err := claude.Adapter{Executable: "/bin/guildhall", Claude: program}.Command(spec)
 	if err != nil {
 		t.Fatal(err)
