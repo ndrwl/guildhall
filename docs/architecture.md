@@ -106,7 +106,7 @@ flowchart TB
     STORE[("Store: tasks, attempts, decisions,<br/>rulings, ownership, receipts")]:::built
     MSG["Local message inbox"]:::built
     INSP["Inspection<br/>task timeline and files"]:::built
-    DIR["Director orchestration<br/>command"]:::planned
+    DIR["Director orchestration<br/>command"]:::built
     INTERP["Workflow interpreter<br/>Go library"]:::built
     RENDER["Prompt rendering<br/>and skills"]:::built
     WRAP["Artisan launcher<br/>containment, endpoint, stop ladder"]:::built
@@ -130,6 +130,7 @@ flowchart TB
 ```
 
 Green boxes are on `main`; grey dashed boxes are designed but not built, and dotted arrows are connections not yet wired.
+Built does not mean live acceptance has passed: the Director is exercised in CI against stand-ins, and its live acceptance is still pending.
 
 - The **Artisan launcher** owns each attempt's worker in a containment unit on the local machine; see [Artisan commands](artisan.md#commands) for the implemented fake-adapter integration.
   `guildhall task start` launches a real agent through the minimal Claude adapter; delivering stored messages to it is not wired yet.
