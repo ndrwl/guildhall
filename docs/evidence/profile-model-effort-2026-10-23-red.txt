@@ -1,0 +1,97 @@
+# Red run for profile model and effort, against stub bodies (claude and fake CheckSettings honouring everything,
+# no --model or --effort from launch.Process, artisan start, either adapter or the wrapper, interp dropping the profile's
+# settings, no task start or director start check, fake.RecordedSettings and claudetest.Settings unimplemented), on Linux, 2026-10-23.
+# go test ./internal/adapter/claude ./internal/adapter/fake ./internal/adapter/runtimes ./internal/launch ./internal/interp ./internal/cli -run 'Settings|ModelAndEffort'
+# Temporary paths are shortened to <tmp> and <state>, and repeated preflight lines and usage text are cut.
+--- FAIL: TestSettingsReachClaude (0.00s)
+    settings_test.go:28: Command argv = ["/bin/guildhall" "claude-artisan" "--task" "task-1" "--attempt" "attempt-1" "--prompt" "<tmp>" "--result" "<tmp>" "--claude" "/opt/claude"]
+        want ["/bin/guildhall" "claude-artisan" "--task" "task-1" "--attempt" "attempt-1" "--prompt" "<tmp>" "--result" "<tmp>" "--model" "opus" "--effort" "high" "--claude" "/opt/claude"]
+    settings_test.go:32: ParseArgs(Command) = {Identity:{TaskID:task-1 AttemptID:attempt-1} PromptFile:<tmp> ResultFile:<tmp> Claude:/opt/claude Copy: Profile: Settings:{Model: Effort:} allowedTools:[]}, <nil>; want settings {Model:opus Effort:high}
+--- FAIL: TestSettingsReachTheStub (0.09s)
+    --- FAIL: TestSettingsReachTheStub/both (0.03s)
+        settings_test.go:63: stub settings = {Model: Effort:}, not implemented; want {Model:sonnet Effort:xhigh}
+    --- FAIL: TestSettingsReachTheStub/none (0.02s)
+        settings_test.go:63: stub settings = {Model: Effort:}, not implemented; want {Model: Effort:}
+    --- FAIL: TestSettingsReachTheStub/model (0.03s)
+        settings_test.go:63: stub settings = {Model: Effort:}, not implemented; want {Model:claude-opus-5-5 Effort:}
+--- FAIL: TestClaudeRefusesSettingsItCannotHonour (0.01s)
+    settings_test.go:91: effort case: CheckSettings({Model: Effort:High}) = <nil>, want ErrUnsupportedSetting
+    settings_test.go:96: effort case: Command = {Argv:[/bin/guildhall claude-artisan --task task-1 --attempt attempt-1 --prompt <tmp> --result <tmp> Dir:<tmp> Env:[A=1]}, <nil>; want ErrUnsupportedSetting and no command
+    settings_test.go:91: model flag: CheckSettings({Model:--dangerously-skip-permissions Effort:}) = <nil>, want ErrUnsupportedSetting
+    settings_test.go:96: model flag: Command = {Argv:[/bin/guildhall claude-artisan --task task-1 --attempt attempt-1 --prompt <tmp> --result <tmp> Dir:<tmp> Env:[A=1]}, <nil>; want ErrUnsupportedSetting and no command
+    settings_test.go:91: model with gap: CheckSettings({Model:opus high Effort:}) = <nil>, want ErrUnsupportedSetting
+    settings_test.go:96: model with gap: Command = {Argv:[/bin/guildhall claude-artisan --task task-1 --attempt attempt-1 --prompt <tmp> --result <tmp> Dir:<tmp> Env:[A=1]}, <nil>; want ErrUnsupportedSetting and no command
+    settings_test.go:91: model control: CheckSettings({Model:opus
+         Effort:}) = <nil>, want ErrUnsupportedSetting
+    settings_test.go:96: model control: Command = {Argv:[/bin/guildhall claude-artisan --task task-1 --attempt attempt-1 --prompt <tmp> --result <tmp> Dir:<tmp> Env:[A=1]}, <nil>; want ErrUnsupportedSetting and no command
+    settings_test.go:91: blank model: CheckSettings({Model:  Effort:}) = <nil>, want ErrUnsupportedSetting
+    settings_test.go:96: blank model: Command = {Argv:[/bin/guildhall claude-artisan --task task-1 --attempt attempt-1 --prompt <tmp> --result <tmp> Dir:<tmp> Env:[A=1]}, <nil>; want ErrUnsupportedSetting and no command
+    settings_test.go:91: effort and flag: CheckSettings({Model:-m Effort:low}) = <nil>, want ErrUnsupportedSetting
+    settings_test.go:96: effort and flag: Command = {Argv:[/bin/guildhall claude-artisan --task task-1 --attempt attempt-1 --prompt <tmp> --result <tmp> Dir:<tmp> Env:[A=1]}, <nil>; want ErrUnsupportedSetting and no command
+    settings_test.go:91: unknown effort: CheckSettings({Model: Effort:extreme}) = <nil>, want ErrUnsupportedSetting
+    settings_test.go:96: unknown effort: Command = {Argv:[/bin/guildhall claude-artisan --task task-1 --attempt attempt-1 --prompt <tmp> --result <tmp> Dir:<tmp> Env:[A=1]}, <nil>; want ErrUnsupportedSetting and no command
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/claude	0.117s
+--- FAIL: TestSettingsReachTheFake (0.00s)
+    settings_test.go:30: argv = ["/opt/guildhall" "fake-artisan" "--task" "task-1" "--attempt" "attempt-1" "--prompt" "<tmp>" "--result" "<tmp>"]
+        want ["/opt/guildhall" "fake-artisan" "--task" "task-1" "--attempt" "attempt-1" "--prompt" "<tmp>" "--result" "<tmp>" "--model" "opus" "--effort" "high"]
+    settings_test.go:34: ParseArgs(Command) = {Identity:{TaskID:task-1 AttemptID:attempt-1} PromptFile:<tmp> ResultFile:<tmp> ControlAddress: ControlToken: Role:worker Stdin:<nil> Settings:{Model: Effort:}}, <nil>; want settings {Model:opus Effort:high}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	0.027s
+--- FAIL: TestEachRuntimeChecksSettings (0.00s)
+    runtimes_test.go:98: claude CheckSettings = <nil>; want ErrUnsupportedSetting naming the effort
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/runtimes	0.023s
+--- FAIL: TestProcessPassesTheProfilesModelAndEffort (0.15s)
+    --- FAIL: TestProcessPassesTheProfilesModelAndEffort/model (0.06s)
+        process_test.go:337: argv = ["artisan" "start" "--store" "<tmp>" "--state" "<state>" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "<state>" "--workdir" "<tmp>"]
+            want ["artisan" "start" "--store" "<tmp>" "--state" "<state>" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "<state>" "--workdir" "<tmp>" "--model" "opus"]
+    --- FAIL: TestProcessPassesTheProfilesModelAndEffort/both (0.04s)
+        process_test.go:337: argv = ["artisan" "start" "--store" "<tmp>" "--state" "<state>" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "<state>" "--workdir" "<tmp>"]
+            want ["artisan" "start" "--store" "<tmp>" "--state" "<state>" "--repo" "app" "--task" "t7" "--step" "build" "--attempt" "1" "--adapter" "fake" "--prompt" "<state>" "--workdir" "<tmp>" "--model" "opus" "--effort" "high"]
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	0.162s
+--- FAIL: TestProfileModelAndEffortReachTheLaunch (0.05s)
+    --- FAIL: TestProfileModelAndEffortReachTheLaunch/both (0.03s)
+        engine_test.go:476: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        engine_test.go:482: launch settings = {Model: Effort:}, want {Model:opus Effort:high}
+        engine_test.go:485: adapter settings = {Model: Effort:}, want {Model:opus Effort:high}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.056s
+--- FAIL: TestTaskStartRunsTheProfilesModelAndEffort (1.20s)
+    --- FAIL: TestTaskStartRunsTheProfilesModelAndEffort/set (0.57s)
+        settings_test.go:29: plan-1 ran on {Model: Effort:}, not implemented; want {Model:opus Effort:high}
+    --- FAIL: TestTaskStartRunsTheProfilesModelAndEffort/unset (0.63s)
+        settings_test.go:29: plan-1 ran on {Model: Effort:}, not implemented; want {Model: Effort:}
+--- FAIL: TestTaskStartRefusesSettingsARuntimeCannotHonour (0.53s)
+    settings_test.go:49: task start: exit 0, "{\"wait\":\"attempt\",\"step\":\"plan\",\"attempt\":1}\n", stderr ; want exit 1 naming profile planner and its effort
+--- FAIL: TestDirectorStartRefusesSettingsARuntimeCannotHonour (0.10s)
+    settings_test.go:62: exit 0
+        config: admitted ...
+        runtime: fake ...
+        store: opens ...
+        skills: 13 release skills install
+        artisans: Director alpha's config <tmp> profile builder grants nothing, so claude print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings (docs/adapters.md#artisan-permissions); wrappers load grants by copy/profile reference, never raw rule flags
+        
+        ; want the artisans check refused naming profile builder and its effort
+--- FAIL: TestArtisanStartSettingsAreAnOwnedAttempts (0.01s)
+    settings_test.go:78: --model in a tab: exit 2, stderr "guildhall: artisan start: flag provided but not defined: -model ...
+    settings_test.go:78: --effort in a tab: exit 2, stderr "guildhall: artisan start: flag provided but not defined: -effort ...
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	1.922s
+FAIL
+
+# Then, against Engine.CheckSettings declared but not called, and no task start check (2026-10-23):
+# go test ./internal/interp -run TestProfileSettingsAreCheckedBeforeAnythingIsRecorded; go test ./internal/cli -run TestTaskStartRefusesSettingsARuntimeCannotHonour
+--- FAIL: TestProfileSettingsAreCheckedBeforeAnythingIsRecorded (0.02s)
+    engine_test.go:502: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) refused: <nil>
+    engine_test.go:504: Advance = <nil>, want ErrUnsupportedSetting naming profile planner
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.027s
+FAIL
+--- FAIL: TestTaskStartRefusesSettingsARuntimeCannotHonour (0.69s)
+    settings_test.go:54: task start: exit 1, "", stderr guildhall: interp: app/t-1 step plan: launch attempt 1: launch: app/t-1/plan/1: the launcher exited before owning the attempt; see <copy>/state/app/t-1/plan-1/launcher.log
+        ; want exit 1 naming profile planner and its effort
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.703s
+FAIL

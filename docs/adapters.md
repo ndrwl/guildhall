@@ -92,7 +92,8 @@ The usage file is the adapter's, like the result: the model never writes it.
 ## Fake adapter
 
 The fake adapter is a test-only runtime with no optional capabilities; it grants no [allowed tools](#artisan-permissions), so its `Command` refuses a referenced profile granting any.
-It runs `guildhall fake-artisan --task <id> --attempt <id> --prompt <file> --result <file>`, which reads the prompt, prints its progress, and writes a result whose summary records the prompt's size and SHA-256 digest.
+It runs `guildhall fake-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--model <model>] [--effort <effort>]`, which reads the prompt, prints its progress, and writes a result whose summary records the prompt's size and SHA-256 digest.
+It honours every [runtime setting](#runtime-settings): before reading the prompt the worker records the model and effort it was given, either empty, as `fake-settings.json` beside the result file, which `fake.RecordedSettings` reads, so tests can see what reached the runtime.
 
 Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; each key may appear once, and an unknown key or value is refused before anything is written.
 
@@ -122,11 +123,13 @@ Work ended by an interrupt or the cancel marker writes none.
 ## Claude adapter
 
 The Claude adapter runs one attempt as a non-interactive Claude Code session, with no optional capabilities.
-Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
+Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--model <model>] [--effort <level>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
-claude --print <instruction> --output-format json --permission-mode acceptEdits [--settings <settings file>] --add-dir <model directory>
+claude --print <instruction> --output-format json --permission-mode acceptEdits [--model <model>] [--effort <level>] [--settings <settings file>] --add-dir <model directory>
 ```
+
+- `--model` and `--effort` are the profile's [runtime settings](#runtime-settings), each passed only when set, so an unset one is Claude Code's own default.
 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
@@ -145,7 +148,7 @@ The wrapper keeps the result protocol, not the model:
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
 - it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
-This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and it passes no profile model or effort; of a profile it uses only the `allowed_tools`, loaded through the copy/profile reference.
+This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and of a profile it uses only the model and effort, passed by value, and the `allowed_tools`, loaded through the copy/profile reference.
 Transcripts, session resume and the Herdr tab mode are later work.
 
 The same adapter runs the [Director's session](director.md#start) interactively, `claude --append-system-prompt-file <role prompt> --add-dir <copy> [--model <model>] "<first message>"` in the session directory, whose `.claude/skills/` holds the rendered skills; that page describes the session's permission settings.
@@ -174,7 +177,7 @@ On a machine where neither the profile nor those settings allow them, a build at
 
 So the grant and the dependency are never silent:
 
-- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and what that config grants each profile that runs the claude adapter, or that it grants nothing and the checks depend on Claude's own settings; it refuses only `allowed_tools` on a profile of another adapter, which cannot grant them, and otherwise refuses nothing, because Guildhall cannot see every settings file Claude Code reads;
+- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and what that config grants each profile that runs the claude adapter, or that it grants nothing and the checks depend on Claude's own settings; of the grants it refuses only `allowed_tools` on a profile of another adapter, which cannot grant them, because Guildhall cannot see every settings file Claude Code reads (it also refuses a profile's [runtime settings](#runtime-settings) its runtime cannot honour);
 - the wrapper names each denied tool use in the attempt's launcher log, as above.
 
 A live run, `TestLiveClaudeBuildPermissions`, asks a real session in a git repository to run a check command Claude Code does not allow as read-only, `sh check.sh`, and then commit; it fails unless the check ran and the commit was made, and on any denied tool use.
@@ -186,6 +189,20 @@ GUILDHALL_CLAUDE_LIVE=1 GUILDHALL_CLAUDE_LIVE_GRANT=configured go test ./interna
 ```
 
 Neither mode has been run yet; they are part of the live acceptance before the Director's first unattended task.
+
+## Runtime settings
+
+A profile's [`model` and `effort`](configuration.md#profiles) travel by value with each attempt the profile runs: the interpreter puts them on `interp.Spec`, mapped unchanged to `adapter.Spec`, and `launch.Process` passes them to `artisan start` as `--model` and `--effort`, each only when set, which gives them to the runtime.
+An empty one is the runtime's own default.
+Each runtime says which settings it can honour, `runtimes.Runtime.CheckSettings`, and refuses any other with `adapter.ErrUnsupportedSetting` and the reason, never running on a default instead:
+
+| Runtime | Model | Effort |
+|---|---|---|
+| `claude` | One word, not starting with `-`, passed to Claude Code's `--model` as given; Claude Code resolves aliases such as `opus` and full names, and a session on a model it does not know ends with no result | `low`, `medium`, `high`, `xhigh` or `max`, the levels Claude Code 2.1.309's `--effort` takes |
+| `fake` | Any, recorded | Any, recorded |
+
+The refusal comes as early as the setting is known: `task new` and `task start` refuse a workflow whose profile names one before anything is recorded, `director start`'s preflight refuses it in any profile on its `artisans` line, and the runtime's command refuses it again, so `artisan start` exits 1 before it owns the attempt.
+The Director's own session takes `[director] model` but not yet its `effort` ([Claude adapter](#claude-adapter)).
 
 ## Conformance
 

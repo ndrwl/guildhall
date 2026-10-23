@@ -69,3 +69,32 @@ func TestLookupSessionConstructsEachRuntime(t *testing.T) {
 		t.Errorf("LookupSession(codex) = %v, %v", r, err)
 	}
 }
+
+// TestEachRuntimeChecksSettings: every runtime honours the zero Settings, the runtime's defaults, and refuses in
+// Command whatever its CheckSettings refuses; the Claude runtime refuses an effort Claude Code does not take.
+func TestEachRuntimeChecksSettings(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "guildhall")
+	dir := t.TempDir()
+	spec := adapter.Spec{Identity: adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}, WorkDir: dir,
+		PromptFile: filepath.Join(dir, "prompt.md"), ResultFile: filepath.Join(dir, "result.json")}
+	for _, name := range runtimes.Names() {
+		r, err := runtimes.Lookup(name, exe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.CheckSettings(adapter.Settings{}); err != nil {
+			t.Errorf("%s refused the defaults: %v", name, err)
+		}
+		bad := adapter.Settings{Effort: "extreme"}
+		checked := r.CheckSettings(bad)
+		spec.Settings = bad
+		_, built := r.Command(spec)
+		if (checked == nil) != (built == nil) || checked != nil && !errors.Is(built, adapter.ErrUnsupportedSetting) {
+			t.Errorf("%s: CheckSettings = %v but Command = %v; want the same refusal", name, checked, built)
+		}
+	}
+	r, _ := runtimes.Lookup(adapter.ClaudeName, exe)
+	if err := r.CheckSettings(adapter.Settings{Effort: "extreme"}); !errors.Is(err, adapter.ErrUnsupportedSetting) || !strings.Contains(err.Error(), "extreme") {
+		t.Errorf("claude CheckSettings = %v; want ErrUnsupportedSetting naming the effort", err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
@@ -568,6 +570,53 @@ func TestCrashBetweenRecordAndLaunchReplaysWhilePaused(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// TestProfileModelAndEffortReachTheLaunch: the model and effort of the stage's profile reach the launch spec and its
+// AdapterSpec as given, and a stage whose profile sets neither launches with the runtime's defaults.
+func TestProfileModelAndEffortReachTheLaunch(t *testing.T) {
+	for name, s := range map[string]adapter.Settings{"none": {}, "both": {Model: "opus", Effort: "high"}} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, backends[0], planExpectation(t, interptest.Succeed("plan written")))
+			e.eng.Config.Profiles["planner"] = config.Profile{Adapter: interp.MockAdapter, Model: s.Model, Effort: s.Effort}
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			launched := e.script.Launched()
+			if len(launched) != 1 {
+				t.Fatalf("launched %d attempts, want 1", len(launched))
+			}
+			if got := launched[0].Settings; got != s {
+				t.Errorf("launch settings = %+v, want %+v", got, s)
+			}
+			if got := launched[0].AdapterSpec().Settings; got != s {
+				t.Errorf("adapter settings = %+v, want %+v", got, s)
+			}
+		})
+	}
+}
+
+// TestProfileSettingsAreCheckedBeforeAnythingIsRecorded: Engine.CheckSettings sees the adapter and settings of the
+// stage's profile, and its refusal fails the advance with nothing recorded or launched, naming the profile.
+func TestProfileSettingsAreCheckedBeforeAnythingIsRecorded(t *testing.T) {
+	e := newEnv(t, backends[0])
+	e.eng.Config.Profiles["planner"] = config.Profile{Adapter: interp.MockAdapter, Model: "opus", Effort: "extreme"}
+	var checked []string
+	e.eng.CheckSettings = func(name string, s adapter.Settings) error {
+		checked = append(checked, name+" "+s.Model+" "+s.Effort)
+		return fmt.Errorf("%w: effort %q", adapter.ErrUnsupportedSetting, s.Effort)
+	}
+	err := advanceErr(t, e, interp.Event{Kind: interp.TaskCreated})
+	if !errors.Is(err, adapter.ErrUnsupportedSetting) || !strings.Contains(err.Error(), "planner") {
+		t.Fatalf("Advance = %v, want ErrUnsupportedSetting naming profile planner", err)
+	}
+	if want := []string{interp.MockAdapter + " opus extreme"}; !slices.Equal(checked, want) {
+		t.Errorf("checked %q, want %q", checked, want)
+	}
+	if got := e.attempts(t); len(got) != 0 {
+		t.Errorf("refused settings recorded attempts: %+v", got)
+	}
+	if got := e.script.Launched(); len(got) != 0 {
+		t.Errorf("refused settings launched %d attempts", len(got))
 	}
 }
 

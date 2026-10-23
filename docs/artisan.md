@@ -378,7 +378,8 @@ Refusing an already-decided attempt preserves its ownership record and containme
 With a positive `--stall-interval` (zero, the default, observes nothing), the launcher also sends the Director `worker-stalled` from its heartbeat when the worker has been silent past the interval ([heartbeat](#heartbeat)); `launch.Process` passes the engine's `stall_interval` when it is positive.
 
 `--profile <name>` names the profile in the Director `--copy`; see [Artisan permissions](adapters.md#artisan-permissions) for grant resolution and runtime support.
-`--profile` applies only to an owned attempt; in a Herdr tab it is a usage error.
+`--model <model>` and `--effort <effort>` are the profile's [runtime settings](adapters.md#runtime-settings), which the runtime runs the attempt on; `launch.Process` passes them when the profile sets them, and a setting the runtime cannot honour is exit 1 before the attempt is owned.
+`--profile`, `--model` and `--effort` apply only to an owned attempt; in a Herdr tab they are a usage error.
 Neither `artisan start` nor `claude-artisan` accepts `--allow-tool`.
 
 The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.

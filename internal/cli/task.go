@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -253,6 +254,15 @@ func acceptTask(cfgPath, repo string) (store.Task, acceptedWorkflow, error) {
 		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
 	if err := cfg.CheckProfiles(w.effective); err != nil {
+		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
+	}
+	var named []string
+	for _, step := range w.effective.Steps {
+		if name := step.Profile(); name != "" && !slices.Contains(named, name) {
+			named = append(named, name)
+		}
+	}
+	if err := checkProfileSettings(cfg, named); err != nil {
 		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
 	data, err := json.Marshal(cfg)

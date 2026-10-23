@@ -199,6 +199,16 @@ func stub(args []string) error {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(draft), GrantedFile), data, 0o600); err != nil {
 		return err
 	}
+	given, err := settingsFlags(flags)
+	if err != nil {
+		return err
+	}
+	if data, err = json.Marshal(given); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(draft), SettingsFile), data, 0o600); err != nil {
+		return err
+	}
 	id, err := identity(instruction)
 	if err != nil {
 		return err
@@ -254,6 +264,45 @@ func stub(args []string) error {
 		return errExit{}
 	}
 	return nil
+}
+
+// SettingsFile is the record, in the model directory, of the --model and --effort a print-mode stub session was
+// given, as the JSON of an adapter.Settings.
+const SettingsFile = "claude-stub-settings.json"
+
+// Settings returns the model and effort the stub's print-mode session for the result file result was given; a
+// session given neither has the zero Settings.
+func Settings(result string) (adapter.Settings, error) {
+	data, err := os.ReadFile(filepath.Join(claude.ModelDir(result), SettingsFile))
+	if err != nil {
+		return adapter.Settings{}, err
+	}
+	var s adapter.Settings
+	err = json.Unmarshal(data, &s)
+	return s, err
+}
+
+// settingsFlags reads the one --model and the one --effort in flags, each optional; an effort must be one of
+// claude.Efforts, as Claude Code's own --effort refuses any other.
+func settingsFlags(flags []string) (adapter.Settings, error) {
+	var s adapter.Settings
+	for _, f := range []struct {
+		name string
+		dst  *string
+	}{{"--model", &s.Model}, {"--effort", &s.Effort}} {
+		i := slices.Index(flags, f.name)
+		if i < 0 {
+			continue
+		}
+		if i+1 >= len(flags) || flags[i+1] == "" || slices.Contains(flags[i+1:], f.name) {
+			return s, fmt.Errorf("want at most one %s with a value, got %q", f.name, flags)
+		}
+		*f.dst = flags[i+1]
+	}
+	if s.Effort != "" && !slices.Contains(claude.Efforts, s.Effort) {
+		return s, fmt.Errorf("--effort %q is not one of %q", s.Effort, claude.Efforts)
+	}
+	return s, nil
 }
 
 // GrantedFile is the record, in the model directory, of the allowed tools a print-mode stub session was granted.

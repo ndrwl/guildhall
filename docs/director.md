@@ -24,7 +24,7 @@ It first runs a preflight and prints one line per check, as `doctor` prints, sto
 - `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.
 - `skills`: the release skills and baseline install.
 - `artisans`: names this Director and its config file, then what that config grants each profile that runs the claude adapter: its [`allowed_tools`](configuration.md#profiles), or nothing, when print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings ([Artisan permissions](adapters.md#artisan-permissions)), as in `artisans: Director tools's config /srv/guildhall/config.toml: profile builder grants Bash(go test:*), Bash(git commit:*); profile reviewer grants nothing, so ...`.
-  It refuses only a profile of another adapter that sets `allowed_tools`, since only the claude adapter grants them.
+  It refuses a profile of another adapter that sets `allowed_tools`, since only the claude adapter grants them, and a profile whose `model` or `effort` its runtime cannot honour, naming the profile and the setting ([runtime settings](adapters.md#runtime-settings)).
 
 A failed check is exit 1 with nothing recorded and nothing written in the copy, and `--check` exits 0 after the preflight, also recording nothing.
 

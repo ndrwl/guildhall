@@ -32,8 +32,10 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -65,6 +67,9 @@ const ArtisanSettingsFile = "claude-settings.json"
 // (docs/adapters.md#artisan-permissions): its checks, staging and committing, and read-only status and diff.
 var SuggestedGoAllowedTools = []string{"Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)"}
 
+// Efforts are the effort levels Claude Code's --effort takes, as Claude Code 2.1.309 lists them.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
 // maxOutputBytes bounds the print-mode output the wrapper keeps to read usage from.
 const maxOutputBytes = 4 << 20
 
@@ -88,11 +93,29 @@ type Adapter struct {
 // Capabilities reports the Claude adapter's optional capabilities: none.
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
+// CheckSettings honours a model Claude Code's --model can take as given, one word that does not start with "-",
+// and an effort among Efforts; it refuses anything else with an error wrapping adapter.ErrUnsupportedSetting.
+// It does not check that the model exists: Claude Code resolves aliases and names itself, and a session on a model
+// it does not know ends with no result.
+func (Adapter) CheckSettings(s adapter.Settings) error {
+	if s.Model != "" && (strings.HasPrefix(s.Model, "-") || strings.IndexFunc(s.Model, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0) {
+		return fmt.Errorf("%w: claude adapter: model %q is not one word Claude Code's --model takes", adapter.ErrUnsupportedSetting, s.Model)
+	}
+	if s.Effort != "" && !slices.Contains(Efforts, s.Effort) {
+		return fmt.Errorf("%w: claude adapter: effort %q is not one Claude Code's --effort takes: %s", adapter.ErrUnsupportedSetting, s.Effort, strings.Join(Efforts, ", "))
+	}
+	return nil
+}
+
 // Command returns the wrapper invocation for spec: an argument list run in
-// spec's working directory with spec's environment. It refuses an invalid
-// spec or an unset Executable, returning no command.
+// spec's working directory with spec's environment, passing spec's settings
+// as --model and --effort, each only when set. It refuses an invalid spec,
+// settings CheckSettings refuses or an unset Executable, returning no command.
 func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
+		return adapter.Command{}, err
+	}
+	if err := a.CheckSettings(spec.Settings); err != nil {
 		return adapter.Command{}, err
 	}
 	if a.Executable == "" {
@@ -107,10 +130,23 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if spec.Profile != "" {
 		argv = append(argv, "--profile", spec.Profile)
 	}
+	argv = append(argv, settingsArgs(spec.Settings)...)
 	if a.Claude != "" {
 		argv = append(argv, "--claude", a.Claude)
 	}
 	return adapter.Command{Argv: argv, Dir: spec.WorkDir, Env: append([]string(nil), spec.Env...)}, nil
+}
+
+// settingsArgs are s as --model and --effort, each only when set: the flags of both the wrapper and Claude Code.
+func settingsArgs(s adapter.Settings) []string {
+	var args []string
+	if s.Model != "" {
+		args = append(args, "--model", s.Model)
+	}
+	if s.Effort != "" {
+		args = append(args, "--effort", s.Effort)
+	}
+	return args
 }
 
 // Args are the wrapper's command-line arguments.
@@ -119,14 +155,17 @@ type Args struct {
 	PromptFile string
 	ResultFile string
 	// Claude is the Claude Code program; empty means Program on PATH.
-	Claude       string
-	Copy         string
-	Profile      string
+	Claude  string
+	Copy    string
+	Profile string
+	// Settings are passed to Claude Code as --model and --effort, each only when set.
+	adapter.Settings
 	allowedTools []string
 }
 
 // ParseArgs parses the wrapper arguments; the prompt and result paths must be absolute
-// and distinct, and the prompt must be outside the model directory.
+// and distinct, the prompt must be outside the model directory, and the settings must be
+// ones CheckSettings honours.
 func ParseArgs(argv []string) (Args, error) {
 	fs := flag.NewFlagSet(Subcommand, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -138,6 +177,8 @@ func ParseArgs(argv []string) (Args, error) {
 	fs.StringVar(&a.Claude, "claude", "", "Claude Code program")
 	fs.StringVar(&a.Copy, "copy", "", "Director copy")
 	fs.StringVar(&a.Profile, "profile", "", "profile declared by the copy")
+	fs.StringVar(&a.Model, "model", "", "Claude Code model")
+	fs.StringVar(&a.Effort, "effort", "", "Claude Code effort level")
 	if err := fs.Parse(argv); err != nil {
 		return Args{}, err
 	}
@@ -149,6 +190,9 @@ func ParseArgs(argv []string) (Args, error) {
 	}
 	if a.Claude != "" && !filepath.IsAbs(a.Claude) {
 		return Args{}, fmt.Errorf("--claude %q must be an absolute path", a.Claude)
+	}
+	if err := (Adapter{}).CheckSettings(a.Settings); err != nil {
+		return Args{}, err
 	}
 	if err := a.Validate(); err != nil {
 		return Args{}, err
@@ -232,11 +276,13 @@ func Instruction(a Args) string {
 }
 
 // ClaudeArgs are the arguments after the program for attempt a: print mode
-// with Instruction as the prompt, OutputFormat, PermissionMode, the settings
-// file at ArtisanSettingsPath when a has allowed tools, and only the model
-// directory added for tool access.
+// with Instruction as the prompt, OutputFormat, PermissionMode, a's model and
+// effort as --model and --effort, each only when set, the settings file at
+// ArtisanSettingsPath when a has allowed tools, and only the model directory
+// added for tool access.
 func ClaudeArgs(a Args) []string {
 	args := []string{"--print", Instruction(a), "--output-format", OutputFormat, "--permission-mode", PermissionMode}
+	args = append(args, settingsArgs(a.Settings)...)
 	if len(a.allowedTools) > 0 {
 		args = append(args, "--settings", ArtisanSettingsPath(a.ResultFile))
 	}
@@ -342,8 +388,8 @@ const markerPoll = 50 * time.Millisecond
 // errMarked ends Claude's session when the attempt's cancel marker appears.
 var errMarked = errors.New("cancel marker present")
 
-// Run is the wrapper. It refuses, starting nothing, a cancelled attempt
-// (adapter.ErrAttemptCancelled) or an existing result file
+// Run is the wrapper. It refuses, starting nothing, settings CheckSettings
+// refuses, a cancelled attempt (adapter.ErrAttemptCancelled) or an existing result file
 // (adapter.ErrResultExists); it replaces the model directory with one holding
 // only the prompt copy and the inputs and skills directories beside the prompt
 // file, so a stale draft is never published, writes ArtisanSettings at
@@ -362,6 +408,9 @@ var errMarked = errors.New("cancel marker present")
 // Claude's exit status does not decide completion: a failing exit after a
 // draft is published is still returned as an error.
 func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
+	if err := (Adapter{}).CheckSettings(a.Settings); err != nil {
+		return err
+	}
 	var err error
 	a.allowedTools, err = adapter.ProfileTools(a.Copy, a.Profile)
 	if err != nil {

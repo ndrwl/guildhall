@@ -208,7 +208,7 @@ func TestParseArgsRefuses(t *testing.T) {
 		"same files":       {"--task", "task-1", "--attempt", "attempt-1", "--prompt", spec.ResultFile, "--result", spec.ResultFile},
 		"bad identity":     {"--task", "", "--attempt", "attempt-1", "--prompt", spec.PromptFile, "--result", spec.ResultFile},
 		"extra argument":   append(slices.Clone(good), "more"),
-		"unknown flag":     append(slices.Clone(good), "--model", "x"),
+		"unknown flag":     append(slices.Clone(good), "--temperature", "x"),
 		"relative program": append(slices.Clone(good), "--claude", "bin/claude"),
 		"prompt in model":  {"--task", "task-1", "--attempt", "attempt-1", "--prompt", claude.PromptCopy(spec.ResultFile), "--result", spec.ResultFile},
 		"empty allow tool": append(slices.Clone(good), "--allow-tool", ""),

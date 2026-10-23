@@ -99,7 +99,7 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | Key | Meaning |
 |---|---|
 | `adapter` | Required: the runtime adapter, such as `claude`. |
-| `model`, `effort` | Profile model and effort selections; the current [Claude adapter](adapters.md#claude-adapter) does not pass them to Artisan sessions. |
+| `model`, `effort` | The model and effort the profile's runtime runs each attempt on, passed to it as given; empty means the runtime's default. A runtime that cannot honour one refuses it rather than ignoring it ([runtime settings](adapters.md#runtime-settings)): the `claude` adapter takes a model as one word not starting with `-` and an effort of `low`, `medium`, `high`, `xhigh` or `max`, and the fake takes any. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
 | `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`; empty, the default, grants nothing. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the suggested set for a Go repository). |
 
@@ -109,6 +109,7 @@ For how the copy/profile reference reaches the runtime, see [Artisan permissions
 Each `allowed_tools` entry is a tool name, optionally with a specifier in parentheses, with no control characters and listed once; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused, so a grant names its commands.
 The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or `GUILDHALL_COPY` selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
+A profile whose `model` or `effort` its runtime cannot honour is refused by `task new` and `task start` for a workflow naming it, before anything is recorded, and by the `director start` preflight for any profile.
 
 ### The director table
 

@@ -21,8 +21,13 @@ var ErrUnknown = errors.New("unknown runtime adapter")
 
 // Runtime builds the command that runs one attempt's Artisan.
 type Runtime interface {
-	// Command returns the attempt's command for a valid spec and refuses an invalid one with no command.
+	// Command returns the attempt's command for a valid spec and refuses an invalid one with no command, including
+	// a spec whose Settings CheckSettings refuses.
 	Command(spec adapter.Spec) (adapter.Command, error)
+	// CheckSettings refuses, with an error wrapping adapter.ErrUnsupportedSetting that names the setting and why,
+	// a model or effort the runtime cannot honour; the zero Settings, the runtime's defaults, is always honoured.
+	// It builds and starts nothing, so a preflight can run it before any attempt is recorded.
+	CheckSettings(s adapter.Settings) error
 }
 
 // Session builds the command that runs one interactive Director session (docs/director.md#start).

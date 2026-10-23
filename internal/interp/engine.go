@@ -172,6 +172,10 @@ type Engine struct {
 	Config            *config.Config
 	DefaultAdapter    string
 	StandardsRevision string
+	// CheckSettings, when set, refuses the model and effort of a step's profile that the profile's adapter cannot
+	// honour (adapter.ErrUnsupportedSetting), before anything is recorded, as CheckAdapter refuses an adapter; nil
+	// leaves them to the launch.
+	CheckSettings func(adapter string, s adapter.Settings) error
 	// DocumentDir is the absolute Director document directory every recorded document path is relative to.
 	DocumentDir string
 	Copy        string
@@ -472,14 +476,17 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 	return true, Next{}, nil
 }
 
-// artisanRuntime identifies the adapter and profile; grants are resolved by the runtime, not transported here.
+// artisanRuntime identifies the adapter and profile, with the profile's model and effort; grants are resolved by
+// the runtime, not transported here.
 type artisanRuntime struct {
-	adapter string
-	profile string
+	adapter  string
+	profile  string
+	settings adapter.Settings
 }
 
 // prepare resolves the runtime and the inputs of an Artisan step, or the inputs alone of a Director stage, which
-// runs no adapter; both are checked before anything is recorded. A step without a profile runs DefaultAdapter
+// runs no adapter; both are checked, the runtime with CheckAdapter and Engine.CheckSettings, before anything is
+// recorded. A step without a profile runs DefaultAdapter
 // granting nothing.
 func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 	if s.Actor() == workflow.DirectorActor {
@@ -492,10 +499,15 @@ func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 		if !ok {
 			return artisanRuntime{}, nil, fmt.Errorf("%w: %q", config.ErrUnknownProfile, p)
 		}
-		rt = artisanRuntime{adapter: profile.Adapter, profile: p}
+		rt = artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: profile.Effort}}
 	}
 	if err := CheckAdapter(rt.adapter); err != nil {
 		return artisanRuntime{}, nil, err
+	}
+	if r.e.CheckSettings != nil && rt.profile != "" {
+		if err := r.e.CheckSettings(rt.adapter, rt.settings); err != nil {
+			return artisanRuntime{}, nil, fmt.Errorf("profile %s: %w", rt.profile, err)
+		}
 	}
 	inputs, err := r.inputs(s)
 	return rt, inputs, err
@@ -645,6 +657,7 @@ func (r *run) launch(s workflow.Step, n int, rt artisanRuntime, inputs []render.
 		ResultFile: r.resultFile(s.ID, n),
 		Manifest:   p.manifest,
 		Copy:       r.e.Copy, Profile: rt.profile,
+		Settings: rt.settings,
 	})
 	if err != nil {
 		return fmt.Errorf("launch attempt %d: %w", n, err)
