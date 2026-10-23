@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -23,10 +24,15 @@ const judgedSelfReview = `{"schema": "guildhall.self-review/1", "repository": "a
 const judgedBrief = "Score D1 against docs/quality.md.\n" +
 	`guildhall-fake: output=judgement.json:{"merge_as_is": "no", "criteria": [{"id": "D1", "score": 2, "evidence": "140 non-test lines"}]}` + "\n"
 
-// shortCopy is newCopy in a short temporary directory, so the attempts' endpoint paths fit the AF_UNIX limit.
+// shortCopy is newCopy in a short temporary directory, so the attempts' endpoint paths fit the AF_UNIX limit. Off
+// Windows it is under /tmp: macOS's per-user TMPDIR leaves the judge's endpoint, under the copy's state, too long.
 func shortCopy(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "gq")
+	root := ""
+	if runtime.GOOS != "windows" {
+		root = "/tmp"
+	}
+	dir, err := os.MkdirTemp(root, "gq")
 	if err != nil {
 		t.Fatal(err)
 	}
