@@ -2,20 +2,14 @@
 
 ## Decision
 
-Run every Claude Director session of a copy from `<copy>/director/claude`.
-The operator approves Claude's native folder-trust dialog at that Director's first start; later starts, reloads and handoffs reuse the same directory identity.
+Use a stable folder identity for Claude Director sessions, with the native approval workflow documented in [Director start](../director.md#start).
 This is the captain's selected route A: one-time manual approval, not an unattended first-ever launch.
 Do not write Claude-owned trust state, change the permission mode, widen the allow rules, or replace the interactive conversation with print/SDK mode.
 
-Keep rendering each numbered session into `director/session-<n>` as before, including its prompts, skills, settings, manifest, notes and endpoint.
-After the preceding process has ended, publish that record's generated `.claude` tree into the stable workspace, replacing the preceding generated tree so removed release skills cannot linger.
-A failed publication starts no runtime and can be retried by the next start.
-The role prompt and first message name the numbered record by absolute path; the startup skill follows that exact path, not a relative file in the workspace.
+Keep numbered session records separate from the runtime workspace so trust identity can persist without overwriting session history.
+The [Claude workspace contract](../contracts/adapter-claude.md#stable-director-workspace) owns publication and recovery, through the optional [`runtimes.PersistentSession`](../contracts/adapter-runtimes.md) boundary; other runtimes need no workspace change.
 The supervisor's existing admission and runtime containment own serialization; there is no second concurrent publisher.
-
-Expose the optional `runtimes.PersistentSession` boundary only for workspace preparation; other runtimes keep their existing directories.
 Leave folder-trust approval and persistence entirely to Claude, without inspecting its undocumented configuration or emitting a trust diagnostic.
-Moving a copy, deleting its workspace or clearing Claude trust may require another approval.
 
 ## Investigation
 

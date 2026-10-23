@@ -11,7 +11,7 @@ The removed advisory trust-preflight test is omitted; the package footer is from
         artisans: Director alpha's config /tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/config.toml: no profile runs the claude adapter
         session: 1 (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/director/session-1)
         session: 1 has no turn-end endpoint, so it waits 1m0s for a turn to end: session: session endpoint path is unusable: "/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/director/session-1/supervisor.sock" is 135 bytes, limit 107
-        
+
         Is this a project you created or one you trust?
         guildhall: director start: the runtime exited with status 1
 FAIL

@@ -25,7 +25,8 @@ const (
 	ManifestFile = "manifest.json"
 )
 
-// StartupMessage is the one-line first message of every Director session: it names StartupFile.
+// StartupMessage is the first message for a runtime launched in the rendered session directory.
+// A runtime launched elsewhere needs a message naming StartupFile by its absolute path.
 const StartupMessage = "You are starting up: read " + StartupFile + " in this directory and follow it."
 
 // SessionInput is one Director session to render (docs/rendering.md#director-sessions).
