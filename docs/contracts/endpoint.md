@@ -6,14 +6,24 @@ Guildhall's one control endpoint, the AF_UNIX socket of the [attempt endpoint de
 Its consumers are the attempt control endpoint (`artisan.Listen` and `artisan.Call`, [control endpoint](../artisan.md#control-endpoint)) and the Director session's turn signals (`session.Listen` and `session.Signal`, [session](session.md)); a later socket, such as a context reporter or a release reload, composes over it rather than copying it.
 
 - An endpoint is one AF_UNIX stream socket, on Windows as on Unix, at a path of at most `MaxPath` bytes (103 on macOS, 107 on Linux and Windows); a longer path is `ErrPath` and creates nothing.
-- Each consumer names its `Protocol`: the schema prefix and the one version it speaks, its request and reply size limits, its mismatch error and its malformed-reply error. `Protocol.Current` is the schema every request and reply carries.
-- `Listen` creates a missing directory `0700`, binds, and on Unix makes the socket `0600`; on Windows the socket inherits the directory's ACL. The endpoint does not authenticate its peers; access control is the directory's.
-- A leftover file at the path is bound over only once proven stale: a socket whose connection is refused, because nothing listens on it, is removed first. A socket that accepts the connection is `ErrAnswers`; anything else, a regular file, a directory or a socket that refuses access, is `ErrUnknown`. Either is kept.
-- Each connection is one exchange: one request line of at most `Protocol.MaxRequest` bytes, decoded with [`strictjson`](strictjson.md) under the consumer's schema and version, answered by one reply line. A request that is not one such line, including a missing, unversioned, older or newer schema, a duplicate key, an undeclared field at any depth and trailing data, is answered with the consumer's `Server.Refuse` and reaches neither `Owns` nor `Serve`; a newer version's refusal says it is unsupported.
+- Each consumer names its `Protocol`: the schema prefix and the one version it speaks, its request and reply size limits, its mismatch error and its malformed-reply error.
+  `Protocol.Current` is the schema every request and reply carries.
+- `Listen` creates a missing directory `0700`, binds, and on Unix makes the socket `0600`; on Windows the socket inherits the directory's ACL.
+  The endpoint does not authenticate its peers; access control is the directory's.
+- A leftover file at the path is bound over only once proven stale: a socket whose connection is refused, because nothing listens on it, is removed first.
+  A socket that accepts the connection is `ErrAnswers`; anything else, a regular file, a directory or a socket that refuses access, is `ErrUnknown`.
+  Either is kept.
+- Each connection is one exchange: one request line of at most `Protocol.MaxRequest` bytes, decoded with [`strictjson`](strictjson.md) under the consumer's schema and version, answered by one reply line.
+  A request that is not one such line, including a missing, unversioned, older or newer schema, a duplicate key, an undeclared field at any depth and trailing data, is answered with the consumer's `Server.Refuse` and reaches neither `Owns` nor `Serve`; a newer version's refusal says it is unsupported.
 - A request naming another owner than `Server.Owns` accepts is answered with `Refuse` carrying the consumer's `Mismatch` text and never reaches `Serve`.
 - `Serve` is called concurrently, one call per request, and the reply is written when it returns, so a request that blocks, such as an attempt's `stop`, delays no other.
-- Transport I/O is bounded by `exchangeTimeout` (5 s): client connect and request write, and server request read and reply write once the handler has answered. A peer that sends no complete request line in time is refused and disconnected. Waiting for the handler's reply in `Call` is bounded only by the caller's context, not by `exchangeTimeout`, so `stop` can complete its stop ladder; once the context is done its error is wrapped. This is not a whole-call deadline and does not cancel server-side handler work.
-- `Call` writes one request line and reads one reply line of at most `Protocol.MaxReply` bytes, decoded strictly; a reply that is not the protocol is the consumer's `Malformed`, also matching `strictjson.ErrNewerSchema` for a newer version, and one naming another owner than the caller expects is the consumer's `Mismatch`, returned with the reply. No socket file at the path, or one nothing listens on, is `ErrNotListening`, which never proves the owner exited. A reply's own refusal is the consumer's to read.
+- Transport I/O is bounded by `exchangeTimeout` (5 s): client connect and request write, and server request read and reply write once the handler has answered.
+  A peer that sends no complete request line in time is refused and disconnected.
+  Waiting for the handler's reply in `Call` is bounded only by the caller's context, not by `exchangeTimeout`, so `stop` can complete its stop ladder; once the context is done its error is wrapped.
+  This is not a whole-call deadline and does not cancel server-side handler work.
+- `Call` writes one request line and reads one reply line of at most `Protocol.MaxReply` bytes, decoded strictly; a reply that is not the protocol is the consumer's `Malformed`, also matching `strictjson.ErrNewerSchema` for a newer version, and one naming another owner than the caller expects is the consumer's `Mismatch`, returned with the reply.
+  No socket file at the path, or one nothing listens on, is `ErrNotListening`, which never proves the owner exited.
+  A reply's own refusal is the consumer's to read.
 - `Close` stops accepting, lets requests being answered get their reply, and removes the socket file; it is idempotent.
 
 ## Tests
