@@ -24,15 +24,14 @@ With allowed tools, `Run` writes `ArtisanSettings`, `{"permissions":{"allow":[<r
 Every Claude Director session of one copy runs in `<copy>/director/claude`, while numbered session directories retain the recorded prompts, skills and settings, and each session's own notes, endpoints and reports.
 The supervisor publishes the current rendered `.claude` tree into that stable directory only after the preceding runtime has ended, and supplies an absolute startup-file path.
 The first interactive start requires Claude's own folder-trust approval once; subsequent starts, reloads and handoffs reuse that approval without Guildhall changing Claude-owned state, permission mode or permission rules.
-Preflight reports the stable path and a read-only trust indication, distinguishing an exact saved approval from unconfirmed effective trust (ancestor/project-root resolution and Claude versions may differ).
-No trust indication is authorization, and an unconfirmed indication does not refuse a first start.
+Guildhall does not inspect Claude's persisted trust configuration; native approval remains entirely Claude's responsibility.
 
 ## Tests
 
 `TestSessionCommand`'s explicit `--effort high` expectation was run red before the effort-default implementation; direct session model/effort refusals were added afterward.
 
-The CLI's `TestDirectorClaudeReusesTrustedWorkspace` and `TestDirectorClaudePreflightNamesTrust` failed before implementation ([red run](../evidence/director-trust-2026-10-23-red.txt)); `TestDirectorClaudeReloadReusesTrustedWorkspace` exercises the same gate with a handoff and real supervisor reload.
-`TestWorkspaceRefreshPreservesRecordsAndPermissions` and `TestSessionTrustReadOnlyAndConservative` were added with the implementation: current files replace stale skills, numbered records and settings bytes survive unchanged, and missing/invalid/non-exact trust records remain unconfirmed without writes.
+The CLI's `TestDirectorClaudeReusesTrustedWorkspace` failed before implementation ([red run](../evidence/director-trust-2026-10-23-red.txt)); `TestDirectorClaudeReloadReusesTrustedWorkspace` exercises the same gate with a handoff and real supervisor reload.
+`TestWorkspaceRefreshPreservesRecordsAndPermissions` was added with the implementation: current files replace stale skills, and numbered records and settings bytes survive unchanged.
 The existing permission golden remains unchanged; the [decision](../decisions/director-stable-claude-workspace.md) records the supported one-time native trust mechanism and isolated live check.
 
 `TestSessionCommand`'s delimiter expectations failed before the startup fix with and without a model, and pass afterward.

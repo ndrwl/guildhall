@@ -53,10 +53,8 @@ type Session interface {
 // PersistentSession is an interactive runtime whose folder identity must survive numbered sessions.
 // PrepareSessionWorkspace publishes the rendered runtime files after the previous process has ended,
 // returning the stable process directory; it must not modify the numbered record or runtime-owned trust state.
-// SessionTrust is a read-only, advisory preflight notice, never an authorization decision.
 type PersistentSession interface {
 	PrepareSessionWorkspace(copyDir, recordDir string) (string, error)
-	SessionTrust(copyDir string, getenv func(string) string) string
 }
 
 // all builds each runtime over the guildhall executable.

@@ -58,16 +58,3 @@ func TestDirectorClaudeReloadReusesTrustedWorkspace(t *testing.T) {
 		t.Fatalf("supervisor exit %d", code)
 	}
 }
-
-func TestDirectorClaudePreflightNamesTrust(t *testing.T) {
-	claudetest.Install(t)
-	dir := directorCopy(t, "[director]\nadapter = \"claude\"", "/exit")
-	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
-	if code != 0 || !strings.Contains(out, "trust:") || !strings.Contains(out, filepath.Join(dir, "director", "claude")) || !strings.Contains(out, "not confirmed") {
-		t.Fatalf("preflight: exit %d\n%s\n%s", code, out, stderr)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "director")); !os.IsNotExist(err) {
-		t.Fatalf("check wrote workspace: %v", err)
-	}
-}

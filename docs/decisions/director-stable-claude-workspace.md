@@ -13,10 +13,8 @@ A failed publication starts no runtime and can be retried by the next start.
 The role prompt and first message name the numbered record by absolute path; the startup skill follows that exact path, not a relative file in the workspace.
 The supervisor's existing admission and runtime containment own serialization; there is no second concurrent publisher.
 
-Expose the optional `runtimes.PersistentSession` boundary for workspace preparation and a read-only trust notice; other runtimes keep their existing directories.
-Both `director start --check` and `director start` print the stable path and whether an exact saved approval was found.
-Missing, malformed or unreadable configuration, a missing workspace, or no exact approval means **trust not confirmed**, not a refusal or a claim that Claude will definitely prompt.
-Ancestor trust, git-root canonicalization, environment overrides and future Claude versions make effective trust Claude's responsibility.
+Expose the optional `runtimes.PersistentSession` boundary only for workspace preparation; other runtimes keep their existing directories.
+Leave folder-trust approval and persistence entirely to Claude, without inspecting its undocumented configuration or emitting a trust diagnostic.
 Moving a copy, deleting its workspace or clearing Claude trust may require another approval.
 
 ## Investigation
@@ -26,17 +24,15 @@ Its `--help` and the [official security documentation](https://code.claude.com/d
 The [CLI reference](https://code.claude.com/docs/en/cli-reference) has no ordinary interactive trust-acceptance option.
 `claude --trust-workspace --guildhall-invalid-probe` fails with `unknown option '--trust-workspace'` before any model starts.
 `claude ultrareview --help` documents that flag only for its unrelated cloud-review command.
-Read-only inspection of the installed runtime identified `projects[canonicalPath].hasTrustDialogAccepted` in the global Claude configuration; the preflight only reads it and conservatively recognizes an exact directory entry.
-The default file is `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json` when selected.
 Undocumented sandbox environment switches are not a supported trust API and falsely asserting sandboxing is inappropriate.
 Permission-bypass flags would violate the safety contract.
 A stable directory with native one-time approval is therefore the supported interactive choice.
 
 ## Evidence
 
-The opt-in trust-gated Claude stub rejected the old numbered working directory before consuming startup; preflight also lacked its trust line ([red run](../evidence/director-trust-2026-10-23-red.txt)).
-Focused tests cover successive starts, handoff plus live-supervisor reload, workspace refresh without stale skills, unchanged permission bytes, and conservative read-only trust notices.
+The opt-in trust-gated Claude stub rejected the old numbered working directory before consuming startup ([red run](../evidence/director-trust-2026-10-23-red.txt)).
+Focused tests cover successive starts, handoff plus live-supervisor reload, workspace refresh without stale skills, and unchanged permission bytes.
 The existing permission golden was not changed.
-The workspace-refresh and trust-parser unit tests were added with the implementation, not claimed as red-first tests.
+The workspace-refresh unit test was added with the implementation, not claimed as a red-first test.
 An isolated named Herdr lab with real Claude confirmed the first 17-rule trust dialog, native approval, then startup after fresh restart and handoff/reload without further dialogs ([live evidence](../evidence/director-trust-2026-10-23-live.txt)).
 CI uses the existing stub and makes zero model calls.

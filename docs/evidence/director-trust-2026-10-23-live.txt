@@ -1,4 +1,7 @@
 Live Claude 2.1.309 / Haiku 5.5, 2026-10-23
+Paths are redacted: <home> is the operator's home and <checkout> is the private checkout.
+Historical capture: the advisory trust diagnostic shown below was subsequently removed;
+Guildhall now leaves approval and persisted trust entirely to Claude.
 Named Herdr lab: fm-lab-guildhall-direct-217574-2938
 All Herdr calls went through fm-herdr-lab.sh; no tmux primary.
 The isolated copy and native Claude config were under /tmp/gh-trust-_zbzigcg.
@@ -12,14 +15,14 @@ Temporary credential copies were removed after the check.
 Resume this session with:
 claude --resume 90238cfc-17be-4a23-9226-35cec84883a5
 guildhall: director start: ended by terminated
-➜  lab git:(main) cd /tmp/gh-trust-_zbzigcg; export PATH=/home/andrew/firstmate/data/guildhall-director-trust-prompt:$P
+➜  lab git:(main) cd /tmp/gh-trust-_zbzigcg; export PATH=<checkout>:$P
 ATH CLAUDE_CONFIG_DIR=/tmp/gh-trust-_zbzigcg/claude-config; guildhall director start --copy /tmp/gh-trust-_zbzigcg/copy
 
 config: admitted (/tmp/gh-trust-_zbzigcg/copy/config.toml)
-runtime: claude (/home/andrew/.local/bin/claude)
+runtime: claude (<home>/.local/bin/claude)
 trust: /tmp/gh-trust-_zbzigcg/copy/director/claude: trust not confirmed; first start may require one folder-trust appro
 val in Claude; effective ancestor/project trust is resolved by Claude (docs/director.md)
-guildhall: /home/andrew/firstmate/data/guildhall-director-trust-prompt/guildhall
+guildhall: <checkout>/guildhall
 store: opens (/tmp/gh-trust-_zbzigcg/copy/director.store)
 skills: 13 release skills install
 artisans: Director alpha's config /tmp/gh-trust-_zbzigcg/copy/config.toml: no profile runs the claude adapter
@@ -49,7 +52,7 @@ session: 1 (/tmp/gh-trust-_zbzigcg/copy/director/session-1)
 
 === First startup after one native approval ===
 val in Claude; effective ancestor/project trust is resolved by Claude (docs/director.md)
-guildhall: /home/andrew/firstmate/data/guildhall-director-trust-prompt/guildhall
+guildhall: <checkout>/guildhall
 store: opens (/tmp/gh-trust-_zbzigcg/copy/director.store)
 skills: 13 release skills install
 artisans: Director alpha's config /tmp/gh-trust-_zbzigcg/copy/config.toml: no profile runs the claude adapter
@@ -172,25 +175,16 @@ session: 1 (/tmp/gh-trust-_zbzigcg/copy/director/session-1)
   context 4%
   ⏵⏵ auto mode on (shift+tab to cycle)
 
-=== Post-approval read-only preflight ===
-config: admitted (/tmp/gh-trust-_zbzigcg/copy/config.toml)
-runtime: claude (/home/andrew/.local/bin/claude)
-trust: /tmp/gh-trust-_zbzigcg/copy/director/claude: exact folder-trust approval recorded; Claude resolves effective trust at startup
-guildhall: /home/andrew/firstmate/data/guildhall-director-trust-prompt/guildhall
-store: opens (/tmp/gh-trust-_zbzigcg/copy/director.store)
-skills: 13 release skills install
-artisans: Director alpha's config /tmp/gh-trust-_zbzigcg/copy/config.toml: no profile runs the claude adapter
-
+=== Unchanged permissions ===
 All three numbered settings files had identical SHA256:
 4ccaf02670d73a602062aef7924387bd439817198088b4c7d6c1adc38d77a33b
-The exact stable-directory hasTrustDialogAccepted was true after native approval.
 
 === Guarded teardown ===
 fm-herdr-lab: session stop 'fm-lab-guildhall-direct-217574-2938' exit=0
 fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
-{"session":{"default":false,"name":"fm-lab-guildhall-direct-217574-2938","running":false,"session_dir":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938","socket_path":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938/herdr.sock"},"stopped":true}
+{"session":{"default":false,"name":"fm-lab-guildhall-direct-217574-2938","running":false,"session_dir":"<home>/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938","socket_path":"<home>/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938/herdr.sock"},"stopped":true}
 fm-herdr-lab: session delete 'fm-lab-guildhall-direct-217574-2938' exit=0
 fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
-{"deleted":true,"session":{"default":false,"name":"fm-lab-guildhall-direct-217574-2938","running":false,"session_dir":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938","socket_path":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938/herdr.sock"}}
+{"deleted":true,"session":{"default":false,"name":"fm-lab-guildhall-direct-217574-2938","running":false,"session_dir":"<home>/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938","socket_path":"<home>/.config/herdr/sessions/fm-lab-guildhall-direct-217574-2938/herdr.sock"}}
 
 The helper removed its tripwire record after verifying unchanged default-session state; no lab server remained.

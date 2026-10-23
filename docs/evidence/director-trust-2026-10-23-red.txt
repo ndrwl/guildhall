@@ -1,3 +1,6 @@
+Historical red run, excerpted to the retained stable-workspace test.
+The removed advisory trust-preflight test is omitted; the package footer is from the original run.
+
 --- FAIL: TestDirectorClaudeReusesTrustedWorkspace (0.10s)
     director_trust_test.go:21: start 1: exit 1
         config: admitted (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudeReusesTrustedWorkspace1306919015/002/config.toml)
@@ -11,15 +14,6 @@
         
         Is this a project you created or one you trust?
         guildhall: director start: the runtime exited with status 1
---- FAIL: TestDirectorClaudePreflightNamesTrust (0.06s)
-    director_trust_test.go:36: preflight: exit 0
-        config: admitted (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/002/config.toml)
-        runtime: claude (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/001/claude)
-        guildhall: /tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/003/guildhall
-        store: opens (/tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/002/director.store)
-        skills: 13 release skills install
-        artisans: Director alpha's config /tmp/fm-guildhall-director-trust-prompt/gotmp/TestDirectorClaudePreflightNamesTrust1486029654/002/config.toml: no profile runs the claude adapter
-        
 FAIL
 FAIL	github.com/ndrwl/guildhall/internal/cli	0.165s
 FAIL

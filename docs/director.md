@@ -21,8 +21,6 @@ It first runs a preflight and prints one line per check, as `doctor` prints, sto
 - `config`: the copy's `config.toml` is a Director config.
   Until managed mode lands, a copy with `managed.toml` beside its config, or with inline `[managed]` settings, is refused naming `guildhall director enrol`.
 - `runtime`: the runtime is one of the adapters, and the program it runs is on `PATH`; the fake runtime is the `guildhall` executable itself.
-- `trust` (Claude): names the stable working directory and reports an exact saved folder approval when readable, otherwise **trust not confirmed**, warning that the first start may need one approval in Claude.
-  This is read-only and advisory, not a refusal: Claude resolves effective ancestor/project-root trust and environment overrides itself.
 - `guildhall`: `guildhall` is on `PATH`, because the session's hooks, status line and Director commands invoke that bare name; a refusal names adding the running executable's directory to `PATH`.
 - `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.
 - `skills`: the release skills and baseline install.
@@ -50,15 +48,13 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory (for Claude, in the stable workspace described below), inside a containment unit of its own ([runtime containment](decisions/0084-director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
 For Claude Code that is `claude --append-system-prompt-file <session-directory>/role.md --add-dir <copy> [--model <model>] [--effort <level>] -- "<first message>"`; see [runtime settings](adapters.md#runtime-settings) for effort resolution and preflight refusals.
 Claude runs in **`<copy>/director/claude`**, a stable workspace reused by starts, reloads and handoffs, with the first message naming the numbered session's `startup.md` by absolute path.
-The first-ever start may show Claude's native folder-trust dialog: review the generated settings, then choose **Yes, I trust this folder** once.
+A Director's very first start shows Claude's native folder-trust dialog: review the generated settings, then choose **Yes, I trust this folder** once.
 Choosing **No, exit** ends the runtime; Guildhall reports its nonzero exit status.
-After approval, subsequent sessions keep the same folder identity and do not require repeated trust approval.
+After approval, later starts, reloads and handoffs keep the same folder identity and do not show the folder-trust prompt again.
 Moving the copy or clearing Claude's saved trust may require approval again.
 The supervisor refreshes the workspace's generated `.claude` tree from the numbered record before each launch, after the preceding runtime has ended; do not edit this generated tree.
 The numbered session records, manifests, prompts, notes and endpoints remain unchanged in purpose.
 The allow/deny rules are unchanged, ordinary permission prompts remain enabled, and Guildhall never writes Claude's own trust state or uses a permission-bypass flag ([decision](decisions/director-stable-claude-workspace.md)).
-Preflight reads only an exact saved approval in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`); it does not reproduce Claude's version-dependent effective trust resolution.
-An unconfirmed result can therefore still be trusted by Claude through an ancestor or project-root entry; it is a visible first-start warning, not a definitive trust verdict.
 The terminal's interrupt reaches the runtime, which handles it; the supervisor waits for the runtime to end, records the session `stopped`, and exits 0, or 1 naming the status when the runtime exited nonzero.
 On Unix a hangup or termination of the supervisor, such as the terminal closing, is passed on to the runtime's unit as a termination; the supervisor waits for it to end, records the session `stopped`, and exits 1 naming the signal.
 A signal the supervisor handles that arrives after the session is recorded but before the runtime starts starts no runtime: the session is recorded `stopped` and the supervisor exits 1 naming the signal.

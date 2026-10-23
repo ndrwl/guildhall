@@ -1,7 +1,6 @@
 package claude
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,48 +33,4 @@ func (Adapter) PrepareSessionWorkspace(copyDir, recordDir string) (string, error
 		return "", err
 	}
 	return dir, nil
-}
-
-// SessionTrust reports an exact saved folder approval where readable, never writes it, and never
-// claims to reproduce Claude's version-dependent ancestor, git-root and managed trust resolution.
-func (Adapter) SessionTrust(copyDir string, getenv func(string) string) string {
-	if getenv == nil {
-		getenv = os.Getenv
-	}
-	dir := WorkspaceDir(copyDir)
-	unknown := fmt.Sprintf("%s: trust not confirmed; first start may require one folder-trust approval in Claude; effective ancestor/project trust is resolved by Claude (docs/director.md)", dir)
-	if getenv("CLAUDE_CODE_IGNORE_PERSISTED_TRUST") != "" {
-		return unknown + "; persisted trust disabled by environment"
-	}
-	configDir := getenv("CLAUDE_CONFIG_DIR")
-	var configPath string
-	if configDir != "" {
-		configPath = filepath.Join(configDir, ".claude.json")
-	} else {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return unknown
-		}
-		configPath = filepath.Join(home, ".claude.json")
-	}
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return unknown
-	}
-	var cfg struct {
-		Projects map[string]struct {
-			Accepted bool `json:"hasTrustDialogAccepted"`
-		} `json:"projects"`
-	}
-	if json.Unmarshal(data, &cfg) != nil {
-		return unknown
-	}
-	canonical, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return unknown
-	}
-	if cfg.Projects[filepath.ToSlash(canonical)].Accepted {
-		return fmt.Sprintf("%s: exact folder-trust approval recorded; Claude resolves effective trust at startup", dir)
-	}
-	return unknown
 }

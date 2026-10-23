@@ -161,9 +161,6 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 		return refuse("runtime", err)
 	}
 	line("runtime", "%s (%s)", p.name, program)
-	if persistent, ok := p.runtime.(runtimes.PersistentSession); ok {
-		line("trust", "%s", persistent.SessionTrust(copyDir, a.Getenv))
-	}
 
 	guildhall, err := a.LookPath("guildhall")
 	if err != nil {
