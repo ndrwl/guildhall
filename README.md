@@ -74,7 +74,7 @@ See [configuration and workflows](docs/configuration.md).
 - Go 1.27 or later, to build Guildhall (no release has been published yet).
 - `git`.
 - To try the task commands: a git checkout of a repository to work on.
-- Optional, depending on what you try: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) for the minimal Claude adapter, `gh` for publishing and merging pull requests on GitHub, `ssh` for Steward rollouts, and Herdr, a terminal multiplexer, for showing agents in tabs.
+- Optional, depending on what you try: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`, subject to the [skill-policy compatibility requirements](docs/configuration.md#claude-skill-policies)) for the minimal Claude adapter, `gh` for publishing and merging pull requests on GitHub, `ssh` for Steward rollouts, and Herdr, a terminal multiplexer, for showing agents in tabs.
 
 `guildhall doctor` tells you which of `git`, `ssh`, `claude` and `herdr` it can find; it does not check for Go or `gh`.
 

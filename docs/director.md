@@ -34,7 +34,7 @@ It first runs a preflight and prints one line per check, as `doctor` prints, sto
   Organization-managed force-enablement can defeat plugin disablement; preflight does not claim to inspect or override that policy.
   Selective bundle/account opt-ins are open-world, and ambient personal/project/plugin skills are not isolated.
 
-The Director's default `director-v1` disables bundled and account-synced skills and `cc-plugin-plugin-authoring@builtin`, without disabling other plugins such as Guildhall Lanterns or any Guildhall release skills.
+See [Claude skill policies](configuration.md#claude-skill-policies) for the Director's shipped defaults and customization controls.
 Generated settings retain existing permissions, turn hooks and status line and are passed explicitly with `--settings` so account-sync control uses a supported session scope.
 The numbered session manifest owns a `claude-skill-policy.json` provenance receipt alongside its runtime files.
 Persist customizations in Guildhall configuration, not the regenerated workspace; tool permissions and engine-owned review/publish authority remain the boundary.
@@ -58,7 +58,7 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - `manifest.json`: the digest of every file above.
 
 It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory (for Claude, in the stable workspace described below), inside a containment unit of its own ([runtime containment](decisions/0084-director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
-For Claude Code that is `claude --append-system-prompt-file <session-directory>/role.md --add-dir <copy> [--model <model>] [--effort <level>] -- "<first message>"`; see [runtime settings](adapters.md#runtime-settings) for effort resolution and preflight refusals.
+For Claude Code that is `claude --append-system-prompt-file <session-directory>/role.md --add-dir <copy> --settings <copy>/director/claude/.claude/settings.json [--model <model>] [--effort <level>] -- "<first message>"`; see [runtime settings](adapters.md#runtime-settings) for effort resolution and preflight refusals.
 Claude runs in **`<copy>/director/claude`**, a stable workspace reused by starts, reloads and handoffs, with the first message naming the numbered session's `startup.md` by absolute path.
 A Director's very first start shows Claude's native folder-trust dialog: review the generated settings, then choose **Yes, I trust this folder** once.
 Choosing **No, exit** ends the runtime; Guildhall reports its nonzero exit status.

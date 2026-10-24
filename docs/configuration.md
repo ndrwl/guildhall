@@ -56,7 +56,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 Each shipped default is overridable; a Steward can lock a key with `overridable = false` using normal managed/local precedence.
 Managed values are supported by the configuration resolver; current standalone Director admission still refuses managed copies as described above.
 Local replacement replaces the entire policy value, not individual JSON members.
-A profile-specific effective key replaces the generic Artisan key; otherwise every profile uses `artisan-v1`, without guessing roles from names like `reviewer-opus-b`.
+A profile-specific effective key replaces the generic Artisan key; otherwise the profile inherits that generic policy, which defaults to `artisan-v1`, without guessing roles from names like `reviewer-opus-b`.
 The shipped example explicitly binds researcher/planner to `artisan-v1`, builder to `builder-v1` and reviewer to `reviewer-v1`.
 
 | Preset | Bundled skills kept | Account sync | Plugin-authoring builtin |

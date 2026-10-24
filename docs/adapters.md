@@ -136,7 +136,7 @@ claude --print <instruction> --output-format json --permission-mode acceptEdits 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
 - The instruction names the prompt copy and a draft result file, `model/result.json`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
-- `acceptEdits` lets Claude edit files in the working directory and the model directory; every other tool that needs permission, such as shell commands, is denied unless the attempt's allowed tools or Claude's own settings allow it, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
+- `acceptEdits` lets Claude edit files in the working directory and the model directory; other tools that need permission depend on explicit or inherited grants, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
 - The wrapper always writes `claude-settings.json` beside the result, outside model-writable added directories, and passes it with `--settings`.
   It merges `permissions.allow` from the referenced copy/profile with the resolved [Claude skill policy](configuration.md#claude-skill-policies), including when the allow list is empty.
   `syncClaudeAiSkills` is consequently supplied in flag scope, not just repository project settings.
@@ -184,8 +184,7 @@ The allow rules widen tool authority and never narrow it: the user's `~/.claude/
 Ordinary print mode also discovers hooks, skills, commands, plugins, agents and MCP servers; skill frontmatter can grant turn-scoped tools.
 Thus `acceptEdits` grants edits only, but an empty profile allow list is not the complete inherited permission environment, and applicable deny rules still win.
 Skill selection is ergonomics, not a security sandbox: independently granted shell/API tools can perform equivalent actions without invoking a skill.
-The shipped researcher profile grants `WebSearch` and `WebFetch`; planner, builder and reviewer ship without those web grants.
-Change the copy's profile `allowed_tools` to customize tool grants, and use Guildhall managed/local settings to customize skill selection, rather than editing generated Claude files.
+See [Claude skill policies](configuration.md#claude-skill-policies) for shipped web grants and independent tool/skill customization, rather than editing generated Claude files.
 On a machine where neither the profile nor those settings allow them, a build attempt can edit files but neither run the checks nor commit, so it leaves no new head to publish.
 
 So the grant and the dependency are never silent:

@@ -350,12 +350,9 @@ The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s)
 ## Claude skill and web defaults
 
 Claude Artisans resolve [skill selection](configuration.md#claude-skill-policies) from the trusted copy/profile reference before launching.
-The default generic, researcher and planner policies add no bundled/account skills; explicit builder and reviewer bindings keep the builder's `claude-api`, `run` and `dataviz`, or the reviewer's supplementary `security-review`.
+That configuration reference owns the shipped role defaults, web grants, account-sync opt-ins and compatibility requirements.
 Rendered workflow skill documents are unchanged, and non-Claude adapters receive no invented equivalent policy.
-The shipped researcher profile grants `WebSearch` and `WebFetch`, while planner, builder and reviewer ship without web grants; customize `allowed_tools` in the copy's profile to change this.
-Skill keeps do not themselves grant those tools.
-The wrapper always renders flag-scoped settings, even without grants, plus a policy receipt outside the model directory, and checks Claude Code >= 2.1.310 without a model call before launch.
-Account syncing is off unless deliberately opted in for document/browser work; no personal account settings are changed.
+See the [Claude adapter](adapters.md#claude-adapter) for the wrapper's settings and policy receipt.
 See [Artisan permissions](adapters.md#artisan-permissions) for inherited settings, hooks and skill-scoped grants: ordinary print mode is not edits-only isolation.
 
 ## Commands

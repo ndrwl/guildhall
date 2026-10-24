@@ -327,7 +327,8 @@ func Granted(result string) ([]string, error) {
 }
 
 // settings reads the allow rules of the one --settings file in flags: an absolute path outside the added
-// directories, holding exactly a permissions object with an allow list. No --settings grants none.
+// directories, holding a permissions allow list (possibly empty) and optional skill-policy controls.
+// No --settings grants none.
 func settings(flags, added []string) ([]string, error) {
 	i := slices.Index(flags, "--settings")
 	if i < 0 {
