@@ -130,6 +130,9 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 		if _, err := a.resolveRuntime(&p); err != nil {
 			return a.fail(fmt.Errorf("director start: reload: runtime: %w", err))
 		}
+		if err := a.preflightSkillPolicies(&p); err != nil {
+			return a.fail(fmt.Errorf("director start: reload: skills: %w", err))
+		}
 	}
 }
 

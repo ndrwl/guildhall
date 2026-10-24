@@ -50,6 +50,53 @@ These are the settings Guildhall itself reads, by their effective value under th
 | `lock_wait` | How long each advance (`task start`, `step done`, `step finish`, `step retry` and a launcher's [watcher advance](running.md#the-watcher)) waits for its task lock, and for the store's lock at each open (including preflight hold/admission reads and launch ownership polling), before it fails: a positive Go duration, default 30 seconds; `config.LockWait` reads it. A launcher's advance reads the same copy, so a failed watcher advance and its one retry each wait this long. |
 | `checks_refresh` | How long a [validate](interpreter.md#validate) step waiting on a head's checks waits after reading them before an advance reads them again: a Go duration, default 1 minute; `"0s"` reads them at every advance, and `config.ChecksRefresh` reads it. The Director session's [checks watcher](director.md#checks) also uses this setting, with its own minimum interval. |
 
+### Claude skill policies
+
+`claude_skills_director`, `claude_skills_artisan` and `claude_skills_profile_<declared-name>` are string-valued managed/local settings containing a typed JSON policy.
+Each shipped default is overridable; a Steward can lock a key with `overridable = false` using normal managed/local precedence.
+Managed values are supported by the configuration resolver; current standalone Director admission still refuses managed copies as described above.
+Local replacement replaces the entire policy value, not individual JSON members.
+A profile-specific effective key replaces the generic Artisan key; otherwise the profile inherits that generic policy, which defaults to `artisan-v1`, without guessing roles from names like `reviewer-opus-b`.
+The shipped example explicitly binds researcher/planner to `artisan-v1`, builder to `builder-v1` and reviewer to `reviewer-v1`.
+
+| Preset | Bundled skills kept | Account sync | Plugin-authoring builtin |
+|---|---|---|---|
+| `director-v1` | None; all 13 Guildhall release skills remain independent | Off | Disabled |
+| `artisan-v1` | None; rendered workflow skill documents remain available | Off | Disabled |
+| `builder-v1` | `claude-api`, `run`, `dataviz` | Off | Disabled |
+| `reviewer-v1` | `security-review`, supplementary only, never a substitute for Guildhall review | Off | Disabled |
+
+```toml
+[local]
+claude_skills_profile_builder = '{"preset":"builder-v1","overrides":{"dataviz":"off","simplify":"on"}}'
+# Explicit document opt-in; do not silently inherit the signed-in account everywhere.
+claude_skills_profile_researcher = '{"preset":"artisan-v1","account_sync":true,"overrides":{"anthropic-skills:pdf":"on","anthropic-skills:docx":"on"}}'
+```
+
+The only policy fields are required `preset`, optional `account_sync` (false by default), `overrides` (canonical skill name to `on`, `off`, `name-only` or `user-invocable-only`) and `plugins` (explicit `plugin@source` IDs to booleans).
+Account skills use the `anthropic-skills:` namespace; keeping one without `account_sync = true` is an error.
+PDF/Office/browser work is explicit opt-in: select the appropriate account skill and sync, and for browser/computer work enable its backing capability together with its safety instructions.
+An opt-in may expose posting, scheduling, connected data and spend; permissions still govern tools.
+Unknown custom skill names are accepted but reported as not discovered, not guaranteed available.
+Malformed JSON, duplicate keys, unknown fields, invalid states/names, unsupported presets and explicit profile policy on a non-Claude profile are refused even in inactive/overridden values.
+
+Presets use `disableBundledSkills` when no bundled skill is kept.
+Keeping any known bundle switches to selective `skillOverrides`, suppressing the other known bundles; unknown future bundles may then load.
+Account sync defaults off via session `--settings`, stopping loading of cached account skills too, without changing account/global files.
+Account-enabled policies suppress known unwanted account skills but cannot promise to suppress newly synced unknown names.
+Plugin skills are excluded from `skillOverrides`: disable a whole plugin through `plugins`, not a skill called `plugin-authoring`.
+The presets disable only `cc-plugin-plugin-authoring@builtin`; unrelated plugins, including Guildhall Lanterns, are untouched.
+No blanket `Skill` deny is generated: selection is ergonomics, not a security sandbox, and existing tool denies remain authoritative.
+An organization-managed force-enabled plugin may override these controls.
+Personal/project skills, unknown plugins and feature-gated inventory are not isolated by this policy.
+
+Resolved settings are rendered before launch, not edited in generated workspaces.
+Both Director and Artisan pass an owned settings file with `--settings`, even when Artisan grants are empty, and record policy provenance/digest in `claude-skill-policy.json`.
+`director start --check` reports configured policy and the tested Claude Code baseline (minimum 2.1.310), not a paid live inventory probe; unsupported versions refuse launch because print mode can silently ignore unsupported settings.
+A kept-bundle policy also refuses an inherited `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS` kill switch.
+The shipped researcher profile's `allowed_tools` grants `WebSearch` and `WebFetch`; planner, builder and reviewer have no shipped web grants.
+Customize those tool grants in the copy's profile, independently from managed/local skill selection.
+
 ### Quality settings
 
 These settings switch the optional practices of the [quality rubric](quality.md) and size them ([decision](decisions/0083-quality-rubric.md)); `config.Quality` reads their effective values and `config.Parse` refuses a value it cannot use, naming the key.

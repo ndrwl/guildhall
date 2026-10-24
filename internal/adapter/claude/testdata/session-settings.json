@@ -1,33 +1,7 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(guildhall)",
-      "Bash(guildhall *)",
-      "Bash(git status)",
-      "Bash(git status *)",
-      "Bash(git log)",
-      "Bash(git log *)",
-      "Bash(git diff)",
-      "Bash(git diff *)",
-      "Bash(git show)",
-      "Bash(git show *)",
-      "Bash(git rev-parse)",
-      "Bash(git rev-parse *)",
-      "Bash(git ls-files)",
-      "Bash(git ls-files *)",
-      "Bash(git branch --list)",
-      "Bash(git branch --list *)",
-      "Bash(git remote -v)"
-    ],
-    "deny": [
-      "Bash(git *--output*)",
-      "Bash(guildhall claude-artisan:*)",
-      "Bash(guildhall fake-artisan:*)",
-      "Bash(guildhall fake-director:*)",
-      "Bash(guildhall artisan start:*)",
-      "Edit(//home/g/copy/config.toml)",
-      "Edit(//home/g/copy/managed.toml)"
-    ]
+  "disableBundledSkills": true,
+  "enabledPlugins": {
+    "cc-plugin-plugin-authoring@builtin": false
   },
   "hooks": {
     "Stop": [
@@ -61,8 +35,78 @@
       }
     ]
   },
+  "permissions": {
+    "allow": [
+      "Bash(guildhall)",
+      "Bash(guildhall *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git show)",
+      "Bash(git show *)",
+      "Bash(git rev-parse)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files)",
+      "Bash(git ls-files *)",
+      "Bash(git branch --list)",
+      "Bash(git branch --list *)",
+      "Bash(git remote -v)"
+    ],
+    "deny": [
+      "Bash(git *--output*)",
+      "Bash(guildhall claude-artisan:*)",
+      "Bash(guildhall fake-artisan:*)",
+      "Bash(guildhall fake-director:*)",
+      "Bash(guildhall artisan start:*)",
+      "Edit(//home/g/copy/config.toml)",
+      "Edit(//home/g/copy/managed.toml)"
+    ]
+  },
+  "skillOverrides": {
+    "anthropic-skills:built-in-browser": "off",
+    "anthropic-skills:chrome-browser": "off",
+    "anthropic-skills:computer-use": "off",
+    "anthropic-skills:deep-research": "off",
+    "anthropic-skills:docs": "off",
+    "anthropic-skills:docx": "off",
+    "anthropic-skills:import-memory": "off",
+    "anthropic-skills:morning": "off",
+    "anthropic-skills:pdf": "off",
+    "anthropic-skills:pptx": "off",
+    "anthropic-skills:skill-creator": "off",
+    "anthropic-skills:xlsx": "off",
+    "artifact-capabilities": "off",
+    "artifact-design": "off",
+    "artifact-diagramming": "off",
+    "batch": "off",
+    "claude-api": "off",
+    "code-review": "off",
+    "commit": "off",
+    "dataviz": "off",
+    "debug": "off",
+    "deep-research": "off",
+    "design": "off",
+    "design-sync": "off",
+    "fewer-permission-prompts": "off",
+    "init": "off",
+    "keybindings-help": "off",
+    "loop": "off",
+    "pr": "off",
+    "run": "off",
+    "run-skill-generator": "off",
+    "schedule": "off",
+    "security-review": "off",
+    "simplify": "off",
+    "update-config": "off",
+    "verify": "off",
+    "workflow-authoring": "off"
+  },
   "statusLine": {
     "type": "command",
     "command": "guildhall director context-report"
-  }
+  },
+  "syncClaudeAiSkills": false
 }

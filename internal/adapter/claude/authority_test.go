@@ -67,7 +67,7 @@ func TestWrapperProfileAuthority(t *testing.T) {
 			if err != nil || len(got) != 0 {
 				t.Fatalf("granted %q: %v", got, err)
 			}
-			if _, err := os.Stat(claude.ArtisanSettingsPath(spec.ResultFile)); !os.IsNotExist(err) {
+			if _, err := os.Stat(claude.ArtisanSettingsPath(spec.ResultFile)); err != nil {
 				t.Fatalf("settings: %v", err)
 			}
 		})

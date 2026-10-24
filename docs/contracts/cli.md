@@ -56,7 +56,13 @@ A request without a baseline role or guide path takes it from `App.InstallBaseli
 Director preflight checks its own model and effective effort at the `runtime` check before recording a session, using the profile runtime refusal rules.
 Director session specs and interpreter-launched profile attempts resolve empty effort through `config.EffectiveEffort`, defaulting to medium; explicit effort wins, and no model fallback is introduced.
 
+`director start` preflight resolves [Claude skill policies](config-claude-skills.md), reports their provenance/digests and configured controls separately from release skill count, and probes `--version` through `App.Output` with a ten-second context when any Claude session/profile applies.
+It refuses versions below 2.1.310, unknown version output and a conflicting inherited bundle-disable switch before recording a session.
+It reports organization/ambient inventory limitations rather than claiming live discovery or making model calls.
+
 ## Tests
+
+`skill_policy_test.go` ran red against the previous preflight, then green: supported-version configured policy reporting, unsupported-version refusal, one version-only process probe and no session directory from `--check`.
 
 Effort-default tests were run red before implementation: `TestTaskStartRunsTheProfilesModelAndEffort` expected medium for an unset profile; `TestDirectorRefusesOwnEffort` expected a preflight refusal; and the first case of `TestDirectorEffortReachesRuntime` expected the fake's recorded medium effort.
 The full Director inheritance matrix (both real child-process fake and strict Claude stub), configured profile fallback and explicit override checks were completed after implementation and passed; all use zero model calls.

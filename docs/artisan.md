@@ -347,6 +347,14 @@ When classification reaches the owner checks, a heartbeat file that `ReadHeartbe
 A missing file (`ErrNoHeartbeat`) remains no heartbeat; see the [API contract](../internal/reconcile/reconcile.go) for refusal handling.
 The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s).
 
+## Claude skill and web defaults
+
+Claude Artisans resolve [skill selection](configuration.md#claude-skill-policies) from the trusted copy/profile reference before launching.
+That configuration reference owns the shipped role defaults, web grants, account-sync opt-ins and compatibility requirements.
+Rendered workflow skill documents are unchanged, and non-Claude adapters receive no invented equivalent policy.
+See the [Claude adapter](adapters.md#claude-adapter) for the wrapper's settings and policy receipt.
+See [Artisan permissions](adapters.md#artisan-permissions) for inherited settings, hooks and skill-scoped grants: ordinary print mode is not edits-only isolation.
+
 ## Commands
 
 `guildhall artisan start`, `stop`, `status` and `resume` name an owned attempt with `--store <file> --state <dir> --repo <id> --task <id> --step <id> --attempt <n>`.

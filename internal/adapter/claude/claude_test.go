@@ -229,7 +229,7 @@ func TestClaudeArgs(t *testing.T) {
 	a := args(spec)
 	got := claude.ClaudeArgs(a)
 	model := filepath.Join(filepath.Dir(spec.ResultFile), artisan.ModelDir)
-	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--permission-mode", claude.PermissionMode, "--add-dir", model}
+	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--permission-mode", claude.PermissionMode, "--settings", claude.ArtisanSettingsPath(spec.ResultFile), "--add-dir", model}
 	if !slices.Equal(got, want) {
 		t.Errorf("ClaudeArgs = %q, want %q", got, want)
 	}
@@ -462,7 +462,7 @@ func TestSuggestedGoAllowedToolsAreValidConfig(t *testing.T) {
 }
 
 // TestRunGrantsAllowedTools: the session Claude runs is granted exactly the attempt's allowed tools, through a
-// settings file outside the directories Claude may write; an attempt with none is given no settings file.
+// settings file outside the directories Claude may write; empty grants still receive the skill policy.
 func TestRunGrantsAllowedTools(t *testing.T) {
 	claudetest.Install(t)
 	for name, rules := range map[string][]string{
@@ -482,8 +482,8 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 				t.Errorf("granted %q, %v; want exactly %q", got, err, rules)
 			}
 			_, err = os.Stat(claude.ArtisanSettingsPath(spec.ResultFile))
-			if exists := err == nil; exists != (len(rules) > 0) {
-				t.Errorf("settings file exists %v (%v); want %v", exists, err, len(rules) > 0)
+			if err != nil {
+				t.Errorf("settings file missing: %v", err)
 			}
 		})
 	}

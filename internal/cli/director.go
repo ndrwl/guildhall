@@ -207,12 +207,15 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 		return refuse("artisans", err)
 	}
 	line("artisans", "%s", perms)
+	if err := a.preflightSkillPolicies(&p); err != nil {
+		return refuse("skills", err)
+	}
 	return p, nil
 }
 
 // artisanPermissions says what this Director's config at cfgPath grants each profile that runs the claude adapter:
-// its allowed_tools, or nothing, when claude print mode allows edits only, so a build's checks and commits depend on
-// Claude's own settings allowing Bash (docs/adapters.md#artisan-permissions). A profile of another adapter with
+// its explicit allowed_tools, or nothing; acceptEdits grants edits only but inherited settings, hooks and
+// skill-scoped grants may allow more, so a build's checks and commits depend on Bash permission (docs/adapters.md#artisan-permissions). A profile of another adapter with
 // allowed_tools is refused, since only the claude adapter grants them, and so is a profile whose model or effort
 // its runtime cannot honour (checkProfileSettings).
 func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
@@ -241,7 +244,7 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 		if len(bare) > 1 {
 			who = "profiles %s grant"
 		}
-		grants = append(grants, fmt.Sprintf(who+" nothing, so claude print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings (docs/adapters.md#artisan-permissions)",
+		grants = append(grants, fmt.Sprintf(who+" nothing explicitly; acceptEdits grants edits only, while inherited settings, hooks and skill-scoped grants may allow more; a build's checks and commits need Bash permission (docs/adapters.md#artisan-permissions)",
 			strings.Join(bare, ", ")))
 	}
 	return whose + strings.Join(grants, "; ") + "; wrappers load grants by copy/profile reference, never raw rule flags", nil
