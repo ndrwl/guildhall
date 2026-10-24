@@ -47,7 +47,20 @@ const LogFile = "launcher.log"
 // waits for that process to exit. It refuses a handle this Process did
 // not return; stopping again, or after the attempt finished, is not an error.
 // Both are safe for concurrent use.
+//
+// With Presentation or OpenPresentation set, the pane starts the ordinary
+// detached launcher through a log-streaming bridge. Launch's single-use claim
+// and durable owner identity, never pane liveness, decide whether a command may
+// be typed. Unlike hidden-mode cleanup, an ambiguous pane start is left owned
+// for reconciliation, never stopped or retried speculatively. Tabs stay open.
 type Process struct {
+	// Presentation, when set, starts the owned launcher from a new Artisan pane.
+	// With nil and no OpenPresentation, Launch retains hidden detached mode.
+	Presentation *Presentation
+	// OpenPresentation lazily resolves the terminal only when launching work,
+	// never while recording results, cancelling, or reconciling an attempt.
+	// It is ignored when Presentation is set; a nil result means hidden mode.
+	OpenPresentation func(context.Context) (*Presentation, error)
 	// Executable is the guildhall binary; Env is added to its environment.
 	Executable string
 	Env        []string
@@ -74,6 +87,7 @@ type child struct {
 	at       Attempt
 	identity artisan.Identity
 	exited   chan struct{}
+	pane     bool
 }
 
 // Launch implements interp.Launcher.Launch; see Process.
@@ -139,6 +153,20 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapter
 		cmd.Stdout, cmd.Stderr = log, log
 		return cmd
 	}
+	presentation := p.Presentation
+	if presentation == nil && p.OpenPresentation != nil {
+		presentation, err = p.OpenPresentation(ctx)
+		if err != nil {
+			_ = log.Close()
+			return interp.Handle{}, err
+		}
+	}
+	if presentation != nil {
+		_ = log.Close()
+		cmd := build()
+		cmd.Dir = workDir
+		return p.launchPane(ctx, at, cmd, presentation)
+	}
 	cmd, err := startDetached(build)
 	// The child holds its own handle on the log.
 	_ = log.Close()
@@ -179,6 +207,18 @@ func (p *Process) owned(ctx context.Context, c *child) error {
 	exited := false
 	for {
 		o, err := c.at.owner()
+		if err == nil && o != nil && c.pane && c.identity.PID == 0 {
+			c.identity = artisan.Identity(o.LauncherIdentity)
+			go func() {
+				for {
+					if live, _ := artisan.Probe(c.identity); live == artisan.Gone {
+						close(c.exited)
+						return
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+			}()
+		}
 		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity {
 			if o.Endpoint != "" {
 				return nil

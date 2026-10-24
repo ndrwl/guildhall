@@ -431,7 +431,28 @@ Escapes from a process group, such as a `setsid` grandchild, are not members and
 
 `launch.ResumeArgv` is the command a pane registers to run after a restart: `guildhall artisan resume` with the attempt's flags, starting with the plain command name Herdr requires.
 `herdr.Client.ReportAgent` registers it with `herdr pane report-agent --source guildhall`, refusing a resume command that starts with a path or an option (`herdr.ErrResumeArgv`).
-Production registration is deferred to L7 part 3, which wires the `herdr.Client.ReportAgent` call with `launch.ResumeArgv` when running the launcher in the Herdr tab.
+Workflow launches now register `launch.ResumeArgv` through `herdr.Client.ReportAgent` with source `guildhall` before typing the launch command into the Artisan's pane.
+A live launcher after a Herdr restart is still live: `artisan resume` refuses to replace it, rather than interpreting the missing presentation as an exited worker.
+
+### Workflow Artisan tabs
+
+With a Director's `herdr_session` configured, workflow attempts, including judge attempts, open a tab in the workspace labelled with that Director's name.
+The tab label is `artisan <repository>/<task>/<step>/<attempt>`.
+Without that setting, workflow attempts keep the hidden detached-process mode.
+Both modes use the same owned launcher, result recording, spend accounting, guard rails, retry rules and watcher.
+
+The pane runs an internal `artisan start --pane-launch` bridge that starts the owned launcher detached from the terminal, with no terminal input and its output appended to `launcher.log`, and streams that log into the pane.
+This is a watchable print-mode Artisan, not an interactive model session.
+Closing the tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
+After the launcher and its watcher finish, the bridge prints a finished line and leaves the tab open for inspection.
+Guildhall does not automatically close these tabs, including after landing or preserving the work; a person may close the presentation without losing the attempt's log, result or isolated copy.
+
+An attempt-local `pane-launch.json` single-use claim is written before opening a pane, then records the tab binding before typing.
+An ambiguous API response, startup timeout or caller interruption leaves that claim in place and returns an error without stopping an unverified launcher or typing another command.
+A duplicate launch reconciles the attempt's files and durable ownership for diagnosis and refuses to launch again; a missing pane is never permission to duplicate work.
+Inspect with `artisan status` and, only for an exited owner, reconcile with `artisan resume`; normal workflow retries have a new attempt number and their own claim.
+A claimed attempt with no owner needs operator inspection of the preserved launch intent rather than an automatic retry of the same launch.
+No Artisan tab cleanup touches other tabs, and the default Herdr session is refused.
 
 ### Harness
 
