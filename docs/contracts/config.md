@@ -29,7 +29,12 @@ It does not mutate the config or inject defaults into its digest; it is for vali
 `Parse` and `ParseCombined` refuse either section's `default_effort` unless it is exactly `low`, `medium`, `high`, `xhigh` or `max`, even if overridden; normal managed/local precedence applies.
 Explicit session/profile settings remain runtime-validated, so fake accepts any value while Claude refuses unsupported settings before launch.
 
+`ClaudeSkills` resolves typed, versioned managed/local skill policies with explicit profile binding, preset expansion and deterministic control digests.
+See the focused [Claude policy contract](config-claude-skills.md) for validation, source/plugin limits and rendering ownership.
+
 ## Tests
+
+`claude_skills_test.go` was run red before implementation (missing parser/resolver methods), then green; `claude_defaults_test.go` adds semantic shipped-example, full matrix and identity regression coverage afterward.
 
 `effort_test.go` was written before implementation: default/local/managed/overridden effort, explicit override, malformed values and separate managed-file precedence; its first run failed to compile because `EffectiveEffort` did not yet exist, then passed with the implementation.
 `config_test.go`, `managed_test.go`, `profile_test.go`; real temporary files: `load_test.go`.

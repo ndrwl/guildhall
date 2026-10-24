@@ -75,6 +75,7 @@ func TestTaskStartRefusesSettingsARuntimeCannotHonour(t *testing.T) {
 // TestDirectorStartRefusesSettingsARuntimeCannotHonour: a profile whose model or effort its runtime cannot honour
 // refuses the preflight's artisans check, naming the profile and the setting, rather than running on a default.
 func TestDirectorStartRefusesSettingsARuntimeCannotHonour(t *testing.T) {
+	claudetest.Install(t)
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"claude\"\nmodel = \"opus\"\neffort = \"extreme\"\n", "/exit")
 	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
 	if code != 1 || !strings.Contains(out, "artisans: refused") || !strings.Contains(stderr, "profile builder") || !strings.Contains(stderr, "extreme") {

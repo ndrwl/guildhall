@@ -37,13 +37,13 @@ func TestSessionCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--model", "opus", "--effort", "high", "--", "You are starting up."}
+	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--model", "opus", "--effort", "high", "--", "You are starting up."}
 	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
 		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
 	}
 	spec.Model, spec.Effort = "", ""
 	named := filepath.Join(c, "claude")
-	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--", "You are starting up."}) {
+	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--", "You are starting up."}) {
 		t.Errorf("named claude, no model: %+v, %v", cmd, err)
 	}
 	if cmd, err := (claude.Adapter{Claude: "bin/claude"}).Session(spec); err == nil || len(cmd.Argv) > 0 {
@@ -115,8 +115,8 @@ func TestSessionStubRequiresMessageSeparator(t *testing.T) {
 // guildhall director context-report.
 func TestSessionSettingsGolden(t *testing.T) {
 	files := claude.Adapter{}.SessionFiles("/home/g/copy")
-	if len(files) != 1 {
-		t.Fatalf("SessionFiles = %v, want only %s", files, claude.SettingsFile)
+	if len(files) != 2 || len(files[claude.SkillPolicyFile]) == 0 {
+		t.Fatalf("SessionFiles should contain settings and policy receipt")
 	}
 	got := files[claude.SettingsFile]
 	path := filepath.Join("testdata", "session-settings.json")

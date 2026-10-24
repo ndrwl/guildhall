@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,10 +49,29 @@ func TestDirectorClaudeReloadReusesTrustedWorkspace(t *testing.T) {
 	writeFile(t, cfg, strings.Replace(string(data), `adapter = "fake"`, `adapter = "claude"`, 1))
 	t.Setenv("GUILDHALL_TEST_CLAUDE_TRUSTED_DIR", filepath.Join(dir, "director", "claude"))
 	done := supervise(t, dir, time.Nanosecond)
+	updated := strings.Replace(string(data), `adapter = "fake"`, `adapter = "claude"`, 1)
+	updated = strings.Replace(updated, "[local]\n", "[local]\nclaude_skills_director = '{\"preset\":\"director-v1\",\"account_sync\":true}'\n", 1)
+	writeFile(t, cfg, updated)
 	copyRun(t, dir, "director", "handoff", "--note-file", noteFile(t, "Continue from the saved note.\n"))
 	copyRun(t, dir, "director", "reload", "--now")
 	copyRun(t, dir, "director", "turn-ended")
 	waitSessions(t, dir, 2)
+	for n, wantSync := range []bool{false, true} {
+		path := filepath.Join(dir, "director", "session-"+fmt.Sprint(n+1), ".claude", "settings.json")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var settings struct {
+			Sync bool `json:"syncClaudeAiSkills"`
+		}
+		if err := json.Unmarshal(b, &settings); err != nil {
+			t.Fatal(err)
+		}
+		if settings.Sync != wantSync {
+			t.Fatalf("session %d account sync %t, want %t", n+1, settings.Sync, wantSync)
+		}
+	}
 	holdsOne(t, dir, 2)
 	copyRun(t, dir, "director", "stop", "--now")
 	copyRun(t, dir, "director", "turn-ended")

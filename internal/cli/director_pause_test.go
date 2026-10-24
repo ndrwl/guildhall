@@ -445,6 +445,9 @@ func supervisorApp(stdin *os.File, grace time.Duration) (*App, *bytes.Buffer, *b
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Executable = os.Executable
 	app.LookPath = exec.LookPath
+	app.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, path, args...).CombinedOutput()
+	}
 	app.InstallSkills = skills.Install
 	app.InstallBaseline = baseline.Install
 	if stdin != nil {

@@ -8,8 +8,25 @@ name = "tools"
 review_instructions = "Cite the accepted requirement for every finding and check Windows paths."
 # How long a worker may stay silent before the Director hears it stalled; "0s" turns that off.
 stall_interval = "15m"
+# Explicit role bindings; renamed/custom profiles inherit artisan-v1 unless bound here.
+claude_skills_director = '{"preset":"director-v1"}'
+claude_skills_artisan = '{"preset":"artisan-v1"}'
+claude_skills_profile_researcher = '{"preset":"artisan-v1"}'
+claude_skills_profile_planner = '{"preset":"artisan-v1"}'
+claude_skills_profile_builder = '{"preset":"builder-v1"}'
+claude_skills_profile_reviewer = '{"preset":"reviewer-v1"}'
 
 # Artisan profiles that workflow steps name with "profile"; no credentials.
+[profile.researcher]
+adapter = "claude"
+model = "opus"
+# Web research is an explicit profile grant, not an account/browser skill opt-in.
+allowed_tools = ["WebSearch", "WebFetch"]
+
+[profile.planner]
+adapter = "claude"
+model = "opus"
+
 [profile.builder]
 adapter = "claude"
 model = "opus"

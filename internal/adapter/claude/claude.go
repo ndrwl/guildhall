@@ -39,6 +39,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/render"
 )
 
@@ -49,10 +50,9 @@ const Subcommand = "claude-artisan"
 // looked up on PATH when the attempt starts.
 const Program = "claude"
 
-// PermissionMode is the Claude Code permission mode of every attempt: file
-// edits are allowed in the working directory and the model directory, and
-// every other tool needing permission is denied, since a non-interactive
-// session has no one to ask.
+// PermissionMode grants edits in the working and model directories. Other tools
+// need permission; inherited settings, hooks and skill-scoped grants may supply it.
+// Non-interactive sessions cannot ask, and applicable deny rules still win.
 const PermissionMode = "acceptEdits"
 
 // OutputFormat is Claude Code's print-mode output format the wrapper asks for: one JSON object, the session's
@@ -60,7 +60,7 @@ const PermissionMode = "acceptEdits"
 const OutputFormat = "json"
 
 // ArtisanSettingsFile is the Claude Code settings file the wrapper writes beside the result file for an attempt
-// granted allowed tools (ArtisanSettings), outside the model directory, so Claude cannot change its own grant.
+// with tool grants and skill policy, even with empty grants, outside the model directory.
 const ArtisanSettingsFile = "claude-settings.json"
 
 // SuggestedGoAllowedTools is the documented allowed_tools set for a Go repository's builder profile
@@ -88,6 +88,8 @@ type Adapter struct {
 	// Claude is the Claude Code program the wrapper runs; empty means Program
 	// on PATH.
 	Claude string
+	// SkillPolicy is the already resolved Director policy; nil uses director-v1.
+	SkillPolicy *config.ClaudeSkillPolicy
 }
 
 // Capabilities reports the Claude adapter's optional capabilities: none.
@@ -224,6 +226,9 @@ func ArtisanSettingsPath(result string) string {
 // ArtisanSettings is the Claude Code settings file granting rules: a permissions object whose allow list is
 // rules, in order, and nothing else, as JSON with a trailing newline.
 func ArtisanSettings(rules []string) []byte {
+	if rules == nil {
+		rules = []string{}
+	}
 	type permissions struct {
 		Allow []string `json:"allow"`
 	}
@@ -278,14 +283,12 @@ func Instruction(a Args) string {
 // ClaudeArgs are the arguments after the program for attempt a: print mode
 // with Instruction as the prompt, OutputFormat, PermissionMode, a's model and
 // effort as --model and --effort, each only when set, the settings file at
-// ArtisanSettingsPath when a has allowed tools, and only the model directory
+// ArtisanSettingsPath on every attempt, and only the model directory
 // added for tool access.
 func ClaudeArgs(a Args) []string {
 	args := []string{"--print", Instruction(a), "--output-format", OutputFormat, "--permission-mode", PermissionMode}
 	args = append(args, settingsArgs(a.Settings)...)
-	if len(a.allowedTools) > 0 {
-		args = append(args, "--settings", ArtisanSettingsPath(a.ResultFile))
-	}
+	args = append(args, "--settings", ArtisanSettingsPath(a.ResultFile))
 	return append(args, "--add-dir", ModelDir(a.ResultFile))
 }
 
@@ -393,7 +396,7 @@ var errMarked = errors.New("cancel marker present")
 // (adapter.ErrResultExists); it replaces the model directory with one holding
 // only the prompt copy and the inputs and skills directories beside the prompt
 // file, so a stale draft is never published, writes ArtisanSettings at
-// ArtisanSettingsPath when a has allowed tools, then runs Claude in the
+// ArtisanSettingsPath with the resolved skill policy on every attempt, then runs Claude in the
 // current directory with ClaudeArgs, no standard input, and its output on
 // stdout and stderr. An interrupt, the end of ctx, or the attempt's cancel
 // marker asks Claude to stop (an interrupt on Unix, termination on Windows),
@@ -432,13 +435,21 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("claude adapter: %w", err)
 	}
+	policy, err := attemptPolicy(a.Copy, a.Profile)
+	if err != nil {
+		return fmt.Errorf("claude adapter: policy: %w", err)
+	}
+	if err := checkProgramPolicy(ctx, path, policy); err != nil {
+		return err
+	}
 	if err := prepareModelDir(a); err != nil {
 		return fmt.Errorf("claude adapter: model directory: %w", err)
 	}
-	if len(a.allowedTools) > 0 {
-		if err := os.WriteFile(ArtisanSettingsPath(a.ResultFile), ArtisanSettings(a.allowedTools), 0o600); err != nil {
-			return fmt.Errorf("claude adapter: settings: %w", err)
-		}
+	if err := os.WriteFile(ArtisanSettingsPath(a.ResultFile), ArtisanPolicySettings(a.allowedTools, policy), 0o600); err != nil {
+		return fmt.Errorf("claude adapter: settings: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(a.ResultFile), SkillPolicyFile), policy.Receipt(), 0o600); err != nil {
+		return fmt.Errorf("claude adapter: policy receipt: %w", err)
 	}
 	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt)
 	defer stopSignals()
@@ -476,7 +487,7 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 func report(a Args, output *limitedBuffer, stdout, stderr io.Writer) error {
 	if denied := Denials(output.buf.Bytes()); len(denied) > 0 {
 		plural := map[bool]string{true: "s"}[len(denied) > 1]
-		_, _ = fmt.Fprintf(stderr, "guildhall: %s: Claude was denied %d tool use%s: %s; print mode allows only edits unless Claude's settings allow more (docs/adapters.md#artisan-permissions)\n",
+		_, _ = fmt.Fprintf(stderr, "guildhall: %s: Claude was denied %d tool use%s: %s; acceptEdits grants edits only; inherited settings, hooks and skill-scoped grants may allow more; deny rules remain authoritative (docs/adapters.md#artisan-permissions)\n",
 			Subcommand, len(denied), plural, strings.Join(denied, ", "))
 	}
 	u, err := ParseUsage(output.buf.Bytes())

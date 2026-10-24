@@ -155,6 +155,10 @@ func exitCode(err error) int {
 // stub checks args as the Claude adapter passes them and plays the prompt's
 // behaviour into the draft the instruction names.
 func stub(args []string) error {
+	if slices.Equal(args, []string{"--version"}) {
+		fmt.Println("2.1.310 (Claude Code)")
+		return nil
+	}
 	if len(args) > 0 && args[0] == "--append-system-prompt-file" {
 		os.Exit(session(args))
 	}
@@ -346,7 +350,11 @@ func settings(flags, added []string) ([]string, error) {
 		return nil, err
 	}
 	var s struct {
-		Permissions struct {
+		DisableBundledSkills bool              `json:"disableBundledSkills"`
+		SyncClaudeAiSkills   bool              `json:"syncClaudeAiSkills"`
+		SkillOverrides       map[string]string `json:"skillOverrides"`
+		EnabledPlugins       map[string]bool   `json:"enabledPlugins"`
+		Permissions          struct {
 			Allow []string `json:"allow"`
 		} `json:"permissions"`
 	}
@@ -355,8 +363,8 @@ func settings(flags, added []string) ([]string, error) {
 	if err := dec.Decode(&s); err != nil {
 		return nil, fmt.Errorf("--settings %s: %w", path, err)
 	}
-	if len(s.Permissions.Allow) == 0 {
-		return nil, fmt.Errorf("--settings %s allows nothing", path)
+	if s.Permissions.Allow == nil {
+		return nil, fmt.Errorf("--settings %s must declare an allow list, even when empty", path)
 	}
 	return s.Permissions.Allow, nil
 }
@@ -431,7 +439,7 @@ func session(args []string) int {
 		return fail("session settings flags: %v", err)
 	}
 	for i := 0; i < separator; i += 2 {
-		if i+1 >= separator || (rest[i] != "--model" && rest[i] != "--effort") {
+		if i+1 >= separator || (rest[i] != "--model" && rest[i] != "--effort" && rest[i] != "--settings") {
 			return fail("unknown session flag: %q", rest[i:separator])
 		}
 	}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -84,6 +85,9 @@ func runDirectorCmd(t *testing.T, args ...string) (int, string, string) {
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Executable = os.Executable
 	app.LookPath = exec.LookPath
+	app.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, path, args...).CombinedOutput()
+	}
 	app.InstallSkills = skills.Install
 	app.InstallBaseline = baseline.Install
 	app.Stdin = strings.NewReader("")
@@ -284,6 +288,7 @@ func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 // file whose profiles grant the Artisans' tools, what each claude profile grants, and for one granting none the
 // permissions its print mode lacks for a build's checks and commits, without refusing.
 func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
+	claudetest.Install(t)
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"claude\"\nallowed_tools = [\"Bash(go test:*)\", \"Bash(git commit:*)\"]\n\n[profile.reviewer]\nadapter = \"claude\"\n", "/exit")
 	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
 	if code != 0 {

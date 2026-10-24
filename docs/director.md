@@ -24,8 +24,20 @@ It first runs a preflight and prints one line per check, as `doctor` prints, sto
 - `guildhall`: `guildhall` is on `PATH`, because the session's hooks, status line and Director commands invoke that bare name; a refusal names adding the running executable's directory to `PATH`.
 - `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.
 - `skills`: the release skills and baseline install.
-- `artisans`: names this Director and its config file, then what that config grants each profile that runs the claude adapter: its [`allowed_tools`](configuration.md#profiles), or nothing, when print mode allows edits only and a build's checks and commits need Bash allowed by Claude's own settings ([Artisan permissions](adapters.md#artisan-permissions)), as in `artisans: Director tools's config /srv/guildhall/config.toml: profile builder grants Bash(go test:*), Bash(git commit:*); profile reviewer grants nothing, so ...`.
+- `artisans`: names this Director and its config file, then each Claude profile's explicit [`allowed_tools`](configuration.md#profiles) grants.
+  `acceptEdits` itself grants edits only; inherited settings, hooks and skill-scoped grants may allow more, so an empty profile grant is not a tool sandbox ([Artisan permissions](adapters.md#artisan-permissions)).
   It refuses a profile of another adapter that sets `allowed_tools`, since only the claude adapter grants them, and a profile whose `model` or `effort` its runtime cannot honour, naming the profile and the setting ([runtime settings](adapters.md#runtime-settings)).
+- Additional `skills` lines report the resolved [Claude skill policy](configuration.md#claude-skill-policies) for the Director and every Claude profile: preset, key, default/managed/local provenance, overridability, digest, known kept/dropped names, bundle mechanism, account sync and disabled plugin IDs.
+  Release skill count is separate: 13 Guildhall release skills installed does not mean 13 total visible skills.
+  Preflight probes `claude --version`, requires at least the tested 2.1.310 baseline, and refuses an inherited `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS` kill switch when the policy keeps bundled skills.
+  These checks validate the generated settings JSON, explicit switches and normalized control digest without launching models or Herdr, not live discovery: unknown feature/account/plugin inventory and organization-managed constraints are explicitly unobserved.
+  Organization-managed force-enablement can defeat plugin disablement; preflight does not claim to inspect or override that policy.
+  Selective bundle/account opt-ins are open-world, and ambient personal/project/plugin skills are not isolated.
+
+The Director's default `director-v1` disables bundled and account-synced skills and `cc-plugin-plugin-authoring@builtin`, without disabling other plugins such as Guildhall Lanterns or any Guildhall release skills.
+Generated settings retain existing permissions, turn hooks and status line and are passed explicitly with `--settings` so account-sync control uses a supported session scope.
+The numbered session manifest owns a `claude-skill-policy.json` provenance receipt alongside its runtime files.
+Persist customizations in Guildhall configuration, not the regenerated workspace; tool permissions and engine-owned review/publish authority remain the boundary.
 
 A failed check is exit 1 with nothing recorded and nothing written in the copy, and `--check` exits 0 after the preflight, also recording nothing.
 

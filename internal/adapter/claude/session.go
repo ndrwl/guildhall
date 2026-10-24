@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
 // SettingsFile is the Claude Code project settings file of a Director session, relative to the session directory.
@@ -81,10 +82,10 @@ func absoluteRule(path string) string {
 }
 
 // Session returns the Claude Code Director session for spec: `claude --append-system-prompt-file <role prompt>
-// --add-dir <copy> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
+// --add-dir <copy> --settings <session settings> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
 // the interactive command shape beside the Artisan's print mode. Session refuses invalid specs and settings
 // with no command and writes nothing; the caller writes
-// Settings at SettingsFile before starting it.
+// SessionFiles before starting it.
 func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
 		return adapter.Command{}, err
@@ -99,7 +100,7 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	if prog != Program && !filepath.IsAbs(prog) {
 		return adapter.Command{}, errors.New("claude adapter: Claude must be an absolute path")
 	}
-	argv := []string{prog, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", spec.Copy}
+	argv := []string{prog, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", spec.Copy, "--settings", filepath.Join(spec.Dir, SettingsFile)}
 	argv = append(argv, settingsArgs(adapter.Settings{Model: spec.Model, Effort: spec.Effort})...)
 	return adapter.Command{Argv: append(argv, "--", spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
 }
@@ -117,9 +118,15 @@ const (
 )
 
 // SessionFiles are the files a Claude Code Director session needs beside its skills, by slash path relative to
-// the session directory: Settings at SettingsFile.
-func (Adapter) SessionFiles(copyDir string) map[string][]byte {
-	return map[string][]byte{SettingsFile: Settings(copyDir)}
+// the session directory: merged settings at SettingsFile and a policy receipt at SkillPolicyFile.
+func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
+	p := a.SkillPolicy
+	if p == nil {
+		policy, _ := config.ParseClaudeSkills(`{"preset":"director-v1"}`)
+		policy.Key = config.ClaudeSkillsDirectorKey
+		p = &policy
+	}
+	return map[string][]byte{SettingsFile: mergePolicy(Settings(copyDir), *p), SkillPolicyFile: p.Receipt()}
 }
 
 // ContextReportCommand is the status-line command of a Director session: Claude Code runs it after each

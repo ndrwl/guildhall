@@ -128,7 +128,7 @@ The Claude adapter runs one attempt as a non-interactive Claude Code session, wi
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--model <model>] [--effort <level>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
-claude --print <instruction> --output-format json --permission-mode acceptEdits [--model <model>] [--effort <level>] [--settings <settings file>] --add-dir <model directory>
+claude --print <instruction> --output-format json --permission-mode acceptEdits [--model <model>] [--effort <level>] --settings <settings file> --add-dir <model directory>
 ```
 
 - `--model` and `--effort` are the profile's effective [runtime settings](#runtime-settings), each passed only when nonempty.
@@ -137,7 +137,11 @@ claude --print <instruction> --output-format json --permission-mode acceptEdits 
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
 - The instruction names the prompt copy and a draft result file, `model/result.json`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
 - `acceptEdits` lets Claude edit files in the working directory and the model directory; every other tool that needs permission, such as shell commands, is denied unless the attempt's allowed tools or Claude's own settings allow it, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
-- With one or more `allowed_tools` in the profile loaded from the referenced copy's `config.toml` via `config.Load`, the wrapper writes the settings file `claude-settings.json` in the attempt directory, beside the result and outside every directory Claude may write, as `{"permissions":{"allow":[<rules>]}}` and nothing else, and passes it with `--settings`; with none it passes no settings file.
+- The wrapper always writes `claude-settings.json` beside the result, outside model-writable added directories, and passes it with `--settings`.
+  It merges `permissions.allow` from the referenced copy/profile with the resolved [Claude skill policy](configuration.md#claude-skill-policies), including when the allow list is empty.
+  `syncClaudeAiSkills` is consequently supplied in flag scope, not just repository project settings.
+  An owned `claude-skill-policy.json` receipt records the preset, effective controls, source key, provenance, overridability and normalized digest; neither file contains credentials.
+  The wrapper probes `claude --version` before preparing the model directory and refuses versions older than 2.1.310 or unknown/prerelease version output; this probe makes no model call.
 - Claude gets no standard input; with `--output-format json` it prints one result message as it exits, which the wrapper reads, and its error output goes to the wrapper's.
 
 The wrapper keeps the result protocol, not the model:
@@ -150,7 +154,7 @@ The wrapper keeps the result protocol, not the model:
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
 - it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
-This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, and of a profile it uses only the model and effort, passed by value, and the `allowed_tools`, loaded through the copy/profile reference.
+This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, and of a profile it uses only the model and effort, passed by value, and the `allowed_tools` and skill policy, loaded through the copy/profile reference.
 It runs as an [owned attempt](artisan.md#commands), including in [workflow Artisan tabs](artisan.md#workflow-artisan-tabs).
 The older manual `artisan start --herdr-session` mode still refuses Claude; it is a separate fake-only result-file demonstration.
 Transcripts and interactive model-session resume are later work.
@@ -176,7 +180,12 @@ allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(g
 
 A repository whose checks are other commands, such as a `make check` target or a linter, adds those commands' rules; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused.
 A reviewer profile, which reads and reports, usually needs none.
-The rules widen what Claude Code's own settings allow and never narrow it: the user's `~/.claude/settings.json` and the repository's `.claude/settings.json`, which the task's worktree carries, still apply, so a profile with no `allowed_tools` can still run commands where those settings allow them, and a `deny` rule there still wins.
+The allow rules widen tool authority and never narrow it: the user's `~/.claude/settings.json` and the repository's `.claude/settings.json`, which the task's worktree carries, still apply.
+Ordinary print mode also discovers hooks, skills, commands, plugins, agents and MCP servers; skill frontmatter can grant turn-scoped tools.
+Thus `acceptEdits` grants edits only, but an empty profile allow list is not the complete inherited permission environment, and applicable deny rules still win.
+Skill selection is ergonomics, not a security sandbox: independently granted shell/API tools can perform equivalent actions without invoking a skill.
+The shipped researcher profile grants `WebSearch` and `WebFetch`; planner, builder and reviewer ship without those web grants.
+Change the copy's profile `allowed_tools` to customize tool grants, and use Guildhall managed/local settings to customize skill selection, rather than editing generated Claude files.
 On a machine where neither the profile nor those settings allow them, a build attempt can edit files but neither run the checks nor commit, so it leaves no new head to publish.
 
 So the grant and the dependency are never silent:
