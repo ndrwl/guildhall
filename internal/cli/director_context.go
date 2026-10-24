@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/lanterns"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -21,14 +23,16 @@ const maxStatusLineBytes = 1 << 20
 // directorContextReport runs `guildhall director context-report [--copy <dir>]`, the Claude Code status-line
 // command of a Director session (docs/director.md#automatic-handoff): it reads the used context percent from the
 // JSON on standard input, writes it to the context report of the session GUILDHALL_SESSION names in the copy, and
-// prints "context <n>%" as the status line. Input with no percent yet writes and prints nothing. It opens no store,
-// since Claude Code runs it after every assistant message.
+// prints "context <n>%" as the legacy status line. Input with no percent yet writes and prints nothing.
+// With --lanterns it instead prints a read-only status band and context, without writing a context report;
+// the core end-of-turn transcript hook supplies the new workspace's handoff input.
 func (a *App) directorContextReport(args []string) int {
 	const name = "director context-report"
 	fl := flag.NewFlagSet(name, flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
 	cp.register(fl)
+	band := fl.Bool("lanterns", false, "display the Lanterns status band without writing context")
 	err := fl.Parse(args)
 	if err == nil {
 		err = cp.apply(a.Getenv, nil, nil, nil)
@@ -59,6 +63,31 @@ func (a *App) directorContextReport(args []string) int {
 	percent, ok, err := claude.ParseStatusLine(b)
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
+	}
+	if *band {
+		counts := lanterns.Counts{}
+		if status, err := readDirectorStatus(context.Background(), filepath.Join(copyDir, "director.store"), filepath.Join(copyDir, "state"), a.Now); err == nil {
+			counts.Known = true
+			for _, t := range status.Tasks {
+				if t.State == store.TaskOpen {
+					counts.Tasks++
+				}
+			}
+			counts.Running = status.Session.GuardRails.RunningAttempts
+			counts.Decisions = len(status.Decisions)
+			for _, item := range status.NeedsMe {
+				switch item.Kind {
+				case "stalled", "retry", "resume", "recovering":
+					counts.Attention++
+				}
+			}
+		}
+		_, _ = fmt.Fprint(a.Stdout, lanterns.Band(counts))
+		if ok {
+			_, _ = fmt.Fprintf(a.Stdout, " · context %d%%", percent)
+		}
+		_, _ = fmt.Fprintln(a.Stdout)
+		return 0
 	}
 	if !ok {
 		return 0

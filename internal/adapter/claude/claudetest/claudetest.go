@@ -431,7 +431,7 @@ func session(args []string) int {
 		return fail("session settings flags: %v", err)
 	}
 	for i := 0; i < separator; i += 2 {
-		if i+1 >= separator || (rest[i] != "--model" && rest[i] != "--effort") {
+		if i+1 >= separator || (rest[i] != "--model" && rest[i] != "--effort" && rest[i] != "--plugin-dir") {
 			return fail("unknown session flag: %q", rest[i:separator])
 		}
 	}

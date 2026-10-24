@@ -56,6 +56,11 @@ jobs:
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
         run: go test ./...
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Lanterns presentation contracts
+        run: node --test internal/lanterns/plugin/tests/*.test.mjs
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:

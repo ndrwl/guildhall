@@ -63,6 +63,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "guildhall director context-report"
+    "command": "guildhall director context-report --lanterns"
   }
 }

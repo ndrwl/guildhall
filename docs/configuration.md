@@ -132,6 +132,12 @@ It belongs to a Director config; a Steward config with one is refused.
 Like a profile it names no credential.
 A config without the table has the same config digest as before the table existed.
 
+## Lanterns presentation preference
+
+The automatically installed [Lanterns plugin](lanterns.md) keeps its per-Director `/calm` preference in `<copy>/director/lanterns-calm`, not in `config.toml`.
+It is off by default and has no effect without `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+The preference survives generated workspace refreshes and handoffs.
+
 ## Workflow definitions
 
 A workflow defines the steps of one task as an ordered list of built-in step kinds.
