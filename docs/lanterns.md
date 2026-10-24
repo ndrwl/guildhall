@@ -72,7 +72,7 @@ Without `GUILDHALL_COPY`, Calm is unavailable and has no plugin-local preference
 The Director supervisor merges labels into the existing vitals-axi labels file every 15 seconds, independent of model turns and function hooks.
 It uses `VITALS_AXI_LABELS` when set, otherwise `$XDG_STATE_HOME/bridge-lights/vitals-identities.json` (defaulting to `~/.local/state/bridge-lights/vitals-identities.json`).
 
-On Linux it contains vitals-axi schemaVersion 1, current boot ID and PID namespace, a generation time, a 60-second expiry and verified process selectors (`pid`, decimal-string `startTicks`, `descendants: true`).
+On Linux it contains vitals-axi schemaVersion 1, current boot ID and PID namespace, a generation time, an expiry at least 60 seconds after refresh and verified process selectors (`pid`, decimal-string `startTicks`, `descendants: true`).
 The live Director supervisor anchors `Director <session>` and each running Artisan's recorded contained worker anchors `Artisan <repo>/<task> <step> #<attempt>`.
 Direct worker matches take precedence over inherited Director labels in vitals-axi.
 Stopped sessions, released owners, completed attempts and dead or reused identities are omitted on refresh.
