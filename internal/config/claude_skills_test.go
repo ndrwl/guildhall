@@ -24,17 +24,19 @@ func TestClaudeSkillPresets(t *testing.T) {
 					t.Errorf("%s not kept", name)
 				}
 			}
-			if len(keep) > 0 && p.SkillOverrides["schedule"] != "off" {
-				t.Fatal("schedule not suppressed")
+			for _, name := range []string{"schedule", "design", "deep-research", "design-sync", "run-skill-generator"} {
+				if p.SkillOverrides[name] != "off" {
+					t.Errorf("%s not suppressed", name)
+				}
 			}
 			b, _ := json.Marshal(p)
 			q, _ := ParseClaudeSkills(`{"preset":"` + preset + `"}`)
 			c, _ := json.Marshal(q)
 			wantDigest := map[string]string{
-				"director-v1": "sha256:19d2200dfb388465dc287a2f5a4d7b8fa121167e4fefd31fc0d3b818611b7473",
-				"artisan-v1":  "sha256:19d2200dfb388465dc287a2f5a4d7b8fa121167e4fefd31fc0d3b818611b7473",
-				"builder-v1":  "sha256:0242ebd8b599e140d24456ac5ca171f2d0b1bde63fd349541519e21ff5ea63a8",
-				"reviewer-v1": "sha256:14de578a159093e46a9ea3874046681ba291e54bd7b00c305cc8c0acd28a8b69",
+				"director-v1": "sha256:e8dfb103fbb5ba1b7166108d43abe12e1287215ac17bcaa2fab4dcbd208649ba",
+				"artisan-v1":  "sha256:e8dfb103fbb5ba1b7166108d43abe12e1287215ac17bcaa2fab4dcbd208649ba",
+				"builder-v1":  "sha256:e54dec7e89af6cbb90f0d0ecf191c2eb6d8cab1e115b41bf51172637a09c9bf9",
+				"reviewer-v1": "sha256:afef7b5370a15d61b2de85fc657de103b7f889e1eef3a2c23a2aebd97410f9c2",
 			}[preset]
 			if string(b) != string(c) || p.Digest() != wantDigest {
 				t.Fatalf("unstable controls digest: %s, want %s", p.Digest(), wantDigest)

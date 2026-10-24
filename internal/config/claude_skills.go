@@ -40,7 +40,7 @@ type claudeSkillInput struct {
 	Plugins     map[string]bool   `json:"plugins"`
 }
 
-var bundledSkills = []string{"update-config", "keybindings-help", "code-review", "simplify", "fewer-permission-prompts", "loop", "schedule", "claude-api", "workflow-authoring", "run", "init", "security-review", "dataviz", "artifact-design", "artifact-diagramming", "artifact-capabilities", "batch", "verify", "commit", "pr", "debug"}
+var bundledSkills = []string{"update-config", "keybindings-help", "code-review", "simplify", "fewer-permission-prompts", "loop", "schedule", "claude-api", "workflow-authoring", "run", "init", "security-review", "dataviz", "artifact-design", "artifact-diagramming", "artifact-capabilities", "batch", "verify", "commit", "pr", "debug", "design", "deep-research", "design-sync", "run-skill-generator"}
 var accountSkills = []string{"built-in-browser", "chrome-browser", "computer-use", "deep-research", "docs", "docx", "import-memory", "morning", "pdf", "pptx", "skill-creator", "xlsx"}
 var skillName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)*$`)
 var pluginName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*@[a-z0-9][a-z0-9._-]*$`)
