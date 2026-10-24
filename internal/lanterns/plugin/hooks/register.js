@@ -6,7 +6,6 @@ let activated,loading,preference,calm=false,ticker,tick=0,theme='light';
   const sites=new Map();
   const key='guildhall-lanterns-smithy';
   const active=$=>activated??= $.env.get('CLAUDE_CODE_ENABLE_FUNCTION_HOOKS').then(v=>v==='1',()=>false);
-  const path=$=>preference??($.plugin.root+'/calm');
   function timer($) {
     if(!calm||ticker)return;
     ticker=$.clock.every(220,async()=>{
@@ -25,7 +24,7 @@ let activated,loading,preference,calm=false,ticker,tick=0,theme='light';
     if(!loading)loading=(async()=>{
       const copy=await $.env.get('GUILDHALL_COPY');
       preference=copy?copy+'/director/lanterns-calm':undefined;
-      try {calm=await $.fs.exists(path($))&&(await $.fs.read(path($))).trim()==='on'}catch {calm=false}
+      try {calm=!!preference&&await $.fs.exists(preference)&&(await $.fs.read(preference)).trim()==='on'}catch {calm=false}
       try {theme=(await $.config.list()).find(r=>r.key==='theme')?.value??'light'}catch {}
       timer($);
     })();
@@ -36,13 +35,14 @@ export function register(on) {
   on('session.start',async($,e,next)=>{
     if(!await active($))return next(e);
     await load($);
-    await $.command.register({name:'calm',description:'Toggle Lanterns Calm tool presentation and smithy chimney.'});
+    if(preference)await $.command.register({name:'calm',description:'Toggle Lanterns Calm tool presentation and smithy chimney.'});
     return next(e);
   });
   on('command.run',{command:'calm'},async($,e,next)=>{
     if(!await active($))return next(e);
     await load($);
-    try {await $.fs.write(path($),calm?'off\n':'on\n')}catch {
+    if(!preference)return next(e);
+    try {await $.fs.write(preference,calm?'off\n':'on\n')}catch {
       $.ui.toast('Calm unchanged: could not save the Director preference.');return {};
     }
     calm=!calm;

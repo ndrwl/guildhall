@@ -54,7 +54,14 @@ func (a *App) contextFromTurn(dir string) error {
 		return fmt.Errorf("transcript is not a regular file")
 	}
 	percent, known, err := claude.TranscriptContext(f)
-	if err != nil || !known {
+	if err != nil {
+		return err
+	}
+	if !known {
+		err := os.Remove(filepath.Join(dir, session.ContextFile))
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	now := time.Now

@@ -7,9 +7,10 @@ Keep the future Clerk interaction plugin separate; do not add its commands here.
 Use Claude's native status line for one combined light/count/context band and function hooks for urgency frames and the opt-in N8 smithy Calm presentation.
 Do not enable early-access function hooks implicitly.
 
-Publish verified Linux Director and Artisan process labels to a per-copy Guildhall-owned file, refreshed by the supervisor independently of the UI.
-Select that file with `VITALS_AXI_LABELS` rather than sharing or rewriting bridge-lights' generation.
-Per-copy ownership avoids cross-copy races and allows the existing vitals-axi verification and expiry contract to remain unchanged.
+Publish verified Linux Director and Artisan process labels to the existing `VITALS_AXI_LABELS` file, defaulting to `$XDG_STATE_HOME/bridge-lights/vitals-identities.json` (or `~/.local/state/bridge-lights/vitals-identities.json`).
+The supervisor refreshes labels independently of the UI, merging copy-scoped entries while preserving other publishers' entries and fields in a live, compatible generation.
+Serialize read/merge/atomic replacement with an advisory exclusive flock on `<labels-file>.lock`; all concurrent publishers must honor that lock.
+No vitals-axi change or consumer reconfiguration is required.
 
 Move the new workspace's automatic-handoff input off the status line into the core `turn-ended` hook.
 The hook reads the latest main-session assistant usage from `transcript_path`, using input plus cache input tokens against the known Anthropic model context capacity.
@@ -29,7 +30,8 @@ No Artisan interactive rollout or Clerk commands are included.
 
 Transcript context uses the published [Anthropic context-window table](https://platform.claude.com/docs/en/build-with-claude/context-windows), checked on 2026-10-24.
 Unknown or provider-specific model IDs do not manufacture a percentage, and malformed or unreadable transcripts cannot prevent the turn-end signal.
-Reads are bounded and compaction resets the prior reading.
+Reads are bounded; compaction or unavailable latest usage invalidates the prior reading and removes the persisted report after a successful transcript read.
+Transient read failures leave the prior report untouched.
 The known-capacity table needs maintenance as model families change; provider-specific window overrides are not inferred from billing totals or cumulative tokens.
 
 ## Evidence

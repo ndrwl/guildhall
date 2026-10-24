@@ -65,32 +65,26 @@ Calm off restores native drawings and cancels its timer.
 The preference is `<copy>/director/lanterns-calm`, containing `on` or `off` and a newline.
 It belongs to this Director copy, survives numbered session handoffs and generated workspace replacement, and is not a `config.toml` setting.
 A failed preference write leaves the current choice unchanged and shows a transient notice.
+Without `GUILDHALL_COPY`, Calm is unavailable and has no plugin-local preference fallback.
 
 ## Vitals labels
 
-The Director supervisor publishes a Guildhall-owned labels file every 15 seconds, independent of model turns and function hooks:
-
-```text
-<copy>/director/lanterns/vitals-identities.json
-```
+The Director supervisor merges labels into the existing vitals-axi labels file every 15 seconds, independent of model turns and function hooks.
+It uses `VITALS_AXI_LABELS` when set, otherwise `$XDG_STATE_HOME/bridge-lights/vitals-identities.json` (defaulting to `~/.local/state/bridge-lights/vitals-identities.json`).
 
 On Linux it contains vitals-axi schemaVersion 1, current boot ID and PID namespace, a generation time, a 60-second expiry and verified process selectors (`pid`, decimal-string `startTicks`, `descendants: true`).
 The live Director supervisor anchors `Director <session>` and each running Artisan's recorded contained worker anchors `Artisan <repo>/<task> <step> #<attempt>`.
 Direct worker matches take precedence over inherited Director labels in vitals-axi.
 Stopped sessions, released owners, completed attempts and dead or reused identities are omitted on refresh.
 Files are atomically replaced with private permissions; publication errors are advisory and a stale generation expires.
+Each copy replaces only its own copy-scoped Lanterns entries, preserving other publishers' entries and unknown fields in a live generation with the same boot and PID namespace.
+The shared expiry is never shortened; expired or incompatible generations are replaced.
+Read/merge/replacement uses a nonblocking exclusive advisory flock on `<labels-file>.lock`; all concurrent publishers must honor that lock.
+Lock contention, malformed files, unsupported schemas and more than 1000 merged entries leave the existing file unchanged.
 The Linux-only selector schema cannot safely label Windows or macOS processes, so those platforms publish no selectors.
 
-Point vitals-axi at the file explicitly:
-
-```sh
-VITALS_AXI_LABELS=/path/to/copy/director/lanterns/vitals-identities.json vitals-axi --tui
-```
-
-Or pass `vitals-axi --labels /path/to/copy/director/lanterns/vitals-identities.json --tui` for one invocation.
-This intentionally selects one Director copy instead of merging competing publishers.
-It does not overwrite bridge-lights' file, modify vitals-axi, or change another shell's existing `VITALS_AXI_LABELS` value.
-For a different copy, select that copy's file.
+Existing vitals-axi invocations retain their combined view without changes to vitals-axi or manual per-copy file selection.
+If using a custom `VITALS_AXI_LABELS` destination, supply the same value to the Director supervisor and the consumer.
 
 ## Checks
 

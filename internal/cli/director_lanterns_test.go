@@ -105,4 +105,39 @@ func TestTurnEndedContextTriggersHandoffWithoutStatusLine(t *testing.T) {
 	if err != nil || len(due) != 1 || due[0].Trigger != store.HandoffContext || due[0].Reason != "context 72%" {
 		t.Fatalf("handoff without status line: %+v %v", due, err)
 	}
+	for _, tail := range []string{
+		`{"type":"system","subtype":"compact_boundary"}`,
+		`{"type":"assistant","message":{"model":"provider-specific","usage":{"input_tokens":144000}}}`,
+	} {
+		if err := session.WriteContext(dir, session.Context{UsedPercent: 72, ReportedAt: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+		data := `{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":144000}}}` + "\n" + tail + "\n"
+		if err := os.WriteFile(transcript, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(map[string]string{"transcript_path": transcript})
+		app, _, stderr := newTestApp(nil, nil)
+		app.Stdin = strings.NewReader(string(b))
+		app.Getenv = func(k string) string {
+			if k == "GUILDHALL_COPY" {
+				return copyDir
+			}
+			return ""
+		}
+		if code := app.Run([]string{"director", "turn-ended"}); code != 0 {
+			t.Fatalf("hook=%d %s", code, stderr.String())
+		}
+		select {
+		case <-ep.Turns():
+		case <-time.After(time.Second):
+			t.Fatal("invalidation suppressed turn signal")
+		}
+		if _, err := os.Stat(filepath.Join(dir, session.ContextFile)); !os.IsNotExist(err) {
+			t.Fatalf("historical context retained: %v", err)
+		}
+		if due, err := messaging.DueHandoffs(s, d); err != nil || len(due) != 0 {
+			t.Fatalf("historical context triggered handoff: %+v %v", due, err)
+		}
+	}
 }

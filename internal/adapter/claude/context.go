@@ -45,6 +45,7 @@ func TranscriptContext(r io.Reader) (int, bool, error) {
 		if row.Type != "assistant" || u == nil {
 			continue
 		}
+		percent, known = 0, false
 		size := modelContextWindow(row.Message.Model)
 		if size == 0 || u.Input < 0 || u.Creation < 0 || u.Read < 0 || u.Input > 10000000 || u.Creation > 10000000 || u.Read > 10000000 {
 			continue

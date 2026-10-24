@@ -27,8 +27,10 @@ func TestTranscriptContextWindowsAndCompaction(t *testing.T) {
 		{`{"type":"assistant","message":{"model":"unknown","usage":{"input_tokens":144000}}}`, 0, false},
 		{`{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":-1}}}`, 0, false},
 		{`{"type":"system","subtype":"compact_boundary"}`, 0, false},
+		{`{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":0}}}`, 0, false},
+		{`{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":10000001}}}`, 0, false},
 	} {
-		n, ok, err := TranscriptContext(strings.NewReader(tt.line + "\n"))
+		n, ok, err := TranscriptContext(strings.NewReader(`{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":144000}}}` + "\n" + tt.line + "\n"))
 		if err != nil || n != tt.percent || ok != tt.known {
 			t.Errorf("%s: %d %v %v", tt.line, n, ok, err)
 		}
