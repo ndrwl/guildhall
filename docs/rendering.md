@@ -79,7 +79,8 @@ It writes, and lists with digests in `manifest.json`, schema `guildhall.session-
 
 A root directory that does not exist holds no skills, and a root's files, such as `CREDITS.md`, are not skills.
 A skills directory or runtime file path that is not relative and slash-separated, or that collides with another file the session writes, and an in-flight item of more than one line, are refused before anything is written; on any error nothing `Session` wrote is left behind.
-`render.StartupMessage` is the session's one-line first message, naming `startup.md`.
+`render.StartupMessage` names `startup.md` relative to the rendered session directory.
+For runtimes launched elsewhere, the supervisor supplies an absolute startup-file path instead ([Director start](director.md#start)).
 
 ## Guildmaster questions
 

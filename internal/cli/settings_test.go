@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 )
@@ -111,7 +111,11 @@ func TestDirectorEffortReachesRuntime(t *testing.T) {
 				t.Fatalf("exit %d: %s %s", code, out, stderr)
 			}
 			n := len(sessions(t, dir))
-			got, err := fake.RecordedSettings(filepath.Join(dir, "director", "session-"+strconv.Itoa(n), "unused-result.json"))
+			workDir := sessionDir(dir, n)
+			if runtime == "claude" {
+				workDir = claude.WorkspaceDir(dir)
+			}
+			got, err := fake.RecordedSettings(filepath.Join(workDir, "unused-result.json"))
 			if err != nil || got.Effort != tc.want {
 				t.Errorf("%s settings = %+v, %v; want %s", runtime, got, err, tc.want)
 			}

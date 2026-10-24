@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -209,8 +210,16 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
-	cmd, err := p.runtime.Session(adapter.SessionSpec{Dir: dir, Copy: copyDir, RolePrompt: r.RolePath,
-		FirstMessage: render.StartupMessage, Model: model, Effort: p.cfg.EffectiveEffort(effort), Env: []string{session.NumberEnv + "=" + strconv.Itoa(n)}})
+	workDir, firstMessage := dir, render.StartupMessage
+	if persistent, ok := p.runtime.(runtimes.PersistentSession); ok {
+		workDir, err = persistent.PrepareSessionWorkspace(copyDir, dir)
+		if err != nil {
+			return a.fail(fmt.Errorf("director start: prepare workspace: %w", err)), false
+		}
+		firstMessage = fmt.Sprintf("You are starting up: read %q and follow it.", r.StartupPath)
+	}
+	cmd, err := p.runtime.Session(adapter.SessionSpec{Dir: workDir, Copy: copyDir, RolePrompt: r.RolePath,
+		FirstMessage: firstMessage, Model: model, Effort: p.cfg.EffectiveEffort(effort), Env: []string{session.NumberEnv + "=" + strconv.Itoa(n)}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}

@@ -122,6 +122,8 @@ Work ended by an interrupt or the cancel marker writes none.
 
 ## Claude adapter
 
+For interactive Director sessions, see [Director start](director.md#start) for the stable workspace and one-time native folder-trust approval.
+
 The Claude adapter runs one attempt as a non-interactive Claude Code session, with no optional capabilities.
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--model <model>] [--effort <level>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 

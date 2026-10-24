@@ -6,13 +6,13 @@ description: Use as the Director when a session starts and its first message nam
 # Director startup
 
 A new Director session starts `recovering`: it starts no new work until you say it is ready.
-The first message names `startup.md` in your session directory.
+The first message names the numbered session's `startup.md`; use that exact path, which may be outside your stable runtime working directory.
 It holds the handoff note your previous session left, if any, and the in-flight snapshot, which is the `needs_me` list of `guildhall director status --json` with the command for each item.
 The binary refuses `guildhall task new`, and `guildhall task start` of a task with no attempt yet, until you run `guildhall director ready`, so recover first and start new work after.
 
 ## Steps
 
-1. Read `startup.md`.
+1. Read `startup.md` at the exact path in the first message.
 2. Read the handoff note it names, if there is one.
    The note tells you what the previous session was doing, which skills it suggests and any grill questions it left open; it does not repeat what the store holds, so read the store for that.
 3. Run `guildhall director status --json` for the current snapshot, since `startup.md` is a copy taken when the session started.
