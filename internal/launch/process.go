@@ -47,7 +47,20 @@ const LogFile = "launcher.log"
 // waits for that process to exit. It refuses a handle this Process did
 // not return; stopping again, or after the attempt finished, is not an error.
 // Both are safe for concurrent use.
+//
+// With Presentation or OpenPresentation set, the pane starts the ordinary
+// detached launcher through a log-streaming bridge. Launch's single-use claim
+// and durable owner identity, never pane liveness, decide whether a command may
+// be typed. Unlike hidden-mode cleanup, an ambiguous pane start is left owned
+// for reconciliation, never stopped or retried speculatively. Tabs stay open.
 type Process struct {
+	// Presentation, when set, starts the owned launcher from a new Artisan pane.
+	// With nil and no OpenPresentation, Launch retains hidden detached mode.
+	Presentation *Presentation
+	// OpenPresentation lazily resolves the terminal only when launching work,
+	// never while recording results, cancelling, or reconciling an attempt.
+	// It is ignored when Presentation is set; a nil result means hidden mode.
+	OpenPresentation func(context.Context) (*Presentation, error)
 	// Executable is the guildhall binary; Env is added to its environment.
 	Executable string
 	Env        []string
@@ -59,7 +72,7 @@ type Process struct {
 	// StallInterval, when positive, is passed as `--stall-interval`, so the launcher sends the Director
 	// worker-stalled from its heartbeat (Config.StallInterval); the engine passes its own.
 	StallInterval time.Duration
-	// StartTimeout bounds Launch's wait for ownership; zero is 30 seconds.
+	// StartTimeout bounds presentation setup and Launch's wait for ownership; zero is 30 seconds.
 	StartTimeout time.Duration
 	LockWait     time.Duration
 
@@ -74,6 +87,7 @@ type child struct {
 	at       Attempt
 	identity artisan.Identity
 	exited   chan struct{}
+	pane     bool
 }
 
 // Launch implements interp.Launcher.Launch; see Process.
@@ -108,7 +122,11 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapter
 	if !filepath.IsAbs(promptFile) || !filepath.IsAbs(workDir) {
 		return interp.Handle{}, fmt.Errorf("launch: prompt file %q and working directory %q must be absolute", promptFile, workDir)
 	}
-	at := Attempt{Store: p.Store, StateDir: p.StateDir, LockWait: p.LockWait, Key: k}
+	storePath, err := filepath.Abs(p.Store)
+	if err != nil {
+		return interp.Handle{}, fmt.Errorf("launch: store path: %w", err)
+	}
+	at := Attempt{Store: storePath, StateDir: p.StateDir, LockWait: p.LockWait, Key: k}
 	if err := ctx.Err(); err != nil {
 		return interp.Handle{}, err
 	}
@@ -117,7 +135,7 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapter
 		return interp.Handle{}, err
 	}
 	build := func() *exec.Cmd {
-		cmd := exec.Command(p.Executable, "artisan", "start", "--store", p.Store, "--state", p.StateDir,
+		cmd := exec.Command(p.Executable, "artisan", "start", "--store", at.Store, "--state", p.StateDir,
 			"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
 			"--adapter", adapterName, "--prompt", promptFile, "--workdir", workDir)
 		if copyDir != "" {
@@ -138,6 +156,25 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapter
 		cmd.Env = append(os.Environ(), p.Env...)
 		cmd.Stdout, cmd.Stderr = log, log
 		return cmd
+	}
+	if p.Presentation != nil || p.OpenPresentation != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.startTimeout())
+		defer cancel()
+	}
+	presentation := p.Presentation
+	if presentation == nil && p.OpenPresentation != nil {
+		presentation, err = p.OpenPresentation(ctx)
+		if err != nil {
+			_ = log.Close()
+			return interp.Handle{}, err
+		}
+	}
+	if presentation != nil {
+		_ = log.Close()
+		cmd := build()
+		cmd.Dir = workDir
+		return p.launchPane(ctx, at, cmd, presentation)
 	}
 	cmd, err := startDetached(build)
 	// The child holds its own handle on the log.
@@ -168,17 +205,32 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapter
 // attempt failed at setup and there is nothing to stop, and the launcher's advance waits for the caller's lock.
 var errReleased = errors.New("the launcher finished the attempt before recording its endpoint")
 
+func (p *Process) startTimeout() time.Duration {
+	if p.StartTimeout > 0 {
+		return p.StartTimeout
+	}
+	return 30 * time.Second
+}
+
 // owned waits until c owns its attempt with its endpoint recorded, and fails at once when c released it without one.
 func (p *Process) owned(ctx context.Context, c *child) error {
-	timeout := p.StartTimeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, p.startTimeout())
 	defer cancel()
 	exited := false
 	for {
 		o, err := c.at.owner()
+		if err == nil && o != nil && c.pane && c.identity.PID == 0 {
+			c.identity = artisan.Identity(o.LauncherIdentity)
+			go func() {
+				for {
+					if live, _ := artisan.Probe(c.identity); live == artisan.Gone {
+						close(c.exited)
+						return
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+			}()
+		}
 		if err == nil && o != nil && artisan.Identity(o.LauncherIdentity) == c.identity {
 			if o.Endpoint != "" {
 				return nil

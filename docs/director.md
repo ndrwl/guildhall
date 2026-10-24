@@ -88,6 +88,11 @@ The release ships the Director's own skills beside the stage skills, each render
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
 
+## Artisan tabs
+
+The Director's `herdr_session` also selects [workflow Artisan tabs](artisan.md#workflow-artisan-tabs), independently of whether the Director itself runs with `--tab` or in a terminal.
+That page owns their presentation, lifecycle and recovery rules; [Herdr access](adapters.md#herdr-access) describes the session prerequisites.
+
 ## The Director's tab
 
 ```sh

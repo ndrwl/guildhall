@@ -191,7 +191,7 @@ func (a *App) artisanStart(args []string) int {
 		profile                              string
 		settings                             adapter.Settings
 		timeout, stall                       time.Duration
-		stopOnTimeout, advance               bool
+		stopOnTimeout, advance, paneLaunch   bool
 		id                                   adapter.Identity
 		owned                                attemptFlags
 	)
@@ -205,6 +205,7 @@ func (a *App) artisanStart(args []string) int {
 	fl.StringVar(&workspace, "herdr-workspace", "", "Herdr workspace id for the tab")
 	fl.Var(&herdrExec, "herdr-exec", "Herdr program, then leading arguments (repeat per word)")
 	fl.StringVar(&label, "tab-label", "", "tab label")
+	fl.BoolVar(&paneLaunch, "pane-launch", false, "internal pane bridge: detach ownership and stream the launcher log")
 	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
 	fl.DurationVar(&stall, "stall-interval", 0, "send the Director worker-stalled when the worker is silent this long; zero observes nothing")
 	fl.StringVar(&profile, "profile", "", "profile declared by the Director copy")
@@ -252,8 +253,24 @@ func (a *App) artisanStart(args []string) int {
 			}
 			advanceArgv = []string{exe, "--copy", dir}
 		}
+		if paneLaunch {
+			exe, err := a.Executable()
+			if err != nil {
+				return a.fail(err)
+			}
+			argv := []string{exe, "artisan", "start"}
+			for _, arg := range args {
+				if arg != "--pane-launch" && !strings.HasPrefix(arg, "--pane-launch=") {
+					argv = append(argv, arg)
+				}
+			}
+			if err := launch.Present(argv, os.Environ(), filepath.Join(at.Dir(), launch.LogFile), a.Stderr); err != nil {
+				return a.fail(err)
+			}
+			return 0
+		}
 		return a.runOwned(at, adapterName, prompt, workdir, owned.copy.dir, profile, settings, timeout, stall, advanceArgv)
-	case owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0 || profile != "" || settings != adapter.Settings{}:
+	case paneLaunch || owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0 || profile != "" || settings != adapter.Settings{}:
 		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance, --stall-interval, --profile, --model and --effort do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")

@@ -1,0 +1,37 @@
+Contract-first workflow Artisan presentation tests, before pane launch wiring:
+$ go test ./internal/launch -run 'TestWorkflowPane|TestAmbiguousPane'
+--- FAIL: TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt (0.08s)
+    presentation_unix_test.go:35: no pane-backed owned launch: pane "" lines []
+--- FAIL: TestAmbiguousPaneLaunchNeverTypesTwice (0.06s)
+    presentation_unix_test.go:57: Launch = <nil>
+FAIL
+
+After wiring:
+$ go test ./internal/launch -run 'TestWorkflowPane|TestAmbiguousPane'
+ok github.com/ndrwl/guildhall/internal/launch 0.270s
+
+Live workflow integration, with the guarded fm-herdr-lab helper supplying every
+Herdr API call's explicit session and owning provision, viewer and teardown:
+$ go test ./internal/cli -run '^TestWorkflowArtisanHerdrLab$' -count=1 -v
+=== RUN   TestWorkflowArtisanHerdrLab
+    artisan_lab_test.go:74: workflow Artisan appeared: session=fm-lab-guildhall-artisa-1328840-22916 workspace=w2 tab=w2:t2 pane=w2:p2
+    artisan_lab_test.go:104: finished Artisan tab closed; attempt outcome and spend unchanged
+--- PASS: TestWorkflowArtisanHerdrLab (2.03s)
+PASS
+Guarded teardown: session stop exit=0; session delete exit=0; default fleet-state
+tripwire verified by the helper (teardown exit=0).
+
+Follow-up live run with an explicit two-second fake delay and an assertion that
+the store still records a running attempt when the labelled tab is inspected:
+=== RUN   TestWorkflowArtisanHerdrLab
+    artisan_lab_test.go:88: running workflow Artisan appeared: session=fm-lab-guildhall-artisa-1485160-11109 workspace=w2 tab=w2:t2 pane=w2:p2
+    artisan_lab_test.go:118: finished Artisan tab closed; attempt outcome and spend unchanged
+--- PASS: TestWorkflowArtisanHerdrLab (4.57s)
+PASS
+Guarded teardown again: stop exit=0, delete exit=0, tripwire verified.
+
+The new pane launch contract tests were observed red before implementation of
+Process's presentation path. The detached log-streaming bridge was prepared
+alongside the boundary contract, before those tests: no separate red-first claim
+is made for that helper. The opt-in live integration test passed on its first run.
+Full raw output and guarded shim: firstmate task data guildhall-artisan-tabs/.

@@ -272,7 +272,7 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 
 - `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
-- The Tier 2 lab runs, the Herdr tab mode running the launcher in its pane and the retirement of the Windows-only worker stop path remain; see the [resume decision](decisions/0048-artisan-resume.md).
+- The Tier 2 lifecycle lab runs and retirement of the Windows-only worker stop path remain; workflow presentation is implemented as [owned Artisan tabs](#workflow-artisan-tabs).
 
 ## Heartbeat
 
@@ -351,7 +351,7 @@ The endpoint call is bounded by the caller's context and `EndpointTimeout` (2 s)
 
 `guildhall artisan start`, `stop`, `status` and `resume` name an owned attempt with `--store <file> --state <dir> --repo <id> --task <id> --step <id> --attempt <n>`.
 The repository flag is `--repo`, as on `task start`, `step done` and `decide` ([D53](decisions/0053-cli-role-grammar.md)); the pre-release `--repository` is a usage error, exit code 2, naming `--repo`.
-A [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY`, stands in for `--store` and `--state`; it does not apply to an attempt in a Herdr tab.
+A [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY`, stands in for `--store` and `--state`; it does not apply to the manual fake-only `artisan start --herdr-session` mode.
 The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
 `artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`, `ModelDir`) for both.
 `model` in the attempt directory is the only part a model-run Artisan may write, holding the copy of its prompt and its draft result, which its wrapper publishes as `result.json`; the result, its cancel marker, `outcome.json`, the lock, the events file and `launcher.log` are never in it.
@@ -379,7 +379,7 @@ With a positive `--stall-interval` (zero, the default, observes nothing), the la
 
 `--profile <name>` names the profile in the Director `--copy`; see [Artisan permissions](adapters.md#artisan-permissions) for grant resolution and runtime support.
 `--model <model>` and `--effort <effort>` are the profile's [runtime settings](adapters.md#runtime-settings), which the runtime runs the attempt on; `launch.Process` passes the profile's effective settings after [effort fallback resolution](configuration.md#settings), and a setting the runtime cannot honour is exit 1 before the attempt is owned.
-`--profile`, `--model` and `--effort` apply only to an owned attempt; in a Herdr tab they are a usage error.
+`--profile`, `--model` and `--effort` apply only to an owned attempt, including a workflow Artisan tab; in the manual fake-only `artisan start --herdr-session` mode they are a usage error.
 Neither `artisan start` nor `claude-artisan` accepts `--allow-tool`.
 
 The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.
@@ -431,7 +431,28 @@ Escapes from a process group, such as a `setsid` grandchild, are not members and
 
 `launch.ResumeArgv` is the command a pane registers to run after a restart: `guildhall artisan resume` with the attempt's flags, starting with the plain command name Herdr requires.
 `herdr.Client.ReportAgent` registers it with `herdr pane report-agent --source guildhall`, refusing a resume command that starts with a path or an option (`herdr.ErrResumeArgv`).
-Production registration is deferred to L7 part 3, which wires the `herdr.Client.ReportAgent` call with `launch.ResumeArgv` when running the launcher in the Herdr tab.
+Workflow launches now register `launch.ResumeArgv` through `herdr.Client.ReportAgent` with source `guildhall` before typing the launch command into the Artisan's pane.
+A live launcher after a Herdr restart is still live: `artisan resume` refuses to replace it, rather than interpreting the missing presentation as an exited worker.
+
+### Workflow Artisan tabs
+
+With a Director's `herdr_session` configured, workflow attempts, including judge attempts, open a tab in the workspace labelled with that Director's name.
+The tab label is `artisan <repository>/<task>/<step>/<attempt>`.
+Without that setting, workflow attempts keep the hidden detached-process mode.
+Both modes use the same owned launcher, result recording, spend accounting, guard rails, retry rules and watcher.
+
+The pane runs an internal `artisan start --pane-launch` bridge that starts the owned launcher detached from the terminal, with no terminal input and its output appended to `launcher.log`, and streams that log into the pane.
+This is a watchable print-mode Artisan, not an interactive model session.
+Closing the tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
+After the launcher and its watcher finish, the bridge prints a finished line and leaves the tab open for inspection.
+Guildhall does not automatically close these tabs, including after landing or preserving the work; a person may close the presentation without losing the attempt's log, result or isolated copy.
+
+An attempt-local `pane-launch.json` single-use claim is written before opening a pane, then records the tab binding before typing.
+An ambiguous API response, startup timeout or caller interruption leaves that claim in place and returns an error without stopping an unverified launcher or typing another command.
+A duplicate launch reconciles the attempt's files and durable ownership for diagnosis and refuses to launch again; a missing pane is never permission to duplicate work.
+Inspect with `artisan status` and, only for an exited owner, reconcile with `artisan resume`; normal workflow retries have a new attempt number and their own claim.
+A claimed attempt with no owner needs operator inspection of the preserved launch intent rather than an automatic retry of the same launch.
+No Artisan tab cleanup touches other tabs, and the default Herdr session is refused.
 
 ### Harness
 

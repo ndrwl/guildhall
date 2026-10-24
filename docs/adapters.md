@@ -150,8 +150,10 @@ The wrapper keeps the result protocol, not the model:
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
 - it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
-This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, it runs only as an [owned attempt](artisan.md#commands) (`artisan start --adapter claude` refuses `--herdr-session`), and of a profile it uses only the model and effort, passed by value, and the `allowed_tools`, loaded through the copy/profile reference.
-Transcripts, session resume and the Herdr tab mode are later work.
+This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, and of a profile it uses only the model and effort, passed by value, and the `allowed_tools`, loaded through the copy/profile reference.
+It runs as an [owned attempt](artisan.md#commands), including in [workflow Artisan tabs](artisan.md#workflow-artisan-tabs).
+The older manual `artisan start --herdr-session` mode still refuses Claude; it is a separate fake-only result-file demonstration.
+Transcripts and interactive model-session resume are later work.
 
 The same adapter runs the [Director's session](director.md#start) interactively; that page describes its command, rendered skills and permission settings.
 
@@ -230,6 +232,7 @@ CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keep
 ## Running an attempt
 
 Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher with the fake or the [Claude adapter](#claude-adapter); see [Artisan commands](artisan.md#commands).
+For workflow launches rather than these manual flags, see [workflow Artisan tabs](artisan.md#workflow-artisan-tabs).
 
 Package `internal/adapter/runtimes` is the one owner of the runtimes Guildhall can launch: `runtimes.Lookup` returns the runtime by the name `artisan start --adapter` and a profile's `adapter` use, `fake` or `claude`, and `runtimes.Names` lists them.
 `artisan start` refuses any other name with a usage error that names it and lists them, in both modes.
