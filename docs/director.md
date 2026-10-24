@@ -294,7 +294,8 @@ The context percent comes from the runtime, an optional capability (R1.24).
 For Claude Code, the core `director turn-ended` hook handles both `Stop` and `StopFailure` and reads the hook input's absolute `transcript_path` before signaling the supervisor.
 It writes the latest main-session assistant message's input tokens plus cache-creation and cache-read input tokens, divided by the model's context window and rounded, to `context.json` in the session directory.
 It does not sum historical usage, count output tokens or include sidechain usage; a compaction boundary resets the previous reading.
-Known Anthropic model families use the published context-window table (1M for Opus 4.6+ and Sonnet 4.6+, 200k for older supported families); unknown/provider-specific model IDs produce no new report rather than a guessed capacity.
+Known Anthropic model families use the published context-window table (1M for Opus 4.6+ and Sonnet 4.6+, 200k for older supported families); unknown/provider-specific model IDs invalidate the prior report rather than guessing a capacity.
+A successfully read transcript with no current known usage removes `context.json`, including after compaction; a transient read failure leaves the prior report untouched.
 Unreadable, malformed or unsupported transcript input leaves the previous report alone and never suppresses the turn-ended signal.
 Transcript reads are bounded to 128 MiB with 8 MiB per line.
 This core hook is independent of [Lanterns](lanterns.md): removing the plugin, replacing the status line or disabling function hooks cannot remove the context trigger.

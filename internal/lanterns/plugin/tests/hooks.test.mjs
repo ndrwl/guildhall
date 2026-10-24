@@ -2,12 +2,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {register} from '../hooks/register.js';
 
-function engine(flag='1', preference='off\n') {
+function engine(flag='1', preference='off\n', copy='/copy') {
  const handlers=[]; let writes=0, writtenPath; const calls=[];
  const on=(event,filter,handler)=>{if(typeof filter==='function'){handler=filter;filter={}}; handlers.push({event,filter,handler});return {catch(){}}};
  register(on);
  const element=kind=>props=>({kind,...props});
- const $={env:{get:async key=>key==='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS'?flag:key==='GUILDHALL_COPY'?'/copy':undefined},plugin:{root:'/workspace/plugin'},
+ const $={env:{get:async key=>key==='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS'?flag:key==='GUILDHALL_COPY'?copy:undefined},plugin:{root:'/workspace/plugin'},
  fs:{exists:async()=>true,read:async()=>preference,write:async path=>{writes++;writtenPath=path}},
  command:{register:async e=>calls.push(e)},clock:{every:(ms,fn)=>{calls.push({ms,fn});return {cancel(){}}}},
  config:{list:async()=>[{key:'theme',value:'dark'}]},
@@ -40,6 +40,14 @@ test('off by default; persisted toggle, tool hiding, original frame contents and
  assert.ok(e.calls.some(c=>c.ms===220));
  await e.run('command.run',{command:'calm'});
  assert.deepEqual(await e.run('ui.render',{component:'Spinner'}),{kind:'original'});
+});
+test('without a Director copy Calm has no persistence or presentation mode',async()=>{
+ const e=engine('1','on\n',null);
+ e.$.fs.exists=()=>{throw Error('unexpected preference read')};
+ await e.run('session.start');
+ assert.deepEqual(await e.run('command.run',{command:'calm'}),{kind:'original'});
+ for(const component of ['ToolUse','ToolResult','ToolGroup','Spinner'])assert.deepEqual(await e.run('ui.render',{component}),{kind:'original'});
+ assert.deepEqual(e.calls,[]);assert.equal(e.writes,0);
 });
 test('saved preference loads before restored rows; failed save preserves current choice',async()=>{
  const e=engine('1','on\n');
