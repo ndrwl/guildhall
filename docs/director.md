@@ -274,7 +274,7 @@ A session directory whose socket path would pass the platform's AF_UNIX limit ge
 ## Automatic handoff
 
 ```sh
-guildhall director context-report [--copy <dir>]
+guildhall director context-report [--lanterns] [--copy <dir>]
 ```
 
 Three triggers tell the Director a handoff is due before its context runs out ([decision](decisions/0085-director-handoff-triggers.md)); each is a [`[director]` setting](configuration.md#the-director-table) and 0 turns it off:
@@ -291,11 +291,21 @@ A wake that fails to type records no crossing, so the next one carries it.
 The thresholds are recorded in the session when it starts, so a changed setting takes effect at the next session.
 
 The context percent comes from the runtime, an optional capability (R1.24).
-For Claude Code, the session's settings register `guildhall director context-report` as the status line: Claude Code runs it after each assistant message with the session's status as JSON on standard input, and it writes `context_window.used_percentage`, rounded, to `context.json` in the session directory, then prints `context <n>%`.
-It finds the session from `GUILDHALL_COPY` and `GUILDHALL_SESSION`, which the supervisor sets for the runtime, and opens no store.
-Input with no percent yet, before the first message, writes and prints nothing; input that is not JSON, or no session number, is exit 1.
+For Claude Code, the core `director turn-ended` hook handles both `Stop` and `StopFailure` and reads the hook input's absolute `transcript_path` before signaling the supervisor.
+It writes the latest main-session assistant message's input tokens plus cache-creation and cache-read input tokens, divided by the model's context window and rounded, to `context.json` in the session directory.
+It does not sum historical usage, count output tokens or include sidechain usage; a compaction boundary resets the previous reading.
+Known Anthropic model families use the published context-window table (1M for Opus 4.6+ and Sonnet 4.6+, 200k for older supported families); unknown/provider-specific model IDs produce no new report rather than a guessed capacity.
+Unreadable, malformed or unsupported transcript input leaves the previous report alone and never suppresses the turn-ended signal.
+Transcript reads are bounded to 128 MiB with 8 MiB per line.
+This core hook is independent of [Lanterns](lanterns.md): removing the plugin, replacing the status line or disabling function hooks cannot remove the context trigger.
+
+Generated workspaces use `guildhall director context-report --lanterns` as one display-only native status line: the overall light comes first, followed by Guildhall status counts and the runtime's `context_window.used_percentage` figure.
+That mode never writes `context.json`; a failed Guildhall status read is neutral and still displays the context figure.
+The original `director context-report` without `--lanterns` retains its legacy behavior for existing workspaces: it writes the supplied percent to the session `GUILDHALL_COPY` and `GUILDHALL_SESSION` name and prints `context <n>%`, opening no store.
+In that legacy mode, input with no percent yet writes and prints nothing; invalid JSON or no session number is exit 1.
 A runtime without the capability, such as the fake, records no report path and its context trigger never fires.
-The lab checklist proves the reporter against a real Claude Code.
+The transcript-hook integration test proves the context threshold with no plugin or status line installed.
+The [Lanterns page](lanterns.md) describes its automatic installation, optional function-hook visuals and vitals labels.
 
 ## Guard rails
 

@@ -200,6 +200,11 @@ func (a *App) directorTurnSignal(turn session.Turn, args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), turnSignalTimeout)
 	defer cancel()
 	dir := filepath.Join(copyDir, "director", fmt.Sprintf("session-%d", d.Number))
+	if turn == session.TurnEnded {
+		if err := a.contextFromTurn(dir); err != nil {
+			_, _ = fmt.Fprintf(a.Stderr, "Lanterns: context refresh unavailable: %v\n", err)
+		}
+	}
 	if err := session.Signal(ctx, dir, d.Number, turn); errors.Is(err, session.ErrPath) {
 		// The supervisor could not bind there either, so it waits out the grace instead.
 		return a.fail(fmt.Errorf("%s: session %d: no supervisor endpoint can listen: %w", name, d.Number, err))

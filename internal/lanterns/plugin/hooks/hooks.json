@@ -1,0 +1,6 @@
+{
+  "modules": ["./register.js"],
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.cjs\"", "timeout": 2}]}]
+  }
+}
