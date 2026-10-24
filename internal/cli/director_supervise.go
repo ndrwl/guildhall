@@ -256,7 +256,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
-	w := sessionWatch{storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
+	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
 		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks}
 	if ep != nil {
 		w.turns = ep.Turns()
@@ -355,6 +355,8 @@ func (a *App) stopGrace() time.Duration {
 // sessionWatch is what the supervisor of session n follows while its runtime runs.
 type sessionWatch struct {
 	storePath, state string
+	copyDir          string
+	labelsAt         time.Time
 	n                int
 	grace, idleAfter time.Duration
 	hook             bool
@@ -392,6 +394,7 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 	}
 	tick := time.NewTicker(poll)
 	defer tick.Stop()
+	w.refreshLabels(time.Now())
 	var ended os.Signal
 	ending, endedAt := keepRunning, time.Time{}
 	decide := func(turn session.Turn) {
@@ -415,6 +418,7 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 		case t := <-w.turns:
 			decide(t)
 		case <-tick.C:
+			w.refreshLabels(time.Now())
 			if w.checks != nil {
 				w.checks.tick(time.Now())
 			}

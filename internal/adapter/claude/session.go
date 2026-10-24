@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/lanterns"
 )
 
 // SettingsFile is the Claude Code project settings file of a Director session, relative to the session directory.
@@ -65,7 +66,7 @@ func Settings(copyDir string) []byte {
 		"UserPromptSubmit": {{[]command{{"command", TurnStartCommand}}}},
 		"Stop":             {{[]command{{"command", TurnEndCommand}}}},
 		"StopFailure":      {{[]command{{"command", TurnEndCommand}}}},
-	}, command{"command", ContextReportCommand}}, "", "  ")
+	}, command{"command", ContextReportCommand + " --lanterns"}}, "", "  ")
 	return append(b, '\n')
 }
 
@@ -81,7 +82,7 @@ func absoluteRule(path string) string {
 }
 
 // Session returns the Claude Code Director session for spec: `claude --append-system-prompt-file <role prompt>
-// --add-dir <copy> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
+// --add-dir <copy> --plugin-dir <bundled Lanterns> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
 // the interactive command shape beside the Artisan's print mode. Session refuses invalid specs and settings
 // with no command and writes nothing; the caller writes
 // Settings at SettingsFile before starting it.
@@ -100,6 +101,7 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 		return adapter.Command{}, errors.New("claude adapter: Claude must be an absolute path")
 	}
 	argv := []string{prog, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", spec.Copy}
+	argv = append(argv, "--plugin-dir", filepath.Join(spec.Dir, PluginDir))
 	argv = append(argv, settingsArgs(adapter.Settings{Model: spec.Model, Effort: spec.Effort})...)
 	return adapter.Command{Argv: append(argv, "--", spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
 }
@@ -117,16 +119,24 @@ const (
 )
 
 // SessionFiles are the files a Claude Code Director session needs beside its skills, by slash path relative to
-// the session directory: Settings at SettingsFile.
+// the session directory: Settings at SettingsFile and the embedded Lanterns plugin at PluginDir.
 func (Adapter) SessionFiles(copyDir string) map[string][]byte {
-	return map[string][]byte{SettingsFile: Settings(copyDir)}
+	files := map[string][]byte{SettingsFile: Settings(copyDir)}
+	for name, data := range lanterns.Files() {
+		files[filepath.ToSlash(filepath.Join(PluginDir, name))] = data
+	}
+	return files
 }
+
+// PluginDir is the bundled Guildhall plugin in a generated Director workspace.
+const PluginDir = ".claude/plugins/lanterns"
 
 // ContextReportCommand is the status-line command of a Director session: Claude Code runs it after each
 // assistant message with the session's status as JSON on standard input.
 const ContextReportCommand = "guildhall director context-report"
 
-// ContextReport reports true: Settings registers ContextReportCommand as the session's status line.
+// ContextReport reports true: the core turn-ended hook reports transcript context.
+// Settings also registers ContextReportCommand with --lanterns as a display-only status line.
 func (Adapter) ContextReport() bool { return true }
 
 // ParseStatusLine reads the share of the context window in use from the JSON Claude Code passes a status-line
