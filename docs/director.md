@@ -90,18 +90,8 @@ Between them they name every command of the [README's list](../README.md#the-com
 
 ## Artisan tabs
 
-A Director's `herdr_session` setting also presents each workflow-started Artisan in its own tab in the workspace labelled with the Director's name, whether the Director itself was started with `--tab` or in a terminal.
-The tab label includes repository, task, step and attempt, and displays the owned launcher's output, including the fake and Claude print-mode adapters and judge attempts.
-No configured session means the existing hidden owned-process mode, without a Herdr dependency.
-Herdr is resolved only when new work launches, never merely to record a result, reconcile or cancel work.
-The named session must already be running and meet the supported Herdr version; the default session is always refused.
-
-Tabs are presentation only: closing a tab or restarting Herdr does not stop the owned attempt, erase its isolated copy or decide task state.
-The pane's bridge starts the launcher detached and follows its durable log; use Guildhall's stop or cancel command rather than terminal Ctrl+C to stop the attempt.
-Resume registration reconciles the existing attempt and never starts another worker.
-Finished Artisan tabs remain open with a clear finished line; Guildhall never automatically closes them or unrelated tabs.
-Unknown pane/startup outcomes preserve a single-use attempt launch claim and require ownership reconciliation, never an automatic second launch into a replacement pane.
-See [workflow Artisan tabs](artisan.md#workflow-artisan-tabs) for recovery and the distinction from the older manual fake-only tab demo.
+The Director's `herdr_session` also selects [workflow Artisan tabs](artisan.md#workflow-artisan-tabs), independently of whether the Director itself runs with `--tab` or in a terminal.
+That page owns their presentation, lifecycle and recovery rules; [Herdr access](adapters.md#herdr-access) describes the session prerequisites.
 
 ## The Director's tab
 
