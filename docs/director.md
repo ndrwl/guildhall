@@ -277,14 +277,14 @@ The context percent comes from the runtime, an optional capability (R1.24).
 For Claude Code, the core `director turn-ended` hook handles both `Stop` and `StopFailure` and reads the hook input's absolute `transcript_path` before signaling the supervisor.
 It writes the latest main-session assistant message's input tokens plus cache-creation and cache-read input tokens, divided by the model's context window and rounded, to `context.json` in the session directory.
 It does not sum historical usage, count output tokens or include sidechain usage; a compaction boundary resets the previous reading.
-Known Anthropic model families use the published context-window table (1M for Opus 4.6+ and Sonnet 4.6+, 200k for older supported families); unknown/provider-specific model IDs invalidate the prior report rather than guessing a capacity.
+Supported model IDs and explicit window suffixes are defined by `modelContextWindow` in [`internal/adapter/claude/context.go`](../internal/adapter/claude/context.go); unknown/provider-specific model IDs invalidate the prior report rather than guessing a capacity.
 A successfully read transcript with no current known usage removes `context.json`, including after compaction; a transient read failure leaves the prior report untouched.
-Unreadable, malformed or unsupported transcript input leaves the previous report alone and never suppresses the turn-ended signal.
+Malformed transcript rows are ignored; invalid hook input or a failed transcript read leaves the previous report alone.
+Context refresh failure never suppresses the turn-ended signal.
 Transcript reads are bounded to 128 MiB with 8 MiB per line.
 This core hook is independent of [Lanterns](lanterns.md): removing the plugin, replacing the status line or disabling function hooks cannot remove the context trigger.
 
-Generated workspaces use `guildhall director context-report --lanterns` as one display-only native status line: the overall light comes first, followed by Guildhall status counts and the runtime's `context_window.used_percentage` figure.
-That mode never writes `context.json`; a failed Guildhall status read is neutral and still displays the context figure.
+Generated workspaces use the display-only [Lanterns status line](lanterns.md#reply-lights-and-the-status-line), which never writes `context.json`.
 The original `director context-report` without `--lanterns` retains its legacy behavior for existing workspaces: it writes the supplied percent to the session `GUILDHALL_COPY` and `GUILDHALL_SESSION` name and prints `context <n>%`, opening no store.
 In that legacy mode, input with no percent yet writes and prints nothing; invalid JSON or no session number is exit 1.
 A runtime without the capability, such as the fake, records no report path and its context trigger never fires.

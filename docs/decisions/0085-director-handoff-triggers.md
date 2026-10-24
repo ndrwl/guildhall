@@ -1,7 +1,8 @@
 # D85. Automatic handoff triggers and the context reporter
 
 A Director session's context fills up as it works, so the session should hand over before it runs out rather than when the captain notices.
-This is the second half of the slice 4 handoff plan (D11b), after [handoff notes and reload](0082-director-handoff-reload.md): three triggers that tell the Director a handoff is due, and the Claude status-line reporter that gives one of them its input.
+This is the second half of the slice 4 handoff plan (D11b), after [handoff notes and reload](0082-director-handoff-reload.md): three triggers that tell the Director a handoff is due.
+The original status-line input was superseded by [core transcript context](lanterns-and-core-context.md); [automatic handoff](../director.md#automatic-handoff) owns current reporter behavior and legacy compatibility.
 
 ## Decisions
 
@@ -18,12 +19,9 @@ This is the second half of the slice 4 handoff plan (D11b), after [handoff notes
   A wake runs in whichever process stored the message, which may have no config, so the supervisor records the session's thresholds and the absolute path of its `context.json`, when the runtime reports context, in the `DirectorSession` it starts.
   A reload re-reads the config, so a changed threshold takes effect with the next session.
 - **The reporter writes a file, not the store.**
-  Claude Code runs a status-line command after each assistant message and passes it JSON on standard input; `guildhall director context-report` reads `context_window.used_percentage` from it and writes `<session>/context.json` atomically, then prints `context <n>%` as the status line.
-  It runs often, so it touches no store and takes no lock: it finds the session directory from `GUILDHALL_COPY` and the session number in `GUILDHALL_SESSION`, which the supervisor sets for the runtime.
-  Input with no used percentage writes nothing and prints nothing, exit 0, because a status line that fails shows an error in the Director's terminal and the trigger only needs the newest known value.
+  See [automatic handoff](../director.md#automatic-handoff) for the core reporter and legacy status-line command.
 - **The context report is an optional capability (R1.24).**
-  `runtimes.Session` gains `ContextReport`: true for Claude Code, whose settings register the reporter as `statusLine`, false for the fake.
-  A session whose runtime reports none records no `context.json` path and its context trigger never fires; the lab checklist proves the reporter against a real Claude Code.
+  See the [`runtimes.Session` contract](../contracts/adapter-runtimes.md) for `ContextReport`.
 - **The status feed shows the newest report.**
   The session section carries `context` with the used percent and when it was reported, read from the recorded path, and is absent when nothing was reported.
 
