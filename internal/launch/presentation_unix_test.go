@@ -5,6 +5,9 @@ package launch_test
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -131,6 +134,154 @@ func TestPaneLostResponsePreservesWorkerAndNeverRetypes(t *testing.T) {
 		if time.Now().After(end) {
 			t.Fatal("uncertain launch did not preserve its running worker")
 		}
+	}
+}
+
+func TestRelativeStorePaneLaunchAndResume(t *testing.T) {
+	for _, files := range []bool{false, true} {
+		name := "workflow"
+		if files {
+			name = "judge"
+		}
+		t.Run(name, func(t *testing.T) {
+			p := newProcess(t)
+			spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=10m"))
+			storePath := p.Store
+			t.Chdir(filepath.Dir(storePath))
+			p.Store = filepath.Base(storePath)
+			panes := adaptertest.NewShellPanes(t, "lab", "director")
+			var resume []string
+			p.Presentation = &launch.Presentation{Host: panes, Workspace: "director", Report: func(_ context.Context, _ string, r herdr.AgentReport) error {
+				resume = r.Resume
+				return nil
+			}}
+			var h interp.Handle
+			var err error
+			if files {
+				k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
+				h, err = p.LaunchFiles(context.Background(), k, spec.Adapter, spec.PromptFile, spec.WorkDir)
+			} else {
+				h, err = p.Launch(context.Background(), spec)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = p.Stop(h) })
+			if err := p.Stop(h); err != nil {
+				t.Fatal(err)
+			}
+			at := launch.Attempt{Store: storePath, StateDir: p.StateDir, Key: artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}}
+			if !reflect.DeepEqual(resume, launch.ResumeArgv(at)) {
+				t.Fatalf("resume = %q", resume)
+			}
+			cmd := exec.Command(p.Executable, resume[1:]...)
+			cmd.Dir = spec.WorkDir
+			cmd.Env = append(os.Environ(), p.Env...)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("resume from pane directory: %v: %s", err, out)
+			}
+		})
+	}
+}
+
+type timeoutTabs struct {
+	adapter.TabHost
+	phase               string
+	creates, interrupts int
+}
+
+func (h *timeoutTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (adapter.TabRef, error) {
+	h.creates++
+	ref, err := h.TabHost.CreateTab(ctx, spec)
+	if err == nil && h.phase == "create" {
+		<-ctx.Done()
+		return ref, ctx.Err()
+	}
+	return ref, err
+}
+
+func (h *timeoutTabs) PaneProcessInfo(ctx context.Context, ref adapter.TabRef) (herdr.ProcessInfo, error) {
+	if h.phase == "shell" {
+		<-ctx.Done()
+		return herdr.ProcessInfo{}, ctx.Err()
+	}
+	return h.TabHost.PaneProcessInfo(ctx, ref)
+}
+
+func (h *timeoutTabs) RunInTab(ctx context.Context, ref adapter.TabRef, line string) error {
+	if err := h.TabHost.RunInTab(ctx, ref, line); err != nil {
+		return err
+	}
+	if h.phase == "type" {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (h *timeoutTabs) InterruptTab(ctx context.Context, ref adapter.TabRef) error {
+	h.interrupts++
+	return h.TabHost.InterruptTab(ctx, ref)
+}
+
+func TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop(t *testing.T) {
+	for _, phase := range []string{"create", "shell", "report", "type"} {
+		t.Run(phase, func(t *testing.T) {
+			p := newProcess(t)
+			p.StartTimeout = 150 * time.Millisecond
+			spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=400ms"))
+			panes := adaptertest.NewShellPanes(t, "lab", "director")
+			host := &timeoutTabs{TabHost: panes, phase: phase}
+			reports := 0
+			p.OpenPresentation = func(ctx context.Context) (*launch.Presentation, error) {
+				if _, ok := ctx.Deadline(); !ok {
+					t.Error("presentation resolution has no deadline")
+				}
+				return &launch.Presentation{Host: host, Workspace: "director", Report: func(ctx context.Context, _ string, _ herdr.AgentReport) error {
+					reports++
+					if phase == "report" {
+						<-ctx.Done()
+						return ctx.Err()
+					}
+					return nil
+				}}, nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			start := time.Now()
+			if _, err := p.Launch(ctx, spec); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("Launch = %v", err)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Fatalf("presentation exceeded StartTimeout: %s", elapsed)
+			}
+			k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
+			if _, err := os.Stat(filepath.Join(k.Dir(p.StateDir), launch.PaneClaim)); err != nil {
+				t.Fatalf("claim lost: %v", err)
+			}
+			beforeReports := reports
+			if _, err := p.Launch(context.Background(), spec); err == nil {
+				t.Fatal("timed-out launch retried")
+			}
+			wantSent := 0
+			if phase == "type" {
+				wantSent = 1
+			}
+			if host.creates != 1 || reports != beforeReports || len(panes.Sent()) != wantSent || host.interrupts != 0 {
+				t.Fatalf("creates=%d reports=%d sent=%q interrupts=%d", host.creates, reports, panes.Sent(), host.interrupts)
+			}
+			if phase == "type" {
+				for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+					a := runningAttempt(t, p)
+					if a.Outcome == store.AttemptSucceeded {
+						break
+					}
+					if a.Outcome != "" || time.Now().After(end) {
+						t.Fatalf("timed-out typing did not preserve worker: %+v", a)
+					}
+				}
+			}
+		})
 	}
 }
 
