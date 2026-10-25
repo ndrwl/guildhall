@@ -31,7 +31,8 @@ var readOnlyGit = []string{"status", "log", "diff", "show", "rev-parse", "ls-fil
 // read-only git commands and `git remote -v` without asking but no git command writing an --output file, no
 // edit tool may change the copy's config.toml or managed.toml, the UserPromptSubmit hook runs TurnStartCommand
 // at the start of every turn, the Stop and StopFailure hooks TurnEndCommand at the end of every turn, the second
-// when a turn ends in an API error, and the status line runs ContextReportCommand. It is JSON with a trailing newline, the same bytes for the same copy.
+// when a turn ends in an API error, and the status line runs ContextReportCommand with --lanterns.
+// It is JSON with a trailing newline, the same bytes for the same copy.
 func Settings(copyDir string) []byte {
 	allow := []string{"Bash(guildhall)", "Bash(guildhall *)"}
 	for _, g := range readOnlyGit {

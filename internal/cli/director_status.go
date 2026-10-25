@@ -268,7 +268,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.Session = statusSession{GuardRails: usage, LastWake: v.LastWake, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release,
 			Pane: d.Pane, StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
 			HandoffNote: v.Handoff, Reload: v.Reload}
-		// A missing or unreadable report is no report: the status line rewrites it after the next message.
+		// A missing or unreadable report is no report; context refresh belongs to the runtime's reporter.
 		if f := d.Handoff.ContextFile; f != "" {
 			if c, err := session.ReadContext(f); err == nil {
 				out.Session.Context = &c
