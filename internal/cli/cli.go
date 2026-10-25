@@ -79,8 +79,9 @@ Commands:
                  tell the session supervisor the runtime's turn has started (its turn-start hook)
   director turn-ended --copy <dir>
                  tell the session supervisor the runtime's turn has ended (its end-of-turn hook)
-  director context-report --copy <dir>
-                 record the context a Director session's runtime reports (its status line)
+  director context-report [--lanterns] --copy <dir>
+                 display status and context only with --lanterns (generated workspaces);
+                 without it, record runtime context for legacy workspaces
   quality judge|judged|agreement --copy <dir> ...
                  judge a delivered task's self-review in a separate session, take a finished judge
                  attempt as its launcher does, and print the judge's agreement with the audits
