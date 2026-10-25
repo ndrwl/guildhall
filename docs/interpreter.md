@@ -221,6 +221,19 @@ A finding the attempt withdraws or resolves leaves its ruling uncontested.
 When a review round within its allowed loop count (`max` plus answered `continue` exits) requests changes again, the engine compares its outcome with the previous one and sends the Director message `<repo>.<task>.stall.<step>-<n>`, type `stall`, naming every signal found: the head (or document) is unchanged, no finding was resolved or withdrawn, or a finding is still open for two rounds (report §5.3).
 A stall is information only: it never changes the loop or itself asks the Guildmaster; loop exits follow `max` or a [dispute](#director-rulings).
 
+## Code-head output intake
+
+A succeeded attempt with one output port of type `code-head` and no listed output files takes its output from Git HEAD in the task's working directory.
+This applies to build and any other attempt producing that port type, not to document or review outputs.
+Guildhall records the full commit object id followed by a newline as `<step>-<n>-<port>`, in the document directory at `tasks/<repo>/<task>/<step>-<n>/head`; it writes no head file in the worktree.
+Tracked staged or unstaged changes, including submodules, refuse intake with an error naming the dirty paths, rather than silently leaving work out of the output.
+Untracked files alone do not block it.
+An unborn HEAD, missing repository or Git failure is an intake error.
+An explicitly listed head file keeps the existing path and content validation.
+The launcher may already have recorded success: while `intake.json` is absent the next advance still takes the result, records the head and proceeds without retrying the succeeded attempt.
+A head document already recorded wins on replay even if the working directory has since changed.
+The task's custody lock serialises advances; external writers must not change the worktree during intake.
+
 ## Review gate
 
 Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.

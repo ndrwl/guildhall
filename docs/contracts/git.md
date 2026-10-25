@@ -3,7 +3,7 @@
 ## Contract
 
 The boundary to the git program: each question the Director asks of a repository is answered by running git with an argument list, never through a shell.
-It answers three: `Program.Ensure`, which makes a task's working directory a worktree of its repository ([workspaces](#workspaces)), `Program.Base`, a task's base ([workspaces](#workspaces)), and `Program.Classify(ctx, repo, last, next)`, run as `git -C <repo> --literal-pathspecs`: whether a task's new commit range `next` is a rebase of the range `last` that was reviewed, for rebase-aware re-review (director slice S6b part 3).
+It answers `Program.FinalHead`, the committed output of a task's work ([final head](#final-head)), and `Program.Ensure`, which makes a task's working directory a worktree of its repository ([workspaces](#workspaces)), `Program.Base`, a task's base ([workspaces](#workspaces)), and `Program.Classify(ctx, repo, last, next)`, run as `git -C <repo> --literal-pathspecs`: whether a task's new commit range `next` is a rebase of the range `last` that was reviewed, for rebase-aware re-review (director slice S6b part 3).
 
 `ScopeRebase` is returned only when all of these hold:
 
@@ -21,6 +21,14 @@ Firstmate's interim `pr-validate` helper is the reference behaviour; unlike it, 
 
 Consumers declare their own narrow interface over `Classify`; the interpreter's is `interp.Rebases`.
 Platform differences: none in the contract; git is found on `PATH` unless `Program.Path` names it.
+
+### Final head
+
+`Program.FinalHead(ctx, dir)` returns the full commit object id of `HEAD^{commit}` in the working directory, without a newline.
+Staged or unstaged tracked changes, including submodules, refuse it with an error naming the dirty paths; untracked files alone do not block it.
+Missing Git, a missing repository, an unborn HEAD, cancellation and other Git failures are errors, never fabricated outputs.
+It uses the bounded Git runner and literal argument lists on every platform.
+The caller must hold exclusive custody while reading; it does not lock out external Git writers.
 
 ### Workspaces
 
@@ -51,11 +59,14 @@ Directories are compared by file identity, not by path text, so symbolic links s
 `w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/0011-repository-paths-are-absolute-in-the.md), is `ErrInvalidWorkspace` there.
 Paths with spaces are passed as single arguments, never through a shell.
 
-Every git run of `Classify`, `Ensure`, `Base` and `Retire` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
+Every git run of `Classify`, `Ensure`, `Base`, `FinalHead` and `Retire` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
 A run past its bound is ended and is a plain error naming git's command and the bound; for `Classify` that is a full scope with that reason, since its context did not end.
 `forge.GitHub` keeps the same rule for `gh` and `git` ([forge](forge.md)); the shared runner both would use waits for a third consumer that runs a program under a bound, and is done when `exec.CommandContext` in `internal/forge`, `internal/git` and `internal/herdr` is found only in it.
 
 ## Tests
+
+`head_test.go` adds green-first boundary coverage for `FinalHead`: committed and detached HEAD, untracked notes, modified/staged/deleted/renamed/added tracked paths, unborn HEAD, non-repository directories, missing executable, cancellation and process timeout.
+The red-first integration regression that drove this new operation is linked from the [interpreter contract](interp.md).
 
 [`internal/git/gittest`](git-gittest.md) defines `RunClassifierContract` and the scripted double `Script`, shared with the interpreter's tests.
 `git_test.go` runs the suite against `Program` over histories built with real git in temporary repositories, with global and system configuration excluded during history setup, on every CI platform, and against `Script`.
