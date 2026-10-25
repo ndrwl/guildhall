@@ -101,12 +101,13 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 		return a.fail(err)
 	}
 	for {
-		n, err := recordNextSession(storePath, self, p.cfg, pane, func(n int) (store.HandoffPolicy, error) {
+		n, sp, err := recordNextSession(storePath, self, p.cfg, pane, func(n int) (store.HandoffPolicy, error) {
 			return handoffPolicy(p.cfg, p.runtime, sessionDir(copyDir, n))
 		})
 		if err != nil {
 			return a.fail(fmt.Errorf("director start: record session: %w", err))
 		}
+		a.warnUnremoved(sp)
 		code, reload := a.runSession(p, n, copyDir, storePath, state, signals)
 		if !reload {
 			if err := stopSession(storePath, n); err != nil {
@@ -137,21 +138,24 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 }
 
 // recordNextSession records the next session as recovering for supervisor self under cfg in pane, with the
-// handoff policy policy gives for its number, and returns its number. A reload requested before it started is
+// handoff policy policy gives for its number, and returns its number beside what checkSupersede found of the
+// session it supersedes, whose failed removal the caller warns of. A reload requested before it started is
 // recorded applied by it.
 func recordNextSession(storePath string, self artisan.Identity, cfg any, pane store.DirectorPane,
-	policy func(n int) (store.HandoffPolicy, error)) (int, error) {
+	policy func(n int) (store.HandoffPolicy, error)) (int, superseded, error) {
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		return 0, err
+		return 0, superseded{}, err
 	}
-	return withStore(storePath, false, func(s *store.Store) (int, error) {
+	var sp superseded
+	n, err := withStore(storePath, false, func(s *store.Store) (int, error) {
 		d := store.DirectorSession{State: store.DirectorRecovering, Identity: store.ProcessIdentity(self),
 			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: pane}
-		newest, err := checkSupersede(s)
-		if err != nil {
+		var err error
+		if sp, err = checkSupersede(s); err != nil {
 			return 0, err
 		}
+		newest := sp.Number
 		d.Number = newest + 1
 		if d.Handoff, err = policy(d.Number); err != nil {
 			return 0, err
@@ -170,6 +174,7 @@ func recordNextSession(storePath string, self artisan.Identity, cfg any, pane st
 		}
 		return d.Number, err
 	})
+	return n, sp, err
 }
 
 // runSession renders session n and runs its runtime to the end, returning the supervisor's exit status and

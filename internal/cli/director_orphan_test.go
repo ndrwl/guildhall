@@ -259,7 +259,7 @@ func checkRecordedRuntimeRecovery(t *testing.T, stopped bool) {
 		t.Fatalf("director stop: exit %d, %+v, stderr %s; want session 1 stopped as superseded", code, printed, errs)
 	}
 	waitGone(t, "after director stop", tree...)
-	if newest, err := withStore(path, true, checkSupersede); err != nil || newest != 1 {
-		t.Errorf("director start's check after the stop = %d, %v; want it admitted after session 1", newest, err)
+	if sp, err := withStore(path, true, checkSupersede); err != nil || sp.Number != 1 {
+		t.Errorf("director start's check after the stop = %d, %v; want it admitted after session 1", sp.Number, err)
 	}
 }

@@ -44,6 +44,8 @@ A failed check is exit 1 with nothing recorded and nothing written in the copy, 
 A start is refused with exit 1, naming `director: live` and recording nothing, while the newest session is not `stopped` and its supervisor's recorded identity names a live process, or cannot be shown gone.
 It is refused the same way while the newest session's [recorded runtime unit](#the-runtimes-record) is not proven empty, naming the processes that survive and `director stop`, which ends them.
 A session whose supervisor is gone, such as one whose machine restarted, is superseded instead, once its runtime's unit is empty.
+A superseded session's emptied runtime unit is then removed, such as its leftover cgroup directory on Linux; a failed removal is a warning naming the unit and the error, `director start: warning: session <n>'s runtime unit <name> was not removed: <error>`, and the start goes on.
+A unit already removed counts as removed, with no warning.
 A start is refused with exit 1 the same way, naming `director: stop sweeping`, while the newest session's [stop](#stop) has not finished stopping its attempts: the session is `sweeping`, or `stopping` with its supervisor gone; wait for `director stop` to finish, or run it again to finish the sweep.
 
 Then it records session `<n>`, one more than the newest, as `recovering` with its own process identity, release and config digest, which records an earlier session still recorded live as `stopped` with the end reason `superseded`.
