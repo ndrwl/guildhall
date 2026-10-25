@@ -1,0 +1,92 @@
+Lanterns / core transcript context, 2026-10-24
+Harness: pi; local Linux; Node 24.22.0; Claude Code 2.1.310.
+All checks below use zero model calls.
+
+Contract-first red runs (before the corresponding implementations existed):
+
+$ go test ./internal/lanterns
+undefined: PublishLabels
+undefined: Labels
+undefined: Files
+undefined: Counts
+undefined: Band
+FAIL github.com/ndrwl/guildhall/internal/lanterns [build failed]
+exit 1
+
+$ node --test internal/lanterns/plugin/tests/*.test.mjs
+ERR_MODULE_NOT_FOUND: hooks/register.js
+ERR_MODULE_NOT_FOUND: lib/presentation.mjs
+tests 2; pass 0; fail 2
+exit 1
+
+$ go test ./internal/adapter/claude -run TestTranscriptContext
+undefined: TranscriptContext
+FAIL github.com/ndrwl/guildhall/internal/adapter/claude [build failed]
+exit 1
+
+Green focused runs after implementation:
+
+$ go test ./internal/lanterns ./internal/adapter/claude ./internal/messaging ./internal/session
+ok github.com/ndrwl/guildhall/internal/lanterns
+ok github.com/ndrwl/guildhall/internal/adapter/claude
+ok github.com/ndrwl/guildhall/internal/messaging
+ok github.com/ndrwl/guildhall/internal/session
+
+$ go test ./internal/cli -run 'TestLanterns|TestTurnEndedContext' -count=1
+ok github.com/ndrwl/guildhall/internal/cli
+
+The CLI integration tests were added after implementation and passed first.
+They are not claimed as red-first evidence.
+The handoff test uses a real transcript, store, session endpoint and context
+threshold with no plugin or status line present, and checks that a missing
+transcript still delivers the turn-ended signal.
+
+$ node --test internal/lanterns/plugin/tests/*.test.mjs
+pass 5; fail 0
+- exact opt-in gate leaves function hooks entirely inert
+- persisted Calm toggle hides/restores routine tool drawings and working row
+- failed preference writes preserve the choice
+- opening urgency only; unmarked replies neutral
+- bounded N8 raster, roof, glow and drifting/fading smoke
+
+$ claude plugin test internal/lanterns/plugin
+(pass) real engine registers Calm, preserves assistant content and paints N8
+1 pass; 0 fail
+The first real-engine run rejected nested helpers receiving $; moving those
+helpers to the module's top level fixed the engine sandbox boundary.
+The real engine confirms a rounded yellow frame, a per-copy preference outside
+the generated .claude tree, and four Raster blits per 880 ms.
+
+Manual Director workspace generation (real CLI, local stub instead of a model):
+
+$ guildhall store init <proof>/copy/director.store
+$ PATH=<proof>/bin:$PATH guildhall director start --copy <proof>/copy
+config: admitted (<proof>/copy/config.toml)
+runtime: claude (<proof>/bin/claude)
+guildhall: <proof>/bin/guildhall
+store: opens (<proof>/copy/director.store)
+skills: 13 release skills install
+session: 1 (<proof>/copy/director/session-1)
+Stub Claude workspace: <proof>/copy/director/claude
+argv includes:
+  --plugin-dir <proof>/copy/director/claude/.claude/plugins/lanterns
+Lanterns plugin installed: yes
+exit 0
+
+The stub checks the installed manifest and function-hook module on disk.
+No --tab flag, Herdr lifecycle operation, credential or model invocation was used.
+
+Final local validation:
+$ gofmt -l .
+(no output)
+$ go build ./...
+exit 0
+$ go vet ./...
+exit 0
+$ go test ./...
+all packages pass, including CLI (71.929s) and cmd/guildhall (54.102s)
+exit 0
+$ golangci-lint run
+0 issues.
+exit 0
+Pinned lint version: 2.15.0.

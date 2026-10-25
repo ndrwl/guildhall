@@ -80,6 +80,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/herdr`](contracts/herdr.md)
 - [`internal/interp/interptest`](contracts/interp-interptest.md)
 - [`internal/interp`](contracts/interp.md)
+- [`internal/lanterns`](contracts/lanterns.md)
 - [`internal/launch`](contracts/launch.md)
 - [`internal/launch/launchtest`](contracts/launch-launchtest.md)
 - [`internal/messaging/messagingtest`](contracts/messaging-messagingtest.md)
