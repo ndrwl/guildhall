@@ -2,12 +2,7 @@
 
 ## Contract
 
-Succeeded attempts with one code-head output port and no listed files derive that output from the work directory's Git HEAD, a full commit object id followed by a newline.
-Tracked staged or unstaged changes refuse intake with an error naming the dirty paths; untracked files alone do not block it.
-Explicit output files retain their existing validation; other port types still require files.
-An already-finished succeeded attempt with no `intake.json` is replayed on the next advance, records the head document and proceeds to its successor without retrying the attempt.
-Once recorded, the head document is immutable on replay, even if HEAD subsequently moves.
-Git failures leave intake incomplete and are reported without manufacturing a successful output.
+[Code-head output intake](../interpreter.md#code-head-output-intake) owns the derived Git output, workspace requirements, explicit-file compatibility and immutable replay contract.
 `head_replay_test.go` exercises real Git over both records backends: running and launcher-finished successes, empty output lists, missing intake markers, untracked notes, staged/unstaged dirt, progression to review, and immutable replay after HEAD moves.
 The feedback command `go test ./internal/interp -run '^TestBuildHeadReplay$' -count=1` failed before the implementation ([red](../evidence/build-head-output-2026-10-25-red.txt)) and passed afterwards ([green](../evidence/build-head-output-2026-10-25-green.txt)).
 `head_validation_test.go` adds green-first controls for unchanged explicit-head validation and missing document-output errors.

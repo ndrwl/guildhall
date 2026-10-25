@@ -362,11 +362,7 @@ The repository flag is `--repo`, as on `task start`, `step done` and `decide` ([
 A [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY`, stands in for `--store` and `--state`; it does not apply to the manual fake-only `artisan start --herdr-session` mode.
 The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
 `artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`, `ModelDir`) for both.
-For a build or other step with a single code-head output port, the final commit is the output: return success with `outputs: []`, without writing a head file.
-During intake Guildhall reads Git HEAD from the working directory and records its full commit id as the head document.
-Staged or unstaged tracked changes refuse intake with their paths named; untracked notes alone are allowed.
-Explicit listed head files retain the existing content validation.
-A succeeded attempt whose launcher already recorded its finish is still taken on the next advance while `intake.json` is absent, so an old empty-output result needs no hand edit or new attempt.
+For build results, see [code-head output intake](interpreter.md#code-head-output-intake) for the final-commit output contract, workspace requirements and recovery of an already-succeeded empty-output result.
 `model` in the attempt directory is the only part a model-run Artisan may write, holding the copy of its prompt and its draft result, which its wrapper publishes as `result.json`; the result, its cancel marker, `outcome.json`, the lock, the events file and `launcher.log` are never in it.
 They are the composition package `internal/launch`, whose [doc comments](../internal/launch/launch.go) own the API contract.
 

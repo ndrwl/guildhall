@@ -256,7 +256,8 @@ The outcome still binds to the attempt's head, spec digest and standards revisio
 
 ## Documents and inputs
 
-A succeeded result's outputs are copied from the task's working directory into the Director document directory at `tasks/<repo>/<task>/<step>-<n>/<output path>` and recorded with their sha256.
+A succeeded result's listed output files are copied from the task's working directory into the Director document directory at `tasks/<repo>/<task>/<step>-<n>/<output path>` and recorded with their sha256.
+An omitted code-head output follows [code-head output intake](#code-head-output-intake) instead.
 Output reads are rooted in the working directory: file and parent-directory symlinks cannot escape it.
 All outputs, including supplemental ones, are read and checked before any are copied or recorded.
 The first output is the step's output port, named `<step>-<n>-<port>`; later outputs add `-<index>`, from 2.
@@ -271,7 +272,8 @@ Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`int
 
 - the first attempt creates the worktree on a new local branch `guildhall/<task>` at the commit the remote's default branch is at then, or on an existing local branch of that name as it is;
 - every later attempt, including a retry, a loop round and a relaunch, reuses it unchanged: Guildhall never resets, cleans or checks out over it, so an Artisan uses git freely inside it and its commits, branches and uncommitted files carry to the next attempt;
-- outputs are files in it, so they sit beside the code; an Artisan that commits should leave them out.
+- listed output files sit beside the code; an Artisan that commits should leave them out.
+  An omitted code-head output is recorded outside the worktree ([code-head output intake](#code-head-output-intake)).
 
 Ensure is replay safe: the worktree is built beside the working directory and moved into place only when complete, so a crash leaves no working directory or a complete one, and the attempt, recorded but not marked launched, is launched by the next advance.
 When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.
