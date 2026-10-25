@@ -52,6 +52,8 @@ func TestRunCleanupReportsAnOrphanedWorker(t *testing.T) {
 	if err := artisantest.KillVerified(artisan.Identity(o.LauncherIdentity)); err != nil {
 		t.Fatal(err)
 	}
+	// Kill only sends the signal. Prove exit before stop can contact the endpoint.
+	waitGone(t, "before checking the orphaned worker", artisan.Identity(o.LauncherIdentity))
 	// A Windows Job Object that kills its processes when its last handle closes takes the grandchild
 	// with the launcher; elsewhere the grandchild runs on until the unit is swept.
 	if got := d.leftovers(t, inv); runtime.GOOS != "windows" && (len(got) == 0 || !strings.Contains(strings.Join(got, "\n"), "grandchild")) {

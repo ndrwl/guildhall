@@ -72,6 +72,7 @@ func TestDirectorStoppedRuntimeRecoveryHoldsAdmission(t *testing.T) {
 	if err := artisantest.KillVerified(launcher); err != nil {
 		t.Fatal(err)
 	}
+	waitGone(t, "before retrying recovery", launcher)
 	if code, out, stderr := d.run(t, "director", "stop", "--store", d.store, "--state", d.state); code != 0 {
 		t.Fatalf("retry recovery: %d, %s, %s", code, out, stderr)
 	}
