@@ -103,7 +103,6 @@ Between them they name every command of the [README's list](../README.md#the-com
 ## Artisan workspaces
 
 The Director's `herdr_session` also selects [workflow Artisan workspaces](artisan.md#workflow-artisan-workspaces), independently of whether the Director itself runs with `--tab` or in a terminal.
-Each attempt opens its own labelled workspace without taking focus or changing the Director's workspace, with a plain readable live stream of assistant text and tool calls.
 That page owns their presentation, lifecycle and recovery rules; [Herdr access](adapters.md#herdr-access) describes the session prerequisites.
 
 ## The Director's tab

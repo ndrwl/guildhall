@@ -37,11 +37,7 @@ Failed-start cleanup follows the same identity boundary: a refused duplicate nev
 
 ## Artisan workspace presentation
 
-Each workflow attempt creates its own new workspace labelled `artisan <repository>/<task>/<step>/<attempt>` in the configured non-default session, without focus.
-It never reuses the Director workspace or a same-labelled workspace.
-The durable single-use claim precedes workspace creation; missing or ambiguous presentation never authorizes another launch.
-No automatic workspace cleanup is performed: result recording and work preservation remain prerequisites for any future tool-driven cleanup.
-The pane streams the durable launcher log and workspace loss does not affect ownership or task records.
+[Workflow Artisan workspaces](../artisan.md#workflow-artisan-workspaces) owns user-facing labels, session selection and cleanup policy; the launch boundary above owns claim ordering and process independence.
 The workspace assertion in `TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt` was added before implementation and failed on reuse of the Director workspace, then passed ([evidence](../evidence/artisan-workspaces-2026-10-25.txt)).
 The additional workspace-create timeout case passed on first run and pins the retained-claim/no-retry rule after an ambiguous workspace response.
 

@@ -143,7 +143,8 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
   An owned `claude-skill-policy.json` receipt records the preset, effective controls, source key, provenance, overridability and normalized digest; neither file contains credentials.
   The wrapper probes `claude --version` before preparing the model directory and refuses versions older than 2.1.310 or unknown/prerelease version output; this probe makes no model call.
 - Claude gets no standard input; `--output-format stream-json --verbose` emits incremental events and a final result event.
-  The wrapper immediately writes assistant text and one short line per tool call (name plus file path or a command truncated to 160 characters) to its output, which the owned launcher appends to `launcher.log` for the pane to stream.
+  The wrapper immediately writes assistant text and one `tool: <name> <subject>` line per tool call to its output, which the owned launcher appends to `launcher.log` for the pane to stream.
+  The subject is the first nonempty file path, notebook path or command, with whitespace normalized and at most 160 runes followed by `...` when truncated; terminal controls other than newlines and tabs are removed from displayed text.
   Raw tool results and protocol events are omitted; this is plain readable text without terminal formatting or Markdown rendering.
   Claude's error output goes to the wrapper's.
   Events are bounded individually at 4 MiB, so earlier transcript volume cannot crowd out final usage; malformed or oversized events are ignored and a missing final result event means unknown usage.

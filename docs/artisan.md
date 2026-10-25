@@ -452,9 +452,7 @@ Without that setting, workflow attempts keep the hidden detached-process mode.
 Both modes use the same owned launcher, result recording, spend accounting, guard rails, retry rules and watcher.
 
 The pane runs an internal `artisan start --pane-launch` bridge that starts the owned launcher detached from the terminal, with no terminal input and its output appended to `launcher.log`, and streams that log into the pane.
-For Claude, the plain live stream contains assistant text, one `tool: <name> <path or command>` line per tool call, and the final result text.
-Commands are shortened to 160 characters; raw tool results and protocol events are omitted.
-There are no frames, colours or Markdown rendering; richer formatting is a later stage.
+The [Claude adapter](adapters.md#claude-adapter) defines the plain live stream's contents and limits; richer formatting is a later stage.
 This is a watchable print-mode Artisan, not an interactive model session.
 Closing the workspace or tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
 After the launcher and its watcher finish, the bridge prints a finished line and leaves the workspace open for inspection.

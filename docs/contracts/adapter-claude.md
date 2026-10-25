@@ -17,7 +17,7 @@ The cancel marker, an interrupt or the end of its context stops Claude (interrup
 `Run` always merges `ArtisanSettings`, `{"permissions":{"allow":[<rules>]}}`, with the resolved [skill policy](config-claude-skills.md), writing JSON with a newline at `ArtisanSettingsPath`, `ArtisanSettingsFile` (`claude-settings.json`) beside the result file and outside the model directory, even with an empty allow list.
 It writes the policy receipt there too, and refuses an unsupported Claude version or conflicting bundle-disable environment before preparing the model directory; the version probe makes no model call.
 `Run` consumes newline-delimited Claude stream events incrementally and writes assistant text and one short line per tool call to stdout while the process is running.
-Tool lines contain the name and a file path or whitespace-normalized command truncated to 160 runes; other event payloads are not displayed.
+The [Claude adapter documentation](../adapters.md#claude-adapter) owns the displayed line format, subject selection and sanitization limits; other event payloads are not displayed.
 Only the final result event supplies usage, denials and final result text; earlier stream volume cannot exhaust the final-result capture budget.
 Malformed or oversized events are ignored for display and cannot change result publication, cancellation or containment semantics.
 Output-consumer failure is presentation-only and cannot stop the Claude process.

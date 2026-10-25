@@ -16,9 +16,8 @@ The launcher reads it when the attempt ends and records it on the attempt with `
 
 ## Measured, estimated or unknown
 
-The Claude adapter now runs print mode with `--output-format json`, so Claude Code prints one result message when it exits, carrying its `usage` and `total_cost_usd`.
+The [Claude adapter](../adapters.md#claude-adapter) owns the output protocol used to read the session's final usage and result text.
 Its token counts are the API's own, so they are `measured`; `total_cost_usd` is Claude Code's price for those tokens, not a bill, so the cost is `estimated`.
-The wrapper writes the session's `result` text to its output as print mode did before, so the launcher log reads the same.
 
 A runtime that reports nothing writes no file, and a file that cannot be read is not trusted: both record `unknown` with zero numbers, never a guess presented as measured.
 A stopped Claude session prints no result message, so its spend is unknown even though it spent tokens; Director stages, run in the Director's own session, have no attempt spend and count as unknown.

@@ -1,8 +1,8 @@
 # Workflow Artisan tabs without terminal ownership
 
-Workflow launches with a Director's explicit `herdr_session` start the owned launcher from a task/step/attempt-labelled pane in that Director's named workspace.
-No configured session keeps hidden mode.
-This implements R1.38 while preserving R1.52–R1.54: the terminal is a presentation binding, never the authority for process liveness or task state.
+This decision introduced workflow presentation in the Director's workspace; [Artisan workspaces and a plain live stream](artisan-workspaces-readable-stream.md) supersedes that placement.
+The current presentation and recovery rules live in [workflow Artisan workspaces](../artisan.md#workflow-artisan-workspaces).
+The terminal remains a presentation binding, never the authority for process liveness or task state (R1.52–R1.54).
 
 The pane runs an internal bridge that starts the ordinary launcher detached, with terminal-independent input and durable `launcher.log` output, and streams that log for observation.
 Running the owned worker directly on the pane's terminal would make terminal loss a lifecycle event, so it is deliberately not an interactive model terminal.
