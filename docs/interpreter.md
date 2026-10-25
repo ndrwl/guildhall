@@ -221,6 +221,19 @@ A finding the attempt withdraws or resolves leaves its ruling uncontested.
 When a review round within its allowed loop count (`max` plus answered `continue` exits) requests changes again, the engine compares its outcome with the previous one and sends the Director message `<repo>.<task>.stall.<step>-<n>`, type `stall`, naming every signal found: the head (or document) is unchanged, no finding was resolved or withdrawn, or a finding is still open for two rounds (report §5.3).
 A stall is information only: it never changes the loop or itself asks the Guildmaster; loop exits follow `max` or a [dispute](#director-rulings).
 
+## Code-head output intake
+
+A succeeded attempt with one output port of type `code-head` and no listed output files takes its output from Git HEAD in the task's working directory.
+This applies to build and any other attempt producing that port type, not to document or review outputs.
+Guildhall records the full commit object id followed by a newline as `<step>-<n>-<port>`, in the document directory at `tasks/<repo>/<task>/<step>-<n>/head`; it writes no head file in the worktree.
+Tracked staged or unstaged changes, including submodules, refuse intake with an error naming the dirty paths, rather than silently leaving work out of the output.
+Untracked files alone do not block it.
+An unborn HEAD, missing repository or Git failure is an intake error.
+An explicitly listed head file keeps the existing path and content validation.
+The launcher may already have recorded success: while `intake.json` is absent the next advance still takes the result, records the head and proceeds without retrying the succeeded attempt.
+A head document already recorded wins on replay even if the working directory has since changed.
+The task's custody lock serialises advances; external writers must not change the worktree during intake.
+
 ## Review gate
 
 Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.
@@ -243,7 +256,8 @@ The outcome still binds to the attempt's head, spec digest and standards revisio
 
 ## Documents and inputs
 
-A succeeded result's outputs are copied from the task's working directory into the Director document directory at `tasks/<repo>/<task>/<step>-<n>/<output path>` and recorded with their sha256.
+A succeeded result's listed output files are copied from the task's working directory into the Director document directory at `tasks/<repo>/<task>/<step>-<n>/<output path>` and recorded with their sha256.
+An omitted code-head output follows [code-head output intake](#code-head-output-intake) instead.
 Output reads are rooted in the working directory: file and parent-directory symlinks cannot escape it.
 All outputs, including supplemental ones, are read and checked before any are copied or recorded.
 The first output is the step's output port, named `<step>-<n>-<port>`; later outputs add `-<index>`, from 2.
@@ -258,7 +272,8 @@ Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`int
 
 - the first attempt creates the worktree on a new local branch `guildhall/<task>` at the commit the remote's default branch is at then, or on an existing local branch of that name as it is;
 - every later attempt, including a retry, a loop round and a relaunch, reuses it unchanged: Guildhall never resets, cleans or checks out over it, so an Artisan uses git freely inside it and its commits, branches and uncommitted files carry to the next attempt;
-- outputs are files in it, so they sit beside the code; an Artisan that commits should leave them out.
+- listed output files sit beside the code; an Artisan that commits should leave them out.
+  An omitted code-head output is recorded outside the worktree ([code-head output intake](#code-head-output-intake)).
 
 Ensure is replay safe: the worktree is built beside the working directory and moved into place only when complete, so a crash leaves no working directory or a complete one, and the attempt, recorded but not marked launched, is launched by the next advance.
 When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.

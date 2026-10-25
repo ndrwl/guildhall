@@ -2,6 +2,11 @@
 
 ## Contract
 
+[Code-head output intake](../interpreter.md#code-head-output-intake) owns the derived Git output, workspace requirements, explicit-file compatibility and immutable replay contract.
+`head_replay_test.go` exercises real Git over both records backends: running and launcher-finished successes, empty output lists, missing intake markers, untracked notes, staged/unstaged dirt, progression to review, and immutable replay after HEAD moves.
+The feedback command `go test ./internal/interp -run '^TestBuildHeadReplay$' -count=1` failed before the implementation ([red](../evidence/build-head-output-2026-10-25-red.txt)) and passed afterwards ([green](../evidence/build-head-output-2026-10-25-green.txt)).
+`head_validation_test.go` adds green-first controls for unchanged explicit-head validation and missing document-output errors.
+
 `Engine.Advance`, the deterministic interpreter ([interpreter](../interpreter.md)): the events, including the Director's `attempt-retried` after a failed or stopped attempt ([decision](../decisions/0062-failed-attempt-retry.md)), what each records, the spec gate, derived mutation ids and replay after a crash between recording and launching an attempt.
 Attempt preparation ([interpreter](../interpreter.md#attempt-preparation), [decision](../decisions/0036-immutable-attempt-preparation.md)): a prepared attempt is published once by renaming `prompt.partial` to `prompt`, replays launch from it unchanged after validating it against its manifest and recorded binding, and invalid preparation is refused with `ErrPreparation` without launching or removing anything.
 Rebase-aware review ([interpreter](../interpreter.md#rebase-aware-review)) defines `Engine.Base`, the `Rebases` seam, the binding's `range` and `scope`, port `resolution`, and the revision-equality prerequisite for narrowing, and the full-review request a round consumes.

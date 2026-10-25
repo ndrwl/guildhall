@@ -761,6 +761,9 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	}
 	port := kind.Outputs[0]
 	if len(outputs) == 0 {
+		if port.Type == workflow.CodeHead {
+			return r.recordWorkHead(s, n, port.Name)
+		}
 		return fmt.Errorf("a succeeded result lists no output for port %s", port.Name)
 	}
 	root, err := os.OpenRoot(r.workPath())

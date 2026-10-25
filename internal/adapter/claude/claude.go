@@ -275,6 +275,7 @@ func Instruction(a Args) string {
 		string(tmpl),
 		`status is "succeeded" when the prompt's work is done and "failed" when it is not; summary says what was done, or why it failed.`,
 		`outputs lists each file the prompt asked you to produce as {"path": "<relative path with / separators in the current directory>", "description": "<optional>"}, and may be empty.`,
+		`For a build or other stage whose output is a code head, commit all tracked work and use outputs: []; Guildhall records your final Git HEAD directly, with no head file needed. Uncommitted tracked changes are refused; untracked notes alone are allowed.`,
 		"Use no other fields, and do not change task_id, attempt_id, schema or version.",
 		"",
 	}, "\n")

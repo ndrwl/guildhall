@@ -1,0 +1,52 @@
+--- FAIL: TestBuildHeadReplay (0.81s)
+    --- FAIL: TestBuildHeadReplay/double/running (0.10s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:100: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) = interp: outputs of build attempt 1: a succeeded result lists no output for port head
+        script.go:165: mock agent: 1 expected launches never happened: review
+    --- FAIL: TestBuildHeadReplay/double/running/dirty (0.09s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:86: dirty intake = interp: outputs of build attempt 1: a succeeded result lists no output for port head, want error naming code.go
+        script.go:165: mock agent: 1 expected launches never happened: review
+    --- FAIL: TestBuildHeadReplay/double/finished (0.09s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:100: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: outputs of build attempt 1: a succeeded result lists no output for port head
+        script.go:165: mock agent: 1 expected launches never happened: review
+    --- FAIL: TestBuildHeadReplay/double/finished/dirty (0.09s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:86: dirty intake = interp: outputs of build attempt 1: a succeeded result lists no output for port head, want error naming code.go
+        script.go:165: mock agent: 1 expected launches never happened: review
+    --- FAIL: TestBuildHeadReplay/store/running (0.11s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:100: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) = interp: outputs of build attempt 1: a succeeded result lists no output for port head
+        script.go:165: mock agent: 1 expected launches never happened: review
+    --- FAIL: TestBuildHeadReplay/store/running/dirty (0.12s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:86: dirty intake = interp: outputs of build attempt 1: a succeeded result lists no output for port head, want error naming code.go
+        script.go:165: mock agent: 1 expected launches never happened: review
+    --- FAIL: TestBuildHeadReplay/store/finished (0.11s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:100: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) = interp: outputs of build attempt 1: a succeeded result lists no output for port head
+        script.go:165: mock agent: 1 expected launches never happened: review
+    --- FAIL: TestBuildHeadReplay/store/finished/dirty (0.11s)
+        head_replay_test.go:58: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        head_replay_test.go:59: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        head_replay_test.go:61: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        head_replay_test.go:86: dirty intake = interp: outputs of build attempt 1: a succeeded result lists no output for port head, want error naming code.go
+        script.go:165: mock agent: 1 expected launches never happened: review
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.812s
+FAIL

@@ -362,6 +362,7 @@ The repository flag is `--repo`, as on `task start`, `step done` and `decide` ([
 A [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY`, stands in for `--store` and `--state`; it does not apply to the manual fake-only `artisan start --herdr-session` mode.
 The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
 `artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`, `ModelDir`) for both.
+For build results, see [code-head output intake](interpreter.md#code-head-output-intake) for the final-commit output contract, workspace requirements and recovery of an already-succeeded empty-output result.
 `model` in the attempt directory is the only part a model-run Artisan may write, holding the copy of its prompt and its draft result, which its wrapper publishes as `result.json`; the result, its cancel marker, `outcome.json`, the lock, the events file and `launcher.log` are never in it.
 They are the composition package `internal/launch`, whose [doc comments](../internal/launch/launch.go) own the API contract.
 
