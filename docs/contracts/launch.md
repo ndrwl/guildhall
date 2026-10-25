@@ -20,10 +20,10 @@ Worker startup errors, including containment persistence errors, remain in `Run`
 `Run` and `Resume` rely on the store's [first finish standing](../store.md#attempts): an attempt another writer, such as the interpreter's result intake, already finished with the same outcome is not an error, and another outcome keeps the store's and is returned as an error.
 `Process` is the real `interp.Launcher` ([mock agent](../mock-agent.md#the-launch-seam)): `Launch` refuses a spec whose `interp.Spec.AdapterSpec` is outside its manifest's attempt layout, runs `guildhall artisan start` for the attempt with the engine's adapter name unchanged and that adapter spec's prompt file and working directory as a detached process logging to `LogFile`: its own session on Unix, its own process group on Windows, and outside a Director runtime's [session unit](artisan.md) it was started from, created in the cgroup `artisan.DetachCgroupEnv` names on Linux (`CLONE_INTO_CGROUP`) and broken away from the Job Object on Windows (`CREATE_BREAKAWAY_FROM_JOB`), each started where the caller is when that is refused ([decision](../decisions/0084-director-stop-admission.md)); and returns once that process owns the attempt with its endpoint recorded, and at once with an error when that process released the attempt without one, so a launcher whose attempt failed at setup is not waited for while its advance waits for the caller's task lock; a process that does not record its endpoint within `StartTimeout` or before the caller's context ends is stopped, and `Launch` returns its error once that process releases the attempt, without waiting for it to exit; an adapter name [`runtimes`](adapter-runtimes.md) does not hold is refused by that process and is `Launch`'s error naming the log, like any other startup failure; `Stop` addresses only the spawned child's captured PID and process token through its recorded endpoint, waits for that process to exit, and refuses a handle it did not return.
 At the shared `Launch` / `LaunchFiles` boundary, the store path is resolved against the caller's working directory before constructing the attempt or child/resume argv, so a pane's working directory cannot reinterpret it.
-`Process.Presentation` optionally supplies the terminal boundary (`adapter.TabHost`, workspace and agent-report function); `OpenPresentation` resolves it lazily only when launching, so result recording and cancellation do not depend on Herdr.
-In presentation mode `Launch` claims `pane-launch.json` exclusively, refuses existing ownership or a prior claim after classifying the attempt, opens a labelled tab, records its binding, registers `ResumeArgv` with source `guildhall`, then types the owned launcher's argv with `--pane-launch`.
+`Process.Presentation` optionally supplies the terminal boundary (`adapter.TabHost` and agent-report function); `OpenPresentation` resolves it lazily only when launching, so result recording and cancellation do not depend on Herdr.
+In presentation mode `Launch` claims `pane-launch.json` exclusively, refuses existing ownership or a prior claim after classifying the attempt, creates a new labelled workspace without focus, opens its Artisan tab, records that binding, registers `ResumeArgv` with source `guildhall`, then types the owned launcher's argv with `--pane-launch`.
 The bridge starts the ordinary launcher detached with durable log output and streams that log; the normal owned endpoint, identity, results, spend and watcher remain authoritative.
-`StartTimeout` bounds presentation resolution, tab creation, shell readiness, agent registration, typing and ownership acquisition together; an earlier caller deadline still applies.
+`StartTimeout` bounds presentation resolution, workspace and tab creation, shell readiness, agent registration, typing and ownership acquisition together; an earlier caller deadline still applies.
 Unlike hidden-mode startup cleanup, uncertain pane startup is never stopped speculatively: timeouts and ambiguous API replies retain the claim and return an error, without another launch or tab removal.
 No tab disappearance is taken as process exit; `Stop` uses only the ownership record's captured process identity and endpoint.
 Finished tabs remain open with a completion line; no presentation path closes any tab.
@@ -35,6 +35,16 @@ It passes the adapter spec's `Settings` as `--model` and `--effort`, each only w
 `Process.LaunchFiles` is `Launch` for an attempt given as its key, adapter name, absolute prompt file and absolute working directory, with no rendered manifest, which a delivered task's [judge](quality.md) uses; it refuses an adapter `interp.CheckAdapter` refuses, a relative path and an ended context, starting nothing, and shares startup with `Launch`, retaining `Process.LockWait`; it passes `Process.Copy` as `--copy` with `--advance` when set, whereas `Launch` passes the adapter spec's copy and profile.
 Failed-start cleanup follows the same identity boundary: a refused duplicate never stops the existing owner, and a stale handle never targets a replacement owner.
 
+## Artisan workspace presentation
+
+Each workflow attempt creates its own new workspace labelled `artisan <repository>/<task>/<step>/<attempt>` in the configured non-default session, without focus.
+It never reuses the Director workspace or a same-labelled workspace.
+The durable single-use claim precedes workspace creation; missing or ambiguous presentation never authorizes another launch.
+No automatic workspace cleanup is performed: result recording and work preservation remain prerequisites for any future tool-driven cleanup.
+The pane streams the durable launcher log and workspace loss does not affect ownership or task records.
+The workspace assertion in `TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt` was added before implementation and failed on reuse of the Director workspace, then passed ([evidence](../evidence/artisan-workspaces-2026-10-25.txt)).
+The additional workspace-create timeout case passed on first run and pins the retained-claim/no-retry rule after an ambiguous workspace response.
+
 ## Tests
 
 The workflow presentation boundary's contract was defined before its tests and implementation.
@@ -45,7 +55,7 @@ The existing shared `interptest.RunLauncherContract` also passes against the pan
 A follow-up regression makes the pane execute its command but lose the API response, then verifies no second command is typed and the original worker still finishes successfully; these supplementary cases passed on their first run.
 `TestRelativeStorePaneLaunchAndResume` covers relative-store workflow and judge launches plus execution of the registered resume command from the pane's directory.
 `TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop` covers bounded tab creation, shell readiness, registration and typing, retained claims, no duplicate command or interrupt, and a worker completing after its typing response times out.
-The opt-in `cli.TestWorkflowArtisanHerdrLab` uses a real workflow-started fake Artisan in a guarded named Herdr session, checks its labelled tab appears, waits for its recorded result and spend and watcher decision, closes only that recorded finished tab, and verifies its attempt record is unchanged.
+The opt-in `cli.TestWorkflowArtisanHerdrLab` uses a real workflow-started fake Artisan in a guarded named Herdr session, checks its labelled workspace appears without stealing Director focus and reads its live pane output, waits for its recorded result and spend and watcher decision, closes only that recorded finished workspace after verifying its sole idle pane, and verifies its attempt record is unchanged.
 It skips in ordinary zero-model CI; its first live run passed, including guarded teardown's default-session tripwire.
 The original cases were written red first against stub bodies, every case failing; the red runs are in the pull request description.
 Review regressions were added later.

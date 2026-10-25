@@ -229,7 +229,7 @@ func TestClaudeArgs(t *testing.T) {
 	a := args(spec)
 	got := claude.ClaudeArgs(a)
 	model := filepath.Join(filepath.Dir(spec.ResultFile), artisan.ModelDir)
-	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--permission-mode", claude.PermissionMode, "--settings", claude.ArtisanSettingsPath(spec.ResultFile), "--add-dir", model}
+	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--verbose", "--permission-mode", claude.PermissionMode, "--settings", claude.ArtisanSettingsPath(spec.ResultFile), "--add-dir", model}
 	if !slices.Equal(got, want) {
 		t.Errorf("ClaudeArgs = %q, want %q", got, want)
 	}

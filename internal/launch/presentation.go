@@ -17,16 +17,15 @@ import (
 )
 
 // Presentation is the optional terminal boundary for Process. Host creates and
-// types into the Director's workspace; Report registers the newly created pane
+// types into a new attempt-specific workspace; Report registers the newly created pane
 // with Herdr. A tab is never used as evidence of worker liveness, and is never
 // closed by Process. A durable single-use launch claim prevents duplicate starts
 // after uncertain API responses. Recovery reconciles attempt ownership, not panes.
 // The pane invokes the same owned launcher through --pane-launch, which detaches
 // its lifetime and streams its durable log; losing the pane cannot stop the worker.
 type Presentation struct {
-	Host      adapter.TabHost
-	Workspace string
-	Report    func(context.Context, string, herdr.AgentReport) error
+	Host   adapter.TabHost
+	Report func(context.Context, string, herdr.AgentReport) error
 }
 
 // PaneClaim is the attempt-local, single-use presentation launch intent.
@@ -35,7 +34,7 @@ type Presentation struct {
 const PaneClaim = "pane-launch.json"
 
 func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, presentation *Presentation) (interp.Handle, error) {
-	if presentation.Host == nil || presentation.Report == nil || presentation.Workspace == "" {
+	if presentation.Host == nil || presentation.Report == nil {
 		return interp.Handle{}, errors.New("launch: incomplete pane presentation")
 	}
 	// Reconcile durable ownership before opening any terminal. In particular a
@@ -56,8 +55,13 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	if err := claim.Close(); err != nil {
 		return interp.Handle{}, err
 	}
-	l := adapter.TabLauncher{Host: presentation.Host, WorkspaceID: presentation.Workspace}
-	tab, shell, err := l.Open(ctx, "artisan "+at.Key.String(), cmd.Dir, p.Env)
+	label := "artisan " + at.Key.String()
+	workspace, err := presentation.Host.CreateWorkspace(ctx, label, cmd.Dir)
+	if err != nil {
+		return interp.Handle{}, err
+	}
+	l := adapter.TabLauncher{Host: presentation.Host, WorkspaceID: workspace.ID}
+	tab, shell, err := l.Open(ctx, label, cmd.Dir, p.Env)
 	if err != nil {
 		return interp.Handle{}, err
 	}
@@ -127,7 +131,7 @@ func Present(argv, env []string, logPath string, out io.Writer) error {
 		select {
 		case err := <-done:
 			_, _ = io.Copy(out, reader)
-			_, _ = fmt.Fprintln(out, "\nguildhall: Artisan launcher finished; result and work remain in Guildhall. This tab may be closed.")
+			_, _ = fmt.Fprintln(out, "\nguildhall: Artisan launcher finished; result and work remain in Guildhall. This workspace may be closed.")
 			return err
 		case <-time.After(100 * time.Millisecond):
 		}

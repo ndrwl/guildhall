@@ -36,7 +36,7 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.WriteString("\nguildhall-fake: delay=2s\n"); err != nil {
+	if _, err := f.WriteString("\nguildhall-fake: delay=5s\n"); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.Close(); err != nil {
@@ -50,9 +50,40 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	if err := os.WriteFile(d.config, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if out, err := exec.Command("herdr", "workspace", "create", "--label", "lab-director", "--session", session).CombinedOutput(); err != nil {
+		t.Fatalf("create lab Director presentation: %s, %v", out, err)
+	}
+	focusedWorkspace := func() string {
+		out, err := exec.Command("herdr", "workspace", "list", "--session", session).CombinedOutput()
+		if err != nil {
+			t.Fatalf("read Director focus: %s, %v", out, err)
+		}
+		var list struct {
+			Result struct {
+				Workspaces []struct {
+					ID      string `json:"workspace_id"`
+					Focused bool   `json:"focused"`
+				} `json:"workspaces"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(out, &list); err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range list.Result.Workspaces {
+			if w.Focused {
+				return w.ID
+			}
+		}
+		t.Fatal("no focused Director workspace")
+		return ""
+	}
+	focusBefore := focusedWorkspace()
 	cmd := exec.Command(binary, "task", "start", "--copy", dir, "--repo", "app", "t-1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("workflow start: %v: %s", err, out)
+	}
+	if focusAfter := focusedWorkspace(); focusBefore != focusAfter {
+		t.Fatalf("Artisan stole focus: before %s after %s", focusBefore, focusAfter)
 	}
 	at := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
 	b, err = os.ReadFile(filepath.Join(at.Dir(d.state), launch.PaneClaim))
@@ -69,6 +100,26 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	workspaces, err := client.WorkspaceList(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceFound := false
+	for _, w := range workspaces {
+		if w.ID == ref.WorkspaceID && w.Label == "artisan app/t-1/plan/1" {
+			workspaceFound = true
+		}
+	}
+	if !workspaceFound {
+		t.Fatalf("separate Artisan workspace missing: %+v", workspaces)
+	}
+	// The PATH shim routes this through the guarded lab helper, just like the
+	// client's API calls. Read the actual terminal, not merely launcher.log.
+	paneText, err := exec.Command("herdr", "pane", "read", ref.PaneID, "--session", session).CombinedOutput()
+	if err != nil || !strings.Contains(string(paneText), "fake artisan:") {
+		t.Fatalf("no readable live pane output: %s, %v", paneText, err)
+	}
+	t.Logf("live pane output: %s", paneText)
 	tabs, err := client.TabList(ctx, ref.WorkspaceID)
 	if err != nil {
 		t.Fatal(err)
@@ -105,15 +156,17 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 			t.Fatal("finished pane did not return to shell")
 		}
 	}
-	owned, err := client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID)
-	if err != nil {
+	if len(tabs) != 1 || tabs[0].PaneCount != 1 {
+		t.Fatal("refusing to close workspace with unexpected tabs or panes")
+	}
+	if _, err := client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.CloseOwnedTab(ctx, owned); err != nil {
-		t.Fatal(err)
+	if out, err := exec.Command("herdr", "workspace", "close", ref.WorkspaceID, "--session", session).CombinedOutput(); err != nil {
+		t.Fatalf("close owned finished workspace: %s, %v", out, err)
 	}
 	if after := d.attempts(t); !reflect.DeepEqual(before, after) {
-		t.Fatalf("closing finished tab changed records: %+v -> %+v", before, after)
+		t.Fatalf("closing finished workspace changed records: %+v -> %+v", before, after)
 	}
-	t.Logf("finished Artisan tab closed; attempt outcome and spend unchanged: %+v", before[0])
+	t.Logf("finished Artisan workspace closed; attempt outcome and spend unchanged: %+v", before[0])
 }

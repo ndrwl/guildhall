@@ -272,7 +272,7 @@ An interrupt delivered to the launcher, such as Ctrl+C in its terminal, is forwa
 
 - `CTRL_BREAK` is not a dependable graceful rung: it reaches only a worker sharing the launcher's console, and a worker may treat it as fatal; the rung's event records `"graceful": false` on Windows, and the marker is the graceful stop on every platform.
 - Escapes from a process-group unit are outside the unit, so the ladder neither waits for nor reaches them ([containment limits](#limits)).
-- The Tier 2 lifecycle lab runs and retirement of the Windows-only worker stop path remain; workflow presentation is implemented as [owned Artisan tabs](#workflow-artisan-tabs).
+- The Tier 2 lifecycle lab runs and retirement of the Windows-only worker stop path remain; workflow presentation is implemented as [owned Artisan workspaces](#workflow-artisan-workspaces).
 
 ## Heartbeat
 
@@ -388,7 +388,7 @@ With a positive `--stall-interval` (zero, the default, observes nothing), the la
 
 `--profile <name>` names the profile in the Director `--copy`; see [Artisan permissions](adapters.md#artisan-permissions) for grant resolution and runtime support.
 `--model <model>` and `--effort <effort>` are the profile's [runtime settings](adapters.md#runtime-settings), which the runtime runs the attempt on; `launch.Process` passes the profile's effective settings after [effort fallback resolution](configuration.md#settings), and a setting the runtime cannot honour is exit 1 before the attempt is owned.
-`--profile`, `--model` and `--effort` apply only to an owned attempt, including a workflow Artisan tab; in the manual fake-only `artisan start --herdr-session` mode they are a usage error.
+`--profile`, `--model` and `--effort` apply only to an owned attempt, including a workflow Artisan workspace; in the manual fake-only `artisan start --herdr-session` mode they are a usage error.
 Neither `artisan start` nor `claude-artisan` accepts `--allow-tool`.
 
 The worker's output goes to standard error, and standard output carries one JSON line: the attempt, the outcome, the store outcome and any accepted result.
@@ -443,25 +443,30 @@ Escapes from a process group, such as a `setsid` grandchild, are not members and
 Workflow launches now register `launch.ResumeArgv` through `herdr.Client.ReportAgent` with source `guildhall` before typing the launch command into the Artisan's pane.
 A live launcher after a Herdr restart is still live: `artisan resume` refuses to replace it, rather than interpreting the missing presentation as an exited worker.
 
-### Workflow Artisan tabs
+### Workflow Artisan workspaces
 
-With a Director's `herdr_session` configured, workflow attempts, including judge attempts, open a tab in the workspace labelled with that Director's name.
-The tab label is `artisan <repository>/<task>/<step>/<attempt>`.
+With a Director's `herdr_session` configured, workflow attempts, including judge attempts, each open a new workspace in that session without taking focus from the Director.
+The workspace and its Artisan tab are labelled `artisan <repository>/<task>/<step>/<attempt>`.
+The Director's workspace is not reused or changed, and even a same-labelled workspace is not reused.
 Without that setting, workflow attempts keep the hidden detached-process mode.
 Both modes use the same owned launcher, result recording, spend accounting, guard rails, retry rules and watcher.
 
 The pane runs an internal `artisan start --pane-launch` bridge that starts the owned launcher detached from the terminal, with no terminal input and its output appended to `launcher.log`, and streams that log into the pane.
+For Claude, the plain live stream contains assistant text, one `tool: <name> <path or command>` line per tool call, and the final result text.
+Commands are shortened to 160 characters; raw tool results and protocol events are omitted.
+There are no frames, colours or Markdown rendering; richer formatting is a later stage.
 This is a watchable print-mode Artisan, not an interactive model session.
-Closing the tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
-After the launcher and its watcher finish, the bridge prints a finished line and leaves the tab open for inspection.
-Guildhall does not automatically close these tabs, including after landing or preserving the work; a person may close the presentation without losing the attempt's log, result or isolated copy.
+Closing the workspace or tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
+After the launcher and its watcher finish, the bridge prints a finished line and leaves the workspace open for inspection.
+Guildhall does not automatically close these workspaces, including after landing or preserving the work; a person may close the presentation without losing the attempt's log, result or isolated copy.
 
 An attempt-local `pane-launch.json` single-use claim is written before opening a pane, then records the tab binding before typing.
 An ambiguous API response, startup timeout or caller interruption leaves that claim in place and returns an error without stopping an unverified launcher or typing another command.
 A duplicate launch reconciles the attempt's files and durable ownership for diagnosis and refuses to launch again; a missing pane is never permission to duplicate work.
 Inspect with `artisan status` and, only for an exited owner, reconcile with `artisan resume`; normal workflow retries have a new attempt number and their own claim.
 A claimed attempt with no owner needs operator inspection of the preserved launch intent rather than an automatic retry of the same launch.
-No Artisan tab cleanup touches other tabs, and the default Herdr session is refused.
+Any future tool-driven workspace cleanup must first record the result and land or preserve the work, and may close only the workspace Guildhall created.
+No Artisan workspace cleanup touches other workspaces or tabs, and the default Herdr session is refused.
 
 ### Harness
 

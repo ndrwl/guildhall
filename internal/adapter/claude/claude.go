@@ -55,9 +55,9 @@ const Program = "claude"
 // Non-interactive sessions cannot ask, and applicable deny rules still win.
 const PermissionMode = "acceptEdits"
 
-// OutputFormat is Claude Code's print-mode output format the wrapper asks for: one JSON object, the session's
-// result message, which carries the session's token usage and Claude Code's cost estimate (ParseUsage).
-const OutputFormat = "json"
+// OutputFormat requests incremental events, ending with the session's result
+// message carrying usage and cost (ParseUsage).
+const OutputFormat = "stream-json"
 
 // ArtisanSettingsFile is the Claude Code settings file the wrapper writes beside the result file for an attempt
 // with tool grants and skill policy, even with empty grants, outside the model directory.
@@ -70,7 +70,7 @@ var SuggestedGoAllowedTools = []string{"Bash(go test:*)", "Bash(go vet:*)", "Bas
 // Efforts are the effort levels Claude Code's --effort takes, as Claude Code 2.1.309 lists them.
 var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
 
-// maxOutputBytes bounds the print-mode output the wrapper keeps to read usage from.
+// maxOutputBytes bounds each stream event and the final result retained for usage.
 const maxOutputBytes = 4 << 20
 
 // StopGrace is how long the wrapper waits for Claude to exit after asking it
@@ -287,7 +287,7 @@ func Instruction(a Args) string {
 // ArtisanSettingsPath on every attempt, and only the model directory
 // added for tool access.
 func ClaudeArgs(a Args) []string {
-	args := []string{"--print", Instruction(a), "--output-format", OutputFormat, "--permission-mode", PermissionMode}
+	args := []string{"--print", Instruction(a), "--output-format", OutputFormat, "--verbose", "--permission-mode", PermissionMode}
 	args = append(args, settingsArgs(a.Settings)...)
 	args = append(args, "--settings", ArtisanSettingsPath(a.ResultFile))
 	return append(args, "--add-dir", ModelDir(a.ResultFile))
@@ -398,15 +398,15 @@ var errMarked = errors.New("cancel marker present")
 // only the prompt copy and the inputs and skills directories beside the prompt
 // file, so a stale draft is never published, writes ArtisanSettings at
 // ArtisanSettingsPath with the resolved skill policy on every attempt, then runs Claude in the
-// current directory with ClaudeArgs, no standard input, and its output on
-// stdout and stderr. An interrupt, the end of ctx, or the attempt's cancel
+// current directory with ClaudeArgs, no standard input, readable assistant/tool
+// lines on stdout as events arrive, and its error output on stderr. An interrupt, the end of ctx, or the attempt's cancel
 // marker asks Claude to stop (an interrupt on Unix, termination on Windows),
 // killing it after StopGrace, and publishes nothing; the marker is not an
 // error. Once Claude exits, the draft's bytes are published at the result
 // file, never replacing one, unless the attempt was cancelled meanwhile; no
 // draft is ErrNoDraft. Before publishing, Run writes the usage Claude's JSON
-// output reports (ParseUsage) as the attempt's usage file, unknown when the
-// output reports none, and passes the session's result text to stdout; a
+// final result event reports (ParseUsage) as the attempt's usage file, unknown
+// when no valid final event is available, and passes the session's result text to stdout; a
 // stopped session writes no usage file. A failure to write the usage file
 // does not stop the draft being published; it is returned as an error after.
 // Claude's exit status does not decide completion: a failing exit after a
@@ -458,10 +458,12 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, ClaudeArgs(a)...)
 	output := &limitedBuffer{limit: maxOutputBytes}
-	cmd.Stdout, cmd.Stderr = output, stderr
+	stream := &readableStream{out: stdout, result: output}
+	cmd.Stdout, cmd.Stderr = stream, stderr
 	cmd.Cancel = func() error { return stop(cmd.Process) }
 	cmd.WaitDelay = StopGrace
 	runErr := cmd.Run()
+	stream.finish()
 	if ctx.Err() != nil {
 		if errors.Is(context.Cause(ctx), errMarked) {
 			_, _ = fmt.Fprintf(stderr, "guildhall: %s: cancel marker present; Claude stopped without a result\n", Subcommand)

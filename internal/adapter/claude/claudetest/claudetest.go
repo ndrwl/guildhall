@@ -170,8 +170,11 @@ func stub(args []string) error {
 	if i < 0 || i+1 >= len(flags) || flags[i+1] != claude.PermissionMode {
 		return fmt.Errorf("want --permission-mode %s, got %q", claude.PermissionMode, flags)
 	}
-	if i := slices.Index(flags, "--output-format"); i < 0 || i+1 >= len(flags) || flags[i+1] != claude.OutputFormat {
-		return fmt.Errorf("want --output-format %s, got %q", claude.OutputFormat, flags)
+	if i := slices.Index(flags, "--output-format"); i < 0 || i+1 >= len(flags) || flags[i+1] != "stream-json" {
+		return fmt.Errorf("want --output-format stream-json, got %q", flags)
+	}
+	if !slices.Contains(flags, "--verbose") {
+		return fmt.Errorf("stream-json requires --verbose, got %q", flags)
 	}
 	var promptFile, draft string
 	sc := bufio.NewScanner(strings.NewReader(instruction))
@@ -228,6 +231,7 @@ func stub(args []string) error {
 			b = adaptertest.Behaviour(strings.TrimSpace(v))
 		}
 	}
+	_, _ = fmt.Fprintln(os.Stdout, `{"type":"assistant","message":{"content":[{"type":"text","text":"I am inspecting the task."},{"type":"tool_use","name":"Read","input":{"file_path":"src/main.go"}},{"type":"tool_use","name":"Bash","input":{"command":"go test ./..."}}]}}`)
 	if b != adaptertest.Hang {
 		// Claude Code prints its result message as it exits, whatever the session did.
 		var denials []any

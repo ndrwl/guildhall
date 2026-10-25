@@ -10,8 +10,8 @@ import (
 )
 
 // artisanPresentation selects only the Director's explicit non-default session
-// and named workspace. No session retains the process-only launcher mode.
-func artisanPresentation(ctx context.Context, cfg *config.Config, copyDir string) (*launch.Presentation, error) {
+// for each attempt's new workspace. No session retains the process-only launcher mode.
+func artisanPresentation(ctx context.Context, cfg *config.Config) (*launch.Presentation, error) {
 	session, err := cfg.HerdrSession()
 	if err != nil || session == "" {
 		return nil, err
@@ -26,9 +26,5 @@ func artisanPresentation(ctx context.Context, cfg *config.Config, copyDir string
 		return nil, err
 	}
 	host := adapter.NewHerdrTabs(client)
-	workspace, err := adapter.EnsureWorkspace(ctx, host, cfg.Name, copyDir)
-	if err != nil {
-		return nil, err
-	}
-	return &launch.Presentation{Host: host, Workspace: workspace, Report: client.ReportAgent}, nil
+	return &launch.Presentation{Host: host, Report: client.ReportAgent}, nil
 }
