@@ -20,11 +20,13 @@ On Linux, only identities matching the current boot and process creation token a
 The Director supervisor anchors the Director label; contained workers anchor Artisan labels, never guessed PIDs.
 Released owners, completed attempts, stopped sessions and dead or reused process identities are omitted.
 Publication takes a nonblocking advisory exclusive flock on `<labels-file>.lock` around read/merge/atomic replacement; cooperating publishers must use the same lock.
-Copy-scoped IDs replace only this copy's Lanterns entries, retaining other publishers' entries and unknown fields in a live generation with the same boot and PID namespace.
+Copy-scoped IDs replace only this copy's Lanterns entries, retaining other publishers' entries and unknown fields in a live generation with the same boot and PID namespace only when each process selector still matches a live PID and start ticks.
+Every refresh drops foreign entries with exited, reused or unverifiable processes and unsupported selector kinds before checking the merged-entry limit; it adds no per-publisher expiry metadata.
 An expired or incompatible generation is replaced; malformed files, unsupported schemas, lock contention and more than 1000 merged entries fail without changing the file.
 The shared expiry is at least 60 seconds from refresh and never shortens a preserved publisher's expiry.
 Non-Linux systems do not publish Linux selectors.
-Failures are advisory and cannot stop or mutate the session; stale generations expire.
+Failures are advisory and cannot stop or mutate the session; stale files expire when no publisher refreshes them.
+While any publisher continues refreshing, labels anchored to exited processes disappear on its next successful refresh; live matching processes remain eligible for preservation.
 
 Calm is off by default and persists at `<copy>/director/lanterns-calm`, outside the replaced plugin workspace, across Director sessions.
 Its toggle persists before changing the live choice; a write failure leaves the choice unchanged.

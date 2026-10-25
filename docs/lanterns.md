@@ -76,8 +76,10 @@ On Linux it contains vitals-axi schemaVersion 1, current boot ID and PID namespa
 The live Director supervisor anchors `Director <session>` and each running Artisan's recorded contained worker anchors `Artisan <repo>/<task> <step> #<attempt>`.
 Direct worker matches take precedence over inherited Director labels in vitals-axi.
 Stopped sessions, released owners, completed attempts and dead or reused identities are omitted on refresh.
-Files are atomically replaced with private permissions; publication errors are advisory and a stale generation expires.
-Each copy replaces only its own copy-scoped Lanterns entries, preserving other publishers' entries and unknown fields in a live generation with the same boot and PID namespace.
+Files are atomically replaced with private permissions; publication errors are advisory and a file expires when no publisher refreshes it.
+Each copy replaces only its own copy-scoped Lanterns entries, preserving other publishers' entries and unknown fields in a live generation with the same boot and PID namespace only while their process selectors match live PIDs and start ticks.
+Every successful refresh removes foreign entries whose processes exited, were reused or cannot be verified, as well as unsupported selector kinds, before applying the entry limit.
+No per-publisher expiry metadata is added; a still-live matching process can remain labeled even if its original publisher stopped.
 The shared expiry is never shortened; expired or incompatible generations are replaced.
 Read/merge/replacement uses a nonblocking exclusive advisory flock on `<labels-file>.lock`; all concurrent publishers must honor that lock.
 Lock contention, malformed files, unsupported schemas and more than 1000 merged entries leave the existing file unchanged.

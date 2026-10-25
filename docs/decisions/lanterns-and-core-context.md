@@ -8,7 +8,8 @@ Use Claude's native status line for one combined light/count/context band and fu
 Do not enable early-access function hooks implicitly.
 
 Publish verified Linux Director and Artisan process labels to the existing `VITALS_AXI_LABELS` file, defaulting to `$XDG_STATE_HOME/bridge-lights/vitals-identities.json` (or `~/.local/state/bridge-lights/vitals-identities.json`).
-The supervisor refreshes labels independently of the UI, merging copy-scoped entries while preserving other publishers' entries and fields in a live, compatible generation.
+The supervisor refreshes labels independently of the UI, merging copy-scoped entries while preserving other publishers' entries and fields in a live, compatible generation only when their process selectors still match live PIDs and start ticks.
+Every merge drops exited, reused or unverifiable foreign process identities and unsupported selector kinds before the entry limit, without adding per-publisher expiry metadata or changing the labels format.
 Serialize read/merge/atomic replacement with an advisory exclusive flock on `<labels-file>.lock`; all concurrent publishers must honor that lock.
 No vitals-axi change or consumer reconfiguration is required.
 

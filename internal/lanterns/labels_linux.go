@@ -102,9 +102,17 @@ func PublishLabels(copyDir string, v store.DirectorView, now time.Time) error {
 				if err := json.Unmarshal(raw, &entry); err != nil {
 					return err
 				}
-				if entry.Source != "guildhall-lanterns" || !strings.HasPrefix(entry.ID, prefix) {
-					entries = append(entries, raw)
+				if entry.Source == "guildhall-lanterns" && strings.HasPrefix(entry.ID, prefix) {
+					continue
 				}
+				if entry.Selector.Kind != "process" {
+					continue
+				}
+				live, err := artisan.Lookup(entry.Selector.PID)
+				if err != nil || live.Token != labels.BootID+":"+entry.Selector.StartTicks {
+					continue
+				}
+				entries = append(entries, raw)
 			}
 			if prior.ExpiresAt.After(labels.ExpiresAt) {
 				labels.ExpiresAt = prior.ExpiresAt
