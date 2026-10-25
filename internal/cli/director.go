@@ -393,7 +393,27 @@ var sweepRuntimeUnit = artisan.Sweep
 
 // removeRuntime removes session d's recorded runtime unit, which runtimeEnded has proved empty, with one more sweep,
 // returning an error naming the unit when it is not removed. A session with no runtime recorded has none.
+// A cgroup is then checked gone, since the sweep reports one that Rmdir refuses as busy as removed.
 func removeRuntime(d store.DirectorSession) error {
+	c := d.Runtime
+	if c == (store.Containment{}) {
+		return nil
+	}
+	failed := func(err error) error {
+		return fmt.Errorf("session %d's runtime unit %s was not removed: %w", d.Number, unitName(c), err)
+	}
+	if _, err := sweepRuntimeUnit(artisan.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}, artisan.Identity(c.Worker)); err != nil {
+		return failed(err)
+	}
+	if c.Kind != artisan.KindCgroup {
+		return nil
+	}
+	switch _, err := os.Stat(c.Name); {
+	case err == nil:
+		return failed(errors.New("still present after removal"))
+	case !errors.Is(err, fs.ErrNotExist):
+		return failed(err)
+	}
 	return nil
 }
 
