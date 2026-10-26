@@ -149,6 +149,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall director context-report`: the Director's status-line command, display-only with `--lanterns`; see [Lanterns](docs/lanterns.md) and [legacy context reporting](docs/director.md#automatic-handoff).
 - `guildhall artisan start|stop|status|resume`: control one agent attempt; `guildhall fake-artisan` and `guildhall claude-artisan` are the fake and Claude wrappers; see [Artisan commands](docs/artisan.md#commands) and [adapters](docs/adapters.md).
 - `guildhall messages send|list|read|ack`: informational messages between the Director and its agents; see [messaging](docs/messaging.md).
+- `guildhall spend report --copy <dir> [--json]`: read-only recorded token and cost attribution by task, step and recorded role/profile; see [spend reporting](docs/spend.md).
 - `guildhall quality judge|judged|agreement`: judge a delivered task's self-review in a separate session, take its judgement, and measure the judge against your audits; see [the quality rubric](docs/quality.md#running-it).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall steward rollout`: preview and apply shared settings to enrolled machines; see [Steward rollouts](docs/steward.md).

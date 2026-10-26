@@ -82,6 +82,8 @@ Commands:
   director context-report [--lanterns] --copy <dir>
                  display status and context only with --lanterns (generated workspaces);
                  without it, record runtime context for legacy workspaces
+  spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]
+                 report recorded attempt tokens and cost without changing state
   quality judge|judged|agreement --copy <dir> ...
                  judge a delivered task's self-review in a separate session, take a finished judge
                  attempt as its launcher does, and print the judge's agreement with the audits
@@ -197,6 +199,8 @@ func (a *App) Run(args []string) int {
 			return a.usageError("doctor takes no arguments")
 		}
 		out = a.doctor()
+	case "spend":
+		return a.spend(rest)
 	case "store":
 		return a.storeCmd(rest)
 	case "messages":

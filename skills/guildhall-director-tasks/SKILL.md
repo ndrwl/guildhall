@@ -78,6 +78,12 @@ Put its three questions to them as asked, record `yes` or `no` to the first as t
 When they ask for a merged task to be judged, run `guildhall-self-review` for it, which ends by starting the judge with `guildhall quality judge`; never judge a task yourself.
 When they ask how far the judge can be trusted, run `guildhall quality agreement` and tell them how many audited tasks the judge also judged and how often it agreed, overall and when its family was separate.
 
+## Recorded spend
+
+For recorded token and USD attribution, run `guildhall spend report --copy <dir> --json`, optionally with `--repo <name>`, `--task <id>` or `--since <RFC3339>`.
+Keep measured, estimated and unknown amounts distinct, and describe totals marked partial as partial.
+See `docs/spend.md` for the first increment's attribution limits; do not infer missing breakdowns from transcripts or use this report to tune costs automatically.
+
 ## Retrying, stopping and resuming attempts
 
 - Retry a failed or stopped attempt with the reason you retry, which the next attempt reads:
