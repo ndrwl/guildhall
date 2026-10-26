@@ -176,6 +176,10 @@ Because validate only completes on a passed result for its current head, the gat
 ## Rounds and loops
 
 Before recording attempt `n` of an Artisan step, the engine records its binding as document `<step>-<n>-inputs` (`tasks/<repo>/<task>/<step>-<n>.inputs.json`): every input it is given, by port, path and digest, and for a review or document review the revisions its outcome must be bound to (subject, accepted-spec digest for code, `Engine.StandardsRevision`).
+A code-review prompt also renders `Review base: <commit>` from that binding's recorded range, alongside the attempt identity.
+This field is the exact base for the supplied head, including rebase-only and requested-full rounds; it is not resolved again during preparation or replay.
+When no range could be recorded, it reads `Review base: unavailable`; the reviewer reports the missing range as a blocker instead of inferring one from the default branch.
+Already-published prompts remain immutable, including prompts prepared before this field existed.
 Besides its wired inputs, an attempt may be given:
 
 - `resolution`: see [rebase-aware review](#rebase-aware-review);

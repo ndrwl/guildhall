@@ -31,7 +31,9 @@ The [replay and recovery contract](../interpreter.md#replay-and-recovery) owns i
 
 The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat file read, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
 
-New review preparations pass the recorded binding's exact revisions to `render.Stage.Revisions`; replay keeps the already-published prompt unchanged.
+New review preparations pass the recorded binding's exact revisions to `render.Stage.Revisions` and its range base to `render.Stage.ReviewBase`; replay keeps the already-published prompt unchanged.
+The emitted code-review prompt names that exact base, including in rebase-only and requested-full rounds, or explicitly says it is unavailable when no range was recorded.
+A reviewer must not infer a replacement base from the current default branch.
 Required output examples are instructional, not an outcome recovery mechanism: missing review files and stale revisions are still refused.
 
 ## Tests
@@ -75,6 +77,8 @@ When the heartbeat moved to the attempt directory it was rewritten red first to 
 It covers both records backends, missing and stale heartbeats, crossings, replay, unchanged attempts, a heartbeat naming another attempt and a newer schema failing the advance.
 Its check that the engine's message is `interp.StalledMessage` for the same crossing was red against a stub returning an empty message ([red run](../evidence/launcher-stall-2026-10-22-red.txt)); the engine's own id derivation then moved into it unchanged.
 Review-fix regression tests cover immutable binding replay, acceptance projection and oversized dispute questions.
+`TestRebaseAwareReview` now also reads the emitted prompt for both Artisan review rounds on both backends, checking the recorded base for full, rebase-only, requested-full and changed-standards rounds, and explicit unavailability without a usable base.
+These assertions failed before the base was passed to the renderer ([red](../evidence/review-base-input-2026-10-26-red.txt)) and passed after implementation ([green](../evidence/review-base-input-2026-10-26-green.txt)); no model calls are involved.
 `rebase_test.go`, on both backends with `gittest.Script`: a rebase gives review 2 the resolution diff and `scope: rebase`; a full classification, no `Base` and a failing `Base` are full, the last two without classifying; a changed standards revision also retains full scope without classification despite an otherwise eligible rebase; review 2's outcome binds to its current head, accepted-spec digest and standards revision in every case.
 Its `requested full` case, red first against stubbed full-review records, requests a full review before review 2 of an otherwise rebase-only update: review 2 is full without classifying, records base 2 and head 2, and consumes the request.
 The equal second finish of `RunRecordsContract`'s attempts case, returning the first finish's receipt, was red first against the store and the double (the red run is cited in [store](store.md)); it replaced per-writer tolerance in the intake and in `launch.Run`, which `TestLauncherRecordedOutcome`, `TestInterpreterFinishRace` and `launch`'s `TestRunAfterTheInterpreterTookTheResult` pin.

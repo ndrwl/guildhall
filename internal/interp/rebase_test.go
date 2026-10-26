@@ -93,6 +93,18 @@ func TestRebaseAwareReview(t *testing.T) {
 				if tc.base != nil && tc.name != "base error" && (b2.Range == nil || *b2.Range != (git.Range{Base: base2, Head: head2})) {
 					t.Errorf("review 2 range = %+v, want base 2 and head 2", b2.Range)
 				}
+				for round, base := range []string{base1, base2} {
+					if tc.base == nil || tc.name == "base error" {
+						base = "unavailable"
+					}
+					data, err := os.ReadFile(filepath.Join(e.stageDir("review", round+1), "prompt", "prompt.md"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !strings.Contains(string(data), "Review base: "+base+"\n") {
+						t.Errorf("review %d prompt does not name recorded base %s", round+1, base)
+					}
+				}
 				if tc.name == "requested full" {
 					fr, err := e.h.Records.FullReviews("app", "t7")
 					if err != nil || len(fr) != 1 || fr[0].ConsumedBy != "review-2" {

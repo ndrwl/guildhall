@@ -2,6 +2,9 @@
 
 Every pull request is reviewed against this standard, the requirements in `docs/requirements.md`, the decisions in `docs/decisions.md` and `CONTRIBUTING.md`.
 Human and automated reviewers apply the same rules.
+For an interpreter code-review attempt, use the head input and the prompt's recorded `Review base` commit to identify the range, not the current default branch.
+A `resolution` input narrows a rebase-only round to its resolution diff; the recorded base still describes the current range.
+An unavailable recorded base is a blocker to report, not permission to guess a range.
 
 The [quality rubric](quality.md) is the scored and trend layer above these rules: it records how good a delivered change was, maps each rule below to its criteria, and never changes what blocks a merge.
 
