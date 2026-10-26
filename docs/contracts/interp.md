@@ -28,7 +28,7 @@ The private history view ([history](../interpreter.md#history)) is a contract in
 [Director stages](../interpreter.md#director-stages) ([decision](../decisions/0072-director-stages.md)): a `director` step is recorded, bound and prepared as an Artisan step is, then handed to the Director with a `director-stage` message (`store.MessageDirectorStage`) and a `launched.json` naming the director launcher (`HandedToDirector`), launching nothing, and waits with `WaitDirectorStage`; its result is taken as an Artisan's, and a published result not yet taken, which no launcher announces, is taken by any advance.
 
 The [replay and recovery contract](../interpreter.md#replay-and-recovery) owns intake completion and concurrent outcome reconciliation.
-Its [intake-rejection decision](../decisions/intake-rejection.md) defines the consumer-owned `Records.RejectAttempt` operation, positively identified validation errors, auditable launcher-success correction, replay-safe notification and unchanged operational-error recovery.
+The [intake-rejection decision](../decisions/intake-rejection.md) explains why rejection uses a distinct consumer-owned `Records.RejectAttempt` operation rather than another finish.
 
 The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat file read, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
 

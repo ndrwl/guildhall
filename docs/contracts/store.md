@@ -25,7 +25,7 @@ The [attempt ownership contract](../store.md#attempt-ownership) defines monotoni
 
 ## Tests
 
-`TestRejectionPreservesLauncherHistory` pins the explicit [intake-rejection contract](../decisions/intake-rejection.md): separate finish and rejection receipts, a failed current outcome with a durable reason, and launcher replay that cannot undo rejection.
+`TestRejectionPreservesLauncherHistory` pins the explicit [intake-rejection contract](../store.md#attempts): separate finish and rejection receipts, a failed current outcome with a durable reason, and launcher replay that cannot undo rejection.
 The shared Records suite runs the new rejection cases against the store, its in-memory double and the CLI's per-operation store wrapper: unfinished and succeeded rejection, failed/stopped refusal, mutation replay and conflict, unknown attempts, blank reasons and retry numbering.
 These focused store controls were added after implementation; the interpreter's D3 regression was red first.
 
