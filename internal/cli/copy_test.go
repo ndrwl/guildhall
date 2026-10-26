@@ -18,6 +18,7 @@ func newCopy(t *testing.T) string {
 	if code := app.Run([]string{"store", "init", filepath.Join(dir, "director.store")}); code != 0 {
 		t.Fatalf("store init: exit %d, stderr %s", code, stderr)
 	}
+	approveRepo(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app")
 	return dir
 }
 
