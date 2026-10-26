@@ -6,12 +6,17 @@ export function urgency(text) {
 export function smithy(columns, tick) {
   const width=Math.max(1,Math.min(512,Math.floor(columns)));
   const rows=Array.from({length:5},()=>Array(width).fill(' '));
-  const x=Math.max(0,Math.floor((width-7)/2));
+  const x=Math.max(0,Math.floor((width-11)/2));
   const put=(r,c,text)=>{for(const ch of text){if(c>=0&&c<width)rows[r][c]=ch;c++}};
   put(2,x+2,'│'); put(3,x,'▁▟███▙▁');
   put(4,x+3,Math.floor(tick/4)%2===0?'▄':'▁');
-  const phase=tick%4;
+  const phase=Math.floor(tick/2)%4;
   put(phase===0?1:0,x+2+phase,['○','○','◌','·'][phase]);
+  put(4,x+8,'┳━┳');
+  const spark=tick%16;
+  if(spark===8)put(3,x+9,'·');
+  if(spark===9)put(2,x+9,'·');
+  if(spark===10)put(1,x+10,'·');
   return rows.map(row=>row.join(''));
 }
 
@@ -34,7 +39,8 @@ export function raster(frame,columns,theme) {
     for(let col=0;col<columns;col++) {
       const ch=glyphs[col]??' ';const offset=(row*columns+col)*12;
       view.setUint32(offset,ch.codePointAt(0),true);
-      view.setUint32(offset+4,row===4?0xd77757:ambient,true);
+      const ember=(row===4&&(ch==='▄'||ch==='▁'))||(row>0&&ch==='·');
+      view.setUint32(offset+4,ember?0xd77757:ambient,true);
       view.setUint32(offset+8,0x01000000,true);
     }
   }

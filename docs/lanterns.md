@@ -51,19 +51,23 @@ The generated status line is display only.
 [Automatic handoff](director.md#automatic-handoff) reads context through the core end-of-turn transcript hook even if Lanterns is missing or disabled, or the status line is removed or replaced.
 The legacy `director context-report` without `--lanterns` still supports old workspaces.
 
-## Calm and the N8 smithy
+## Calm and the S2 smithy
 
-With function hooks enabled, `/calm` toggles an off-by-default presentation preference.
+With function hooks enabled and `GUILDHALL_COPY` set, Calm is on by default when no preference has been saved.
+`/calm` toggles the presentation preference and remembers both `on` and `off`.
 It hides routine `ToolUse`, `ToolResult` and `ToolGroup` drawings, not their execution or stored transcript entries.
 Assistant and user messages remain visible.
-The native Spinner becomes the N8 smithy chimney: the wide blue roof `▁▟███▙▁`, chimney, and Claude-orange glow `▄` pulsing on the 880 ms beat.
-Smoke puffs `○ ◌ ·` rise, drift right and fade at the 220 ms tick.
-The blue follows the dark/light theme family; the glow stays Claude orange.
+The native Spinner becomes S2, Rare forge spark: an 11-by-5-cell smithy with blue roof `▁▟███▙▁`, chimney and anvil `┳━┳`.
+Smoke puffs `○ ◌ ·` rise, drift right and fade, each pose held for 440 ms on the 220 ms base tick.
+The Claude-orange hearth alternates `▄` and `▁` every 880 ms.
+One orange spark rises beside the anvil for ticks 8–10 of each 16-tick loop (660 ms of every 3,520 ms); otherwise there is no spark.
+The blue follows the dark/light theme family; only the hearth and spark use orange, with the terminal background inherited.
 Frames clip to narrow terminals without wrapping and repaint only mounted working rows.
 Calm off restores native drawings and cancels its timer.
 
 The preference is `<copy>/director/lanterns-calm`, containing `on` or `off` and a newline.
 It belongs to this Director copy, survives numbered session handoffs and generated workspace replacement, and is not a `config.toml` setting.
+An absent file means on; an unreadable or invalid existing file falls back to native drawings.
 A failed preference write leaves the current choice unchanged and shows a transient notice.
 Without `GUILDHALL_COPY`, Calm is unavailable and has no plugin-local preference fallback.
 
