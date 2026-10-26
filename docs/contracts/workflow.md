@@ -16,6 +16,15 @@ Review outcome findings carry a required stable `id` and an optional cited `rule
 
 `Weakenings`, `FloorProblems` and `Authority.Admit` are the workflow-edit authority policy at task creation ([configuration](../configuration.md#enforcement-at-task-creation)): a conservative classifier of a revision against a baseline, the review floor, and the admission decision over the shipped definitions, the caller's approved digests and candidate baselines; they read and record nothing.
 
+## Refutation contract
+
+`refute` version 1 is Artisan-only, with required document input `spec`, optional many-document input `context`, and document output `findings`.
+It accepts the existing `profile` and `skills` settings and no loop outcomes.
+The findings document attacks assumptions, edge cases, alternatives and risks, with severity and a suggested spec change per finding; it is advice, not a review verdict or an acceptance.
+`guildmaster-approval` accepts optional many-document `findings` alongside its required `spec` and optional typed `reviews`, and its decision lists all supplied artifacts while remaining bound to the spec digest.
+Missing required inputs, mismatched artifact types and unsupported actors/settings are refused by the existing validator.
+The shipped default remains unchanged; the opt-in example places refutation between plan and acceptance and re-runs it when acceptance's existing bounded loop returns to plan.
+
 ## Tests
 
 `workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`

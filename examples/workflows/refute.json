@@ -1,0 +1,28 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "refute-trial",
+  "description": "Opt-in trial: a fresh Artisan attacks the plan before Guildmaster acceptance; the shipped default is unchanged.",
+  "steps": [
+    {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director", "skills": ["guildhall-grill", "guildhall-domain-model"]}},
+    {"id": "research", "type": "research", "version": 1, "settings": {"profile": "researcher"}},
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"},
+     "inputs": {"context": ["grill.notes", "research.notes"]}},
+    {"id": "refute", "type": "refute", "version": 1, "settings": {"profile": "reviewer"},
+     "inputs": {"spec": ["plan.spec"], "context": ["research.notes"]}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"], "findings": ["refute.findings"]},
+     "on": {"changes_requested": {"goto": "plan", "max": 3}}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder"},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}},
+    {"id": "validate", "type": "validate", "version": 1,
+     "inputs": {"head": ["publish.head"]},
+     "on": {"failed": {"goto": "build", "max": 3}}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["publish.head"], "review": ["review.outcome"], "validation": ["validate.result"]}}
+  ]
+}
