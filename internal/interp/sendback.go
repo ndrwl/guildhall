@@ -40,17 +40,26 @@ func (r *run) sentBack(ev Event) error {
 			return fmt.Errorf("%w: step %s attempt %d is still running", ErrEvent, a.Step, a.Number)
 		}
 	}
-	prepared := r.document(bindingName(ev.Step, ev.Attempt+1)) != nil
-	if !prepared {
-		p := filepath.Join(r.e.DocumentDir, "tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d.inputs.json", ev.Step, ev.Attempt+1))
-		_, err := os.Stat(p)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+	for _, s := range r.def.Steps[i:] {
+		if !runsAttempts(s) {
+			continue
 		}
-		prepared = err == nil
-	}
-	if prepared {
-		return fmt.Errorf("%w: step %s attempt %d already has prepared inputs", ErrEvent, ev.Step, ev.Attempt+1)
+		n := 1
+		if a := r.latestAttempt(s.ID); a != nil {
+			n = a.Number + 1
+		}
+		prepared := r.document(bindingName(s.ID, n)) != nil
+		if !prepared {
+			p := filepath.Join(r.e.DocumentDir, "tasks", r.task.Repository, r.task.ID, fmt.Sprintf("%s-%d.inputs.json", s.ID, n))
+			_, err := os.Stat(p)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			prepared = err == nil
+		}
+		if prepared {
+			return fmt.Errorf("%w: step %s attempt %d already has prepared inputs", ErrEvent, s.ID, n)
+		}
 	}
 	data := []byte(ev.Reason)
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, name+".md"), SHA256: digest.Of(data).Hex()}, data)

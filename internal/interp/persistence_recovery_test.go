@@ -76,6 +76,52 @@ func TestMergeabilityRecoversFileBeforeDocumentRecord(t *testing.T) {
 	}
 }
 
+func TestSendBackRejectsDownstreamPreparedAttempt(t *testing.T) {
+	for _, b := range backends {
+		for _, fileOnly := range []bool{false, true} {
+			name := b.name + "/recorded"
+			if fileOnly {
+				name = b.name + "/file-only"
+			}
+			t.Run(name, func(t *testing.T) {
+				e, _ := newValidateEnv(t, b)
+				e.toValidate(t)
+				feedback := "Resolve the PR conflict."
+				e.script.Expect(buildExp(t, 2, head2, "sha256:"+sum([]byte(feedback))),
+					reviewExp(t, "review", "reviewer", 2, head2, ptr(bound(t, workflow.VerdictApproved, head, nil)), bound(t, workflow.VerdictApproved, head2, nil)))
+				ev := interp.Event{Kind: interp.StepSentBack, Step: "build", Attempt: 1, Reason: feedback}
+				want(t, e.advance(t, ev), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+				if fileOnly {
+					e.eng.Records = &interruptedDocumentRecord{Records: e.h.Records, name: "review-2-inputs"}
+				} else {
+					e.eng.Caps = store.AttemptCaps{MaxRunning: 1}
+					occupy(t, e, "other")
+				}
+				err := advanceErr(t, e, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
+				if fileOnly {
+					if err == nil || !strings.Contains(err.Error(), "interrupted before document record") {
+						t.Fatalf("prepare failure = %v", err)
+					}
+				} else if !errors.Is(err, store.ErrAttemptCap) {
+					t.Fatalf("cap refusal = %v", err)
+				}
+				e.eng.Records = e.h.Records
+				e.eng.Hold = func() (bool, error) { return true, nil }
+				want(t, e.advance(t, ev), interp.Next{Wait: interp.WaitPaused, Step: "review"})
+				if err := advanceErr(t, e, interp.Event{Kind: interp.StepSentBack, Step: "build", Attempt: 2, Reason: "New instructions for another build"}); !errors.Is(err, interp.ErrEvent) || !strings.Contains(err.Error(), "step review attempt 2 already has prepared inputs") {
+					t.Fatalf("send-back with downstream preparation = %v", err)
+				}
+				if _, ok := e.documents(t)["send-back-build-2"]; ok {
+					t.Fatal("refused feedback was recorded")
+				}
+				e.eng.Hold = nil
+				e.eng.Caps = store.AttemptCaps{}
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "review", Attempt: 2})
+			})
+		}
+	}
+}
+
 func TestSendBackRejectsAlreadyPreparedNextAttempt(t *testing.T) {
 	for _, b := range backends {
 		for _, fileOnly := range []bool{false, true} {
