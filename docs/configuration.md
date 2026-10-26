@@ -189,7 +189,8 @@ A config without the table has the same config digest as before the table existe
 ## Lanterns presentation preference
 
 The automatically installed [Lanterns plugin](lanterns.md) keeps its per-Director `/calm` preference in `<copy>/director/lanterns-calm`, not in `config.toml`.
-It is off by default and has no effect without `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+With `GUILDHALL_COPY` set, an absent preference means Calm is on; `/calm` toggles and remembers both `on` and `off`, so a saved `off` keeps native drawings.
+Function hooks still require explicit opt-in with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; without it, Calm has no effect.
 The preference survives generated workspace refreshes and handoffs.
 
 ## Workflow definitions

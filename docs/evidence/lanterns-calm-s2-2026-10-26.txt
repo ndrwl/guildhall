@@ -29,7 +29,7 @@ test at internal/lanterns/plugin/tests/hooks.test.mjs:53:1
   + undefined
   - 'none'
   
-      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/hooks.test.mjs:56:69)
+      at TestContext.<anonymous> (internal/lanterns/plugin/tests/hooks.test.mjs:56:69)
       at async Test.run (node:internal/test_runner/test:1409:7)
       at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
     generatedMessage: true,
@@ -48,8 +48,8 @@ test at internal/lanterns/plugin/tests/hooks.test.mjs:65:1
   + 14120791
   - 9676287
   
-      at assertS2 (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
-      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/hooks.test.mjs:70:46)
+      at assertS2 (internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
+      at TestContext.<anonymous> (internal/lanterns/plugin/tests/hooks.test.mjs:70:46)
       at async Test.run (node:internal/test_runner/test:1409:7)
       at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
     generatedMessage: false,
@@ -68,8 +68,8 @@ test at internal/lanterns/plugin/tests/presentation.test.mjs:9:1
   + 14120791
   - 9676287
   
-      at assertS2 (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
-      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/presentation.test.mjs:14:53)
+      at assertS2 (internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
+      at TestContext.<anonymous> (internal/lanterns/plugin/tests/presentation.test.mjs:14:53)
       at Test.runInAsyncScope (node:async_hooks:227:14)
       at Test.run (node:internal/test_runner/test:1402:25)
       at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
@@ -98,7 +98,7 @@ test at internal/lanterns/plugin/tests/presentation.test.mjs:18:1
       '              ▄               '
     ]
   
-      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/presentation.test.mjs:23:9)
+      at TestContext.<anonymous> (internal/lanterns/plugin/tests/presentation.test.mjs:23:9)
       at Test.runInAsyncScope (node:async_hooks:227:14)
       at Test.run (node:internal/test_runner/test:1402:25)
       at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
