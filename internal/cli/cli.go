@@ -56,8 +56,9 @@ Commands:
   step finish --store <path> --config <file> --state <dir> ...
                  finish a Director stage with its outputs and advance its task
   step retry --store <path> --config <file> --state <dir> ...
-  step send-back --repo <id> --task <id> --step <id> --attempt <n> --feedback <instructions> [--copy <dir> | --store <path> --config <file> --state <dir>]
                  start the next attempt after a failed or stopped one
+  step send-back --repo <id> --task <id> --step <id> --attempt <n> --feedback <instructions> [--copy <dir> | --store <path> --config <file> --state <dir>]
+                 send a succeeded Artisan step back with Director feedback
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
   director status --json --store <path> --state <dir>
