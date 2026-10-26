@@ -12,6 +12,9 @@ It accepts files in any order without modifying the input slice.
 
 ## Tests
 
+`internal/interp/TestBuiltinOutputInstructions` executes rendering and parses each advertised output with the real consumer, covering exact bound code and document revisions with configured and unconfigured standards.
+The configured cases passed against existing rendering; the empty-standard cases failed before the validator fix.
+
 `session_test.go` was written red first against a stub `Session` ([red run](../evidence/director-start-2026-10-22-red.txt)): golden `startup.md` and manifest (`testdata/golden/session-*`), the startup text with no handoff note and nothing in flight, the release skills rendered with the tree digests `skills/testdata/digests.txt` records, the same role digest from CRLF and CR sources, first-root-wins name order, and the refusals.
 `render_test.go`: golden prompts and manifests per Artisan kind and golden questions per Guildmaster kind (`testdata/golden`), CRLF and CR sources against real temporary files, refusals.
 `TestManifestRecordsBaselineRoots` sees each role, guide and standard keep the root its source names.

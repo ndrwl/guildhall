@@ -177,6 +177,9 @@ Because validate only completes on a passed result for its current head, the gat
 
 Before recording attempt `n` of an Artisan step, the engine records its binding as document `<step>-<n>-inputs` (`tasks/<repo>/<task>/<step>-<n>.inputs.json`): every input it is given, by port, path and digest, and for a review or document review the revisions its outcome must be bound to (subject, accepted-spec digest for code, `Engine.StandardsRevision`).
 New review preparations pass that binding's exact revisions to `render.Stage.Revisions` and its range base to `render.Stage.ReviewBase`, leaving the latter empty when no range was recorded.
+Both code and document review output examples contain those exact revisions, not placeholder hashes.
+An unconfigured standards revision remains `""` in the binding and the example and is a valid outcome revision.
+Intake, history matching and approval gates compare standards revisions exactly, including empty, so an outcome for no configured revision cannot approve a nonempty revision or vice versa.
 The base is not resolved again during preparation, including rebase-only and requested-full rounds.
 The [rendering contract](rendering.md#artisan-prompts) owns the emitted field, and [attempt preparation](#attempt-preparation) owns published-prompt immutability, including prompts prepared before this field existed.
 Besides its wired inputs, an attempt may be given:
