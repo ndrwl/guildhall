@@ -3,8 +3,11 @@ package interp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -47,11 +50,18 @@ func (r *run) mergeBlocked(pr *pullRequestDoc, head string) (bool, error) {
 	m.URL = pr.URL
 	id := "pr-blocked-" + head + "-" + m.State
 	if d := r.document(id); d == nil {
-		data, err := json.Marshal(m)
+		p := path.Join("tasks", r.task.Repository, r.task.ID, id+".json")
+		data, err := os.ReadFile(filepath.Join(r.e.DocumentDir, filepath.FromSlash(p)))
+		if errors.Is(err, os.ErrNotExist) {
+			data, err = json.Marshal(m)
+		}
 		if err != nil {
 			return false, err
 		}
-		if err := r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: id, Path: path.Join("tasks", r.task.Repository, r.task.ID, id+".json"), SHA256: digest.Of(data).Hex()}, data); err != nil {
+		if err := json.Unmarshal(data, &m); err != nil {
+			return false, err
+		}
+		if err := r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: id, Path: p, SHA256: digest.Of(data).Hex()}, data); err != nil {
 			return false, err
 		}
 	} else {
