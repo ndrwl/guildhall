@@ -1,0 +1,36 @@
+Deterministic regression, before the implementation change:
+$ go test ./internal/endpoint -run '^TestCloseWaitsForReplyWrite$' -count=1
+--- FAIL: TestCloseWaitsForReplyWrite (0.00s)
+    close_test.go:66: Close returned before the stop reply was written: <nil>
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/endpoint	0.005s
+FAIL
+Exit: 1
+
+Same feedback command, after the implementation change:
+$ go test ./internal/endpoint -run '^TestCloseWaitsForReplyWrite$' -count=1
+ok  	github.com/ndrwl/guildhall/internal/endpoint	0.105s
+Exit: 0
+
+Repeated affected tests on Linux:
+$ go test ./internal/endpoint ./internal/launch ./internal/cli -run '^(TestCloseWaitsForReplyWrite|TestStopThroughTheEndpoint|TestArtisanStartCustody|TestArtisanStopWithoutAnOwner)$' -count=500
+ok  	github.com/ndrwl/guildhall/internal/endpoint	50.832s
+ok  	github.com/ndrwl/guildhall/internal/launch	75.370s
+ok  	github.com/ndrwl/guildhall/internal/cli	118.047s
+Exit: 0
+
+Local checks:
+$ go build ./... && go vet ./... && go test ./... && golangci-lint run
+All packages passed; golangci-lint v2.15.0: 0 issues.
+Exit: 0
+$ gofmt -l .
+No output.
+$ git diff --check
+No output.
+
+Limit:
+The local -race attempt could not compile: CGO_ENABLED=0 by default;
+CGO_ENABLED=1 reported cgo: C compiler "gcc" not found.
+No compiler was installed; the validation plan was explicitly changed to
+non-race repetition plus the existing Linux/Windows/macOS CI matrix.
+This file records local evidence, not unobserved cross-platform CI results.

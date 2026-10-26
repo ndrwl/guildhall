@@ -58,7 +58,7 @@ A requirement describes intended behaviour, not shipped behaviour: see the READM
 | # | Requirement |
 |---|---|
 | R1.21 | The core is agent-agnostic: the Go tool owns all state and lifecycle; workflow, role and Artisan definitions are runtime-neutral files rendered per runtime |
-| R1.22 | Claude Code is the first runtime adapter; Pi and Codex are future adapters. A fake test-only adapter with no optional capabilities runs in CI to keep the core runtime-neutral *(default: the fake adapter)* |
+| R1.22 | Claude Code is the first runtime adapter; Pi and Codex are future adapters. A fake adapter with no optional capabilities runs in CI to keep the core runtime-neutral *(tests select the fake adapter through explicit profiles; profile-less Artisan steps are refused)* |
 | R1.23 | Baseline adapter contract: the tool launches the agent's normal interactive session in a Herdr pane it creates, with a prompt file and working directory; the Artisan writes a result file that the tool validates, and completion comes from that file, not from process exit or the terminal; the tool can stop the Artisan. Herdr's agent-state signals are optional hints only |
 | R1.24 | Optional adapter capabilities are used only once proven: pre-assigned session id and resume, native background sessions, hooks, structured output and remote control |
 | R1.25 | Remote control of Directors is an optional capability subject to proof. Baseline access is a Herdr tab per Director (R1.37), reached remotely through Herdr's saved SSH machine profiles; plain SSH remains the fallback |

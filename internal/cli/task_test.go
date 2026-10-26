@@ -15,15 +15,21 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// directorTOML has repository "app" on the shipped default workflow and "lib" on the human-review example
+// directorTOML has repository "app" on an explicit fake-profile workflow and "lib" on the human-review example
 // with its review swapped back to an Artisan. Paths are fixed so digests and goldens are stable.
 const directorTOML = `schema_version = 1
 mode = "director"
 name = "alpha"
 
+[local]
+
+[profile.demo]
+adapter = "fake"
+
 [[repository]]
 id = "app"
 path = "/srv/app"
+workflow = "test-default"
 remote = "git@github.com:example/app.git"
 owner_machine = "workstation"
 
@@ -50,9 +56,48 @@ func writeDirector(t *testing.T, toml string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(dir, "workflows", "human-review.json"), string(example))
+	def, err := workflow.Parse(example)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range def.Steps {
+		if def.Steps[i].Type == "plan" || def.Steps[i].Type == "build" || def.Steps[i].Type == "review" {
+			if def.Steps[i].Settings == nil {
+				def.Steps[i].Settings = map[string]json.RawMessage{}
+			}
+			def.Steps[i].Settings["profile"] = json.RawMessage(`"demo"`)
+		}
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "workflows", "human-review.json"), string(data))
+	data, err = json.Marshal(testDefault(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "workflows", "test-default.json"), string(data))
 	writeFile(t, filepath.Join(dir, "config.toml"), toml)
 	return filepath.Join(dir, "config.toml")
+}
+
+func testDefault(t *testing.T) *workflow.Definition {
+	t.Helper()
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	def.Name = "test-default"
+	for i := range def.Steps {
+		if def.Steps[i].Actor() == workflow.ArtisanActor {
+			if def.Steps[i].Settings == nil {
+				def.Steps[i].Settings = map[string]json.RawMessage{}
+			}
+			def.Steps[i].Settings["profile"] = json.RawMessage(`"demo"`)
+		}
+	}
+	return def
 }
 
 func writeFile(t *testing.T, path, body string) {
@@ -85,6 +130,13 @@ func runTask(t *testing.T, args ...string) (int, string, string) {
 
 func newTask(t *testing.T, storePath, cfg, repo, title, id string, deps ...string) store.Receipt {
 	t.Helper()
+	c, err := config.Load(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := c.Repository(repo); ok && r.Workflow == "test-default" {
+		approveRepo(t, storePath, cfg, repo)
+	}
 	args := []string{"new", "--store", storePath, "--config", cfg, "--repo", repo, "--title", title}
 	for _, d := range deps {
 		args = append(args, "--depends-on", d)
@@ -143,10 +195,7 @@ func TestTaskNewBindsEffectiveWorkflowAndConfig(t *testing.T) {
 	if r.MutationID != "task:app:t-1" || r.Operation != "create-task" || r.Repository != "app" || r.TaskID != "t-1" {
 		t.Fatalf("receipt = %+v", r)
 	}
-	def, err := workflow.Default()
-	if err != nil {
-		t.Fatal(err)
-	}
+	def := testDefault(t)
 	got := readTask(t, path, "app", "t-1")
 	if got.Workflow != def.Revision() || got.ConfigDigest != configDigest(t, cfg) || got.State != store.TaskOpen || got.Title != "Fix the login redirect" {
 		t.Fatalf("default task = %+v, want workflow %+v", got, def.Revision())
@@ -328,16 +377,11 @@ func TestTaskNewRefusesUnknownProfilesAndWritesNothing(t *testing.T) {
 }
 
 func TestTaskDefaultIgnoresShadowFile(t *testing.T) {
-	cfg := writeDirector(t, directorTOML)
+	cfg := writeDirector(t, strings.Replace(directorTOML, `workflow = "test-default"`, `workflow = "default"`, 1))
 	writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "default.json"), "invalid JSON")
 	path := emptyStore(t)
-	newTask(t, path, cfg, "app", "Task", "t-1")
-	def, err := workflow.Default()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := readTask(t, path, "app", "t-1").Workflow; got != def.Revision() {
-		t.Fatalf("workflow = %+v, want %+v", got, def.Revision())
+	if stderr := refuseTask(t, path, cfg, "app"); !strings.Contains(stderr, `step "research"`) || !strings.Contains(stderr, "custom workflow") {
+		t.Fatalf("stderr = %q", stderr)
 	}
 }
 
@@ -346,6 +390,7 @@ func TestTaskArgumentOrders(t *testing.T) {
 	path := emptyStore(t)
 	approveRepo(t, path, cfg, "lib")
 	newTask(t, path, cfg, "lib", "Dependency", "dep")
+	approveRepo(t, path, cfg, "app")
 	flags := []string{"--store", path, "--config", cfg, "--repo", "app", "--title=--", "--depends-on", "lib/dep"}
 	var first string
 	for _, position := range []int{0, 2, len(flags)} {
@@ -626,10 +671,10 @@ const smallWorkflow = `{
   "schema": "guildhall.workflow/1",
   "name": "small",
   "steps": [
-    {"id": "plan", "type": "plan", "version": 1},
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "demo"}},
     {"id": "accept", "type": "guildmaster-approval", "version": 1, "inputs": {"spec": ["plan.spec"]}},
-    {"id": "build", "type": "build", "version": 1, "inputs": {"spec": ["accept.spec"]}},
-    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan"},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "demo"}, "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "demo"},
      "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
      "on": {"changes_requested": {"goto": "build", "max": 3}}},
     {"id": "publish", "type": "publish", "version": 1, "inputs": {"head": ["build.head"]}},
@@ -704,10 +749,7 @@ func TestTaskNewEnforcesWorkflowAuthority(t *testing.T) {
 	})
 
 	t.Run("a non-weakening change needs no approval", func(t *testing.T) {
-		def, err := workflow.Default()
-		if err != nil {
-			t.Fatal(err)
-		}
+		def := testDefault(t)
 		def.Name = "careful"
 		for i := range def.Steps {
 			if def.Steps[i].ID == "review" {
@@ -718,7 +760,7 @@ func TestTaskNewEnforcesWorkflowAuthority(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		toml := strings.Replace(directorTOML, `workflow = "human-review"`, `workflow = "careful"`, 1)
+		toml := strings.NewReplacer(`workflow = "human-review"`, `workflow = "careful"`, `workflow = "test-default"`, `workflow = "careful"`).Replace(directorTOML)
 		toml = strings.Replace(toml, "[repository.workflow_overrides.review]\nactor = \"artisan\"\n", "", 1)
 		toml += "\n[repository.workflow_overrides.review]\nactor = \"guildmaster\"\n"
 		cfg := writeDirector(t, toml)

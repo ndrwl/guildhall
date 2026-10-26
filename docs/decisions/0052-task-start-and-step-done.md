@@ -13,7 +13,7 @@ The [interpreter's replay and recovery contract](../interpreter.md#replay-and-re
 
 `task start --decision <id>` feeds `decision-answered`, because answering a decision never advances a task and nothing else would feed that event until the Director runs.
 The Director's inputs that have no home yet come from beside its config: workflows from `workflows/` as `task new` reads them, and the prompt baseline from `baseline/`; documents and attempts live under `--state`.
-The default adapter is `fake`, the only one `artisan run` runs, until the Claude adapter lands.
+At this slice the default adapter was `fake`, pending the Claude adapter; current runtime selection is defined under [profiles](../configuration.md#profiles).
 
 The acceptance run uses a Director-local workflow, `fake-straight`, rather than a shipped one: both shipped workflows begin with a Director grill and include publish and validate, which the engine refuses as unsupported, and those are out of this slice.
 Its Artisan stage guides carry the fake adapter's `output` directive, because workflow validation refuses `instructions` on plan and build steps.
