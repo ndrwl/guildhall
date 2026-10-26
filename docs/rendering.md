@@ -22,6 +22,18 @@ Standards are inlined, because a reviewer measures against those exact words.
 An input whose file does not match the sha256 its record names is refused (`ErrDigestMismatch`), so a prompt never cites a document that changed after it was recorded.
 On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave files, which the caller removes before rendering again only while no launch has been given them (the interpreter renders into a staging directory and [publishes it once](interpreter.md#attempt-preparation)).
 
+### Required outputs and result template
+
+Every rendered Artisan prompt includes the kind's required output ports, work-directory-relative file names, exact formats and minimal valid examples, even when a copy overrides its stage guide.
+Document ports use `<port>.md` UTF-8 Markdown; review outcomes use `outcome.json` and the strict `guildhall.review-outcome/1` format.
+The interpreter supplies the attempt's recorded review revisions through `Stage.Revisions`, so its example has the exact subject, spec digest and standards revision that intake requires.
+Standalone rendering without revisions shows explicitly illustrative values to replace, never a claim that zero hashes identify the real subject.
+A review must write the outcome file and list it in result `outputs`; a verdict in summary alone is insufficient.
+Code-head ports need no file: Guildhall records the final committed Git HEAD automatically, and the result uses `outputs: []`.
+The generated Result template carries the task and attempt identity and the matching file entries.
+Adapters name where to write that result and refer to this template instead of supplying an empty-output default.
+Engine-only and Guildmaster-only kinds do not launch an Artisan and have no Artisan guide or result template.
+
 ### Line endings and paths
 
 The prompt file uses LF line endings only.

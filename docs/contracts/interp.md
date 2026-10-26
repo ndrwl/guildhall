@@ -31,7 +31,15 @@ The [replay and recovery contract](../interpreter.md#replay-and-recovery) owns i
 
 The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat file read, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
 
+New review preparations pass the recorded binding's exact revisions to `render.Stage.Revisions`; replay keeps the already-published prompt unchanged.
+Required output examples are instructional, not an outcome recovery mechanism: missing review files and stale revisions are still refused.
+
 ## Tests
+
+`TestBuiltinOutputInstructions` executes `render.Prompt` for every built-in kind that admits an Artisan and every embedded stage guide, checks every required port and file entry, parses the result template with `adapter.ParseResult`, and submits every shown output example to `checkPort` (and review revisions to `BoundTo`).
+Its feedback command, `go test ./internal/interp -run '^TestBuiltinOutputInstructions$' -count=1`, failed before implementation for all six Artisan kinds because their rendered prompts had no output-aware Result template, and passed afterward.
+The existing three-review integration trace now also checks the document-review and code-review revisions delivered to the renderer on both records backends.
+Engine-only and Guildmaster-only kinds have no Artisan guide and remain covered by their own stage tests.
 
 `TestResearchProfileReachesTheLaunch` was written before the registry fix: on both the in-memory and real-store backends, a parsed research workflow with a profile failed validation ([red run](../evidence/research-profile-2026-10-23-red.txt)).
 With the fix it validates, launches research with that profile's adapter, model and effort, preserves the copy/profile/settings in `AdapterSpec`, and does not duplicate the attempt on replay ([green run](../evidence/research-profile-2026-10-23-green.txt)).

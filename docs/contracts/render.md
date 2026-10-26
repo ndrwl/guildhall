@@ -5,6 +5,11 @@
 `Prompt` and `Question`: the [rendering contract](../rendering.md) (rationale: [Rendered prompts, skills and their digests](../decisions/0025-rendered-prompts-skills-and-digests.md)).
 `Session` renders a Director session ([Director sessions](../rendering.md#director-sessions)): the LF role prompt, every skill of the roots byte for byte under the runtime's skills directory, the runtime's files, `startup.md` and `manifest.json`, refusing a non-empty directory, colliding or non-portable paths and multi-line in-flight items, and leaving nothing behind on error; `StartupMessage` names `startup.md` relative to the rendered directory; see [rendering](../rendering.md#director-sessions) for launches outside that directory.
 Pure over files: no interface and no double.
+Every Artisan prompt names each required output port, a work-directory-relative file path, its format and a minimal valid example, followed by a complete identity-bound result template with matching output entries.
+Code-head ports instead describe automatic final Git HEAD capture, no output file and an empty result output list.
+Review examples distinguish code and document subjects and explain that revision placeholders must be replaced with the actual bound input revisions; a summary verdict is not an outcome.
+These sections are generated from the kind, independently of baseline overrides, so a stale guide cannot remove the output contract.
+The renderer owns the result template; adapters direct the Artisan to it rather than supplying a contradictory empty list.
 `TreeDigest(files []File) digest.Digest` is shared by skill copying and interpreter preparation verification for the [skill tree digest](../rendering.md#skills).
 It accepts files in any order without modifying the input slice.
 

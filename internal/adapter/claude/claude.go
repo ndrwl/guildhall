@@ -255,14 +255,11 @@ func PromptCopy(result string) string {
 // the draft file, once, as the last action.
 func Instruction(a Args) string {
 	tmpl, _ := json.Marshal(struct {
-		Schema    string   `json:"schema"`
-		Version   int      `json:"version"`
-		TaskID    string   `json:"task_id"`
-		AttemptID string   `json:"attempt_id"`
-		Status    string   `json:"status"`
-		Summary   string   `json:"summary"`
-		Outputs   []string `json:"outputs"`
-	}{adapter.ResultSchema, adapter.ResultVersion, a.TaskID, a.AttemptID, string(adapter.StatusSucceeded), "What was done, in one or more sentences.", []string{}})
+		Schema    string `json:"schema"`
+		Version   int    `json:"version"`
+		TaskID    string `json:"task_id"`
+		AttemptID string `json:"attempt_id"`
+	}{adapter.ResultSchema, adapter.ResultVersion, a.TaskID, a.AttemptID})
 	return strings.Join([]string{
 		fmt.Sprintf("You are a Guildhall Artisan working on task %s, attempt %s, in the current directory.", a.TaskID, a.AttemptID),
 		"Read the prompt file below and follow it; the inputs and skills directories it names are beside it.",
@@ -271,10 +268,11 @@ func Instruction(a Args) string {
 		"Result file: " + DraftFile(a.ResultFile),
 		"",
 		"When you have finished, or cannot go on, write your result to the result file above, once, as your last action, and nowhere else.",
-		"It is one JSON object, exactly this shape:",
+		"Use the prompt's Result template, including its required outputs entries. It is one JSON object with these fixed identity fields:",
 		string(tmpl),
 		`status is "succeeded" when the prompt's work is done and "failed" when it is not; summary says what was done, or why it failed.`,
-		`outputs lists each file the prompt asked you to produce as {"path": "<relative path with / separators in the current directory>", "description": "<optional>"}, and may be empty.`,
+		`outputs lists each required file as {"path": "<relative path with / separators in the current directory>", "description": "<optional>"}. For succeeded file-producing stages it must not be empty; write the required files in the work directory before writing the result. A verdict in summary does not replace a review outcome file.`,
+		`If a custom prompt has no Result template, add status, summary and outputs to the fixed identity fields above, following the same required-file rules.`,
 		`For a build or other stage whose output is a code head, commit all tracked work and use outputs: []; Guildhall records your final Git HEAD directly, with no head file needed. Uncommitted tracked changes are refused; untracked notes alone are allowed.`,
 		"Use no other fields, and do not change task_id, attempt_id, schema or version.",
 		"",

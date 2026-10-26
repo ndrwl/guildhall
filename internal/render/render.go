@@ -57,6 +57,9 @@ type Stage struct {
 	Step workflow.Step
 	// Attempt is the attempt number, starting at 1.
 	Attempt int
+	// Revisions, when present, supplies the exact binding for review outcome examples.
+	// The interpreter owns this value; standalone callers may omit it for illustrative examples.
+	Revisions *workflow.Revisions
 	// Dir is the attempt directory Prompt writes into; it must not exist or be empty.
 	// Question ignores it.
 	Dir string
@@ -220,7 +223,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Step.Instructions(), role, guide, standards); err != nil {
+	if err := r.write(&m, inputData, found, stage.Step.Instructions(), role, guide, standards, stage.Revisions); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -233,7 +236,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, instructions, role, guide string, standards []string) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, instructions, role, guide string, standards []string, revisions *workflow.Revisions) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -265,7 +268,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, ins
 		}
 		m.Skills = append(m.Skills, skill)
 	}
-	prompt := []byte(composePrompt(m, instructions, role, guide, standards))
+	prompt := []byte(composePrompt(m, instructions, role, guide, standards) + outputInstructions(m.Identity, revisions))
 	if err := os.WriteFile(r.PromptPath, prompt, 0o644); err != nil {
 		return fmt.Errorf("render: %w", err)
 	}

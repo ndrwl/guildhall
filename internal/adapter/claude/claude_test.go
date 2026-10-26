@@ -245,11 +245,14 @@ func TestClaudeArgs(t *testing.T) {
 		claudetest.PromptLine + claude.PromptCopy(spec.ResultFile) + "\n",
 		claudetest.DraftLine + claude.DraftFile(spec.ResultFile) + "\n",
 		`"schema":"guildhall.artisan-result"`, `"version":1`, `"task_id":"task-1"`, `"attempt_id":"attempt-1"`,
-		`"succeeded"`, `"failed"`, "outputs",
+		`"succeeded"`, `"failed"`, "outputs", "Use the prompt's Result template, including its required outputs entries.",
 	} {
 		if !strings.Contains(in, s) {
 			t.Errorf("Instruction lacks %q:\n%s", s, in)
 		}
+	}
+	if strings.Contains(in, `"outputs":[]`) || strings.Contains(in, "and may be empty") {
+		t.Errorf("Instruction supplies a contradictory empty-output default:\n%s", in)
 	}
 	if strings.Contains(in, spec.ResultFile+"\n") || strings.Contains(in, spec.PromptFile+"\n") {
 		t.Errorf("Instruction names the result or prompt file itself, outside the model directory:\n%s", in)
