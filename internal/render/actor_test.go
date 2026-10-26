@@ -6,7 +6,33 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
+
+func TestDirectorPromptHasNoArtisanCompletion(t *testing.T) {
+	for _, kind := range workflow.Kinds() {
+		if !slices.Contains(kind.Actors, workflow.DirectorActor) {
+			continue
+		}
+		t.Run(kind.Type, func(t *testing.T) {
+			stage := attempt(t, step(t, "step", kind.Type, `{"actor":"director"}`))
+			result, err := Prompt(stage, nil, baseline("grill"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(result.PromptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, instruction := range []string{"## Required outputs", "## Result template", "result file your runtime names"} {
+				if strings.Contains(string(data), instruction) {
+					t.Errorf("Director prompt contains Artisan instruction %q", instruction)
+				}
+			}
+		})
+	}
+}
 
 // Both review subjects use the same actor boundary and verdict contract.
 func TestReviewActors(t *testing.T) {

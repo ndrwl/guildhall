@@ -62,10 +62,6 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 				t.Fatal(err)
 			}
 			prompt := string(data)
-			guide, err := fs.ReadFile(baseline.Release(), guideName)
-			if err != nil {
-				t.Fatal(err)
-			}
 			resultSection := sectionAfter(t, prompt, "## Result template\n")
 			example := fencedExample(t, resultSection, "json")
 			result, err := adapter.ParseResult([]byte(example), adapter.Identity{TaskID: "task", AttemptID: "step-1"})
@@ -74,13 +70,15 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 			}
 			outputIndex := 0
 			for _, port := range kind.Outputs {
-				if !strings.Contains(string(guide), "`"+port.Name+"`") {
-					t.Errorf("shipped guide does not name required port %s", port.Name)
-				}
 				section := sectionAfter(t, prompt, "### Output port `"+port.Name+"`\n")
 				language := "text"
+				format := "Format: a UTF-8 Markdown document."
 				if port.Type == workflow.ReviewResult {
 					language = "json"
+					format = "Format: one strict JSON `guildhall.review-outcome/1` object"
+				}
+				if port.Type != workflow.CodeHead && !strings.Contains(section, format) {
+					t.Errorf("port %s does not advertise %s", port.Name, format)
 				}
 				content := fencedExample(t, section, language)
 				if err := checkPort(port.Type, []byte(content)); err != nil {
@@ -132,8 +130,10 @@ func sectionAfter(t *testing.T, text, heading string) string {
 	if !ok {
 		t.Fatalf("rendered instructions lack %q", heading)
 	}
-	if before, _, found := strings.Cut(rest, "\n## "); found {
-		return before
+	for _, next := range []string{"\n## ", "\n### "} {
+		if before, _, found := strings.Cut(rest, next); found {
+			rest = before
+		}
 	}
 	return rest
 }
