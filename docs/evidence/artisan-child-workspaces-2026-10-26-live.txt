@@ -5,7 +5,7 @@ PASS
 ok  	github.com/ndrwl/guildhall/internal/cli	0.429s
 fm-herdr-lab: session stop 'fm-lab-guildhall-artisa-961137-30334' exit=0
 fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
-{"session":{"default":false,"name":"fm-lab-guildhall-artisa-961137-30334","running":false,"session_dir":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-artisa-961137-30334","socket_path":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-artisa-961137-30334/herdr.sock"},"stopped":true}
+{"session":{"default":false,"name":"fm-lab-guildhall-artisa-961137-30334","running":false,"session_dir":"<redacted-session-dir>","socket_path":"<redacted-socket-path>"},"stopped":true}
 fm-herdr-lab: session delete 'fm-lab-guildhall-artisa-961137-30334' exit=0
 fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
-{"deleted":true,"session":{"default":false,"name":"fm-lab-guildhall-artisa-961137-30334","running":false,"session_dir":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-artisa-961137-30334","socket_path":"/home/andrew/.config/herdr/sessions/fm-lab-guildhall-artisa-961137-30334/herdr.sock"}}
+{"deleted":true,"session":{"default":false,"name":"fm-lab-guildhall-artisa-961137-30334","running":false,"session_dir":"<redacted-session-dir>","socket_path":"<redacted-socket-path>"}}
