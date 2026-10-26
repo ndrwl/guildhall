@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -11,7 +12,7 @@ import (
 
 // artisanPresentation selects only the Director's explicit non-default session
 // for each attempt's new workspace. No session retains the process-only launcher mode.
-func artisanPresentation(ctx context.Context, cfg *config.Config) (*launch.Presentation, error) {
+func artisanPresentation(ctx context.Context, cfg *config.Config, storePath, state string, warnings io.Writer) (*launch.Presentation, error) {
 	session, err := cfg.HerdrSession()
 	if err != nil || session == "" {
 		return nil, err
@@ -25,6 +26,6 @@ func artisanPresentation(ctx context.Context, cfg *config.Config) (*launch.Prese
 	if _, err := client.Status(ctx); err != nil {
 		return nil, err
 	}
-	host := adapter.NewHerdrTabs(client)
+	host := &artisanWorkspaces{TabHost: adapter.NewHerdrTabs(client), client: client, storePath: storePath, state: state, warnings: warnings}
 	return &launch.Presentation{Host: host, Report: client.ReportAgent}, nil
 }

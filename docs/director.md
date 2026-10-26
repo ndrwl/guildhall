@@ -100,9 +100,18 @@ The release ships the Director's own skills beside the stage skills, each render
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
 
+## Chat address
+
+The baseline Director role addresses the user plainly as "Guildmaster" at least once in every chat reply, including bad news.
+That address is chat-only, never added to commits, PR text, task records, documents or messages.
+Optional light guild flavour must not obscure technical content.
+A custom role is responsible for its own conversation instructions.
+
 ## Artisan workspaces
 
 The Director's `herdr_session` also selects [workflow Artisan workspaces](artisan.md#workflow-artisan-workspaces), independently of whether the Director itself runs with `--tab` or in a terminal.
+New Artisan workspaces are labelled `└ <task> · <step> #<attempt>` and, when exact ownership and order are verifiable, form a contiguous launch-order block directly under this Director's recorded workspace.
+A Director running outside a recorded Herdr pane still gets Artisan workspaces, but ordering warns and skips rather than guessing a parent from labels or focus.
 That page owns their presentation, lifecycle and recovery rules; [Herdr access](adapters.md#herdr-access) describes the session prerequisites.
 
 ## The Director's tab

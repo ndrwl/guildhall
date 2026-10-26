@@ -7,6 +7,11 @@ The `store`, `messages`, `task`, `decide`, `workflow approve` / `workflow approv
 
 `artisan start` without `--herdr-session`, `artisan stop`, `artisan status` and `artisan resume` are [owned attempt commands](../artisan.md#commands) over [`internal/launch`](launch.md); `artisan start` with `--herdr-session` is the [tab mode](../adapters.md#running-an-attempt).
 Workflow and quality launches lazily resolve the configured `herdr_session` through the production Herdr client and pass that terminal and `ReportAgent` into `launch.Process`, which creates a new labelled workspace per attempt without focus ([workflow workspaces](../artisan.md#workflow-artisan-workspaces)).
+The Artisan workspace host serializes creation and optional ordering under an account-private per-session presentation lock, so successful ordering preserves launch order across concurrent tasks.
+It reads the Director's existing pane binding without changing the store, verifies that tab and pane live, and journals only response-created workspace ids and labels under the state directory before attempting one move.
+Ordering and journal failures warn on stderr and return the created workspace successfully; no task record, launch result, ownership or lifecycle changes.
+`artisan_order_test.go` covers journal binding, uncertain-move non-retry, corruption refusal and warning-only creation with a busy lock or missing Director store; these tests were added after implementation and passed on their first run.
+`artisan_order_lab_test.go` exercises the production host and socket boundary in the guarded named-session lab ([evidence](../evidence/artisan-child-workspaces-2026-10-26-live.txt)).
 No session retains hidden mode; result-only advances and cancellation do not resolve Herdr.
 The internal owned `artisan start --pane-launch` bridge detaches the same start invocation without that flag and streams `launcher.log`; it never forwards terminal closure as a stop request.
 The opt-in `TestWorkflowArtisanHerdrLab` and ordinary CI's pane stand-in are described in the [launch contract](launch.md#tests).

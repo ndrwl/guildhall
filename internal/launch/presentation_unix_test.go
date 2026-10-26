@@ -71,7 +71,7 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 	// Closing the terminal's process is presentation only. ShellPanes' interrupt
 	// kills the pane bridge, not its independently owned launcher and worker.
 	workspaces, err := panes.Workspaces(context.Background())
-	if err != nil || len(workspaces) != 2 || workspaces[1].Label != "artisan app/t7/build/1" {
+	if err != nil || len(workspaces) != 2 || workspaces[1].Label != "└ t7 · build #1" {
 		t.Fatalf("expected separate labelled Artisan workspace: %+v, %v", workspaces, err)
 	}
 	ref := adapter.TabRef{Session: "lab", WorkspaceID: workspaces[1].ID, TabID: workspaces[1].ID + ":t1", PaneID: pane}

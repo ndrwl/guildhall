@@ -106,7 +106,7 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	}
 	workspaceFound := false
 	for _, w := range workspaces {
-		if w.ID == ref.WorkspaceID && w.Label == "artisan app/t-1/plan/1" {
+		if w.ID == ref.WorkspaceID && w.Label == "└ t-1 · plan #1" {
 			workspaceFound = true
 		}
 	}

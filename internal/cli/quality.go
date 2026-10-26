@@ -168,7 +168,7 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 	return fn(&quality.Judge{
 		Records:  records,
 		Outbox:   outbox,
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall, LockWait: f.wait, OpenPresentation: func(ctx context.Context) (*launch.Presentation, error) { return artisanPresentation(ctx, cfg) }},
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, Copy: copyDir, StallInterval: stall, LockWait: f.wait, OpenPresentation: func(ctx context.Context) (*launch.Presentation, error) { return artisanPresentation(ctx, cfg, f.store, state, a.Stderr) }},
 		Config:   cfg,
 		StateDir: state, DocumentDir: filepath.Join(state, "documents"), QualityDir: filepath.Join(copyDir, "quality"),
 		Role: baselineSource(filepath.Join(cfgDir, "baseline"), release, "roles/judge.md").Path,
