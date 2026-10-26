@@ -12,6 +12,8 @@ guildhall step send-back --help
 With `GUILDHALL_COPY` set, the path flags can be omitted.
 `--attempt` names the succeeded attempt, not the next attempt to create.
 The task must be open, the step must run as an Artisan, the named attempt must be the step's latest succeeded attempt, and no task attempt may still be running.
+A new request is also refused if the target or any downstream attempt-running step already has immutable inputs prepared for its next attempt, whether recorded as a binding document or only written to disk before an interrupted record.
+Advance the already-prepared work instead; accepting new feedback could otherwise launch an attempt with obsolete inputs.
 Failed or stopped attempts use [`step retry`](running.md#step-retry) instead.
 Missing or whitespace-only feedback, invalid identifiers or attempt numbers, extra arguments and unknown flags are usage errors, exit 2, before the store is opened.
 Other refusals and operational errors exit 1 on standard error; success prints the normal advance JSON on standard output, exit 0.

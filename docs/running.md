@@ -113,10 +113,7 @@ An attempt whose launcher died is first settled with [`artisan resume`](artisan.
 ## `step send-back`
 
 [`step send-back`](step-send-back.md) starts a new attempt of a succeeded Artisan step with required `--feedback` from the Director.
-It names the succeeded `--attempt`, preserves old attempts and review evidence, and applies the usual task lock, admission holds and caps.
-It refuses a task with any running attempt, a non-latest succeeded attempt, a non-Artisan target or empty feedback.
-The request is durable and replay-safe; the new attempt receives the instructions on its `feedback` port, and changed outputs trigger downstream review and republishing to the same PR.
-A rebase-aware review scopes to the resolution only when the classifier proves that appropriate.
+See the command guide for admission requirements, prepared-input refusals, replay semantics and downstream review behaviour.
 This is one option after a `pr-blocked` report from validate or deliver, not an instruction to rebase; holding the task or leaving it unadvanced are alternatives.
 
 ## Output and exit status

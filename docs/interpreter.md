@@ -59,7 +59,7 @@ There is no seam: like `launched.json` and `result.json`, the file is read from 
 | `task-created` | The task exists and is open. | Nothing by itself. |
 | `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. When its launcher already recorded the outcome, that outcome stands, and a succeeded one has its outputs recorded by the next advance, whatever its event. |
 | `decision-answered` | The named decision exists and is answered. | Nothing by itself: the answer is already recorded. |
-| `step-sent-back` | A latest succeeded Artisan attempt with nonempty Director feedback and no unfinished attempt anywhere in the task; a recorded same-identity request is a replay. | Immutable `send-back-<step>-<attempt>` feedback document, then the step's next attempt under ordinary admission gates; changed-feedback replays are refused. |
+| `step-sent-back` | The [send-back admission and replay requirements](step-send-back.md). | Immutable `send-back-<step>-<attempt>` feedback document, then the step's next attempt under ordinary admission gates; changed-feedback replays are refused. |
 | `attempt-retried` | The named attempt of the named step exists, finished `failed` or `stopped`, and is the step's latest. When the step's latest attempt is the next one, the event is a replay. | The step's next attempt, started as a first attempt starts; once it has launched, the Director's reason, when given, as message `<repo>.<task>.attempt-retried.<step>-<n>`, type `attempt-retried`. A replay launches the next attempt if it was recorded but not launched, and records nothing but that message, sent again when it is missing. |
 
 Any other event, or one that does not match the records, is refused with `ErrEvent` and changes nothing.
@@ -165,7 +165,9 @@ The observation is recorded as document `pr-blocked-<full-head>-<state>` before 
 It includes the PR URL, full head/base commits, state, paths, behind count and the available commands and options.
 Validate and deliver share that identity: a replay, a changed base or reaching deliver does not notify again for the same head and state.
 The first observation remains immutable; a different head or state gets a new report.
+If the observation file was written but its document record failed, the next blocked observation with that identity records the existing bytes rather than regenerating evidence against a moved base.
 An advance replays recorded observation messages before walking the workflow, so a notification lost after its document committed is recovered even if the forge has since cleared.
+Replay recognizes only the full-head identity with state `conflicting` or `behind`, not ordinary workflow documents whose names also begin with `pr-blocked-`.
 Validate's refresh cache retains the Director wait between reads, and the checks watcher no longer polls a task waiting on the Director.
 A Director-initiated advance rechecks when due; deliver rechecks on each advance.
 Guildhall never rebases automatically and prescribes no recovery.
