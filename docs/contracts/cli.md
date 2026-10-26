@@ -83,6 +83,10 @@ It reports organization/ambient inventory limitations rather than claiming live 
 
 ## Tests
 
+`TestAdvancePreflightLockWait` holds the real store lock and requires `task start`, `task start --decision` and `step retry` to reach a store-lock refusal with the configured wait, rather than the default 30-second wait.
+The test configures a five-second lock wait and requires refusal within twenty seconds.
+The [timing-budget decision](../decisions/preflight-lock-wait-test-budget.md) records why the uncontended task lock needs headroom and the delayed-open reproduction.
+
 `skill_policy_test.go` ran red against the previous preflight, then green: supported-version configured policy reporting, unsupported-version refusal, one version-only process probe and no session directory from `--check`.
 
 Effort-default tests were run red before implementation: `TestTaskStartRunsTheProfilesModelAndEffort` expected medium for an unset profile; `TestDirectorRefusesOwnEffort` expected a preflight refusal; and the first case of `TestDirectorEffortReachesRuntime` expected the fake's recorded medium effort.

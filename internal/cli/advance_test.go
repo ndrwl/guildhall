@@ -131,7 +131,9 @@ func (d runDirector) result(step string, n int) string {
 	return filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}.Dir(d.state), artisan.ResultFile)
 }
 
-// waitResult waits for the attempt's launcher to publish a valid result.
+// waitResult waits for a valid result and for its launcher to record spend before the test advances or stops
+// the attempt. The worker can publish its result before the launcher records containment; taking that result
+// immediately can release ownership before the running update, leaving cleanup without containment evidence.
 func (d runDirector) waitResult(t *testing.T, step string, n int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(time.Minute))
@@ -139,6 +141,7 @@ func (d runDirector) waitResult(t *testing.T, step string, n int) {
 	if _, err := adapter.WaitResult(ctx, d.result(step, n), adapter.Identity{TaskID: "t-1", AttemptID: artisan.AttemptKey{Step: step, Attempt: n}.AttemptID()}, adapter.WaitOptions{Poll: 20 * time.Millisecond}); err != nil {
 		t.Fatalf("result of %s-%d: %v", step, n, err)
 	}
+	d.waitSpend(t, step, n)
 }
 
 // stopAll fails the test for every leftover, so no process outlives the test.

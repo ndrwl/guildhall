@@ -1,0 +1,16 @@
+--- FAIL: TestRefutePortsAndWiring (0.00s)
+    refute_test.go:22: missing refute v1
+--- FAIL: TestRefuteTrialExample (0.00s)
+    refute_test.go:61: open ../../examples/workflows/refute.json: no such file or directory
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/workflow	0.003s
+--- FAIL: TestRefuteFakeAdapter (0.00s)
+    refute_fake_test.go:41: render: step "refute": unknown kind refute version 1
+--- FAIL: TestRefuteBeforeAcceptance (0.00s)
+    --- FAIL: TestRefuteBeforeAcceptance/double (0.00s)
+        refute_test.go:27: invalid workflow: step "refute": unknown step type "refute"; step "accept": unknown input "findings" for guildmaster-approval
+    --- FAIL: TestRefuteBeforeAcceptance/store (0.00s)
+        refute_test.go:27: invalid workflow: step "refute": unknown step type "refute"; step "accept": unknown input "findings" for guildmaster-approval
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.007s
+FAIL

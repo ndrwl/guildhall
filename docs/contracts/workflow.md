@@ -11,14 +11,24 @@ Grill steps accept optional `skills` with the shared distinct-name-list validati
 The release skills for a grill follow its actor: `guildhall-grill` with `guildhall-domain-model` for the Director, `guildhall-grill-unattended` for an Artisan ([decision](../decisions/0061-grill-live-interview.md)); the registry does not bind skills to actors, so a step lists the ones it renders, and the shipped default's Director grill lists `guildhall-grill` and `guildhall-domain-model` (`TestDefaultGrillIsTheDirectorsLiveGrill`, red first against the default with no skills, [red run](../evidence/director-stages-2026-10-22-red.txt)).
 `ValidateStepSettings` checks an isolated step's kind, version and settings with the same actor, allowed-key, required-setting, type, name and duplicate rules as `Validate`, without requiring the surrounding workflow's input and loop wiring.
 
+`ReviewOutcome.Validate` and `ReviewOutcome.BoundTo` enforce the [review outcome revision contract](../configuration.md#review-outcome).
 Review outcome findings carry a required stable `id` and an optional cited `rule`, and outcomes carry `dispositions` of the previous round's findings; `ReviewOutcome.Blocking` is true only for `changes_requested` with a rule-cited finding.
 `DispositionState.Valid` is the one disposition-state rule, used by `ReviewOutcome.Validate` and the store's review projection; their `unknown state` refusal tests (`review_test.go`, `internal/store/rulings_test.go`) pin it.
 
 `Weakenings`, `FloorProblems` and `Authority.Admit` are the workflow-edit authority policy at task creation ([configuration](../configuration.md#enforcement-at-task-creation)): a conservative classifier of a revision against a baseline, the review floor, and the admission decision over the shipped definitions, the caller's approved digests and candidate baselines; they read and record nothing.
 
+## Refutation contract
+
+The [built-in registry](../../internal/workflow/registry.go) owns `refute` and `guildmaster-approval` ports, settings, actors and loop outcomes.
+Missing required inputs, mismatched artifact types and unsupported actors/settings are refused by the existing validator.
+See [configuration](../configuration.md#opt-in-plan-refutation) for opting in, the [baseline stage guide](../../baseline/stages/refute.md) for critique instructions, and the [interpreter contract](../interpreter.md#plan-refutation) for intake and acceptance semantics.
+
 ## Tests
 
 `workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`
+
+`TestUnconfiguredStandardsBinding` covers parsing and exact bidirectional empty/configured standards binding for both subjects and both reviewers.
+`internal/interp/TestUnconfiguredStandardsReviewExample` is red-first evidence for copied-example intake through persistence, human review, replay and delivery gating on both record backends.
 
 `TestResearchAcceptsOnlyProfile` covers omitted and valid profiles, invalid profile types and names, and refusal of skills both alone and alongside a profile, through full-workflow and isolated-step validation.
 The original broader research settings tests captured [red](../evidence/research-profile-2026-10-23-red.txt) and [green](../evidence/research-profile-2026-10-23-green.txt) runs before the scope was narrowed to profile only; those runs are historical evidence, not verification of skills refusal.

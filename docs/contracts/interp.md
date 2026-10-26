@@ -40,7 +40,18 @@ The [worker-stalled observation contract](../interpreter.md#worker-stalled-obser
 The [rounds and loops contract](../interpreter.md#rounds-and-loops) owns passing the recorded binding's revisions and range base into review preparation.
 Required output examples are instructional, not an outcome recovery mechanism: missing review files and stale revisions are still refused.
 
+## Refutation
+
+The [plan-refutation contract](../interpreter.md#plan-refutation) owns document intake and acceptance semantics.
+Refutation uses the existing Artisan `Launcher`, `Prompter` and `Records` seams; deterministic tests substitute a scripted launcher or fake runtime rather than calling a model.
+
 ## Tests
+
+`TestRefutePortsAndWiring`, `TestRefuteTrialExample`, `TestRefuteBeforeAcceptance` and `TestRefuteFakeAdapter` were written before the registry implementation.
+The focused command `go test ./internal/workflow ./internal/interp -run '^TestRefute' -count=1` failed for the unknown kind, unknown acceptance input and missing example ([red](../evidence/refute-step-2026-10-26-red.txt)), then passed ([green](../evidence/refute-step-2026-10-26-green.txt)).
+The interpreter trace runs research → plan → refute → acceptance on both records backends, checking exact input digests, persisted findings bytes, replay without duplicate attempts and a decision that lists both documents while remaining bound to the spec.
+The fake runtime test executes `fake.Run` with a real generated prompt and consumes its result and findings file; it does not test model intelligence.
+The existing `TestBuiltinOutputInstructions` additionally exercises refute's emitted output examples and result template through the real parsers.
 
 `TestRejectedLauncherSuccess` was red first against the existing interpreter: a review result with `status: succeeded` and `outputs: []`, a launcher-recorded succeeded outcome and no intake marker returned `no output for port outcome` on both `task start` and `step done` event paths.
 The feedback command is `go test ./internal/interp -run '^TestRejectedLauncherSuccess$' -count=1`; it now verifies failed outcome, Director wait, one reason-bearing notification across replay, retry attempt 2 and valid review progression on both backends.
