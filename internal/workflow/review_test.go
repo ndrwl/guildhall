@@ -54,7 +54,7 @@ func TestReviewOutcomeRefusals(t *testing.T) {
 		{"two subjects", func(o *ReviewOutcome) { o.Revisions.Subject.DocumentDigest = documentDigest }, "subject needs a code_head or a document_digest, not both"},
 		{"code head without spec", func(o *ReviewOutcome) { o.Revisions.SpecDigest = "" }, "spec_digest"},
 		{"bad spec digest", func(o *ReviewOutcome) { o.Revisions.SpecDigest = "md5:00" }, "spec_digest"},
-		{"missing standards", func(o *ReviewOutcome) { o.Revisions.StandardsRevision = "" }, "standards_revision"},
+		{"blank standards", func(o *ReviewOutcome) { o.Revisions.StandardsRevision = " \t" }, "standards_revision"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

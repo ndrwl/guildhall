@@ -49,6 +49,7 @@ type Revisions struct {
 	// It is required when the subject is a code head and optional for a document.
 	SpecDigest string `json:"spec_digest,omitempty"`
 	// StandardsRevision names the central standards revision reviewed against.
+	// Empty means no standards revision is configured; binding still compares it exactly.
 	StandardsRevision string `json:"standards_revision"`
 }
 
@@ -191,8 +192,8 @@ func (o ReviewOutcome) Validate() error {
 			problems = append(problems, `spec_digest must be "sha256:<64 hex>"`)
 		}
 	}
-	if strings.TrimSpace(o.Revisions.StandardsRevision) == "" {
-		problems = append(problems, "standards_revision is required")
+	if o.Revisions.StandardsRevision != "" && strings.TrimSpace(o.Revisions.StandardsRevision) == "" {
+		problems = append(problems, "standards_revision must not be whitespace-only")
 	}
 	if len(problems) > 0 {
 		return errors.New("invalid review outcome: " + strings.Join(problems, "; "))
