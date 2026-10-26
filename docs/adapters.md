@@ -1,6 +1,6 @@
 # Artisan adapters
 
-This page describes the baseline contract between Guildhall and an Artisan runtime (R1.23), the result file that completes an attempt, the test-only fake adapter and the minimal Claude adapter (R1.22), and how Guildhall reaches Herdr to show each workflow Artisan in its own workspace (R1.38).
+This page describes the baseline contract between Guildhall and an Artisan runtime (R1.23), the result file that completes an attempt, the fake adapter for tests and demos and the minimal Claude adapter (R1.22), and how Guildhall reaches Herdr to show each workflow Artisan in its own workspace (R1.38).
 It describes what is built today; no runtime or platform is claimed as supported until its acceptance passes (R1.27).
 
 ## Baseline contract
@@ -91,7 +91,7 @@ The usage file is the adapter's, like the result: the model never writes it.
 
 ## Fake adapter
 
-The fake adapter is a test-only runtime with no optional capabilities; it grants no [allowed tools](#artisan-permissions), so its `Command` refuses a referenced profile granting any.
+The fake adapter is a runtime for tests and no-model demos with no optional capabilities; it grants no [allowed tools](#artisan-permissions), so its `Command` refuses a referenced profile granting any.
 It runs `guildhall fake-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--model <model>] [--effort <effort>]`, which reads the prompt, prints its progress, and writes a result whose summary records the prompt's size and SHA-256 digest.
 It honours every [runtime setting](#runtime-settings): before reading the prompt the worker records the model and effort it was given, either empty, as `fake-settings.json` beside the result file, which `fake.RecordedSettings` reads, so tests can see what reached the runtime.
 
@@ -221,7 +221,8 @@ Each runtime says which settings it can honour, `runtimes.Runtime.CheckSettings`
 | `claude` | One word, not starting with `-`, passed to Claude Code's `--model` as given; Claude Code resolves aliases such as `opus` and full names, and a session on a model it does not know ends with no result | `low`, `medium`, `high`, `xhigh` or `max`, the levels Claude Code 2.1.309's `--effort` takes |
 | `fake` | Any, recorded | Any, recorded |
 
-`task new` checks the workflow's named profiles before recording the task; each interpreter advance (`task start`, `step done` or `step retry`) checks an Artisan step's profile before recording or launching that step's attempt, rather than prechecking every profile in the workflow.
+Task creation and advance enforce the workflow's [profile admission requirements](configuration.md#profiles).
+Runtime settings are checked for each Artisan step before recording or launching that step's attempt, rather than prechecking every profile's runtime settings in the workflow.
 `director start`'s preflight checks every profile on its `artisans` line, and the runtime's command checks again, so `artisan start` exits 1 for unsupported settings before it owns the attempt.
 The Director's own session takes `[director] model` and `effort`, using the same [configuration fallback rules](configuration.md#settings).
 Its preflight's `runtime` line checks those effective settings with the same runtime refusal rules before recording a session, and Claude session construction checks them again.

@@ -168,9 +168,7 @@ type Engine struct {
 	// Workflow returns the definition a task's revision names; Advance refuses one with another digest (ErrRevision).
 	Workflow func(workflow.Revision) (*workflow.Definition, error)
 	// Config gives the profile adapters and the repositories' merge policies.
-	// A step without a profile runs DefaultAdapter.
 	Config            *config.Config
-	DefaultAdapter    string
 	StandardsRevision string
 	// CheckSettings, when set, refuses the model and effort of a step's profile that the profile's adapter cannot
 	// honour (adapter.ErrUnsupportedSetting), before anything is recorded, as CheckAdapter refuses an adapter; nil
@@ -239,6 +237,9 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 		return Next{}, fmt.Errorf("interp: %w: task bound %s %s, definition is %s %s", ErrRevision, t.Workflow.Name, t.Workflow.Digest, def.Name, def.Digest())
 	}
 	if err := workflow.Validate(def); err != nil {
+		return Next{}, fmt.Errorf("interp: %w", err)
+	}
+	if err := e.Config.CheckArtisanAdapters(def); err != nil {
 		return Next{}, fmt.Errorf("interp: %w", err)
 	}
 	r := &run{e: e, ctx: ctx, task: t, def: def}
@@ -489,25 +490,22 @@ type artisanRuntime struct {
 
 // prepare resolves the runtime and the inputs of an Artisan step, or the inputs alone of a Director stage, which
 // runs no adapter; both are checked, the runtime with CheckAdapter and Engine.CheckSettings, before anything is
-// recorded. A step without a profile runs DefaultAdapter
-// granting nothing.
+// recorded.
 func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 	if s.Actor() == workflow.DirectorActor {
 		inputs, err := r.inputs(s)
 		return artisanRuntime{}, inputs, err
 	}
-	rt := artisanRuntime{adapter: r.e.DefaultAdapter}
-	if p := s.Profile(); p != "" {
-		profile, ok := r.e.Config.Profiles[p]
-		if !ok {
-			return artisanRuntime{}, nil, fmt.Errorf("%w: %q", config.ErrUnknownProfile, p)
-		}
-		rt = artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: r.e.Config.EffectiveEffort(profile.Effort)}}
+	p := s.Profile()
+	profile, err := r.e.Config.Profile(p)
+	if err != nil {
+		return artisanRuntime{}, nil, err
 	}
+	rt := artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: r.e.Config.EffectiveEffort(profile.Effort)}}
 	if err := CheckAdapter(rt.adapter); err != nil {
 		return artisanRuntime{}, nil, err
 	}
-	if r.e.CheckSettings != nil && rt.profile != "" {
+	if r.e.CheckSettings != nil {
 		if err := r.e.CheckSettings(rt.adapter, rt.settings); err != nil {
 			return artisanRuntime{}, nil, fmt.Errorf("profile %s: %w", rt.profile, err)
 		}

@@ -22,7 +22,7 @@ The engine consumes seven narrow interfaces, declared in `internal/interp` besid
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
 `Engine.Workflow` returns the definition a task's revision names, and the engine refuses one whose name or digest differs (`ErrRevision`).
-`Engine.Config` gives each profile's adapter and each repository's path, remote and merge policy; a step without a profile runs `Engine.DefaultAdapter`.
+`Engine.Config` gives each profile's adapter and each repository's path, remote and merge policy; an Artisan step without a profile is refused before admission or advancement, with a remedy to set a profile on that step in a custom workflow.
 `Engine.StandardsRevision` must name the central standards revision presented for human reviews.
 A blank revision refuses to open a human review decision.
 The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.

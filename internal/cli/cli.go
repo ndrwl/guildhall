@@ -44,7 +44,7 @@ Commands:
                  start, stop, classify and resume one owned Artisan attempt
   artisan harness inventory|kill-owned|probe --lab
                  list, kill and probe an attempt's processes: lab test tooling
-  fake-artisan   run the test-only fake Artisan
+  fake-artisan   run the deterministic fake Artisan for explicit no-model demos/tests
   claude-artisan run one attempt in Claude Code; artisan start --adapter claude runs it
   fake-director  run the test-only fake Director session
   task new|show|list|timeline|files|finding rule|review --store <path> ...

@@ -227,6 +227,7 @@ func TestArtisanStartRefusesAnUnknownAdapterByName(t *testing.T) {
 func TestArtisanStopWithoutAnOwner(t *testing.T) {
 	o := newOwnedAttempt(t, "x")
 	code, stdout, stderr := guildhall(t, "", o.args("stop")...)
+	t.Logf("artisan stop without owner: exit %d; stdout %s; stderr %s", code, stdout, stderr)
 	var rep struct {
 		Endpoint       string         `json:"endpoint"`
 		Classification classification `json:"classification"`
@@ -299,11 +300,10 @@ func TestArtisanStartCustody(t *testing.T) {
 		t.Errorf("ownership changed from %+v to %+v", owner, now)
 	}
 
-	// The launcher may exit before its answer reaches stop, which then proves the stop by the launcher gone and
-	// its unit empty (docs/artisan.md#commands).
+	// A successful endpoint stop must deliver its reply before the launcher exits.
 	code, stdout, stderr := guildhall(t, "", o.args("stop")...)
-	answered := strings.Contains(stdout, `"endpoint":"stopped"`) || strings.Contains(stdout, `"endpoint":"no stop: `) && strings.Contains(stdout, `"launcher":"gone"`)
-	if code != 0 || !answered || !strings.Contains(stdout, `"state":"cancelled"`) {
+	t.Logf("artisan stop: exit %d; stdout %s; stderr %s", code, stdout, stderr)
+	if code != 0 || !strings.Contains(stdout, `"endpoint":"stopped"`) || !strings.Contains(stdout, `"state":"cancelled"`) {
 		t.Errorf("stop: exit %d; stdout %q; stderr %q", code, stdout, stderr)
 	}
 	select {
@@ -311,6 +311,7 @@ func TestArtisanStartCustody(t *testing.T) {
 	case <-time.After(testenv.Ceiling(30 * time.Second)):
 		t.Fatalf("the launcher did not exit after the stop; stderr %s", runErr.String())
 	}
+	t.Logf("artisan start: exit %d; final report %s", run.ProcessState.ExitCode(), lastLine(runOut.String()))
 	if code := run.ProcessState.ExitCode(); code != 5 {
 		t.Errorf("launcher exit %d, want 5; stdout %q; stderr %q", code, runOut.String(), runErr.String())
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
@@ -446,22 +447,29 @@ func (publishOnly) Checks(_ context.Context, _ forge.Commit) ([]forge.Check, err
 	return nil, errors.New("checks unavailable")
 }
 
-// TestDefaultWorkflowDelivers runs the shipped default workflow, with its grill overridden to an Artisan with no
-// skills as a repository meant to run unattended does, from task creation to a merged pull request over the fake forge:
+// TestDefaultWorkflowDelivers runs a custom copy of the shipped default workflow, with explicit mock profiles
+// for its Artisans and the shipped Director grill, from task creation to a merged pull request over the fake forge:
 // grill, research, plan, acceptance, build, review, publish, a failed validation that takes the loop back to
 // build, the new head reviewed, published and validated, and the merge.
 func TestDefaultWorkflowDelivers(t *testing.T) {
-	shipped, err := workflow.Default()
+	def, err := workflow.Default()
 	if err != nil {
 		t.Fatal(err)
 	}
-	def, err := workflow.ApplyOverrides(shipped, map[string]workflow.Override{"grill": {Actor: workflow.ArtisanActor}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// An override changes only the actor, so the grill would still list the Director's live-grill skills; an
-	// unattended repository lists its own, and the fixture skill roots hold none of them.
+	// The fixture skill roots do not contain the Director's live-grill skills.
 	def.Steps[0].Settings["skills"] = json.RawMessage(`[]`)
+	profiles := map[string]json.RawMessage{
+		"research": json.RawMessage(`"researcher"`),
+		"plan":     json.RawMessage(`"planner"`), "build": json.RawMessage(`"builder"`), "review": json.RawMessage(`"reviewer"`),
+	}
+	for i := range def.Steps {
+		if profile, ok := profiles[def.Steps[i].ID]; ok {
+			if def.Steps[i].Settings == nil {
+				def.Steps[i].Settings = make(map[string]json.RawMessage)
+			}
+			def.Steps[i].Settings["profile"] = profile
+		}
+	}
 	if err := workflow.Validate(def); err != nil {
 		t.Fatal(err)
 	}
@@ -476,20 +484,18 @@ func TestDefaultWorkflowDelivers(t *testing.T) {
 				if previous != nil {
 					inputs["previous"] = outcomeDigest(*previous)
 				}
-				return interptest.Expectation{Step: "review", Attempt: n, Inputs: inputs, Standards: []string{"standards/go.md", "standards/review.md"},
+				return interptest.Expectation{Step: "review", Attempt: n, Profile: "reviewer", Inputs: inputs, Standards: []string{"standards/go.md", "standards/review.md"},
 					Respond: interptest.Review(bound(t, workflow.VerdictApproved, h, nil))}
 			}
 			built := func(n int, h string, inputs map[string]string) interptest.Expectation {
-				return interptest.Expectation{Step: "build", Attempt: n, Inputs: inputs, Standards: []string{"standards/go.md"},
+				return interptest.Expectation{Step: "build", Attempt: n, Profile: "builder", Inputs: inputs, Standards: []string{"standards/go.md"},
 					Respond: interptest.Succeed("built", interptest.File{Path: "head", Data: headFile(h)})}
 			}
 			e := newEnvDefinition(t, b, def,
-				interptest.Expectation{Step: "grill", Attempt: 1, Inputs: map[string]string{}, Standards: []string{"standards/go.md"},
-					Respond: interptest.Succeed("grilled", interptest.File{Path: "notes.md", Data: notes})},
-				interptest.Expectation{Step: "research", Attempt: 1, Inputs: map[string]string{}, Standards: []string{"standards/go.md"},
+				interptest.Expectation{Step: "research", Attempt: 1, Profile: "researcher", Inputs: map[string]string{}, Standards: []string{"standards/go.md"},
 					Respond: interptest.Succeed("researched", interptest.File{Path: "research.md", Data: research})},
 				// Both notes reach the plan on port context; the script compares the last one wired.
-				interptest.Expectation{Step: "plan", Attempt: 1, Inputs: map[string]string{"context": "sha256:" + sum(research)}, Standards: []string{"standards/go.md"},
+				interptest.Expectation{Step: "plan", Attempt: 1, Profile: "planner", Inputs: map[string]string{"context": "sha256:" + sum(research)}, Standards: []string{"standards/go.md"},
 					Respond: interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})},
 				built(1, head, map[string]string{"spec": spec}),
 				reviewed(1, head, nil),
@@ -504,7 +510,8 @@ func TestDefaultWorkflowDelivers(t *testing.T) {
 			e.eng.Forge = f
 			e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote, MergePolicy: config.MergeApproval}}
 
-			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "grill", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirectorStage, Step: "grill", Attempt: 1})
+			finishStage(t, e, "grill", 1, adapter.StatusSucceeded, interptest.File{Path: "notes.md", Data: notes})
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "grill", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "research", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})

@@ -36,8 +36,11 @@ The repository's `workflow` setting, `default` when it names none, selects the e
 - Any other name is the file `workflows/<name>.json` in the configuration file's directory, and the file's `name` must equal it.
 
 The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, and the result is checked with `workflow.Validate` (R1.59).
-The effective workflow's profile references are then checked with `config.CheckProfiles`; every named profile must be declared in the loaded Director configuration.
-A missing or unreadable file, a parse error, a refused override, a validation problem or an undeclared profile refuses the task with the problems named, and the store is not opened, so nothing is written.
+The effective workflow is then checked with `config.CheckArtisanAdapters`: every named profile must be declared in the loaded Director configuration, and every Artisan step must name a profile.
+A profile-less Artisan is refused with the workflow and step named and a remedy to set a profile on that step in a custom workflow; no default adapter, real or fake, supplies a missing profile.
+The shipped `default` workflow is profile-neutral, so select a custom workflow with explicit profiles before creating a task; the example Director config selects `workflows/profiled.json` with Claude profiles.
+For deterministic tests or demos, name a profile whose `adapter` is `fake`; other actors need no Artisan profile.
+A missing or unreadable file, a parse error, a refused override, a validation problem, an undeclared profile or a profile-less Artisan refuses the task with the problems named, and the store is not opened, so nothing is written.
 
 The effective workflow must then be [authorized](configuration.md#enforcement-at-task-creation): shipped with the release, approved by the Guildmaster for its exact digest, or a change from a shipped or approved definition that meets the review floor and weakens nothing.
 An unauthorized workflow refuses the task with its digest and what it weakens named, and writes nothing.

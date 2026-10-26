@@ -22,6 +22,7 @@ Start a role through Guildhall rather than running the agent directly, so it get
 ## 2. Give it work
 
 The `task new` and `task start` lines need the copy's Director config, `demo/config.toml`, to declare a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](configuration.md) name other repositories, so change one to `app` before using it.
+When using the example Director config, also copy its selected `examples/workflows/profiled.json` to `demo/workflows/profiled.json` and complete the [profile setup and workflow approval](configuration.md#profiles) before `task new`.
 `task start` uses the role prompt and stage guides shipped in the binary unless a `baseline/` directory beside the config, `demo/baseline/`, overrides them file by file; see [what an advance runs over](running.md#what-an-advance-runs-over).
 
 ```sh
@@ -84,7 +85,7 @@ To stop one running Artisan attempt, use `guildhall artisan stop`; see [Artisan 
 
 ### Send and acknowledge a message
 
-With the copy from above; the output shown is for a copy where only `task new` has run, so `task start` and answered decisions add their own receipts and records:
+With the copy from above:
 
 ```sh
 cat > note.json <<'EOF'
@@ -96,25 +97,11 @@ EOF
 ./guildhall store doctor --copy demo
 ```
 
-`send` prints the receipt only after the message is committed, and sending the same envelope again prints the same receipt and stores nothing new:
-
-```json
-{"mutation_id":"message:t-1-note-1","operation":"send-message","request_digest":"sha256:8c4f3149fed51b4795c3dedf5bb628671bd249f1c5923c77723be239346f628f","repository":"app","task_id":"t-1","record":"message/t-1-note-1","sequence":2,"committed_at":"2026-10-22T07:56:28.47136214Z"}
-```
+`send` prints the receipt only after the message is committed, and sending the same envelope again prints the same receipt and stores nothing new.
 
 `list` shows the unacknowledged message, and after `ack` the inbox is empty while the message stays readable by id.
-With no Director session recorded, the send also recorded its [wake](messaging.md#waking-the-director) as `queued`, which is one of the receipts:
-
-```console
-$ ./guildhall store doctor --copy demo
-store: demo/director.store
-schema_version: 1 (supported: 1)
-integrity: ok
-receipts: 4
-workflow approvals: 0
-director: sessions 0, wakes 1
-repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 0, rulings 0, owners 0 (0 starting without containment), messages 1 (0 unread)
-```
+With no Director session recorded, the send also records its [wake](messaging.md#waking-the-director) as `queued`, which is one of the receipts.
+`store doctor` reports the copy's current records, including workflow approvals and their receipts from setup; see [`guildhall store doctor`](store.md#guildhall-store-doctor).
 
 ### Preview a Steward rollout
 

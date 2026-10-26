@@ -9,6 +9,9 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `Load` follows the filesystem fallback and error rules in [configuration](../configuration.md).
 
 `Profile` and `CheckProfiles` refuse an unknown profile name (`ErrUnknownProfile`).
+`CheckArtisanAdapters` checks profile references, then refuses the first Artisan step without a profile (`ErrMissingAdapter`), naming the workflow and step and directing the user to set a profile on that step in a custom workflow.
+It is read-only, does not launch anything, and does not require an adapter for other actors.
+Explicit fake profiles remain valid; no default adapter fallback is supported.
 A profile's `AllowedTools` is its `allowed_tools` list in order, empty by default; `Parse` refuses an entry `CheckAllowedTool` refuses, a tool name with an optional non-empty parenthesised specifier and no control characters that does not allow every shell command (`Bash`, `Bash(*)`, `Bash(:*)`), and a duplicate, naming the profile; profiles are read only from the copy's own config, never from `managed.toml`.
 `StallInterval` is the effective `stall_interval` [setting](../configuration.md#settings) as a duration, `DefaultStallInterval` (15 minutes) when unset and zero for `0s`; `Parse` refuses a managed or local value that is not a nonnegative Go duration, and `StallInterval` returns that error for a config built without `Parse`.
 `ChecksRefresh` is the effective `checks_refresh` setting the same way, `DefaultChecksRefresh` (1 minute) when unset and zero for `0s`.
@@ -33,6 +36,12 @@ Explicit session/profile settings remain runtime-validated, so fake accepts any 
 See the focused [Claude policy contract](config-claude-skills.md) for validation, source/plugin limits and rendering ownership.
 
 ## Tests
+
+`TestArtisanAdapterAdmission` in `artisan_test.go` rejects the profile-less shipped workflow even when a manually constructed config contains a local `default_adapter` value of fake, Claude or mock; that setting does not provide admission.
+It accepts explicit profiles for those adapters, removes each Artisan step's profile in turn to assert a step-named refusal, and checks unknown-profile errors.
+`TestShippedDirectorSelectsRealArtisan` loads the example Director config, parses each selected custom workflow, applies repository overrides, validates and checks admission, and asserts every Artisan step selects a Claude profile.
+These focused configuration tests were added after the implementation; the original CLI regressions drove the change red first.
+They do not test default-adapter precedence or malformed-default validation, which are not supported admission paths.
 
 `claude_skills_test.go` was run red before implementation (missing parser/resolver methods), then green; `claude_defaults_test.go` adds semantic shipped-example, full matrix and identity regression coverage afterward.
 
