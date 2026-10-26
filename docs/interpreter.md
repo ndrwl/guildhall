@@ -23,8 +23,7 @@ The engine consumes seven narrow interfaces, declared in `internal/interp` besid
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
 `Engine.Workflow` returns the definition a task's revision names, and the engine refuses one whose name or digest differs (`ErrRevision`).
 `Engine.Config` gives each profile's adapter and each repository's path, remote and merge policy; an Artisan step without a profile is refused before admission or advancement, with a remedy to set a profile on that step in a custom workflow.
-`Engine.StandardsRevision` must name the central standards revision presented for human reviews.
-A blank revision refuses to open a human review decision.
+`Engine.StandardsRevision` supplies the central standards revision presented for human reviews, following the [review outcome revision contract](configuration.md#review-outcome).
 The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
 
 ## Worker-stalled observations
@@ -177,6 +176,7 @@ Because validate only completes on a passed result for its current head, the gat
 
 Before recording attempt `n` of an Artisan step, the engine records its binding as document `<step>-<n>-inputs` (`tasks/<repo>/<task>/<step>-<n>.inputs.json`): every input it is given, by port, path and digest, and for a review or document review the revisions its outcome must be bound to (subject, accepted-spec digest for code, `Engine.StandardsRevision`).
 New review preparations pass that binding's exact revisions to `render.Stage.Revisions` and its range base to `render.Stage.ReviewBase`, leaving the latter empty when no range was recorded.
+The [review outcome contract](configuration.md#review-outcome) owns revision validity and exact matching, including unconfigured standards.
 The base is not resolved again during preparation, including rebase-only and requested-full rounds.
 The [rendering contract](rendering.md#artisan-prompts) owns the emitted field, and [attempt preparation](#attempt-preparation) owns published-prompt immutability, including prompts prepared before this field existed.
 Besides its wired inputs, an attempt may be given:
