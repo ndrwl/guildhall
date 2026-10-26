@@ -82,7 +82,7 @@ When they ask how far the judge can be trusted, run `guildhall quality agreement
 
 For recorded token and USD attribution, run `guildhall spend report --copy <dir> --json`, optionally with `--repo <name>`, `--task <id>` or `--since <RFC3339>`.
 Keep measured, estimated and unknown amounts distinct, and describe totals marked partial as partial.
-Adapter/model and prompt-only, tool-schema or file-read breakdowns are unavailable unless recorded; do not infer them from transcripts or use this report to tune costs automatically.
+See `docs/spend.md` for the first increment's attribution limits; do not infer missing breakdowns from transcripts or use this report to tune costs automatically.
 
 ## Retrying, stopping and resuming attempts
 

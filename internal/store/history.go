@@ -82,6 +82,8 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 	return h, nil
 }
 
+// Receipts reads every mutation receipt in one transaction, without task filtering.
+// It scans the whole receipt bucket; callers should reuse the result across tasks.
 func (s *Store) Receipts() ([]Receipt, error) {
 	out := []Receipt{}
 	err := s.view(func(tx *bolt.Tx) error {
