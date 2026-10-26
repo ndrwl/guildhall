@@ -104,7 +104,6 @@ func RunSessionContract(t *testing.T, newSubject func(t *testing.T) SessionSubje
 		}
 		defer func() { _, _ = r.Close(), w.Close() }()
 		go func() {
-			time.Sleep(100 * time.Millisecond)
 			_, _ = io.WriteString(w, "hello\n/exit\n")
 		}()
 		if code := runSession(t, s, spec, r); code != 0 {

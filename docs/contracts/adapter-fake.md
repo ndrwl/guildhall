@@ -13,6 +13,10 @@ With `TurnLogEnv` naming a file, it appends one line to it per turn, `<pid> star
 
 ## Tests
 
+Cancel-sidecar and late-result tests wait for the existing sleeper boundary to acknowledge that work began, rather than sleeping to guess readiness.
+Lifetime and ignore-cancel checks inspect the duration requested through the injected sleeper instead of asserting elapsed wall time.
+These replace timing-dependent assertions without changing fake Artisan behavior ([timing policy](../test-timing.md)).
+
 `TestFakeDirectorSessionCommand`'s model and effort flags were run red before the effort-default implementation; the CLI integration tests read the recorded settings from a real fake Director child process.
 
 `fake_test.go`, `conformance_test.go` (the shipped fake as a real child process, on interpreter-rendered attempts mapped through `interp.Spec.AdapterSpec`, and inside the Artisan launcher on this platform's unit with `launch.Files`, where a stop must end at rung 1, the cancel marker), `conformance_unix_test.go` (typed into a tab by `adapter.TabLauncher` over `adaptertest.ShellPanes` and stopped by Ctrl+C).

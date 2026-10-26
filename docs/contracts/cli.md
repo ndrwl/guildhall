@@ -7,6 +7,11 @@
 The additional `TestSpendReportMetadataFiltersAndMalformedEvidence`, `TestSpendReportRetriesAggregateWithoutTranscriptReads` and `TestSpendReportCopyAndHelp` cases were added after implementation and passed on their first run; they pin manifest identity, missing and malformed evidence, inclusive start times, repository/task filtering, environment copy selection and help against real fixture stores.
 `TestSpendReportMetadataFiltersAndMalformedEvidence` also checks attribution from the published `prompt/manifest.json`; `TestSpendReportScansReceiptsOnlyOnceWhenFiltered` bounds receipt scans, and `TestSpendReportStartIndexSeparatesAttemptIdentities` covers start-receipt identity and legacy receipts.
 
+Owned `artisan start --timeout` is a result-wait budget beginning after worker startup and recorded containment, not a budget for acquiring ownership.
+`App.AdvanceContext`, when set, supplies task advances' interrupt subscription; nil uses `signal.NotifyContext`.
+The interrupted-launch integration test uses the real subscription and releases its held lock only when that context is cancelled, not after a sleep.
+The [timing policy](../test-timing.md) and [regression evidence](../evidence/ci-timing-flakes-2026-10-26.md) cover immediate result expiry, pre-start stop proof and deterministic watcher ordering.
+
 Task admission and advance require an explicitly configured runtime for each Artisan stage, through its named profile; profile-less Artisan stages are refused with a custom-workflow remedy.
 A missing profile fails with exit 1 and an error naming the step and directing the user to set a profile on that step in a custom workflow, without task-record mutations or launches.
 Explicit profiles whose adapter is `fake` are still accepted; there is no default-adapter remedy.
@@ -81,7 +86,17 @@ Director session specs and interpreter-launched profile attempts resolve empty e
 It refuses versions below 2.1.310, unknown version output and a conflicting inherited bundle-disable switch before recording a session.
 It reports organization/ambient inventory limitations rather than claiming live discovery or making model calls.
 
+`step send-back` accepts the usual advance path flags plus required `--repo`, `--task`, `--step`, positive `--attempt` and nonempty `--feedback`.
+It validates syntax before accessing dependencies, runs `StepSentBack` under the existing task lock and admission gates, and prints the standard advance JSON/next.json on success.
+Unknown flags, extra arguments and missing or malformed required fields exit 2; engine or persistence refusals exit 1.
+`--help` prints usage and examples without requiring a store.
+It starts a new attempt only for a succeeded Artisan step, preserves old attempts and passes the Director's feedback as an input document; identical replay starts nothing extra and conflicting feedback is refused.
+See [the command](../step-send-back.md).
+
 ## Tests
+
+`sendback_test.go` exercises help without store access, unknown/missing/invalid flags, actual new-attempt launch through the CLI and replay without an extra attempt.
+These CLI tests were added after implementation; the initial interpreter API red run and focused integration green run are in [the evidence](../evidence/pr-conflicts-2026-10-26).
 
 `TestAdvancePreflightLockWait` holds the real store lock and requires `task start`, `task start --decision` and `step retry` to reach a store-lock refusal with the configured wait, rather than the default 30-second wait.
 The test configures a five-second lock wait and requires refusal within twenty seconds.

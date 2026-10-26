@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -66,7 +65,7 @@ func TestExternalResumeDeliversQueuedWork(t *testing.T) {
 	t.Logf("terminal delivery: %q; runtime turns: %q", typed, c.turnLines())
 	t.Log("repeated resume:", c.guildhall("", "director", "resume"))
 	t.Log("replayed message:", c.guildhall(note, "messages", "send", "director", "-"))
-	time.Sleep(300 * time.Millisecond)
+	// Both CLI operations have acknowledged their synchronous wake decisions.
 	if !reflect.DeepEqual(wakes(), before) || len(c.typed()) != 1 || len(c.turnLines()) != 2 {
 		t.Fatalf("replay altered wakes or delivered again: wakes=%+v typed=%q turns=%q", wakes(), c.typed(), c.turnLines())
 	}

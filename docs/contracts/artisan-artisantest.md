@@ -8,7 +8,7 @@ A breakaway request is recorded under the worker's own identity, since a record 
 A harness states what its backend can do: terminate, whether a `setsid` grandchild escapes or stays a member, refused breakaway, and the containment kind it reports.
 A worker can exit right after starting its grandchildren, orphaning them, honour a cancel marker by exiting, or publish a result using the delay and marker handshake defined by [`Worker`](../../internal/artisan/artisantest/worker.go).
 `RunStopContract`, the launcher's stop ladder and precedence contract, runs a `Launcher` over units from a harness with `Files`, the double of `artisan.AttemptFiles` over a result file and a marker file.
-Stop timing is selected by [`Harness.Ladder`](../../internal/artisan/artisantest/contract.go), allowing the fake harness to avoid native process waits without changing the shared assertions.
+Stop timing is selected by [`Harness.Ladder`](../../internal/artisan/artisantest/contract.go); both real and fake harnesses follow the [test timing policy](../test-timing.md), since marker observation still needs goroutine scheduling.
 On Windows `RunStopContract` also holds a published result without sharing while the launcher decides and requires `finished`, so every adapter must read through `internal/atomicfile`; the case reads the result path through `Harness.StopFiles`, the one accessor for a harness's files.
 `Harness.Worker` replaces the test binary as the stop contract's worker with a real Artisan's command, which records its processes in the case's inventory directory; the fake Artisan plays it in `internal/launch`.
 `KillVerified` is `artisan.Kill`.

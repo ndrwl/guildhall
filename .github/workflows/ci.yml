@@ -48,6 +48,8 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+      - name: Test timing policy
+        run: go test ./internal/testenv -run '^TestTimingPolicy' -count=1
       - name: Build
         run: go build ./...
       - name: Vet

@@ -43,7 +43,7 @@ func TestCloseRetriesTerminationFailure(t *testing.T) {
 				if !errors.Is(err, unix.EPERM) {
 					t.Fatalf("Close = %v", err)
 				}
-			case <-time.After(time.Second):
+			case <-time.After(testenv.Ceiling(30 * time.Second)):
 				t.Fatal("Close waited after termination failed")
 			}
 			if u.closed {

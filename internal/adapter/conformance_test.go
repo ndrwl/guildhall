@@ -120,7 +120,7 @@ func TestScriptedRuntimeHelper(t *testing.T) {
 		write(ok)
 		os.Exit(3)
 	case adaptertest.Hang:
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) // timing:allow intentionally hung adapter child; parent owns stop and reap.
 	default:
 		fmt.Fprintf(os.Stderr, "scripted runtime: unknown prompt %q\n", prompt)
 		os.Exit(2)

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 )
@@ -87,7 +88,9 @@ func TestWriterInAnotherProcessIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "guildhall.store")
 	cmd, stdin := startHolder(t, path)
 
-	if _, err := Open(path, testOptions()); !errors.Is(err, ErrLocked) {
+	opts := testOptions()
+	opts.LockTimeout = 100 * time.Millisecond // timing:allow the other process has acknowledged holding this lock; refusal is intentional.
+	if _, err := Open(path, opts); !errors.Is(err, ErrLocked) {
 		t.Fatalf("Open while another process writes: err = %v, want ErrLocked", err)
 	}
 	_ = stdin.Close()

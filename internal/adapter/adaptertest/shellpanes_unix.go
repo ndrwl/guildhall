@@ -230,7 +230,7 @@ func (p *ShellPanes) InterruptTab(ctx context.Context, ref adapter.TabRef) error
 			return ctx.Err()
 		case <-deadline:
 			return nil
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(100 * time.Millisecond): // timing:allow retry cadence; interruptWait is the completion ceiling.
 		}
 	}
 }

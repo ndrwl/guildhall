@@ -14,7 +14,7 @@ func parentGone() <-chan struct{} {
 	ppid := os.Getppid()
 	go func() {
 		for os.Getppid() == ppid {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond) // timing:allow parent-exit condition polling, not readiness synchronization.
 		}
 		close(gone)
 	}()

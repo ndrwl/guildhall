@@ -131,7 +131,7 @@ func testToolBoundary(t *testing.T, newBoundary func(t *testing.T) toolBoundary)
 			if !errors.Is(got.ctxErr, context.Canceled) {
 				t.Errorf("context error at Output return = %v, want Canceled", got.ctxErr)
 			}
-		case <-time.After(testenv.Ceiling(5 * time.Second)):
+		case <-time.After(testenv.Ceiling(30 * time.Second)):
 			t.Fatal("Output did not return promptly after cancellation")
 		}
 	})
@@ -224,7 +224,7 @@ func TestToolProbeHelper(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) // timing:allow intentionally hung subprocess; the caller cancels and reaps it.
 	}
 	code, _ := strconv.Atoi(exit)
 	os.Exit(code)

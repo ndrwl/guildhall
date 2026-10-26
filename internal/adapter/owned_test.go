@@ -35,7 +35,7 @@ func TestOwnedWorkerHelper(t *testing.T) {
 		select {
 		case <-ctx.Done():
 			os.Exit(5)
-		case <-time.After(10 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond): // timing:allow release-file polling bounded by ctx.
 		}
 	}
 	err := WriteResult(os.Getenv("GUILDHALL_RESULT"), Result{Identity: id, Status: StatusSucceeded, Summary: "done", Outputs: []Output{}})
@@ -81,7 +81,7 @@ func TestOwnedWorkerStopContract(t *testing.T) {
 			select {
 			case <-ctx.Done():
 				t.Fatal("worker did not begin")
-			case <-time.After(10 * time.Millisecond):
+			case <-time.After(10 * time.Millisecond): // timing:allow work-file polling bounded by ctx.
 			}
 		}
 		return owner, cmd, result, work

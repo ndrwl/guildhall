@@ -31,6 +31,9 @@ Its consumers are the attempt control endpoint (`artisan.Listen` and `artisan.Ca
 
 ## Tests
 
+Blocked-request cancellation is triggered after the handler acknowledges entry, not by a deadline that also races connection startup.
+The deliberately blocked reply's negative close observation is explicitly allowlisted; its positive drain waits keep generous ceilings ([timing policy](../test-timing.md)).
+
 `TestCloseWaitsForReplyWrite` blocks reply encoding after the handler returns over a real socket, checks that concurrent `Close` calls wait, then releases encoding and verifies the decoded reply and successful closures.
 It failed before the drain was implemented and passed afterward; the regression and the affected launcher/CLI stop tests also passed 500 repetitions on Linux ([captured runs](../evidence/launcher-stop-reply-2026-10-26.txt)).
 Local `-race` validation was unavailable because this environment has no C compiler; no race-detector pass is claimed.

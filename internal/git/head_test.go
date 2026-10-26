@@ -107,6 +107,7 @@ func TestFinalHead(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Setenv(hangingGitEnv, "1")
+		// timing:allow intentional timeout of a child that never answers; no readiness assertion.
 		_, err = (git.Program{Path: exe, Timeout: 200 * time.Millisecond}).FinalHead(ctx, r.dir)
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("timeout = %v", err)

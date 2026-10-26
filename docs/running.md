@@ -1,6 +1,6 @@
 # Running a task
 
-`guildhall task start`, `guildhall step done`, `guildhall step finish` and `guildhall step retry` drive a task through the [interpreter](interpreter.md) from the command line.
+`guildhall task start`, `guildhall step done`, `guildhall step finish`, `guildhall step retry` and `guildhall step send-back` drive a task through the [interpreter](interpreter.md) from the command line.
 Each runs one `interp.Engine.Advance` and prints where the task now stands; launching an Artisan attempt runs it as its own [owned launcher](artisan.md#commands) process, which outlives the command.
 When the advance runs from a [copy](#copies), each attempt's launcher is also the task's watcher: once it records the attempt's outcome it runs `step done` or `task start` itself ([the watcher](#the-watcher)), so nobody types `step done`.
 Over explicit `--store`, `--config` and `--state` paths nothing advances in the background, and the caller runs `step done` once the result file exists.
@@ -110,9 +110,18 @@ A retry whose start or launch fails exits 1 and sends no reason, so it can be re
 A running or succeeded attempt, or one a later attempt already follows, is refused with exit status 1 and nothing is recorded; repeating the command after the next attempt launched prints what the task waits for and writes nothing beyond the reason, if an interrupted retry had not yet sent it.
 An attempt whose launcher died is first settled with [`artisan resume`](artisan.md#commands).
 
+## `step send-back`
+
+[`step send-back`](step-send-back.md) starts a new attempt of a succeeded Artisan step with required `--feedback` from the Director.
+See the command guide for admission requirements, prepared-input refusals, replay semantics and downstream review behaviour.
+This is one option after a `pr-blocked` report from validate or deliver, not an instruction to rebase; holding the task or leaving it unadvanced are alternatives.
+
 ## Output and exit status
 
-All four print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"director-stage","step":"grill","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start`, or a Director session's [checks watcher](director.md#checks), reads again once `checks_refresh` has passed, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
+All five print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"director-stage","step":"grill","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start`, or a Director session's [checks watcher](director.md#checks), reads again once `checks_refresh` has passed, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
+A conflicting PR or one behind under strict branch protection instead waits with `{"wait":"director","step":"validate"}` (or `deliver`) and sends one `pr-blocked` report per head and state, with URL, head/base commits, paths, behind count and options.
+The Director chooses what to do; Guildhall does not rebase automatically or keep polling the task after that wait.
+
 While the Director is [paused or stopping](director.md#pause-and-resume), an advance that would start a new attempt, `task start` and `step retry` among them, starts none and waits `{"wait":"paused","step":"<step>"}`, the step whose attempt was held, which `next.json` records too.
 
 | Exit status | Meaning |

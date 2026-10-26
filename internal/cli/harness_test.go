@@ -119,7 +119,7 @@ func TestArtisanHarnessInventoryAndKillOwned(t *testing.T) {
 		id := artisan.Identity{PID: p.PID, Token: p.Token}
 		lv, err := artisan.Probe(id)
 		for lv != artisan.Gone && time.Now().Before(end) {
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond) // timing:allow liveness polling within the overall cleanup ceiling.
 			lv, err = artisan.Probe(id)
 		}
 		if lv != artisan.Gone {

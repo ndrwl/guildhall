@@ -387,7 +387,7 @@ func TestGitHubMergeTimeout(t *testing.T) {
 	s.HangMerge = true
 	g.writeState(t, s)
 	f := h.Forge.(forge.GitHub)
-	f.Timeout = 500 * time.Millisecond
+	f.Timeout = 500 * time.Millisecond // timing:allow intentional timeout of a tool that never answers; no readiness assertion.
 	began := time.Now()
 	_, err = f.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
 	if took := time.Since(began); took > 30*time.Second {
@@ -517,7 +517,9 @@ type ghState struct {
 	// Checks are each head's statusCheckRollup contexts, in GitHub's form; a head without an entry has no rollup.
 	Checks map[string][]map[string]any `json:"checks"`
 	// MoreChecks reports another page of contexts.
-	MoreChecks bool `json:"more_checks"`
+	MoreChecks       bool   `json:"more_checks"`
+	Mergeable        string `json:"mergeable"`
+	MergeStateStatus string `json:"merge_state_status"`
 }
 
 type ghPR struct {
@@ -624,7 +626,8 @@ func runGH(s *ghState, bare string, args []string) int {
 			head = remoteBranch(bare, p.Branch)
 		}
 		v := map[string]any{"number": p.Number, "url": fmt.Sprintf("https://github.com/acme/widgets/pull/%d", p.Number),
-			"state": p.State, "headRefName": p.Branch, "headRefOid": head, "mergeCommit": nil}
+			"state": p.State, "headRefName": p.Branch, "headRefOid": head, "mergeCommit": nil,
+			"baseRefOid": remoteBranch(bare, "main"), "mergeable": s.Mergeable, "mergeStateStatus": s.MergeStateStatus}
 		if p.MergeCommit != "" {
 			v["mergeCommit"] = map[string]string{"oid": p.MergeCommit}
 		}
@@ -673,6 +676,9 @@ func runGH(s *ghState, bare string, args []string) int {
 		fmt.Printf("https://github.com/acme/widgets/pull/%d\n", n)
 		return 0
 	case "pr view":
+		if flags["--json"] != "number,url,state,headRefName,headRefOid,mergeCommit" && flags["--json"] != "url,state,headRefOid,baseRefOid,mergeable,mergeStateStatus" {
+			return fail(2, "fake gh: pr view --json %q", flags["--json"])
+		}
 		p, code := number()
 		if p == nil {
 			return code
@@ -689,7 +695,7 @@ func runGH(s *ghState, bare string, args []string) int {
 		case s.SignedOut:
 			return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
 		case s.HangMerge:
-			time.Sleep(time.Minute)
+			time.Sleep(time.Minute) // timing:allow hung forge subprocess; caller timeout kills and reaps it.
 			return fail(1, "fake gh: hung merge was not killed")
 		case s.DropMerge:
 			s.Offline = true

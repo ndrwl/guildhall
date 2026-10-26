@@ -28,8 +28,35 @@ func (dyingUnit) Start(*exec.Cmd) (artisan.Identity, error) {
 		_ = p.Kill()
 	}
 	for {
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) // timing:allow unreachable fallback after self-kill, not synchronization.
 	}
+}
+
+// HideUnstartedContainment models process-group platforms on every host: no
+// containment is recoverable until a worker has started. The underlying unit
+// is real, so its normal startup and cleanup contracts are preserved.
+func HideUnstartedContainment() {
+	newUnit = func(name string) (artisan.Unit, error) {
+		u, err := artisan.NewUnit(name)
+		return &unnamedBeforeStart{Unit: u}, err
+	}
+}
+
+type unnamedBeforeStart struct {
+	artisan.Unit
+	started bool
+}
+
+func (u *unnamedBeforeStart) Containment() artisan.Containment {
+	if !u.started {
+		return artisan.Containment{}
+	}
+	return u.Unit.Containment()
+}
+
+func (u *unnamedBeforeStart) Start(cmd *exec.Cmd) (artisan.Identity, error) {
+	u.started = true
+	return u.Unit.Start(cmd)
 }
 
 // MainIfDetacher plays the detaching session runtime of TestDetachedLauncherLeavesTheSessionUnit.

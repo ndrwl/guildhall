@@ -72,8 +72,9 @@ func TestOrderingPreservesStartupBudget(t *testing.T) {
 		timeout time.Duration
 		lookup  bool
 	}{
-		{name: "stalled lookup", timeout: 15 * time.Second, lookup: true},
-		{name: "insufficient budget", timeout: time.Second},
+		{name: "stalled lookup", timeout: 30 * time.Second, lookup: true},
+		// Exactly the reserved startup budget leaves no time for optional ordering.
+		{name: "insufficient budget", timeout: 10 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state := t.TempDir()
@@ -107,12 +108,19 @@ func TestOrderingPreservesStartupBudget(t *testing.T) {
 			if !strings.Contains(warnings.String(), "ordering skipped") {
 				t.Fatalf("missing ordering warning: %s", &warnings)
 			}
-			_, markerErr := os.Stat(marker)
-			if tc.lookup && markerErr != nil {
-				t.Fatalf("lookup did not reach stalled transport: %v", markerErr)
-			}
-			if !tc.lookup && !errors.Is(markerErr, os.ErrNotExist) {
-				t.Fatalf("lookup ran without startup budget: %v", markerErr)
+			if tc.lookup {
+				// The optional lookup must expire without exhausting startup.
+				// Its short product budget need not allow the child to start.
+				if !strings.Contains(warnings.String(), context.DeadlineExceeded.Error()) {
+					t.Fatalf("ordering did not time out: %s", &warnings)
+				}
+			} else {
+				if !strings.Contains(warnings.String(), "insufficient startup budget") {
+					t.Fatalf("ordering was not skipped for its budget: %s", &warnings)
+				}
+				if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("lookup ran without startup budget: %v", err)
+				}
 			}
 		})
 	}
@@ -126,7 +134,7 @@ func TestArtisanOrderingStalledTransport(t *testing.T) {
 	if err := os.WriteFile(marker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(time.Hour)
+	time.Sleep(time.Hour) // timing:allow intentionally hung lookup fixture; parent cancels and reaps it.
 }
 
 type orderRecorder struct {

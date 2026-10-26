@@ -19,7 +19,7 @@ const hangingGitEnv = "GUILDHALL_TEST_HANGING_GIT"
 
 func TestMain(m *testing.M) {
 	if os.Getenv(hangingGitEnv) != "" {
-		time.Sleep(time.Minute)
+		time.Sleep(time.Minute) // timing:allow intentionally hung git child, killed and reaped by the caller.
 		fmt.Fprintln(os.Stderr, "hanging git: not ended at its timeout")
 		os.Exit(1)
 	}
@@ -34,7 +34,7 @@ func TestClassifyTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(hangingGitEnv, "1")
-	p := git.Program{Path: exe, Timeout: 200 * time.Millisecond}
+	p := git.Program{Path: exe, Timeout: 200 * time.Millisecond} // timing:allow intentional timeout of a child that never answers; no readiness assertion.
 	last := git.Range{Base: strings.Repeat("a", 40), Head: strings.Repeat("b", 40)}
 	next := git.Range{Base: strings.Repeat("c", 40), Head: strings.Repeat("d", 40)}
 	got, err := p.Classify(context.Background(), t.TempDir(), last, next)

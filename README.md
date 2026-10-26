@@ -141,6 +141,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks; see [tasks](docs/tasks.md).
 - `guildhall task start` and `guildhall step done`: advance a task through its workflow; see [running a task](docs/running.md).
 - `guildhall step retry`: start the next attempt of a step after a failed or stopped one; see [running a task](docs/running.md#step-retry).
+- `guildhall step send-back`: send a succeeded Artisan step back with Director feedback; see [send-back](docs/step-send-back.md).
 - `guildhall decide list|show|answer`: decisions waiting for you; see [decisions](docs/decisions-cli.md).
 - `guildhall director status --json`: everything in flight and what needs the Director or you, in one JSON document; see [the Director](docs/director.md#status).
 - `guildhall director start` and `guildhall director ready`: run a Director session in its own Herdr tab or your terminal, and let a recovering session start new work; see [the Director](docs/director.md#start).

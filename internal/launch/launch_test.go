@@ -22,7 +22,7 @@ import (
 // deadline is the longest a test waits for a launcher, worker or store event,
 // and a worker's lifetime when it must outlast the test: scaled for slow
 // runners, so test children, which inherit the environment, share it.
-var deadline = testenv.Ceiling(30 * time.Second)
+var deadline = testenv.Ceiling(time.Minute)
 
 // storeWait is how long a test's own store open waits for a launcher or
 // advance child that holds the lock.
@@ -30,8 +30,8 @@ var storeWait = testenv.Ceiling(store.DefaultLockTimeout)
 
 var key = artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
-// fastLadder keeps stop cases short; the ladder itself is artisan's contract.
-var fastLadder = artisan.Ladder{Cooperative: 2 * time.Second, Interrupt: 500 * time.Millisecond, Terminate: time.Second, Kill: 3 * time.Second}
+// Real containment gets generous rung budgets; successful stops return on exit.
+var fastLadder = artisan.Ladder{Cooperative: 10 * time.Second, Interrupt: 10 * time.Second, Terminate: 10 * time.Second, Kill: 10 * time.Second}
 
 // newAttempt returns attempt app/t-1/build/1, recorded running in a new
 // store, with its attempt directory and a short state directory.
@@ -180,7 +180,7 @@ func start(a launch.Attempt, cmd adapter.Command) (<-chan ran, context.CancelFun
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan ran, 1)
 	go func() {
-		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Ladder: fastLadder, ResultGrace: time.Second, HeartbeatInterval: 100 * time.Millisecond})
+		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Ladder: fastLadder, HeartbeatInterval: 100 * time.Millisecond})
 		done <- ran{r, err}
 	}()
 	return done, cancel

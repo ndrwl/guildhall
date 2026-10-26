@@ -33,7 +33,7 @@ func TestTransportTimeoutBoundsEachCopy(t *testing.T) {
 	f.Write(file, []byte("remote\n"))
 	f.Hang("alpha")
 	tr := f.Transport()
-	tr.Timeout = 200 * time.Millisecond
+	tr.Timeout = 200 * time.Millisecond // timing:allow intentional timeout of a tool that never answers; no startup-speed assertion.
 	start := time.Now()
 	err := tr.Fetch(context.Background(), file, t.TempDir()+"/fetched.toml")
 	if !errors.Is(err, context.DeadlineExceeded) || !strings.HasPrefix(err.Error(), "scp: ") {

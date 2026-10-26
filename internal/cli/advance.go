@@ -144,8 +144,10 @@ func (a *App) step(args []string) int {
 		return a.stepFinish(args[1:])
 	case len(args) > 0 && args[0] == "retry":
 		return a.stepRetry(args[1:])
+	case len(args) > 0 && args[0] == "send-back":
+		return a.stepSendBack(args[1:])
 	}
-	return a.usageError("step: the commands are done, finish and retry")
+	return a.usageError("step: the commands are done, finish, retry and send-back")
 }
 
 // stepRetry runs `guildhall step retry`: it feeds attempt-retried for the Director's retry of a failed or
@@ -350,7 +352,11 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		ws = a.Workspaces
 	}
 	// An interrupt ends the advance and releases the task lock; the next advance replays it.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	notify := a.AdvanceContext
+	if notify == nil {
+		notify = signal.NotifyContext
+	}
+	ctx, stop := notify(context.Background(), os.Interrupt)
 	defer stop()
 	context.AfterFunc(ctx, stop)
 	e := &interp.Engine{

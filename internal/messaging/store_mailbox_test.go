@@ -29,7 +29,7 @@ func newStoreHarness(t *testing.T) *storeHarness {
 
 func (h *storeHarness) open(t *testing.T) {
 	t.Helper()
-	s, err := store.Open(h.path, store.Options{LockTimeout: time.Second})
+	s, err := store.Open(h.path, store.Options{LockTimeout: 30 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}

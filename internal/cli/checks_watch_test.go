@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
@@ -354,15 +355,28 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 	if code, out, stderr := d.run(t, "director", "pause", "--copy", dir); code != 0 {
 		t.Fatalf("pause: %s %s", out, stderr)
 	}
-	// Let a round already in flight finish, then challenge the paused guard with green CI.
-	time.Sleep(300 * time.Millisecond)
-	reads := cf.reads.Load()
-	f.SetChecks("git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567", forge.Check{Name: "ci", State: forge.CheckPassed})
-	time.Sleep(400 * time.Millisecond)
-	if cf.reads.Load() != reads || strings.TrimSpace(readFileString(t, filepath.Join(d.state, "app", "t-1", nextFile))) != `{"wait":"checks","step":"validate"}` {
-		t.Fatal("paused supervisor observed or advanced green checks")
+	// The task lock is the completion barrier for an advance already in flight.
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(time.Minute))
+	defer cancel()
+	release, err := artisan.LockAttempt(ctx, filepath.Join(d.state, "app", "t-1"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Logf("green while paused: forge reads remain %d; task still waits for checks", reads)
+	release()
+	f.SetChecks("git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567", forge.Check{Name: "ci", State: forge.CheckPassed})
+	// Exercise actual paused task eligibility for completed watcher rounds,
+	// advancing their clock explicitly rather than sleeping for the supervisor.
+	paused := &checksWatch{waiting: checksWaiting(d.store, d.state), now: time.Now,
+		advance: func(taskRef) error { t.Error("paused watcher attempted an advance"); return nil },
+		report:  func(_ taskRef, err error) { t.Errorf("paused watcher: %v", err) }}
+	for i := range 3 {
+		paused.tick(time.Now().Add(time.Duration(i) * time.Hour))
+		paused.wait()
+	}
+	if strings.TrimSpace(readFileString(t, filepath.Join(d.state, "app", "t-1", nextFile))) != `{"wait":"checks","step":"validate"}` {
+		t.Fatal("paused supervisor advanced green checks")
+	}
+	t.Log("green while paused: completed watcher rounds found no eligible task")
 	if code, out, stderr := d.run(t, "director", "resume", "--copy", dir); code != 0 {
 		t.Fatalf("resume: %s %s", out, stderr)
 	}

@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -43,13 +44,16 @@ func TestRetry(t *testing.T) {
 }
 
 func TestRetryIsBounded(t *testing.T) {
-	start, calls := time.Now(), 0
-	err := retry(func() error { calls++; return errRace }, isRace)
-	elapsed := time.Since(start)
-	if !errors.Is(err, errRace) || elapsed < patience || elapsed > patience+time.Second {
-		t.Fatalf("retry of a lasting race = %v after %v, want the race after about %v", err, elapsed, patience)
-	}
-	if max := int(patience/interval) + 1; calls < 2 || calls > max {
-		t.Fatalf("retry called op %d times, want between 2 and %d", calls, max)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		start, calls := time.Now(), 0
+		err := retry(func() error { calls++; return errRace }, isRace)
+		elapsed := time.Since(start)
+		if !errors.Is(err, errRace) || elapsed < patience || elapsed > patience+time.Second {
+			t.Fatalf("retry of a lasting race = %v after %v, want the race after about %v", err, elapsed, patience)
+		}
+		// The first call and the call exactly at the deadline precede expiry.
+		if max := int(patience/interval) + 2; calls < 2 || calls > max {
+			t.Fatalf("retry called op %d times, want between 2 and %d", calls, max)
+		}
+	})
 }

@@ -40,8 +40,9 @@ type runDirector struct {
 	// workspaces is the App's workspaces: the double, with app's remote's default branch set.
 	workspaces *gittest.Workspaces
 	// panes, when set, is the App's Director pane; otherwise pane, when set, is.
-	panes *typedPanes
-	pane  messaging.DirectorPane
+	panes          *typedPanes
+	pane           messaging.DirectorPane
+	advanceContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -111,6 +112,7 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app.InstallSkills = func(string) error { return nil }
 	app.InstallBaseline = baseline.Install
 	app.Forge = d.forge
+	app.AdvanceContext = d.advanceContext
 	if d.workspaces != nil {
 		app.Workspaces = d.workspaces
 	}
@@ -191,7 +193,18 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			if code != 0 {
 				exit = fmt.Errorf("exit %d", code)
 			}
-			return launchtest.Report(stdout, stderr, exit)
+			rep, err := launchtest.Report(stdout, stderr, exit)
+			if err != nil && rep.Launcher == launch.LauncherGone {
+				// File outcomes mask the Exited classification. Check the released
+				// record itself for a launcher that never recorded a worker unit.
+				own, readErr := withStore(d.store, true, func(s *store.Store) (store.Ownership, error) {
+					return s.Ownership("app", "t-1", a.Step, a.Number)
+				})
+				if readErr == nil && own.State == store.OwnerReleased && own.Containment == (store.Containment{}) {
+					return rep, nil
+				}
+			}
+			return rep, err
 		})
 		if err != nil {
 			out = append(out, fmt.Sprintf("artisan stop %s-%d: %v", a.Step, a.Number, err))
@@ -202,7 +215,7 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			id := artisan.Identity{PID: p.PID, Token: p.Token}
 			lv, err := artisan.Probe(id)
 			for err == nil && lv != artisan.Gone && time.Now().Before(settle) {
-				time.Sleep(50 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond) // timing:allow liveness polling within the settle ceiling, not readiness synchronization.
 				lv, err = artisan.Probe(id)
 			}
 			if err != nil || lv != artisan.Gone {

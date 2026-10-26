@@ -394,7 +394,7 @@ func TestDoctorReportsDamagedDirectorRecords(t *testing.T) {
 				t.Fatal(err)
 			}
 			_ = s.Close()
-			db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
+			db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 30 * time.Second})
 			if err != nil {
 				t.Fatal(err)
 			}

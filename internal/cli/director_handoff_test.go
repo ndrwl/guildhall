@@ -305,7 +305,7 @@ func waitSessions(t *testing.T, dir string, n int) []store.DirectorSession {
 // holdsOne sees, after some of the supervisor's polls, that the copy still has n sessions.
 func holdsOne(t *testing.T, dir string, n int) {
 	t.Helper()
-	time.Sleep(time.Second)
+	time.Sleep(time.Second) // timing:allow negative observation only; session transitions use waitSessions, and grace logic uses an injected clock.
 	if got := sessions(t, dir); len(got) != n || got[n-1].State != store.DirectorRunning {
 		t.Fatalf("sessions = %+v; want session %d still running", got, n)
 	}

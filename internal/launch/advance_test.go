@@ -21,7 +21,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
-	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // advanceEnv makes the test binary play `guildhall step done` and `guildhall task start` for Run's advance:
@@ -166,7 +165,7 @@ func startAdvancingTo(a launch.Attempt, cmd adapter.Command, advance []string, o
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan ran, 1)
 	go func() {
-		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Advance: advance, Ladder: fastLadder, ResultGrace: time.Second, HeartbeatInterval: 100 * time.Millisecond,
+		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Advance: advance, Ladder: fastLadder, HeartbeatInterval: 100 * time.Millisecond,
 			Outbox: outbox})
 		done <- ran{r, err}
 	}()
@@ -388,7 +387,12 @@ func TestProcessLaunchReturnsOnceItsStoppedLauncherReleases(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := newProcess(t)
-	p.Store, p.StateDir, p.StartTimeout = filepath.Join(dir, "director.store"), filepath.Join(dir, "state"), time.Millisecond
+	p.Store, p.StateDir = filepath.Join(dir, "director.store"), filepath.Join(dir, "state")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Cancel at the setup boundary after validation, before the child can own
+	// its attempt. No worker startup races a millisecond timer.
+	p.OpenPresentation = func(context.Context) (*launch.Presentation, error) { cancel(); return nil, nil }
 	spec := prepared(t, p, fixtureSpec(t, instructions[interptest.Hangs]))
 	spec.Copy = dir
 	k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
@@ -398,17 +402,12 @@ func TestProcessLaunchReturnsOnceItsStoppedLauncherReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(advanceEnv, string(b))
-	begun := time.Now()
-	_, err = p.Launch(context.Background(), spec)
-	took := time.Since(begun)
+	_, err = p.Launch(ctx, spec)
 	if werr := os.WriteFile(unlocked, nil, 0o600); werr != nil {
 		t.Fatal(werr)
 	}
-	if err == nil {
-		t.Fatal("Launch succeeded past its StartTimeout")
-	}
-	if took > testenv.Ceiling(10*time.Second) {
-		t.Errorf("Launch took %v to stop its launcher; want no wait for the launcher's advance", took)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Launch = %v, want cancellation", err)
 	}
 	s, err := store.Open(p.Store, store.Options{ReadOnly: true, LockTimeout: storeWait})
 	if err != nil {

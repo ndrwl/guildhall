@@ -58,7 +58,7 @@ func TestSessionEndEmptiesTheRuntimesUnit(t *testing.T) {
 				}
 			}
 			app, _, _ := newTestApp(nil, nil)
-			app.SessionPoll, app.StopGrace = 10*time.Millisecond, time.Nanosecond
+			app.SessionPoll, app.StopGrace = 10*time.Millisecond, time.Nanosecond // timing:allow end immediately after the recorded runtime tree is ready; not a setup ceiling.
 			done := make(chan error, 1)
 			var ending endAction
 			go func() {
@@ -161,7 +161,7 @@ func TestRuntimeWaitsForRecord(t *testing.T) {
 	defer func() { _ = u.Close() }()
 	cmd := artisantest.Command(inv, artisantest.Worker{Grandchildren: 1})
 	_, err = artisan.StartRecorded(u, cmd, func(id artisan.Identity) error {
-		time.Sleep(200 * time.Millisecond)
+		// StartRecorded has entered the recording barrier but has not released it.
 		entries, err := artisantest.Inventory(inv)
 		if err != nil {
 			return err

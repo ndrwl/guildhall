@@ -57,6 +57,8 @@ Commands:
                  finish a Director stage with its outputs and advance its task
   step retry --store <path> --config <file> --state <dir> ...
                  start the next attempt after a failed or stopped one
+  step send-back --repo <id> --task <id> --step <id> --attempt <n> --feedback <instructions> [--copy <dir> | --store <path> --config <file> --state <dir>]
+                 send a succeeded Artisan step back with Director feedback
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
   director status --json --store <path> --state <dir>
@@ -142,6 +144,9 @@ type App struct {
 	StopGrace time.Duration
 	// Now is the clock director status counts today's attempts by; nil means wall time.
 	Now func() time.Time
+	// AdvanceContext subscribes task advances to interruption; nil uses
+	// signal.NotifyContext. Tests can observe cancellation without clock sleeps.
+	AdvanceContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 	// DirectorTabs opens the terminal host director start opens the Director's tab in, for the named Herdr
 	// session, after checking the session's server, and returns the server's version; nil means Herdr, found
 	// on PATH as herdr.

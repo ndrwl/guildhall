@@ -50,7 +50,7 @@ func TestWindowsNativeWorkerContract(t *testing.T) {
 			if time.Now().After(deadline) {
 				t.Fatal("helper did not report its creation time")
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) // timing:allow poll the helper readiness file within the overall ceiling.
 		}
 		w, err := openNativeWorker(uint32(cmd.Process.Pid), created, exe)
 		if err != nil {
@@ -95,6 +95,6 @@ func TestNativeWorkerChildHelper(t *testing.T) {
 		if _, err := os.Stat(os.Args[at+2]); err == nil {
 			os.Exit(0)
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // timing:allow child polls its release file; parent owns termination and cleanup.
 	}
 }
