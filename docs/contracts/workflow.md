@@ -11,8 +11,7 @@ Grill steps accept optional `skills` with the shared distinct-name-list validati
 The release skills for a grill follow its actor: `guildhall-grill` with `guildhall-domain-model` for the Director, `guildhall-grill-unattended` for an Artisan ([decision](../decisions/0061-grill-live-interview.md)); the registry does not bind skills to actors, so a step lists the ones it renders, and the shipped default's Director grill lists `guildhall-grill` and `guildhall-domain-model` (`TestDefaultGrillIsTheDirectorsLiveGrill`, red first against the default with no skills, [red run](../evidence/director-stages-2026-10-22-red.txt)).
 `ValidateStepSettings` checks an isolated step's kind, version and settings with the same actor, allowed-key, required-setting, type, name and duplicate rules as `Validate`, without requiring the surrounding workflow's input and loop wiring.
 
-An empty `Revisions.StandardsRevision` denotes no configured standards revision and is valid; nonempty whitespace-only values are invalid.
-`ReviewOutcome.BoundTo` compares standards revisions exactly, including empty, so an unconfigured review cannot approve configured standards or vice versa.
+`ReviewOutcome.Validate` and `ReviewOutcome.BoundTo` enforce the [review outcome revision contract](../configuration.md#review-outcome).
 Review outcome findings carry a required stable `id` and an optional cited `rule`, and outcomes carry `dispositions` of the previous round's findings; `ReviewOutcome.Blocking` is true only for `changes_requested` with a rule-cited finding.
 `DispositionState.Valid` is the one disposition-state rule, used by `ReviewOutcome.Validate` and the store's review projection; their `unknown state` refusal tests (`review_test.go`, `internal/store/rulings_test.go`) pin it.
 
