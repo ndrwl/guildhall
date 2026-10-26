@@ -31,9 +31,7 @@ The [replay and recovery contract](../interpreter.md#replay-and-recovery) owns i
 
 The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat file read, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
 
-New review preparations pass the recorded binding's exact revisions to `render.Stage.Revisions` and its range base to `render.Stage.ReviewBase`; replay keeps the already-published prompt unchanged.
-The emitted code-review prompt names that exact base, including in rebase-only and requested-full rounds, or explicitly says it is unavailable when no range was recorded.
-A reviewer must not infer a replacement base from the current default branch.
+The [rounds and loops contract](../interpreter.md#rounds-and-loops) owns passing the recorded binding's revisions and range base into review preparation.
 Required output examples are instructional, not an outcome recovery mechanism: missing review files and stale revisions are still refused.
 
 ## Tests

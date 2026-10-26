@@ -6,8 +6,8 @@ It keeps upstream's two axes, Spec and Standards, never merged or reranked, with
 What upstream asks a user for is given by the stage instead.
 The head comes from the `head` input and the spec from the `spec` input by its recorded digest, which the renderer already refuses to mismatch, so the branches that ask for a fixed point or a spec are dropped, and an empty range is a `rejected` outcome with a finding rather than a question.
 The standards are the ones the prompt inlines, so the Standards axis measures against the exact words and revision the outcome binds to.
-On 2026-10-21 the captain approved ("Yes, yes") the default-branch fallback as an interim adaptation until the reviewer is given the recorded base as an input, which remains a separate follow-up.
-When the inputs give no base, review the commits on the head that the repository's default branch does not have; a supplied recorded base takes precedence.
+On 2026-10-21 the captain approved ("Yes, yes") the default-branch fallback as an interim adaptation until the reviewer was given the recorded base as an input.
+That interim is superseded by [Expose the recorded review base in the prompt](review-base-input.md); the [review skill](../../skills/guildhall-review/SKILL.md#what-you-review) owns range selection and missing-base handling.
 
 The output is the shared [review outcome](../configuration.md#review-outcome) rather than a new report format.
 Each finding carries `id`, `rule`, `file` and `line` and a concrete failure, as `docs/review.md` defines a finding.
