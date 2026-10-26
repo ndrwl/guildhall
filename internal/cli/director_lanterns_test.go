@@ -92,7 +92,7 @@ func TestTurnEndedContextTriggersHandoffWithoutStatusLine(t *testing.T) {
 			if turn != session.TurnEnded {
 				t.Fatal(turn)
 			}
-		case <-time.After(time.Second):
+		case <-time.After(time.Minute):
 			t.Fatal("hook did not signal supervisor")
 		}
 	}
@@ -130,7 +130,7 @@ func TestTurnEndedContextTriggersHandoffWithoutStatusLine(t *testing.T) {
 		}
 		select {
 		case <-ep.Turns():
-		case <-time.After(time.Second):
+		case <-time.After(time.Minute):
 			t.Fatal("invalidation suppressed turn signal")
 		}
 		if _, err := os.Stat(filepath.Join(dir, session.ContextFile)); !os.IsNotExist(err) {

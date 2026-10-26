@@ -137,7 +137,7 @@ func RunCopierContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 				"Fetch": func(ctx context.Context) error { return h.Copier().Fetch(ctx, managed(Alpha), local) },
 				"Put":   func(ctx context.Context) error { return h.Copier().Put(ctx, local, managed(Alpha)) },
 			} {
-				ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+				ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond) // timing:allow intentionally hung transfer; no startup or success must fit this deadline.
 				done := make(chan error, 1)
 				go func() { done <- transfer(ctx) }()
 				select {

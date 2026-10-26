@@ -64,7 +64,7 @@ func TestCloseWaitsForReplyWrite(t *testing.T) {
 	select {
 	case err := <-closed:
 		t.Fatalf("Close returned before the stop reply was written: %v", err)
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): // timing:allow negative observation of a deliberately blocked reply, not a deadline for progress.
 		// Close must still be draining the deliberately blocked reply.
 	}
 	release()

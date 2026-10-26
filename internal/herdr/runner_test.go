@@ -136,7 +136,7 @@ func testRunner(t *testing.T, newRunner func(t *testing.T) runnerUnderTest) {
 				select {
 				case got := <-done:
 					t.Fatalf("run returned before cancellation: exit %d, %v", got.exit, got.err)
-				case <-time.After(10 * time.Millisecond):
+				case <-time.After(10 * time.Millisecond): // timing:allow readiness polling within the separate deadline.
 				}
 			}
 			cancel()
@@ -267,7 +267,7 @@ func TestRunnerProbeHelper(t *testing.T) {
 		if err := os.WriteFile(os.Args[at+3], nil, 0o600); err != nil {
 			os.Exit(2)
 		}
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) // timing:allow intentionally hung tool child; parent cancels and reaps it.
 	}
 	os.Exit(p.Exit)
 }

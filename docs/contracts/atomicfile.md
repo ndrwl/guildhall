@@ -16,6 +16,10 @@ The retry policy does not cover cancel-marker checks.
 
 ## Tests
 
+The retry-bound and immediate-missing-file assertions now run with `testing/synctest`, not wall-clock duration limits.
+The exact-deadline retry count includes the initial call and the call at the deadline before the next interval exceeds it.
+Windows exclusive-handle tests retain real file handles but advance release and retry on the same synthetic clock ([timing policy](../test-timing.md)).
+
 `retry_test.go` was written red first against a stub that did not retry: a race is retried until success, a permanent error or a race followed by one returns at once, and a lasting race is returned after the bound.
 `TestReadDuringWrite` runs 128 concurrent read/write pairs on every runner, joining each pair before starting the next so a Windows rename faces only one bounded read; every read and write succeeds and each read sees a whole version, without a machine-speed-dependent throughput requirement.
 On Windows, `TestReadWaitsForExclusiveHolder` holds the file without sharing for 50 ms and `TestWriteWaitsForReader` holds it open for reading, and `TestTransientWindows` pins the two errors.

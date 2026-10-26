@@ -13,6 +13,8 @@ The refresh numbers every unnumbered record after each sustainability review, in
 Record a package's contract and tests in its own `docs/contracts/<package>.md`.
 Describe a new command in its own `docs/` page and add at most one line for it to the README command list.
 
+Use event-driven synchronization or a synthetic clock in tests; real-process ceilings and justified exceptions follow the [test timing policy](docs/test-timing.md).
+
 ## Local checks
 
 CI runs these on Linux, Windows and macOS; run them before opening a pull request.

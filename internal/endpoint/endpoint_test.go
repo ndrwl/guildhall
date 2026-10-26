@@ -157,12 +157,12 @@ func TestABlockedRequestDelaysNoOther(t *testing.T) {
 	if _, err := callPing(ctx, path, "alpha"); err != nil {
 		t.Errorf("ping during a blocked one: %v", err)
 	}
-	short, cancelShort := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	short, cancelShort := context.WithCancel(context.Background())
 	defer cancelShort()
-	go func() { <-p.entered }()
+	go func() { <-p.entered; cancelShort() }()
 	_, err := endpoint.Call(short, path, pingProto, ping{Schema: pingProto.Current(), Owner: "alpha", Block: true}, func(r pong) bool { return true })
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("Call past its context's deadline = %v, want DeadlineExceeded", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Call after request cancellation = %v, want Canceled", err)
 	}
 	close(p.release)
 	select {

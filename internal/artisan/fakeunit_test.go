@@ -88,7 +88,8 @@ func newFakeHarness() artisantest.Harness {
 		SetsidEscapes:    true,
 		BreakawayRefused: true,
 		Kind:             artisan.KindGroup,
-		Ladder:           artisan.Ladder{Cooperative: 100 * time.Millisecond, Interrupt: 100 * time.Millisecond, Terminate: 100 * time.Millisecond, Kill: 100 * time.Millisecond},
+		// Marker observation still runs in a goroutine even for an in-memory unit.
+		Ladder: artisan.Ladder{Cooperative: 10 * time.Second, Interrupt: 10 * time.Second, Terminate: 10 * time.Second, Kill: 10 * time.Second},
 	}
 }
 

@@ -41,7 +41,7 @@ func TestRunTakeoverWaitsForOutcomePublication(t *testing.T) {
 			runCtx := ctx
 			if !publish {
 				var stop context.CancelFunc
-				runCtx, stop = context.WithTimeout(ctx, 100*time.Millisecond)
+				runCtx, stop = context.WithTimeout(ctx, 100*time.Millisecond) // timing:allow lock is already held; expiry must refuse ownership, never complete startup.
 				defer stop()
 			}
 			done := make(chan ran, 1)
@@ -53,7 +53,7 @@ func TestRunTakeoverWaitsForOutcomePublication(t *testing.T) {
 				select {
 				case r := <-done:
 					t.Fatalf("Run returned while publication lock held: %+v, %v", r.r, r.err)
-				case <-time.After(200 * time.Millisecond):
+				case <-time.After(200 * time.Millisecond): // timing:allow negative observation while the publication lock is deliberately held.
 				}
 				if after := ownership(t, a); !reflect.DeepEqual(before, after) {
 					t.Fatalf("ownership changed under publication lock: %+v", after)

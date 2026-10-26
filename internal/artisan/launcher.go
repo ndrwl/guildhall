@@ -191,6 +191,9 @@ type LauncherConfig struct {
 	// ResultGrace is how long the worker may outlive its accepted result;
 	// zero means DefaultResultGrace.
 	ResultGrace time.Duration
+	// ResultTimeout bounds the result wait after Unit.Start returns, not setup
+	// or ownership acquisition. Zero waits without a result deadline.
+	ResultTimeout time.Duration
 	// Key is the attempt the launcher owns, named by its heartbeat.
 	Key AttemptKey
 	// HeartbeatInterval is how often the heartbeat is written; zero means
@@ -309,6 +312,12 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 	defer tick.Stop()
 	beat := time.NewTicker(l.c.HeartbeatInterval)
 	defer beat.Stop()
+	var resultDeadline <-chan time.Time
+	if l.c.ResultTimeout > 0 {
+		timer := time.NewTimer(l.c.ResultTimeout)
+		defer timer.Stop()
+		resultDeadline = timer.C
+	}
 	var decided *Outcome
 	var grace <-chan time.Time
 	for {
@@ -335,6 +344,8 @@ func (l *Launcher) run(cmd *exec.Cmd, signals <-chan os.Signal) (Outcome, error)
 			l.event(eventWorkerExited, nil)
 			d, err := l.decide(false, "worker exited without a result")
 			return l.ladder(d, 2, err, false, signals)
+		case <-resultDeadline:
+			return l.stop(decided)
 		case <-l.stopReq:
 			return l.stop(decided)
 		case s := <-signals:

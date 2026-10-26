@@ -11,6 +11,9 @@ An ownership record whose attempt directory does not exist is classified from th
 
 ## Tests
 
+Heartbeat tests freeze publication through a channel, advance `Options.Now` against the frozen beat to prove staleness, then release publication and observe recovery.
+Freshness integration checks observe heartbeat sequences with a generous stale threshold, not a half-second race against the runner ([timing policy](../test-timing.md)).
+
 `reconcile_test.go` was written red first against stub bodies of `Classify`, `Contained` and the launcher heartbeat; every case failed on its assertions ([red run](../evidence/reconcile-2026-10-21-red.txt)).
 After the red commit two harness details changed, not expectations: the take-over request in the stale-heartbeat case had carried state `running`, which the store refuses as invalid before the ownership check.
 Later, the wedged and stale-heartbeat cases were made to wait for the launcher's first heartbeat before blocking it: blocking earlier could stop the launcher before any beat, a race in the harness that never tested staleness.

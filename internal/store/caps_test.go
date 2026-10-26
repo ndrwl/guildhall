@@ -11,7 +11,7 @@ import (
 // capStore opens a store whose clock the test moves.
 func capStore(t *testing.T, now *time.Time) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "guildhall.store"), Options{LockTimeout: time.Second, Now: func() time.Time { return *now }})
+	s, err := Open(filepath.Join(t.TempDir(), "guildhall.store"), Options{LockTimeout: 30 * time.Second, Now: func() time.Time { return *now }})
 	if err != nil {
 		t.Fatal(err)
 	}

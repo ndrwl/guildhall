@@ -157,8 +157,11 @@ const (
 // sleepCopier never finishes a copy, so Apply holds its lock until the process is killed.
 type sleepCopier struct{}
 
+// timing:allow intentionally hung copier fixture; parent tests kill the owning subprocess.
 func (sleepCopier) Fetch(context.Context, Remote, string) error { time.Sleep(time.Hour); return nil }
-func (sleepCopier) Put(context.Context, string, Remote) error   { time.Sleep(time.Hour); return nil }
+
+// timing:allow intentionally hung copier fixture; parent tests kill the owning subprocess.
+func (sleepCopier) Put(context.Context, string, Remote) error { time.Sleep(time.Hour); return nil }
 
 // lockOwner is the owner process's main: Apply the plan for workstation, blocking in transport.
 func lockOwner(private, plan string) int {
@@ -191,7 +194,7 @@ func TestStaleWriterLockNeedsManualRecoveryAfterOwnerStops(t *testing.T) {
 		select {
 		case err := <-exited:
 			t.Fatalf("owner exited before locking: %v: %s", err, stderr.String())
-		case <-time.After(10 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond): // timing:allow readiness polling within the overall deadline.
 		}
 		if time.Now().After(deadline) {
 			_ = owner.Process.Kill()

@@ -68,6 +68,9 @@ const (
 	ContainmentSubreaper = "subreaper+pgroup"
 	// ContainmentGroup is a process group alone (macOS), found by its leader.
 	ContainmentGroup = "pgroup"
+	// ContainmentNotStarted attests that completed supervision never invoked
+	// worker startup. It has no name, reason or worker identity.
+	ContainmentNotStarted = "not-started"
 )
 
 // ErrUnrecoverable reports a containment record that cannot identify its unit,
@@ -112,6 +115,10 @@ func (c Containment) Recoverable() error {
 		return nil
 	}
 	switch c.Kind {
+	case ContainmentNotStarted:
+		if c != (Containment{Kind: ContainmentNotStarted}) {
+			return unrecoverable("not-started cannot name a unit or worker")
+		}
 	case ContainmentJob, ContainmentCgroup:
 		if err := text("name", c.Name); err != nil {
 			return err

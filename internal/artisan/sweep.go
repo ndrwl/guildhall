@@ -38,7 +38,12 @@ func Kill(id Identity) error { return kill(id) }
 // returns no processes afterwards, so a caller repeats Sweep until it does.
 // A kind this platform does not have is an error matching
 // errors.ErrUnsupported.
-func Sweep(c Containment, worker Identity) ([]Identity, error) { return sweep(c, worker) }
+func Sweep(c Containment, worker Identity) ([]Identity, error) {
+	if c.Kind == KindNotStarted {
+		return noStartedWorker(c, worker)
+	}
+	return sweep(c, worker)
+}
 
 // Settle decides an attempt whose launcher is gone and whose unit is proven
 // empty, from the attempt directory dir and its files, with the launcher's

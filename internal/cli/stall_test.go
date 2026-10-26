@@ -81,7 +81,7 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 		worker := artisan.Identity(o.Containment.Worker)
 		lv, err := artisan.Probe(worker)
 		for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); err == nil && lv != artisan.Gone && time.Now().Before(end); {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond) // timing:allow process-liveness polling within the cleanup ceiling.
 			lv, err = artisan.Probe(worker)
 		}
 		if err != nil || lv != artisan.Gone {

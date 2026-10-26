@@ -217,6 +217,9 @@ type Config struct {
 	Ladder            artisan.Ladder
 	ResultGrace       time.Duration
 	HeartbeatInterval time.Duration
+	// ResultTimeout bounds only the result wait after worker startup and
+	// containment recording. Zero has no result deadline; ctx still cancels setup.
+	ResultTimeout time.Duration
 	// Advance, when set, is the guildhall program followed by the options every advance of the attempt's task
 	// takes, such as `guildhall --copy <dir>`: once the store outcome is recorded, Run advances the task with it
 	// (the package comment's step 6). Nil advances nothing.
@@ -282,7 +285,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	stalls := c.stalls()
 	defer stalls.close()
 	l, err := artisan.NewLauncher(artisan.LauncherConfig{Dir: a.Dir(), Unit: recorded, Files: a.Files(), Ladder: c.Ladder,
-		ResultGrace: c.ResultGrace, Key: k, HeartbeatInterval: c.HeartbeatInterval, LastOutput: lastOutput(c.Stdout, c.Stderr), Beat: stalls.beat})
+		ResultGrace: c.ResultGrace, ResultTimeout: c.ResultTimeout, Key: k, HeartbeatInterval: c.HeartbeatInterval, LastOutput: lastOutput(c.Stdout, c.Stderr), Beat: stalls.beat})
 	if err != nil {
 		return rep, err
 	}
@@ -304,6 +307,18 @@ func Run(ctx context.Context, c Config) (Report, error) {
 		return rep, fmt.Errorf("launch: take ownership of %s: %w", k, err)
 	}
 	finish := func(outcome store.AttemptOutcome, runErr error) (Report, error) {
+		// Only a completed launcher can attest that Start was never invoked.
+		// Never fill this evidence before supervision: a crash in Start must
+		// remain unverified on platforms without a named containment unit.
+		if !recorded.startAttempted && own.Containment == (store.Containment{}) {
+			own.Containment = store.Containment{Kind: store.ContainmentNotStarted}
+			if err := a.write(func(s *store.Store) error {
+				_, err := s.UpdateOwnership(mutation("not-started"), own)
+				return err
+			}); err != nil {
+				return rep, errors.Join(runErr, err)
+			}
+		}
 		var spendErr error
 		err := a.write(func(s *store.Store) error {
 			_, spendErr = s.RecordAttemptSpend(mutation("spend"), k.Repository, k.TaskID, k.Step, k.Attempt, a.spend())
@@ -565,12 +580,14 @@ func ownerLiveness(w reconcile.Owner) (store.Liveness, error) {
 // record kills the worker, so nothing runs that a sweep could not find.
 type recordingUnit struct {
 	artisan.Unit
-	a        Attempt
-	own      store.Ownership
-	mutation string
+	a              Attempt
+	own            store.Ownership
+	mutation       string
+	startAttempted bool
 }
 
 func (u *recordingUnit) Start(cmd *exec.Cmd) (artisan.Identity, error) {
+	u.startAttempted = true
 	w, err := u.Unit.Start(cmd)
 	if err != nil {
 		return w, err

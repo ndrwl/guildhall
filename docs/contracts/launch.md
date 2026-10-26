@@ -9,6 +9,10 @@ Result reads use `atomicfile.Open` and its [bounded publication-race retry](atom
 `attemptOutcome` is the one translation of a launcher outcome and result into the store's outcome ([glossary](../glossary.md#outcome)).
 The [owned command lifecycle](../artisan.md#commands) describes `Run`'s setup, locked takeover, supervision and finalization, including refusal of already-decided attempts.
 Worker startup errors, including containment persistence errors, remain in `Run`'s returned error while the launcher decides and writes the outcome and the store records it.
+`Config.ResultTimeout` starts only after worker startup and containment recording; ownership acquisition and endpoint setup are not charged against a result-wait budget.
+Caller cancellation still bounds setup, and an expired ownership wait is never reported ready from a later endpoint read.
+When completed supervision never invoked worker startup and no named containment was recorded, `Run` records explicit `not-started` containment before finishing the attempt.
+It never infers this evidence after a failed startup invocation or a crash; a live launcher remains live even with `not-started` evidence.
 `Run` records a named unit's description (job, cgroup) with the ownership it takes, and the worker identity with `running`, so an owner gone between the two is proven exited by its empty unit; a process group is recorded only with its worker ([limits](../artisan.md#limits)).
 `ProbeOwner` is alive while the recorded launcher lives and gone only when it is gone and its recorded unit is proven empty, by `reconcile.ProbeOwner`, the one owner-gone rule.
 `Resume` follows the [resume rules](../artisan.md#resume): nothing to do without an unreleased record, refusal of a live or unproven owner, a sweep until the unit is proven empty, then `artisan.Settle` (an owner still `starting` fails with `launcher exited before its worker was recorded`) and `FinishAttempt` under the attempt lock with an idempotent mutation id; `ResumeArgv` is the command a pane registers for it.
@@ -42,6 +46,11 @@ The workspace assertion in `TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAtt
 The additional workspace-create timeout case passed on first run and pins the retained-claim/no-retry rule after an ambiguous workspace response.
 
 ## Tests
+
+The timing regressions and revised synchronization are described in the [timing policy](../test-timing.md) with [red/green evidence](../evidence/ci-timing-flakes-2026-10-26.md).
+`TestStopProvesPreStartCancellationWithoutNamedContainment` models the process-group recovery boundary with a real unit and a child launcher, then requires stop to prove termination after that child exits.
+`TestOwnedWaitHonoursCancellationBeforeReady` refuses a cancelled ownership wait even when a ready endpoint is already recorded.
+The watcher-release test now cancels at the setup boundary rather than assuming a one-millisecond deadline defeats startup; its release-file assertion still proves that the advance follows `Launch` returning.
 
 The workflow presentation boundary's contract was defined before its tests and implementation.
 `presentation_unix_test.go` uses the existing `adaptertest.ShellPanes` process stand-in: a workflow-spec launch must type the owned bridge in a new pane, register the exact resume argv first, survive loss of the pane process with the attempt unchanged, and refuse duplicate or uncertain launches without typing again.

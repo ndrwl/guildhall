@@ -18,10 +18,11 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // deadline bounds every wait for a fake process.
-const deadline = 10 * time.Second
+var deadline = testenv.Ceiling(time.Minute)
 
 func TestP0DirectivesAreValidated(t *testing.T) {
 	inv := t.TempDir()
@@ -72,7 +73,14 @@ type running struct {
 func runReal(t *testing.T, args Args) *running {
 	t.Helper()
 	r := &running{done: make(chan struct{})}
-	go func() { r.err = Run(context.Background(), args, io.Discard, Sleep); close(r.done) }()
+	started := make(chan struct{})
+	go func() {
+		r.err = Run(context.Background(), args, io.Discard, func(ctx context.Context, d time.Duration) error {
+			close(started)
+			return Sleep(ctx, d)
+		})
+		close(r.done)
+	}()
 	t.Cleanup(func() {
 		_ = adapter.MarkCancelled(args.ResultFile, args.Identity)
 		select {
@@ -81,6 +89,13 @@ func runReal(t *testing.T, args Args) *running {
 			t.Error("fake did not return after the case")
 		}
 	})
+	select {
+	case <-started:
+	case <-r.done:
+		t.Fatalf("fake returned before working: %v", r.err)
+	case <-time.After(deadline):
+		t.Fatal("fake did not begin working")
+	}
 	return r
 }
 
@@ -98,7 +113,6 @@ func returned(t *testing.T, r *running) error {
 func TestRunHonoursTheCancelSidecar(t *testing.T) {
 	args := setup(t, "guildhall-fake: delay=10m\n")
 	done := runReal(t, args)
-	time.Sleep(100 * time.Millisecond)
 	if err := adapter.MarkCancelled(args.ResultFile, args.Identity); err != nil {
 		t.Fatal(err)
 	}
@@ -115,47 +129,45 @@ func TestRunIgnoreCancelKeepsWorking(t *testing.T) {
 	if err := adapter.MarkCancelled(args.ResultFile, args.Identity); err != nil {
 		t.Fatal(err)
 	}
-	begun := time.Now()
-	err := returned(t, runReal(t, args))
-	if d := time.Since(begun); d < 300*time.Millisecond {
-		t.Errorf("an ignoring fake returned after %v, before its delay", d)
+	var worked time.Duration
+	err := Run(context.Background(), args, io.Discard, func(ctx context.Context, d time.Duration) error { worked += d; return ctx.Err() })
+	if worked != 300*time.Millisecond {
+		t.Errorf("work requested = %v, want full delay", worked)
 	}
-	// The adapter refuses to publish a result once the attempt is cancelled.
 	if !errors.Is(err, adapter.ErrAttemptCancelled) {
-		t.Errorf("Run = %v, want the adapter's refusal ErrAttemptCancelled", err)
+		t.Errorf("Run = %v, want publication refused", err)
 	}
 }
 
 func TestRunResultAfterCancelPublishesALateResult(t *testing.T) {
 	args := setup(t, "guildhall-fake: result=after-cancel\n")
 	done := runReal(t, args)
-	time.Sleep(150 * time.Millisecond)
 	if _, err := os.Stat(args.ResultFile); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("result published before the marker: %v", err)
+		t.Fatalf("result published before marker: %v", err)
 	}
 	if err := adapter.MarkCancelled(args.ResultFile, args.Identity); err != nil {
 		t.Fatal(err)
 	}
 	if err := returned(t, done); err != nil {
-		t.Fatalf("Run = %v", err)
+		t.Fatal(err)
 	}
 	b, err := os.ReadFile(args.ResultFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r, err := adapter.ParseResult(b, args.Identity); err != nil || r.Status != adapter.StatusSucceeded {
-		t.Errorf("late result %+v, %v; want a valid succeeded result", r, err)
+		t.Errorf("late result %+v, %v", r, err)
 	}
 }
 
 func TestRunResultNeverEndsAtTheLifetime(t *testing.T) {
 	args := setup(t, "guildhall-fake: result=never\nguildhall-fake: lifetime=300ms\n")
-	begun := time.Now()
-	if err := returned(t, runReal(t, args)); err != nil {
-		t.Fatalf("Run = %v", err)
+	var worked time.Duration
+	if err := Run(context.Background(), args, io.Discard, func(_ context.Context, d time.Duration) error { worked += d; return nil }); err != nil {
+		t.Fatal(err)
 	}
-	if d := time.Since(begun); d < 300*time.Millisecond {
-		t.Errorf("returned after %v, before its lifetime", d)
+	if worked != 300*time.Millisecond {
+		t.Errorf("work requested = %v, want full lifetime", worked)
 	}
 	if _, err := os.Stat(args.ResultFile); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("result=never wrote a result: %v", err)

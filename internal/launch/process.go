@@ -213,12 +213,20 @@ func (p *Process) startTimeout() time.Duration {
 }
 
 // owned waits until c owns its attempt with its endpoint recorded, and fails at once when c released it without one.
+// A cancelled wait is never reported ready, even if ownership was recorded before the next read.
 func (p *Process) owned(ctx context.Context, c *child) error {
 	ctx, cancel := context.WithTimeout(ctx, p.startTimeout())
 	defer cancel()
 	exited := false
 	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("the launcher did not own the attempt: %w", err)
+		}
 		o, err := c.at.owner()
+		// Opening the store may wait on its lock past the caller's deadline.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("the launcher did not own the attempt: %w", ctxErr)
+		}
 		if err == nil && o != nil && c.pane && c.identity.PID == 0 {
 			c.identity = artisan.Identity(o.LauncherIdentity)
 			go func() {

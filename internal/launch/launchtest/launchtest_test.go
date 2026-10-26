@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -60,20 +61,22 @@ func TestStopRule(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s := &script{reports: c.reports, errs: c.errs}
-			err := stopWithin(s.stop, 300*time.Millisecond, time.Millisecond)
-			switch {
-			case c.proven && err != nil:
-				t.Fatalf("Stop = %v, want proven", err)
-			case c.proven && s.calls != c.calls:
-				t.Errorf("Stop ran %d stops, want %d", s.calls, c.calls)
-			case !c.proven && (err == nil || !strings.Contains(err.Error(), "not proven stopped")):
-				t.Fatalf("Stop = %v, want the last stop's error", err)
-			case !c.proven && c.calls != 0 && s.calls != c.calls:
-				t.Errorf("Stop gave up after %d stops, want %d: once more after the launcher is seen gone", s.calls, c.calls)
-			case !c.proven && c.calls == 0 && s.calls < 2:
-				t.Errorf("Stop gave up after %d stops, want it retried until its bound", s.calls)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				s := &script{reports: c.reports, errs: c.errs}
+				err := stopWithin(s.stop, 300*time.Millisecond, time.Millisecond)
+				switch {
+				case c.proven && err != nil:
+					t.Fatalf("Stop = %v, want proven", err)
+				case c.proven && s.calls != c.calls:
+					t.Errorf("Stop ran %d stops, want %d", s.calls, c.calls)
+				case !c.proven && (err == nil || !strings.Contains(err.Error(), "not proven stopped")):
+					t.Fatalf("Stop = %v, want the last stop's error", err)
+				case !c.proven && c.calls != 0 && s.calls != c.calls:
+					t.Errorf("Stop gave up after %d stops, want %d: once more after the launcher is seen gone", s.calls, c.calls)
+				case !c.proven && c.calls == 0 && s.calls < 2:
+					t.Errorf("Stop gave up after %d stops, want it retried until its bound", s.calls)
+				}
+			})
 		})
 	}
 }
@@ -99,15 +102,17 @@ func (f *fakeT) Errorf(format string, args ...any) {
 }
 
 func TestStopAllFailsForEachUnproven(t *testing.T) {
-	ft := &fakeT{TB: t}
-	keys := []artisan.AttemptKey{{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}, {Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}}
-	stopAllWithin(ft, keys, func(k artisan.AttemptKey) (launch.StopReport, error) {
-		if k.Step == "plan" {
-			return launch.StopReport{Endpoint: "not asked: no ownership record"}, nil
+	synctest.Test(t, func(t *testing.T) {
+		ft := &fakeT{TB: t}
+		keys := []artisan.AttemptKey{{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}, {Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}}
+		stopAllWithin(ft, keys, func(k artisan.AttemptKey) (launch.StopReport, error) {
+			if k.Step == "plan" {
+				return launch.StopReport{Endpoint: "not asked: no ownership record"}, nil
+			}
+			return advancing, errNotStopped
+		}, 50*time.Millisecond, time.Millisecond)
+		if len(ft.errors) != 1 || !strings.Contains(ft.errors[0], "build-1") {
+			t.Errorf("StopAll errors = %q, want one naming build-1", ft.errors)
 		}
-		return advancing, errNotStopped
-	}, 50*time.Millisecond, time.Millisecond)
-	if len(ft.errors) != 1 || !strings.Contains(ft.errors[0], "build-1") {
-		t.Errorf("StopAll errors = %q, want one naming build-1", ft.errors)
-	}
+	})
 }

@@ -75,7 +75,7 @@ func waitForSweptProcesses(t *testing.T, ids []artisan.Identity) {
 			if time.Now().After(end) {
 				t.Fatalf("process %v is %v (%v) after waiting %v for the sweep", id, lv, err, deadline)
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond) // timing:allow liveness polling within the cleanup ceiling.
 		}
 	}
 }

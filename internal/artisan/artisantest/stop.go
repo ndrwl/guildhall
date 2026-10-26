@@ -77,9 +77,9 @@ func FilesOf(f Files) StopFiles {
 // StopKey is the attempt every stop-contract launcher owns.
 var StopKey = artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
-// stopLadder keeps the contract's waits short: a worker ignoring every
-// graceful rung takes its interrupt and cooperative bounds to stop.
-var stopLadder = artisan.Ladder{Cooperative: 2 * time.Second, Interrupt: 500 * time.Millisecond, Terminate: 2 * time.Second, Kill: 5 * time.Second}
+// stopLadder gives real workers generous rung budgets; a worker ignoring
+// graceful rungs must wait out those bounds before escalation.
+var stopLadder = artisan.Ladder{Cooperative: 10 * time.Second, Interrupt: 10 * time.Second, Terminate: 10 * time.Second, Kill: 10 * time.Second}
 
 // RunStopContract runs the launcher's stop ladder and precedence contract
 // with units from h; the scenario ids are those of the P0 lifecycle plan.
@@ -164,10 +164,9 @@ func RunStopContract(t *testing.T, h Harness) {
 	})
 	t.Run("L16 a result racing the stop is decided exactly once", func(t *testing.T) {
 		for range 4 {
-			c := h.launch(t, func(f StopFiles) Worker { return Worker{Result: f.Result, ResultAfter: 100 * time.Millisecond} })
+			c := h.launch(t, func(f StopFiles) Worker { return Worker{Result: f.Result} })
 			c.start(nil)
 			c.role("worker", 1)
-			time.Sleep(100 * time.Millisecond)
 			c.stop(nil)
 			out := c.outcome(nil, artisan.Outcome{Rung: -1, State: "any"})
 			c.marked(out.State == artisan.Cancelled)
@@ -203,11 +202,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		}
 		wg.Wait()
 		c.outcome(nil, artisan.Outcome{State: artisan.Cancelled, Rung: -1})
-		begun := time.Now()
-		c.stop(nil)
-		if d := time.Since(begun); d > time.Second {
-			t.Errorf("a stop after the end took %v", d)
-		}
+		c.stop(nil) // The ended event and call counts, not elapsed time, prove idempotence.
 		c.count("ladder", 1)
 		c.count("ended", 1)
 		if n := c.u.calls("kill"); n > 1 {
@@ -270,6 +265,7 @@ func RunStopContract(t *testing.T, h Harness) {
 	t.Run("survivors after the last rung are reported", func(t *testing.T) {
 		c := h.launch(t, func(StopFiles) Worker { return Worker{IgnoreInterrupt: true} })
 		c.u.stuck = true
+		// timing:allow stuck membership is simulated and never empties; this exercises exhaustion, not process speed.
 		c.ladder = artisan.Ladder{Cooperative: 100 * time.Millisecond, Interrupt: 100 * time.Millisecond, Terminate: 100 * time.Millisecond, Kill: 100 * time.Millisecond}
 		c.start(nil)
 		worker := c.role("worker", 1)[0].Identity

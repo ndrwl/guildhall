@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -354,30 +355,33 @@ owner_machine = "workstation"
 }
 
 func TestDirectorStatusWaitsForTheWriter(t *testing.T) {
-	dir := statusCopy(t)
-	w, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan struct{})
-	var code int
-	var out, stderr string
-	go func() {
-		defer close(done)
-		code, out, stderr = directorCmd(t, nil, "status", "--copy", dir, "--json")
-	}()
-	select {
-	case <-done:
-		t.Fatalf("status finished while the writer held the store: exit %d, %s", code, stderr)
-	case <-time.After(500 * time.Millisecond):
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	<-done
-	if code != 0 || !strings.Contains(out, `"sequence":23`) {
-		t.Fatalf("after the writer let go: exit %d, %s%s", code, out, stderr)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		dir := statusCopy(t)
+		w, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		var code int
+		var out, stderr string
+		go func() {
+			defer close(done)
+			code, out, stderr = directorCmd(t, nil, "status", "--copy", dir, "--json")
+		}()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatalf("status finished while the writer held the store: exit %d, %s", code, stderr)
+		default:
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		<-done
+		if code != 0 || !strings.Contains(out, `"sequence":23`) {
+			t.Fatalf("after the writer let go: exit %d, %s%s", code, out, stderr)
+		}
+	})
 }
 
 // TestDirectorStatusNext copies next.json as written, Windows paths included, and reports one that is not JSON.

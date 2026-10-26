@@ -28,12 +28,12 @@ func testNativeWorker(t *testing.T, open func(t *testing.T) nativeUnderTest) {
 	ctx := context.Background()
 	waitExit := func(t *testing.T, n nativeUnderTest) {
 		t.Helper()
-		deadline := time.Now().Add(testenv.Ceiling(5 * time.Second))
+		deadline := time.Now().Add(testenv.Ceiling(30 * time.Second))
 		for !n.exited() {
 			if time.Now().After(deadline) {
-				t.Fatalf("process did not exit within %v", testenv.Ceiling(5*time.Second))
+				t.Fatalf("process did not exit within %v", testenv.Ceiling(30*time.Second))
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) // timing:allow process-exit polling inside the overall ceiling.
 		}
 	}
 	t.Run("stop terminates the process and proves it", func(t *testing.T) {

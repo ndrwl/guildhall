@@ -144,6 +144,9 @@ type App struct {
 	StopGrace time.Duration
 	// Now is the clock director status counts today's attempts by; nil means wall time.
 	Now func() time.Time
+	// AdvanceContext subscribes task advances to interruption; nil uses
+	// signal.NotifyContext. Tests can observe cancellation without clock sleeps.
+	AdvanceContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 	// DirectorTabs opens the terminal host director start opens the Director's tab in, for the named Herdr
 	// session, after checking the session's server, and returns the server's version; nil means Herdr, found
 	// on PATH as herdr.

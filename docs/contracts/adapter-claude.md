@@ -45,6 +45,8 @@ Unknown model capacities yield no reading.
 
 ## Tests
 
+The context-stop integration test waits for the stub's startup record before cancelling, then asserts cancellation and no published result rather than a subsecond startup duration ([timing policy](../test-timing.md)).
+
 `skill_policy_test.go` was run red before implementation (missing policy field, receipt constant and version checker), then green: Director control merge/flag scope, zero-grant Artisan settings/receipt and version compatibility.
 Existing process and golden expectations were updated to the intentional always-present settings flag and extra receipt.
 Supplemental tests cover trusted profile overrides, backing environment conflicts, exact rendered switch presence and digest agreement; the rendered-validation test ran red against the missing validator before implementation.

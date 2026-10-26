@@ -111,7 +111,7 @@ func TestQualityJudgeEndToEnd(t *testing.T) {
 		case <-ctx.Done():
 			log, _ := os.ReadFile(filepath.Join(d.state, "app", "t-1", workflow.JudgeStep+"-1", "launcher.log"))
 			t.Fatalf("judgement document and notification not both observed; documents %+v; Director messages %+v; launcher log:\n%s", docs, msgs, log)
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(50 * time.Millisecond): // timing:allow condition polling bounded by the overall context.
 		}
 	}
 	task, err := withStore(d.store, true, func(s *store.Store) (store.Task, error) { return s.Task("app", "t-1") })

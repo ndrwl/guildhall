@@ -387,7 +387,7 @@ func TestGitHubMergeTimeout(t *testing.T) {
 	s.HangMerge = true
 	g.writeState(t, s)
 	f := h.Forge.(forge.GitHub)
-	f.Timeout = 500 * time.Millisecond
+	f.Timeout = 500 * time.Millisecond // timing:allow intentional timeout of a tool that never answers; no readiness assertion.
 	began := time.Now()
 	_, err = f.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
 	if took := time.Since(began); took > 30*time.Second {
@@ -695,7 +695,7 @@ func runGH(s *ghState, bare string, args []string) int {
 		case s.SignedOut:
 			return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
 		case s.HangMerge:
-			time.Sleep(time.Minute)
+			time.Sleep(time.Minute) // timing:allow hung forge subprocess; caller timeout kills and reaps it.
 			return fail(1, "fake gh: hung merge was not killed")
 		case s.DropMerge:
 			s.Offline = true
