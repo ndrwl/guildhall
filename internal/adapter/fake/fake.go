@@ -1,4 +1,4 @@
-// Package fake is the test-only Artisan adapter (R1.22). It declares no
+// Package fake is the Artisan adapter for tests and no-model demos (R1.22). It declares no
 // optional capabilities and runs `guildhall fake-artisan`, which reads its
 // prompt file and writes a version 1 result file, so the core is exercised
 // without any agent runtime. Prompt lines of the form
