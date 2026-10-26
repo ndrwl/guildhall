@@ -9,6 +9,11 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `Load` follows the filesystem fallback and error rules in [configuration](../configuration.md).
 
 `Profile` and `CheckProfiles` refuse an unknown profile name (`ErrUnknownProfile`).
+`DefaultAdapter` reads the explicit `default_adapter` managed/local setting, empty when unset, with ordinary precedence and no fake fallback.
+`Parse` refuses an empty or non-id `default_adapter` in either section even when overridden.
+`CheckArtisanAdapters` checks profile references, then refuses the first Artisan step without a profile when its supplied default adapter is empty (`ErrMissingAdapter`), naming the workflow, step and configuration remedies.
+It is read-only, does not launch anything, and does not require an adapter for other actors.
+Explicit fake profiles and defaults remain valid.
 A profile's `AllowedTools` is its `allowed_tools` list in order, empty by default; `Parse` refuses an entry `CheckAllowedTool` refuses, a tool name with an optional non-empty parenthesised specifier and no control characters that does not allow every shell command (`Bash`, `Bash(*)`, `Bash(:*)`), and a duplicate, naming the profile; profiles are read only from the copy's own config, never from `managed.toml`.
 `StallInterval` is the effective `stall_interval` [setting](../configuration.md#settings) as a duration, `DefaultStallInterval` (15 minutes) when unset and zero for `0s`; `Parse` refuses a managed or local value that is not a nonnegative Go duration, and `StallInterval` returns that error for a config built without `Parse`.
 `ChecksRefresh` is the effective `checks_refresh` setting the same way, `DefaultChecksRefresh` (1 minute) when unset and zero for `0s`.
@@ -33,6 +38,9 @@ Explicit session/profile settings remain runtime-validated, so fake accepts any 
 See the focused [Claude policy contract](config-claude-skills.md) for validation, source/plugin limits and rendering ownership.
 
 ## Tests
+
+`artisan_test.go` covers explicit fake/Claude/mock defaults, explicit fake profiles, unknown profiles, managed/local precedence, malformed defaults and admission of the parsed shipped example with a real runtime.
+These focused configuration tests were added after the implementation; CLI regressions drove the change red first.
 
 `claude_skills_test.go` was run red before implementation (missing parser/resolver methods), then green; `claude_defaults_test.go` adds semantic shipped-example, full matrix and identity regression coverage afterward.
 

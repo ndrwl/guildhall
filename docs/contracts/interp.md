@@ -2,6 +2,10 @@
 
 ## Contract
 
+`Engine.Advance` checks `config.CheckArtisanAdapters` before event intake or any mutation: an Artisan without a profile requires an explicit `Engine.DefaultAdapter`.
+An empty selection is `config.ErrMissingAdapter`, not an implicit fake; the refusal names the step and remediation.
+Explicit fake/mock defaults remain usable, including tests; there is no missing-selection exemption for test binaries.
+
 [Code-head output intake](../interpreter.md#code-head-output-intake) owns the derived Git output, workspace requirements, explicit-file compatibility and immutable replay contract.
 `head_replay_test.go` exercises real Git over both records backends: running and launcher-finished successes, empty output lists, missing intake markers, untracked notes, staged/unstaged dirt, progression to review, and immutable replay after HEAD moves.
 The feedback command `go test ./internal/interp -run '^TestBuildHeadReplay$' -count=1` failed before the implementation ([red](../evidence/build-head-output-2026-10-25-red.txt)) and passed afterwards ([green](../evidence/build-head-output-2026-10-25-green.txt)).

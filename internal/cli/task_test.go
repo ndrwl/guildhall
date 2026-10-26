@@ -21,6 +21,9 @@ const directorTOML = `schema_version = 1
 mode = "director"
 name = "alpha"
 
+[local]
+default_adapter = "fake"
+
 [[repository]]
 id = "app"
 path = "/srv/app"

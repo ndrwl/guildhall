@@ -5,6 +5,8 @@ name = "tools"
 
 # Owned by this Director; may replace managed keys marked overridable.
 [local]
+# Stages without a named profile must explicitly select a runtime; never an implicit fake.
+default_adapter = "claude"
 review_instructions = "Cite the accepted requirement for every finding and check Windows paths."
 # How long a worker may stay silent before the Director hears it stalled; "0s" turns that off.
 stall_interval = "15m"

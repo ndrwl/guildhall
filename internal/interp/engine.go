@@ -168,7 +168,7 @@ type Engine struct {
 	// Workflow returns the definition a task's revision names; Advance refuses one with another digest (ErrRevision).
 	Workflow func(workflow.Revision) (*workflow.Definition, error)
 	// Config gives the profile adapters and the repositories' merge policies.
-	// A step without a profile runs DefaultAdapter.
+	// A step without a profile requires an explicit DefaultAdapter; empty refuses admission.
 	Config            *config.Config
 	DefaultAdapter    string
 	StandardsRevision string
@@ -239,6 +239,9 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 		return Next{}, fmt.Errorf("interp: %w: task bound %s %s, definition is %s %s", ErrRevision, t.Workflow.Name, t.Workflow.Digest, def.Name, def.Digest())
 	}
 	if err := workflow.Validate(def); err != nil {
+		return Next{}, fmt.Errorf("interp: %w", err)
+	}
+	if err := e.Config.CheckArtisanAdapters(def, e.DefaultAdapter); err != nil {
 		return Next{}, fmt.Errorf("interp: %w", err)
 	}
 	r := &run{e: e, ctx: ctx, task: t, def: def}

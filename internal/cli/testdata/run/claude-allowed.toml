@@ -5,6 +5,7 @@ mode = "director"
 name = "beta"
 
 [local]
+default_adapter = "fake"
 standards_revision = "standards-1"
 
 [[repository]]

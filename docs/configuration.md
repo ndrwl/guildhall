@@ -42,6 +42,7 @@ These are the settings Guildhall itself reads, by their effective value under th
 
 | Key | Meaning |
 |---|---|
+| `default_adapter` | Explicit runtime for Artisan stages without a named profile, such as `"claude"`; unset means no runtime, so `task new` and advance refuse the workflow at the first unconfigured Artisan stage, naming the step and the fix. Normal managed/local precedence applies; values must be adapter ids. `"fake"` is allowed only by explicit choice, for demos/tests; there is no silent fake fallback. |
 | `default_effort` | Fallback effort for the Director session (including a positional runtime with no `[director]` table) and workflow Artisan stages whose profile has unset or empty `effort`: `low`, `medium`, `high`, `xhigh` or `max`, default `medium`; `config.EffectiveEffort` resolves it. Normal managed/local precedence applies, and empty, padded or unknown values in either section are refused even if overridden. An explicit `[director] effort` or profile `effort` replaces this fallback and is checked by its runtime. |
 | `stall_interval` | How long a launched worker may go without output, while its launcher's heartbeat stays fresh, before its launcher, or an advance, sends the Director a [`worker-stalled`](interpreter.md#worker-stalled-observations) message: a Go duration such as `"15m"` or `"90s"`, default 15 minutes; `"0s"` turns the observation off, and `config.StallInterval` reads it. |
 | `max_running_attempts` | The [guard rail](director.md#guard-rails) capping how many Artisan attempts may run at once across the Director's repositories: a positive whole number such as `"4"`, the default 4; `config.GuardRails` reads it. |
@@ -159,6 +160,12 @@ For how the copy/profile reference reaches the runtime, see [Artisan permissions
 Each `allowed_tools` entry is a tool name, optionally with a specifier in parentheses, with no control characters and listed once; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused, so a grant names its commands.
 The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or `GUILDHALL_COPY` selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
+`config.CheckArtisanAdapters` additionally refuses an Artisan stage without a profile or explicit default adapter, before task creation or advance mutates task records.
+Director, Guildmaster and engine stages do not require an Artisan adapter.
+The shipped default workflow is profile-neutral: declaring profiles alone does not select one.
+Set each Artisan step's `profile` in a custom workflow or repository overrides, or add `default_adapter = "claude"` under `[local]` in the copy's `director.toml`, as the shipped example does.
+Existing copies without either selection must make this choice before creating or advancing tasks.
+To deliberately run a no-model demo, select `default_adapter = "fake"` or a profile whose `adapter = "fake"`.
 For when profile settings are checked, see [runtime settings](adapters.md#runtime-settings).
 
 ### The director table

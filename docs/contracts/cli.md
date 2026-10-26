@@ -2,6 +2,11 @@
 
 ## Contract
 
+Task admission and advance require an explicitly configured runtime for each Artisan stage, through its profile or the effective `default_adapter` setting.
+A missing selection fails with exit 1 and an error naming the step, profile remedy and default-adapter remedy, without task-record mutations or launches.
+Explicit `fake` is still accepted.
+`adapter_admission_test.go` reproduced both silent admission and fake launch before implementation ([red evidence](../evidence/no-silent-fake-2026-10-26-red.txt)); both now refuse and leave the real store bytes unchanged ([green evidence](../evidence/no-silent-fake-2026-10-26-green.txt)).
+
 Commands, output and exit codes (README); doctor's process boundary, `App.LookPath` and `App.Output`: a missing tool is `exec.ErrNotFound`, output is stdout and stderr combined, a failing command is an error with its output, and context cancellation stops a hung command; see D6 for doctor's timeout policy.
 The `store`, `messages`, `task`, `decide`, `workflow approve` / `workflow approvals` and `steward rollout` commands, including the read-only task inspection reads `task timeline` (with findings and rulings) and `task files`, `task finding rule` and `task review --full` (`docs/store.md`, `docs/messaging.md`, `docs/tasks.md`, `docs/decisions-cli.md`, `docs/configuration.md`, `docs/steward.md`); task acceptance refuses undeclared profiles in the effective workflow before opening or writing the store, and refuses an unauthorized effective workflow through `workflow.Authority.Admit` over the shipped definitions and the store's approvals before writing; `workflow approve --config --repo` approves a repository's effective workflow; see `docs/tasks.md` for task acceptance and retry contracts.
 
