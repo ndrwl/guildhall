@@ -8,6 +8,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -68,4 +69,61 @@ func TestArtisanChildWorkspaceHerdrLab(t *testing.T) {
 		t.Fatalf("unexpected complete workspace order: %+v", list)
 	}
 	t.Logf("verified complete order with two Artisan workspaces below Director: %+v", list)
+
+	// Exercise refusal guards against the same real server: a failed optional
+	// placement must leave every existing workspace in order and the new child usable.
+	for _, guard := range []string{"corrupt journal", "stale Director binding", "busy lock", "short startup budget"} {
+		t.Run(guard, func(t *testing.T) {
+			guardState := t.TempDir()
+			guardPath := filepath.Join(guardState, "director.store")
+			s, err := store.Open(guardPath, store.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			pane := store.DirectorPane{Session: session, Workspace: parent.ID, Tab: parent.InitialTab.ID(), Pane: parent.InitialTab.PaneID()}
+			if guard == "stale Director binding" {
+				pane.Tab = foreign.InitialTab.ID()
+			}
+			startSession(t, guardPath, pane)
+			if guard == "corrupt journal" {
+				if err := os.WriteFile(filepath.Join(guardState, "artisan-workspaces.json"), []byte("broken"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if guard == "busy lock" {
+				release, err := lockWorkspaceOrder(session)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer release()
+			}
+			createCtx := ctx
+			if guard == "short startup budget" {
+				var cancel context.CancelFunc
+				createCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+			}
+			before, err := client.WorkspaceList(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var warning bytes.Buffer
+			h := &artisanWorkspaces{TabHost: adapter.NewHerdrTabs(client), client: client, storePath: guardPath, state: guardState, warnings: &warning}
+			child, err := h.CreateWorkspace(createCtx, "└ guarded · build #1", "")
+			if err != nil || createCtx.Err() != nil || !strings.Contains(warning.String(), "ordering skipped") {
+				t.Fatalf("creation=%+v err=%v ctx=%v warning=%s", child, err, createCtx.Err(), &warning)
+			}
+			after, err := client.WorkspaceList(ctx)
+			if err != nil || len(after) != len(before)+1 || !reflect.DeepEqual(after[:len(before)], before) || after[len(before)].ID != child.ID {
+				t.Fatalf("guard changed existing order: before=%+v after=%+v err=%v", before, after, err)
+			}
+			if _, err := client.RecordedTab(ctx, child.ID, child.InitialTab.ID(), child.InitialTab.PaneID()); err != nil {
+				t.Fatalf("new child not usable after refusal: %v", err)
+			}
+			t.Logf("%s: existing order unchanged, child %s usable; %s", guard, child.ID, &warning)
+		})
+	}
 }

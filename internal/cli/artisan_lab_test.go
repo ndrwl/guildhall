@@ -50,9 +50,17 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	if err := os.WriteFile(d.config, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("herdr", "workspace", "create", "--label", "lab-director", "--session", session).CombinedOutput(); err != nil {
-		t.Fatalf("create lab Director presentation: %s, %v", out, err)
+	client, err := herdr.New(herdr.Options{Session: session, Command: []string{"herdr"}})
+	if err != nil {
+		t.Fatal(err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	parent, err := client.WorkspaceCreate(ctx, "lab-director", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	startSession(t, d.store, store.DirectorPane{Session: session, Workspace: parent.ID, Tab: parent.InitialTab.ID(), Pane: parent.InitialTab.PaneID()})
 	focusedWorkspace := func() string {
 		out, err := exec.Command("herdr", "workspace", "list", "--session", session).CombinedOutput()
 		if err != nil {
@@ -94,12 +102,6 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	if err := json.Unmarshal(b, &ref); err != nil {
 		t.Fatal(err)
 	}
-	client, err := herdr.New(herdr.Options{Session: session, Command: []string{"herdr"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	workspaces, err := client.WorkspaceList(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -113,11 +115,21 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	if !workspaceFound {
 		t.Fatalf("separate Artisan workspace missing: %+v", workspaces)
 	}
+	if len(workspaces) != 2 || workspaces[0].ID != parent.ID || workspaces[1].ID != ref.WorkspaceID {
+		t.Fatalf("Artisan not directly below its Director: %+v", workspaces)
+	}
+	t.Logf("workflow workspace order: %+v", workspaces)
 	// The PATH shim routes this through the guarded lab helper, just like the
 	// client's API calls. Read the actual terminal, not merely launcher.log.
-	paneText, err := exec.Command("herdr", "pane", "read", ref.PaneID, "--session", session).CombinedOutput()
-	if err != nil || !strings.Contains(string(paneText), "fake artisan:") {
-		t.Fatalf("no readable live pane output: %s, %v", paneText, err)
+	var paneText []byte
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		paneText, err = exec.Command("herdr", "pane", "read", ref.PaneID, "--session", session).CombinedOutput()
+		if err == nil && strings.Contains(string(paneText), "fake artisan:") {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("no readable live pane output: %s, %v", paneText, err)
+		}
 	}
 	t.Logf("live pane output: %s", paneText)
 	tabs, err := client.TabList(ctx, ref.WorkspaceID)
