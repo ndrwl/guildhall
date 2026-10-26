@@ -75,13 +75,13 @@ func TestASilentPeerIsDisconnected(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = e.Close() })
+	start := time.Now()
 	c, err := net.Dial("unix", e.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
-	start := time.Now()
 	line, err := bufio.NewReader(c).ReadString('\n')
 	if err != nil || !strings.Contains(line, "malformed request") {
 		t.Fatalf("reply to a silent peer %q, %v; want a refusal", line, err)
