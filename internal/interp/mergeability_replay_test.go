@@ -24,6 +24,50 @@ func (o *interruptedPRNotification) Send(to store.Recipient, e messaging.Envelop
 	return o.Outbox.Send(to, e)
 }
 
+func TestMergeabilityReplayIgnoresWorkflowDocuments(t *testing.T) {
+	for _, b := range backends {
+		for _, step := range []string{"pr-blocked-build", "pr-blocked-abcd-conflicting", "pr-blocked-build-behind"} {
+			t.Run(b.name+"/"+step, func(t *testing.T) {
+				def := straight(t)
+				for i := range def.Steps {
+					s := &def.Steps[i]
+					if s.ID == "build" {
+						s.ID = step
+					}
+					for port, refs := range s.Inputs {
+						for j, ref := range refs {
+							if suffix, ok := strings.CutPrefix(ref, "build."); ok {
+								s.Inputs[port][j] = step + "." + suffix
+							}
+						}
+					}
+				}
+				exps := straightScript(t)
+				exps[1].Step = step
+				e := newEnvDefinition(t, b, def, exps...)
+				want(t, e.accepted(t), interp.Next{Wait: interp.WaitAttempt, Step: step, Attempt: 1})
+				want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: step, Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "review", Attempt: 1})
+				want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "sign-off", Decision: "sign-off-1"})
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "sign-off", Decision: "sign-off-1"})
+				for _, name := range []string{step + "-1-inputs", step + "-1-head"} {
+					if _, ok := e.documents(t)[name]; !ok {
+						t.Fatalf("workflow document %s was not recorded", name)
+					}
+				}
+				page, err := e.mailbox.List(store.Recipient{Role: store.RecipientDirector}, 0, 100)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, message := range page.Messages {
+					if message.Type == store.MessagePRBlocked {
+						t.Fatalf("workflow document emitted a PR-blocked notification: %+v", message)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestMergeabilityReplaysRecordedObservationAfterNotificationFailure(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {

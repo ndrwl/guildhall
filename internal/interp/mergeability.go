@@ -80,7 +80,12 @@ func (r *run) mergeBlocked(pr *pullRequestDoc, head string) (bool, error) {
 // committed, even if the forge has since become clear or work moved upstream.
 func (r *run) replayMergeBlocked() error {
 	for _, d := range r.documents {
-		if !strings.HasPrefix(d.Name, "pr-blocked-") {
+		identity, ok := strings.CutPrefix(d.Name, "pr-blocked-")
+		if !ok {
+			continue
+		}
+		head, state, ok := strings.Cut(identity, "-")
+		if !ok || !digest.ValidHead(head) || (state != "conflicting" && state != "behind") {
 			continue
 		}
 		data, err := r.read(d)
