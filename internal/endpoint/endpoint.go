@@ -93,10 +93,11 @@ type Server[Req, Rep any] interface {
 
 // Endpoint is a bound endpoint.
 type Endpoint struct {
-	path     string
-	ln       net.Listener
-	once     sync.Once
-	closeErr error
+	path      string
+	ln        net.Listener
+	once      sync.Once
+	closeErr  error
+	exchanges sync.WaitGroup
 }
 
 // Listen binds an endpoint at path speaking p for s and serves until Close. A path longer than MaxPath is ErrPath.
@@ -131,7 +132,10 @@ func Listen[Req, Rep any](path string, p Protocol, s Server[Req, Rep]) (*Endpoin
 		return nil, fmt.Errorf("endpoint: restrict: %w", err)
 	}
 	e := &Endpoint{path: path, ln: ln}
-	go serve(ln, p, s)
+	// Keep the accept loop counted until it can no longer add exchanges, so
+	// Close may safely wait even when Accept and listener closure race.
+	e.exchanges.Add(1)
+	go serve(e, p, s)
 	return e, nil
 }
 
@@ -160,9 +164,10 @@ func removeStale(path string) error {
 	return nil
 }
 
-func serve[Req, Rep any](ln net.Listener, p Protocol, s Server[Req, Rep]) {
+func serve[Req, Rep any](e *Endpoint, p Protocol, s Server[Req, Rep]) {
+	defer e.exchanges.Done()
 	for {
-		c, err := ln.Accept()
+		c, err := e.ln.Accept()
 		if errors.Is(err, net.ErrClosed) {
 			return
 		}
@@ -170,7 +175,11 @@ func serve[Req, Rep any](ln net.Listener, p Protocol, s Server[Req, Rep]) {
 			time.Sleep(acceptRetry)
 			continue
 		}
-		go answer(c, p, s)
+		e.exchanges.Add(1)
+		go func() {
+			defer e.exchanges.Done()
+			answer(c, p, s)
+		}()
 	}
 }
 
@@ -201,14 +210,17 @@ func answer[Req, Rep any](c net.Conn, p Protocol, s Server[Req, Rep]) {
 // Path returns the socket path the endpoint is bound at.
 func (e *Endpoint) Path() string { return e.path }
 
-// Close stops accepting requests and removes the socket file; requests being answered still get their reply. It
-// is idempotent.
+// Close stops accepting requests and removes the socket file, then waits for all
+// accepted exchanges to finish writing their replies or hit their I/O deadlines.
+// It is idempotent, including concurrent calls. Handlers must return before Close
+// can finish and must not call Close themselves; handler execution has no deadline.
 func (e *Endpoint) Close() error {
 	e.once.Do(func() {
 		e.closeErr = e.ln.Close()
 		if err := os.Remove(e.path); err != nil && !errors.Is(err, fs.ErrNotExist) && e.closeErr == nil {
 			e.closeErr = err
 		}
+		e.exchanges.Wait()
 	})
 	return e.closeErr
 }
