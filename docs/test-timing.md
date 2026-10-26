@@ -14,7 +14,7 @@ They use no model calls or credentials.
 - Use channels for acknowledgements and cancellation ordering.
   A Claude stop test waits for the stub's startup record before cancelling, and endpoint tests cancel only after the handler acknowledges entry.
 - Poll an observable cross-process condition within a generous ceiling when the producer cannot send a channel event.
-  `testenv.WaitFor` checks immediately, then polls until success, with a CI-scaled 30-second ceiling and an error naming the missing event.
+  Use [`testenv.WaitFor`](../internal/testenv/wait.go) for a named condition wait.
   Existing condition loops may retain their own generous ceiling.
   A polling interval controls cost, not success.
 - Check ordering and durable state rather than elapsed duration.
@@ -55,11 +55,5 @@ Do not hide a budget in a helper to evade it.
 
 ## Ownership regressions
 
-An owned `artisan start --timeout` starts its result budget only after the worker starts and containment is recorded.
-Even an immediately expiring budget therefore produces an owned, stopped attempt, not an ownership-acquisition error.
-Caller cancellation of an ownership wait cannot be reported as ready merely because the next read finds an endpoint.
-
-A launcher completing without ever invoking worker startup records explicit `not-started` evidence when it has no named containment.
-A later stop still requires the launcher to be proven gone; missing evidence and crashes during startup remain unverified.
-This distinguishes deliberate pre-start cancellation from the process-group crash window instead of hiding it in cleanup retries.
-See the [decision](decisions/ci-timing-flakes.md) and [regression evidence](evidence/ci-timing-flakes-2026-10-26.md).
+See [Artisan commands](artisan.md#commands) for the owned result-timeout lifecycle, the [launch contract](contracts/launch.md) for ownership-wait cancellation, and the [store containment record](store.md#containment-record) for pre-start recovery evidence.
+The [decision](decisions/ci-timing-flakes.md) records the rationale; [regression evidence](evidence/ci-timing-flakes-2026-10-26.md) captures the failures and subsequent runs.

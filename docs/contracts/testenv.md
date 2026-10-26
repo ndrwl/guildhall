@@ -22,9 +22,8 @@ A wait that ends on its event costs nothing extra, so a slow runner makes a test
 It is for ceilings only: a grace a test waits out on purpose, such as `internal/cli`'s `leftovers` settle for a worker it expects to survive, or a duration the code under test observes, such as a stop ladder's rungs or a stall interval, stays unscaled.
 Test-binary children inherit `CI` and so the same ceilings.
 
-`WaitFor(t, what, ready)` checks `ready` immediately, then polls until it succeeds or a CI-scaled 30-second ceiling expires, failing with the event named by `what`.
-It is for real filesystem/process conditions; a producer-owned channel is preferable when available.
-The [test timing policy](../test-timing.md) specifies the ten-second minimum ceiling and local `timing:allow` exceptions enforced by `TestTimingPolicy` in every CI matrix job.
+[`WaitFor`](../../internal/testenv/wait.go) supplies named condition waits for real filesystem/process events.
+The [test timing policy](../test-timing.md) owns the ceiling and exception rules enforced by `TestTimingPolicy` in every CI matrix job.
 
 ## Tests
 

@@ -77,8 +77,8 @@ func FilesOf(f Files) StopFiles {
 // StopKey is the attempt every stop-contract launcher owns.
 var StopKey = artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
-// stopLadder keeps the contract's waits short: a worker ignoring every
-// graceful rung takes its interrupt and cooperative bounds to stop.
+// stopLadder gives real workers generous rung budgets; a worker ignoring
+// graceful rungs must wait out those bounds before escalation.
 var stopLadder = artisan.Ladder{Cooperative: 10 * time.Second, Interrupt: 10 * time.Second, Terminate: 10 * time.Second, Kill: 10 * time.Second}
 
 // RunStopContract runs the launcher's stop ladder and precedence contract
