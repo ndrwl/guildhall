@@ -354,9 +354,11 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	defer stop()
 	context.AfterFunc(ctx, stop)
 	e := &interp.Engine{
-		Copy:     copyDir,
-		Records:  records,
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall, LockWait: wait, OpenPresentation: func(ctx context.Context) (*launch.Presentation, error) { return artisanPresentation(ctx, cfg) }},
+		Copy:    copyDir,
+		Records: records,
+		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall, LockWait: wait, OpenPresentation: func(ctx context.Context) (*launch.Presentation, error) {
+			return artisanPresentation(ctx, cfg, f.store, state, a.Stderr)
+		}},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },

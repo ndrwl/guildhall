@@ -447,8 +447,16 @@ A live launcher after a Herdr restart is still live: `artisan resume` refuses to
 ### Workflow Artisan workspaces
 
 With a Director's `herdr_session` configured, workflow attempts, including judge attempts, each open a new workspace in that session without taking focus from the Director.
-The workspace and its Artisan tab are labelled `artisan <repository>/<task>/<step>/<attempt>`.
+The workspace is labelled `└ <task> · <step> #<attempt>`, for example `└ d3 · review #1`; its tab retains `artisan <repository>/<task>/<step>/<attempt>`.
+When the Director has an exact recorded Herdr pane, Guildhall places each new Artisan workspace directly below that Director, after its earlier children in launch order.
 The Director's workspace is not reused or changed, and even a same-labelled workspace is not reused.
+Ordering uses protocol 16's socket-only `workspace.move` method in the configured named session and verifies the complete returned order.
+It moves only the newly created workspace, never the Director, earlier children or foreign workspaces.
+A presentation-only `artisan-workspaces.json` journal under the state directory binds exact workspace ids and labels to their Director; labels alone never grant ownership.
+An account-private named-session lock serializes ordering; contention or crash residue skips ordering, never reclaims a lock.
+An unavailable method, old protocol, unreadable socket, missing Director identity, corrupt journal, renamed or detached sibling, foreign child, manually interleaved block, insufficient startup time, ordering timeout or failed verification warns and leaves Herdr's current order without retry or rollback.
+The [CLI contract](contracts/cli.md) owns the ordering time budget.
+Ordering never fails an Artisan launch or changes task records, lifecycle or recovery.
 Without that setting, workflow attempts keep the hidden detached-process mode.
 Both modes use the same owned launcher, result recording, spend accounting, guard rails, retry rules and watcher.
 

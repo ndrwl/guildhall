@@ -377,7 +377,9 @@ func TestPlainReloadWaitsForAQuietPoint(t *testing.T) {
 	holdsOne(t, dir, 1)
 	copyRun(t, dir, "director", "turn-ended")
 	waitSessions(t, dir, 2)
-	copyRun(t, dir, "director", "turn-ended")
+	// The new session is busy already. Do not send a turn end before the
+	// start: the endpoint acknowledges delivery, not supervisor consumption,
+	// so a reload could otherwise be observed in that intervening idle state.
 	copyRun(t, dir, "director", "turn-started")
 	copyRun(t, dir, "director", "reload")
 	holdsOne(t, dir, 2)

@@ -1,0 +1,20 @@
+--- FAIL: TestPlaceWorkspace (0.00s)
+    --- FAIL: TestPlaceWorkspace/first_child (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=true moved=true
+    --- FAIL: TestPlaceWorkspace/second_child (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=true moved=true
+    --- FAIL: TestPlaceWorkspace/already_adjacent (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=true moved=false
+    --- FAIL: TestPlaceWorkspace/closed_sibling (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=true moved=true
+    --- FAIL: TestPlaceWorkspace/method_unavailable (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=false moved=true
+    --- FAIL: TestPlaceWorkspace/wrong_full_order (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=false moved=true
+    --- FAIL: TestPlaceWorkspace/mismatched_response (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=false moved=true
+    --- FAIL: TestPlaceWorkspace/malformed_response (0.00s)
+        order_test.go:56: err=workspace ordering not implemented moved=false; want OK=false moved=true
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/herdr	0.005s
+FAIL

@@ -11,6 +11,11 @@ import (
 )
 
 func TestAdvancePreflightLockWait(t *testing.T) {
+	// Even an uncontended task lock opens a file under its acquisition deadline.
+	// Leave slow runners room for that open, while keeping the refusal ceiling
+	// below the default 30s store wait so ignoring lock_wait still fails.
+	const lockWait = 5 * time.Second
+	const refusalCeiling = 4 * lockWait
 	for _, command := range [][]string{
 		{"task", "start", "t-1"},
 		{"task", "start", "t-1", "--decision", "d-1"},
@@ -27,7 +32,7 @@ func TestAdvancePreflightLockWait(t *testing.T) {
 				t.Fatal(err)
 			}
 			d.config = filepath.Join(dir, "config.toml")
-			b = []byte(strings.Replace(string(b), "[local]", "[local]\nlock_wait = \"1s\"", 1))
+			b = []byte(strings.Replace(string(b), "[local]", "[local]\nlock_wait = \""+lockWait.String()+"\"", 1))
 			if err := os.WriteFile(d.config, b, 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -42,8 +47,8 @@ func TestAdvancePreflightLockWait(t *testing.T) {
 			if code == 0 || !strings.Contains(stderr, store.ErrLocked.Error()) {
 				t.Fatalf("code %d, stderr %s; want store lock refusal", code, stderr)
 			}
-			if elapsed > 4*time.Second {
-				t.Fatalf("lock wait %v; want refusal within 4s", elapsed)
+			if elapsed > refusalCeiling {
+				t.Fatalf("lock wait %v; want refusal within %v", elapsed, refusalCeiling)
 			}
 		})
 	}
