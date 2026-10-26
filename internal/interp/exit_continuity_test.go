@@ -2,11 +2,9 @@ package interp_test
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -82,9 +80,7 @@ func TestArtisanExitPreservesFindings(t *testing.T) {
 				}
 				e.eng.StandardsRevision = "standards-2"
 				want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}), interp.Next{Wait: interp.WaitAttempt, Step: "review", Attempt: 3})
-				if err := advanceErr(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 3}); !errors.Is(err, interp.ErrOutcome) || !strings.Contains(err.Error(), "f1") {
-					t.Fatalf("missing exit finding disposition = %v", err)
-				}
+				assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 3}, "f1")
 			})
 		}
 	}

@@ -233,15 +233,12 @@ func TestStaleOutcomeIsRefused(t *testing.T) {
 				buildExp(t, 1, head, ""), reviewExp(t, "review", "reviewer", 1, head, nil, bound(t, workflow.VerdictApproved, head2, nil)))
 			e.accepted(t)
 			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
-			err := advanceErr(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
-			if !errors.Is(err, interp.ErrOutcome) || !strings.Contains(err.Error(), "stale") {
-				t.Fatalf("Advance = %v, want ErrOutcome naming a stale outcome", err)
-			}
+			assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1}, "stale")
 			if _, ok := e.documents(t)["review-1-outcome"]; ok {
 				t.Error("a stale outcome was recorded")
 			}
-			if a := e.attempts(t); a[len(a)-1].Step != "review" || a[len(a)-1].Outcome != "" {
-				t.Errorf("attempts = %+v, want the review still running", a)
+			if a := e.attempts(t); a[len(a)-1].Step != "review" || a[len(a)-1].Outcome != store.AttemptFailed {
+				t.Errorf("attempts = %+v, want the review failed", a)
 			}
 		})
 	}
@@ -258,10 +255,7 @@ func TestOutcomeMustDispositionEveryPriorFinding(t *testing.T) {
 	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
 	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
 	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
-	err := advanceErr(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2})
-	if !errors.Is(err, interp.ErrOutcome) || !strings.Contains(err.Error(), `"f1"`) {
-		t.Fatalf("Advance = %v, want ErrOutcome naming f1", err)
-	}
+	assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}, `"f1"`)
 }
 
 // TestStallSignals: builds that return the same head make the review run again on it; each round below
