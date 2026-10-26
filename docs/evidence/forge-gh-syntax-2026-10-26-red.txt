@@ -1,0 +1,26 @@
+--- FAIL: TestGitHubArguments (0.32s)
+    forge_test.go:215: /tmp/fm-guildhall-forge-gh-flags/gotmp/go-build2944167266/b001/forge.test repo view --repo github.com/acme/widgets --json defaultBranchRef: exit status 2: fake gh: repo view does not take --repo
+fake gh: repo view does not take --not-a-gh-flag
+fake gh: repo view takes 1 positional arguments, got 2
+fake gh: --json needs a value
+fake gh: pr list does not take --not-a-gh-flag
+fake gh: pr list takes 0 positional arguments, got 1
+fake gh: --json needs a value
+fake gh: pr create does not take --not-a-gh-flag
+fake gh: pr create takes 0 positional arguments, got 1
+fake gh: pr create does not take --json
+fake gh: pr view does not take --not-a-gh-flag
+fake gh: pr view takes 1 positional arguments, got 2
+fake gh: --json needs a value
+fake gh: pr merge does not take --not-a-gh-flag
+fake gh: pr merge takes 1 positional arguments, got 2
+fake gh: pr merge does not take --json
+fake gh: api graphql does not take --not-a-gh-flag
+fake gh: api graphql takes 0 positional arguments, got 1
+fake gh: api graphql does not take --json
+fake gh: repo view does not take --repo
+fake gh: pr merge does not take --admin
+fake gh: pr merge does not take --auto
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/forge	2.714s
+FAIL

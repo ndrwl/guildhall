@@ -221,12 +221,21 @@ func TestGitHubArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := g.readState(t).Calls
+	t.Run("installed-gh-flags", func(t *testing.T) {
+		for _, c := range calls {
+			checkInstalledGHFlags(t, c)
+		}
+	})
 	for _, c := range calls {
 		t.Logf("gh %q", c)
 		if len(c) > 1 && c[0] == "api" {
 			if !slices.Equal(flagValues(c, "--hostname"), []string{"github.com"}) || !slices.Contains(c, "owner=acme") || !slices.Contains(c, "name=widgets") ||
 				!slices.Contains(c, "oid="+h.Heads[0]) {
 				t.Errorf("gh %q does not name github.com, acme/widgets and the head", c)
+			}
+		} else if c[0] == "repo" {
+			if len(c) != 5 || c[2] != "github.com/acme/widgets" || slices.Contains(c, "--repo") {
+				t.Errorf("gh %q does not name its repository positionally", c)
 			}
 		} else if i := slices.Index(c, "--repo"); i < 0 || i+1 >= len(c) || c[i+1] != "github.com/acme/widgets" {
 			t.Errorf("gh %q does not name --repo github.com/acme/widgets", c)
@@ -566,8 +575,8 @@ func runGH(s *ghState, bare string, args []string) int {
 		fmt.Fprintf(os.Stderr, format+"\n", a...)
 		return code
 	}
-	if len(args) < 2 {
-		return fail(2, "fake gh: unknown command %q", args)
+	if err := validateGHArgs(args); err != nil {
+		return fail(2, "fake gh: %v", err)
 	}
 	cmd, rest := args[0]+" "+args[1], args[2:]
 	if cmd == "api graphql" {
@@ -591,26 +600,14 @@ func runGH(s *ghState, bare string, args []string) int {
 			positional = append(positional, a)
 		}
 	}
-	allowed := map[string][]string{
-		"repo view": {"--repo", "--json"},
-		"pr list":   {"--repo", "--head", "--state", "--json"},
-		"pr create": {"--repo", "--head", "--title", "--body"},
-		"pr view":   {"--repo", "--json"},
-		"pr merge":  {"--repo", "--squash", "--match-head-commit"},
-	}
-	known, ok := allowed[cmd]
-	if !ok {
-		return fail(2, "fake gh: unknown command %q", cmd)
-	}
-	for f := range flags {
-		if !slices.Contains(known, f) {
-			return fail(2, "fake gh: %s does not take %s", cmd, f)
-		}
-	}
 	if s.Offline {
 		return fail(1, "error connecting to api.github.com")
 	}
-	if flags["--repo"] != "github.com/acme/widgets" {
+	repo := flags["--repo"]
+	if cmd == "repo view" {
+		repo = positional[0]
+	}
+	if repo != "github.com/acme/widgets" {
 		return fail(1, "fake gh: no repository %q", flags["--repo"])
 	}
 	out := func(v any) int {

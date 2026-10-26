@@ -49,7 +49,7 @@ func (g GitHub) Publish(ctx context.Context, c Change) (PullRequest, error) {
 	var view struct {
 		DefaultBranchRef struct{ Name string } `json:"defaultBranchRef"`
 	}
-	if err := g.ghJSON(ctx, c.Repository, &view, "repo", "view", "--repo", repo, "--json", "defaultBranchRef"); err != nil {
+	if err := g.ghJSON(ctx, c.Repository, &view, "repo", "view", repo, "--json", "defaultBranchRef"); err != nil {
 		return PullRequest{}, err
 	}
 	if view.DefaultBranchRef.Name == "" || view.DefaultBranchRef.Name == c.Branch {
