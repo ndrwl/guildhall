@@ -79,9 +79,8 @@ It reports organization/ambient inventory limitations rather than claiming live 
 ## Tests
 
 `TestAdvancePreflightLockWait` holds the real store lock and requires `task start`, `task start --decision` and `step retry` to reach a store-lock refusal with the configured wait, rather than the default 30-second wait.
-Its task lock is uncontended, but opening its lock file and scheduling the first acquisition still consume the acquisition deadline.
-The test therefore budgets five seconds for acquisition and requires refusal within twenty seconds; it does not require every filesystem open to complete in one second.
-A two-second delay at the OS open of `attempt.lock` reproduced the original one-second test's exact task-lock deadline failure before this timing correction.
+The test configures a five-second lock wait and requires refusal within twenty seconds.
+The [timing-budget decision](../decisions/preflight-lock-wait-test-budget.md) records why the uncontended task lock needs headroom and the delayed-open reproduction.
 
 `skill_policy_test.go` ran red against the previous preflight, then green: supported-version configured policy reporting, unsupported-version refusal, one version-only process probe and no session directory from `--check`.
 
