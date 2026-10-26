@@ -79,6 +79,8 @@ type StageAttempt struct {
 	// Number counts attempts of this step for this task, starting at 1.
 	Number  int            `json:"number"`
 	Outcome AttemptOutcome `json:"outcome,omitempty"`
+	// IntakeRejection is the validation reason that superseded an unfinished or launcher-succeeded outcome.
+	IntakeRejection string `json:"intake_rejection,omitempty"`
 	// Spend is what the attempt's runtime reported it spent (RecordAttemptSpend); nil until recorded.
 	Spend *Spend `json:"spend,omitempty"`
 }

@@ -312,7 +312,15 @@ A lost acknowledgement, or a crash after `Launch` returns but before the mark, r
 An attempt's binding is recorded before the attempt, and a relaunch uses the recorded binding, so a replayed launch is given exactly the inputs of the first.
 Result intake publishes `intake.json` atomically in the attempt directory only after every output document, ruling contest and stall notification succeeds and the attempt outcome is recorded or reconciled.
 A launcher-recorded success without this marker replays the intake operations idempotently; the first output document alone is not completion evidence.
-If the launcher concurrently records the same outcome, the store's [first finish stands](store.md#attempts) and intake's finish returns the launcher's receipt; a different persisted outcome stands and the advance reports an error.
+This includes attempts left succeeded by an older release whose intake failed: the next `task start` or `step done` validates them again.
+Missing required outputs, invalid output paths, unreadable files named by the result, invalid port content and stale or undispositioned review outcomes reject intake.
+Malformed or wrong-identity result bytes also reject intake; a missing or unreadable result file and a newer unsupported result version remain operational errors.
+Rejection records the attempt as `failed` with `intake_rejection`, using a separate [`reject-attempt` mutation](store.md#attempts), rather than attempting another finish over the launcher's success.
+The task waits `{"wait":"director","step":"<step>","attempt":<n>}` and sends one `attempt-failed` message naming the attempt and rejection reason.
+The Director can then use `step retry` normally; the rejected result file is retained for diagnosis.
+The stored failure, not an intake marker, drives rejection recovery: a crash before notification replays the message without duplicating it.
+Store failures, interrupts, inability to open the working directory, Guildhall-owned binding or document I/O errors, and code-head derivation failures are not output rejection: the advance returns an error and unfinished intake remains replayable.
+If the launcher concurrently records the same outcome, the store's [first finish stands](store.md#attempts) and intake's finish returns the launcher's receipt; outside the explicit intake-rejection operation, a different persisted outcome stands and the advance reports an error.
 A Guildmaster's answer is recorded as a document before the attempt it feeds, so a repeat completes it.
 `Advance` is not safe for concurrent use on one task; callers must serialise whole advances, as the [CLI's task lock](running.md#what-an-advance-runs-over) does.
 

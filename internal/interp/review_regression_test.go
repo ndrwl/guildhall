@@ -97,11 +97,7 @@ func TestOutputContainment(t *testing.T) {
 			if err := os.Symlink(target, link); err != nil {
 				t.Fatal(err)
 			}
-			_, err := e.eng.Advance(context.Background(), interp.Event{Kind: interp.AttemptResult, Repository: "app", Task: "t7", Step: "plan", Attempt: 1})
-			if err == nil {
-				t.Fatal("accepted escaping output")
-			}
-			t.Logf("escaping %s output refused: %v; documents: %+v", mode, err, e.documents(t))
+			assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}, "read output")
 			for name := range e.documents(t) {
 				if name != "plan-1-inputs" { // the attempt's binding is recorded before it launches
 					t.Fatalf("recorded output %s before validating containment", name)

@@ -67,7 +67,8 @@ The advance's output is appended to the attempt's `launcher.log` and an `advance
 An advance that exits unsuccessfully, such as one that waited its `lock_wait` for a task lock another advance held, is run once more, which waits the lock wait again.
 When that run fails too, the launcher sends the Director `<repo>.<task>.advance-failed.<step>-<n>`, type `advance-failed`, naming the command and its last line of error output; the send goes through the store with no task lock, and the Director is [woken](messaging.md#waking-the-director) for it as for any other send.
 [`director status`](director.md#status) lists the attempt nobody took as an `advance` item until an advance takes it.
-A failed advance changes neither the attempt's outcome nor the launcher's exit status: both commands are idempotent, so the Director's next `task start`, or the `step done` the status item names, repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).
+An operational advance failure does not reclassify the attempt or change the launcher's exit status: both commands are idempotent, so the Director's next `task start`, or the `step done` the status item names, repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).
+A result rejected during intake instead records a failed attempt with its reason and waits for the Director, even when the launcher recorded success; a later notification or persistence error may still require replay to finish that advance.
 An attempt [`artisan resume`](artisan.md#resume) settles after its launcher died is not advanced; the Director's `task start` after the resume is.
 
 ## `task start`
@@ -80,8 +81,9 @@ With `--decision <id>` it feeds `decision-answered` for that answered decision i
 
 `step done` is the result intake for one attempt.
 `--result` must be the attempt's own result file, `result.json` in its attempt directory; any other path is refused, because the interpreter reads results only there.
-The file is validated with `adapter.ReadResult` for identity `<task>`, `<step>-<n>` before the engine is called, so a missing, malformed or other attempt's result changes nothing.
-It then feeds `attempt-result`: a succeeded result's outputs are recorded as documents and the task moves on.
+The file is read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>` before the engine is called; missing or unreadable files and unsupported newer versions remain operational errors.
+Malformed or wrong-identity result bytes are passed to the engine for durable rejection under the task lock.
+It feeds `attempt-result`: a valid succeeded result's outputs are recorded as documents and the task moves on, while rejected results or outputs record a failed attempt with the reason and wait for the Director.
 
 The attempt's launcher records its store outcome when it decides the attempt, which may be before or after `step done`.
 The [interpreter's recovery contract](interpreter.md#replay-and-recovery) defines intake replay and outcome reconciliation when these operations overlap.
@@ -99,6 +101,8 @@ A missing `--summary`, an output that is not `<port>=<file>`, a port named twice
 ## `step retry`
 
 `step retry` is the Director's decision after a failed or stopped attempt, which leaves the task waiting with `{"wait":"director",...}`.
+This includes a launcher-succeeded attempt whose result intake was rejected: run `task start` or `step done` first to apply the rejection if an earlier release left it succeeded with unfinished intake.
+The failure's `intake_rejection`, the `attempt-failed` message and the status feed's retry reason explain why it was rejected; no hand-written replacement verdict is needed.
 It feeds [`attempt-retried`](interpreter.md#events) for attempt `--attempt` of `--step`: valid only when that attempt is the step's latest and finished `failed` or `stopped`, and the task is open.
 The engine then starts the next attempt exactly as `task start` starts a first one, and prints `{"wait":"attempt",...}` for it.
 `--reason`, when given, is recorded as the Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the next attempt has launched, so `task timeline` shows why the attempt was retried.

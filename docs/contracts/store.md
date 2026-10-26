@@ -25,6 +25,10 @@ The [attempt ownership contract](../store.md#attempt-ownership) defines monotoni
 
 ## Tests
 
+`TestRejectionPreservesLauncherHistory` pins the explicit [intake-rejection contract](../store.md#attempts): separate finish and rejection receipts, a failed current outcome with a durable reason, and launcher replay that cannot undo rejection.
+The shared Records suite runs the new rejection cases against the store, its in-memory double and the CLI's per-operation store wrapper: unfinished and succeeded rejection, failed/stopped refusal, mutation replay and conflict, unknown attempts, blank reasons and retry numbering.
+These focused store controls were added after implementation; the interpreter's D3 regression was red first.
+
 `admission_test.go` was written red first against a `StartCappedAttempt` that ignored `Hold` and a `StopUnownedAttempt` that refused everything ([red run](../evidence/director-stop-admission-2026-10-22-red.txt)): a held start over each session state, refused only while `paused` or `stopping` with no receipt or attempt, a replay returning its receipt while held and a start without `Hold` admitted; admission after resume; forty starts from another handle raced against a pause, none committing after it; and the unowned stop, its replay, a later equal finish standing, a later take-over refused, and the owned, finished and missing refusals; `TestStopHoldsUntilItsSweepFinishes`, added when review found the hold lifting at `stopped` before the sweep and not run red, holds a start over a session stopped while `Sweeping` and admits it after `FinishDirectorStop`, which keeps the end time and refuses a session with no stop sweeping.
 
 Real bbolt files: `store_test.go`, `records_test.go`, `messages_test.go`, `approvals_test.go`, `history_test.go`, `ownership_test.go`, `process_test.go` (separate processes, including a take-over refused while another process owns the attempt and allowed once it is killed), `fixture_test.go` (schema v1 file), `rulings_test.go`; full-review requests are pinned by the store run of `interptest.RunRecordsContract`

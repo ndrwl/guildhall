@@ -1,8 +1,6 @@
 package interp_test
 
 import (
-	"context"
-	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -16,10 +14,7 @@ func TestHeadFallbackScope(t *testing.T) {
 		t.Run(b.name+"/document still required", func(t *testing.T) {
 			e := newEnv(t, b, planExpectation(t, interptest.Succeed("no document")))
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})
-			_, err := e.eng.Advance(context.Background(), interp.Event{Repository: "app", Task: "t7", Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
-			if err == nil || !strings.Contains(err.Error(), "no output for port spec") {
-				t.Fatalf("document intake: %v", err)
-			}
+			assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}, "no output for port spec")
 		})
 		t.Run(b.name+"/explicit head still validated", func(t *testing.T) {
 			exps := straightScript(t)[:2]
@@ -29,10 +24,7 @@ func TestHeadFallbackScope(t *testing.T) {
 			next := e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
 			e.answer(t, next.Decision, "approved")
 			e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: next.Decision})
-			_, err := e.eng.Advance(context.Background(), interp.Event{Repository: "app", Task: "t7", Kind: interp.AttemptResult, Step: "build", Attempt: 1})
-			if err == nil || !strings.Contains(err.Error(), "code head output is not") {
-				t.Fatalf("explicit intake: %v", err)
-			}
+			assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1}, "code head output is not")
 			if _, ok := e.documents(t)["build-1-head"]; ok {
 				t.Fatal("invalid head recorded")
 			}
