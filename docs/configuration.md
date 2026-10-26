@@ -352,7 +352,8 @@ Parsing and validation accept or refuse a definition only; they never activate i
 3. it meets the review floor and weakens nothing in an authorized baseline: a shipped definition, or the repository's workflow file before its overrides when that file's own digest is approved.
 
 The refusal names the effective digest, each review-floor problem or each baseline with what the revision weakens in it, and the `workflow approve --config --repo` command that approves it.
-Approving the exact effective digest is the Guildmaster's way to admit a weakening edit, including one below the floor.
+Approving the exact effective digest currently admits a weakening edit, including one below the floor.
+The accepted [rails, not tracks](decisions/rails-not-tracks.md) direction requires final independent review and required validation regardless of admission or route; enforcing that invariant independently of workflow shape is follow-up work, not a guarantee of the current admission check.
 
 The classifier, `workflow.Weakenings`, is conservative: anything it cannot prove harmless is weakening.
 It matches steps by id and guards the steps that review, approve, validate, publish or deliver (`review`, `document-review`, `guildmaster-approval`, `validate`, `publish`, `deliver`).

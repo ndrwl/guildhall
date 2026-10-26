@@ -14,7 +14,7 @@ The same commands serve three callers:
 
 ## The flow of one task
 
-This is the intended flow of one task:
+This is the intended normal flow of one task, not the only route a Director may choose:
 
 ```mermaid
 sequenceDiagram
@@ -144,10 +144,15 @@ Built does not mean live acceptance has passed: the Director is exercised in CI 
 
 ### Workflows
 
-Each task runs a JSON workflow made of built-in, versioned step kinds; a workflow cannot contain commands or code.
+Each task uses a JSON workflow made of built-in, versioned step kinds; a workflow cannot contain commands or code.
 Each step names who fulfils it: an Artisan, the Guildmaster, the Director or Guildhall itself.
-Loops are bounded, Guildmaster steps are durable pauses that spend no model tokens, and every repository's merge policy applies whatever the workflow says.
-The [workflow interpreter](interpreter.md) executes a supported subset; the default workflow is shown under [the walkthrough](walkthrough.md#2-give-it-work).
+The design is [rails, not tracks](decisions/rails-not-tracks.md): workflows and step kinds explain their purpose, the default sequence and bounded loops supply the normal route, and the Director can choose recorded alternatives without weakening delivery invariants.
+The engine must preserve the accepted specification, independent final-code review, required validation, merge authorization under repository policy, and full records and custody regardless of route.
+Guildmaster steps remain durable pauses that spend no model tokens.
+Unexpected waits and refusals must reach the Director with the facts and safe tools; edge cases and workarounds also become maintenance tickets for the Steward's private queue or a standalone Director's local queue.
+The [workflow interpreter](interpreter.md) currently executes a supported ordered subset; general route-changing tools, purpose text and maintenance tickets are follow-up work, not shipped behavior.
+The [escape-path audit](evidence/rails-not-tracks-audit-2026-10-26.md) identifies the current gaps, including enforcement that still depends on workflow shape.
+The default workflow is shown under [the walkthrough](walkthrough.md#2-give-it-work).
 
 ## What the badges mean
 
