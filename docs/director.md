@@ -205,6 +205,13 @@ While the session is `paused` or `stopping` the watcher advances nothing.
 One round runs at a time; a failed advance, such as an unreachable forge, is appended with its standard-error output to `checks.log` in the session's directory and tried again a refresh later, and the supervisor lets a running round end before it records the session stopped.
 With no supervisor running, the task waits until someone runs the `task start` its `checks` item in [`needs_me`](#status) names.
 
+A validate or deliver observation of a conflicting PR or a strict-protection-blocked behind PR instead records its mergeability and sends one `pr-blocked` message per head and state.
+The report gives the URL, head/base commits, conflicting paths, behind count and options, and the task waits for the Director, so the checks watcher does not keep polling it.
+The Director chooses the response; Guildhall never rebases automatically.
+[`step send-back`](step-send-back.md) can start a new attempt of a succeeded Artisan step with Director feedback, followed by normal rebase-aware review and republishing to the same PR.
+Holding the task, leaving the work unadvanced, using the existing attempt stop or Director-stage abandonment paths, and rechecking after an external change are alternatives, not a prescribed recovery sequence.
+See the shipped `guildhall-director-tasks` skill for the commands and their limits.
+
 ## Stop
 
 ```sh

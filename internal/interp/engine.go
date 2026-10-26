@@ -37,6 +37,8 @@ const (
 	DecisionAnswered EventKind = "decision-answered"
 	// AttemptRetried: the Director asked for the next attempt of a step whose latest attempt failed or stopped.
 	AttemptRetried EventKind = "attempt-retried"
+	// StepSentBack: the Director sends a succeeded Artisan step back as a new attempt with Reason as feedback.
+	StepSentBack EventKind = "step-sent-back"
 )
 
 // Event is one thing that happened to a task, given to Engine.Advance.
@@ -44,12 +46,14 @@ type Event struct {
 	Kind       EventKind
 	Repository string
 	Task       string
-	// Step and Attempt name the attempt whose result arrived (AttemptResult) or that is retried (AttemptRetried).
+	// Step and Attempt name the attempt whose result arrived (AttemptResult), that is retried (AttemptRetried),
+	// or whose succeeded work the Director sends back (StepSentBack).
 	Step    string
 	Attempt int
 	// Decision is the id of the answered decision (DecisionAnswered only).
 	Decision string
-	// Reason is the Director's reason for a retry, recorded as a Director message when not empty (AttemptRetried only).
+	// Reason is the Director's reason for a retry (AttemptRetried), or required feedback for StepSentBack.
+	// A retry records it as a Director message; send-back records an immutable input document.
 	Reason string
 }
 
@@ -249,6 +253,9 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 	if err := r.intake(ev); err != nil {
 		return Next{}, err
 	}
+	if err := r.replayMergeBlocked(); err != nil {
+		return Next{}, err
+	}
 	for _, step := range def.Steps {
 		if !runsAttempts(step) {
 			continue
@@ -334,6 +341,8 @@ func (r *run) intake(ev Event) error {
 		return r.takeResult(r.def.Steps[i], a)
 	case AttemptRetried:
 		return r.retried(ev)
+	case StepSentBack:
+		return r.sentBack(ev)
 	case DecisionAnswered:
 		d := r.decision(ev.Decision)
 		switch {

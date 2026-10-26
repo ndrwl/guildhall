@@ -1,0 +1,39 @@
+Contract-first evidence for Director-owned PR conflict recovery (2026-10-26)
+
+The behavioural contract was recorded in docs/decisions/pr-conflict-director-control.md before implementation.
+The initial interpreter tests were added before the new API or implementation.
+Their first run failed at compilation, not at a behavioural assertion:
+
+$ go test ./internal/interp -run 'TestMergeabilityWaits|TestSendBack'
+internal/interp/pr_blocked_test.go:16:6: f.SetMergeability undefined
+internal/interp/pr_blocked_test.go:16:28: undefined: forge.Mergeability
+internal/interp/pr_blocked_test.go:49:34: undefined: interp.StepSentBack
+FAIL github.com/ndrwl/guildhall/internal/interp [build failed]
+
+After implementation and test expansion:
+
+$ go test ./internal/interp ./internal/forge ./internal/cli -run 'TestGitHubMergeability|TestMergeability|TestSendBack|TestStepSendBack'
+ok github.com/ndrwl/guildhall/internal/interp 0.813s
+ok github.com/ndrwl/guildhall/internal/forge 0.634s
+ok github.com/ndrwl/guildhall/internal/cli 0.196s
+
+Interpreter tests run against both real store records and the interpreter records double.
+They cover conflicting and strict-behind reports, replay deduplication across validate/deliver, changed-head notifications, changed-base deduplication, refresh retention, no-CI obstruction, Director feedback, immutable request replay, admission holds and active-attempt refusals.
+The send-back flow proves resolution-scoped rebase review and republishing to the same PR.
+Forge integration tests use real git against a local bare repository and the strict gh executable stand-in, including real merge-tree exit-1 conflict evidence and installed-gh offline syntax checks.
+The shared RunMergeabilityContract suite runs against both the real boundary and scripted fake, checking exact evidence, repeated reads, ownership of returned path slices, invalid inputs and moved heads.
+A notification-failure test proves recovery from the durable observation even when the forge clears before the notification is replayed.
+CLI tests exercise command validation, help, actual launch, feedback and replay through the normal advance wiring.
+The forge integration and extra refusal/hold/cache tests were added after implementation; they are not claimed as red-first tests.
+No external forge credentials or model calls were used.
+
+Final complete local validation (exit 0):
+- gofmt -l .: no output
+- go build ./...: passed
+- go vet ./...: passed
+- go test ./...: all packages passed
+- golangci-lint run (v2.15.0, the CI-pinned version): 0 issues
+- git diff --check: passed
+
+The first full run identified expected shipped-skill digest changes and a two-sentence Markdown table row.
+The digest fixture was regenerated with the supported skills -update test flag, and the row was corrected to one sentence; the final full run above passed.

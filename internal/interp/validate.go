@@ -120,14 +120,27 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		p, _ := parseDecision(source)
 		k = p.round + 1
 	}
-	if due, err := r.checksDue(s, h); err != nil || !due {
+	if due, blocked, err := r.checksDue(s, h); err != nil || !due {
+		if blocked {
+			wait = Next{Wait: WaitDirector, Step: s.ID}
+		}
 		return false, wait, err
+	}
+	blocked, err := r.mergeBlocked(pr, h)
+	if err != nil {
+		return false, Next{}, err
+	}
+	if blocked {
+		if err := r.checksRead(s, h, true); err != nil {
+			return false, Next{}, err
+		}
+		return false, Next{Wait: WaitDirector, Step: s.ID}, nil
 	}
 	checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h})
 	if err != nil {
 		return false, Next{}, err
 	}
-	if err := r.checksRead(s, h); err != nil {
+	if err := r.checksRead(s, h, false); err != nil {
 		return false, Next{}, err
 	}
 	v := validationDoc{Schema: validationSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: h, Verdict: validationPassed, Checks: checks}
@@ -180,8 +193,9 @@ func newFailure(checks, last []forge.Check) bool {
 
 // checksRead is when validate step s last read the checks of Head, kept in <state>/<repo>/<task>/<step>.checks.json.
 type checksRead struct {
-	Head   string    `json:"head"`
-	ReadAt time.Time `json:"read_at"`
+	Head    string    `json:"head"`
+	ReadAt  time.Time `json:"read_at"`
+	Blocked bool      `json:"blocked,omitempty"`
 }
 
 func (r *run) checksReadPath(s workflow.Step) string {
@@ -190,31 +204,31 @@ func (r *run) checksReadPath(s workflow.Step) string {
 
 // checksDue reports whether validate step s may read the checks of head h: always without a ChecksRefresh, and
 // otherwise unless it read them less than ChecksRefresh ago.
-func (r *run) checksDue(s workflow.Step, h string) (bool, error) {
+func (r *run) checksDue(s workflow.Step, h string) (bool, bool, error) {
 	if r.e.ChecksRefresh <= 0 {
-		return true, nil
+		return true, false, nil
 	}
 	data, err := atomicfile.Read(r.checksReadPath(s))
 	if errors.Is(err, fs.ErrNotExist) {
-		return true, nil
+		return true, false, nil
 	}
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	var c checksRead
 	if err := json.Unmarshal(data, &c); err != nil {
-		return false, fmt.Errorf("%s: %w", r.checksReadPath(s), err)
+		return false, false, fmt.Errorf("%s: %w", r.checksReadPath(s), err)
 	}
 	now := r.now()
-	return c.Head != h || c.ReadAt.After(now) || now.Sub(c.ReadAt) >= r.e.ChecksRefresh, nil
+	return c.Head != h || c.ReadAt.After(now) || now.Sub(c.ReadAt) >= r.e.ChecksRefresh, c.Head == h && c.Blocked, nil
 }
 
 // checksRead records that validate step s read the checks of head h now, when a ChecksRefresh paces the reads.
-func (r *run) checksRead(s workflow.Step, h string) error {
+func (r *run) checksRead(s workflow.Step, h string, blocked bool) error {
 	if r.e.ChecksRefresh <= 0 {
 		return nil
 	}
-	data, err := json.Marshal(checksRead{Head: h, ReadAt: r.now().UTC()})
+	data, err := json.Marshal(checksRead{Head: h, ReadAt: r.now().UTC(), Blocked: blocked})
 	if err != nil {
 		return err
 	}

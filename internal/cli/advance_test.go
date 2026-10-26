@@ -193,7 +193,18 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 			if code != 0 {
 				exit = fmt.Errorf("exit %d", code)
 			}
-			return launchtest.Report(stdout, stderr, exit)
+			rep, err := launchtest.Report(stdout, stderr, exit)
+			if err != nil && rep.Launcher == launch.LauncherGone {
+				// File outcomes mask the Exited classification. Check the released
+				// record itself for a launcher that never recorded a worker unit.
+				own, readErr := withStore(d.store, true, func(s *store.Store) (store.Ownership, error) {
+					return s.Ownership("app", "t-1", a.Step, a.Number)
+				})
+				if readErr == nil && own.State == store.OwnerReleased && own.Containment == (store.Containment{}) {
+					return rep, nil
+				}
+			}
+			return rep, err
 		})
 		if err != nil {
 			out = append(out, fmt.Sprintf("artisan stop %s-%d: %v", a.Step, a.Number, err))

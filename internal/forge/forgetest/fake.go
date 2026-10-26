@@ -21,9 +21,10 @@ type Fake struct {
 	bases    map[string]string
 	prs      map[string][]forge.PullRequest
 	// pushed holds the heads ever pushed to each remote, and checks what each remote reports for a head.
-	pushed map[string]map[string]bool
-	checks map[string]map[string][]forge.Check
-	refuse string
+	pushed       map[string]map[string]bool
+	checks       map[string]map[string][]forge.Check
+	refuse       string
+	mergeability forge.Mergeability
 	// publishes and merges count calls.
 	publishes, merges int
 }

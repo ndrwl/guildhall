@@ -9,7 +9,16 @@ The cases: a pull request opened for the pushed head and replayed unchanged; the
 Its merge moves the default branch to a merge commit derived from the head; it never touches git or the network, and it is safe for concurrent use.
 `NewFakeHarness` is the `Fake` under the suite.
 
+`Fake.SetMergeability` scripts observations for the consumer's optional mergeability seam and clones path slices on input and output under the fake's mutex.
+An empty scripted head resolves to the requested head, and an omitted URL resolves to the published PR's URL.
+It performs no network or git operations; production evidence computation is tested separately against real git and strict gh process syntax.
+
+`RunMergeabilityContract` is the shared observation contract for the scripted fake and the strict-gh/real-git fixture.
+It checks exact evidence, immutable returned slices, repeated reads, malformed requests and refusal when the requested head no longer matches the observation.
+
 ## Tests
+
+`TestFakeMergeabilityContract` and `TestGitHubMergeabilityEvidence` run the same `RunMergeabilityContract` suite against both sources.
 
 Run by `internal/forge/forge_test.go` against `Fake` and `forge.GitHub`; `Fake` is the double in `internal/interp/deliver_test.go` and `internal/cli/advance_test.go`.
 Both were red first against stubs, as recorded in [`internal/forge`](forge.md#tests).

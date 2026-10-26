@@ -3,11 +3,11 @@
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
 It follows `changes_requested` and `failed` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review and validation gates before `deliver`, [publishes and merges](#publish-and-deliver) through the forge and [validates](#validate) the published head against the forge's checks; it hands [Director stages](#director-stages) to the Director; the checks gate, automatic merging and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
-[`task start`, `step done`, `step finish` and `step retry`](running.md) run it from the command line; from a copy, each attempt's launcher runs them itself as the task's [watcher](running.md#the-watcher).
+[`task start`, `step done`, `step finish`, `step retry` and `step send-back`](running.md) run it from the command line; from a copy, each attempt's launcher runs them itself as the task's [watcher](running.md#the-watcher).
 
 ## Seams
 
-The engine consumes seven narrow interfaces, declared in `internal/interp` beside the code that calls them.
+The engine consumes eight narrow interfaces, declared in `internal/interp` beside the code that calls them.
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
@@ -17,6 +17,7 @@ The engine consumes seven narrow interfaces, declared in `internal/interp` besid
 | `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 | `Forge`: [publish and deliver](#publish-and-deliver), [validate](#validate) | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunForgeContract` |
+| `MergeabilityReader`: [mergeability observations](#mergeability-observations), optional on the forge | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunMergeabilityContract` |
 | `Workspaces`: [the working directory](#the-working-directory) | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
@@ -58,6 +59,7 @@ There is no seam: like `launched.json` and `result.json`, the file is read from 
 | `task-created` | The task exists and is open. | Nothing by itself. |
 | `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. When its launcher already recorded the outcome, that outcome stands, and a succeeded one has its outputs recorded by the next advance, whatever its event. |
 | `decision-answered` | The named decision exists and is answered. | Nothing by itself: the answer is already recorded. |
+| `step-sent-back` | The [send-back admission and replay requirements](step-send-back.md). | Immutable `send-back-<step>-<attempt>` feedback document, then the step's next attempt under ordinary admission gates; changed-feedback replays are refused. |
 | `attempt-retried` | The named attempt of the named step exists, finished `failed` or `stopped`, and is the step's latest. When the step's latest attempt is the next one, the event is a replay. | The step's next attempt, started as a first attempt starts; once it has launched, the Director's reason, when given, as message `<repo>.<task>.attempt-retried.<step>-<n>`, type `attempt-retried`. A replay launches the next attempt if it was recorded but not launched, and records nothing but that message, sent again when it is missing. |
 
 Any other event, or one that does not match the records, is refused with `ErrEvent` and changes nothing.
@@ -96,7 +98,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
 Every attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails); one refused at a cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, naming `step retry` for a refused retry and `task start` otherwise, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.
-Publishing, validating and merging send `published`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, described below.
+Publishing, validating and merging send `published`, `pr-blocked`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, described below.
 
 ## Director stages
 
@@ -150,6 +152,27 @@ There is no automatic rebase or retry: each later advance, such as `task start` 
 Any other forge error, such as a forge it could not reach, fails the advance, records nothing and sends no `merge-refused` message.
 
 Replay follows the general rule: a crash before `publish-<k>-head` publishes the same head again, and the forge returns the same pull request; a crash after the forge merged but before `<decision>-merge` asks again, and the forge returns the merge it already made.
+
+### Mergeability observations
+
+Before validate reads checks, and before deliver opens or follows a merge decision, a forge implementing `MergeabilityReader` reads the PR's `mergeable` and `mergeStateStatus` with `gh pr view <number> --repo <repository> --json url,state,headRefOid,baseRefOid,mergeable,mergeStateStatus`.
+A conflicting (`CONFLICTING` or `DIRTY`) PR, or a `BEHIND` PR blocked by strict branch protection, waits with `{"wait":"director","step":"<validate-or-deliver>"}` rather than waiting silently for checks GitHub may never run.
+`UNKNOWN` and an otherwise `BLOCKED` PR are not assumed to be conflicts or strict-behind states.
+Observations must match the published head; a moved PR or a failed observation is an error, not permission to merge.
+The forge fetches the exact base commit without updating a branch and computes the behind count with `rev-list` and conflicting paths with `merge-tree`; it never checks out, merges or rebases the task's worktree.
+
+The observation is recorded as document `pr-blocked-<full-head>-<state>` before sending the Director a message with the same suffix and type `pr-blocked`.
+It includes the PR URL, full head/base commits, state, paths, behind count and the available commands and options.
+Validate and deliver share that identity: a replay, a changed base or reaching deliver does not notify again for the same head and state.
+The first observation remains immutable; a different head or state gets a new report.
+If the observation file was written but its document record failed, the next blocked observation with that identity records the existing bytes rather than regenerating evidence against a moved base.
+An advance replays recorded observation messages before walking the workflow, so a notification lost after its document committed is recovered even if the forge has since cleared.
+Replay recognizes only the full-head identity with state `conflicting` or `behind`, not ordinary workflow documents whose names also begin with `pr-blocked-`.
+Validate's refresh cache retains the Director wait between reads, and the checks watcher no longer polls a task waiting on the Director.
+A Director-initiated advance rechecks when due; deliver rechecks on each advance.
+Guildhall never rebases automatically and prescribes no recovery.
+The Director can [send a succeeded step back](step-send-back.md) with its instructions, hold the task, leave the work unadvanced, or act externally and recheck.
+Existing attempt stop and Director-stage abandonment paths are unchanged; no task-cancellation command is added.
 
 ## Validate
 
