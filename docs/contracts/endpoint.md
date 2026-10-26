@@ -24,9 +24,16 @@ Its consumers are the attempt control endpoint (`artisan.Listen` and `artisan.Ca
 - `Call` writes one request line and reads one reply line of at most `Protocol.MaxReply` bytes, decoded strictly; a reply that is not the protocol is the consumer's `Malformed`, also matching `strictjson.ErrNewerSchema` for a newer version, and one naming another owner than the caller expects is the consumer's `Mismatch`, returned with the reply.
   No socket file at the path, or one nothing listens on, is `ErrNotListening`, which never proves the owner exited.
   A reply's own refusal is the consumer's to read.
-- `Close` stops accepting, lets requests being answered get their reply, and removes the socket file; it is idempotent.
+- `Close` stops accepting and removes the socket file, then waits for every accepted exchange to finish writing its reply (or hit its transport deadline) before returning; it is idempotent, including concurrent calls.
+  This lets an owning launcher exit after `Close` without truncating its stop reply.
+  Handlers must return before shutdown can complete and must not call `Close` themselves.
+  Handler execution has no shutdown deadline; transport read and write deadlines still apply.
 
 ## Tests
+
+`TestCloseWaitsForReplyWrite` blocks reply encoding after the handler returns over a real socket, checks that concurrent `Close` calls wait, then releases encoding and verifies the decoded reply and successful closures.
+It failed before the drain was implemented and passed afterward; the regression and the affected launcher/CLI stop tests also passed 500 repetitions on Linux ([captured runs](../evidence/launcher-stop-reply-2026-10-26.txt)).
+Local `-race` validation was unavailable because this environment has no C compiler; no race-detector pass is claimed.
 
 `endpointtest.RunEndpointContract` ([contract](endpoint-endpointtest.md)) is the shared suite; `endpoint_test.go` runs it over a test consumer, a ping naming an owner, and `artisan` and `session` each run it over their own `Listen` and `Call`.
 `endpoint_test.go` also covers the path limit creating nothing, `Call` with no socket file and over a stale socket (`ErrNotListening`), a blocked request delaying no other with the caller's context bounding a `Call`, and `Call` refusing a newer, unversioned, extended, duplicated, oversize and non-JSON reply as the consumer's `Malformed` and a reply naming another owner as its `Mismatch`, while returning a refusal reply for the consumer to read; `dir_unix_test.go` checks a missing directory is created `0700`, and `exchange_internal_test.go`, with the bound shortened, that a silent peer is refused once the exchange bound passes.
