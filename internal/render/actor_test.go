@@ -3,21 +3,32 @@ package render
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	release "github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 func TestDirectorPromptHasNoArtisanCompletion(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "baseline")
+	if err := release.Install(root); err != nil {
+		t.Fatal(err)
+	}
+	shipped := func(name string) Source {
+		return Source{Name: name, Path: filepath.Join(root, filepath.FromSlash(name))}
+	}
 	for _, kind := range workflow.Kinds() {
 		if !slices.Contains(kind.Actors, workflow.DirectorActor) {
 			continue
 		}
 		t.Run(kind.Type, func(t *testing.T) {
 			stage := attempt(t, step(t, "step", kind.Type, `{"actor":"director"}`))
-			result, err := Prompt(stage, nil, baseline("grill"), nil)
+			result, err := Prompt(stage, nil, Baseline{
+				Role: shipped("roles/director.md"), Guide: shipped("stages/" + kind.Type + ".md"),
+			}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -25,7 +36,7 @@ func TestDirectorPromptHasNoArtisanCompletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, instruction := range []string{"## Required outputs", "## Result template", "result file your runtime names"} {
+			for _, instruction := range []string{"Required outputs", "Result template", "result file your runtime names", "`outputs`", "outputs:"} {
 				if strings.Contains(string(data), instruction) {
 					t.Errorf("Director prompt contains Artisan instruction %q", instruction)
 				}
