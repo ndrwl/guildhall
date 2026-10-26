@@ -56,7 +56,8 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		return interp.Handle{}, err
 	}
 	label := "artisan " + at.Key.String()
-	workspace, err := presentation.Host.CreateWorkspace(ctx, label, cmd.Dir)
+	workspaceLabel := fmt.Sprintf("└ %s · %s #%d", at.Key.TaskID, at.Key.Step, at.Key.Attempt)
+	workspace, err := presentation.Host.CreateWorkspace(ctx, workspaceLabel, cmd.Dir)
 	if err != nil {
 		return interp.Handle{}, err
 	}

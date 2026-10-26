@@ -573,12 +573,22 @@ func TestHeartbeat(t *testing.T) {
 			writeHeartbeat(t, dir, artisan.Heartbeat{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: 1, Sequence: 41, Time: quiet, LastOutputAt: quiet, WorkerState: "running"})
 		})
 		await(t, c.dir, c.owner, reconcile.Running)
-		time.Sleep(stale)
-		cl := classify(c.dir, c.owner)
-		want(t, cl, reconcile.Running)
-		h := *cl.Heartbeat
-		if !h.LastOutputAt.Equal(quiet) || time.Since(h.Time) > stale || h.Sequence <= 41 || h.Key() != key || h.WorkerState != "running" {
-			t.Fatalf("heartbeat %+v, want a fresh beat after sequence 41 with last output %v", h, quiet)
+		// Observe continued publication beyond a stale interval, allowing the
+		// worker to finish starting even on a heavily loaded runner.
+		after := time.Now().Add(stale)
+		for end := time.Now().Add(deadline); ; time.Sleep(beat) {
+			cl := classify(c.dir, c.owner)
+			if cl.State == reconcile.Running && cl.Heartbeat != nil && cl.Heartbeat.WorkerState == "running" && cl.Heartbeat.Time.After(after) {
+				want(t, cl, reconcile.Running)
+				h := *cl.Heartbeat
+				if !h.LastOutputAt.Equal(quiet) || cl.HeartbeatAge > stale || h.Sequence <= 41 || h.Key() != key {
+					t.Fatalf("heartbeat %+v, want a fresh beat after sequence 41 with last output %v", h, quiet)
+				}
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatalf("no fresh running-worker heartbeat after %v: %+v", after, cl)
+			}
 		}
 	})
 	t.Run("a stale heartbeat while alive is stuck, refuses a relaunch and recovers", func(t *testing.T) {

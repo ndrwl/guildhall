@@ -61,8 +61,9 @@ type Client struct {
 	command []string
 	// run executes argv with env and returns stdout, stderr and the exit code;
 	// err is set only when the process could not be run at all.
-	run     func(ctx context.Context, argv, env []string) (stdout, stderr []byte, exit int, err error)
-	environ func() []string
+	run           func(ctx context.Context, argv, env []string) (stdout, stderr []byte, exit int, err error)
+	environ       func() []string
+	moveWorkspace func(context.Context, string, string, int) ([]byte, error)
 }
 
 // New returns a client for the named session. The session must be given and

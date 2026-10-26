@@ -1,0 +1,5 @@
+--- FAIL: TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt (0.09s)
+    presentation_unix_test.go:75: expected separate labelled Artisan workspace: [{ID:director Label:director InitialTab:{session: workspaceID: tabID: paneID:}} {ID:director-2 Label:artisan app/t7/build/1 InitialTab:{session: workspaceID: tabID: paneID:}}], <nil>
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/launch	0.097s
+FAIL

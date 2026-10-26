@@ -1,0 +1,11 @@
+=== RUN   TestArtisanChildWorkspaceHerdrLab
+    artisan_order_lab_test.go:70: verified complete order with two Artisan workspaces below Director: [{ID:w1 Label:lab-director InitialTab:{session: workspaceID: tabID: paneID:}} {ID:w3 Label:└ d3 · build #1 InitialTab:{session: workspaceID: tabID: paneID:}} {ID:w4 Label:└ d3 · review #1 InitialTab:{session: workspaceID: tabID: paneID:}} {ID:w2 Label:lab-foreign InitialTab:{session: workspaceID: tabID: paneID:}}]
+--- PASS: TestArtisanChildWorkspaceHerdrLab (0.42s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/cli	0.429s
+fm-herdr-lab: session stop 'fm-lab-guildhall-artisa-961137-30334' exit=0
+fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
+{"session":{"default":false,"name":"fm-lab-guildhall-artisa-961137-30334","running":false,"session_dir":"<redacted-session-dir>","socket_path":"<redacted-socket-path>"},"stopped":true}
+fm-herdr-lab: session delete 'fm-lab-guildhall-artisa-961137-30334' exit=0
+fm-herdr-lab: stdout (first 4096 bytes; credential-bearing lines omitted):
+{"deleted":true,"session":{"default":false,"name":"fm-lab-guildhall-artisa-961137-30334","running":false,"session_dir":"<redacted-session-dir>","socket_path":"<redacted-socket-path>"}}
