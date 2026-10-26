@@ -135,7 +135,8 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
-- The instruction names the prompt copy and a draft result file, `model/result.json`, and gives the exact result object for the attempt's identity; Claude reads the prompt and writes the draft once, as its last action.
+- The instruction names the prompt copy and a draft result file, `model/result.json`, fixes the result identity, and directs Claude to the prompt's [generated Result template](rendering.md#required-outputs-and-result-template); Claude reads the prompt and writes the draft once, as its last action.
+  For a custom prompt without a template, the instruction describes adding status, summary and the required file entries to those identity fields, allowing an empty output list only for failed results or automatic code-head capture.
 - `acceptEdits` lets Claude edit files in the working directory and the model directory; other tools that need permission depend on explicit or inherited grants, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
 - The wrapper always writes `claude-settings.json` beside the result, outside model-writable added directories, and passes it with `--settings`.
   It merges `permissions.allow` from the referenced copy/profile with the resolved [Claude skill policy](configuration.md#claude-skill-policies), including when the allow list is empty.

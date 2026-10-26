@@ -154,10 +154,16 @@ func roundTraceThreeReviews(t *testing.T, ids [3]string) {
 			)
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "design-review", Attempt: 1})
+			if got := e.stages[len(e.stages)-1].Revisions; got == nil || *got != design.Revisions {
+				t.Fatalf("document review prompt revisions = %+v, want %+v", got, design.Revisions)
+			}
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "design-review", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})
 			e.answer(t, "accept-1", "approved")
 			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 1})
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: ids[0], Attempt: 1})
+			if got := e.stages[len(e.stages)-1].Revisions; got == nil || *got != o1.Revisions {
+				t.Fatalf("code review prompt revisions = %+v, want %+v", got, o1.Revisions)
+			}
 
 			// Round 1 requests changes citing rules: the build runs again with the outcome as feedback.
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[0], Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
