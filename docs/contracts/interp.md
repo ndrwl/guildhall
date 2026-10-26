@@ -3,8 +3,9 @@
 ## Contract
 
 `Engine.Advance` checks `config.CheckArtisanAdapters` before event intake or any mutation: an Artisan without a profile is refused with a custom-workflow remedy.
-An empty selection is `config.ErrMissingAdapter`, not an implicit fake; the refusal names the step and remediation.
-Explicit fake/mock defaults remain usable, including tests; there is no missing-selection exemption for test binaries.
+A missing profile is `config.ErrMissingAdapter`, not an implicit fake; the refusal names the step and directs the user to set a profile on that step in a custom workflow.
+Explicit fake/mock profiles remain usable, including tests; there is no profile-less exemption for test binaries.
+`TestAdvanceRefusesProfilelessLegacyTask` exercises a task bound to a profile-less workflow over both records backends and asserts the refusal records and launches no attempts.
 
 [Code-head output intake](../interpreter.md#code-head-output-intake) owns the derived Git output, workspace requirements, explicit-file compatibility and immutable replay contract.
 `head_replay_test.go` exercises real Git over both records backends: running and launcher-finished successes, empty output lists, missing intake markers, untracked notes, staged/unstaged dirt, progression to review, and immutable replay after HEAD moves.
