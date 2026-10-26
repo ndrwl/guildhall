@@ -170,7 +170,10 @@ func (r *run) allowed(s workflow.Step) int {
 // pending returns, as feedback inputs, every allowed firing of a loop back to step t that no attempt of t
 // has served yet, recording a Guildmaster's answer as a document first.
 func (r *run) pending(t workflow.Step) ([]render.Input, error) {
-	var out []render.Input
+	out, err := r.sentBackFeedback(t)
+	if err != nil {
+		return nil, err
+	}
 	for _, s := range r.def.Steps {
 		if rule, ok := s.On[loopOutcome(s)]; !ok || rule.Goto != t.ID {
 			continue

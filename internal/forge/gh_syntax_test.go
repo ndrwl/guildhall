@@ -60,6 +60,7 @@ func ghCallShapes() [][]string {
 		{"pr", "list", "--repo", "github.com/acme/widgets", "--head", "guildhall/t7", "--state", "open", "--json", "number,url,state,headRefName,headRefOid,mergeCommit"},
 		{"pr", "create", "--repo", "github.com/acme/widgets", "--head", "guildhall/t7", "--title", "Task t7", "--body", "Body text"},
 		{"pr", "view", "1", "--repo", "github.com/acme/widgets", "--json", "number,url,state,headRefName,headRefOid,mergeCommit"},
+		{"pr", "view", "1", "--repo", "github.com/acme/widgets", "--json", "url,state,headRefOid,baseRefOid,mergeable,mergeStateStatus"},
 		{"pr", "merge", "1", "--repo", "github.com/acme/widgets", "--squash", "--match-head-commit", strings.Repeat("a", 40)},
 		{"api", "graphql", "--hostname", "github.com", "-f", "query=query { viewer { login } }", "-f", "owner=acme", "-f", "name=widgets", "-f", "oid=" + strings.Repeat("a", 40)},
 	}
@@ -96,7 +97,7 @@ func TestGHCommandShapes(t *testing.T) {
 		t.Fatalf("repo view --repo = %d, want 2", code)
 	}
 	for _, bypass := range []string{"--admin", "--auto"} {
-		bad := append(slices.Clone(ghCallShapes()[4]), bypass)
+		bad := append(slices.Clone(ghCallShapes()[5]), bypass)
 		if code := runGH(&ghState{}, "", bad); code != 2 {
 			t.Fatalf("merge %s = %d, want 2", bypass, code)
 		}

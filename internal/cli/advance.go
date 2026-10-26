@@ -144,8 +144,10 @@ func (a *App) step(args []string) int {
 		return a.stepFinish(args[1:])
 	case len(args) > 0 && args[0] == "retry":
 		return a.stepRetry(args[1:])
+	case len(args) > 0 && args[0] == "send-back":
+		return a.stepSendBack(args[1:])
 	}
-	return a.usageError("step: the commands are done, finish and retry")
+	return a.usageError("step: the commands are done, finish, retry and send-back")
 }
 
 // stepRetry runs `guildhall step retry`: it feeds attempt-retried for the Director's retry of a failed or
