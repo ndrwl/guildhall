@@ -42,10 +42,8 @@ Required output examples are instructional, not an outcome recovery mechanism: m
 
 ## Refutation
 
-`refute` uses the existing `Launcher`, `Prompter` and `Records` seams, with no new process or store abstraction.
-Its ordinary document output is immutable per attempt and follows the existing identity, retry, rejection and recovery rules.
-Acceptance resolves optional `findings` documents into its question but retains the required spec as its sole approval subject and accepted output.
-No model call, automatic spec rewrite, new loop outcome or default-workflow change is introduced.
+The [plan-refutation contract](../interpreter.md#plan-refutation) owns document intake and acceptance semantics.
+Refutation uses the existing Artisan `Launcher`, `Prompter` and `Records` seams; deterministic tests substitute a scripted launcher or fake runtime rather than calling a model.
 
 ## Tests
 

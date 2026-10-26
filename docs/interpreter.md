@@ -30,12 +30,12 @@ The engine persists that revision, the subject, and (for code review) the accept
 ## Plan refutation
 
 The optional `refute` kind uses the ordinary Artisan launch and document-intake path, with a fresh attempt reading `spec` and optional research `context`, then recording `<step>-<n>-findings`.
-The baseline guide requests severity, evidence and a suggested spec change for every finding; the generated required-output instructions name `findings.md` and include it in the result template.
+The [baseline stage guide](../baseline/stages/refute.md) owns the critique instructions; the generated required-output instructions name `findings.md` and include it in the result template.
 Intake enforces the existing document contract, not the semantic quality or severity labels of the prose; deterministic tests make no model calls.
-Wire its findings into `guildmaster-approval`'s optional `findings` input to list both spec and refutation in the acceptance question, by artifact name and digest.
+When findings are supplied to acceptance, the question lists both spec and refutation by artifact name and digest.
 Acceptance stays bound to the spec digest and copies only the approved spec to its accepted-spec output; refutation cannot authorize a build or satisfy a review gate.
 A `changes_requested` acceptance with an existing bounded rule back to plan re-runs subsequent refutation against the new spec; there is no refute-specific loop or automatic revision.
-The [opt-in example](../examples/workflows/refute.json) demonstrates the wiring; the default workflow is unchanged.
+See [configuration](configuration.md#opt-in-plan-refutation) for opt-in wiring and trial guidance.
 
 ## Worker-stalled observations
 

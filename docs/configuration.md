@@ -277,11 +277,9 @@ A kind with more than one actor requires the `actor` setting; a kind with one ac
 
 [`examples/workflows/refute.json`](../examples/workflows/refute.json) adds a fresh Artisan after plan and before acceptance; it does not change the shipped default.
 Configure its `researcher`, `planner`, `reviewer` and `builder` profiles before selecting it as a repository's workflow; the refuter uses `reviewer` but may select any configured Artisan profile, including an optional role override.
-The baseline Artisan role and `stages/refute.md` supply the independent critic instructions without requiring a separate runtime or actor.
-`refute` version 1 requires one document as `spec`, accepts optional many-document `context` (research notes), and produces one Markdown document as `findings`.
-Each finding has an identifier, severity, evidence and a suggested spec change, covering wrong assumptions, missed edge cases, simpler alternatives and risks.
-Wire `refute.findings` to acceptance's optional many-document `findings` input, alongside `plan.spec` as `spec`, so the decision lists both with their recorded digests.
-Findings are advisory: they do not replace typed review outcomes, automatically revise the spec or grant acceptance.
+The baseline Artisan role and [refutation stage guide](../baseline/stages/refute.md) supply the independent critic instructions without requiring a separate runtime or actor.
+The [registry](../internal/workflow/registry.go) defines the typed ports; the example wires `plan.spec` and research notes into refutation, then `refute.findings` alongside `plan.spec` into acceptance.
+See [the interpreter contract](interpreter.md#plan-refutation) for how advisory findings are presented and how acceptance remains bound to the spec.
 The example's existing bounded `changes_requested` rule returns to plan and then runs a fresh refutation before asking again.
 Trial this workflow on a real task before proposing it as the default; no real-task trial or model evaluation is claimed here.
 
