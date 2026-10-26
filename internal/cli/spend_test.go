@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
-	"time"
 )
 
 func TestSpendReportRecordedUsage(t *testing.T) {
@@ -95,7 +95,7 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := (artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}).Dir(d.state)
-	if err = os.MkdirAll(dir, 0o700); err != nil {
+	if err = os.MkdirAll(filepath.Join(dir, "prompt"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	m := render.Manifest{Schema: render.ManifestSchema, Identity: render.Identity{Repository: "app", Task: "t-1", Step: "build", Attempt: 1, Profile: "builder"}, Role: render.File{Path: "roles/builder.md"}}
@@ -103,7 +103,7 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := filepath.Join(dir, render.ManifestFile)
+	manifest := filepath.Join(dir, "prompt", render.ManifestFile)
 	if err = os.WriteFile(manifest, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +115,10 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 	got, err := readSpend(s, d.state, "app", "t-1", started.CommittedAt)
 	if err != nil || len(got.Rows) != 1 || got.Rows[0].Profile != "builder" || got.Rows[0].Role != "roles/builder.md" || got.Total.TokensUnknown != 1 {
 		t.Fatalf("report=%+v err=%v", got, err)
+	}
+	unfiltered, err := readSpend(s, d.state, "", "", time.Time{})
+	if err != nil || len(unfiltered.Rows) != 1 || unfiltered.Rows[0].Profile != "builder" || unfiltered.Rows[0].Role != "roles/builder.md" {
+		t.Fatalf("unfiltered=%+v err=%v", unfiltered, err)
 	}
 	for _, filter := range []struct {
 		repo, task string
@@ -180,6 +184,103 @@ func TestSpendReportRetriesAggregateWithoutTranscriptReads(t *testing.T) {
 	got, err := readSpend(s, d.state, "", "", time.Time{})
 	if err != nil || len(got.Rows) != 1 || got.Total.Attempts != 2 || got.Total.Partial || got.Rows[0].Measured.InputTokens != 18 || got.Rows[0].Measured.CostUSD != 0.5 {
 		t.Fatalf("report=%+v err=%v", got, err)
+	}
+}
+
+type countedSpendStore struct {
+	*store.Store
+	receiptReads int
+	attemptReads int
+}
+
+func (s *countedSpendStore) Receipts() ([]store.Receipt, error) {
+	s.receiptReads++
+	return s.Store.Receipts()
+}
+
+func (s *countedSpendStore) Attempts(repo, task string) ([]store.StageAttempt, error) {
+	s.attemptReads++
+	return s.Store.Attempts(repo, task)
+}
+
+func TestSpendReportScansReceiptsOnlyOnceWhenFiltered(t *testing.T) {
+	d := newRunDirector(t)
+	newTask(t, d.store, d.config, "app", "Second task", "t-2")
+	s, err := store.Open(d.store, store.Options{RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	var boundary time.Time
+	for _, task := range []string{"t-1", "t-2"} {
+		for _, step := range []string{"build", "review"} {
+			r, err := s.StartAttempt(task+step, "app", task, step)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if boundary.IsZero() {
+				boundary = r.CommittedAt
+			}
+		}
+	}
+	for _, since := range []time.Time{{}, boundary} {
+		counted := &countedSpendStore{Store: s}
+		got, err := readSpend(counted, d.state, "", "", since)
+		if err != nil || got.Total.Attempts != 4 || got.ExcludedUnknownStart != 0 {
+			t.Fatalf("since=%v report=%+v err=%v", since, got, err)
+		}
+		wantReceipts := 0
+		if !since.IsZero() {
+			wantReceipts = 1
+		}
+		if counted.receiptReads != wantReceipts || counted.attemptReads != 2 {
+			t.Fatalf("since=%v receipt reads=%d, attempt reads=%d", since, counted.receiptReads, counted.attemptReads)
+		}
+	}
+}
+
+type startIndexSpendStore struct {
+	boundary time.Time
+}
+
+func (s startIndexSpendStore) Repositories() ([]string, error) {
+	return []string{"app", "other"}, nil
+}
+
+func (s startIndexSpendStore) Tasks(repo string) ([]store.Task, error) {
+	return []store.Task{{Repository: repo, ID: "t-1"}, {Repository: repo, ID: "t-2"}}, nil
+}
+
+func (s startIndexSpendStore) Attempts(repo, task string) ([]store.StageAttempt, error) {
+	return []store.StageAttempt{
+		{Repository: repo, TaskID: task, Step: "build", Number: 1},
+		{Repository: repo, TaskID: task, Step: "build", Number: 2},
+	}, nil
+}
+
+func (s startIndexSpendStore) Receipts() ([]store.Receipt, error) {
+	return []store.Receipt{
+		{Repository: "app", TaskID: "t-1", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary},
+		{Repository: "app", TaskID: "t-1", Operation: "start-owned-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(time.Second)},
+		{Repository: "app", TaskID: "t-2", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary.Add(-time.Second)},
+		{Repository: "app", TaskID: "t-2", Operation: "start-attempt", CommittedAt: s.boundary},
+		{Repository: "other", TaskID: "t-1", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary.Add(-time.Second)},
+		{Repository: "other", TaskID: "t-1", Operation: "start-owned-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(-time.Second)},
+		{Repository: "other", TaskID: "t-2", Operation: "finish-attempt", Record: "attempt/build/1", CommittedAt: s.boundary},
+		{Repository: "other", TaskID: "t-2", Operation: "start-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(-time.Second)},
+	}, nil
+}
+
+func TestSpendReportStartIndexSeparatesAttemptIdentities(t *testing.T) {
+	s := startIndexSpendStore{boundary: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	state := t.TempDir()
+	got, err := readSpend(s, state, "", "", s.boundary)
+	if err != nil || got.Total.Attempts != 2 || got.ExcludedUnknownStart != 2 || len(got.Rows) != 1 || got.Rows[0].Repository != "app" || got.Rows[0].Task != "t-1" {
+		t.Fatalf("report=%+v err=%v", got, err)
+	}
+	got, err = readSpend(s, state, "", "", time.Time{})
+	if err != nil || got.Total.Attempts != 8 || got.ExcludedUnknownStart != 0 {
+		t.Fatalf("unfiltered=%+v err=%v", got, err)
 	}
 }
 

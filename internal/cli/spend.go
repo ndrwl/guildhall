@@ -156,9 +156,28 @@ func (a *App) spend(args []string) int {
 	return a.spendTable(report)
 }
 
-func readSpend(s *store.Store, state, repository, taskID string, since time.Time) (spendReport, error) {
+type spendStore interface {
+	Repositories() ([]string, error)
+	Tasks(string) ([]store.Task, error)
+	Attempts(string, string) ([]store.StageAttempt, error)
+	Receipts() ([]store.Receipt, error)
+}
+
+func readSpend(s spendStore, state, repository, taskID string, since time.Time) (spendReport, error) {
 	out := spendReport{Rows: []spendRow{}, Unavailable: []string{"prompt_only_tokens", "tool_schema_tokens", "file_read_tokens", "adapter", "model"}}
 	groups := map[spendGroup]spendSummary{}
+	starts := map[[3]string]time.Time{}
+	if !since.IsZero() {
+		receipts, err := s.Receipts()
+		if err != nil {
+			return out, err
+		}
+		for _, r := range receipts {
+			if r.Operation == "start-attempt" || r.Operation == "start-owned-attempt" {
+				starts[[3]string{r.Repository, r.TaskID, r.Record}] = r.CommittedAt
+			}
+		}
+	}
 	repos, err := s.Repositories()
 	if err != nil {
 		return out, err
@@ -175,20 +194,14 @@ func readSpend(s *store.Store, state, repository, taskID string, since time.Time
 			if taskID != "" && taskID != task.ID {
 				continue
 			}
-			h, err := s.TaskHistory(repo, task.ID)
+			attempts, err := s.Attempts(repo, task.ID)
 			if err != nil {
 				return out, err
 			}
-			for _, at := range h.Attempts {
+			for _, at := range attempts {
 				if !since.IsZero() {
-					started := time.Time{}
 					record := fmt.Sprintf("attempt/%s/%d", at.Step, at.Number)
-					for _, r := range h.Receipts {
-						if (r.Operation == "start-attempt" || r.Operation == "start-owned-attempt") && r.Record == record {
-							started = r.CommittedAt
-							break
-						}
-					}
+					started := starts[[3]string{repo, task.ID, record}]
 					if started.IsZero() {
 						out.ExcludedUnknownStart++
 						continue
@@ -237,7 +250,7 @@ func readSpend(s *store.Store, state, repository, taskID string, since time.Time
 }
 
 func spendManifest(dir string, at store.StageAttempt, key *spendGroup) error {
-	f, err := os.Open(filepath.Join(dir, render.ManifestFile))
+	f, err := os.Open(filepath.Join(dir, "prompt", render.ManifestFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

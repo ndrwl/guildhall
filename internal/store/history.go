@@ -82,6 +82,17 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 	return h, nil
 }
 
+func (s *Store) Receipts() ([]Receipt, error) {
+	out := []Receipt{}
+	err := s.view(func(tx *bolt.Tx) error {
+		return scan(tx.Bucket(bucketReceipts), nil, &out)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: receipts: %w", err)
+	}
+	return out, nil
+}
+
 // scan appends the records of bucket b whose keys start with prefix, in key order; a nil bucket has none.
 func scan[T any](b *bolt.Bucket, prefix []byte, out *[]T) error {
 	if b == nil {
