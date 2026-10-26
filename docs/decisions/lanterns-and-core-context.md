@@ -4,7 +4,8 @@
 
 Ship Lanterns as its own visual-only plugin embedded in the Guildhall binary and installed into each Claude Director's generated workspace.
 Keep the future Clerk interaction plugin separate; do not add its commands here.
-Use Claude's native status line for one combined light/count/context band and function hooks for urgency frames and the opt-in N8 smithy Calm presentation.
+Use Claude's native status line for one combined light/count/context band and function hooks for urgency frames and Calm presentation.
+The original N8 animation and opt-in Calm default are superseded by the [S2 decision](lanterns-calm-s2.md); see the [Lanterns contract](../contracts/lanterns.md) for current animation and preference behavior.
 Do not enable early-access function hooks implicitly.
 
 Publish verified Linux Director and Artisan process labels to the existing `VITALS_AXI_LABELS` file, defaulting to `$XDG_STATE_HOME/bridge-lights/vitals-identities.json` (or `~/.local/state/bridge-lights/vitals-identities.json`).

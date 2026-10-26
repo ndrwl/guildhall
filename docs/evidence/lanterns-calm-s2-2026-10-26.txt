@@ -25,10 +25,10 @@ test at internal/lanterns/plugin/tests/hooks.test.mjs:53:1
 ✖ absent preference defaults on; off persists across a fresh session (1.543975ms)
   AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
   + actual - expected
-  
+
   + undefined
   - 'none'
-  
+
       at TestContext.<anonymous> (internal/lanterns/plugin/tests/hooks.test.mjs:56:69)
       at async Test.run (node:internal/test_runner/test:1409:7)
       at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
@@ -44,10 +44,10 @@ test at internal/lanterns/plugin/tests/hooks.test.mjs:65:1
 ✖ fake clock paints one exact S2 loop at 220 ms; clips, unmounts and restores (1.160165ms)
   AssertionError [ERR_ASSERTION]: color tick=0 (4,0)
   + actual - expected
-  
+
   + 14120791
   - 9676287
-  
+
       at assertS2 (internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
       at TestContext.<anonymous> (internal/lanterns/plugin/tests/hooks.test.mjs:70:46)
       at async Test.run (node:internal/test_runner/test:1409:7)
@@ -64,10 +64,10 @@ test at internal/lanterns/plugin/tests/presentation.test.mjs:9:1
 ✖ S2 exact loop, per-cell colors and bounded narrow fallback (2.010247ms)
   AssertionError [ERR_ASSERTION]: color tick=0 (4,0)
   + actual - expected
-  
+
   + 14120791
   - 9676287
-  
+
       at assertS2 (internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
       at TestContext.<anonymous> (internal/lanterns/plugin/tests/presentation.test.mjs:14:53)
       at Test.runInAsyncScope (node:async_hooks:227:14)
@@ -88,7 +88,7 @@ test at internal/lanterns/plugin/tests/presentation.test.mjs:18:1
 ✖ S2 holds smoke for two ticks and retains the hearth beat (2.106956ms)
   AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
   + actual - expected
-  
+
     [
   -   '              ○               ',
       '                              ',
@@ -97,7 +97,7 @@ test at internal/lanterns/plugin/tests/presentation.test.mjs:18:1
       '           ▁▟███▙▁            ',
       '              ▄               '
     ]
-  
+
       at TestContext.<anonymous> (internal/lanterns/plugin/tests/presentation.test.mjs:23:9)
       at Test.runInAsyncScope (node:async_hooks:227:14)
       at Test.run (node:internal/test_runner/test:1402:25)

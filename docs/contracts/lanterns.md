@@ -41,7 +41,7 @@ Smoke uses `floor(tick/2) % 4`: `(1,x+2,○)`, `(0,x+3,○)`, `(0,x+4,◌)`, `(0
 In the 16-tick / 3,520 ms loop, only ticks 8, 9 and 10 add a single spark `·`, respectively at `(3,x+9)`, `(2,x+9)` and `(1,x+10)`.
 Hearth and spark use `#d77757`; all other cells use ambient `#93a5ff` for themes beginning with `dark`, otherwise `#5769f7`.
 Each cell remains three little-endian uint32 words: codepoint, foreground RGB and inherited-background flag `0x01000000`.
-Widths below 11 keep origin zero and clip the right edge, including deliberate roof-only fragments at widths 1 and 3.
+Widths below 11 keep origin zero and clip the right edge, including deliberate roof fragments at widths 1 and 3.
 Unmounted sites stop blitting, narrow viewports clip without wrapping, and Calm off restores native drawings.
 
 Tests are written before implementation, using real file/process identity integration on Linux and a fake function-hook engine for terminal behavior.
