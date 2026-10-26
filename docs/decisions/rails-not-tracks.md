@@ -67,22 +67,8 @@ The toolbox must always offer an honest hold or escalation when no lawful execut
 ### Maintenance tickets to the Steward
 
 When an edge case requires intervention—an engine dead end, an unexpected state or a workaround—the Director files a maintenance ticket, including when it successfully resolves the immediate task.
-The ticket contains the originating Director and repository, task, step and attempt (or an explicit not-applicable value before task creation), workflow and release revisions, observed state, exact error, relevant artifact or log references and digests, and what the Director tried and did, including its workaround and remaining risk.
-Evidence must be redacted for credentials and unrelated private data; large evidence stays referenced rather than copied into a message body.
-Repeated observations of one incident update or link its evidence instead of creating an unbounded queue of duplicates.
-
-This extends the [designed messaging and ticket model](../messaging.md#maintenance-tickets-to-the-steward-designed-not-built), not the authority of a message.
-A maintenance ticket proposes future work: it launches no Artisan, changes no policy, grants no tool-install permission and approves no task or merge.
-The Steward keeps the maintenance queue in the private configuration repository for the Guildmaster to triage; accepting a ticket authorizes the separately scoped maintenance work, while deferral or decline leaves its evidence intact.
-Filing the ticket is not a reason to block an otherwise safe continuation of the originating task, and a delivery receipt is not acceptance of the proposed work.
-
-A standalone Director records the same ticket locally for its Guildmaster, with no Steward dependency.
-When a Steward exists, collection over the existing Steward-to-Director SSH direction can import the ticket idempotently into the private queue, as the designed lesson collection does; no Director needs access to the private repository or a new Director-to-Steward connection.
-Collection is on request, without periodic model spend, and the local record remains until collection has a durable receipt.
-The Steward still does not send Director inbox messages: queue receipts are command results, and configuration changes retain the existing rollout commands and authority.
-
-Local maintenance ticket records, listing and evidence capture, Steward collection and private-queue persistence, receipt/deduplication handling and Guildmaster triage are **not built**.
-The external Director messaging and ordinary ticket commands in `messaging.md` are also designed, not built; the maintenance extension must not be presented as a currently supported recipient, envelope type or command.
+This extends the designed messaging and ticket model, not the authority of a message.
+The [maintenance-ticket reference](../messaging.md#maintenance-tickets-to-the-steward-designed-not-built) owns the evidence, authority, standalone operation, collection and triage contract; these capabilities are **not built**.
 
 ## Delivery plan and acceptance
 
