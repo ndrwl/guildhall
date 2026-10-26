@@ -22,7 +22,16 @@ A wait that ends on its event costs nothing extra, so a slow runner makes a test
 It is for ceilings only: a grace a test waits out on purpose, such as `internal/cli`'s `leftovers` settle for a worker it expects to survive, or a duration the code under test observes, such as a stop ladder's rungs or a stall interval, stays unscaled.
 Test-binary children inherit `CI` and so the same ceilings.
 
+`WaitFor(t, what, ready)` checks `ready` immediately, then polls until it succeeds or a CI-scaled 30-second ceiling expires, failing with the event named by `what`.
+It is for real filesystem/process conditions; a producer-owned channel is preferable when available.
+The [test timing policy](../test-timing.md) specifies the ten-second minimum ceiling and local `timing:allow` exceptions enforced by `TestTimingPolicy` in every CI matrix job.
+
 ## Tests
+
+`wait_test.go` exercises immediate success, repeated condition checks and a named failure using synthetic time.
+These helper checks passed on their first run; they are not historical red-first evidence.
+`TestTimingPolicyRules` runs the policy scanner over accepted/rejected source fixtures, including aliases, local constants, short argv timeouts, field assignments, elapsed assertions, sleeps and explicit exceptions.
+The repository-wide guard initially failed on the existing timing inventory before those sites were converted or justified.
 
 `testenv_test.go` was written red first against a stub that always skipped: the skip and failure table over a recording `T`, `Required`'s parsing and refusal, and `TestCIRequirementsAreKnown`, which checks the running job's own `GUILDHALL_CI_REQUIRE` on every runner.
 `ceiling_test.go`'s `TestCeiling` was written red first against a `Ceiling` returning `d` unchanged ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): unset keeps the ceiling, and `true` and any other value scale it; the cap cases were added after a macOS run where `cmd/guildhall`'s scaled minute ceilings outlasted the package timeout.

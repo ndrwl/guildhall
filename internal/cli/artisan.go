@@ -351,15 +351,10 @@ func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir, copyDir,
 		return a.fail(err)
 	}
 	ctx := context.Background()
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, artisan.StopSignals...)
 	defer signal.Stop(signals)
-	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals, Advance: advance,
+	rep, err := launch.Run(ctx, launch.Config{Attempt: at, Command: cmd, Stdin: a.Stdin, Stdout: a.Stderr, Stderr: a.Stderr, Signals: signals, Advance: advance, ResultTimeout: timeout,
 		// A failed wake is not written to stderr: that is the worker's output file, so the line would restart its
 		// stall clock. The message stays stored and the next advance's replay tries the wake again.
 		StallInterval: stall, Outbox: wakingOutbox{storeRecords{path: at.Store}, a.directorPane(), io.Discard}})

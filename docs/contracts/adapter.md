@@ -23,6 +23,9 @@ The native worker boundary `nativeWorker` stops one verified process and proves 
 
 ## Tests
 
+Result-wait polling and timeout behavior use `testing/synctest`; the missing-result goroutine is observed blocked before publishing its result.
+Real-process completion still uses generous ceilings and the shared cancellation case no longer requires a worker to initialize within 300 milliseconds ([timing policy](../test-timing.md)).
+
 `TestNewWorkspaceReplacesOnlyItsOwnedStartingShell` crosses the real subprocess boundary with the existing Herdr stand-in and was written red first ([captured run](../evidence/director-tabs-2026-10-23-red.txt)).
 `TestIdleTabCloseRefusesUnsafeIdentity` covers unowned, busy, split, moved-tab, moved-pane and cancelled cleanup; the moved-pane regression and the initial-shell-startup wait were added red first in self-review (same captured run).
 `tabcontract.TestIdleClose` runs shared idle, busy, transient-busy, cancelled, mismatched-identity and already-closed cases against `HerdrTabs` and the CLI's `directorTabs` double through `TestHerdrIdleTabCloseContract` and `TestDirectorIdleTabCloseContract`.

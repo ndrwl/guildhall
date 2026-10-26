@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
@@ -32,11 +33,13 @@ func TestWriteReplacesAndLeavesNoTemporary(t *testing.T) {
 }
 
 func TestReadMissingIsImmediate(t *testing.T) {
-	start := time.Now()
-	_, err := atomicfile.Read(filepath.Join(t.TempDir(), "result"))
-	if !errors.Is(err, fs.ErrNotExist) || time.Since(start) > 100*time.Millisecond {
-		t.Fatalf("Read of a missing file = %v after %v, want fs.ErrNotExist at once", err, time.Since(start))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		_, err := atomicfile.Read(filepath.Join(t.TempDir(), "result"))
+		if !errors.Is(err, fs.ErrNotExist) || time.Since(start) > 100*time.Millisecond {
+			t.Fatalf("Read of a missing file = %v after %v, want fs.ErrNotExist at once", err, time.Since(start))
+		}
+	})
 }
 
 // Each concurrent read/write pair finishes before the next starts, so Windows

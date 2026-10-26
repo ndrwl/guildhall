@@ -7,6 +7,11 @@
 The additional `TestSpendReportMetadataFiltersAndMalformedEvidence`, `TestSpendReportRetriesAggregateWithoutTranscriptReads` and `TestSpendReportCopyAndHelp` cases were added after implementation and passed on their first run; they pin manifest identity, missing and malformed evidence, inclusive start times, repository/task filtering, environment copy selection and help against real fixture stores.
 `TestSpendReportMetadataFiltersAndMalformedEvidence` also checks attribution from the published `prompt/manifest.json`; `TestSpendReportScansReceiptsOnlyOnceWhenFiltered` bounds receipt scans, and `TestSpendReportStartIndexSeparatesAttemptIdentities` covers start-receipt identity and legacy receipts.
 
+Owned `artisan start --timeout` is a result-wait budget beginning after worker startup and recorded containment, not a budget for acquiring ownership.
+`App.AdvanceContext`, when set, supplies task advances' interrupt subscription; nil uses `signal.NotifyContext`.
+The interrupted-launch integration test uses the real subscription and releases its held lock only when that context is cancelled, not after a sleep.
+The [timing policy](../test-timing.md) and [regression evidence](../evidence/ci-timing-flakes-2026-10-26.md) cover immediate result expiry, pre-start stop proof and deterministic watcher ordering.
+
 Task admission and advance require an explicitly configured runtime for each Artisan stage, through its named profile; profile-less Artisan stages are refused with a custom-workflow remedy.
 A missing profile fails with exit 1 and an error naming the step and directing the user to set a profile on that step in a custom workflow, without task-record mutations or launches.
 Explicit profiles whose adapter is `fake` are still accepted; there is no default-adapter remedy.

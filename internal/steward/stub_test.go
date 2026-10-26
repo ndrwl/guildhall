@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 		if err := os.Mkdir(ready, 0o700); err != nil {
 			os.Exit(1)
 		}
-		time.Sleep(time.Minute)
+		time.Sleep(time.Minute) // timing:allow deliberately hung scp subprocess; parent owns timeout and reap.
 		os.Exit(0)
 	}
 	if private := os.Getenv(ownerPrivateEnv); private != "" {
@@ -80,7 +80,7 @@ func stubSCP(root string, args []string) int {
 				return 1
 			}
 		}
-		time.Sleep(time.Hour) // until the caller's context kills it
+		time.Sleep(time.Hour) // timing:allow deliberately hung scp subprocess until the caller kills it.
 	}
 	data, err := os.ReadFile(stubPath(root, src))
 	if err != nil {

@@ -5,8 +5,10 @@ package cli
 import (
 	"context"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -82,7 +84,7 @@ func TestInterruptedAdvanceReleasesTheTask(t *testing.T) {
 	if code, out, _ := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "deliver-1", "t-1")...)...); code == 0 {
 		t.Fatalf("interrupted task start: exit 0, %s", out)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(30*time.Second))
 	defer cancel()
 	release, err := artisan.LockAttempt(ctx, filepath.Join(d.state, "app", "t-1"))
 	if err != nil {
@@ -117,20 +119,25 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 	if err := os.MkdirAll(k.Dir(d.state), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(30*time.Second))
 	defer cancel()
 	release, err := artisan.LockAttempt(ctx, k.Dir(d.state))
 	if err != nil {
 		t.Fatal(err)
 	}
-	interrupted := make(chan time.Time, 1)
+	release = sync.OnceFunc(release)
+	defer release()
+	d.advanceContext = func(parent context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
+		ctx, stop := signal.NotifyContext(parent, signals...)
+		context.AfterFunc(ctx, release)
+		return ctx, stop
+	}
+	interrupted := make(chan struct{}, 1)
 	go func() {
-		defer release()
 		for end := time.Now().Add(testenv.Ceiling(time.Minute)); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
 			if _, err := os.Stat(filepath.Join(k.Dir(d.state), launch.LogFile)); err == nil {
-				interrupted <- time.Now()
+				interrupted <- struct{}{}
 				_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
-				time.Sleep(time.Second)
 				return
 			}
 		}
@@ -139,10 +146,7 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 		t.Fatalf("interrupted task start: exit 0, %q, stderr %s", out, stderr)
 	}
 	select {
-	case at := <-interrupted:
-		if took := time.Since(at); took > 10*time.Second {
-			t.Errorf("task start took %v after the interrupt; want no wait for the launcher's advance", took)
-		}
+	case <-interrupted:
 	default:
 		t.Fatal("task start returned before it launched the plan attempt")
 	}

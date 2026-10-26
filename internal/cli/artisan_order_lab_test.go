@@ -103,7 +103,7 @@ func TestArtisanChildWorkspaceHerdrLab(t *testing.T) {
 			createCtx := ctx
 			if guard == "short startup budget" {
 				var cancel context.CancelFunc
-				createCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+				createCtx, cancel = context.WithTimeout(ctx, time.Minute)
 				defer cancel()
 			}
 			before, err := client.WorkspaceList(ctx)

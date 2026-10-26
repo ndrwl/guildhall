@@ -77,6 +77,9 @@ The methods are safe for concurrent use.
 
 The store's ownership record keeps the same description, with the worker identity in place of a name for a process group ([containment record](store.md#containment-record)).
 A job or cgroup exists, named, from the moment the unit is created, so `artisan start` records it with the ownership, before the worker starts, and the `running` update adds the worker identity; a process group is recorded only once its worker runs.
+When supervision completes without ever invoking worker startup and no named containment was recorded, the ownership instead records `not-started`, with no name, reason or worker.
+That explicit evidence proves no worker was started, but stop still requires the launcher itself to be proven gone.
+It is never inferred from missing containment or written before a potentially crashing startup.
 
 ### Linux: detection
 
@@ -379,7 +382,7 @@ Refusing an already-decided attempt preserves its ownership record and containme
 2. it binds the control endpoint and records its path; failure at either step records the attempt as failed with `FinishAttempt`, releasing ownership without starting the worker, and returns the setup error joined with any finalization error.
    A finalized failed attempt requires a new attempt for subsequent work;
 3. it starts the worker in the attempt's containment unit and records the containment in `containment.json` and, with the worker identity, in the ownership record, with state `running`;
-4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; a positive `--timeout` requests the stop ladder when it expires (zero, the default, imposes no limit), as do the endpoint's `stop` and SIGTERM or SIGHUP;
+4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; a positive `--timeout` starts after worker startup and containment recording and requests the stop ladder when the result wait expires, without bounding ownership acquisition or setup (zero, the default, imposes no result limit), as do the endpoint's `stop` and SIGTERM or SIGHUP;
 5. it records the store outcome with `FinishAttempt`, which releases the ownership;
 6. with `--advance`, it then advances the task over the copy as its [watcher](running.md#the-watcher): `step done` after a finished attempt with a valid result, otherwise `task start`, or `quality judged` for a delivered task's judge attempt, with the output appended to `launcher.log` and an `advance` event in `events.jsonl` for each run; a failed advance is run once more and, failing again, [told to the Director](running.md#the-watcher) as `advance-failed`, and never changes the outcome.
    `--advance` needs a copy, `--copy` or `GUILDHALL_COPY`, and is a usage error without one; `launch.Process` passes `--copy <dir> --advance` only when the engine runs from a copy.

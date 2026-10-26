@@ -53,7 +53,7 @@ func TestReadableStreamBeforeClaudeExits(t *testing.T) {
 				t.Errorf("missing %q: %s", want, text)
 			}
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("no readable stream while Claude is running")
 	}
 }

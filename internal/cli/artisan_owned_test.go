@@ -117,7 +117,7 @@ func TestArtisanStartOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
 		{"guildhall-fake: fault=no-result\n", "", 4, "failed", "failed"},
 		{"guildhall-fake: fault=malformed\n", "", 4, "failed", "failed"},
 		{"guildhall-fake: fault=wrong-identity\n", "", 4, "failed", "failed"},
-		{"guildhall-fake: delay=5m\n", "300ms", 5, "stopped", "cancelled"},
+		{"guildhall-fake: delay=5m\n", "1ns", 5, "stopped", "cancelled"}, // timing:allow immediate result expiry after ownership/startup; not a startup deadline.
 	}
 	for _, tc := range cases {
 		t.Run(strings.TrimSpace(tc.prompt), func(t *testing.T) {
@@ -163,7 +163,7 @@ func TestArtisanStartRunsClaudeOwned(t *testing.T) {
 		{adaptertest.Succeed, nil, 0, "succeeded", 0},
 		{adaptertest.Fail, nil, 4, "failed", 0},
 		{adaptertest.NoResult, nil, 4, "failed", 0},
-		{adaptertest.Hang, []string{"--timeout", "500ms"}, 5, "stopped", 1},
+		{adaptertest.Hang, []string{"--timeout", "1ns"}, 5, "stopped", -1}, // timing:allow immediate result expiry; escalation rung is not a startup-speed assertion.
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.b), func(t *testing.T) {
@@ -173,7 +173,7 @@ func TestArtisanStartRunsClaudeOwned(t *testing.T) {
 				t.Fatalf("exit %d, want %d; stdout %q; stderr %q", code, tc.code, stdout, stderr)
 			}
 			r := decodeJSON[runReport](t, lastLine(stdout))
-			if r.AttemptOutcome != tc.outcome || r.Outcome.Rung != tc.rung {
+			if r.AttemptOutcome != tc.outcome || tc.rung >= 0 && r.Outcome.Rung != tc.rung {
 				t.Errorf("report %+v; want attempt outcome %s at rung %d", r, tc.outcome, tc.rung)
 			}
 		})

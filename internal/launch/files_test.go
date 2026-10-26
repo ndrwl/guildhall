@@ -23,6 +23,9 @@ func TestMain(m *testing.M) {
 	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
 	mainIfDyingLauncher()
+	if os.Getenv(noWorkerEnv) != "" {
+		launch.HideUnstartedContainment()
+	}
 	if len(os.Args) > 1 && os.Args[1] == fake.Subcommand {
 		os.Exit(fake.Main(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}

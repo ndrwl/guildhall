@@ -23,6 +23,7 @@ func TestContainmentRoundTrips(t *testing.T) {
 		{Kind: ContainmentCgroup, Name: "/sys/fs/cgroup/app.slice/guildhall-a1", Reason: "cgroup v2 delegated", Worker: worker},
 		{Kind: ContainmentSubreaper, Reason: "no cgroup v2 mounted at /sys/fs/cgroup", Worker: worker},
 		{Kind: ContainmentGroup, Worker: worker},
+		{Kind: ContainmentNotStarted},
 	} {
 		t.Run(c.Kind, func(t *testing.T) {
 			if err := c.Recoverable(); err != nil {
@@ -46,6 +47,9 @@ func TestContainmentRequiresRecoveryEvidence(t *testing.T) {
 		name string
 		c    Containment
 	}{
+		{"not-started with worker", Containment{Kind: ContainmentNotStarted, Worker: worker}},
+		{"not-started with name", Containment{Kind: ContainmentNotStarted, Name: "group"}},
+		{"not-started with reason", Containment{Kind: ContainmentNotStarted, Reason: "unknown"}},
 		{"unknown kind", Containment{Kind: "vm", Name: "guildhall-a1", Worker: worker}},
 		{"no kind", Containment{Name: "4242"}},
 		{"job without name", Containment{Kind: ContainmentJob, Worker: worker}},

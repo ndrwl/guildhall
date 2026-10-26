@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -38,27 +39,31 @@ func holdExclusive(t *testing.T, path string, d time.Duration) {
 }
 
 func TestReadWaitsForExclusiveHolder(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "result")
-	if err := os.WriteFile(path, []byte("whole\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	holdExclusive(t, path, 50*time.Millisecond)
-	if got, err := Read(path); err != nil || string(got) != "whole\n" {
-		t.Fatalf("Read while held = %q, %v; want the content once released", got, err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "result")
+		if err := os.WriteFile(path, []byte("whole\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		holdExclusive(t, path, 50*time.Millisecond)
+		if got, err := Read(path); err != nil || string(got) != "whole\n" {
+			t.Fatalf("Read while held = %q, %v; want the content once released", got, err)
+		}
+	})
 }
 
 func TestWriteWaitsForReader(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "result")
-	if err := os.WriteFile(path, []byte("old\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	time.AfterFunc(50*time.Millisecond, func() { _ = f.Close() })
-	if err := Write(path, []byte("new\n")); err != nil {
-		t.Fatalf("Write while a reader holds the file: %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "result")
+		if err := os.WriteFile(path, []byte("old\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.AfterFunc(50*time.Millisecond, func() { _ = f.Close() })
+		if err := Write(path, []byte("new\n")); err != nil {
+			t.Fatalf("Write while a reader holds the file: %v", err)
+		}
+	})
 }

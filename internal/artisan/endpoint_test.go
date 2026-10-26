@@ -48,7 +48,7 @@ func mainIfEndpointHolder() {
 			_ = c.Close()
 		}
 	}()
-	time.Sleep(time.Minute)
+	time.Sleep(time.Minute) // timing:allow idle child holds its endpoint until the parent kills and reaps it.
 	os.Exit(0)
 }
 
@@ -530,10 +530,11 @@ func TestEndpointAnswersStatusDuringBlockedStop(t *testing.T) {
 	if st, err := call(t, path, artisan.OpStatus); err != nil || st.Phase != "running" {
 		t.Errorf("status during a blocked stop = %+v, %v", st, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := artisan.Call(ctx, path, testKey, mustSelf(t), artisan.OpStop); !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, os.ErrDeadlineExceeded) {
-		t.Errorf("stop past the caller's deadline: %v, want a deadline error", err)
+	go func() { <-h.entered; cancel() }()
+	if _, err := artisan.Call(ctx, path, testKey, mustSelf(t), artisan.OpStop); !errors.Is(err, context.Canceled) {
+		t.Errorf("stop after the caller cancels: %v, want cancellation", err)
 	}
 	close(h.release)
 	select {

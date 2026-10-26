@@ -152,6 +152,9 @@ const (
 	KindSubreaper = "subreaper+pgroup"
 	// KindGroup is a process group alone (macOS).
 	KindGroup = "pgroup"
+	// KindNotStarted is completed supervision's explicit evidence that no
+	// worker startup was invoked. It is never inferred from missing evidence.
+	KindNotStarted = "not-started"
 )
 
 // Containment is the record of how a unit contains its worker.
@@ -177,7 +180,17 @@ type Containment struct {
 // kind this platform does not have is an error matching errors.ErrUnsupported.
 // An empty list with a nil error proves the unit empty; an error proves nothing.
 func Contained(c Containment, worker Identity) ([]Identity, error) {
+	if c.Kind == KindNotStarted {
+		return noStartedWorker(c, worker)
+	}
 	return contained(c, worker)
+}
+
+func noStartedWorker(c Containment, worker Identity) ([]Identity, error) {
+	if c != (Containment{Kind: KindNotStarted}) || worker != (Identity{}) {
+		return nil, errors.New("artisan: not-started cannot name a unit or worker")
+	}
+	return nil, nil
 }
 
 // ContainmentFile is the file RecordContainment writes in the attempt

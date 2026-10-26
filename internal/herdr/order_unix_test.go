@@ -32,7 +32,7 @@ func TestSocketWorkspaceMoveWire(t *testing.T) {
 			return
 		}
 		defer func() { _ = conn.Close() }()
-		_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+		_ = conn.SetDeadline(time.Now().Add(time.Minute))
 		var req struct {
 			ID     string `json:"id"`
 			Method string `json:"method"`
@@ -52,7 +52,7 @@ func TestSocketWorkspaceMoveWire(t *testing.T) {
 		_, err = conn.Write([]byte("{\"id\":\"guildhall-workspace-move\",\"result\":{\"type\":\"workspace_list\",\"workspaces\":[]}}\n"))
 		done <- err
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	out, err := socketWorkspaceMove(ctx, path, "child", 2)
 	if err != nil {

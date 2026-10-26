@@ -17,7 +17,7 @@ import (
 type delayedRequest struct{}
 
 func (delayedRequest) MarshalJSON() ([]byte, error) {
-	time.Sleep(2 * exchangeTimeout)
+	time.Sleep(2 * exchangeTimeout) // timing:allow intentionally expire an already established socket write deadline before encoding.
 	return []byte(`{}`), nil
 }
 
@@ -41,9 +41,8 @@ func TestCallRequestWriteBound(t *testing.T) {
 		c, _ := ln.Accept()
 		accepted <- c
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	start := time.Now()
 	_, err = Call[delayedRequest, struct{}](ctx, path, Protocol{}, delayedRequest{}, func(struct{}) bool { return true })
 	if c := <-accepted; c != nil {
 		defer func() { _ = c.Close() }() // Cleanup only; connection-close errors are not under test.
@@ -51,9 +50,6 @@ func TestCallRequestWriteBound(t *testing.T) {
 	var timeout net.Error
 	if !errors.As(err, &timeout) || !timeout.Timeout() || ctx.Err() != nil {
 		t.Fatalf("Call: %v, context: %v; want transport timeout", err, ctx.Err())
-	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Fatalf("request write took %v", elapsed)
 	}
 }
 

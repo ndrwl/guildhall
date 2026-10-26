@@ -34,7 +34,7 @@ func StartInPane(l adapter.TabLauncher) func(t *testing.T, spec adapter.Spec, cm
 				if info.ShellIdle() {
 					return
 				}
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond) // timing:allow condition polling for shell idle; the caller bounds process completion.
 			}
 		}()
 		return p, nil

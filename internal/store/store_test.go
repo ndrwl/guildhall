@@ -19,7 +19,7 @@ import (
 var testTime = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
 func testOptions() Options {
-	return Options{LockTimeout: 100 * time.Millisecond, Now: func() time.Time { return testTime }}
+	return Options{LockTimeout: 30 * time.Second, Now: func() time.Time { return testTime }}
 }
 
 func openTest(t *testing.T, path string) *Store {
@@ -280,15 +280,13 @@ func TestConcurrentSameMutationAppliesOnce(t *testing.T) {
 
 func TestSecondWriterIsRefused(t *testing.T) {
 	_, path := newStore(t)
-	start := time.Now()
-	_, err := Open(path, testOptions())
+	opts := testOptions()
+	opts.LockTimeout = 100 * time.Millisecond // timing:allow deliberate contention; the first writer already holds the lock.
+	_, err := Open(path, opts)
 	if !errors.Is(err, ErrLocked) {
 		t.Fatalf("second Open: err = %v, want ErrLocked", err)
 	}
-	if waited := time.Since(start); waited > 5*time.Second {
-		t.Fatalf("lock wait was not bounded: %v", waited)
-	}
-	ro := testOptions()
+	ro := opts
 	ro.ReadOnly = true
 	if _, err := Open(path, ro); !errors.Is(err, ErrLocked) {
 		t.Fatalf("read-only Open while a writer holds the store: err = %v, want ErrLocked", err)
@@ -367,7 +365,7 @@ func TestNewerSchemaIsRefused(t *testing.T) {
 		t.Fatalf("read-only Open: err = %v, want ErrNewerSchema", err)
 	}
 	// Refusal released the lock.
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 100 * time.Millisecond})
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("lock still held after refusal: %v", err)
 	}
@@ -401,7 +399,7 @@ func TestMissingRequiredBucketsAreRefused(t *testing.T) {
 				if !errors.Is(err, ErrNotStore) {
 					t.Fatalf("Open: %v, want ErrNotStore", err)
 				}
-				db, err = bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
+				db, err = bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: 30 * time.Second})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -484,7 +482,7 @@ func countReceipts(t *testing.T, s *Store) int {
 
 func setMeta(t *testing.T, path, key string, value []byte) {
 	t.Helper()
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}

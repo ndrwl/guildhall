@@ -49,7 +49,7 @@ func TestDirectorStartRecordsATerminatedSessionStopped(t *testing.T) {
 		select {
 		case code = <-done:
 			ended = true
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(100 * time.Millisecond): // timing:allow readiness polling within the separate deadline.
 			if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorRecovering {
 				_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 			}

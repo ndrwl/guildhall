@@ -57,7 +57,7 @@ func TestArtisanStopDrainsSilentPeer(t *testing.T) {
 		select {
 		case <-ctx.Done():
 			t.Fatal("socket path was not removed during shutdown")
-		case <-time.After(10 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond): // timing:allow endpoint-readiness polling bounded by ctx.
 		}
 	}
 	select {

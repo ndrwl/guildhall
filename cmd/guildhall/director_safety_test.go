@@ -660,7 +660,7 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 		}
 		before := wakes()
 
-		time.Sleep(30 * time.Second)
+		time.Sleep(30 * time.Second) // timing:allow deliberately hung tool fixture; caller timeout terminates it.
 		if got := c.turnLines(); len(got) != 1 {
 			t.Errorf("turns over the idle hold %q, want only the first message's", got)
 		}

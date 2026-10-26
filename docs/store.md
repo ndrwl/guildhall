@@ -180,9 +180,12 @@ Every [Artisan containment kind](artisan.md#recording-the-containment) has one, 
 | `cgroup` | The cgroup directory, required | Optional |
 | `subreaper+pgroup` | Must be empty | Required: the group is found by its leader, the worker |
 | `pgroup` | Must be empty | Required: the group is found by its leader, the worker |
+| `not-started` | Must be empty | Must be absent: completed supervision never invoked worker startup |
 
 A process group has no name of its own, and no group id or other invented name may stand in for the worker identity, because a group id is reused once its leader is gone.
-`reason` keeps the Linux detection result that chose the kind, such as why no delegated cgroup v2 was usable; it may be omitted.
+`reason` keeps the Linux detection result that chose the kind, such as why no delegated cgroup v2 was usable; it may be omitted and must be absent for `not-started`.
+`not-started` is explicit terminal no-worker evidence, not a backend or an inference from an empty record.
+The launcher records it only when supervision completes without ever invoking startup and there was no named containment to retain.
 When present, `name`, `reason` and the worker token must be non-blank valid UTF-8 within `MaxContainmentBytes` (1024 bytes each); a recorded worker must also have a positive PID.
 `Containment.Recoverable` checks structural recovery evidence, not identity liveness or whether the unit is empty.
 It fails with `ErrUnrecoverable` for an unknown kind or a violation of these field requirements.

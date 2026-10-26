@@ -19,10 +19,11 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // deadline bounds every wait for a process to appear or end.
-const deadline = 10 * time.Second
+var deadline = testenv.Ceiling(time.Minute)
 
 // Harness is one Unit implementation under test.
 type Harness struct {
@@ -82,8 +83,8 @@ func RunUnitContract(t *testing.T, h Harness) {
 		worker := c.start()
 		all := append([]artisan.Identity{worker}, ids(c.role("grandchild", 1))...)
 		c.waitMembers(all...)
-		_ = c.u.Interrupt() // delivery may fail; only membership decides a rung
-		time.Sleep(500 * time.Millisecond)
+		_ = c.u.Interrupt()                // delivery may fail; only membership decides a rung
+		time.Sleep(500 * time.Millisecond) // timing:allow negative observation of an ignored signal after worker readiness, not a progress deadline.
 		c.waitMembers(all...)
 		c.kill()
 	})
@@ -115,7 +116,6 @@ func RunUnitContract(t *testing.T, h Harness) {
 			if !errors.Is(err, artisan.ErrUnsupportedRung) || !errors.Is(err, errors.ErrUnsupported) {
 				t.Errorf("Terminate() = %v, want ErrUnsupportedRung", err)
 			}
-			time.Sleep(200 * time.Millisecond)
 			c.waitMembers(all...)
 			c.kill()
 			return
@@ -265,7 +265,7 @@ func (h Harness) begin(t *testing.T, w Worker) *run {
 			if lv, _ := artisan.Probe(sentinel); lv == artisan.Gone {
 				return
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond) // timing:allow cleanup polls recorded identities within the overall ceiling.
 		}
 		t.Errorf("sentinel %v did not exit after release", sentinel)
 	})

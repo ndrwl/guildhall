@@ -19,13 +19,14 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 const (
 	beat     = 50 * time.Millisecond
-	stale    = 500 * time.Millisecond
-	deadline = 20 * time.Second
+	stale    = 30 * time.Second
+	deadline = time.Minute
 	// launcherEnv makes the test binary a launcher process (mainIfLauncher).
 	launcherEnv = "GUILDHALL_RECONCILE_LAUNCHER"
 )
@@ -52,6 +53,17 @@ func owner(launcher artisan.Identity) *store.Ownership {
 
 func classify(dir string, o *store.Ownership) reconcile.Classification {
 	return reconcile.Classify(context.Background(), reconcile.Attempt{Dir: dir, Files: artisantest.NewFiles(dir), Owner: o}, reconcile.Options{StaleAfter: stale})
+}
+
+// classifyStale advances the classifier clock after publication is frozen.
+func classifyStale(t *testing.T, c *live) reconcile.Classification {
+	t.Helper()
+	h, err := artisan.ReadHeartbeat(c.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reconcile.Classify(context.Background(), reconcile.Attempt{Dir: c.dir, Files: c.files, Owner: c.owner},
+		reconcile.Options{StaleAfter: stale, Now: func() time.Time { return h.Time.Add(stale + time.Second) }})
 }
 
 func want(t *testing.T, c reconcile.Classification, s reconcile.State) {
@@ -297,7 +309,7 @@ func TestClassifyResultMarkerRace(t *testing.T) {
 				t.Fatal("launcher did not reach marker publication")
 			}
 			write(t, files.Result, artisantest.ResultBody)
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond) // timing:allow lock is held at an acknowledged marker barrier; expiry is intentional.
 			defer cancel()
 			c := reconcile.Classify(ctx, reconcile.Attempt{Dir: dir, Files: files.Files}, reconcile.Options{})
 			want(t, c, reconcile.Unknown)
@@ -523,7 +535,7 @@ func launch(t *testing.T, lastOutput func() time.Time, prepare func(dir string))
 func (c *live) beating(t *testing.T) {
 	t.Helper()
 	for cl := await(t, c.dir, c.owner, reconcile.Running); cl.Heartbeat == nil; cl = await(t, c.dir, c.owner, reconcile.Running) {
-		time.Sleep(beat)
+		time.Sleep(beat) // timing:allow poll for initial heartbeat; await supplies the event ceiling.
 	}
 }
 
@@ -551,20 +563,32 @@ func ownedStore(t *testing.T, c *live) *store.Store {
 func TestHeartbeat(t *testing.T) {
 	t.Run("a wedged launcher is stuck while its identity and endpoint live", func(t *testing.T) {
 		var hold atomic.Bool
+		frozen, resume := make(chan struct{}, 1), make(chan struct{})
+		release := sync.OnceFunc(func() { hold.Store(false); close(resume) })
 		c := launch(t, func() time.Time {
-			for hold.Load() {
-				time.Sleep(10 * time.Millisecond)
+			if hold.Load() {
+				frozen <- struct{}{}
+				<-resume
 			}
 			return time.Time{}
 		}, nil)
-		t.Cleanup(func() { hold.Store(false) })
+		t.Cleanup(release)
 		c.beating(t)
 		hold.Store(true)
-		cl := await(t, c.dir, c.owner, reconcile.Stuck)
+		testenv.WaitFor(t, "heartbeat publication frozen", func() bool {
+			select {
+			case <-frozen:
+				return true
+			default:
+				return false
+			}
+		})
+		cl := classifyStale(t, c)
+		want(t, cl, reconcile.Stuck)
 		if cl.Launcher != "alive" || cl.Heartbeat == nil || cl.HeartbeatAge <= stale {
 			t.Errorf("stuck without its evidence: %+v", cl)
 		}
-		hold.Store(false)
+		release()
 		await(t, c.dir, c.owner, reconcile.Running)
 	})
 	t.Run("a stalled worker's fresh heartbeat is not stuck", func(t *testing.T) {
@@ -573,12 +597,10 @@ func TestHeartbeat(t *testing.T) {
 			writeHeartbeat(t, dir, artisan.Heartbeat{Repository: key.Repository, TaskID: key.TaskID, Step: key.Step, Attempt: 1, Sequence: 41, Time: quiet, LastOutputAt: quiet, WorkerState: "running"})
 		})
 		await(t, c.dir, c.owner, reconcile.Running)
-		// Observe continued publication beyond a stale interval, allowing the
-		// worker to finish starting even on a heavily loaded runner.
-		after := time.Now().Add(stale)
+		// Observe multiple published beats, not a race against a short stale window.
 		for end := time.Now().Add(deadline); ; time.Sleep(beat) {
 			cl := classify(c.dir, c.owner)
-			if cl.State == reconcile.Running && cl.Heartbeat != nil && cl.Heartbeat.WorkerState == "running" && cl.Heartbeat.Time.After(after) {
+			if cl.State == reconcile.Running && cl.Heartbeat != nil && cl.Heartbeat.WorkerState == "running" && cl.Heartbeat.Sequence >= 43 {
 				want(t, cl, reconcile.Running)
 				h := *cl.Heartbeat
 				if !h.LastOutputAt.Equal(quiet) || cl.HeartbeatAge > stale || h.Sequence <= 41 || h.Key() != key {
@@ -587,23 +609,34 @@ func TestHeartbeat(t *testing.T) {
 				break
 			}
 			if time.Now().After(end) {
-				t.Fatalf("no fresh running-worker heartbeat after %v: %+v", after, cl)
+				t.Fatalf("no fresh running-worker heartbeat after sequence 42: %+v", cl)
 			}
 		}
 	})
 	t.Run("a stale heartbeat while alive is stuck, refuses a relaunch and recovers", func(t *testing.T) {
 		var hold atomic.Bool
+		frozen, resume := make(chan struct{}, 1), make(chan struct{})
+		release := sync.OnceFunc(func() { hold.Store(false); close(resume) })
 		c := launch(t, func() time.Time {
-			for hold.Load() {
-				time.Sleep(10 * time.Millisecond)
+			if hold.Load() {
+				frozen <- struct{}{}
+				<-resume
 			}
 			return time.Time{}
 		}, nil)
 		c.beating(t)
 		s := ownedStore(t, c)
-		t.Cleanup(func() { hold.Store(false) })
+		t.Cleanup(release)
 		hold.Store(true)
-		await(t, c.dir, c.owner, reconcile.Stuck)
+		testenv.WaitFor(t, "heartbeat publication frozen", func() bool {
+			select {
+			case <-frozen:
+				return true
+			default:
+				return false
+			}
+		})
+		want(t, classifyStale(t, c), reconcile.Stuck)
 		next := *owner(artisan.Identity{PID: 1, Token: "relauncher"})
 		next.State = ""
 		if _, err := s.TakeOwnership("relaunch", next, launcherProbe); !errors.Is(err, store.ErrOwnerLive) {
@@ -611,7 +644,7 @@ func TestHeartbeat(t *testing.T) {
 		} else {
 			t.Logf("take-over of stuck attempt refused: %v", err)
 		}
-		hold.Store(false)
+		release()
 		await(t, c.dir, c.owner, reconcile.Running)
 	})
 	t.Run("a crashed launcher's frozen heartbeat is evidence; the identity decides", func(t *testing.T) {

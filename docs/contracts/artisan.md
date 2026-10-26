@@ -2,6 +2,12 @@
 
 ## Contract
 
+`LauncherConfig.ResultTimeout`, when positive, begins after `Unit.Start` returns; it ends the result wait through the normal stop ladder and never bounds worker startup.
+`KindNotStarted` is explicit evidence from completed supervision that worker startup was never invoked, not an operating-system unit backend.
+`Contained` and `Sweep` return no members for that evidence on every platform, rejecting it if accompanied by a name, reason or worker identity.
+Missing containment retains its conservative meaning.
+The [timing policy](../test-timing.md) describes real-unit ceilings and synthetic-clock retry checks.
+
 Process identity: `Lookup` and `Probe` by PID plus a boot-scoped creation token; a zombie is gone, a failed probe is unverified, never gone.
 The containment seam the launcher consumes, `Unit`: start with verified membership, members by identity, interrupt, terminate (Unix only, `ErrUnsupportedRung` on Windows), kill, exited and close; a stop rung counts only when the unit is empty.
 Each unit reports its `Containment` (kind, name, Linux detection reason), and `RecordContainment` writes it to the attempt directory as `containment.json`.

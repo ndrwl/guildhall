@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	case "sleep":
-		time.Sleep(time.Minute)
+		time.Sleep(time.Minute) // timing:allow intentionally hung subprocess; parent tests kill and reap it.
 		os.Exit(0)
 	case "exit":
 		os.Exit(0)
@@ -99,7 +99,7 @@ func TestStartProcessRefusesEmptyCommand(t *testing.T) {
 func TestTabLauncherTypesCommandForThePaneShell(t *testing.T) {
 	f := newFakeTabs("lab", "bash")
 	f.busyReads = 2
-	l := TabLauncher{Host: f, WorkspaceID: "w1", ShellReady: time.Second, Poll: time.Millisecond}
+	l := TabLauncher{Host: f, WorkspaceID: "w1", ShellReady: time.Minute, Poll: time.Millisecond}
 	cmd := Command{Argv: []string{"/bin/guild hall", "fake-artisan", "--prompt", "it's"}, Dir: "/work", Env: []string{"A=1"}}
 	run, err := l.Start(context.Background(), "artisan task-1", cmd)
 	if err != nil {
@@ -150,6 +150,7 @@ func TestTabLauncherOpensThenTypes(t *testing.T) {
 func TestTabLauncherRefusesBusyOrUnknownShell(t *testing.T) {
 	busy := newFakeTabs("lab", "bash")
 	busy.busyReads = 1 << 30
+	// timing:allow deliberate timeout of an in-memory pane which never becomes ready; no startup is expected.
 	l := TabLauncher{Host: busy, WorkspaceID: "w1", ShellReady: 20 * time.Millisecond, Poll: time.Millisecond}
 	if _, err := l.Start(context.Background(), "a", Command{Argv: []string{"x"}}); err == nil {
 		t.Error("Start typed into a pane whose shell never became idle")

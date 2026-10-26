@@ -24,6 +24,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // TestMain lets the test binary act as the stub `claude`, as
@@ -550,15 +551,22 @@ func TestRunStopsOnContext(t *testing.T) {
 	if err := os.WriteFile(spec.PromptFile, []byte(claudetest.Prompt(adaptertest.Hang)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	start := time.Now()
-	err := claude.Run(ctx, args(spec), &bytes.Buffer{}, &bytes.Buffer{})
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("Run = %v, want the context's end", err)
-	}
-	if d := time.Since(start); d < 400*time.Millisecond || d > claude.StopGrace+5*time.Second {
-		t.Errorf("Run returned after %s; want Claude running until the context ended, then stopped", d)
+	done := make(chan error, 1)
+	go func() { done <- claude.Run(ctx, args(spec), &bytes.Buffer{}, &bytes.Buffer{}) }()
+	testenv.WaitFor(t, "Claude stub startup", func() bool {
+		_, err := claudetest.Granted(spec.ResultFile)
+		return err == nil
+	})
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Run = %v, want context cancellation", err)
+		}
+	case <-time.After(testenv.Ceiling(30 * time.Second)):
+		t.Fatal("Claude did not stop after cancellation")
 	}
 	if _, err := os.Stat(spec.ResultFile); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("stopped attempt has a result: %v", err)

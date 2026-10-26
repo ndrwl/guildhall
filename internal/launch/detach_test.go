@@ -26,7 +26,7 @@ func mainIfDetacher() {
 		os.Exit(2)
 	}
 	_ = cmd.Process.Release()
-	time.Sleep(time.Minute)
+	time.Sleep(time.Minute) // timing:allow fixture lifetime; parent verifies detach then kills the recorded identity.
 	os.Exit(0)
 }
 

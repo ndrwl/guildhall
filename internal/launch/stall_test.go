@@ -15,6 +15,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // speakerEnv makes the test binary a worker that writes one line to standard output when the file speak-<n> appears
@@ -105,7 +106,7 @@ func speaker(t *testing.T, a launch.Attempt, interval time.Duration) (string, fu
 	t.Cleanup(cancel)
 	done := make(chan ran, 1)
 	go func() {
-		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Stdout: out, Stderr: out, Ladder: fastLadder, ResultGrace: time.Second,
+		r, err := launch.Run(ctx, launch.Config{Attempt: a, Command: cmd, Stdout: out, Stderr: out, Ladder: fastLadder,
 			HeartbeatInterval: 50 * time.Millisecond, StallInterval: interval, Outbox: storeOutbox(a.Store)})
 		done <- ran{r, err}
 	}()
@@ -128,12 +129,25 @@ func waitStalls(t *testing.T, a launch.Attempt, n int, interval time.Duration) [
 			t.Fatalf("worker-stalled messages = %d, want %d", len(stalls(t, a)), n)
 		}
 	}
-	time.Sleep(interval + 250*time.Millisecond)
+	waitBeats(t, a)
 	got := stalls(t, a)
 	if len(got) != n {
 		t.Fatalf("worker-stalled messages = %d after more beats, want %d", len(got), n)
 	}
 	return got
+}
+
+// waitBeats observes several completed heartbeat rounds rather than assuming
+// a sleep gives the launcher enough CPU to run them.
+func waitBeats(t *testing.T, a launch.Attempt) {
+	h, err := artisan.ReadHeartbeat(a.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	testenv.WaitFor(t, "three more launcher heartbeats", func() bool {
+		next, err := artisan.ReadHeartbeat(a.Dir())
+		return err == nil && next.Sequence >= h.Sequence+3
+	})
 }
 
 // TestLauncherSendsOneStallPerCrossing: a worker silent past the stall interval gets exactly one worker-stalled
@@ -164,8 +178,10 @@ func TestLauncherSendsOneStallPerCrossing(t *testing.T) {
 // TestLauncherWithoutStallIntervalSendsNone: a zero stall interval, `--stall-interval 0s`, observes nothing.
 func TestLauncherWithoutStallIntervalSendsNone(t *testing.T) {
 	a := newAttempt(t)
-	speaker(t, a, 0)
-	time.Sleep(time.Second)
+	_, finish := speaker(t, a, 0)
+	running(t, a)
+	waitBeats(t, a)
+	finish()
 	if got := stalls(t, a); len(got) != 0 {
 		t.Fatalf("worker-stalled messages = %d, want 0", len(got))
 	}

@@ -418,7 +418,7 @@ func hang() {
 		select {
 		case <-gone:
 			return
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(50 * time.Millisecond): // timing:allow parent-liveness polling; HangLimit bounds the fixture lifetime.
 		}
 	}
 }

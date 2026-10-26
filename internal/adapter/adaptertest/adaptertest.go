@@ -140,8 +140,8 @@ func RunConformance(t *testing.T, newSubject func(t *testing.T) Subject) {
 		s := newSubject(t)
 		spec := newSpec(t, s, Hang)
 		p := start(t, s, spec)
-		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancellation is input; no runtime startup must fit in a tiny result window.
 		if _, err := adapter.WaitResult(ctx, spec.ResultFile, spec.Identity, adapter.WaitOptions{Poll: 10 * time.Millisecond, Exited: p.Exited()}); !errors.Is(err, adapter.ErrNoResultYet) {
 			t.Fatalf("WaitResult while working = %v, want ErrNoResultYet", err)
 		}
