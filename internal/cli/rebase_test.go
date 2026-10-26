@@ -19,6 +19,15 @@ import (
 // review a rebase round: its binding records scope rebase over the new range and the resolution document is
 // recorded, with Base and Rebases from git.Program over the repository's configured path.
 func TestReviewAfterARebaseReviewsTheResolution(t *testing.T) {
+	reviewAfterRebase(t, false)
+}
+
+func TestRequestedFullReviewAfterARebase(t *testing.T) {
+	reviewAfterRebase(t, true)
+}
+
+func reviewAfterRebase(t *testing.T, requestedFull bool) {
+	t.Helper()
 	// Every git here, the test's and guildhall's alike, runs without the user's or system's configuration, so the
 	// worktree guildhall checks out (CRLF under Windows' system core.autocrlf) is clean to the test's git.
 	global := filepath.Join(t.TempDir(), "gitconfig")
@@ -136,11 +145,36 @@ func TestReviewAfterARebaseReviewsTheResolution(t *testing.T) {
 	h2 := gitIn(work, "rev-parse", "HEAD")
 	guide("build", "head:"+h2)
 	done("review", 1, `{"wait":"attempt","step":"build","attempt":2}`)
-	done("build", 2, `{"wait":"attempt","step":"review","attempt":2}`)
-	if b := binding("review-2-inputs"); b.Scope != git.ScopeRebase || b.Range == nil || *b.Range != (git.Range{Base: b2, Head: h2}) {
-		t.Errorf("review-2 binding = %+v, want rebase over %s..%s", b, b2, h2)
+	if requestedFull {
+		step("", "task", "review", "--store", d.store, "--repo", "app", "--full", "t-1")
 	}
-	if _, ok := documents()["review-2-resolution"]; !ok {
-		t.Errorf("no review-2-resolution document")
+	done("build", 2, `{"wait":"attempt","step":"review","attempt":2}`)
+	wantScope := git.ScopeRebase
+	if requestedFull {
+		wantScope = git.ScopeFull
+	}
+	if b := binding("review-2-inputs"); b.Scope != wantScope || b.Range == nil || *b.Range != (git.Range{Base: b2, Head: h2}) {
+		t.Errorf("review-2 binding = %+v, want %s over %s..%s", b, wantScope, b2, h2)
+	}
+	if _, ok := documents()["review-2-resolution"]; ok != !requestedFull {
+		t.Errorf("review-2-resolution present = %v, requested full = %v", ok, requestedFull)
+	}
+	prompt, err := os.ReadFile(filepath.Join(filepath.Dir(d.result("review", 2)), "prompt", "prompt.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prompt), "Review base: "+b2+"\n") {
+		t.Errorf("review-2 prompt does not deliver recorded base %s", b2)
+	}
+	if requestedFull {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = s.Close() }()
+		requests, err := s.FullReviews("app", "t-1")
+		if err != nil || len(requests) != 1 || requests[0].ConsumedBy != "review-2" {
+			t.Fatalf("full-review requests = %+v, error %v", requests, err)
+		}
 	}
 }

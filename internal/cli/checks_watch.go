@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -100,7 +101,7 @@ func checksWaiting(path, state string) func() ([]taskRef, error) {
 			if t.State != store.TaskOpen {
 				continue
 			}
-			b, err := os.ReadFile(filepath.Join(state, t.Repository, t.ID, nextFile))
+			b, err := atomicfile.Read(filepath.Join(state, t.Repository, t.ID, nextFile))
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			} else if err != nil {

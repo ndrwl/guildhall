@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
@@ -398,6 +399,9 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 				if open && !judge {
 					it := item
 					it.Kind, it.Retryable, it.Reason, it.Command = "retry", true, fmt.Sprintf("attempt %d of %s %s", at.Number, at.Step, at.Outcome), "guildhall step retry "+flags
+					if at.IntakeRejection != "" {
+						it.Reason += "; result rejected: " + at.IntakeRejection
+					}
 					retry = append(retry, it)
 				}
 			}
@@ -490,7 +494,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 
 // readNext reads a task's next.json as written, or says why it cannot; a missing file is neither.
 func readNext(path string) (json.RawMessage, string) {
-	b, err := os.ReadFile(path)
+	b, err := atomicfile.Read(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, ""

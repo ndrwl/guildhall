@@ -376,7 +376,7 @@ func (r *run) checkOutcome(s workflow.Step, n int, data []byte) (*workflow.Revie
 		return nil, fmt.Errorf("%w: attempt %d recorded no revisions to bind its outcome to", ErrOutcome, n)
 	}
 	if err := o.BoundTo(*b.Revisions); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrOutcome, err)
+		return nil, rejectOutput(fmt.Errorf("%w: %v", ErrOutcome, err))
 	}
 	prev, err := r.previous(b)
 	if err != nil || prev == nil {
@@ -384,7 +384,7 @@ func (r *run) checkOutcome(s workflow.Step, n int, data []byte) (*workflow.Revie
 	}
 	for _, f := range prev.Findings {
 		if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.Finding == f.ID }) {
-			return nil, fmt.Errorf("%w: previous finding %q has no disposition", ErrOutcome, f.ID)
+			return nil, rejectOutput(fmt.Errorf("%w: previous finding %q has no disposition", ErrOutcome, f.ID))
 		}
 	}
 	return o, nil

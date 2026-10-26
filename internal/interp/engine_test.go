@@ -111,9 +111,10 @@ func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*s
 		},
 		Config: &config.Config{
 			Profiles: map[string]config.Profile{
-				"planner":  {Adapter: interp.MockAdapter},
-				"builder":  {Adapter: interp.MockAdapter},
-				"reviewer": {Adapter: interp.MockAdapter},
+				"researcher": {Adapter: interp.MockAdapter},
+				"planner":    {Adapter: interp.MockAdapter},
+				"builder":    {Adapter: interp.MockAdapter},
+				"reviewer":   {Adapter: interp.MockAdapter},
 				// The Guildhall repository's three code reviews (report.md §7.1).
 				"reviewer-opus":        {Adapter: interp.MockAdapter},
 				"reviewer-opus-strict": {Adapter: interp.MockAdapter},
@@ -122,7 +123,6 @@ func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*s
 			Repositories: []config.Repository{{ID: "app", MergePolicy: config.MergeApproval}},
 		},
 		StandardsRevision: "standards-1",
-		DefaultAdapter:    interp.MockAdapter,
 		DocumentDir:       t.TempDir(),
 		StateDir:          t.TempDir(),
 	}

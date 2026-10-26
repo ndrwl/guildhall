@@ -81,7 +81,7 @@ func (r *run) requestedFull(step string, n int) (bool, error) {
 		return false, nil
 	}
 	if f.ConsumedBy == "" {
-		if _, err := r.e.Records.ConsumeFullReview(r.mutation("full-review", strconv.Itoa(f.Number)), r.task.Repository, r.task.ID, f.Number, by); err != nil {
+		if _, err := r.e.Records.ConsumeFullReview(r.mutation("consume-full-review", strconv.Itoa(f.Number)), r.task.Repository, r.task.ID, f.Number, by); err != nil {
 			return false, err
 		}
 		f.ConsumedBy = by

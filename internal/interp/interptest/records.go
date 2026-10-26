@@ -392,6 +392,28 @@ func (r *Records) FinishAttempt(mutationID, repository, taskID, step string, num
 	})
 }
 
+// RejectAttempt implements interp.Records.
+func (r *Records) RejectAttempt(mutationID, repository, taskID, step string, number int, reason string) (store.Receipt, error) {
+	if number < 1 || strings.TrimSpace(reason) == "" {
+		return store.Receipt{}, fmt.Errorf("%w: rejection needs positive attempt and reason", store.ErrInvalid)
+	}
+	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: number, Outcome: store.AttemptFailed, IntakeRejection: reason}
+	return r.mutate(mutationID, "reject-attempt", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Attempt, rc.Record = repository, taskID, number, fmt.Sprintf("attempt/%s/%d", step, number)
+		for i, a := range r.attempts {
+			if a.Repository != repository || a.TaskID != taskID || a.Step != step || a.Number != number {
+				continue
+			}
+			if a.Outcome != "" && a.Outcome != store.AttemptSucceeded {
+				return fmt.Errorf("%w: attempt already finished", store.ErrInvalid)
+			}
+			r.attempts[i].Outcome, r.attempts[i].IntakeRejection = store.AttemptFailed, reason
+			return nil
+		}
+		return store.ErrNotFound
+	})
+}
+
 // PutDocument implements interp.Records.
 func (r *Records) PutDocument(mutationID string, d store.DocumentRef) (store.Receipt, error) {
 	return r.mutate(mutationID, "put-document", d, func(rc *store.Receipt) error {
@@ -530,6 +552,7 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		}
 		return h
 	}
+	runRejectionContract(t, setup)
 	want := func(t *testing.T, what string, err, target error) {
 		t.Helper()
 		if !errors.Is(err, target) {

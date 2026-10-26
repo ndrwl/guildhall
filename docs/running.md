@@ -34,7 +34,7 @@ The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/conf
 |---|---|
 | Records, outbox | The store at `--store`, opened for each record operation and closed before the next, so an attempt's launcher can take its ownership while the advance runs |
 | Workflow | The repository's effective workflow, resolved from `--config` exactly as [`task new`](tasks.md) resolves it; a definition that is no longer the task's bound revision is refused |
-| Profiles, merge policy | The Director config; a step without a profile runs the `fake` adapter, and a profile may name `fake` or `claude`, the [runtimes](adapters.md#running-an-attempt) `artisan start` runs owned |
+| Profiles, merge policy | The Director config; an Artisan step must name a profile, otherwise `task new` and advance refuse it by step name and direct you to set a profile in a custom workflow; explicit `fake` and `claude` profiles remain available, the [runtimes](adapters.md#running-an-attempt) `artisan start` runs owned |
 | Standards revision | The config setting `standards_revision` |
 | Guard rails | The config's [guard rails](director.md#guard-rails): a repository the config does not list is refused before anything else is read or written, and every new attempt starts under `max_running_attempts` and `max_attempts_per_day`, so one past a cap is refused with exit 1 naming the rail and a `budget-refused` message to the Director |
 | Stall interval | The config setting [`stall_interval`](configuration.md#settings), default 15 minutes, `0s` off: the attempt's launcher, given it as `--stall-interval`, sends the Director one [`worker-stalled`](interpreter.md#worker-stalled-observations) message from its heartbeat when its worker has been silent for longer, and an advance that finds a launched attempt waiting sends the same message, a replay when the launcher sent it, when its heartbeat is fresh and its worker silent for longer |
@@ -67,7 +67,8 @@ The advance's output is appended to the attempt's `launcher.log` and an `advance
 An advance that exits unsuccessfully, such as one that waited its `lock_wait` for a task lock another advance held, is run once more, which waits the lock wait again.
 When that run fails too, the launcher sends the Director `<repo>.<task>.advance-failed.<step>-<n>`, type `advance-failed`, naming the command and its last line of error output; the send goes through the store with no task lock, and the Director is [woken](messaging.md#waking-the-director) for it as for any other send.
 [`director status`](director.md#status) lists the attempt nobody took as an `advance` item until an advance takes it.
-A failed advance changes neither the attempt's outcome nor the launcher's exit status: both commands are idempotent, so the Director's next `task start`, or the `step done` the status item names, repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).
+An operational advance failure does not reclassify the attempt or change the launcher's exit status: both commands are idempotent, so the Director's next `task start`, or the `step done` the status item names, repeats what was lost ([recovery](interpreter.md#replay-and-recovery)).
+A result rejected during intake instead records a failed attempt with its reason and waits for the Director, even when the launcher recorded success; a later notification or persistence error may still require replay to finish that advance.
 An attempt [`artisan resume`](artisan.md#resume) settles after its launcher died is not advanced; the Director's `task start` after the resume is.
 
 ## `task start`
@@ -80,8 +81,9 @@ With `--decision <id>` it feeds `decision-answered` for that answered decision i
 
 `step done` is the result intake for one attempt.
 `--result` must be the attempt's own result file, `result.json` in its attempt directory; any other path is refused, because the interpreter reads results only there.
-The file is validated with `adapter.ReadResult` for identity `<task>`, `<step>-<n>` before the engine is called, so a missing, malformed or other attempt's result changes nothing.
-It then feeds `attempt-result`: a succeeded result's outputs are recorded as documents and the task moves on.
+The file is read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>` before the engine is called; missing or unreadable files and unsupported newer versions remain operational errors.
+Malformed or wrong-identity result bytes are passed to the engine for durable rejection under the task lock.
+It feeds `attempt-result`: a valid succeeded result's outputs are recorded as documents and the task moves on, while rejected results or outputs record a failed attempt with the reason and wait for the Director.
 
 The attempt's launcher records its store outcome when it decides the attempt, which may be before or after `step done`.
 The [interpreter's recovery contract](interpreter.md#replay-and-recovery) defines intake replay and outcome reconciliation when these operations overlap.
@@ -99,6 +101,8 @@ A missing `--summary`, an output that is not `<port>=<file>`, a port named twice
 ## `step retry`
 
 `step retry` is the Director's decision after a failed or stopped attempt, which leaves the task waiting with `{"wait":"director",...}`.
+This includes a launcher-succeeded attempt whose result intake was rejected: run `task start` or `step done` first to apply the rejection if an earlier release left it succeeded with unfinished intake.
+The failure's `intake_rejection`, the `attempt-failed` message and the status feed's retry reason explain why it was rejected; no hand-written replacement verdict is needed.
 It feeds [`attempt-retried`](interpreter.md#events) for attempt `--attempt` of `--step`: valid only when that attempt is the step's latest and finished `failed` or `stopped`, and the task is open.
 The engine then starts the next attempt exactly as `task start` starts a first one, and prints `{"wait":"attempt",...}` for it.
 `--reason`, when given, is recorded as the Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the next attempt has launched, so `task timeline` shows why the attempt was retried.

@@ -168,9 +168,7 @@ type Engine struct {
 	// Workflow returns the definition a task's revision names; Advance refuses one with another digest (ErrRevision).
 	Workflow func(workflow.Revision) (*workflow.Definition, error)
 	// Config gives the profile adapters and the repositories' merge policies.
-	// A step without a profile runs DefaultAdapter.
 	Config            *config.Config
-	DefaultAdapter    string
 	StandardsRevision string
 	// CheckSettings, when set, refuses the model and effort of a step's profile that the profile's adapter cannot
 	// honour (adapter.ErrUnsupportedSetting), before anything is recorded, as CheckAdapter refuses an adapter; nil
@@ -239,6 +237,9 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 		return Next{}, fmt.Errorf("interp: %w: task bound %s %s, definition is %s %s", ErrRevision, t.Workflow.Name, t.Workflow.Digest, def.Name, def.Digest())
 	}
 	if err := workflow.Validate(def); err != nil {
+		return Next{}, fmt.Errorf("interp: %w", err)
+	}
+	if err := e.Config.CheckArtisanAdapters(def); err != nil {
 		return Next{}, fmt.Errorf("interp: %w", err)
 	}
 	r := &run{e: e, ctx: ctx, task: t, def: def}
@@ -453,8 +454,11 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		next, err := r.start(s)
 		return false, next, r.retryLaunched(s.ID, next.Attempt, err)
 	case a.Outcome != store.AttemptSucceeded:
-		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed,
-			fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome))
+		text := fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome)
+		if a.IntakeRejection != "" {
+			text += " Result rejected: " + a.IntakeRejection
+		}
+		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed, text)
 		return false, Next{Wait: WaitDirector, Step: s.ID, Attempt: a.Number}, err
 	}
 	// The latest attempt succeeded: it stands unless a loop sent the task back here or its inputs moved.
@@ -486,25 +490,22 @@ type artisanRuntime struct {
 
 // prepare resolves the runtime and the inputs of an Artisan step, or the inputs alone of a Director stage, which
 // runs no adapter; both are checked, the runtime with CheckAdapter and Engine.CheckSettings, before anything is
-// recorded. A step without a profile runs DefaultAdapter
-// granting nothing.
+// recorded.
 func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 	if s.Actor() == workflow.DirectorActor {
 		inputs, err := r.inputs(s)
 		return artisanRuntime{}, inputs, err
 	}
-	rt := artisanRuntime{adapter: r.e.DefaultAdapter}
-	if p := s.Profile(); p != "" {
-		profile, ok := r.e.Config.Profiles[p]
-		if !ok {
-			return artisanRuntime{}, nil, fmt.Errorf("%w: %q", config.ErrUnknownProfile, p)
-		}
-		rt = artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: r.e.Config.EffectiveEffort(profile.Effort)}}
+	p := s.Profile()
+	profile, err := r.e.Config.Profile(p)
+	if err != nil {
+		return artisanRuntime{}, nil, err
 	}
+	rt := artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: r.e.Config.EffectiveEffort(profile.Effort)}}
 	if err := CheckAdapter(rt.adapter); err != nil {
 		return artisanRuntime{}, nil, err
 	}
-	if r.e.CheckSettings != nil && rt.profile != "" {
+	if r.e.CheckSettings != nil {
 		if err := r.e.CheckSettings(rt.adapter, rt.settings); err != nil {
 			return artisanRuntime{}, nil, fmt.Errorf("profile %s: %w", rt.profile, err)
 		}
@@ -726,11 +727,18 @@ func (r *run) taken(s workflow.Step, n int) bool {
 func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	res, err := adapter.ReadResult(r.resultFile(s.ID, a.Number), r.identity(s.ID, a.Number))
 	if err != nil {
+		if errors.Is(err, adapter.ErrMalformedResult) || errors.Is(err, adapter.ErrIdentityMismatch) {
+			return r.rejectResult(s, a, err)
+		}
 		return fmt.Errorf("interp: result of %s attempt %d: %w", s.ID, a.Number, err)
 	}
 	outcome := store.AttemptFailed
 	if res.Status == adapter.StatusSucceeded {
 		if err := r.recordOutputs(s, a.Number, res.Outputs); err != nil {
+			var rejection *resultRejection
+			if errors.As(err, &rejection) {
+				return r.rejectResult(s, a, err)
+			}
 			return fmt.Errorf("interp: outputs of %s attempt %d: %w", s.ID, a.Number, err)
 		}
 		if err := r.contest(s, a.Number); err != nil {
@@ -764,7 +772,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		if port.Type == workflow.CodeHead {
 			return r.recordWorkHead(s, n, port.Name)
 		}
-		return fmt.Errorf("a succeeded result lists no output for port %s", port.Name)
+		return rejectOutput(fmt.Errorf("a succeeded result lists no output for port %s", port.Name))
 	}
 	root, err := os.OpenRoot(r.workPath())
 	if err != nil {
@@ -775,15 +783,15 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	var review *store.Review
 	for i, o := range outputs {
 		if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
-			return fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path)
+			return rejectOutput(fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path))
 		}
 		data, err := root.ReadFile(filepath.FromSlash(o.Path))
 		if err != nil {
-			return err
+			return rejectOutput(fmt.Errorf("read output %q: %w", o.Path, err))
 		}
 		if i == 0 {
 			if err := checkPort(port.Type, data); err != nil {
-				return err
+				return rejectOutput(err)
 			}
 			if isReview(s) {
 				o, err := r.checkOutcome(s, n, data)

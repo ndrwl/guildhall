@@ -1,0 +1,1 @@
+ok  	github.com/ndrwl/guildhall/internal/cli	0.045s

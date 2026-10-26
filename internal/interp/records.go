@@ -25,6 +25,10 @@ import (
 // a replayed mutation id returns its receipt whatever the caps are now.
 // FinishAttempt finishes a running attempt once and the first finish stands: finishing it again with the same
 // outcome under another mutation id returns the first finish's receipt, and another outcome is store.ErrInvalid.
+// RejectAttempt records a result-validation failure with a nonempty reason, changing an unfinished or
+// succeeded attempt to failed and preserving the launcher finish as a separate historical receipt.
+// Failed or stopped attempts are refused with store.ErrInvalid; an unknown attempt is store.ErrNotFound.
+// Repeating its mutation id is idempotent, including after a retry starts.
 // A document or decision is recorded once per name or id and an existing one is refused with store.ErrExists. ContestRuling contests a recorded ruling once: an unknown
 // one is store.ErrNotFound and a contested one store.ErrInvalid. SetTaskState closes an open task as done or
 // cancelled: another state, or a task already closed, is store.ErrInvalid, and an unknown one store.ErrNotFound.
@@ -41,6 +45,7 @@ type Records interface {
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
 	StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error)
 	FinishAttempt(mutationID, repository, taskID, step string, number int, outcome store.AttemptOutcome) (store.Receipt, error)
+	RejectAttempt(mutationID, repository, taskID, step string, number int, reason string) (store.Receipt, error)
 	PutDocument(mutationID string, d store.DocumentRef) (store.Receipt, error)
 	OpenDecision(mutationID string, d store.Decision) (store.Receipt, error)
 	ContestRuling(mutationID, repository, taskID, document, finding, by string) (store.Receipt, error)

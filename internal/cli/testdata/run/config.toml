@@ -7,6 +7,9 @@ name = "alpha"
 [local]
 standards_revision = "standards-1"
 
+[profile.demo]
+adapter = "fake"
+
 [[repository]]
 id = "app"
 path = "/srv/app"
