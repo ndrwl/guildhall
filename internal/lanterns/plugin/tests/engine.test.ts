@@ -1,7 +1,7 @@
 // Runs under the installed Claude Code function-hook engine; no model calls.
 import { test, expect, mock } from 'claude-code/testing';
 
-test('real engine registers Calm, preserves assistant content and paints N8', async ($, on) => {
+test('real engine defaults Calm on, preserves assistant content and paints S2', async ($, on) => {
   mock.env(on, { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: '1', GUILDHALL_COPY: '/copy' });
   const clock = mock.clock(on);
   const commands: string[] = [];
@@ -22,11 +22,16 @@ test('real engine registers Calm, preserves assistant content and paints N8', as
   expect(frame.type).toBe('Box');
   expect(frame.props.borderStyle).toBe('round');
   expect(frame.props.borderColor).toBe('yellow');
-  await $.command.run({ command: 'calm', args: '', cwd: '/work' });
-  expect(saved).toBe('on\n');
-  expect(preference).toBe('/copy/director/lanterns-calm');
+  expect(saved).toBe('');
   const spinner = await $.ui.render({ component: 'Spinner', surface: 'terminal', requestId: 'work', viewport: { columns: 30, rows: 24 }, props: { word: 'Working', message: null, mode: 'requesting' } });
   expect(spinner.type).toBe('Box');
   await clock.advance(880);
   expect(blits.length).toBe(4);
+  await $.command.run({ command: 'calm', args: '', cwd: '/work' });
+  expect(saved).toBe('off\n');
+  expect(preference).toBe('/copy/director/lanterns-calm');
+  await clock.advance(880);
+  expect(blits.length).toBe(4);
+  const native = await $.ui.render({ component: 'Spinner', surface: 'terminal', requestId: 'work', props: {} });
+  expect(native.type).toBe('Text');
 });

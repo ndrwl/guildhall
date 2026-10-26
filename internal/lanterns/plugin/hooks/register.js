@@ -24,7 +24,7 @@ let activated,loading,preference,calm=false,ticker,tick=0,theme='light';
     if(!loading)loading=(async()=>{
       const copy=await $.env.get('GUILDHALL_COPY');
       preference=copy?copy+'/director/lanterns-calm':undefined;
-      try {calm=!!preference&&await $.fs.exists(preference)&&(await $.fs.read(preference)).trim()==='on'}catch {calm=false}
+      try {calm=!!preference&&(!await $.fs.exists(preference)||(await $.fs.read(preference)).trim()==='on')}catch {calm=false}
       try {theme=(await $.config.list()).find(r=>r.key==='theme')?.value??'light'}catch {}
       timer($);
     })();

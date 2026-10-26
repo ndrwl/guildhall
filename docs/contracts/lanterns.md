@@ -28,15 +28,24 @@ Non-Linux systems do not publish Linux selectors.
 Failures are advisory and cannot stop or mutate the session; stale files expire when no publisher refreshes them.
 While any publisher continues refreshing, labels anchored to exited processes disappear on its next successful refresh; live matching processes remain eligible for preservation.
 
-Calm is off by default and persists at `<copy>/director/lanterns-calm`, outside the replaced plugin workspace, across Director sessions.
+Calm is on when `<copy>/director/lanterns-calm` is absent; explicit `on` or `off` persists outside the replaced plugin workspace across Director sessions.
+An unreadable or invalid existing preference fails closed to native drawings.
 Its toggle persists before changing the live choice; a write failure leaves the choice unchanged.
 Without `GUILDHALL_COPY`, Calm registers no command, reads or writes no preference and leaves native tool and Spinner drawings unchanged.
 Calm hides only routine tool drawings, leaving messages, execution and stored transcripts untouched.
-Its terminal Spinner is a bounded Raster with a blue smithy roof `▁▟███▙▁`, chimney and orange glow `▄` pulsing every 880 ms.
-Smoke `○ ◌ ·` rises, drifts right and fades on the 220 ms tick.
+Its terminal Spinner is S2, Rare forge spark: an 11-by-5-cell sprite centered in `W = max(1, min(512, floor(viewport.columns ?? 80) - 2))` Raster columns.
+The origin is `x = max(0, floor((W - 11) / 2))`; all individual writes clip without wrapping.
+The chimney is at `(row 2, x+2)`, roof `▁▟███▙▁` starts at `(3,x)`, and anvil `┳━┳` starts at `(4,x+8)`.
+The hearth at `(4,x+3)` alternates `▄` and `▁` every four 220 ms ticks (880 ms).
+Smoke uses `floor(tick/2) % 4`: `(1,x+2,○)`, `(0,x+3,○)`, `(0,x+4,◌)`, `(0,x+5,·)`, holding each pose 440 ms.
+In the 16-tick / 3,520 ms loop, only ticks 8, 9 and 10 add a single spark `·`, respectively at `(3,x+9)`, `(2,x+9)` and `(1,x+10)`.
+Hearth and spark use `#d77757`; all other cells use ambient `#93a5ff` for themes beginning with `dark`, otherwise `#5769f7`.
+Each cell remains three little-endian uint32 words: codepoint, foreground RGB and inherited-background flag `0x01000000`.
+Widths below 11 keep origin zero and clip the right edge, including deliberate roof-only fragments at widths 1 and 3.
 Unmounted sites stop blitting, narrow viewports clip without wrapping, and Calm off restores native drawings.
 
 Tests are written before implementation, using real file/process identity integration on Linux and a fake function-hook engine for terminal behavior.
 No new Lanterns test invokes a model or Herdr lifecycle operation.
 The [captured evidence](../evidence/lanterns-2026-10-24.txt) records red unit tests, green focused checks, the actual function-hook engine test and a manual generated workspace.
 The CLI integration tests were added after the unit implementations and passed first; no red-first claim is made for those integration tests.
+The [S2 evidence](../evidence/lanterns-calm-s2-2026-10-26.txt) captures new default-on and exact-frame tests failing before implementation, then nine passing Node contracts and the updated zero-model-call real engine check.

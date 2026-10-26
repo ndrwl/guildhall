@@ -1,0 +1,142 @@
+S2 contract-first validation
+
+Before implementation: node --test internal/lanterns/plugin/tests/*.test.mjs
+✔ without exact flag all function hooks are complete no-ops (3.983115ms)
+✔ persisted off; toggle, tool hiding, original frame contents and restoration (2.112446ms)
+✔ without a Director copy Calm has no persistence or presentation mode (0.96841ms)
+✖ absent preference defaults on; off persists across a fresh session (1.543975ms)
+✖ fake clock paints one exact S2 loop at 220 ms; clips, unmounts and restores (1.160165ms)
+✔ saved preference loads before restored rows; failed save preserves current choice (1.887991ms)
+✔ only opening markers select urgency; unknown is neutral (1.451569ms)
+✖ S2 exact loop, per-cell colors and bounded narrow fallback (2.010247ms)
+✖ S2 holds smoke for two ticks and retains the hearth beat (2.106956ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 5
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 99.499441
+
+✖ failing tests:
+
+test at internal/lanterns/plugin/tests/hooks.test.mjs:53:1
+✖ absent preference defaults on; off persists across a fresh session (1.543975ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'none'
+  
+      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/hooks.test.mjs:56:69)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'none',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at internal/lanterns/plugin/tests/hooks.test.mjs:65:1
+✖ fake clock paints one exact S2 loop at 220 ms; clips, unmounts and restores (1.160165ms)
+  AssertionError [ERR_ASSERTION]: color tick=0 (4,0)
+  + actual - expected
+  
+  + 14120791
+  - 9676287
+  
+      at assertS2 (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
+      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/hooks.test.mjs:70:46)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 14120791,
+    expected: 9676287,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at internal/lanterns/plugin/tests/presentation.test.mjs:9:1
+✖ S2 exact loop, per-cell colors and bounded narrow fallback (2.010247ms)
+  AssertionError [ERR_ASSERTION]: color tick=0 (4,0)
+  + actual - expected
+  
+  + 14120791
+  - 9676287
+  
+      at assertS2 (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/s2-contract.mjs:20:10)
+      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/presentation.test.mjs:14:53)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 14120791,
+    expected: 9676287,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at internal/lanterns/plugin/tests/presentation.test.mjs:18:1
+✖ S2 holds smoke for two ticks and retains the hearth beat (2.106956ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   '              ○               ',
+      '                              ',
+  +   '             ○                ',
+      '             │                ',
+      '           ▁▟███▙▁            ',
+      '              ▄               '
+    ]
+  
+      at TestContext.<anonymous> (file:///home/andrew/.treehouse/guildhall-6b8e12/2/guildhall/internal/lanterns/plugin/tests/presentation.test.mjs:23:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ '                              ', '             ○                ', '             │                ', '           ▁▟███▙▁            ', '              ▄               ' ],
+    expected: [ '              ○               ', '                              ', '             │                ', '           ▁▟███▙▁            ', '              ▄               ' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+After implementation: same Node command
+✔ without exact flag all function hooks are complete no-ops (2.458205ms)
+✔ persisted off; toggle, tool hiding, original frame contents and restoration (1.214266ms)
+✔ without a Director copy Calm has no persistence or presentation mode (0.642809ms)
+✔ absent preference defaults on; off persists across a fresh session (0.624295ms)
+✔ fake clock paints one exact S2 loop at 220 ms; clips, unmounts and restores (62.529954ms)
+✔ saved preference loads before restored rows; failed save preserves current choice (0.36748ms)
+✔ only opening markers select urgency; unknown is neutral (1.051315ms)
+✔ S2 exact loop, per-cell colors and bounded narrow fallback (71.240782ms)
+✔ S2 holds smoke for two ticks and retains the hearth beat (0.727276ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 137.176795
+
+Zero-model-call engine: claude plugin test internal/lanterns/plugin
+
+tests/engine.test.ts:
+(pass) real engine defaults Calm on, preserves assistant content and paints S2 [74.51ms]
+
+ 1 pass
+ 0 fail
+Ran 1 test across 1 file. [0.28s]
