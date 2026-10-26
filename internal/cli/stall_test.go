@@ -73,6 +73,7 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 	if err := artisantest.KillVerified(artisan.Identity(o.LauncherIdentity)); err != nil {
 		t.Fatal(err)
 	}
+	waitGone(t, "before observing the orphaned worker", artisan.Identity(o.LauncherIdentity))
 	t.Cleanup(func() {
 		// Sweep the orphaned worker so the cleanup proves the attempt not running and its worker tree empty;
 		// the sweep settles the attempt, so the recorded worker itself must be proven gone here.

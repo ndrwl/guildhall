@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/launch/launchtest"
+	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -26,8 +27,11 @@ func TestStopNamesALauncherStillAdvancing(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := newProcess(t)
-	p.Store, p.StateDir, p.StartTimeout = filepath.Join(dir, "director.store"), filepath.Join(dir, "state"), time.Millisecond
-	spec := prepared(t, p, fixtureSpec(t, instructions[interptest.Hangs]))
+	p.Store, p.StateDir = filepath.Join(dir, "director.store"), filepath.Join(dir, "state")
+	// Let the worker finish normally so containment is recorded on every OS.
+	// A startup timeout can cancel before a process-group worker is started,
+	// leaving no containment with which Stop can prove termination.
+	spec := prepared(t, p, fixtureSpec(t, instructions[interptest.Succeeds]))
 	spec.Copy = dir
 	k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
 	record, unlocked := filepath.Join(t.TempDir(), "advances.jsonl"), filepath.Join(t.TempDir(), "unlocked")
@@ -38,13 +42,28 @@ func TestStopNamesALauncherStillAdvancing(t *testing.T) {
 	t.Setenv(advanceEnv, string(b))
 	// Unblock the advance however the test ends, so its launcher does not outlive the test.
 	t.Cleanup(func() { _ = os.WriteFile(unlocked, nil, 0o600) })
-	if _, err := p.Launch(context.Background(), spec); err == nil {
-		t.Fatal("Launch succeeded past its StartTimeout")
+	if _, err := p.Launch(context.Background(), spec); err != nil {
+		t.Fatal(err)
 	}
 	a := launch.Attempt{Key: k, Store: p.Store, StateDir: p.StateDir}
-	rep, err := launch.Stop(context.Background(), a)
-	if !errors.Is(err, launch.ErrNotStopped) || rep.Launcher != launch.LauncherAdvancing {
-		t.Fatalf("Stop while the advance is held = %+v, %v; want launcher %s and %v", rep, err, launch.LauncherAdvancing, launch.ErrNotStopped)
+	for end := time.Now().Add(deadline); ; time.Sleep(20 * time.Millisecond) {
+		state, err := launch.Status(context.Background(), a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Status is read-only: do not stop the worker before it starts.
+		if state.State == reconcile.Finished {
+			rep, err := launch.Stop(context.Background(), a)
+			if errors.Is(err, launch.ErrNotStopped) && rep.Launcher == launch.LauncherAdvancing {
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatalf("Stop while the advance is held = %+v, %v; want launcher %s and %v", rep, err, launch.LauncherAdvancing, launch.ErrNotStopped)
+			}
+		}
+		if time.Now().After(end) {
+			t.Fatalf("Status = %+v; want a finished worker with its advance held", state)
+		}
 	}
 	stops := 0
 	err = launchtest.Stop(func() (launch.StopReport, error) {

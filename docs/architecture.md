@@ -138,7 +138,7 @@ Built does not mean live acceptance has passed: the Director is exercised in CI 
   The only built runtime adapter, the [Claude adapter](adapters.md#claude-adapter), runs a print-mode session under a wrapper for Artisans, and the Director's interactive session runs under `guildhall director start` (see [the Director](director.md)).
   See [adapters](adapters.md) for the fake adapter and the session mode each adapter runs.
 - The **execution environment** is the local machine first; a Docker environment is a planned separate boundary and is not built.
-- **Herdr**, a terminal multiplexer, shows each Director and Artisan in its own tab.
+- **Herdr**, a terminal multiplexer, presents [Directors](director.md#the-directors-tab) and [workflow Artisans](artisan.md#workflow-artisan-workspaces).
   A tab is a presentation binding only: closing it, restarting Herdr or rebooting never changes task state or loses work.
 - **Messages** carry information only: a message never records a result, answers a decision or approves a merge.
 

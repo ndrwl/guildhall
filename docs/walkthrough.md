@@ -58,7 +58,7 @@ A repository can have you review instead of an Artisan without changing any othe
 ```
 
 `task show`, `timeline` and `files` read a task's attempts, decisions and documents without changing anything; `guildhall artisan status` classifies one Artisan attempt; see [Artisan commands](artisan.md#commands).
-In the planned setup, Herdr, a terminal multiplexer, shows each Director and Artisan in its own tab; a tab is presentation only, so closing it never changes a task.
+Herdr, a terminal multiplexer, presents [Directors](director.md#the-directors-tab) and [workflow Artisans](artisan.md#workflow-artisan-workspaces); terminal presentation never owns task state.
 Directors and Artisans also exchange informational [messages](messaging.md), which never carry a result, a decision or an approval.
 
 ## 4. Answer its decisions

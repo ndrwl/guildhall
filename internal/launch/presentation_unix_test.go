@@ -27,7 +27,7 @@ func TestPaneProcessPassesLauncherContract(t *testing.T) {
 	interptest.RunLauncherContract(t, func(t *testing.T) interptest.Harness {
 		p := newProcess(t)
 		panes := adaptertest.NewShellPanes(t, "lab", "director")
-		p.Presentation = &launch.Presentation{Host: panes, Workspace: "director", Report: func(context.Context, string, herdr.AgentReport) error { return nil }}
+		p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) error { return nil }}
 		return interptest.Harness{Launcher: p, Adapter: interp.FakeAdapter, Prepare: func(t *testing.T, o interptest.Outcome, render func(string) interp.Spec) interp.Spec {
 			return prepared(t, p, render(instructions[o]))
 		}}
@@ -39,7 +39,7 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 	spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=10m"))
 	panes := adaptertest.NewShellPanes(t, "lab", "director")
 	var pane string
-	p.Presentation = &launch.Presentation{Host: panes, Workspace: "director", Report: func(_ context.Context, id string, r herdr.AgentReport) error {
+	p.Presentation = &launch.Presentation{Host: panes, Report: func(_ context.Context, id string, r herdr.AgentReport) error {
 		pane = id
 		at := launch.Attempt{Store: p.Store, StateDir: p.StateDir, Key: artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}}
 		if r.Source != "guildhall" || r.Agent != "artisan" || !reflect.DeepEqual(r.Resume, launch.ResumeArgv(at)) {
@@ -70,7 +70,11 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 	}
 	// Closing the terminal's process is presentation only. ShellPanes' interrupt
 	// kills the pane bridge, not its independently owned launcher and worker.
-	ref := adapter.TabRef{Session: "lab", WorkspaceID: "director", TabID: "director:t1", PaneID: pane}
+	workspaces, err := panes.Workspaces(context.Background())
+	if err != nil || len(workspaces) != 2 || workspaces[1].Label != "artisan app/t7/build/1" {
+		t.Fatalf("expected separate labelled Artisan workspace: %+v, %v", workspaces, err)
+	}
+	ref := adapter.TabRef{Session: "lab", WorkspaceID: workspaces[1].ID, TabID: workspaces[1].ID + ":t1", PaneID: pane}
 	before := runningAttempt(t, p)
 	if err := panes.InterruptTab(context.Background(), ref); err != nil {
 		t.Fatal(err)
@@ -87,7 +91,7 @@ func TestAmbiguousPaneLaunchNeverTypesTwice(t *testing.T) {
 	spec := prepared(t, p, fixtureSpec(t, ""))
 	panes := adaptertest.NewShellPanes(t, "lab", "director")
 	refused := errors.New("report refused")
-	p.Presentation = &launch.Presentation{Host: panes, Workspace: "director", Report: func(context.Context, string, herdr.AgentReport) error { return refused }}
+	p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) error { return refused }}
 	if _, err := p.Launch(context.Background(), spec); !errors.Is(err, refused) {
 		t.Fatalf("Launch = %v", err)
 	}
@@ -117,7 +121,7 @@ func TestPaneLostResponsePreservesWorkerAndNeverRetypes(t *testing.T) {
 	p := newProcess(t)
 	spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=200ms"))
 	panes := adaptertest.NewShellPanes(t, "lab", "director")
-	p.Presentation = &launch.Presentation{Host: uncertainTabs{panes}, Workspace: "director", Report: func(context.Context, string, herdr.AgentReport) error { return nil }}
+	p.Presentation = &launch.Presentation{Host: uncertainTabs{panes}, Report: func(context.Context, string, herdr.AgentReport) error { return nil }}
 	if _, err := p.Launch(context.Background(), spec); err == nil {
 		t.Fatal("lost API response not returned")
 	}
@@ -151,7 +155,7 @@ func TestRelativeStorePaneLaunchAndResume(t *testing.T) {
 			p.Store = filepath.Base(storePath)
 			panes := adaptertest.NewShellPanes(t, "lab", "director")
 			var resume []string
-			p.Presentation = &launch.Presentation{Host: panes, Workspace: "director", Report: func(_ context.Context, _ string, r herdr.AgentReport) error {
+			p.Presentation = &launch.Presentation{Host: panes, Report: func(_ context.Context, _ string, r herdr.AgentReport) error {
 				resume = r.Resume
 				return nil
 			}}
@@ -188,6 +192,17 @@ type timeoutTabs struct {
 	adapter.TabHost
 	phase               string
 	creates, interrupts int
+	workspaces          int
+}
+
+func (h *timeoutTabs) CreateWorkspace(ctx context.Context, label, cwd string) (herdr.Workspace, error) {
+	h.workspaces++
+	w, err := h.TabHost.CreateWorkspace(ctx, label, cwd)
+	if err == nil && h.phase == "workspace" {
+		<-ctx.Done()
+		return w, ctx.Err()
+	}
+	return w, err
 }
 
 func (h *timeoutTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (adapter.TabRef, error) {
@@ -225,7 +240,7 @@ func (h *timeoutTabs) InterruptTab(ctx context.Context, ref adapter.TabRef) erro
 }
 
 func TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop(t *testing.T) {
-	for _, phase := range []string{"create", "shell", "report", "type"} {
+	for _, phase := range []string{"workspace", "create", "shell", "report", "type"} {
 		t.Run(phase, func(t *testing.T) {
 			p := newProcess(t)
 			p.StartTimeout = 150 * time.Millisecond
@@ -237,7 +252,7 @@ func TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop(t *testing.T) {
 				if _, ok := ctx.Deadline(); !ok {
 					t.Error("presentation resolution has no deadline")
 				}
-				return &launch.Presentation{Host: host, Workspace: "director", Report: func(ctx context.Context, _ string, _ herdr.AgentReport) error {
+				return &launch.Presentation{Host: host, Report: func(ctx context.Context, _ string, _ herdr.AgentReport) error {
 					reports++
 					if phase == "report" {
 						<-ctx.Done()
@@ -267,8 +282,12 @@ func TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop(t *testing.T) {
 			if phase == "type" {
 				wantSent = 1
 			}
-			if host.creates != 1 || reports != beforeReports || len(panes.Sent()) != wantSent || host.interrupts != 0 {
-				t.Fatalf("creates=%d reports=%d sent=%q interrupts=%d", host.creates, reports, panes.Sent(), host.interrupts)
+			wantCreates := 1
+			if phase == "workspace" {
+				wantCreates = 0
+			}
+			if host.workspaces != 1 || host.creates != wantCreates || reports != beforeReports || len(panes.Sent()) != wantSent || host.interrupts != 0 {
+				t.Fatalf("workspaces=%d creates=%d reports=%d sent=%q interrupts=%d", host.workspaces, host.creates, reports, panes.Sent(), host.interrupts)
 			}
 			if phase == "type" {
 				for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {

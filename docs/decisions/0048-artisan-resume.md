@@ -8,7 +8,7 @@ Escapes from a process group are not swept; that limit is the containment's, alr
 The decision is written with `artisan.Settle` under the attempt lock, with the launcher's precedence and an existing `outcome.json` kept, and the store outcome is recorded in the same lock while the record still names the gone launcher, so a concurrent take-over or resume cannot be finished by mistake.
 Resume adds no store record kind: it writes `FinishAttempt` with a mutation id derived from the attempt and the gone launcher, so a rerun records the same outcome; the interpreter's replay matrix covers only the engine's writes and is unchanged.
 `launch.ResumeArgv` starts with the plain command name `guildhall`, because Herdr refuses a path as `resume_argv`, and `herdr.Client.ReportAgent` registers it through `pane report-agent --source guildhall`.
-For production registration, see [workflow Artisan tabs](../artisan.md#workflow-artisan-tabs).
+For production registration, see [workflow Artisan workspaces](../artisan.md#workflow-artisan-workspaces).
 The fake Artisan gained the P0 lifecycle directives inside `internal/adapter/fake` rather than a second fake, honours the `.cancelled` sidecar, and plays the stop contract's worker through `artisantest.Harness.Worker`.
 The lab harness commands sit under `guildhall artisan harness` and refuse to run without `--lab`, because they are test tooling.
 The remaining lifecycle work is the Tier 2 lab runs on WSL and the Windows pilot, and retirement of the Windows-only worker stop path once the ladder passes the native Windows case.

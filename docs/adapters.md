@@ -1,6 +1,6 @@
 # Artisan adapters
 
-This page describes the baseline contract between Guildhall and an Artisan runtime (R1.23), the result file that completes an attempt, the test-only fake adapter and the minimal Claude adapter (R1.22), and how Guildhall reaches Herdr to show an Artisan in a tab (R1.38).
+This page describes the baseline contract between Guildhall and an Artisan runtime (R1.23), the result file that completes an attempt, the test-only fake adapter and the minimal Claude adapter (R1.22), and how Guildhall reaches Herdr to show each workflow Artisan in its own workspace (R1.38).
 It describes what is built today; no runtime or platform is claimed as supported until its acceptance passes (R1.27).
 
 ## Baseline contract
@@ -128,7 +128,7 @@ The Claude adapter runs one attempt as a non-interactive Claude Code session, wi
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--model <model>] [--effort <level>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
-claude --print <instruction> --output-format json --permission-mode acceptEdits [--model <model>] [--effort <level>] --settings <settings file> --add-dir <model directory>
+claude --print <instruction> --output-format stream-json --verbose --permission-mode acceptEdits [--model <model>] [--effort <level>] --settings <settings file> --add-dir <model directory>
 ```
 
 - `--model` and `--effort` are the profile's effective [runtime settings](#runtime-settings), each passed only when nonempty.
@@ -142,7 +142,12 @@ claude --print <instruction> --output-format json --permission-mode acceptEdits 
   `syncClaudeAiSkills` is consequently supplied in flag scope, not just repository project settings.
   An owned `claude-skill-policy.json` receipt records the preset, effective controls, source key, provenance, overridability and normalized digest; neither file contains credentials.
   The wrapper probes `claude --version` before preparing the model directory and refuses versions older than 2.1.310 or unknown/prerelease version output; this probe makes no model call.
-- Claude gets no standard input; with `--output-format json` it prints one result message as it exits, which the wrapper reads, and its error output goes to the wrapper's.
+- Claude gets no standard input; `--output-format stream-json --verbose` emits incremental events and a final result event.
+  The wrapper immediately writes assistant text and one `tool: <name> <subject>` line per tool call to its output, which the owned launcher appends to `launcher.log` for the pane to stream.
+  The subject is the first nonempty file path, notebook path or command, with whitespace normalized and at most 160 runes followed by `...` when truncated; terminal controls other than newlines and tabs are removed from displayed text.
+  Raw tool results and protocol events are omitted; this is plain readable text without terminal formatting or Markdown rendering.
+  Claude's error output goes to the wrapper's.
+  Events are bounded individually at 4 MiB, so earlier transcript volume cannot crowd out final usage; malformed or oversized events are ignored and a missing final result event means unknown usage.
 
 The wrapper keeps the result protocol, not the model:
 
@@ -150,12 +155,12 @@ The wrapper keeps the result protocol, not the model:
 - once Claude exits it publishes the draft's bytes at the result file by a hard link, never replacing a result; it does not validate them, so a malformed or misidentified draft is rejected by the reader like any other result, and no draft means no result;
 - the cancel marker, an interrupt or the end of its context asks Claude to stop (an interrupt on Unix, termination on Windows), kills it after 10 seconds, and publishes nothing; so the owned launcher's stop ends at rung 1;
 - Claude's exit status does not decide completion: a failing exit after a published draft is still reported;
-- once Claude exits, before publishing, it writes the [usage file](#usage-file) from the result message: its `usage` input, output, cache creation and cache read tokens are `measured`, and its `total_cost_usd`, Claude Code's price for those tokens, is an `estimated` cost; what the message lacks is `unknown`, and output that is not one JSON object gives an unknown usage; it then writes the message's `result` text to its own output, as print mode printed it, or the output unchanged when it is not a result message.
+- once Claude exits, before publishing, it writes the [usage file](#usage-file) from the result message: its `usage` input, output, cache creation and cache read tokens are `measured`, and its `total_cost_usd`, Claude Code's price for those tokens, is an `estimated` cost; what the message lacks is `unknown`, and a missing or invalid final result event gives unknown usage; it then writes that event's `result` text to its own output.
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
 - it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
 This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, and of a profile it uses only the model and effort, passed by value, and the `allowed_tools` and skill policy, loaded through the copy/profile reference.
-It runs as an [owned attempt](artisan.md#commands), including in [workflow Artisan tabs](artisan.md#workflow-artisan-tabs).
+It runs as an [owned attempt](artisan.md#commands), including in [workflow Artisan workspaces](artisan.md#workflow-artisan-workspaces).
 The older manual `artisan start --herdr-session` mode still refuses Claude; it is a separate fake-only result-file demonstration.
 Transcripts and interactive model-session resume are later work.
 
@@ -240,7 +245,7 @@ CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keep
 ## Running an attempt
 
 Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher with the fake or the [Claude adapter](#claude-adapter); see [Artisan commands](artisan.md#commands).
-For workflow launches rather than these manual flags, see [workflow Artisan tabs](artisan.md#workflow-artisan-tabs).
+For workflow launches rather than these manual flags, see [workflow Artisan workspaces](artisan.md#workflow-artisan-workspaces).
 
 Package `internal/adapter/runtimes` is the one owner of the runtimes Guildhall can launch: `runtimes.Lookup` returns the runtime by the name `artisan start --adapter` and a profile's `adapter` use, `fake` or `claude`, and `runtimes.Names` lists them.
 `artisan start` refuses any other name with a usage error that names it and lists them, in both modes.

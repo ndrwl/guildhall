@@ -194,6 +194,7 @@ func TestDirectorStopWaitsForAnInFlightAdvance(t *testing.T) {
 	if err := artisantest.KillVerified(launcher); err != nil {
 		t.Fatal(err)
 	}
+	waitGone(t, "before cleanup of the stand-in owner", launcher)
 }
 
 // duringSweep runs fn once, as director stop's sweep reaches an attempt nothing owns.
