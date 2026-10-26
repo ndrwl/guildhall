@@ -393,6 +393,35 @@ All are new records in the receiver's or sender's existing store, keyed outside 
 A ticket's decision is a decision of kind `question` with options `accept` and `decline`, and the inbox alert one with options `reopen` and `keep-closed`.
 Decisions are keyed by repository and task today, so both need the decision record's key to admit a ticket or the inbox as its subject; that is the first contract the ticket slice changes.
 
+### Maintenance tickets to the Steward (designed, not built)
+
+The [rails, not tracks decision](decisions/rails-not-tracks.md) extends the ticket model with Director-filed maintenance incidents: engine dead ends, unexpected states and workarounds, including incidents the Director resolved successfully.
+This is a separate maintenance intake, not a new sender or recipient accepted by today's local inbox or by the Director-to-Director envelope above.
+The existing proposed `ticket file --from-message` form admits only `handoff-offer` and `dependency-notice`; it does not yet file maintenance incidents.
+A follow-up contract must add local incident filing and inspection and Steward collection, rather than overloading `question` or pretending a ticket starts a task.
+
+The incident record needs:
+
+- a stable originating Director identity and ticket id, repository/task/step/attempt references, or an explicit not-applicable value for a pre-task failure;
+- release and workflow revisions, the observed state and time, exact error, and evidence references with digests;
+- what the Director tried, what it actually did, the workaround if any, and remaining risk;
+- collection state and receipt, plus a link to the Steward's queue item when collected.
+
+Evidence capture must exclude credentials and unrelated private data.
+The queue is durable locally before any collection, and repeated delivery of the same origin/id returns the same receipt; conflicting content under that identity is refused, while later observations are linked as new evidence rather than overwriting the original.
+Transport failure leaves the ticket pending locally, never silently discarded or described as collected.
+
+The Steward collects proposed maintenance tickets on request over its existing SSH access to Director copies, as designed for [lessons](director-modes.md#lessons), and persists its maintenance queue in the private configuration repository.
+Directors need neither that repository nor a connection to the Steward, and the Steward does not gain a Director inbox sender type.
+A collection receipt is a command result, not a Steward message or permission to act.
+A standalone Director uses the identical local queue for its Guildmaster to triage and can have it collected later if a Steward is introduced.
+
+The Guildmaster may accept, defer or decline the proposed maintenance work, with the decision and evidence retained.
+Acceptance leads to separately scoped work under the ordinary task, approval and rollout rules; it does not retroactively approve the originating task or authorize an install.
+This reuses the ordinary ticket principle that a proposal is not a task, but needs a maintenance-specific triage lifecycle and a subject independent of an existing task, as ordinary tickets already require.
+Filing, listing, evidence capture, collection, receipts, private-queue persistence and triage still need to be built and contract-tested, including offline retry and standalone operation.
+Nothing polls or spends model tokens merely because a ticket is queued.
+
 ### Conflicts to resolve
 
 These are flagged rather than chosen silently:
