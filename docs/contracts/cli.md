@@ -2,7 +2,7 @@
 
 ## Contract
 
-Task admission and advance require an explicitly configured runtime for each Artisan stage, through its profile or the effective `default_adapter` setting.
+Task admission and advance require an explicitly configured runtime for each Artisan stage, through its named profile; profile-less Artisan stages are refused with a custom-workflow remedy.
 A missing selection fails with exit 1 and an error naming the step, profile remedy and default-adapter remedy, without task-record mutations or launches.
 Explicit `fake` is still accepted.
 `adapter_admission_test.go` reproduced both silent admission and fake launch before implementation ([red evidence](../evidence/no-silent-fake-2026-10-26-red.txt)); both now refuse and leave the real store bytes unchanged ([green evidence](../evidence/no-silent-fake-2026-10-26-green.txt)).

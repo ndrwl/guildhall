@@ -5,8 +5,6 @@ name = "tools"
 
 # Owned by this Director; may replace managed keys marked overridable.
 [local]
-# Stages without a named profile must explicitly select a runtime; never an implicit fake.
-default_adapter = "claude"
 review_instructions = "Cite the accepted requirement for every finding and check Windows paths."
 # How long a worker may stay silent before the Director hears it stalled; "0s" turns that off.
 stall_interval = "15m"
@@ -47,7 +45,8 @@ id = "cli"
 path = '/srv/src/cli'
 remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"
-# merge_policy defaults to "approval"; workflow defaults to "default".
+workflow = "profiled"
+# merge_policy defaults to "approval".
 
 [[repository]]
 id = "docs-site"
@@ -55,7 +54,7 @@ path = '/srv/src/docs-site'
 remote = "https://github.com/example/docs-site.git"
 owner_machine = "workstation"
 merge_policy = "auto"
-workflow = "default"
+workflow = "profiled"
 
 # This repository has the Guildmaster review every change instead of an Artisan.
 [repository.workflow_overrides.review]

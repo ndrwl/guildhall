@@ -12,91 +12,75 @@ import (
 )
 
 func TestArtisanAdapterAdmission(t *testing.T) {
-	def, err := workflow.Default()
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, name := range []string{"fake", "claude", "mock"} {
-		c := &Config{}
-		if err := c.CheckArtisanAdapters(def, name); err != nil {
-			t.Errorf("explicit %s: %v", name, err)
-		}
-	}
-	c := &Config{}
-	if err := c.CheckArtisanAdapters(def, ""); !errors.Is(err, ErrMissingAdapter) || !strings.Contains(err.Error(), `step "research"`) {
-		t.Fatalf("missing: %v", err)
-	}
-	c.Profiles = map[string]Profile{"demo": {Adapter: "fake"}}
-	for i := range def.Steps {
-		if def.Steps[i].Actor() == workflow.ArtisanActor {
-			if def.Steps[i].Settings == nil {
-				def.Steps[i].Settings = map[string]json.RawMessage{}
+		t.Run(name, func(t *testing.T) {
+			def, err := workflow.Default()
+			if err != nil {
+				t.Fatal(err)
 			}
-			def.Steps[i].Settings["profile"] = json.RawMessage(`"demo"`)
-		}
-	}
-	if err := c.CheckArtisanAdapters(def, ""); err != nil {
-		t.Fatalf("explicit fake profiles: %v", err)
-	}
-	delete(c.Profiles, "demo")
-	if err := c.CheckArtisanAdapters(def, "fake"); !errors.Is(err, ErrUnknownProfile) {
-		t.Fatalf("default masked bad profile: %v", err)
+			c := &Config{Local: map[string]string{"default_adapter": name}, Profiles: map[string]Profile{"explicit": {Adapter: name}}}
+			if err := c.CheckArtisanAdapters(def); !errors.Is(err, ErrMissingAdapter) || !strings.Contains(err.Error(), `step "research"`) || !strings.Contains(err.Error(), "custom workflow") {
+				t.Fatalf("missing: %v", err)
+			}
+			for i := range def.Steps {
+				if def.Steps[i].Actor() == workflow.ArtisanActor {
+					if def.Steps[i].Settings == nil {
+						def.Steps[i].Settings = map[string]json.RawMessage{}
+					}
+					def.Steps[i].Settings["profile"] = json.RawMessage(`"explicit"`)
+				}
+			}
+			if err := c.CheckArtisanAdapters(def); err != nil {
+				t.Fatalf("explicit profiles: %v", err)
+			}
+			for i := range def.Steps {
+				if def.Steps[i].Actor() != workflow.ArtisanActor {
+					continue
+				}
+				saved := def.Steps[i].Settings["profile"]
+				delete(def.Steps[i].Settings, "profile")
+				if err := c.CheckArtisanAdapters(def); !errors.Is(err, ErrMissingAdapter) || !strings.Contains(err.Error(), `step "`+def.Steps[i].ID+`"`) {
+					t.Fatalf("missing %s: %v", def.Steps[i].ID, err)
+				}
+				def.Steps[i].Settings["profile"] = saved
+			}
+			delete(c.Profiles, "explicit")
+			if err := c.CheckArtisanAdapters(def); !errors.Is(err, ErrUnknownProfile) {
+				t.Fatalf("unknown: %v", err)
+			}
+		})
 	}
 }
 
 func TestShippedDirectorSelectsRealArtisan(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "examples", "director.toml"))
+	root := filepath.Join("..", "..", "examples")
+	c, err := Load(filepath.Join(root, "director.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	def, err := workflow.Default()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.DefaultAdapter() != "claude" {
-		t.Fatalf("shipped default %q", c.DefaultAdapter())
-	}
-	if err := c.CheckArtisanAdapters(def, c.DefaultAdapter()); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestInvalidDefaultAdapter(t *testing.T) {
-	for _, value := range []string{"", "Claude Code", " fake", "fake "} {
-		for _, section := range []string{"local", "managed"} {
-			base := strings.Split(director(t), "[managed.")[0]
-			suffix := "\n[local]\ndefault_adapter = '" + value + "'\n"
-			if section == "managed" {
-				suffix = "\n[managed.default_adapter]\nvalue = '" + value + "'\noverridable = true\n[local]\ndefault_adapter = 'fake'\n"
-			}
-			if _, err := Parse([]byte(base + suffix)); err == nil || !strings.Contains(err.Error(), DefaultAdapterKey) {
-				t.Errorf("%s %q: %v", section, value, err)
+	for _, repo := range c.Repositories {
+		data, err := os.ReadFile(filepath.Join(root, "workflows", repo.Workflow+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		def, err := workflow.Parse(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		def, err = workflow.ApplyOverrides(def, repo.WorkflowOverrides)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := workflow.Validate(def); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.CheckArtisanAdapters(def); err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range def.Steps {
+			if step.Actor() == workflow.ArtisanActor && c.Profiles[step.Profile()].Adapter != "claude" {
+				t.Fatalf("%s/%s does not select Claude", repo.ID, step.ID)
 			}
 		}
-	}
-}
-
-func TestDefaultAdapterPrecedence(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		managed map[string]ManagedSetting
-		local   map[string]string
-		want    string
-	}{
-		{name: "unset"},
-		{name: "local fake", local: map[string]string{DefaultAdapterKey: "fake"}, want: "fake"},
-		{name: "managed", managed: map[string]ManagedSetting{DefaultAdapterKey: {Value: "claude"}}, local: map[string]string{DefaultAdapterKey: "fake"}, want: "claude"},
-		{name: "overridable", managed: map[string]ManagedSetting{DefaultAdapterKey: {Value: "claude", Overridable: true}}, local: map[string]string{DefaultAdapterKey: "fake"}, want: "fake"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c := &Config{Managed: tc.managed, Local: tc.local}
-			if got := c.DefaultAdapter(); got != tc.want {
-				t.Fatalf("got %q want %q", got, tc.want)
-			}
-		})
 	}
 }

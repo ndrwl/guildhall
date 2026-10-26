@@ -5,8 +5,10 @@ mode = "director"
 name = "beta"
 
 [local]
-default_adapter = "fake"
 standards_revision = "standards-1"
+
+[profile.demo]
+adapter = "fake"
 
 [[repository]]
 id = "app"

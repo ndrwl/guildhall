@@ -6,7 +6,7 @@
     {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"}},
     {"id": "accept", "type": "guildmaster-approval", "version": 1,
      "inputs": {"spec": ["plan.spec"]}},
-    {"id": "build", "type": "build", "version": 1,
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "demo"},
      "inputs": {"spec": ["accept.spec"]}},
     {"id": "sign-off", "type": "review", "version": 1, "settings": {"actor": "guildmaster"},
      "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},

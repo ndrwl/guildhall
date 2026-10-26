@@ -269,7 +269,7 @@ func acceptTask(cfgPath, repo string) (store.Task, acceptedWorkflow, error) {
 	if err != nil {
 		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
-	if err := cfg.CheckArtisanAdapters(w.effective, cfg.DefaultAdapter()); err != nil {
+	if err := cfg.CheckArtisanAdapters(w.effective); err != nil {
 		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
 	var named []string

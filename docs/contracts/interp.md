@@ -2,7 +2,7 @@
 
 ## Contract
 
-`Engine.Advance` checks `config.CheckArtisanAdapters` before event intake or any mutation: an Artisan without a profile requires an explicit `Engine.DefaultAdapter`.
+`Engine.Advance` checks `config.CheckArtisanAdapters` before event intake or any mutation: an Artisan without a profile is refused with a custom-workflow remedy.
 An empty selection is `config.ErrMissingAdapter`, not an implicit fake; the refusal names the step and remediation.
 Explicit fake/mock defaults remain usable, including tests; there is no missing-selection exemption for test binaries.
 

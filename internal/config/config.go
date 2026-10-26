@@ -373,12 +373,6 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
-	if m, ok := c.Managed[DefaultAdapterKey]; ok && !workflow.ValidID(m.Value) {
-		add("managed %s %q must be an adapter id", DefaultAdapterKey, m.Value)
-	}
-	if v, ok := c.Local[DefaultAdapterKey]; ok && !workflow.ValidID(v) {
-		add("local %s %q must be an adapter id", DefaultAdapterKey, v)
-	}
 	problems = append(problems, c.checkQuality()...)
 	problems = append(problems, c.checkClaudeSkills()...)
 

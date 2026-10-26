@@ -4,7 +4,7 @@
   "description": "The straight path behind a live grill: the Director grills, an Artisan researches, and the plan takes both notes as context before acceptance, build, review, sign-off and delivery.",
   "steps": [
     {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director", "skills": ["go-tdd"]}},
-    {"id": "research", "type": "research", "version": 1},
+    {"id": "research", "type": "research", "version": 1, "settings": {"profile": "researcher"}},
     {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"},
      "inputs": {"context": ["grill.notes", "research.notes"]}},
     {"id": "accept", "type": "guildmaster-approval", "version": 1,

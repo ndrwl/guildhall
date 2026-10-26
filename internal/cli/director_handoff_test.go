@@ -446,7 +446,7 @@ func TestReloadTakesTheCurrentRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, cfg, strings.Replace(string(b), "\nadapter = \"fake\"", "\nadapter = \"claude\"", 1))
+	writeFile(t, cfg, strings.Replace(string(b), "[director]\nadapter = \"fake\"", "[director]\nadapter = \"claude\"", 1))
 	t.Setenv("PATH", t.TempDir())
 	copyRun(t, dir, "director", "turn-ended")
 	copyRun(t, dir, "director", "reload")

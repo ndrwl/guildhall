@@ -46,10 +46,10 @@ func TestDirectorClaudeReloadReusesTrustedWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, cfg, strings.Replace(string(data), "\nadapter = \"fake\"", "\nadapter = \"claude\"", 1))
+	writeFile(t, cfg, strings.Replace(string(data), "[director]\nadapter = \"fake\"", "[director]\nadapter = \"claude\"", 1))
 	t.Setenv("GUILDHALL_TEST_CLAUDE_TRUSTED_DIR", filepath.Join(dir, "director", "claude"))
 	done := supervise(t, dir, time.Nanosecond)
-	updated := strings.Replace(string(data), "\nadapter = \"fake\"", "\nadapter = \"claude\"", 1)
+	updated := strings.Replace(string(data), "[director]\nadapter = \"fake\"", "[director]\nadapter = \"claude\"", 1)
 	updated = strings.Replace(updated, "[local]\n", "[local]\nclaude_skills_director = '{\"preset\":\"director-v1\",\"account_sync\":true}'\n", 1)
 	writeFile(t, cfg, updated)
 	copyRun(t, dir, "director", "handoff", "--note-file", noteFile(t, "Continue from the saved note.\n"))
