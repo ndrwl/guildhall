@@ -600,22 +600,6 @@ func runGH(s *ghState, bare string, args []string) int {
 			positional = append(positional, a)
 		}
 	}
-	allowed := map[string][]string{
-		"repo view": {"--json"},
-		"pr list":   {"--repo", "--head", "--state", "--json"},
-		"pr create": {"--repo", "--head", "--title", "--body"},
-		"pr view":   {"--repo", "--json"},
-		"pr merge":  {"--repo", "--squash", "--match-head-commit"},
-	}
-	known, ok := allowed[cmd]
-	if !ok {
-		return fail(2, "fake gh: unknown command %q", cmd)
-	}
-	for f := range flags {
-		if !slices.Contains(known, f) {
-			return fail(2, "fake gh: %s does not take %s", cmd, f)
-		}
-	}
 	if s.Offline {
 		return fail(1, "error connecting to api.github.com")
 	}
