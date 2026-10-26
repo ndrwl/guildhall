@@ -2,6 +2,7 @@
 
 Every pull request is reviewed against this standard, the requirements in `docs/requirements.md`, the decisions in `docs/decisions.md` and `CONTRIBUTING.md`.
 Human and automated reviewers apply the same rules.
+For an interpreter code-review attempt, follow the [review skill's range and round rules](../skills/guildhall-review/SKILL.md#what-you-review).
 
 The [quality rubric](quality.md) is the scored and trend layer above these rules: it records how good a delivered change was, maps each rule below to its criteria, and never changes what blocks a merge.
 

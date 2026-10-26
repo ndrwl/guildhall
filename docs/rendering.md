@@ -16,6 +16,10 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 | `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
+Code-review prompts also include `Review base: <commit>` alongside the attempt identity, using `Stage.ReviewBase` verbatim; an empty value renders as `Review base: unavailable`.
+Other step kinds omit this field.
+The [interpreter](interpreter.md#rounds-and-loops) owns selecting the value, and the [review skill](../skills/guildhall-review/SKILL.md#what-you-review) owns how the reviewer uses it.
+
 Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory.
 The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.
 Standards are inlined, because a reviewer measures against those exact words.

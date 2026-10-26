@@ -14,7 +14,8 @@ Review alone and start no sub-agents, because a workflow that wants several revi
 ## What you review
 
 - The head is the commit the `head` input names, and the outcome binds to it.
-- The base is the one the attempt recorded for its range; as an interim fallback until the reviewer is given the recorded base as an input, where the inputs give none, review the commits on the head that the repository's default branch does not have.
+- The base is the exact commit in the prompt's `Review base` field, taken from the attempt's recorded range; never substitute the current default branch.
+- If `Review base` is `unavailable`, the attempt has no recorded range: report the missing base as a blocker rather than guessing the range.
 - Read the change once with `git diff <base>...<head>` and `git log --oneline <base>..<head>`, and review only what it changes.
 - With a `resolution` input the round re-reviews a rebase: review that resolution diff, and carry earlier findings by the round rules below.
 - The spec is the `spec` input under `inputs/`, at the digest the prompt lists; it is never missing and you never look for another.

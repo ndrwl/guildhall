@@ -1,0 +1,1 @@
+ok  	github.com/ndrwl/guildhall/internal/interp	0.954s

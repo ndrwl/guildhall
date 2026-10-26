@@ -1,0 +1,392 @@
+--- FAIL: TestRebaseAwareReview (0.93s)
+    --- FAIL: TestRebaseAwareReview/rebase/double (0.06s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4633e2d50}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:4c9d7c23b6df69d97aabda0fbfc184f826c8a4d0e6a6ec8a894a3192e10b29af Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4631f78f0}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-resolution Path:tasks/app/t7/review-2.resolution.diff SHA256:66a7ff97201a35dadbe5b5dc4422311e883b801f5a775f58b3d640bb0b071ce9 Review:<nil>}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4633e2d50}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:4c9d7c23b6df69d97aabda0fbfc184f826c8a4d0e6a6ec8a894a3192e10b29af Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4631f78f0}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-resolution Path:tasks/app/t7/review-2.resolution.diff SHA256:66a7ff97201a35dadbe5b5dc4422311e883b801f5a775f58b3d640bb0b071ce9 Review:<nil>}
+    --- FAIL: TestRebaseAwareReview/rebase/store (0.10s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4633e3ce0}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:4c9d7c23b6df69d97aabda0fbfc184f826c8a4d0e6a6ec8a894a3192e10b29af Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4633e3d10}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-resolution Path:tasks/app/t7/review-2.resolution.diff SHA256:66a7ff97201a35dadbe5b5dc4422311e883b801f5a775f58b3d640bb0b071ce9 Review:<nil>}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4635f4150}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:4c9d7c23b6df69d97aabda0fbfc184f826c8a4d0e6a6ec8a894a3192e10b29af Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4635f4180}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-resolution Path:tasks/app/t7/review-2.resolution.diff SHA256:66a7ff97201a35dadbe5b5dc4422311e883b801f5a775f58b3d640bb0b071ce9 Review:<nil>}
+    --- FAIL: TestRebaseAwareReview/changed_standards/double (0.07s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4633b2360}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:d42b1eb6718140a99c1f960de52abe71fc986cef0b002d04f426be728c117e43 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:b951bb4691bdd8e4d1f9591c2e575c4e420a806f1ae19c4834abd3f81cdef2c3 Review:0x33f4634e7b30}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4633b2360}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:d42b1eb6718140a99c1f960de52abe71fc986cef0b002d04f426be728c117e43 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:b951bb4691bdd8e4d1f9591c2e575c4e420a806f1ae19c4834abd3f81cdef2c3 Review:0x33f4634e7b30}
+    --- FAIL: TestRebaseAwareReview/changed_standards/store (0.10s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e3260}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:d42b1eb6718140a99c1f960de52abe71fc986cef0b002d04f426be728c117e43 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:b951bb4691bdd8e4d1f9591c2e575c4e420a806f1ae19c4834abd3f81cdef2c3 Review:0x33f4634e3290}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e3590}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:d42b1eb6718140a99c1f960de52abe71fc986cef0b002d04f426be728c117e43 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:b951bb4691bdd8e4d1f9591c2e575c4e420a806f1ae19c4834abd3f81cdef2c3 Review:0x33f4634e35c0}
+    --- FAIL: TestRebaseAwareReview/requested_full/double (0.07s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4637121e0}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4633e28d0}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4637121e0}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4633e28d0}
+    --- FAIL: TestRebaseAwareReview/requested_full/store (0.08s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f46340ea50}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f46340ea80}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f46340ed80}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f46340edb0}
+    --- FAIL: TestRebaseAwareReview/full/double (0.07s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e5c20}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4636b2240}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e5c20}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4636b2240}
+    --- FAIL: TestRebaseAwareReview/full/store (0.09s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e77a0}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4634e77d0}
+        rebase_test.go:105: review 1 prompt does not name recorded base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        rebase_test.go:105: review 2 prompt does not name recorded base cccccccccccccccccccccccccccccccccccccccc
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:2b4b3900a037aabd0bb9d9e90a8b0087a79c239bed5fe67fee77e98ac5a4a4a2 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e7ad0}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:efe357a92b4b39ec9e12feac7618f708433f06b199c3a1dc5cab20d3324b097a Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4634e7b00}
+    --- FAIL: TestRebaseAwareReview/no_base/double (0.06s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f46340ebd0}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4634e58c0}
+        rebase_test.go:105: review 1 prompt does not name recorded base unavailable
+        rebase_test.go:105: review 2 prompt does not name recorded base unavailable
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f46340ebd0}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f4634e58c0}
+    --- FAIL: TestRebaseAwareReview/no_base/store (0.09s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f46337e690}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f46337e720}
+        rebase_test.go:105: review 1 prompt does not name recorded base unavailable
+        rebase_test.go:105: review 2 prompt does not name recorded base unavailable
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f46337eba0}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f46337ebd0}
+    --- FAIL: TestRebaseAwareReview/base_error/double (0.07s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e76e0}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f46355ddd0}
+        rebase_test.go:105: review 1 prompt does not name recorded base unavailable
+        rebase_test.go:105: review 2 prompt does not name recorded base unavailable
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f4634e76e0}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f46355ddd0}
+    --- FAIL: TestRebaseAwareReview/base_error/store (0.09s)
+        rebase_test.go:67: Advance({Kind:task-created Repository:app Task:t7 Step: Attempt:0 Decision: Reason:}) => {Wait:attempt Step:plan Attempt:1 Decision:}
+        rebase_test.go:67: Advance({Kind:attempt-result Repository:app Task:t7 Step:plan Attempt:1 Decision: Reason:}) => {Wait:decision Step:accept Attempt:0 Decision:accept-1}
+        rebase_test.go:67: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:accept-1 Reason:}) => {Wait:attempt Step:build Attempt:1 Decision:}
+        rebase_test.go:68: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:1 Decision: Reason:}) => {Wait:attempt Step:review Attempt:1 Decision:}
+        rebase_test.go:69: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:1 Decision: Reason:}) => {Wait:attempt Step:build Attempt:2 Decision:}
+        rebase_test.go:78: Advance({Kind:attempt-result Repository:app Task:t7 Step:build Attempt:2 Decision: Reason:}) => {Wait:attempt Step:review Attempt:2 Decision:}
+        rebase_test.go:79: Advance({Kind:attempt-result Repository:app Task:t7 Step:review Attempt:2 Decision: Reason:}) => {Wait:decision Step:deliver Attempt:0 Decision:deliver-1}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f463713710}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:89: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f463713740}
+        rebase_test.go:105: review 1 prompt does not name recorded base unavailable
+        rebase_test.go:105: review 2 prompt does not name recorded base unavailable
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:accept-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-head Path:tasks/app/t7/build-1/head SHA256:3d51eb31d2eaa0c0163e0e6e240f4370d06d484c91f4db87d14778c6140c67e3 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-1-inputs Path:tasks/app/t7/build-1.inputs.json SHA256:7ec1af26ac7118c00192a66db8fa55c64b2476844cb10cba8b3a42cd932bae1f Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-head Path:tasks/app/t7/build-2/head SHA256:0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:build-2-inputs Path:tasks/app/t7/build-2.inputs.json SHA256:d890bf947ea3537ab4b6bd3f4ca9d593ae732731893b301d894fadf4278629cf Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-inputs Path:tasks/app/t7/plan-1.inputs.json SHA256:62b512d8c76bbed3048fc81bd94bd2aeaab2de4d3b36edbed2f3d3dd8ff3e33e Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:plan-1-spec Path:tasks/app/t7/plan-1/spec.md SHA256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-inputs Path:tasks/app/t7/review-1.inputs.json SHA256:c5e57f19e4119ef8deaf1261b85dfc4009a2c49ab017f1781fb915827e4ccc11 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-1-outcome Path:tasks/app/t7/review-1/review-outcome.json SHA256:62670fb1b0547efc60f85b9e7a8e71168ef78f597e1b57043f13eee0c8a367dd Review:0x33f463713a40}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-inputs Path:tasks/app/t7/review-2.inputs.json SHA256:76c92735a5f12538a43fcc4066a05dddd71b94383785bd3fa13172e10bfff7f9 Review:<nil>}
+        rebase_test.go:115: document: {Repository:app TaskID:t7 Name:review-2-outcome Path:tasks/app/t7/review-2/review-outcome.json SHA256:987d78007bcd4831d5f1cb7f87d6abe45fb60e6c97bc1fe052cb9d584a244ad5 Review:0x33f463713a70}
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.940s
+FAIL

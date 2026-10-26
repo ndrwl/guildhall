@@ -176,6 +176,9 @@ Because validate only completes on a passed result for its current head, the gat
 ## Rounds and loops
 
 Before recording attempt `n` of an Artisan step, the engine records its binding as document `<step>-<n>-inputs` (`tasks/<repo>/<task>/<step>-<n>.inputs.json`): every input it is given, by port, path and digest, and for a review or document review the revisions its outcome must be bound to (subject, accepted-spec digest for code, `Engine.StandardsRevision`).
+New review preparations pass that binding's exact revisions to `render.Stage.Revisions` and its range base to `render.Stage.ReviewBase`, leaving the latter empty when no range was recorded.
+The base is not resolved again during preparation, including rebase-only and requested-full rounds.
+The [rendering contract](rendering.md#artisan-prompts) owns the emitted field, and [attempt preparation](#attempt-preparation) owns published-prompt immutability, including prompts prepared before this field existed.
 Besides its wired inputs, an attempt may be given:
 
 - `resolution`: see [rebase-aware review](#rebase-aware-review);
