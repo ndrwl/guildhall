@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -51,7 +52,17 @@ func (h *artisanWorkspaces) CreateWorkspace(ctx context.Context, label, cwd stri
 		return child, err
 	}
 	if lockErr == nil {
-		lockErr = placeArtisan(ctx, h.client, h.storePath, h.state, child)
+		budget := 2 * time.Second
+		if deadline, ok := ctx.Deadline(); ok {
+			budget = min(budget, time.Until(deadline)-10*time.Second)
+		}
+		if budget <= 0 || ctx.Err() != nil {
+			lockErr = errors.New("insufficient startup budget for ordering")
+		} else {
+			orderCtx, cancel := context.WithTimeout(ctx, budget)
+			lockErr = placeArtisan(orderCtx, h.client, h.storePath, h.state, child)
+			cancel()
+		}
 	}
 	if lockErr != nil {
 		_, _ = fmt.Fprintf(h.warnings, "guildhall: warning: Artisan workspace ordering skipped: %v\n", lockErr)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -43,12 +44,23 @@ func TestPlaceWorkspace(t *testing.T) {
 		{name: "malformed response", list: []Workspace{parent, foreign, child}, wire: `broken`, wantMove: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			status := fixture(t, "status.json")
+			socketPath := filepath.Join(t.TempDir(), "herdr.sock")
+			var statusRecord map[string]any
+			if err := json.Unmarshal([]byte(fixture(t, "status.json")), &statusRecord); err != nil {
+				t.Fatal(err)
+			}
+			statusRecord["server"].(map[string]any)["socket"] = socketPath
+			if tc.status == "socket" {
+				statusRecord["server"].(map[string]any)["socket"] = ""
+			}
+			statusBytes, err := json.Marshal(statusRecord)
+			if err != nil {
+				t.Fatal(err)
+			}
+			status := string(statusBytes)
 			switch tc.status {
 			case "old":
-				status = strings.ReplaceAll(status, `"protocol": 22`, `"protocol": 15`)
-			case "socket":
-				status = strings.ReplaceAll(status, `/home/user/.config/herdr/sessions/guildhall-lab/herdr.sock`, ``)
+				status = strings.ReplaceAll(status, `"protocol":22`, `"protocol":15`)
 			case "session":
 				status = strings.ReplaceAll(status, `guildhall-lab`, `default`)
 			}
@@ -57,7 +69,7 @@ func TestPlaceWorkspace(t *testing.T) {
 			moved := false
 			c.moveWorkspace = func(_ context.Context, socket, id string, index int) ([]byte, error) {
 				moved = true
-				if socket != "/home/user/.config/herdr/sessions/guildhall-lab/herdr.sock" || id != "new" {
+				if socket != socketPath || id != "new" {
 					t.Fatalf("unsafe target %q %q", socket, id)
 				}
 				if tc.failMove {
@@ -81,7 +93,7 @@ func TestPlaceWorkspace(t *testing.T) {
 				out, _ := json.Marshal(map[string]any{"id": "guildhall-workspace-move", "result": map[string]any{"type": "workspace_list", "workspaces": expected}})
 				return out, nil
 			}
-			err := c.PlaceWorkspace(context.Background(), child, "director", tc.siblings)
+			err = c.PlaceWorkspace(context.Background(), child, "director", tc.siblings)
 			if (err == nil) != tc.wantOK || moved != tc.wantMove {
 				t.Fatalf("err=%v moved=%v; want OK=%v moved=%v", err, moved, tc.wantOK, tc.wantMove)
 			}

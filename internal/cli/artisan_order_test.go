@@ -12,8 +12,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/herdr"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 type creationProbe struct {
@@ -55,6 +57,76 @@ func TestOrderingSkipNeverFailsCreation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOrderingPreservesStartupBudget(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		timeout time.Duration
+		lookup  bool
+	}{
+		{name: "stalled lookup", timeout: 15 * time.Second, lookup: true},
+		{name: "insufficient budget", timeout: time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := t.TempDir()
+			path := filepath.Join(state, "director.store")
+			s, err := store.Open(path, store.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			startSession(t, path, store.DirectorPane{Session: "lab", Workspace: "director", Tab: "director:t1", Pane: "director:p1"})
+			marker := filepath.Join(state, "lookup-started")
+			t.Setenv("GUILDHALL_TEST_ORDERING_LOOKUP", marker)
+			client, err := herdr.New(herdr.Options{Session: "lab", Command: []string{executable, "-test.run=^TestArtisanOrderingStalledTransport$", "--"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			probe := &creationProbe{}
+			var warnings bytes.Buffer
+			host := &artisanWorkspaces{TabHost: probe, client: client, storePath: path, state: state, warnings: &warnings}
+			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
+			defer cancel()
+			child, err := host.CreateWorkspace(ctx, "└ task · build #1", "")
+			if err != nil || child.ID != "new" || probe.calls != 1 {
+				t.Fatalf("creation=%+v err=%v calls=%d", child, err, probe.calls)
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("ordering exhausted startup context: %v", ctx.Err())
+			}
+			if !strings.Contains(warnings.String(), "ordering skipped") {
+				t.Fatalf("missing ordering warning: %s", &warnings)
+			}
+			_, markerErr := os.Stat(marker)
+			if tc.lookup && markerErr != nil {
+				t.Fatalf("lookup did not reach stalled transport: %v", markerErr)
+			}
+			if !tc.lookup && !errors.Is(markerErr, os.ErrNotExist) {
+				t.Fatalf("lookup ran without startup budget: %v", markerErr)
+			}
+		})
+	}
+}
+
+func TestArtisanOrderingStalledTransport(t *testing.T) {
+	marker := os.Getenv("GUILDHALL_TEST_ORDERING_LOOKUP")
+	if marker == "" {
+		t.Skip("ordering transport helper")
+	}
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Hour)
 }
 
 type orderRecorder struct {
