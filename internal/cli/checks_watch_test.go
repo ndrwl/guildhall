@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
@@ -386,7 +387,7 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 
 func readFileString(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := atomicfile.Read(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
 	}
