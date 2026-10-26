@@ -2,6 +2,10 @@
 
 ## Contract
 
+`spend report` follows the [recorded spend contract](../spend.md): read-only store and attempt-file aggregation, independent measured and estimated subtotals, explicit unknown counts and partial totals, inclusive start-time filters, and no transcript parsing or inferred historical settings.
+`TestSpendReportRecordedUsage` and `TestSpendReportRejectsInvalidInput` were written before implementation and failed to compile because `spendReport` did not exist; they then passed with the command implemented.
+The additional `TestSpendReportMetadataFiltersAndMalformedEvidence`, `TestSpendReportRetriesAggregateWithoutTranscriptReads` and `TestSpendReportCopyAndHelp` cases were added after implementation and passed on their first run; they pin manifest identity, missing and malformed evidence, inclusive start times, repository/task filtering, environment copy selection and help against real fixture stores.
+
 Task admission and advance require an explicitly configured runtime for each Artisan stage, through its named profile; profile-less Artisan stages are refused with a custom-workflow remedy.
 A missing profile fails with exit 1 and an error naming the step and directing the user to set a profile on that step in a custom workflow, without task-record mutations or launches.
 Explicit profiles whose adapter is `fake` are still accepted; there is no default-adapter remedy.
