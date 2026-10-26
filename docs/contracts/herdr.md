@@ -11,7 +11,8 @@ Every run ends when its context ends: the program is killed and its output pipes
 `WorkspaceCreate` validates the workspace, starting tab and root pane from the same creation response and returns the initial tab's ownership proof; `WorkspaceList` never grants tab ownership.
 `PlaceWorkspace` is an optional presentation operation: it moves only a newly created workspace with response-derived ownership, after its exact Director and already adjacent, journal-bound siblings in launch order.
 It requires named-session status, protocol 16 or newer and an absolute socket path from that status, never ambient socket identity.
-It refuses missing or duplicate identities, renamed or detached siblings, interleaving and unowned child labels, and verifies the entire returned order after exactly one `workspace.move` request.
+It refuses missing or duplicate identities, renamed or detached siblings, interleaving and unowned child labels.
+An already-adjacent child needs no move; otherwise it verifies the entire returned order after exactly one `workspace.move` request.
 Errors grant no retry, rollback, rename, close or task-record authority; callers warn and continue launching.
 `ShellCommand` renders argv so the named shell starts exactly that argv, or refuses (D20).
 

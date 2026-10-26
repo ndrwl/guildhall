@@ -110,9 +110,7 @@ A custom role is responsible for its own conversation instructions.
 ## Artisan workspaces
 
 The Director's `herdr_session` also selects [workflow Artisan workspaces](artisan.md#workflow-artisan-workspaces), independently of whether the Director itself runs with `--tab` or in a terminal.
-New Artisan workspaces are labelled `└ <task> · <step> #<attempt>` and, when exact ownership and order are verifiable, form a contiguous launch-order block directly under this Director's recorded workspace.
-A Director running outside a recorded Herdr pane still gets Artisan workspaces, but ordering warns and skips rather than guessing a parent from labels or focus.
-That page owns their presentation, lifecycle and recovery rules; [Herdr access](adapters.md#herdr-access) describes the session prerequisites.
+That page owns their child labels, best-effort placement under the Director, lifecycle and recovery rules; [Herdr access](adapters.md#herdr-access) describes the session prerequisites.
 
 ## The Director's tab
 
