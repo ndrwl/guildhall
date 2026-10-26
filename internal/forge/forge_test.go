@@ -517,7 +517,9 @@ type ghState struct {
 	// Checks are each head's statusCheckRollup contexts, in GitHub's form; a head without an entry has no rollup.
 	Checks map[string][]map[string]any `json:"checks"`
 	// MoreChecks reports another page of contexts.
-	MoreChecks bool `json:"more_checks"`
+	MoreChecks       bool   `json:"more_checks"`
+	Mergeable        string `json:"mergeable"`
+	MergeStateStatus string `json:"merge_state_status"`
 }
 
 type ghPR struct {
@@ -624,7 +626,8 @@ func runGH(s *ghState, bare string, args []string) int {
 			head = remoteBranch(bare, p.Branch)
 		}
 		v := map[string]any{"number": p.Number, "url": fmt.Sprintf("https://github.com/acme/widgets/pull/%d", p.Number),
-			"state": p.State, "headRefName": p.Branch, "headRefOid": head, "mergeCommit": nil}
+			"state": p.State, "headRefName": p.Branch, "headRefOid": head, "mergeCommit": nil,
+			"baseRefOid": remoteBranch(bare, "main"), "mergeable": s.Mergeable, "mergeStateStatus": s.MergeStateStatus}
 		if p.MergeCommit != "" {
 			v["mergeCommit"] = map[string]string{"oid": p.MergeCommit}
 		}
@@ -673,6 +676,9 @@ func runGH(s *ghState, bare string, args []string) int {
 		fmt.Printf("https://github.com/acme/widgets/pull/%d\n", n)
 		return 0
 	case "pr view":
+		if flags["--json"] != "number,url,state,headRefName,headRefOid,mergeCommit" && flags["--json"] != "url,state,headRefOid,baseRefOid,mergeable,mergeStateStatus" {
+			return fail(2, "fake gh: pr view --json %q", flags["--json"])
+		}
 		p, code := number()
 		if p == nil {
 			return code

@@ -403,7 +403,7 @@ func run(ctx context.Context, timeout time.Duration, dir, program string, env []
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return nil, &runError{program: program, args: args, output: strings.TrimSpace(stderr.String()), err: err}
+			return stdout.Bytes(), &runError{program: program, args: args, output: strings.TrimSpace(stderr.String()), err: err}
 		}
 		return nil, fmt.Errorf("%s: %w", program, err)
 	}

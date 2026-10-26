@@ -491,6 +491,7 @@ const (
 	MessageChecksFailed     = "checks-failed"
 	MessageChecksPassed     = "checks-passed"
 	MessageChecksPending    = "checks-pending"
+	MessagePRBlocked        = "pr-blocked"
 	MessageDecision         = "decision"
 	MessageDirectorStage    = "director-stage"
 	MessageJudgeFailed      = "judge-failed"
@@ -515,7 +516,7 @@ const (
 var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
 	MessageBudgetRefused: "engine", MessageChangesRequested: "engine", MessageChecksFailed: "engine",
-	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessageDecision: "engine",
+	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",

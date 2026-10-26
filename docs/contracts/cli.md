@@ -81,7 +81,17 @@ Director session specs and interpreter-launched profile attempts resolve empty e
 It refuses versions below 2.1.310, unknown version output and a conflicting inherited bundle-disable switch before recording a session.
 It reports organization/ambient inventory limitations rather than claiming live discovery or making model calls.
 
+`step send-back` accepts the usual advance path flags plus required `--repo`, `--task`, `--step`, positive `--attempt` and nonempty `--feedback`.
+It validates syntax before accessing dependencies, runs `StepSentBack` under the existing task lock and admission gates, and prints the standard advance JSON/next.json on success.
+Unknown flags, extra arguments and missing or malformed required fields exit 2; engine or persistence refusals exit 1.
+`--help` prints usage and examples without requiring a store.
+It starts a new attempt only for a succeeded Artisan step, preserves old attempts and passes the Director's feedback as an input document; identical replay starts nothing extra and conflicting feedback is refused.
+See [the command](../step-send-back.md).
+
 ## Tests
+
+`sendback_test.go` exercises help without store access, unknown/missing/invalid flags, actual new-attempt launch through the CLI and replay without an extra attempt.
+These CLI tests were added after implementation; the initial interpreter API red run and focused integration green run are in [the evidence](../evidence/pr-conflicts-2026-10-26).
 
 `TestAdvancePreflightLockWait` holds the real store lock and requires `task start`, `task start --decision` and `step retry` to reach a store-lock refusal with the configured wait, rather than the default 30-second wait.
 The test configures a five-second lock wait and requires refusal within twenty seconds.

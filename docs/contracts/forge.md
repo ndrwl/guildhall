@@ -35,7 +35,19 @@ Every pull-request gh call names `--repo github.com/<owner>/<repo>`, which `GitH
 Programs run with argument lists, never through a shell, with `GH_PROMPT_DISABLED=1` and `GIT_TERMINAL_PROMPT=0` so neither waits for input, and each run is bounded by `GitHub.Timeout`, `DefaultTimeout` (5 minutes) when zero: a run past it is ended and is a plain error naming the program and the timeout, never `ErrRefused`, and the operation returns without viewing the pull request again, so nothing is recorded and the next advance asks again; a merge whose gh call exits unsuccessfully and whose pull request gh then views still unmerged is `ErrRefused` with gh's standard error, while gh's exit 4, a missing or failed sign-in, and a failing view are returned as they are.
 Platform differences: none in the contract.
 
+`GitHub.Mergeability` observes an open PR at the requested full head using the command-specific `pr view` JSON flags, with the PR number positional and repository selected by `--repo`.
+It returns URL, head/base, conflicting or strict-protection-behind state, sorted unique conflict paths and a behind count.
+Unknown mergeability and generic protection `BLOCKED` are not guessed to be conflicts or strict-behind states.
+A moved PR is `ErrRefused`; malformed requests are `ErrInvalid`, and unsupported remotes and operational errors remain errors.
+For a blocked observation it fetches the exact base object without updating branches or `FETCH_HEAD`, counts base-only commits and reads `merge-tree --write-tree --name-only -z`, including stdout on conflict exit 1.
+It never modifies a worktree or rebases; concurrent observations only write git objects.
+
 ## Tests
+
+`TestGitHubMergeabilityEvidence` crosses real git and the strict command-specific gh stand-in: a genuinely divergent base produces conflict paths and a behind count without changing HEAD or worktree; conflicting, strict-behind, unknown, generic-blocked and moved-head cases are checked.
+The mergeability command shape also crosses installed gh's offline help parser when available.
+These forge tests were added after implementation as integration evidence, not claimed as red-first history.
+
 
 [`internal/forge/forgetest`](forge-forgetest.md) defines `RunForgeContract` and the double `Fake`.
 `forge_test.go` runs the suite against `Fake` and against `GitHub` with real git pushing to a local bare repository, which the test's own git configuration maps to `https://github.com/acme/widgets.git` with `insteadOf`, and the test binary acting as gh over a state file, reading branch heads from the bare repository; the fake gh refuses any command or flag it does not know, so a change in what `GitHub` asks for fails.

@@ -45,7 +45,19 @@ Required output examples are instructional, not an outcome recovery mechanism: m
 The [plan-refutation contract](../interpreter.md#plan-refutation) owns document intake and acceptance semantics.
 Refutation uses the existing Artisan `Launcher`, `Prompter` and `Records` seams; deterministic tests substitute a scripted launcher or fake runtime rather than calling a model.
 
+`MergeabilityReader` is the narrow forge-observation seam for validate and deliver; GitHub and the forge double implement it, while legacy forges without it retain existing checks/refusal behaviour.
+A conflicting or strict-behind PR records immutable evidence before sending a `pr-blocked` Director message, once per full head and state shared across steps, then waits for the Director.
+The evidence carries PR URL, full head/base, files, behind count and options; no automatic rebase occurs.
+Validate retains the Director wait in its refresh cache; errors are not conflicts and unknown state does not stop the normal checks wait.
+`StepSentBack` implements the [send-back admission, feedback and replay contract](../step-send-back.md); invalid requests and changed feedback are `ErrEvent`.
+
 ## Tests
+
+`pr_blocked_test.go` was added before implementation and failed at compilation on the missing mergeability/send-back API, rather than a behavioural assertion; [captured evidence](../evidence/pr-conflicts-2026-10-26) records that distinction.
+Its expanded cases run against real records and the double: conflicting and strict-behind states notify once across validate/deliver, a changed head notifies anew, send-back passes Director feedback, rebase review receives only the resolution and republish updates the same PR.
+`mergeability_replay_test.go` verifies a notification interrupted after recording is recovered even when the obstruction clears before the next advance, with no duplicate message, and that ordinary `pr-blocked-` workflow documents are not replayed as observations.
+`persistence_recovery_test.go` covers file-before-record observation recovery against a moved base and refusal of new send-back feedback when the target or a downstream step has recorded or file-only prepared inputs, while preserving identical request replay.
+`sendback_test.go` and `mergeability_refresh_test.go`, added after implementation, cover refused requests, immutable replay, holds, workspace custody, changed-base deduplication and retention of the Director wait while refresh-cached, including no-CI repositories.
 
 `TestRefutePortsAndWiring`, `TestRefuteTrialExample`, `TestRefuteBeforeAcceptance` and `TestRefuteFakeAdapter` were written before the registry implementation.
 The focused command `go test ./internal/workflow ./internal/interp -run '^TestRefute' -count=1` failed for the unknown kind, unknown acceptance input and missing example ([red](../evidence/refute-step-2026-10-26-red.txt)), then passed ([green](../evidence/refute-step-2026-10-26-green.txt)).

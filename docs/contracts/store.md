@@ -23,6 +23,9 @@ The test binaries of `internal/store`, `messaging`, `interp`, `cli`, `launch`, `
 
 The [attempt ownership contract](../store.md#attempt-ownership) defines monotonic recovery evidence, `ProbeLauncher`'s containment refusal and the explicit containment-aware recovery path.
 
+The engine-origin `pr-blocked` message type is registered for Director inbox counting and wake delivery.
+Its head/state replay identity and observation document are owned by the interpreter; no new store mutation or schema is introduced.
+
 ## Tests
 
 `TestRejectionPreservesLauncherHistory` pins the explicit [intake-rejection contract](../store.md#attempts): separate finish and rejection receipts, a failed current outcome with a durable reason, and launcher replay that cannot undo rejection.

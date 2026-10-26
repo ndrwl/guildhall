@@ -194,6 +194,9 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
+	if blocked, err := r.mergeBlocked(pr, h); err != nil || blocked {
+		return false, Next{Wait: WaitDirector, Step: s.ID}, err
+	}
 	d := r.latestDecision(s.ID)
 	switch {
 	case d == nil || d.Subject == nil || d.Subject.Digest != h:

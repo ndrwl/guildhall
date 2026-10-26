@@ -96,6 +96,28 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 - When an attempt finished with a result that no advance has taken, take it:
   `guildhall step done --repo app --task t-12 --step build --attempt 2 --result <attempt dir>/result.json`.
 
+## Published PR conflicts and sending work back
+
+A `pr-blocked` message is information for you to judge, not an instruction to rebase.
+It names the PR URL, head and base commits, whether it is conflicting or behind under strict branch protection, the conflicting paths and how many commits it is behind.
+Guildhall records one report per head and state, waits for you and never rebases automatically.
+You may choose any appropriate recovery; the available options are not a fixed procedure:
+
+- Send a succeeded Artisan step back as a new attempt with your instructions as feedback:
+  `guildhall step send-back --repo app --task t-12 --step build --attempt 1 --feedback "Resolve the base conflict while preserving the accepted change."`
+  `--attempt` is the succeeded attempt you are sending back, not the new attempt's number.
+  The same request with identical feedback is replay-safe; different feedback for that identity is refused.
+  No attempt in the task may still be running when you make a new request.
+  The next review keeps its previous evidence and scopes to the resolution only when the rebase classifier proves it appropriate; other changes receive full review, and republish updates the same open PR.
+- Hold the task by leaving it waiting, or put a Guildmaster-requested `hold` on an existing merge decision.
+- Abandon pursuing the work by leaving it unadvanced; there is no task-cancellation CLI.
+  Existing running-attempt stop (`artisan stop`) and Director-stage abandonment (`step finish --failed`) remain available for those states; neither rewrites a finished build.
+- Recheck after an external change with `guildhall task start --repo app t-12`.
+
+`step send-back` uses the normal task lock, pause/stop holds, attempt caps and review gates.
+It does not answer a Guildmaster decision or approve a merge.
+Use `step retry`, not send-back, for a failed or stopped attempt.
+
 ## Rulings and full review
 
 When a reviewer's finding is outside the accepted spec, repeats another or belongs in a follow-up, you may rule on it instead of waiting for the reviewer:
