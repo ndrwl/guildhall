@@ -9,10 +9,9 @@ The renderer owns the complete result template; Claude supplies the result desti
 The fake adapter does not render separate result instructions and receives the same generated prompt.
 Review examples use the interpreter's recorded revision binding when available, not revision values guessed from the worktree or a moving configuration.
 Standalone rendering retains explicitly labelled illustrative revisions.
-Built-in guides name their ports and files and refer to the generated format examples.
+Shared stage guides describe what to produce, leaving Artisan completion mechanics to the actor-gated [generated instructions](../rendering.md#required-outputs-and-result-template).
 
-A zero-model contract test renders every Artisan kind with its embedded guide and feeds the advertised examples and result template to the real port and result readers.
-The feedback command failed before implementation for all six Artisan kinds and passes afterward; the worker report retains the captured runs.
+The [interpreter contract tests](../contracts/interp.md#tests) own the zero-model output-example checks and their feedback command.
 Existing prompt and baseline digest goldens are intentionally updated.
 This prevents omission in future instructions without weakening intake, inventing a review verdict, rewriting published attempts or recovering a live review automatically.
 Engine-only delivery and validation do not gain Artisan prompts because they do not run Artisans.

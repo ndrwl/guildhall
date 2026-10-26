@@ -12,7 +12,7 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 
 | Written | Contents |
 |---|---|
-| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, and the skills by path and tree digest. |
+| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
 | `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
@@ -26,12 +26,13 @@ On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave 
 
 Every rendered Artisan prompt includes the kind's required output ports, work-directory-relative file names, exact formats and minimal valid examples, even when a copy overrides its stage guide.
 Document ports use `<port>.md` UTF-8 Markdown; review outcomes use `outcome.json` and the strict `guildhall.review-outcome/1` format.
-The interpreter supplies the attempt's recorded review revisions through `Stage.Revisions`, so its example has the exact subject, spec digest and standards revision that intake requires.
+The interpreter supplies the attempt's recorded review revisions through `Stage.Revisions`, so its example has the exact subject, accepted spec digest (for code review) and standards revision that intake requires.
 Standalone rendering without revisions shows explicitly illustrative values to replace, never a claim that zero hashes identify the real subject.
 A review must write the outcome file and list it in result `outputs`; a verdict in summary alone is insufficient.
 Code-head ports need no file: Guildhall records the final committed Git HEAD automatically, and the result uses `outputs: []`.
 The generated Result template carries the task and attempt identity and the matching file entries.
 Adapters name where to write that result and refer to this template instead of supplying an empty-output default.
+Director-actor prompts omit these generated sections and retain [command-based completion](running.md#step-finish).
 Engine-only and Guildmaster-only kinds do not launch an Artisan and have no Artisan guide or result template.
 
 ### Line endings and paths
