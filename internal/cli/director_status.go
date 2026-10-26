@@ -398,6 +398,9 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 				if open && !judge {
 					it := item
 					it.Kind, it.Retryable, it.Reason, it.Command = "retry", true, fmt.Sprintf("attempt %d of %s %s", at.Number, at.Step, at.Outcome), "guildhall step retry "+flags
+					if at.IntakeRejection != "" {
+						it.Reason += "; result rejected: " + at.IntakeRejection
+					}
 					retry = append(retry, it)
 				}
 			}

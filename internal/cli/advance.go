@@ -220,9 +220,12 @@ func (a *App) stepDone(args []string) int {
 	if want := filepath.Join(k.Dir(state), artisan.ResultFile); file != want {
 		return a.fail(fmt.Errorf("step done: result %s is not attempt %s's result file %s", file, k, want))
 	}
-	if _, err := adapter.ReadResult(file, adapter.Identity{TaskID: k.TaskID, AttemptID: k.AttemptID()}); err != nil {
+	if _, err := adapter.ReadResult(file, adapter.Identity{TaskID: k.TaskID, AttemptID: k.AttemptID()}); err != nil &&
+		!errors.Is(err, adapter.ErrMalformedResult) && !errors.Is(err, adapter.ErrIdentityMismatch) {
 		return a.fail(fmt.Errorf("step done: %w", err))
 	}
+	// Contract violations are taken under the task lock by the interpreter, which
+	// records rejection; operational read errors above remain replayable.
 	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptResult, Repository: f.repo, Task: *task, Step: *step, Attempt: n}))
 }
 
@@ -495,6 +498,10 @@ func (p storeRecords) StartCappedAttempt(m, repo, id, step string, caps store.At
 
 func (p storeRecords) FinishAttempt(m, repo, id, step string, n int, o store.AttemptOutcome) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.FinishAttempt(m, repo, id, step, n, o) })
+}
+
+func (p storeRecords) RejectAttempt(m, repo, id, step string, n int, reason string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.RejectAttempt(m, repo, id, step, n, reason) })
 }
 
 func (p storeRecords) PutDocument(m string, d store.DocumentRef) (store.Receipt, error) {

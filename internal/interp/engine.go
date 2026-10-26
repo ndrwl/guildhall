@@ -453,8 +453,11 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		next, err := r.start(s)
 		return false, next, r.retryLaunched(s.ID, next.Attempt, err)
 	case a.Outcome != store.AttemptSucceeded:
-		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed,
-			fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome))
+		text := fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome)
+		if a.IntakeRejection != "" {
+			text += " Result rejected: " + a.IntakeRejection
+		}
+		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed, text)
 		return false, Next{Wait: WaitDirector, Step: s.ID, Attempt: a.Number}, err
 	}
 	// The latest attempt succeeded: it stands unless a loop sent the task back here or its inputs moved.
@@ -726,11 +729,18 @@ func (r *run) taken(s workflow.Step, n int) bool {
 func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	res, err := adapter.ReadResult(r.resultFile(s.ID, a.Number), r.identity(s.ID, a.Number))
 	if err != nil {
+		if errors.Is(err, adapter.ErrMalformedResult) || errors.Is(err, adapter.ErrIdentityMismatch) {
+			return r.rejectResult(s, a, err)
+		}
 		return fmt.Errorf("interp: result of %s attempt %d: %w", s.ID, a.Number, err)
 	}
 	outcome := store.AttemptFailed
 	if res.Status == adapter.StatusSucceeded {
 		if err := r.recordOutputs(s, a.Number, res.Outputs); err != nil {
+			var rejection *resultRejection
+			if errors.As(err, &rejection) {
+				return r.rejectResult(s, a, err)
+			}
 			return fmt.Errorf("interp: outputs of %s attempt %d: %w", s.ID, a.Number, err)
 		}
 		if err := r.contest(s, a.Number); err != nil {
@@ -764,7 +774,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		if port.Type == workflow.CodeHead {
 			return r.recordWorkHead(s, n, port.Name)
 		}
-		return fmt.Errorf("a succeeded result lists no output for port %s", port.Name)
+		return rejectOutput(fmt.Errorf("a succeeded result lists no output for port %s", port.Name))
 	}
 	root, err := os.OpenRoot(r.workPath())
 	if err != nil {
@@ -775,15 +785,15 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	var review *store.Review
 	for i, o := range outputs {
 		if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
-			return fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path)
+			return rejectOutput(fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path))
 		}
 		data, err := root.ReadFile(filepath.FromSlash(o.Path))
 		if err != nil {
-			return err
+			return rejectOutput(fmt.Errorf("read output %q: %w", o.Path, err))
 		}
 		if i == 0 {
 			if err := checkPort(port.Type, data); err != nil {
-				return err
+				return rejectOutput(err)
 			}
 			if isReview(s) {
 				o, err := r.checkOutcome(s, n, data)

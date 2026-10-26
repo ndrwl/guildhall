@@ -12,7 +12,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Record | Key | Contract |
 |---|---|---|
 | Task | repository, task id | Title, the workflow revision (name and `sha256:` digest), the `sha256:` digest of the configuration it was accepted under, and the tasks it depends on, and optionally the earlier task whose defect it fixes. The revisions never change after creation (R1.62). State starts `open` and moves once to `done` or `cancelled`. Dependencies and the fixed task must already exist, in any repository of the same Director. |
-| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`, once; the [first finish stands](#attempts). A step cannot start a new attempt while one is running, and a task that is not open cannot start one, except that the [judge](decisions/quality-judge.md) step `quality-judge` starts only on a `done` task. Optionally its `spend`, recorded once ([attempts](#attempts)). |
+| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`; the [first finish stands](#attempts), except that explicit intake rejection changes unfinished or succeeded attempts to failed with `intake_rejection`. A step cannot start a new attempt while one is running, and a task that is not open cannot start one, except that the [judge](decisions/quality-judge.md) step `quality-judge` starts only on a `done` task. Optionally its `spend`, recorded once ([attempts](#attempts)). |
 | Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. A review outcome's reference also projects its findings and dispositions (`review`), so inspection never opens the file; finding ids must be valid ids with non-blank summaries and disposition states `resolved`, `still-open` or `withdrawn`. |
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Workflow approval | workflow digest | The Guildmaster's approval of one exact workflow revision for this Director: the workflow name, its `sha256:` digest, the approval words exactly as given and the UTC time it was recorded. Recorded once per digest; see [workflow-edit authority](configuration.md#workflow-edit-authority). Not per repository and never changes a task. |
@@ -63,7 +63,12 @@ A caller that loses the result of a mutation, for example because the process st
 
 ## Attempts
 
-An attempt has one outcome, and the first finish stands.
+An attempt has one current outcome, and the first `FinishAttempt` stands.
+`RejectAttempt` is the explicit exception for invalid result intake: it changes an unfinished or succeeded attempt to `failed` and records its non-blank validation reason as `intake_rejection`.
+It atomically releases ownership and writes a separate `reject-attempt` receipt for `attempt/<step>/<number>`; the launcher's earlier `finish-attempt` receipt remains unchanged in the task history.
+Failed or stopped attempts cannot be rejected again under a new mutation id, and unknown attempts are refused.
+Replaying the same rejection mutation returns its original receipt even after a retry starts; changing the request conflicts.
+A replay of the original launcher finish returns its original receipt without undoing rejection.
 Several writers finish attempts, each under its own mutation id: the launcher when its worker ends (`launch-finish:<tag>`), the interpreter's result intake (`attempt-finish:…`) and `artisan resume` settling an exited launcher's attempt (`resume-finish:<tag>`); any of them may write first, so the rule is the store's and no writer repeats it.
 
 - `FinishAttempt` on an attempt already finished with the same outcome, under a different mutation id, returns the receipt of the mutation that finished it and writes nothing: the new id gets no receipt and no sequence number, so it stays free.

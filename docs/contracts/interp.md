@@ -28,6 +28,7 @@ The private history view ([history](../interpreter.md#history)) is a contract in
 [Director stages](../interpreter.md#director-stages) ([decision](../decisions/0072-director-stages.md)): a `director` step is recorded, bound and prepared as an Artisan step is, then handed to the Director with a `director-stage` message (`store.MessageDirectorStage`) and a `launched.json` naming the director launcher (`HandedToDirector`), launching nothing, and waits with `WaitDirectorStage`; its result is taken as an Artisan's, and a published result not yet taken, which no launcher announces, is taken by any advance.
 
 The [replay and recovery contract](../interpreter.md#replay-and-recovery) owns intake completion and concurrent outcome reconciliation.
+Its [intake-rejection decision](../decisions/intake-rejection.md) defines the consumer-owned `Records.RejectAttempt` operation, positively identified validation errors, auditable launcher-success correction, replay-safe notification and unchanged operational-error recovery.
 
 The [worker-stalled observation contract](../interpreter.md#worker-stalled-observations) defines the heartbeat file read, configured interval and clock, threshold crossings, replay identity and unchanged attempt state.
 
@@ -35,6 +36,13 @@ New review preparations pass the recorded binding's exact revisions to `render.S
 Required output examples are instructional, not an outcome recovery mechanism: missing review files and stale revisions are still refused.
 
 ## Tests
+
+`TestRejectedLauncherSuccess` was red first against the existing interpreter: a review result with `status: succeeded` and `outputs: []`, a launcher-recorded succeeded outcome and no intake marker returned `no output for port outcome` on both `task start` and `step done` event paths.
+The feedback command is `go test ./internal/interp -run '^TestRejectedLauncherSuccess$' -count=1`; it now verifies failed outcome, Director wait, one reason-bearing notification across replay, retry attempt 2 and valid review progression on both backends.
+The task report retains the captured red and green output outside the repository.
+Additional post-implementation controls cover missing/unreadable output files, malformed result bytes, invalid paths, store rejection interrupted before and after commit, interrupted notification, canceled context, operational result/document I/O failure and successful replay.
+`TestCLIRejectedIntakeRecovery` executes the real CLI and store with a Director stage to verify persisted `next.json`, status retry reason and normal retry, without launching a model.
+The existing stale-review, missing-disposition, explicit-head and containment tests now assert durable rejection rather than an error with an attempt left running, matching the new contract.
 
 `TestBuiltinOutputInstructions` executes `render.Prompt` for every built-in kind that admits an Artisan and every embedded stage guide, checks every required port and file entry, parses the result template with `adapter.ParseResult`, and submits every shown output example to `checkPort` (and review revisions to `BoundTo`).
 Its feedback command, `go test ./internal/interp -run '^TestBuiltinOutputInstructions$' -count=1`, failed before implementation for all six Artisan kinds because their rendered prompts had no output-aware Result template, and passed afterward.
