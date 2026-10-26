@@ -107,6 +107,14 @@ var kinds = []Kind{
 		Actors:   artisanOnly,
 	},
 	{
+		// Refute attacks a proposed spec without granting acceptance or a review verdict.
+		Type: "refute", Version: 1,
+		Inputs:   []Port{{Name: "spec", Type: Document}, {Name: "context", Type: Document, Optional: true, Many: true}},
+		Outputs:  []Port{{Name: "findings", Type: Document}},
+		Settings: artisan,
+		Actors:   artisanOnly,
+	},
+	{
 		// Document-review reviews a document, such as a plan's spec, before it is accepted;
 		// its outcome is bound to the document's digest (Subject.DocumentDigest).
 		Type: "document-review", Version: 1,
@@ -121,6 +129,7 @@ var kinds = []Kind{
 		Inputs: []Port{
 			{Name: "spec", Type: Document},
 			{Name: "reviews", Type: ReviewResult, Optional: true, Many: true},
+			{Name: "findings", Type: Document, Optional: true, Many: true},
 		},
 		Outputs:  []Port{{Name: "spec", Type: AcceptedSpec}},
 		Settings: instructions,

@@ -26,6 +26,16 @@ The engine does not read workflow approvals; `task new` [enforces them at task c
 `Engine.StandardsRevision` supplies the central standards revision presented for human reviews, following the [review outcome revision contract](configuration.md#review-outcome).
 The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
 
+## Plan refutation
+
+The optional `refute` kind uses the ordinary Artisan launch and document-intake path, with a fresh attempt reading `spec` and optional research `context`, then recording `<step>-<n>-findings`.
+The [baseline stage guide](../baseline/stages/refute.md) owns the critique instructions; the generated required-output instructions name `findings.md` and include it in the result template.
+Intake enforces the existing document contract, not the semantic quality or severity labels of the prose; deterministic tests make no model calls.
+When findings are supplied to acceptance, the question lists both spec and refutation by artifact name and digest.
+Acceptance stays bound to the spec digest and copies only the approved spec to its accepted-spec output; refutation cannot authorize a build or satisfy a review gate.
+A `changes_requested` acceptance with an existing bounded rule back to plan re-runs subsequent refutation against the new spec; there is no refute-specific loop or automatic revision.
+See [configuration](configuration.md#opt-in-plan-refutation) for opt-in wiring and trial guidance.
+
 ## Worker-stalled observations
 
 Configure `Engine.StallInterval` to a positive duration to enable heartbeat observations; nonpositive values disable them.

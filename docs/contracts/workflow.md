@@ -17,6 +17,12 @@ Review outcome findings carry a required stable `id` and an optional cited `rule
 
 `Weakenings`, `FloorProblems` and `Authority.Admit` are the workflow-edit authority policy at task creation ([configuration](../configuration.md#enforcement-at-task-creation)): a conservative classifier of a revision against a baseline, the review floor, and the admission decision over the shipped definitions, the caller's approved digests and candidate baselines; they read and record nothing.
 
+## Refutation contract
+
+The [built-in registry](../../internal/workflow/registry.go) owns `refute` and `guildmaster-approval` ports, settings, actors and loop outcomes.
+Missing required inputs, mismatched artifact types and unsupported actors/settings are refused by the existing validator.
+See [configuration](../configuration.md#opt-in-plan-refutation) for opting in, the [baseline stage guide](../../baseline/stages/refute.md) for critique instructions, and the [interpreter contract](../interpreter.md#plan-refutation) for intake and acceptance semantics.
+
 ## Tests
 
 `workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`

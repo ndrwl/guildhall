@@ -242,7 +242,7 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
 `research` accepts only `profile`, a [profile](#profiles) name; it does not accept `skills`.
-`plan`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
+`plan`, `refute`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
 The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 
@@ -259,8 +259,9 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 |---|---|---|
 | `grill` | `director` or `artisan` | notes: the Director interviews the Guildmaster live with `guildhall-grill` and `guildhall-domain-model`; an Artisan grills unattended with `guildhall-grill-unattended` |
 | `research`, `plan`, `build` | `artisan` | notes, a spec document, a code head |
+| `refute` | `artisan` | a findings document attacking the proposed spec, not a review verdict |
 | `document-review` | `artisan` or `guildmaster` | a review outcome for a document, such as the plan's spec |
-| `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` |
+| `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` and refutation documents as `findings` |
 | `review` | `artisan` or `guildmaster` | a review outcome for a code head against the accepted spec |
 | `publish` | `engine` | the same head, pushed to the repository's remote branch with its pull request opened or updated |
 | `validate`, `deliver` | `engine` | a validation result, the landed change |
@@ -271,6 +272,16 @@ The director grill is a live interview in rounds of numbered questions until the
 A kind with more than one actor requires the `actor` setting; a kind with one actor refuses it.
 `publish` comes before `validate` so forge checks have a pushed head to read; it never merges.
 `publish` and `deliver` have no settings: the repository's configuration and merge policy decide where work goes and how it lands.
+
+### Opt-in plan refutation
+
+[`examples/workflows/refute.json`](../examples/workflows/refute.json) adds a fresh Artisan after plan and before acceptance; it does not change the shipped default.
+Configure its `researcher`, `planner`, `reviewer` and `builder` profiles before selecting it as a repository's workflow; the refuter uses `reviewer` but may select any configured Artisan profile, including an optional role override.
+The baseline Artisan role and [refutation stage guide](../baseline/stages/refute.md) supply the independent critic instructions without requiring a separate runtime or actor.
+The [registry](../internal/workflow/registry.go) defines the typed ports; the example wires `plan.spec` and research notes into refutation, then `refute.findings` alongside `plan.spec` into acceptance.
+See [the interpreter contract](interpreter.md#plan-refutation) for how advisory findings are presented and how acceptance remains bound to the spec.
+The example's existing bounded `changes_requested` rule returns to plan and then runs a fresh refutation before asking again.
+Trial this workflow on a real task before proposing it as the default; no real-task trial or model evaluation is claimed here.
 
 ### Choosing actors per repository
 
