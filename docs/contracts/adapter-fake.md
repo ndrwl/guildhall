@@ -2,7 +2,7 @@
 
 ## Contract
 
-The test-only fake runtime: no optional capabilities, bounded prompt directives (`docs/adapters.md`); `Adapter.Command` loads the spec's copy/profile reference through `adapter.ProfileTools` and refuses a profile granting allowed tools, since the fake grants none; an undeclared profile is also refused.
+The fake runtime described under [Fake adapter](../adapters.md#fake-adapter): `Adapter.Command` loads the spec's copy/profile reference through `adapter.ProfileTools` and refuses a profile granting allowed tools, since the fake grants none; an undeclared profile is also refused.
 `CheckSettings` honours every model and effort; `Command` passes `Spec.Settings` as `--model` and `--effort` after `--result`, each only when set, `ParseArgs` reads them into `Args.Settings`, and a worker (not a grandchild) records them, the zero `adapter.Settings` included, as `SettingsFile`, `fake-settings.json` beside the result file, before it reads its prompt; `RecordedSettings` reads it back, `fs.ErrNotExist` before the worker ran.
 `Main` is `guildhall fake-artisan`; `Run` handles interrupts itself, honours the attempt's cancel marker unless told to ignore it, and with the P0 lifecycle directives plays a process tree (`grandchildren`, `grandchild-cmd`), ignores the marker or interrupts, publishes a late result, echoes input, bounds its lifetime and records every process's identity in an inventory directory through `artisan.RecordProcess`.
 Once its work ends, before any result, `Run` writes `ReportedUsage`, fixed measured tokens and an estimated cost, as the attempt's [usage file](../adapters.md#usage-file); work ended by an interrupt or the cancel marker writes none, and a failure to write it is shown as progress and does not stop the result.

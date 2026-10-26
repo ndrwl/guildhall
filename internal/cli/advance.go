@@ -357,7 +357,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
 		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
-		Config:   cfg, DefaultAdapter: interp.FakeAdapter, StandardsRevision: standards, CheckSettings: runtimeSettings,
+		Config:   cfg, StandardsRevision: standards, CheckSettings: runtimeSettings,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
 		Workspaces: ws,
 		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the

@@ -37,7 +37,7 @@ func shortCopy(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	if err := os.CopyFS(dir, os.DirFS(filepath.Dir(writeDirector(t, directorTOML+"\n[local]\nquality_judge_profiles = \"judge-fake\"\n\n[profile.judge-fake]\nadapter = \"fake\"\n")))); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(filepath.Dir(writeDirector(t, strings.Replace(directorTOML, "[local]\n", "[local]\nquality_judge_profiles = \"judge-fake\"\n", 1)+"\n[profile.judge-fake]\nadapter = \"fake\"\n")))); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(dir, "state"), 0o700); err != nil {

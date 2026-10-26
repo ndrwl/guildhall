@@ -3,10 +3,10 @@
   "name": "fake-publish",
   "description": "The fake Artisan's straight path with a publish step: plan, Guildmaster acceptance, build, a Guildmaster sign-off, publish and delivery of the published head under the approval merge policy.",
   "steps": [
-    {"id": "plan", "type": "plan", "version": 1},
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "demo"}},
     {"id": "accept", "type": "guildmaster-approval", "version": 1,
      "inputs": {"spec": ["plan.spec"]}},
-    {"id": "build", "type": "build", "version": 1,
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "demo"},
      "inputs": {"spec": ["accept.spec"]}},
     {"id": "sign-off", "type": "review", "version": 1, "settings": {"actor": "guildmaster"},
      "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},

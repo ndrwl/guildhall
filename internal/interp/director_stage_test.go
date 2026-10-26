@@ -46,7 +46,7 @@ func (e *env) stageDir(step string, n int) string {
 
 // researchExpectation is the research Artisan, answering with its notes.
 func researchExpectation(notes []byte) interptest.Expectation {
-	return interptest.Expectation{Step: "research", Attempt: 1, Inputs: map[string]string{}, Standards: []string{"standards/go.md"},
+	return interptest.Expectation{Step: "research", Attempt: 1, Profile: "researcher", Inputs: map[string]string{}, Standards: []string{"standards/go.md"},
 		Respond: interptest.Succeed("researched", interptest.File{Path: "notes.md", Data: notes})}
 }
 

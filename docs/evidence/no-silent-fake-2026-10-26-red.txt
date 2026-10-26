@@ -1,0 +1,7 @@
+--- FAIL: TestTaskNewRefusesImplicitFake (0.03s)
+    adapter_admission_test.go:17: exit 0 stdout "{\"mutation_id\":\"task:app:t-1\",\"operation\":\"create-task\",\"request_digest\":\"sha256:ed08176b71824f7e59167f86a6df48f9ff2b8483785a90bd1f73bf8dc5cb3961\",\"repository\":\"app\",\"task_id\":\"t-1\",\"record\":\"task\",\"sequence\":1,\"committed_at\":\"2026-10-26T08:42:45.728297358Z\"}\n" stderr ""
+--- FAIL: TestAdvanceRefusesImplicitFake (0.07s)
+    adapter_admission_test.go:30: exit 0 stdout "{\"wait\":\"attempt\",\"step\":\"plan\",\"attempt\":1}\n" stderr ""
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.105s
+FAIL

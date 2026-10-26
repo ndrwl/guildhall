@@ -2,6 +2,12 @@
 
 ## Contract
 
+Task admission and advance require an explicitly configured runtime for each Artisan stage, through its named profile; profile-less Artisan stages are refused with a custom-workflow remedy.
+A missing profile fails with exit 1 and an error naming the step and directing the user to set a profile on that step in a custom workflow, without task-record mutations or launches.
+Explicit profiles whose adapter is `fake` are still accepted; there is no default-adapter remedy.
+The original `adapter_admission_test.go` regressions reproduced silent admission and fake launch before implementation ([historical red evidence](../evidence/no-silent-fake-2026-10-26-red.txt)); the [historical green evidence](../evidence/no-silent-fake-2026-10-26-green.txt) records the initial fix, before admission was narrowed to named profiles only.
+The current tests refuse task creation on the shipped profile-less workflow and advancement of a legacy task bound to a profile-less custom workflow, asserting the custom-workflow remedy and unchanged real store bytes.
+
 Commands, output and exit codes (README); doctor's process boundary, `App.LookPath` and `App.Output`: a missing tool is `exec.ErrNotFound`, output is stdout and stderr combined, a failing command is an error with its output, and context cancellation stops a hung command; see D6 for doctor's timeout policy.
 The `store`, `messages`, `task`, `decide`, `workflow approve` / `workflow approvals` and `steward rollout` commands, including the read-only task inspection reads `task timeline` (with findings and rulings) and `task files`, `task finding rule` and `task review --full` (`docs/store.md`, `docs/messaging.md`, `docs/tasks.md`, `docs/decisions-cli.md`, `docs/configuration.md`, `docs/steward.md`); task acceptance refuses undeclared profiles in the effective workflow before opening or writing the store, and refuses an unauthorized effective workflow through `workflow.Authority.Admit` over the shipped definitions and the store's approvals before writing; `workflow approve --config --repo` approves a repository's effective workflow; see `docs/tasks.md` for task acceptance and retry contracts.
 
@@ -100,7 +106,10 @@ Making the current terminal the default, with `--tab` opting into the wrapper an
 `render_test.go` checks malformed settings are refused before installation or attempt creation.
 
 `TestTaskNewEnforcesWorkflowAuthority` and `TestWorkflowApproveRepositoryEffectiveRevision`, and the new `TestWorkflowUsageErrors` cases, were written red first ([red run](../evidence/s10-approval-enforcement-2026-10-21-red.txt)): a weakening override refused until its effective digest is approved, approving the file alone not enough, a workflow below the floor refused until approved, a non-weakening change admitted with no approval, and the approve form's refusals and usage errors.
-Because the lib repository's human-review workflow weakens the shipped default, the task tests approve it first, and the testdata/run Director approves fake-straight, which has no validate step, before `task new`; those tests failed in the red run only because `workflow approve --config --repo` did not exist yet.
+The task fixtures name a `demo` profile whose adapter is `fake`: app selects `test-default`, a custom copy of the default with explicit Artisan profiles, and lib selects human-review with explicit profiles and an Artisan review override.
+Both effective workflows require approval: test-default changes the reviewer's profile and lib weakens the shipped default; the task helpers approve them before creation.
+The testdata/run Director likewise uses named fake profiles and approves fake-straight, which has no validate step, before `task new`.
+The original workflow-approval tests failed in their red run only because `workflow approve --config --repo` did not exist yet.
 
 `advance_test.go` runs task app/t-1 over `testdata/run` (the fake-straight workflow, whose stage guides carry the fake adapter's directives) with the test binary playing every launcher: `TestTaskStartAndStepDone` and `TestStepDoneRefusesAResultItDoesNotTake` were written red first against a stub advance and failed with it; `TestTaskStartAndStepDoneUsage` passed against the stub, whose flag checks were already written.
 `TestTaskStartAndStepDoneByTheWatcher` runs the same task from a copy of `testdata/run`: after `task start` launches the plan, the store records `accept-1` with no `step done` typed, the next `task start` waits on it, and `next.json` holds that line; `TestArtisanStartAdvanceNeedsACopy` refuses `artisan start --advance` over explicit paths with a usage error naming `--advance`.

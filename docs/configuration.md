@@ -159,6 +159,13 @@ For how the copy/profile reference reaches the runtime, see [Artisan permissions
 Each `allowed_tools` entry is a tool name, optionally with a specifier in parentheses, with no control characters and listed once; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused, so a grant names its commands.
 The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or `GUILDHALL_COPY` selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
+`config.CheckArtisanAdapters` additionally refuses an Artisan stage without a profile, before task creation or advance mutates task records.
+Director, Guildmaster and engine stages do not require an Artisan adapter.
+The shipped default workflow is profile-neutral: declaring profiles alone does not select one.
+Set each Artisan step's `profile` in a custom workflow and select that workflow on the repository; the shipped example selects `examples/workflows/profiled.json` with real Claude profiles.
+Existing copies without step profiles must select a custom workflow before creating or advancing tasks.
+Changing the reviewer's profile requires approval of the effective workflow revision with `guildhall workflow approve --repo <id> --words-file <file>`; this includes the example's `profiled` workflow.
+To deliberately run a no-model demo, name an explicit profile whose `adapter = "fake"`.
 For when profile settings are checked, see [runtime settings](adapters.md#runtime-settings).
 
 ### The director table
@@ -191,7 +198,9 @@ A workflow defines the steps of one task as an ordered list of built-in step kin
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
 The shipped default is [`internal/workflow/default.json`](../internal/workflow/default.json).
-[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step.
+[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step; assign its Artisan profiles as described under [profiles](#profiles) before using it.
+
+This structural example also leaves profile selection to the copy; see [profiles](#profiles) for the admission requirements.
 
 ```json
 {
@@ -232,8 +241,9 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 
 The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
-`research` accepts only optional `profile`, a [profile](#profiles) name; it does not accept `skills`.
-`plan`, `build`, `document-review` and `review` accept optional `profile` and `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
+`research` accepts only `profile`, a [profile](#profiles) name; it does not accept `skills`.
+`plan`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
+The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 
 Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a step:
