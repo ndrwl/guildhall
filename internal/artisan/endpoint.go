@@ -211,11 +211,8 @@ type Endpoint struct {
 //
 // The endpoint's parent directory is created with mode 0700 and, on Unix,
 // the socket is made 0600; access control is the state directory's, and the
-// endpoint does not authenticate its peers. Close stops accepting requests
-// and removes the socket file, then waits for accepted exchanges to finish
-// writing replies or hit their I/O deadlines. It is idempotent, including
-// concurrent calls. Handlers must return before Close completes and must not
-// call Close themselves.
+// endpoint does not authenticate its peers. Close follows the shared endpoint
+// shutdown contract (docs/contracts/endpoint.md).
 func Listen(path string, k AttemptKey, self Identity, owner OwnerLookup, h EndpointHandler) (*Endpoint, error) {
 	if err := k.validate(); err != nil {
 		return nil, err

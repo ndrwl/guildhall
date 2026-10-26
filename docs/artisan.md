@@ -407,6 +407,7 @@ Startup failures remain returned errors even when the failed outcome is successf
 
 `artisan stop` asks the owner to stop through the endpoint its unreleased ownership record names and waits for the ladder's end within `--timeout` (one minute).
 It never signals a process itself.
+Before exiting, the launcher closes its endpoint and drains accepted exchanges under the [shared endpoint shutdown contract](contracts/endpoint.md), so its own exit does not truncate a stop reply.
 Without a successful endpoint answer, success requires no ownership record, or a launcher proven gone and its recorded unit proven empty; missing containment is unverified, including during startup.
 A released record alone does not prove termination while its launcher still lives.
 On a released record the report's `launcher` names the recorded launcher: `advancing` while it lives, running the task's [advance](running.md#the-watcher) after releasing its attempt, which exits 1 as not proven stopped; `gone` once it has exited, when stop exits 0 if the recorded unit is proven empty; `unverified` when it cannot be probed.
