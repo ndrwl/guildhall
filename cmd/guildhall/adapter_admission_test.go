@@ -48,6 +48,7 @@ func TestBinaryRefusesImplicitFake(t *testing.T) {
 			t.Fatal(err)
 		}
 		out, stderr, err := d.try("", args...)
+		t.Logf("guildhall %s: %v\nstdout: %s\nstderr: %s", strings.Join(args, " "), err, out, stderr)
 		if err == nil || out != "" || !strings.Contains(stderr, `step "plan"`) || !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "custom workflow") {
 			t.Fatalf("%v: err %v out %q stderr %q", args, err, out, stderr)
 		}
@@ -59,6 +60,15 @@ func TestBinaryRefusesImplicitFake(t *testing.T) {
 	if err := os.WriteFile(file, original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
-	d.done("plan", 1) // Explicit fake actually produces a result, not merely admission.
+	started := d.advance([]string{"task", "start"}, "t-1")
+	t.Logf("explicit fake profile: task start output: %s", started)
+	d.want(started, `{"wait":"attempt","step":"plan","attempt":1}`)
+	done := d.done("plan", 1) // Explicit fake actually produces a result, not merely admission.
+	t.Logf("explicit fake profile: step done output: %s", done)
+	d.want(done, `{"wait":"decision","step":"accept","decision":"accept-1"}`)
+	result, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "plan-1", "result.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("explicit fake profile: persisted Artisan result: %s", result)
 }

@@ -198,7 +198,9 @@ A workflow defines the steps of one task as an ordered list of built-in step kin
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
 The shipped default is [`internal/workflow/default.json`](../internal/workflow/default.json).
-[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step.
+[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step; assign its Artisan profiles as described under [profiles](#profiles) before using it.
+
+This structural example also leaves profile selection to the copy; see [profiles](#profiles) for the admission requirements.
 
 ```json
 {
@@ -239,8 +241,9 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 
 The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
-`research` accepts only optional `profile`, a [profile](#profiles) name; it does not accept `skills`.
-`plan`, `build`, `document-review` and `review` accept optional `profile` and `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
+`research` accepts only `profile`, a [profile](#profiles) name; it does not accept `skills`.
+`plan`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
+The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 
 Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a step:

@@ -40,7 +40,8 @@ See the focused [Claude policy contract](config-claude-skills.md) for validation
 `TestArtisanAdapterAdmission` in `artisan_test.go` rejects the profile-less shipped workflow even when a manually constructed config contains a local `default_adapter` value of fake, Claude or mock; that setting does not provide admission.
 It accepts explicit profiles for those adapters, removes each Artisan step's profile in turn to assert a step-named refusal, and checks unknown-profile errors.
 `TestShippedDirectorSelectsRealArtisan` loads the example Director config, parses each selected custom workflow, applies repository overrides, validates and checks admission, and asserts every Artisan step selects a Claude profile.
-These focused configuration tests were added after the implementation; the original CLI regressions drove the change red first. They do not test default-adapter precedence or malformed-default validation, which are not supported admission paths.
+These focused configuration tests were added after the implementation; the original CLI regressions drove the change red first.
+They do not test default-adapter precedence or malformed-default validation, which are not supported admission paths.
 
 `claude_skills_test.go` was run red before implementation (missing parser/resolver methods), then green; `claude_defaults_test.go` adds semantic shipped-example, full matrix and identity regression coverage afterward.
 
