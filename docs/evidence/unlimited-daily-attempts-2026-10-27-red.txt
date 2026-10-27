@@ -1,0 +1,45 @@
+# Unlimited daily attempts (d10): red and green runs, 2026-10-27
+
+The new config tests, before and after parseCap accepts max_attempts_per_day = "0".
+go test ./internal/config/ -run 'TestGuardRails|TestParseAcceptsNoDailyCap' -count=1
+
+## red, before the fix
+
+--- FAIL: TestGuardRails (0.01s)
+    --- FAIL: TestGuardRails/a_local_0_is_no_daily_cap (0.00s)
+        guard_rails_test.go:28: invalid config: local max_attempts_per_day "0" must be a positive whole number
+    --- FAIL: TestGuardRails/a_managed_0_is_no_daily_cap (0.00s)
+        guard_rails_test.go:28: invalid config: managed max_attempts_per_day "0" must be a positive whole number
+--- FAIL: TestGuardRailsRefuseAnInvalidCap (0.01s)
+    guard_rails_test.go:84: GuardRails of an unparsed daily cap of -1 = max_attempts_per_day "-1" must be a positive whole number, want one naming the key and that 0 is no daily cap
+--- FAIL: TestParseAcceptsNoDailyCap (0.01s)
+    --- FAIL: TestParseAcceptsNoDailyCap/local_daily_0 (0.00s)
+        guard_rails_test.go:103: Parse = invalid config: local max_attempts_per_day "0" must be a positive whole number, want a daily cap of 0 accepted
+    --- FAIL: TestParseAcceptsNoDailyCap/managed_daily_0 (0.00s)
+        guard_rails_test.go:103: Parse = invalid config: managed max_attempts_per_day "0" must be a positive whole number, want a daily cap of 0 accepted
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/config	0.023s
+FAIL
+
+## green, after the fix
+
+--- PASS: TestGuardRails (0.01s)
+    --- PASS: TestGuardRails/unset_are_the_defaults (0.00s)
+    --- PASS: TestGuardRails/local_caps (0.00s)
+    --- PASS: TestGuardRails/a_managed_cap (0.00s)
+    --- PASS: TestGuardRails/an_overridable_managed_cap_replaced_locally (0.00s)
+    --- PASS: TestGuardRails/a_local_0_is_no_daily_cap (0.00s)
+    --- PASS: TestGuardRails/a_managed_0_is_no_daily_cap (0.00s)
+--- PASS: TestGuardRailsRefuseAnInvalidCap (0.01s)
+--- PASS: TestParseAcceptsNoDailyCap (0.00s)
+    --- PASS: TestParseAcceptsNoDailyCap/local_daily_0 (0.00s)
+    --- PASS: TestParseAcceptsNoDailyCap/managed_daily_0 (0.00s)
+    --- PASS: TestParseAcceptsNoDailyCap/local_running_0 (0.00s)
+    --- PASS: TestParseAcceptsNoDailyCap/managed_running_0 (0.00s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/config	0.022s
+
+## interp end-to-end
+
+TestNoDailyCapStartsPastTheDefault (internal/interp/budget_test.go) passes on both the double and the store
+before and after the fix: the engine and store already treated MaxPerDay 0 as no cap, so only config changed.

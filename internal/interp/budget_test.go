@@ -2,6 +2,7 @@ package interp_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -121,6 +122,32 @@ func TestDailyCapRefusesUntilTheNextDay(t *testing.T) {
 			}
 			e.eng.Caps.MaxPerDay = 3
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
+		})
+	}
+}
+
+// TestNoDailyCapStartsPastTheDefault: a daily cap of 0 is no cap, so a launch past the default's count of starts
+// in one day is not refused and sends no budget-refused message.
+func TestNoDailyCapStartsPastTheDefault(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e := newEnv(t, b, planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})))
+			e.h.Clock.Set(time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC))
+			e.eng.Caps = store.AttemptCaps{MaxRunning: 100, MaxPerDay: 0}
+			// 41 starts of app/t8's plan today, the last still running.
+			occupy(t, e, "plan")
+			for n := range config.DefaultMaxAttemptsPerDay {
+				if _, err := e.h.Records.FinishAttempt(fmt.Sprintf("finish:plan:%d", n), "app", "t8", "plan", n+1, store.AttemptFailed); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := e.h.Records.StartAttempt(fmt.Sprintf("occupy:plan:%d", n), "app", "t8", "plan"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
+			if got := budgetMessages(t, e); len(got) != 0 {
+				t.Fatalf("budget-refused messages = %v, want none", got)
+			}
 		})
 	}
 }

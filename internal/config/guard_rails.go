@@ -32,13 +32,15 @@ type GuardRails struct {
 	Repositories []string `json:"repositories"`
 	// MergePolicies is each listed repository's merge_policy, which deliver enforces.
 	MergePolicies map[string]MergePolicy `json:"merge_policies"`
-	// MaxRunningAttempts and MaxAttemptsPerDay are the attempt caps, each at least 1.
+	// MaxRunningAttempts and MaxAttemptsPerDay are the attempt caps. MaxRunningAttempts is at least 1;
+	// MaxAttemptsPerDay is at least 0, and 0 is no daily cap.
 	MaxRunningAttempts int `json:"max_running_attempts"`
 	MaxAttemptsPerDay  int `json:"max_attempts_per_day"`
 }
 
 // GuardRails returns the effective guard rails: the listed repositories and their merge policies, and each cap's
-// effective setting, its default when unset. A cap that is not a positive decimal integer is an error naming its
+// effective setting, its default when unset. MaxAttemptsPerDay may be 0, which is no daily cap. A cap that is not a
+// plain decimal integer in its range (at least 1, or at least 0 for max_attempts_per_day) is an error naming its
 // key; Parse refuses one already.
 func (c *Config) GuardRails() (GuardRails, error) {
 	g := GuardRails{Repositories: []string{}, MergePolicies: map[string]MergePolicy{}}
@@ -74,10 +76,16 @@ func (c *Config) ListedRepository(id string) (Repository, error) {
 	return r, nil
 }
 
+// parseCap parses a cap setting written as a plain decimal integer: at least 1, except that max_attempts_per_day
+// may also be 0, which is no daily cap. Parse and GuardRails both check a cap here, so they agree.
 func parseCap(key, v string) (int, error) {
+	least, want := 1, "a positive whole number"
+	if key == MaxAttemptsPerDayKey {
+		least, want = 0, "a whole number (0 for no daily cap)"
+	}
 	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 || strconv.Itoa(n) != v {
-		return 0, fmt.Errorf("%s %q must be a positive whole number", key, v)
+	if err != nil || n < least || strconv.Itoa(n) != v {
+		return 0, fmt.Errorf("%s %q must be %s", key, v, want)
 	}
 	return n, nil
 }
