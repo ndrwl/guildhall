@@ -335,9 +335,9 @@ func (f *sweepFixture) leftOpen() []store.Message {
 func TestWorkspaceCloseSweep(t *testing.T) {
 	const after = 5 * time.Minute
 	type result struct {
-		closed []string
-		marked bool
-		report string
+		closed  []string
+		marked  bool
+		report  string
 		noHerdr bool
 	}
 	for _, tc := range []struct {
