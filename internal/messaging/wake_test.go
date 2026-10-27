@@ -28,8 +28,15 @@ func (p *recordingPane) TypeLine(_ context.Context, pane store.DirectorPane, lin
 
 var directorPane = store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"}
 
-// wakeHarness is a real store holding task app/t-1 and, unless state is empty, a Director session in state.
+// wakeHarness is a real store holding task app/t-1 and, unless state is empty, a fake runtime's Director session in
+// state, the one runtime a wake types into.
 func wakeHarness(t *testing.T, state store.DirectorState, pane store.DirectorPane) *storeHarness {
+	t.Helper()
+	return runtimeHarness(t, state, pane, store.TypedWakeAdapter)
+}
+
+// runtimeHarness is wakeHarness with the session recorded running the runtime adapter.
+func runtimeHarness(t *testing.T, state store.DirectorState, pane store.DirectorPane, adapter string) *storeHarness {
 	t.Helper()
 	h := newStoreHarness(t)
 	h.CreateTask(t, "app", "t-1")
@@ -37,7 +44,7 @@ func wakeHarness(t *testing.T, state store.DirectorState, pane store.DirectorPan
 		return h
 	}
 	d := store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 7, Token: "boot:7"}, Release: "dev",
-		ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: pane}
+		ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: pane, Adapter: adapter, Dir: "/copy/director/session-1"}
 	r, err := h.s.StartDirectorSession(d)
 	if err != nil {
 		t.Fatal(err)

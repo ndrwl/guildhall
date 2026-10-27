@@ -453,6 +453,59 @@ func TestPaneRunAndInterruptUseOwnedPane(t *testing.T) {
 	}
 }
 
+// TestPaneReadSendTextAndTitleUseOwnedPane: the screen is read with its styling, a draft is typed with no Enter,
+// and the wake notice is the pane's title, each only into a pane this client owns (d8).
+func TestPaneReadSendTextAndTitleUseOwnedPane(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"tab create":           {stdout: fixture(t, "tab_create.json")},
+		"pane read":            {stdout: "\x1b[2mscreen\x1b[0m\n"},
+		"pane send-text":       {},
+		"pane report-metadata": {},
+	})
+	tab, err := c.TabCreate(context.Background(), TabSpec{WorkspaceID: "w1", Label: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if screen, err := c.PaneRead(ctx, tab); err != nil || screen != "\x1b[2mscreen\x1b[0m\n" {
+		t.Fatalf("PaneRead = %q, %v", screen, err)
+	}
+	if err := c.PaneSendText(ctx, tab, "half a\nsentence"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PaneTitle(ctx, tab, "guildhall", "guildhall: 2 unread (note 2)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PaneTitle(ctx, tab, "guildhall", ""); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range [][]string{
+		{"herdr", "pane", "read", "w1:p2", "--source", "visible", "--ansi", "--session", "guildhall-lab"},
+		{"herdr", "pane", "send-text", "w1:p2", "half a\nsentence", "--session", "guildhall-lab"},
+		{"herdr", "pane", "report-metadata", "w1:p2", "--source", "guildhall", "--title", "guildhall: 2 unread (note 2)", "--session", "guildhall-lab"},
+		{"herdr", "pane", "report-metadata", "w1:p2", "--source", "guildhall", "--clear-title", "--session", "guildhall-lab"},
+	} {
+		if !slices.Equal(f.calls[i+1].args, want) {
+			t.Errorf("call %d argv = %q, want %q", i+1, f.calls[i+1].args, want)
+		}
+	}
+	if _, err := c.PaneRead(ctx, OwnedTab{}); err == nil {
+		t.Error("PaneRead accepted a zero tab")
+	}
+	if err := c.PaneSendText(ctx, OwnedTab{}, "x"); err == nil {
+		t.Error("PaneSendText accepted a zero tab")
+	}
+	if err := c.PaneSendText(ctx, tab, ""); err == nil {
+		t.Error("PaneSendText accepted no text")
+	}
+	if err := c.PaneTitle(ctx, tab, "guildhall", "two\nlines"); err == nil {
+		t.Error("PaneTitle accepted a multi-line title")
+	}
+	if len(f.calls) != 5 {
+		t.Errorf("refusals reached Herdr: %d calls", len(f.calls))
+	}
+}
+
 func TestReportAgentRegistersTheResumeCommand(t *testing.T) {
 	c, f := newTestClient(t, map[string]response{"pane report-agent": {stdout: `{"id":"cli:request","result":{"type":"ok"}}`}})
 	resume := []string{"guildhall", "artisan", "resume", "--store", "/s/g.store", "--state", "/s/st", "--attempt", "1"}

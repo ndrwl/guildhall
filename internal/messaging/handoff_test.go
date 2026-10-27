@@ -15,13 +15,20 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// handoffHarness is a real store holding task app/t-1 and session 1 running in directorPane under policy.
+// handoffHarness is a real store holding task app/t-1 and session 1 of the fake runtime, which wakes are typed
+// into, running in directorPane under policy.
 func handoffHarness(t *testing.T, policy store.HandoffPolicy) *storeHarness {
+	t.Helper()
+	return handoffHarnessFor(t, policy, store.TypedWakeAdapter)
+}
+
+// handoffHarnessFor is handoffHarness with the session running the runtime adapter.
+func handoffHarnessFor(t *testing.T, policy store.HandoffPolicy, adapter string) *storeHarness {
 	t.Helper()
 	h := newStoreHarness(t)
 	h.CreateTask(t, "app", "t-1")
 	d := store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 7, Token: "boot:7"}, Release: "dev",
-		ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: directorPane, Handoff: policy}
+		ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: directorPane, Handoff: policy, Adapter: adapter, Dir: "/copy/director/session-1"}
 	r, err := h.s.StartDirectorSession(d)
 	if err != nil {
 		t.Fatal(err)

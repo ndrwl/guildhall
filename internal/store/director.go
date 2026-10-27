@@ -80,6 +80,12 @@ type DirectorSession struct {
 	// ConfigDigest is the "sha256:<hex>" digest of the configuration the session was started under.
 	ConfigDigest string       `json:"config_digest"`
 	Pane         DirectorPane `json:"pane,omitzero"`
+	// Adapter is the runtime adapter the session runs, such as "claude"; it chooses how a wake reaches the
+	// Director (TypedWakes). A session recorded before it was kept has none.
+	Adapter string `json:"adapter,omitempty"`
+	// Dir is the session's absolute directory, where its supervisor's endpoint listens; a wake that does not type
+	// is handed over that endpoint.
+	Dir string `json:"dir,omitempty"`
 	// StartedAt, ReadyAt and EndedAt are set by the store, in UTC: when the session was recorded, when it first
 	// became running and when it was recorded stopped.
 	StartedAt time.Time `json:"started_at"`
@@ -110,6 +116,15 @@ type DirectorSession struct {
 func (d DirectorSession) Holds() bool {
 	return d.State == DirectorPaused || d.State == DirectorStopping || d.Sweeping
 }
+
+// TypedWakeAdapter is the one runtime adapter whose sessions are woken by typing a line into their pane: the fake,
+// which is test-only and has no hooks.
+const TypedWakeAdapter = "fake"
+
+// TypedWakes reports whether a wake reaches the session by typing into its pane: only a fake runtime's session.
+// Every other session, a Claude Code one among them and one recorded with no adapter, is woken through its session
+// endpoint and never typed into (docs/decisions/director-wake-hook.md).
+func (d DirectorSession) TypedWakes() bool { return d.Adapter == TypedWakeAdapter }
 
 // EndSuperseded is the end reason of a session recorded stopped because its supervisor is gone, by
 // StartDirectorSession when a newer session is recorded and by director stop.

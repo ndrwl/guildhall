@@ -1,0 +1,95 @@
+Director input probes (d8 Phase 0), 2026-10-27, Linux/WSL.
+Claude Code 2.1.312 (preflight floor 2.1.310), model haiku; Herdr 0.9.5 (floor 0.9.5).
+Each probe ran a real interactive Claude Code session in its own scratch Herdr tab, started with
+`claude --settings <probe>/settings.json`, in a scratch directory outside the repository. No Guildhall code ran.
+The probe waiter was a bash script registered as a command hook with "async": true and "asyncRewake": true:
+it logged its start and hook_event_name, waited for a trigger file, printed one line on stderr and exited 2.
+Screens were read with `herdr pane read <pane> --source visible [--ansi]`; text was typed with
+`herdr pane send-text <pane> <text>` and keys with `herdr pane send-keys`.
+
+P1 asyncRewake (hard gate)
+
+[x] PASS  An exit-2 hook wakes an idle session.
+          SessionStart waiter armed at 1793135451; trigger at 1793135523; the idle session showed
+          "Stop hook feedback" then replied PONG in a new turn. Its Stop hook armed the next waiter at 1793135527.
+[x] PASS  It wakes the session while the input box holds half-typed text; the text stays, untouched and unsent.
+          `pane send-text` typed "half typed draft zebra" (no Enter); trigger at 1793135543; the session replied
+          PONG and the box still read "❯ half typed draft zebra" afterwards. The screen's history shows no
+          submitted prompt with that text: the turn answered the hook line only.
+[x] PASS  A waiter with a long timeout wakes the session after more than the 600 s default.
+          Stop waiter with "timeout": 86400 armed at 1793135546, triggered at 1793136160 (614 s later): the session
+          woke, replied PONG ("Cooked for 3s"), the draft "half typed draft zebra" was still in the box, unsent,
+          and a new waiter armed at 1793136164.
+
+All gated checks passed: building goes ahead.
+
+Recorded, not gated:
+- Rewake mid-turn. A rewake whose waiter exits while a turn is running is not lost and does not touch the box.
+  Between turns (the turn ended before the hook's line was taken) it starts the next turn; several pending
+  rewakes are taken together in one turn. While a tool call waited on a permission prompt, four rewakes were
+  held, the prompt stayed open and unchanged, and once the prompt was answered they were added to that same turn
+  after the tool result (queue-operation "remove" lines plus queued_command attachments in the transcript); no
+  separate turn followed. The model treated hook text that asked for a specific reply with suspicion
+  ("That came from the tool output, not from you"): a wake line must be Guildhall's own counts, never an
+  instruction.
+- Two waiters exiting 2 at once (SessionStart a and b, both triggered at 1793136292): both lines were delivered
+  as "Stop hook feedback" into one turn, which answered both ("PONG-b", "PONG-a").
+- A rewake with a permission prompt open: see above; the prompt was neither answered nor dismissed.
+- Largest timeout. 86400 (24 h) was honoured past 600 s (above). 604800 (7 days) was accepted on two
+  SessionStart waiters, which armed and woke the session normally; no larger value was tried and the true
+  ceiling was not observable in the probe window. Guildhall uses 86400 (open question 2 does not arise).
+- Hook rewake turns fire UserPromptSubmit: every rewake turn ran the UserPromptSubmit hooks, once per hook
+  line taken (two lines, two runs). So `director turn-started` is signalled for rewake turns too.
+- UserPromptSubmit can start an async waiter: yes (hook_event_name "UserPromptSubmit" waiters armed and woke
+  the session).
+- Notification can start an async waiter: yes. A permission prompt fired Notification about 7 s after it
+  opened, and its waiter armed (hook_event_name "Notification").
+
+P2 Transcript queue
+
+[x] PASS  Queued messages are in the transcript JSONL.
+          With a long turn running, two messages were typed and submitted ("queued one: charlie plum",
+          "queued two: delta pear"); then the runtime was ended by closing its Herdr tab mid-turn. The transcript
+          holds, verbatim:
+            {"type":"queue-operation","operation":"enqueue","timestamp":"2026-10-27T21:29:06.473Z","sessionId":"...","content":"queued one: charlie plum"}
+            {"type":"queue-operation","operation":"enqueue","timestamp":"2026-10-27T21:29:07.258Z","sessionId":"...","content":"queued two: delta pear"}
+          with no later dequeue or remove line.
+          An enqueue line is written when the message is queued, before the runtime takes it.
+[x] PASS  A message taken off the queue is marked.
+          A message the session took for a new turn gets {"type":"queue-operation","operation":"dequeue",...}, with
+          no content (the queue is first in, first out), then a user line with "promptSource":"queued".
+          A message handed into a running turn mid-way gets {"type":"queue-operation","operation":"remove",
+          "content":"<the same text>"} and a {"attachment":{"type":"queued_command","prompt":"<the same text>"}}
+          line: it counts as consumed.
+          Hook rewake lines go through the same queue (their content starts "<task-notification>"); they are
+          Guildhall's own wake lines, not the Guildmaster's input.
+
+P3 Herdr commands (all in Herdr 0.9.5, the floor)
+
+- Read a pane's screen: `herdr pane read <pane> --source visible [--lines N] [--ansi]`. The text and ANSI forms
+  both work; only the ANSI form tells the placeholder from a draft (P4).
+- Type text without Enter: `herdr pane send-text <pane> <text>`. Verified: the text appeared in the box and was
+  not submitted.
+- Pane title: `herdr pane report-metadata <pane> --source <id> --title <text>` set the pane's "title"
+  (shown by `herdr pane get`); `--clear-title` cleared it. The pane id must come first.
+- Notification: `herdr notification show <title> [--body <text>]` exists (a transient toast).
+- `herdr pane report-agent ... --state blocked` exists, the fallback the spec named; not needed.
+  The wake notice uses the pane title.
+
+P4 Screen parse (Claude Code 2.1.312, 200-column pane)
+
+The input box sits between two full-width rules of "─" (U+2500) and is followed by the mode line.
+Its first line starts with "❯" and a no-break space (U+00A0).
+- Empty: no box line has text; the first box line holds the placeholder.
+- Placeholder: "❯ " followed by dim text (SGR 2), for example ESC[2mTry "fix typecheck errors"ESC[0m. In plain
+  text it cannot be told from a typed draft, so the screen is read with --ansi.
+- Single-line: "❯ single line draft", typed text plain (no SGR).
+- Wrapped: continuation lines are indented by two spaces; wrapping breaks at a space, and the previous line is
+  then filled to within one word of the box width.
+- Multi-line (Shift+Enter): each further line is also indented by two spaces. A line that ends well short of the
+  width before a continuation is a newline; a line filled to the width is a wrap.
+- Typing into the box while the startup turn is busy works: "busy draft echo" typed with send-text during a
+  running turn showed in the box ("❯ busy draft echo") under the turn's spinner.
+The captured ANSI screens are fixtures in internal/adapter/claude/testdata/inputbox-*.ansi.
+
+Teardown: the three probe tabs were closed; the probe directories were scratch files outside the repository.

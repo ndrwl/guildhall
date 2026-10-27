@@ -102,7 +102,8 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 		return a.fail(err)
 	}
 	for {
-		n, sp, err := recordNextSession(storePath, self, p.cfg, pane, func(n int) (store.HandoffPolicy, error) {
+		base := store.DirectorSession{Pane: pane, Adapter: p.name}
+		n, sp, err := recordNextSession(storePath, self, p.cfg, base, copyDir, func(n int) (store.HandoffPolicy, error) {
 			return handoffPolicy(p.cfg, p.runtime, sessionDir(copyDir, n))
 		})
 		if err != nil {
@@ -138,26 +139,30 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 	}
 }
 
-// recordNextSession records the next session as recovering for supervisor self under cfg in pane, with the
-// handoff policy policy gives for its number, and returns its number beside what checkSupersede found of the
-// session it supersedes, whose failed removal the caller warns of. A reload requested before it started is
-// recorded applied by it.
-func recordNextSession(storePath string, self artisan.Identity, cfg any, pane store.DirectorPane,
+// recordNextSession records the next session as recovering for supervisor self under cfg, in base's pane and
+// with its runtime adapter, its directory in copyDir and the handoff policy policy gives for its number, and
+// returns its number beside what checkSupersede found of the session it supersedes, whose failed removal the
+// caller warns of. A reload requested before it started is recorded applied by it.
+func recordNextSession(storePath string, self artisan.Identity, cfg any, base store.DirectorSession, copyDir string,
 	policy func(n int) (store.HandoffPolicy, error)) (int, superseded, error) {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return 0, superseded{}, err
 	}
+	if copyDir, err = filepath.Abs(copyDir); err != nil {
+		return 0, superseded{}, err
+	}
 	var sp superseded
 	n, err := withStore(storePath, false, func(s *store.Store) (int, error) {
 		d := store.DirectorSession{State: store.DirectorRecovering, Identity: store.ProcessIdentity(self),
-			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: pane}
+			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: base.Pane, Adapter: base.Adapter}
 		var err error
 		if sp, err = checkSupersede(s); err != nil {
 			return 0, err
 		}
 		newest := sp.Number
 		d.Number = newest + 1
+		d.Dir = sessionDir(copyDir, d.Number)
 		if d.Handoff, err = policy(d.Number); err != nil {
 			return 0, err
 		}
@@ -284,8 +289,17 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, closes: closes}
 	if ep != nil {
 		w.turns = ep.Turns()
+		// A session that is not typed into is woken through its waiter, with the notice in its pane while none is
+		// registered (docs/decisions/director-wake-hook.md).
+		if p.name != store.TypedWakeAdapter {
+			w.waiter = ep
+			if d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) { return s.DirectorSession(n) }); err == nil && d.Pane != (store.DirectorPane{}) {
+				w.notice = a.wakeNotice(d.Pane)
+			}
+		}
 	}
 	ended, ending, err := a.waitSession(u, c, signals, &w)
+	w.setNotice("")
 	checks.wait()
 	deps.wait()
 	var exit *exec.ExitError
@@ -409,6 +423,28 @@ type sessionWatch struct {
 	// newest wake sequence when the last turn ended; turned is set while the last turn signal is a turn end.
 	wakes, woke, turnWake uint64
 	turned                bool
+
+	// waiter is the session endpoint's waiter registration, nil without an endpoint, and notice the wake notice
+	// outside the input box, nil for none (docs/decisions/director-wake-hook.md).
+	waiter waiterSource
+	notice wakeNotice
+	// handed is the waiter's count of wakes taken and refreshes when last read. missed is set while a wake recorded
+	// "no waiter" waits to be handed to the next waiter, and noticed is the notice shown, "" for none.
+	handed  uint64
+	missed  bool
+	noticed string
+}
+
+// waiterSource is the session endpoint as the supervisor reads its waiter: *session.Endpoint.
+type waiterSource interface {
+	Waiter() session.WaiterState
+	Hand(line string) error
+}
+
+// wakeNotice shows and clears the wake notice outside the Director's input box, such as its pane's title.
+type wakeNotice interface {
+	Show(ctx context.Context, text string) error
+	Clear(ctx context.Context) error
 }
 
 // waitSession waits for the started runtime c, in unit u, to end, passing its unit each termination among signals,
@@ -479,12 +515,22 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 	if turn != "" || w.signalled.IsZero() {
 		w.signalled = now
 	}
+	// A wake a waiter took, or a waiter's refresh, is the wake's activity: the Director is not idle again until a
+	// turn ends after it, either the rewake turn it starts or the running turn it is added to. It is counted
+	// before the turn signal, which may already be that turn's end.
+	if w.waiter != nil {
+		st := w.waiter.Waiter()
+		if n := st.Handed + st.Refreshed; n > w.handed {
+			w.handed, w.turned, w.signalled = n, false, now
+		}
+	}
 	switch turn {
 	case session.TurnStarted:
 		w.turned = false
 	case session.TurnEnded:
 		w.turned = true
 	}
+	var unread map[string]int
 	in, err := withStore(w.storePath, true, func(s *store.Store) (endInput, error) {
 		in := endInput{TurnEnded: turn == session.TurnEnded, Hook: w.hook, Grace: w.grace, IdleAfter: w.idleAfter}
 		var err error
@@ -504,8 +550,12 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 			}
 			for _, wk := range ws {
 				w.wakes = wk.Sequence
-				if wk.Decision == store.WakeWoke {
+				switch {
+				// A typed wake's record is its activity; a handed one was counted when the waiter took it.
+				case wk.Decision == store.WakeWoke && (in.Session.TypedWakes() || w.waiter == nil):
 					w.woke, w.signalled = wk.Sequence, now
+				case wk.Decision == store.WakeQueued && wk.Reason == messaging.ReasonNoWaiter:
+					w.missed = true
 				}
 			}
 		}
@@ -514,11 +564,17 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 		}
 		in.Idle = w.turned && w.woke <= w.turnWake
 		in.Quiet = now.Sub(w.signalled)
+		if w.waiter != nil {
+			if unread, err = s.DirectorUnread(); err != nil {
+				return in, err
+			}
+		}
 		return in, nil
 	})
 	if err != nil {
 		return keepRunning
 	}
+	w.waiterTick(in, unread)
 	w.idleTrigger(in)
 	if in.Session.State != store.DirectorStopping && in.Reload == nil {
 		w.wanted = time.Time{}
@@ -541,6 +597,47 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 	}
 	in.StageRunning = running
 	return decideEnd(in)
+}
+
+// waiterTick keeps the session's waiter in step with its unread messages (docs/decisions/director-wake-hook.md):
+// once a waiter is registered after a wake was recorded "no waiter", it hands that waiter one wake line of the
+// current unread counts, and with no waiter registered it shows the wake notice outside the input box while
+// messages are unread and either a wake was missed or the Director is idle. The notice is cleared once the wake is
+// delivered or nothing is unread. A session that is not running or recovering, such as a paused one, is not woken
+// and shows no notice.
+func (w *sessionWatch) waiterTick(in endInput, unread map[string]int) {
+	if w.waiter == nil {
+		return
+	}
+	live := in.Session.State == store.DirectorRunning || in.Session.State == store.DirectorRecovering
+	if !live || len(unread) == 0 {
+		w.missed = false
+	}
+	registered := w.waiter.Waiter().Registered
+	if registered && w.missed && w.waiter.Hand(messaging.WakeLine(unread)) == nil {
+		w.missed = false
+	}
+	want := ""
+	if live && len(unread) > 0 && !registered && (w.missed || in.Idle) {
+		want = messaging.WakeLine(unread)
+	}
+	w.setNotice(want)
+}
+
+// setNotice shows text as the wake notice, or clears it for "", when that changes what is shown. A notice Herdr
+// refused is not tried again until the text changes.
+func (w *sessionWatch) setNotice(text string) {
+	if w.notice == nil || text == w.noticed {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+	defer cancel()
+	if text == "" {
+		_ = w.notice.Clear(ctx)
+	} else {
+		_ = w.notice.Show(ctx, text)
+	}
+	w.noticed = text
 }
 
 // idleTrigger types the idle line (docs/director.md#automatic-handoff) once per quiet period: when handoff_idle is

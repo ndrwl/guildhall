@@ -626,6 +626,53 @@ func (c *Client) RunInOwnedTab(ctx context.Context, t OwnedTab, line string) err
 	return err
 }
 
+// PaneRead reads the visible screen of the root pane of a tab this client created, with its ANSI styling (`herdr
+// pane read <pane> --source visible --ansi`), so a dim placeholder can be told from typed text.
+func (c *Client) PaneRead(ctx context.Context, t OwnedTab) (string, error) {
+	if err := c.checkOwned(t); err != nil {
+		return "", err
+	}
+	out, err := c.call(ctx, "pane", "read", t.paneID, "--source", "visible", "--ansi")
+	if err != nil {
+		return "", err
+	}
+	// Herdr prints the screen itself, not a JSON result (docs/evidence/director-input-2026-10-27.txt).
+	return string(out), nil
+}
+
+// PaneSendText types text into the root pane of a tab this client created without pressing Enter (`herdr pane
+// send-text`), so it waits in the input box unsent. Success means Herdr accepted the input.
+func (c *Client) PaneSendText(ctx context.Context, t OwnedTab, text string) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	if text == "" {
+		return errors.New("herdr pane send-text needs text")
+	}
+	_, err := c.call(ctx, "pane", "send-text", t.paneID, text)
+	return err
+}
+
+// PaneTitle sets the title of the root pane of a tab this client created, as display-only metadata reported by
+// source (`herdr pane report-metadata <pane> --source <source> --title <title>`), or clears it for "".
+func (c *Client) PaneTitle(ctx context.Context, t OwnedTab, source, title string) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	if !labelShape.MatchString(source) {
+		return fmt.Errorf("herdr metadata source %q: need letters, digits, '.', '_' or '-'", source)
+	}
+	if strings.ContainsAny(title, "\r\n") {
+		return errors.New("herdr pane title must be one line")
+	}
+	args := []string{"pane", "report-metadata", t.paneID, "--source", source, "--clear-title"}
+	if title != "" {
+		args = []string{"pane", "report-metadata", t.paneID, "--source", source, "--title", title}
+	}
+	_, err := c.call(ctx, args...)
+	return err
+}
+
 // InterruptOwnedTab sends Ctrl+C to the root pane of a tab this client created.
 func (c *Client) InterruptOwnedTab(ctx context.Context, t OwnedTab) error {
 	if err := c.checkOwned(t); err != nil {

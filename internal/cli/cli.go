@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/steward"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // version is set at release build time with
@@ -82,6 +83,8 @@ Commands:
                  tell the session supervisor the runtime's turn has started (its turn-start hook)
   director turn-ended --copy <dir>
                  tell the session supervisor the runtime's turn has ended (its end-of-turn hook)
+  director wait-wake --copy <dir>
+                 wait for the session supervisor to wake the Director, then exit 2 (its rewake hook)
   director context-report [--lanterns] --copy <dir>
                  display status and context only with --lanterns (generated workspaces);
                  without it, record runtime context for legacy workspaces
@@ -134,6 +137,9 @@ type App struct {
 	Getenv func(string) string
 	// DirectorPane types wake lines into the Director's recorded pane; nil means Herdr, found on PATH as herdr.
 	DirectorPane messaging.DirectorPane
+	// WakeNotice is the wake notice of a Director's recorded pane, shown while no waiter is registered; nil means
+	// the pane's Herdr title.
+	WakeNotice func(store.DirectorPane) wakeNotice
 	// SessionPoll is how often a Director session's supervisor reads its session while the runtime runs; zero
 	// means one second.
 	SessionPoll time.Duration

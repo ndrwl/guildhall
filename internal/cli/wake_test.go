@@ -19,8 +19,15 @@ func (p *typedPanes) TypeLine(_ context.Context, pane store.DirectorPane, line s
 	return nil
 }
 
-// startSession records a running Director session in the store at path, bound to a pane unless pane is zero.
+// startSession records a running fake-runtime Director session, the one runtime a wake types into, in the store at
+// path, bound to a pane unless pane is zero.
 func startSession(t *testing.T, path string, pane store.DirectorPane) {
+	t.Helper()
+	startRuntimeSession(t, path, pane, store.TypedWakeAdapter)
+}
+
+// startRuntimeSession is startSession with the session recorded running the runtime adapter.
+func startRuntimeSession(t *testing.T, path string, pane store.DirectorPane, adapter string) {
 	t.Helper()
 	s, err := store.Open(path, store.Options{RequireStore: true})
 	if err != nil {
@@ -28,7 +35,7 @@ func startSession(t *testing.T, path string, pane store.DirectorPane) {
 	}
 	defer func() { _ = s.Close() }()
 	r, err := s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 7, Token: "boot:7"},
-		Release: "dev", ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: pane})
+		Release: "dev", ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: pane, Adapter: adapter})
 	if err != nil {
 		t.Fatal(err)
 	}

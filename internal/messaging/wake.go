@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -33,6 +34,37 @@ type DirectorPane interface {
 	TypeLine(ctx context.Context, pane store.DirectorPane, line string) error
 }
 
+// EndpointWaker is the seam beside TypeLine that wakes a Director without touching its input box
+// (docs/decisions/director-wake-hook.md): HandWake hands line, counts only, to the waiter session d's runtime armed
+// with its wait-wake hook, through the supervisor's session endpoint. It returns session.ErrNoWaiter, handing
+// nothing, when no waiter is registered or no supervisor listens. A DirectorPane that is not an EndpointWaker wakes
+// only typed sessions; every other session is recorded "no waiter".
+type EndpointWaker interface {
+	HandWake(ctx context.Context, d store.DirectorSession, line string) error
+}
+
+// ReasonNoWaiter is the queued reason of a wake no waiter took: the session's runtime is not typed into and had no
+// wait-wake hook registered with its supervisor. The supervisor hands the next registered waiter one wake for it.
+const ReasonNoWaiter = "no waiter"
+
+// deliver wakes session d with line and returns why it could not, as a queued wake's reason, or "". Only a session
+// whose runtime has no hooks, the fake, is typed into (store.DirectorSession.TypedWakes); any other is handed the
+// line through pane's EndpointWaker and is never typed into, whatever its input box holds.
+func deliver(ctx context.Context, pane DirectorPane, d store.DirectorSession, line string) string {
+	if d.TypedWakes() {
+		return paneReason(pane.TypeLine(ctx, d.Pane, line))
+	}
+	w, ok := pane.(EndpointWaker)
+	if !ok {
+		return ReasonNoWaiter
+	}
+	err := w.HandWake(ctx, d, line)
+	if errors.Is(err, session.ErrNoWaiter) || errors.Is(err, session.ErrNoSupervisor) {
+		return ReasonNoWaiter
+	}
+	return paneReason(err)
+}
+
 // WakeStore is the store as Wake reads and writes it. *store.Store implements it; a caller that must not hold
 // the store's lock while Wake types implements it by opening the store for each call.
 type WakeStore interface {
@@ -51,11 +83,13 @@ type WakeStore interface {
 // Wake is the one wake function: after a message to the Director is stored, it decides whether to wake the
 // Director, acts on that decision and records it as the message's store.Wake.
 //
-// With the newest session running or recovering and a bound pane, it types one fixed line into that pane,
+// With the newest session running or recovering and a bound pane, it wakes the Director with one fixed line,
 // WakeLine of the Director's unread counts, which carries counts only and never message text, with HandoffLine's
-// suffix of the handoff crossings DueHandoffs finds, and records woke and each crossing typed. Otherwise it types nothing and records queued with the reason: "no session", the session's state
-// ("paused", "stopping" or "stopped"), "no pane", "nothing unread" when the message was acknowledged first,
-// "runtime not running", or "pane: <error>" when typing failed.
+// suffix of the handoff crossings DueHandoffs finds, and records woke and each crossing delivered. The line is
+// handed to the session's waiter (EndpointWaker); only a fake runtime's session is typed into. Otherwise it
+// delivers nothing and records queued with the reason: "no session", the session's state ("paused", "stopping" or
+// "stopped"), "no pane", "nothing unread" when the message was acknowledged first, "no waiter" when no waiter took
+// the line, "runtime not running", or "pane: <error>" when typing or handing failed.
 // A queued message still waits in the inbox for the Director's next turn.
 //
 // A message already woken for, such as a replayed send, returns its recorded wake and types nothing new.
@@ -114,7 +148,7 @@ func typeWake(ctx context.Context, st WakeStore, pane DirectorPane, idle time.Du
 			return "", nil, err
 		}
 	}
-	if reason := paneReason(pane.TypeLine(ctx, d.Pane, HandoffLine(WakeLine(unread), dues))); reason != "" {
+	if reason := deliver(ctx, pane, d, HandoffLine(WakeLine(unread), dues)); reason != "" {
 		return reason, nil, nil
 	}
 	return "", dues, nil
@@ -201,7 +235,7 @@ func WakeResumed(ctx context.Context, st SessionReader, pane DirectorPane, waiti
 		return ResumeWake{}, err
 	}
 	if reason == "" {
-		reason = paneReason(pane.TypeLine(ctx, d.Pane, ResumeLine(waiting)))
+		reason = deliver(ctx, pane, d, ResumeLine(waiting))
 	}
 	if reason != "" {
 		return ResumeWake{Decision: store.WakeQueued, Reason: reason}, nil
