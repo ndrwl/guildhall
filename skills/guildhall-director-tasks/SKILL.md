@@ -99,7 +99,7 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 ## Published PR conflicts and sending work back
 
 A `pr-blocked` message is information for you to judge, not an instruction to rebase.
-It names the PR URL, head and base commits, whether it is conflicting or behind under strict branch protection, the conflicting paths and how many commits it is behind.
+It names the PR URL, head commit and base tip (the base branch's tip when Guildhall measured it), whether it is conflicting or behind under strict branch protection, the conflicting paths and how many commits it is behind.
 Guildhall records one report per head and state, waits for you and never rebases automatically.
 You may choose any appropriate recovery; the available options are not a fixed procedure:
 

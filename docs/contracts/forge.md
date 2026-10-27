@@ -36,10 +36,13 @@ Programs run with argument lists, never through a shell, with `GH_PROMPT_DISABLE
 Platform differences: none in the contract.
 
 `GitHub.Mergeability` observes an open PR at the requested full head using the command-specific `pr view` JSON flags, with the PR number positional and repository selected by `--repo`.
-It returns URL, head/base, conflicting or strict-protection-behind state, sorted unique conflict paths and a behind count.
+It returns URL, head, base tip, conflicting or strict-protection-behind state, sorted unique conflict paths and a behind count.
+The `pr view` fields are `url,state,headRefOid,baseRefName,mergeable,mergeStateStatus`; GitHub's recorded base commit goes stale, so it is not read.
+The base tip is the base branch's commit on the remote when measured, and is empty when no obstruction is reported.
 Unknown mergeability and generic protection `BLOCKED` are not guessed to be conflicts or strict-behind states.
 A moved PR is `ErrRefused`; malformed requests are `ErrInvalid`, and unsupported remotes and operational errors remain errors.
-For a blocked observation it fetches the exact base object without updating branches or `FETCH_HEAD`, counts base-only commits and reads `merge-tree --write-tree --name-only -z`, including stdout on conflict exit 1.
+For a blocked observation it reads the base tip with `git ls-remote <remote> refs/heads/<baseRefName>`; a missing, ambiguous or invalid tip is an error, not a guessed state.
+It fetches that exact tip without updating branches or `FETCH_HEAD`, counts base-only commits and reads `merge-tree --write-tree --name-only -z`, including stdout on conflict exit 1.
 It never modifies a worktree or rebases; concurrent observations only write git objects.
 
 ## Tests

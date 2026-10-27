@@ -208,7 +208,7 @@ One round runs at a time; a failed advance, such as an unreachable forge, is app
 With no supervisor running, the task waits until someone runs the `task start` its `checks` item in [`needs_me`](#status) names.
 
 A validate or deliver observation of a conflicting PR or a strict-protection-blocked behind PR instead records its mergeability and sends one `pr-blocked` message per head and state.
-The report gives the URL, head/base commits, conflicting paths, behind count and options, and the task waits for the Director, so the checks watcher does not keep polling it.
+The report gives the URL, head commit, base tip (the base branch's tip when measured), conflicting paths, behind count and options, and the task waits for the Director, so the checks watcher does not keep polling it.
 The Director chooses the response; Guildhall never rebases automatically.
 [`step send-back`](step-send-back.md) can start a new attempt of a succeeded Artisan step with Director feedback, followed by normal rebase-aware review and republishing to the same PR.
 Holding the task, leaving the work unadvanced, using the existing attempt stop or Director-stage abandonment paths, and rechecking after an external change are alternatives, not a prescribed recovery sequence.
