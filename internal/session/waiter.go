@@ -37,12 +37,13 @@ var (
 )
 
 // waiters is the registration of the one waiter of a session: the newest registered id, whether a poll of it is
-// open, when its last poll ended, and a wake line handed to it and not yet taken.
+// open, when its last poll ended, whether it has taken a wake line, and a wake line handed and not yet taken.
 type waiters struct {
 	mu      sync.Mutex
 	id      string
 	polls   int
 	ended   time.Time
+	spent   bool
 	line    string
 	has     bool
 	wake    chan struct{}
@@ -52,14 +53,17 @@ type waiters struct {
 	closed  bool
 }
 
-// alive reports whether the newest waiter is registered: a poll of it is open, or its last ended within
-// WaiterLease. The caller holds mu.
+// alive reports whether the newest waiter is registered: it has not taken a wake line, which ends it, and a poll
+// of it is open or its last ended within WaiterLease. The caller holds mu.
 func (w *waiters) alive(now time.Time) bool {
-	return w.id != "" && (w.polls > 0 || now.Sub(w.ended) < WaiterLease)
+	return w.id != "" && !w.spent && (w.polls > 0 || now.Sub(w.ended) < WaiterLease)
 }
 
 // poll registers waiter id, retiring an older one, and waits up to hold for a wake line. It returns the line, ""
-// with no error when hold passed with none, or ErrRetired when a newer waiter has replaced id.
+// with no error when hold passed with none, or ErrRetired when a newer waiter has replaced id. A line handed to an
+// older waiter that it did not take is kept for id. A waiter that takes a line is spent: it wakes the Director and
+// exits, so it no longer counts as registered, and a wake before the next waiter registers is ErrNoWaiter rather
+// than a line no waiter takes.
 func (w *waiters) poll(id string, hold time.Duration) (string, error) {
 	w.mu.Lock()
 	if w.closed {
@@ -71,8 +75,9 @@ func (w *waiters) poll(id string, hold time.Duration) (string, error) {
 			close(w.retire)
 		}
 		w.id, w.retire = id, make(chan struct{})
-		w.polls, w.has, w.line = 0, false, ""
+		w.polls = 0
 	}
+	w.spent = false
 	if w.wake == nil {
 		w.wake = make(chan struct{})
 	}
@@ -99,7 +104,7 @@ func (w *waiters) poll(id string, hold time.Duration) (string, error) {
 		return "", nil
 	}
 	line := w.line
-	w.has, w.line = false, ""
+	w.has, w.line, w.spent = false, "", true
 	w.handed++
 	return line, nil
 }

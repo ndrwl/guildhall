@@ -174,3 +174,69 @@ func TestAWaiterSurvivesTheEndpointDropping(t *testing.T) {
 		t.Fatalf("the reconnected waiter = %+v", r)
 	}
 }
+
+// TestASecondWakeAfterTheWaiterTookOneIsNoWaiter: a waiter that has taken a line exits to wake the Director, so it
+// no longer counts as registered even within its lease. A second wake before the next waiter registers is
+// ErrNoWaiter, which the sender records "no waiter" with the wake notice, rather than a line handed to a waiter
+// that is gone and dropped when the next one registers.
+func TestASecondWakeAfterTheWaiterTookOneIsNoWaiter(t *testing.T) {
+	// A lease far longer than the test, so only the taken line can end the registration.
+	shortWaits(t, 10*time.Second, time.Minute)
+	dir := shortDir(t)
+	ep, err := session.Listen(dir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ep.Close() }()
+	ctx := context.Background()
+	first := poll(dir, 1, "w-1")
+	registered(t, ep)
+	if err := session.Wake(ctx, dir, 1, "guildhall: 1 unread (note 1)"); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-first; r.err != nil || r.line != "guildhall: 1 unread (note 1)" {
+		t.Fatalf("first poll = %+v", r)
+	}
+	if ep.Waiter().Registered {
+		t.Fatal("a waiter that took a line still counts as registered")
+	}
+	if err := session.Wake(ctx, dir, 1, "guildhall: 2 unread (note 2)"); !errors.Is(err, session.ErrNoWaiter) {
+		t.Fatalf("a second wake within the lease = %v, want ErrNoWaiter", err)
+	}
+	// The next waiter is not handed a stale line: its poll is held until the catch-up wake reaches it.
+	next := poll(dir, 1, "w-2")
+	registered(t, ep)
+	if err := ep.Hand("guildhall: 2 unread (note 2)"); err != nil {
+		t.Fatalf("the catch-up wake = %v", err)
+	}
+	if r := <-next; r.err != nil || r.line != "guildhall: 2 unread (note 2)" {
+		t.Fatalf("next poll = %+v", r)
+	}
+	if st := ep.Waiter(); st.Handed != 2 {
+		t.Fatalf("state = %+v, want two handed", st)
+	}
+}
+
+// TestALineAnOlderWaiterDidNotTakeReachesTheNewer: a wake handed to a waiter between its polls that a newer waiter
+// replaces before it polls again is taken by the newer one, not dropped.
+func TestALineAnOlderWaiterDidNotTakeReachesTheNewer(t *testing.T) {
+	shortWaits(t, 50*time.Millisecond, time.Minute)
+	dir := shortDir(t)
+	ep, err := session.Listen(dir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ep.Close() }()
+	if r := <-poll(dir, 1, "old"); r.err != nil || r.line != "" {
+		t.Fatalf("a held poll = %+v, want it answered empty", r)
+	}
+	if err := session.Wake(context.Background(), dir, 1, "guildhall: 1 unread (note 1)"); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-poll(dir, 1, "new"); r.err != nil || r.line != "guildhall: 1 unread (note 1)" {
+		t.Fatalf("newer poll = %+v, want the line the older waiter did not take", r)
+	}
+	if err := session.Refresh(context.Background(), dir, 1, "old"); !errors.Is(err, session.ErrRetired) {
+		t.Fatalf("older refresh = %v, want ErrRetired", err)
+	}
+}

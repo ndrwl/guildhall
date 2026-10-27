@@ -76,7 +76,7 @@ func (a *App) directorWaitWake(args []string) int {
 		n = d.Number
 	}
 	dir := sessionDir(copyDir, n)
-	a.hookInput(dir, n)
+	a.hookInput()
 	id := fmt.Sprintf("%d-%s", os.Getpid(), rand.Text()[:10])
 	refreshAt := time.Now().Add(*refreshAfter)
 	for {
@@ -131,7 +131,7 @@ func sessionLive(storePath string, n int) bool {
 }
 
 // hookInput reads the hook's JSON input; the waiter keeps nothing of it yet.
-func (a *App) hookInput(string, int) {
+func (a *App) hookInput() {
 	if a.Stdin != nil {
 		_, _ = io.Copy(io.Discard, io.LimitReader(a.Stdin, 1<<20))
 	}

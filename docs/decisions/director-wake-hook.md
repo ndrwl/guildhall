@@ -23,6 +23,8 @@ The waiter registers with the session supervisor over the session endpoint (`sup
 - Five minutes before its timeout a waiter still registered tells the supervisor with a `refresh` operation and exits 2 with a counts-only line, so the short turn that follows arms a new waiter through its `Stop` hook.
 
 A waiter counts as registered while a poll of it is open and for five seconds after one ends, so the supervisor can tell a live waiter from one that ended, which only happens when it is killed.
+A waiter that has taken a wake line no longer counts as registered, since it exits to wake the Director: a second wake before the next waiter registers is recorded `no waiter` with the wake notice and reaches that next waiter as its catch-up wake, rather than being handed to a waiter that is gone.
+A line handed to a waiter between its polls and not taken before a newer waiter replaces it is kept for the newer one.
 
 ## Wake delivery
 
