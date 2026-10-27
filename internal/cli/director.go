@@ -332,43 +332,98 @@ var errDirectorLive = errors.New("director: live")
 // errStopSweeping refuses a start while the newest session's stop has not finished stopping its attempts.
 var errStopSweeping = errors.New("director: stop sweeping")
 
+// superseded is what checkSupersede found: the newest session's number, 0 when there is none, its recorded runtime
+// unit, and, when that unit was proven empty but could not be removed, the removal's error.
+type superseded struct {
+	Number  int
+	Unit    store.Containment
+	Removal error
+}
+
+// warnUnremoved prints a warning for sp's failed removal, if any.
+func (a *App) warnUnremoved(sp superseded) {
+	if sp.Removal != nil {
+		a.notef("director start: warning: %v\n", sp.Removal)
+	}
+}
+
 // checkSupersede returns the newest session's number, 0 when there is none, refusing with errStopSweeping while
 // that session's stop has not finished its sweep, it is sweeping or stopping with its supervisor gone, and with
 // errDirectorLive while it is not stopped and its supervisor is alive or cannot be shown gone, or while its recorded
 // runtime unit is not proven empty (runtimeEnded). A session whose supervisor is gone is superseded when the next one
-// is recorded.
-func checkSupersede(s *store.Store) (int, error) {
+// is recorded. Once a stopped or gone session's unit is proven empty, it is removed (removeRuntime); a failed removal
+// is returned as Removal, never as the refusal, so the caller warns naming the unit and the error and starts anyway.
+// A unit already removed is removed.
+func checkSupersede(s *store.Store) (superseded, error) {
 	d, err := s.LatestDirectorSession()
 	sweeping := func() error {
 		return fmt.Errorf("%w: session %d's stop has not finished stopping its attempts; wait for director stop to finish, or run guildhall director stop to finish it", errStopSweeping, d.Number)
 	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return 0, nil
+		return superseded{}, nil
 	case err != nil:
-		return 0, err
+		return superseded{}, err
 	case d.Sweeping:
-		return 0, sweeping()
+		return superseded{}, sweeping()
 	case d.State == store.DirectorStopped:
 		if err := runtimeEnded(d); err != nil {
-			return 0, err
+			return superseded{}, err
 		}
-		return d.Number, nil
+		return superseded{Number: d.Number, Unit: d.Runtime, Removal: removeRuntime(d)}, nil
 	}
 	switch live, err := artisan.Probe(artisan.Identity(d.Identity)); live {
 	case artisan.Gone:
 		if d.State == store.DirectorStopping {
-			return 0, sweeping()
+			return superseded{}, sweeping()
 		}
 		if err := runtimeEnded(d); err != nil {
-			return 0, err
+			return superseded{}, err
 		}
-		return d.Number, nil
+		return superseded{Number: d.Number, Unit: d.Runtime, Removal: removeRuntime(d)}, nil
 	case artisan.Alive:
-		return 0, fmt.Errorf("%w: session %d is %s under its supervisor, pid %d", errDirectorLive, d.Number, d.State, d.Identity.PID)
+		return superseded{}, fmt.Errorf("%w: session %d is %s under its supervisor, pid %d", errDirectorLive, d.Number, d.State, d.Identity.PID)
 	default:
-		return 0, fmt.Errorf("%w: session %d is %s and its supervisor, pid %d, cannot be shown gone: %v", errDirectorLive, d.Number, d.State, d.Identity.PID, err)
+		return superseded{}, fmt.Errorf("%w: session %d is %s and its supervisor, pid %d, cannot be shown gone: %v", errDirectorLive, d.Number, d.State, d.Identity.PID, err)
 	}
+}
+
+// sweepRuntimeUnit is the removal sweep removeRuntime runs; tests replace it.
+var sweepRuntimeUnit = artisan.Sweep
+
+// removeRuntime removes session d's recorded runtime unit, which runtimeEnded has proved empty, with one more sweep,
+// returning an error naming the unit when it is not removed. A session with no runtime recorded has none.
+// A cgroup is then checked gone, since the sweep reports one that Rmdir refuses as busy as removed.
+func removeRuntime(d store.DirectorSession) error {
+	c := d.Runtime
+	if c == (store.Containment{}) {
+		return nil
+	}
+	failed := func(err error) error {
+		return fmt.Errorf("session %d's runtime unit %s was not removed: %w", d.Number, unitName(c), err)
+	}
+	if _, err := sweepRuntimeUnit(artisan.Containment{Kind: c.Kind, Name: c.Name, Reason: c.Reason}, artisan.Identity(c.Worker)); err != nil {
+		return failed(err)
+	}
+	if c.Kind != artisan.KindCgroup {
+		return nil
+	}
+	switch _, err := os.Stat(c.Name); {
+	case err == nil:
+		return failed(errors.New("still present after removal"))
+	case !errors.Is(err, fs.ErrNotExist):
+		return failed(err)
+	}
+	return nil
+}
+
+// unitName names the recorded runtime unit c: its name, or, for a process group, which has none, its kind and
+// worker.
+func unitName(c store.Containment) string {
+	if c.Name != "" {
+		return c.Name
+	}
+	return fmt.Sprintf("%s of pid %d", c.Kind, c.Worker.PID)
 }
 
 // runtimeEnded refuses with errDirectorLive while session d's recorded runtime unit is not proven empty, such as
@@ -405,10 +460,12 @@ var directorStartWait, directorStartPoll = 2 * time.Minute, 200 * time.Milliseco
 func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storePath, runtime string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	newest, err := withStore(storePath, true, checkSupersede)
+	sp, err := withStore(storePath, true, checkSupersede)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err))
 	}
+	a.warnUnremoved(sp)
+	newest := sp.Number
 	exe, err := a.Executable()
 	if err != nil {
 		return a.fail(err)

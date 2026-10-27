@@ -1,0 +1,45 @@
+# Red run for removing a superseded session's emptied runtime unit (D3), 2026-10-24, Linux (WSL, no delegated cgroup: subreaper+pgroup unit)
+
+## cli, against a removeRuntime that did nothing
+
+This host's session units are subreaper process groups, since no cgroup v2 subtree is delegated to the test
+process, so TestDirectorStartRemovesASupersededUnit's cgroup removal assertions skip here, as
+internal/artisan/unit_linux_test.go does, after its supersede assertions pass; they run on a host with a delegated
+cgroup. TestRemoveRuntimeReportsALeftoverCgroup stands in for them on every host, over a stubbed sweep. The
+survivor, live supervisor, sweeping and no runtime cases of TestDirectorStartSweepsNothingItDoesNotSupersede assert
+that no sweep runs, so they pass against the stub; its emptied case, which shows the recording sweep sees a call,
+fails.
+
+$ go test ./internal/cli/ -run "TestDirectorStart(RemovesASupersededUnit|WarnsOfAFailedRemoval|SweepsNothingItDoesNotSupersede)|TestRemoveRuntime" -count=1 -v
+=== RUN   TestDirectorStartRemovesASupersededUnit
+=== RUN   TestDirectorStartRemovesASupersededUnit/stopped
+    director_supersede_test.go:94: removal observed on a cgroup unit only; this unit is subreaper+pgroup (cgroup v2 at /sys/fs/cgroup, but the launcher cgroup /non-systemd is not writable by this user: not a delegated subtree (WSL))
+=== RUN   TestDirectorStartRemovesASupersededUnit/supervisor_gone
+    director_supersede_test.go:94: removal observed on a cgroup unit only; this unit is subreaper+pgroup (cgroup v2 at /sys/fs/cgroup, but the launcher cgroup /non-systemd is not writable by this user: not a delegated subtree (WSL))
+--- PASS: TestDirectorStartRemovesASupersededUnit (0.12s)
+    --- SKIP: TestDirectorStartRemovesASupersededUnit/stopped (0.06s)
+    --- SKIP: TestDirectorStartRemovesASupersededUnit/supervisor_gone (0.06s)
+=== RUN   TestDirectorStartWarnsOfAFailedRemoval
+    director_supersede_test.go:117: check = {Number:1 Unit:{Kind:subreaper+pgroup Name: Reason:cgroup v2 at /sys/fs/cgroup, but the launcher cgroup /non-systemd is not writable by this user: not a delegated subtree (WSL) Worker:{PID:2141933 Token:843eaea7-7fa8-4f63-a589-67566bfb273e:7938405}} Removal:<nil>}, <nil>; want session 1 superseded with a removal error naming subreaper+pgroup of pid 2141933 and the sweep's error
+--- FAIL: TestDirectorStartWarnsOfAFailedRemoval (0.07s)
+=== RUN   TestRemoveRuntimeReportsALeftoverCgroup
+    director_supersede_test.go:157: removeRuntime over a leftover cgroup = <nil>; want it named still present after removal
+    director_supersede_test.go:164: swept []; want each unit swept once as recorded
+    director_supersede_test.go:167: removeRuntime with no runtime = <nil> after 0 sweeps; want nil and no sweep
+--- FAIL: TestRemoveRuntimeReportsALeftoverCgroup (0.00s)
+=== RUN   TestDirectorStartSweepsNothingItDoesNotSupersede
+=== RUN   TestDirectorStartSweepsNothingItDoesNotSupersede/emptied
+    director_supersede_test.go:230: the removal sweep ran 0 times, want 1
+=== RUN   TestDirectorStartSweepsNothingItDoesNotSupersede/survivors
+=== RUN   TestDirectorStartSweepsNothingItDoesNotSupersede/live_supervisor
+=== RUN   TestDirectorStartSweepsNothingItDoesNotSupersede/sweeping
+=== RUN   TestDirectorStartSweepsNothingItDoesNotSupersede/no_runtime
+--- FAIL: TestDirectorStartSweepsNothingItDoesNotSupersede (0.21s)
+    --- FAIL: TestDirectorStartSweepsNothingItDoesNotSupersede/emptied (0.06s)
+    --- PASS: TestDirectorStartSweepsNothingItDoesNotSupersede/survivors (0.03s)
+    --- PASS: TestDirectorStartSweepsNothingItDoesNotSupersede/live_supervisor (0.05s)
+    --- PASS: TestDirectorStartSweepsNothingItDoesNotSupersede/sweeping (0.05s)
+    --- PASS: TestDirectorStartSweepsNothingItDoesNotSupersede/no_runtime (0.02s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.410s
+FAIL

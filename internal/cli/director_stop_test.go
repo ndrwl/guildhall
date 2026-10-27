@@ -339,8 +339,8 @@ func TestDirectorStartRefusesAStoppingGoneSession(t *testing.T) {
 	if code, out, stderr := runCLI(t, "director", "stop", "--store", path, "--state", t.TempDir()); code != 0 {
 		t.Fatalf("director stop: exit %d, %s %s", code, out, stderr)
 	}
-	if n, err := withStore(path, true, checkSupersede); err != nil || n != 1 {
-		t.Errorf("start after director stop = %d, %v; want session 1 superseded", n, err)
+	if sp, err := withStore(path, true, checkSupersede); err != nil || sp.Number != 1 {
+		t.Errorf("start after director stop = %d, %v; want session 1 superseded", sp.Number, err)
 	}
 }
 
