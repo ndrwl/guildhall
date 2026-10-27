@@ -17,9 +17,6 @@ import (
 //   - `pane process-info --pane herdrPane` reports shell pid 10 and the runtime as pid 11.
 //   - `pane run herdrPane <line>` appends line to the file typed in the directory HerdrStubEnv names, accepting
 //     it as Herdr accepts typed input; the check plays the pane's terminal and hands it to the runtime.
-//   - `pane send-text herdrPane <text>` appends text, newlines escaped, to the file sent-text there: text typed
-//     with no Enter.
-//   - `pane read herdrPane --source visible --ansi` prints the file screen there, the scripted screen.
 //   - `pane report-metadata herdrPane --source <id> --title <t>|--clear-title` appends "--title <t>" or
 //     "--clear-title" to the file notices there: the wake notice.
 //
@@ -75,21 +72,6 @@ func herdrStub(args []string) int {
 			return fail("pane_not_found", "pane "+args[2]+" not found")
 		}
 		return record("typed", args[3])
-	case len(args) == 4 && args[0] == "pane" && args[1] == "send-text":
-		if args[2] != herdrPane {
-			return fail("pane_not_found", "pane "+args[2]+" not found")
-		}
-		return record("sent-text", strings.ReplaceAll(args[3], "\n", `\n`))
-	case len(args) == 7 && args[0] == "pane" && args[1] == "read" && args[3] == "--source":
-		if args[2] != herdrPane {
-			return fail("pane_not_found", "pane "+args[2]+" not found")
-		}
-		screen, err := os.ReadFile(filepath.Join(os.Getenv(HerdrStubEnv), "screen"))
-		if err != nil {
-			return fail("pane_unreadable", err.Error())
-		}
-		_, _ = os.Stdout.Write(screen)
-		return 0
 	case len(args) >= 5 && args[0] == "pane" && args[1] == "report-metadata" && args[3] == "--source":
 		if args[2] != herdrPane {
 			return fail("pane_not_found", "pane "+args[2]+" not found")

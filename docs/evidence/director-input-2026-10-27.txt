@@ -67,7 +67,7 @@ P2 Transcript queue
 P3 Herdr commands (all in Herdr 0.9.5, the floor)
 
 - Read a pane's screen: `herdr pane read <pane> --source visible [--lines N] [--ansi]`. The text and ANSI forms
-  both work; only the ANSI form tells the placeholder from a draft (P4).
+  both work; only the ANSI form tells the input box's dim placeholder from typed text.
 - Type text without Enter: `herdr pane send-text <pane> <text>`. Verified: the text appeared in the box and was
   not submitted.
 - Pane title: `herdr pane report-metadata <pane> --source <id> --title <text>` set the pane's "title"
@@ -75,21 +75,5 @@ P3 Herdr commands (all in Herdr 0.9.5, the floor)
 - Notification: `herdr notification show <title> [--body <text>]` exists (a transient toast).
 - `herdr pane report-agent ... --state blocked` exists, the fallback the spec named; not needed.
   The wake notice uses the pane title.
-
-P4 Screen parse (Claude Code 2.1.312, 200-column pane)
-
-The input box sits between two full-width rules of "─" (U+2500) and is followed by the mode line.
-Its first line starts with "❯" and a no-break space (U+00A0).
-- Empty: no box line has text; the first box line holds the placeholder.
-- Placeholder: "❯ " followed by dim text (SGR 2), for example ESC[2mTry "fix typecheck errors"ESC[0m. In plain
-  text it cannot be told from a typed draft, so the screen is read with --ansi.
-- Single-line: "❯ single line draft", typed text plain (no SGR).
-- Wrapped: continuation lines are indented by two spaces; wrapping breaks at a space, and the previous line is
-  then filled to within one word of the box width.
-- Multi-line (Shift+Enter): each further line is also indented by two spaces. A line that ends well short of the
-  width before a continuation is a newline; a line filled to the width is a wrap.
-- Typing into the box while the startup turn is busy works: "busy draft echo" typed with send-text during a
-  running turn showed in the box ("❯ busy draft echo") under the turn's spinner.
-The captured ANSI screens are fixtures in internal/adapter/claude/testdata/inputbox-*.ansi.
 
 Teardown: the three probe tabs were closed; the probe directories were scratch files outside the repository.

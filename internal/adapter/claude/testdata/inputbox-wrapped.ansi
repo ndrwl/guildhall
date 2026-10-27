@@ -1,5 +1,0 @@
-[0m[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
-❯ single line draft and then a much longer continuation that keeps going well past the width of this pane so that the input box has to wrap the draft onto a second visual line, which the parser must
-  join back together without adding a newline
-[0m[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
-  [0m[38;2;255;193;7m⏵⏵ auto mode on[0m[38;2;153;153;153m (shift+tab to cycle)[0m

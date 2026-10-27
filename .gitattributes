@@ -7,9 +7,6 @@
 # Message envelope fixtures keep the exact bytes and encodings Windows tools write.
 internal/messaging/testdata/*.json binary
 
-# Captured terminal screens keep the exact CR and escape bytes Herdr printed.
-*.ansi binary
-
 # Skills ship with exact LF bytes because their tree digests pin them.
 skills/** text eol=lf
 
