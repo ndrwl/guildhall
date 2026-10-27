@@ -16,6 +16,7 @@ The merge rule is the repository's `merge_policy`, which `deliver` already enfor
 ## Attempt caps
 
 `max_running_attempts` (default 4) and `max_attempts_per_day` (default 40) are per Director, across every repository.
+See also [unlimited daily attempts](unlimited-daily-attempts.md): `max_attempts_per_day = "0"` is no daily cap.
 They meter attempts, not tokens or cost.
 Each attempt's token use and cost, which the Guildmaster asked for alongside the caps, is now recorded and shown beside them ([attempt spend](0079-attempt-spend.md)): the Claude adapter's tokens are measured and its cost is Claude Code's estimate, and a runtime that reports nothing is recorded as unknown.
 A token or cost budget is a follow-up.

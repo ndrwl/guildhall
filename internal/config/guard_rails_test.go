@@ -16,6 +16,9 @@ func TestGuardRails(t *testing.T) {
 		{name: "a managed cap", managed: "[managed.max_attempts_per_day]\nvalue = \"5\"\n", wantRunning: DefaultMaxRunningAttempts, wantDaily: 5},
 		{name: "an overridable managed cap replaced locally", local: `max_running_attempts = "1"`,
 			managed: "[managed.max_running_attempts]\nvalue = \"3\"\noverridable = true\n", wantRunning: 1, wantDaily: DefaultMaxAttemptsPerDay},
+		{name: "a local 0 is no daily cap", local: `max_attempts_per_day = "0"`, wantRunning: DefaultMaxRunningAttempts, wantDaily: 0},
+		{name: "a managed 0 is no daily cap", local: `max_running_attempts = "2"`,
+			managed: "[managed.max_attempts_per_day]\nvalue = \"0\"\n", wantRunning: 2, wantDaily: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := strings.Replace(director(t), `notes_dir = "notes"`, `notes_dir = "notes"`+"\n"+tc.local, 1)
@@ -51,6 +54,12 @@ func TestGuardRailsRefuseAnInvalidCap(t *testing.T) {
 		"[local]\nmax_running_attempts = \"four\"",
 		"[local]\nmax_attempts_per_day = \"2.5\"",
 		"[local]\nmax_attempts_per_day = \" 3\"",
+		"[local]\nmax_attempts_per_day = \"-1\"",
+		"[local]\nmax_attempts_per_day = \"00\"",
+		"[local]\nmax_attempts_per_day = \"+0\"",
+		"[local]\nmax_attempts_per_day = \" 0\"",
+		"[managed.max_running_attempts]\nvalue = \"0\"\n[local]",
+		"[managed.max_attempts_per_day]\nvalue = \"-1\"\n[local]",
 		"[managed.max_attempts_per_day]\nvalue = \"many\"\n[local]",
 	} {
 		data := strings.Replace(director(t), "[local]", bad, 1)
@@ -65,6 +74,37 @@ func TestGuardRailsRefuseAnInvalidCap(t *testing.T) {
 	cfg := &Config{Local: map[string]string{MaxAttemptsPerDayKey: "none"}}
 	if _, err := cfg.GuardRails(); err == nil || !strings.Contains(err.Error(), MaxAttemptsPerDayKey) {
 		t.Errorf("GuardRails of an unparsed invalid cap = %v", err)
+	}
+	cfg = &Config{Local: map[string]string{MaxRunningAttemptsKey: "0"}}
+	if _, err := cfg.GuardRails(); err == nil || !strings.Contains(err.Error(), MaxRunningAttemptsKey) {
+		t.Errorf("GuardRails of an unparsed running cap of 0 = %v", err)
+	}
+	cfg = &Config{Local: map[string]string{MaxAttemptsPerDayKey: "-1"}}
+	if _, err := cfg.GuardRails(); err == nil || !strings.Contains(err.Error(), MaxAttemptsPerDayKey) || !strings.Contains(err.Error(), "0 for no daily cap") {
+		t.Errorf("GuardRails of an unparsed daily cap of -1 = %v, want one naming the key and that 0 is no daily cap", err)
+	}
+}
+
+// TestParseAcceptsNoDailyCap: Parse accepts a daily cap of "0", managed or local, and still refuses a running cap
+// of "0" in either place.
+func TestParseAcceptsNoDailyCap(t *testing.T) {
+	for _, tc := range []struct {
+		name, replace, wantKey string
+	}{
+		{name: "local daily 0", replace: "[local]\nmax_attempts_per_day = \"0\""},
+		{name: "managed daily 0", replace: "[managed.max_attempts_per_day]\nvalue = \"0\"\n[local]"},
+		{name: "local running 0", replace: "[local]\nmax_running_attempts = \"0\"", wantKey: MaxRunningAttemptsKey},
+		{name: "managed running 0", replace: "[managed.max_running_attempts]\nvalue = \"0\"\n[local]", wantKey: MaxRunningAttemptsKey},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(strings.Replace(director(t), "[local]", tc.replace, 1)))
+			switch {
+			case tc.wantKey == "" && err != nil:
+				t.Errorf("Parse = %v, want a daily cap of 0 accepted", err)
+			case tc.wantKey != "" && (err == nil || !strings.Contains(err.Error(), tc.wantKey)):
+				t.Errorf("Parse = %v, want a refusal naming %s", err, tc.wantKey)
+			}
+		})
 	}
 }
 
