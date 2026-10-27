@@ -262,6 +262,37 @@ func (p Program) Base(ctx context.Context, repository, branch string) (string, e
 	return strings.TrimSpace(string(out)), nil
 }
 
+// Tip returns the commit refs/heads/<branch> is at in the repository at repository. A branch that does not exist,
+// an invalid branch name and any git failure are errors.
+func (p Program) Tip(ctx context.Context, repository, branch string) (string, error) {
+	if err := p.validBranch(ctx, branch); err != nil {
+		return "", err
+	}
+	out, err := p.git(ctx, repository, "show-ref", "--verify", "--hash", "refs/heads/"+branch)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// IsAncestor reports whether commit is head or one of its ancestors in the repository at repository. A commit or
+// head the repository does not have is false, not an error; any other git failure is an error.
+func (p Program) IsAncestor(ctx context.Context, repository, commit, head string) (bool, error) {
+	for _, id := range []string{commit, head} {
+		if strings.HasPrefix(id, "-") {
+			return false, nil
+		}
+		_, err := p.git(ctx, repository, "rev-parse", "--verify", "--quiet", id+"^{commit}")
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return false, nil
+		} else if err != nil {
+			return false, err
+		}
+	}
+	return p.merged(ctx, repository, commit, head)
+}
+
 // Retirement is a task workspace whose change was merged, to be removed.
 type Retirement struct {
 	Workspace

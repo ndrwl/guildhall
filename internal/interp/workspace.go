@@ -15,12 +15,16 @@ import (
 	"github.com/ndrwl/guildhall/internal/git"
 )
 
-// Workspaces makes a task's working directory a git worktree of its repository; git.Program implements it (its
-// contract is git.Program.Ensure, FastForward and Retire), and gittest.Workspaces is its double.
+// Workspaces makes a task's working directory a git worktree of its repository and reads the task branch's tip,
+// base and ancestry for the code-head check; git.Program implements it (its contract is git.Program.Ensure,
+// FastForward, Retire, Tip, IsAncestor and Base), and gittest.Workspaces is its double.
 type Workspaces interface {
 	Ensure(ctx context.Context, w git.Workspace) error
 	FastForward(ctx context.Context, w git.Workspace) (kept string, err error)
 	Retire(ctx context.Context, r git.Retirement) ([]string, error)
+	Tip(ctx context.Context, repository, branch string) (string, error)
+	IsAncestor(ctx context.Context, repository, commit, head string) (bool, error)
+	Base(ctx context.Context, repository, branch string) (string, error)
 }
 
 var _ Workspaces = git.Program{}

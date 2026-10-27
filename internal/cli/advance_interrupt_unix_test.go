@@ -43,6 +43,8 @@ func TestInterruptedAdvanceReleasesTheTask(t *testing.T) {
 	f.SetBranch(remote, "main", strings.Repeat("a", 40))
 	f.AddCommit(appRepo, head)
 	d.forge = f
+	// The fake build reports the remote's default branch as its head, so intake finds it at the task branch's tip.
+	d.workspaces.SetDefault(remote, head)
 	step := func(args ...string) string {
 		t.Helper()
 		code, out, stderr := d.run(t, args...)

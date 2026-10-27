@@ -319,6 +319,19 @@ An unborn HEAD, missing repository or Git failure is an intake error.
 An explicitly listed head file keeps the existing path and content validation.
 The launcher may already have recorded success: while `intake.json` is absent the next advance still takes the result, records the head and proceeds without retrying the succeeded attempt.
 A head document already recorded wins on replay even if the working directory has since changed.
+
+### The head check
+
+With `Engine.Workspaces`, launching an attempt of a step whose single output port is a code head, a build including its fix rounds and send-back attempts, first records document `<step>-<n>-base`, at `tasks/<repo>/<task>/<step>-<n>/base`: the full commit id `Workspaces.Base` answers for branch `guildhall/<task>` after `Ensure`, the merge base of the task branch and the default branch the workspace last fetched, followed by a newline.
+It is recorded once: an attempt recorded but never launched and launched again keeps its first base, though `Ensure` has since moved the recorded default branch.
+The merge base, not the branch tip, is the base so that a send-back attempt that rebases the task branch onto a newer default branch still descends from it; on a first build the two are the same commit.
+Failing to read or record the base fails the launch, which the next advance retries.
+
+At intake, on both the omitted and the explicit path and before anything is recorded, the head is accepted only if it is the tip of `refs/heads/guildhall/<task>` (`Workspaces.Tip`) and the recorded base is it or one of its ancestors (`Workspaces.IsAncestor`).
+Otherwise the result is [rejected](#replay-and-recovery) with a reason such as `head abc1234 is not the tip of guildhall/t7 (tip def5678)` or `head abc1234 does not descend from the attempt's base 0a1b2c3`: a head on another branch, a detached HEAD that is not the tip, a head the repository lacks and a branch reset onto unrelated history are all refused, so publish never pushes them.
+Work that resets the branch onto the default branch and commits again still passes.
+The check is skipped when the head document is already recorded, so a replay after the branch moved on keeps the accepted head; with no `Engine.Workspaces`; and for an attempt with no recorded base, one launched before bases were recorded.
+A git failure, a missing branch and an ended context reading the tip or ancestry are operational errors that leave intake replayable, never a rejection.
 The task's custody lock serialises advances; external writers must not change the worktree during intake.
 
 ## Review gate
@@ -348,7 +361,7 @@ An omitted code-head output follows [code-head output intake](#code-head-output-
 Output reads are rooted in the working directory: file and parent-directory symlinks cannot escape it.
 All outputs, including supplemental ones, are read and checked before any are copied or recorded.
 The first output is the step's output port, named `<step>-<n>-<port>`; later outputs add `-<index>`, from 2.
-A code-head output must hold a 40 or 64 lowercase hex object id, and a review outcome must parse, or nothing is recorded.
+A code-head output must hold a 40 or 64 lowercase hex object id and pass [the head check](#the-head-check), and a review outcome must parse, or nothing is recorded.
 Every review outcome, including human review and loop-exit acceptance, projects findings and dispositions in its document reference for inspection.
 An input `step.port` resolves to that port's document of the latest round, and its file is checked against the recorded digest before it is used.
 
@@ -379,7 +392,7 @@ With no `Engine.Workspaces` the working directory is a plain directory, which is
 
 Every read of where a record sits in a task's history goes through one private view in `internal/interp` (`history.go`), built from the task's records at the start of an advance and updated by each write the advance makes, so a read after a write sees it.
 It answers a step's latest attempt, its round decisions and next round, its loop exits and how many were answered `continue`, its blocking results in round order, the originating round of each exit, which feedback an attempt was given, the latest document of a step's output port and the range a code review's latest outcome reviewed.
-Record names stay the keys and keep their forms (`<step>-<n>`, `<step>-x<k>`, `<step>-<n>-<port>`, `<step>-<n>-<port>-<index>`, `<step>-<n>-inputs`, `<decision>-revisions`, `<decision>-answer`); they are parsed in one place, from the right, so a step id ending in `-<digits>` or `-x<digits>` is never mistaken for a round of a step it extends.
+Record names stay the keys and keep their forms (`<step>-<n>`, `<step>-x<k>`, `<step>-<n>-<port>`, `<step>-<n>-<port>-<index>`, `<step>-<n>-inputs`, `<step>-<n>-base`, `<decision>-revisions`, `<decision>-answer`); they are parsed in one place, from the right, so a step id ending in `-<digits>` or `-x<digits>` is never mistaken for a round of a step it extends.
 Exit `k` of a step originates in its `k`th blocking result; an exit's output orders immediately after that round and before later rounds.
 A missing or unreadable record the view needs, such as the outcome an exit originated in, is an error, never a guess that the step approved.
 The view is private: it is not a storage interface and has no double; it runs over both the store and `interptest.Records` through the engine tests.
@@ -401,7 +414,7 @@ An attempt's binding is recorded before the attempt, and a relaunch uses the rec
 Result intake publishes `intake.json` atomically in the attempt directory only after every output document, ruling contest and stall notification succeeds and the attempt outcome is recorded or reconciled.
 A launcher-recorded success without this marker replays the intake operations idempotently; the first output document alone is not completion evidence.
 This includes attempts left succeeded by an older release whose intake failed: the next `task start` or `step done` validates them again.
-Missing required outputs, invalid output paths, unreadable files named by the result, invalid port content and stale or undispositioned review outcomes reject intake.
+Missing required outputs, invalid output paths, unreadable files named by the result, invalid port content, a code head that fails [the head check](#the-head-check) and stale or undispositioned review outcomes reject intake.
 Malformed or wrong-identity result bytes also reject intake; a missing or unreadable result file and a newer unsupported result version remain operational errors.
 Rejection records the attempt as `failed` with `intake_rejection`, using a separate [`reject-attempt` mutation](store.md#attempts), rather than attempting another finish over the launcher's success.
 The task waits `{"wait":"director","step":"<step>","attempt":<n>}` and sends one `attempt-failed` message naming the attempt and rejection reason.

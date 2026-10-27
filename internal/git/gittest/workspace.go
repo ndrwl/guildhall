@@ -27,6 +27,10 @@ type WorkspaceHarness struct {
 	// AdvanceDefault adds a commit adding the file name to the default branch of w's remote, as a dependency's
 	// merge does, and returns it.
 	AdvanceDefault func(t *testing.T, w git.Workspace, name string) string
+	// Tip, IsAncestor and Base are the implementation's git.Program.Tip, IsAncestor and Base.
+	Tip        func(ctx context.Context, repository, branch string) (string, error)
+	IsAncestor func(ctx context.Context, repository, commit, head string) (bool, error)
+	Base       func(ctx context.Context, repository, branch string) (string, error)
 	// Arrange returns a workspace whose remote's default branch is at base, whose Dir and branch do not exist yet
 	// and whose Dir's parent does.
 	Arrange func(t *testing.T) (w git.Workspace, base string)
@@ -233,6 +237,56 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 			t.Errorf("FastForward = %v, want ErrInvalidWorkspace", err)
 		}
 	})
+	t.Run("the tip and base of a task branch", func(t *testing.T) {
+		h := newHarness(t)
+		w, base := h.Arrange(t)
+		if _, err := h.Tip(ctx, w.Repository, w.Branch); err == nil {
+			t.Error("Tip of a branch that does not exist succeeded")
+		}
+		if _, err := h.Base(ctx, w.Repository, w.Branch); err == nil {
+			t.Error("Base before the first Ensure succeeded")
+		}
+		ensure(t, h, w)
+		if got, err := h.Tip(ctx, w.Repository, w.Branch); err != nil || got != base {
+			t.Errorf("Tip of a new branch = %s, %v; want %s", got, err, base)
+		}
+		commit := h.Commit(t, w.Dir, "c.txt")
+		if got, err := h.Tip(ctx, w.Repository, w.Branch); err != nil || got != commit {
+			t.Errorf("Tip after a commit = %s, %v; want %s", got, err, commit)
+		}
+		if got, err := h.Base(ctx, w.Repository, w.Branch); err != nil || got != base {
+			t.Errorf("Base after a commit = %s, %v; want %s", got, err, base)
+		}
+	})
+	t.Run("ancestry", func(t *testing.T) {
+		h := newHarness(t)
+		w, base := h.Arrange(t)
+		ensure(t, h, w)
+		commit := h.Commit(t, w.Dir, "c.txt")
+		unknown := strings.Repeat("0", 39) + "1"
+		for _, c := range []struct {
+			commit, head string
+			want         bool
+		}{
+			{base, commit, true},
+			{commit, commit, true},
+			{commit, base, false},
+			{unknown, commit, false},
+			{base, unknown, false},
+		} {
+			if got, err := h.IsAncestor(ctx, w.Repository, c.commit, c.head); err != nil || got != c.want {
+				t.Errorf("IsAncestor(%s, %s) = %v, %v; want %v", c.commit, c.head, got, err, c.want)
+			}
+		}
+		ended, cancel := context.WithCancel(ctx)
+		cancel()
+		if _, err := h.IsAncestor(ended, w.Repository, base, commit); err == nil {
+			t.Error("IsAncestor with an ended context succeeded")
+		}
+		if _, err := h.Tip(ended, w.Repository, w.Branch); err == nil {
+			t.Error("Tip with an ended context succeeded")
+		}
+	})
 	retired := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
 		t.Helper()
 		if kept, err := h.Retire(ctx, r); err != nil || len(kept) > 0 {
@@ -322,7 +376,7 @@ func writeFile(t *testing.T, name, data string) {
 	}
 }
 
-// Workspaces is an in-memory double of git.Program.Ensure for consumers' tests: each working directory it creates
+// Workspaces is an in-memory double of git.Program.Ensure, Retire, Tip, IsAncestor and Base for consumers' tests: each working directory it creates
 // is a plain directory whose commits it keeps in memory, and it passes RunWorkspaceContract. It never runs git.
 // It is safe for concurrent use.
 type Workspaces struct {
@@ -333,7 +387,10 @@ type Workspaces struct {
 	commits  map[string]map[string]bool
 	parents  map[string]string
 	// adds names the file each AdvanceDefault commit adds.
-	adds     map[string]string
+	adds map[string]string
+	// recorded is each workspace's default branch as Ensure or FastForward last recorded it, by repository and
+	// branch.
+	recorded map[[2]string]string
 	calls    []git.Workspace
 	forwards []git.Workspace
 	n        int
@@ -349,7 +406,7 @@ type tree struct {
 // NewWorkspaces returns a double with no remotes.
 func NewWorkspaces() *Workspaces {
 	return &Workspaces{defaults: map[string]string{}, branches: map[[2]string]string{}, trees: map[string]tree{}, commits: map[string]map[string]bool{},
-		parents: map[string]string{}}
+		parents: map[string]string{}, recorded: map[[2]string]string{}}
 }
 
 // SetDefault points remote's default branch at head; Ensure fails for a remote with none.
@@ -379,6 +436,7 @@ func (f *Workspaces) Ensure(ctx context.Context, w git.Workspace) error {
 		if tr.repository != w.Repository {
 			return fmt.Errorf("%w: %s is a worktree of %s", git.ErrNotWorkspace, dir, tr.repository)
 		}
+		f.record(w)
 		return nil
 	}
 	if len(entries) > 0 {
@@ -396,7 +454,17 @@ func (f *Workspaces) Ensure(ctx context.Context, w git.Workspace) error {
 		return err
 	}
 	f.trees[dir] = tree{repository: w.Repository, branch: w.Branch, head: head}
+	f.record(w)
 	return nil
+}
+
+// record records the remote's default branch for the workspace, as git.Program records
+// refs/guildhall/default/<branch> on every Ensure; a remote with none leaves the record as it was.
+func (f *Workspaces) record(w git.Workspace) {
+	if head, ok := f.defaults[w.Remote]; ok {
+		f.recorded[[2]string{w.Repository, w.Branch}] = head
+		f.add(w.Repository, head)
+	}
 }
 
 func (f *Workspaces) add(repository, head string) {
@@ -472,6 +540,9 @@ func (f *Workspaces) FastForward(ctx context.Context, w git.Workspace) (string, 
 		return "", nil
 	}
 	main, ok := f.defaults[w.Remote]
+	if ok {
+		f.recorded[[2]string{w.Repository, w.Branch}] = main
+	}
 	switch {
 	case !ok:
 		return "the remote " + w.Remote + " has no default branch", nil
@@ -494,6 +565,57 @@ func (f *Workspaces) FastForward(ctx context.Context, w git.Workspace) (string, 
 	f.branches[[2]string{tr.repository, tr.branch}] = main
 	f.add(tr.repository, main)
 	return "", nil
+}
+
+// Tip implements git.Program.Tip: the commit the branch is at, an error for a branch that does not exist.
+func (f *Workspaces) Tip(ctx context.Context, repository, branch string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tip, ok := f.branches[[2]string{repository, branch}]
+	if !ok {
+		return "", fmt.Errorf("branch %s of %s does not exist", branch, repository)
+	}
+	return tip, nil
+}
+
+// IsAncestor implements git.Program.IsAncestor over the parents the double's commits record: false for a commit
+// the repository does not have.
+func (f *Workspaces) IsAncestor(ctx context.Context, repository, commit, head string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.commits[repository][commit] || !f.commits[repository][head] {
+		return false, nil
+	}
+	return f.merged(commit, head), nil
+}
+
+// Base implements git.Program.Base: the nearest commit of the branch's history that is also in the history of
+// the default branch Ensure last recorded for it; a branch with no workspace, before the first Ensure or after
+// Retire, is an error.
+func (f *Workspaces) Base(ctx context.Context, repository, branch string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := [2]string{repository, branch}
+	tip, ok := f.branches[key]
+	def, recorded := f.recorded[key]
+	if !ok || !recorded {
+		return "", fmt.Errorf("branch %s of %s has no workspace", branch, repository)
+	}
+	for c := tip; c != ""; c = f.parents[c] {
+		if f.merged(c, def) {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("branch %s of %s has no merge base with its default branch", branch, repository)
 }
 
 // Contains reports whether head is a commit of repository.
@@ -639,6 +761,7 @@ func (f *Workspaces) Retire(ctx context.Context, r git.Retirement) ([]string, er
 		delete(f.trees, dir)
 	}
 	delete(f.branches, branch)
+	delete(f.recorded, branch)
 	return nil, nil
 }
 

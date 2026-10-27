@@ -124,7 +124,7 @@ func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "internal", "cli", "testdata", "run"))); err != nil {
 		t.Fatal(err)
 	}
-	repository, remote, _ := gittest.Repository(t)
+	repository, remote, base := gittest.Repository(t)
 	c := &safetyCopy{t: t, dir: dir, path: path, turns: filepath.Join(dir, "turns.log"), inventory: filepath.Join(dir, "inventory"),
 		herdr: filepath.Join(dir, "herdr")}
 	if err := os.Mkdir(c.herdr, 0o700); err != nil {
@@ -137,7 +137,8 @@ func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
 	})
 	c.setPlan(plan)
 	c.edit(filepath.Join("baseline", "stages", "build.md"), func(b string) string {
-		return b + "guildhall-fake: inventory=" + c.inventory + "\n"
+		// The fake build commits nothing, so the head it reports is the task branch's tip, the default branch.
+		return strings.Replace(b, fixtureHead, base, 1) + "guildhall-fake: inventory=" + c.inventory + "\n"
 	})
 	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
 	if err != nil {
