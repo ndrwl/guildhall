@@ -565,7 +565,8 @@ func neverPlanned(t *testing.T) string {
 
 // TestRetryWithAnUnknownAdapterSendsNoReason pins T1 through the binary, where interp.CheckAdapter allows any
 // name: a retry whose profile names an adapter the launcher does not run fails to launch attempt 2 and stores no
-// reason, so once the profile is fixed a retry with another reason launches attempt 2 and stores that reason.
+// reason, so once the profile is fixed a retry with another reason launches attempt 2 and stores the first reason,
+// which attempt 2's binding already holds and its prompt quotes.
 func TestRetryWithAnUnknownAdapterSendsNoReason(t *testing.T) {
 	dir := neverPlanned(t)
 	cfg := filepath.Join(dir, "claude.toml")
@@ -606,7 +607,7 @@ func TestRetryWithAnUnknownAdapterSendsNoReason(t *testing.T) {
 	if err := json.Unmarshal([]byte(d.run("", reason...)), &msg); err != nil {
 		t.Fatal(err)
 	}
-	if msg.Text != "Reason B" {
-		t.Errorf("retry reason %q, want %q", msg.Text, "Reason B")
+	if msg.Text != "Reason A" {
+		t.Errorf("retry reason %q, want the bound %q", msg.Text, "Reason A")
 	}
 }

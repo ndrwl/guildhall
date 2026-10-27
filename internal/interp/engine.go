@@ -53,7 +53,9 @@ type Event struct {
 	// Decision is the id of the answered decision (DecisionAnswered only).
 	Decision string
 	// Reason is the Director's reason for a retry (AttemptRetried), or required feedback for StepSentBack.
-	// A retry records it as a Director message; send-back records an immutable input document.
+	// A retry binds it to the next attempt, whose prompt quotes it, and records it as a Director message once that
+	// attempt launches; a retry repeated after a refusal keeps the first bound reason. Send-back records an
+	// immutable input document.
 	Reason string
 }
 
@@ -523,6 +525,25 @@ func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 	return rt, inputs, err
 }
 
+// retryContext is what attempt n of step is told about the Director's retry of attempt n-1, or nil when the walk
+// does not follow such a retry. Only that latest retry is told; the summary is read from the retried attempt's
+// result, and is empty when it has none that reads.
+func (r *run) retryContext(step string, n int) *retryContext {
+	ev := r.retry
+	if ev == nil || ev.Step != step || ev.Attempt+1 != n {
+		return nil
+	}
+	a := r.attempt(step, ev.Attempt)
+	if a == nil {
+		return nil
+	}
+	c := &retryContext{Attempt: a.Number, Outcome: string(a.Outcome), Reason: ev.Reason, Rejection: a.IntakeRejection}
+	if res, err := adapter.ReadResult(r.resultFile(step, a.Number), r.identity(step, a.Number)); err == nil {
+		c.Summary = res.Summary
+	}
+	return c
+}
+
 // retryLaunched sends the reason of the retry that attempt n of step follows once its launch succeeded, so a
 // refused start or launch sends nothing.
 func (r *run) retryLaunched(step string, n int, err error) error {
@@ -535,8 +556,13 @@ func (r *run) retryLaunched(step string, n int, err error) error {
 }
 
 // retryReason sends the Director's reason for a retry under an id derived from the retried attempt, so a replay
-// resends it. A replay with a different reason conflicts with the one already sent and is ignored.
+// resends it. The reason is the one bound to the next attempt when there is one, as its prompt quotes it, so a
+// retry repeated with another reason after a refusal tells the timeline what the prompt says. A replay with a
+// different reason conflicts with the one already sent and is ignored.
 func (r *run) retryReason(ev Event) error {
+	if b, err := r.binding(ev.Step, ev.Attempt+1); err == nil && b.Retry != nil {
+		ev.Reason = b.Retry.Reason
+	}
 	if ev.Reason == "" {
 		return nil
 	}
@@ -595,6 +621,7 @@ func (r *run) start(s workflow.Step) (Next, error) {
 			}
 			inputs = append(inputs, resolution...)
 		}
+		b.Retry = r.retryContext(s.ID, n)
 		if err := r.bind(s, n, inputs, b); err != nil {
 			return Next{}, err
 		}

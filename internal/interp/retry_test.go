@@ -105,8 +105,9 @@ func TestRetryRefusedAtStartSendsNoReason(t *testing.T) {
 	}
 }
 
-// TestRetryWhoseLaunchFailsSendsNoReason: a retry whose launch fails after attempt 2 is recorded sends no reason,
-// so a later retry with another reason launches attempt 2 and stores that reason.
+// TestRetryWhoseLaunchFailsSendsNoReason: a retry whose launch fails after attempt 2 is recorded sends no reason;
+// a later retry with another reason launches attempt 2 and stores the reason already bound to it, which its
+// prompt quotes.
 func TestRetryWhoseLaunchFailsSendsNoReason(t *testing.T) {
 	plan2 := planExpectation(t, interptest.Fail("still no plan"))
 	plan2.Attempt = 2
@@ -121,9 +122,10 @@ func TestRetryWhoseLaunchFailsSendsNoReason(t *testing.T) {
 		t.Fatalf("a failed launch stored the reason %q", got)
 	}
 	want(t, e.advance(t, retried("plan", 1, "second reason")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
-	if got := e.messages(t)["app.t7.attempt-retried.plan-1"]; got != "second reason" {
-		t.Errorf("reason message = %q, want the second reason", got)
+	if got := e.messages(t)["app.t7.attempt-retried.plan-1"]; got != "first reason" {
+		t.Errorf("reason message = %q, want the first, bound reason", got)
 	}
+	wantRetrySection(t, retryPrompt(t, e, "plan", 2), "first reason")
 	if got := len(e.script.Launched()); got != 2 {
 		t.Errorf("launches = %d, want 2", got)
 	}

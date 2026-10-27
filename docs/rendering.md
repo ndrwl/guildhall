@@ -12,13 +12,17 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 
 | Written | Contents |
 |---|---|
-| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
+| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), then for a retried attempt (`Stage.Retry`) a "Why this is a retry" section, the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
 | `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
 Code-review prompts also include `Review base: <commit>` alongside the attempt identity, using `Stage.ReviewBase` verbatim; an empty value renders as `Review base: unavailable`.
 Other step kinds omit this field.
 The [interpreter](interpreter.md#rounds-and-loops) owns selecting the value, and the [review skill](../skills/guildhall-review/SKILL.md#what-you-review) owns how the reviewer uses it.
+
+The "Why this is a retry" section, for Artisan and Director prompts alike, names the retried attempt and how it ended, then quotes the Director's reason ("None given." when empty), the intake rejection (only when there is one) and the previous result summary ("None recorded." when empty), and closes by saying the stage guide and required outputs still apply.
+Each quoted text sits in a `text` fence longer than any backtick run inside it, so agent-written text cannot read as stage instructions.
+Prompts without `Stage.Retry` have no such section.
 
 Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory.
 The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.
@@ -30,6 +34,7 @@ On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave 
 
 Every rendered Artisan prompt includes the kind's required output ports, work-directory-relative file names, exact formats and minimal valid examples, even when a copy overrides its stage guide.
 Document ports use `<port>.md` UTF-8 Markdown; review outcomes use `outcome.json` and the strict `guildhall.review-outcome/1` format.
+Review and document-review sections state the finding-id rule (lowercase letters, digits and hyphens, starting with a letter, at most 63 characters, kept across rounds) and show, after the approval example, an example with one finding whose id intake accepts; intake still refuses any other id.
 The interpreter supplies the attempt's recorded review revisions through `Stage.Revisions`, so its example has the exact subject, accepted spec digest (for code review) and standards revision that intake requires.
 Standalone rendering without revisions shows explicitly illustrative values to replace, never a claim that zero hashes identify the real subject.
 A review must write the outcome file and list it in result `outputs`; a verdict in summary alone is insufficient.

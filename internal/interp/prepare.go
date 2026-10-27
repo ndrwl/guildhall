@@ -54,7 +54,7 @@ func (r *run) preparation(s workflow.Step, n int, inputs []render.Input) (prepar
 	if b.Range != nil {
 		reviewBase = b.Range.Base
 	}
-	rendered, err := r.e.Prompter.Prompt(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Step: s, Attempt: n, Dir: partial, Revisions: b.Revisions, ReviewBase: reviewBase}, inputs)
+	rendered, err := r.e.Prompter.Prompt(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Step: s, Attempt: n, Dir: partial, Revisions: b.Revisions, ReviewBase: reviewBase, Retry: b.Retry.render()}, inputs)
 	if err != nil {
 		return prepared{}, err
 	}

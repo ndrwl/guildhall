@@ -44,6 +44,26 @@ type binding struct {
 	// Range is the commit range a code review attempt reviews, when its base was known; Scope is how much of it.
 	Range *git.Range `json:"range,omitempty"`
 	Scope git.Scope  `json:"scope,omitempty"`
+	// Retry is why the Director retried the previous attempt, when this attempt follows a retry.
+	Retry *retryContext `json:"retry,omitempty"`
+}
+
+// retryContext is a Director retry of attempt Attempt, which ended Outcome, as the next attempt's prompt quotes it:
+// the Director's reason, the retried attempt's intake rejection and its result's summary, each possibly empty.
+type retryContext struct {
+	Attempt   int    `json:"attempt"`
+	Outcome   string `json:"outcome"`
+	Reason    string `json:"reason,omitempty"`
+	Rejection string `json:"rejection,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+}
+
+// render is the retry context as the renderer takes it; nil when there is none.
+func (c *retryContext) render() *render.Retry {
+	if c == nil {
+		return nil
+	}
+	return &render.Retry{Attempt: c.Attempt, Outcome: c.Outcome, Reason: c.Reason, Rejection: c.Rejection, Summary: c.Summary}
 }
 
 type boundInput struct {
