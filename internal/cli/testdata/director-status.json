@@ -38,9 +38,19 @@
         "app",
         "lib"
       ],
-      "merge_policies": {
-        "app": "auto",
-        "lib": "approval"
+      "merge_requires": {
+        "app": {
+          "guildmaster_approval": false,
+          "artisan_approval": true,
+          "ci_green": true,
+          "nothing_open": true
+        },
+        "lib": {
+          "guildmaster_approval": true,
+          "artisan_approval": true,
+          "ci_green": true,
+          "nothing_open": true
+        }
       },
       "max_running_attempts": 3,
       "max_attempts_per_day": 40,

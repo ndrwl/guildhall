@@ -11,6 +11,7 @@ The Guildmaster chose each product question below from the recommended options o
 - **A refused merge.** The merge is bound to the decision's head with `--match-head-commit` and never uses `--admin` or `--auto`; when the forge refuses it, for example because required checks fail or the branch is behind its base, the refusal is recorded as a task document, `<decision>-refused` and then `-refused-2` and on, once per reason, the Director is told the forge's reason and the task waits for the Director, who decides the recovery.
   There is no automatic rebase or retry; a later advance asks the forge again.
 - **The `auto` policy** stays refused with `ErrUnsupported`: R1.36's "within accepted scope" is not yet defined and automatic merging needs validation results.
+  Superseded by [merge requirements](merge-requires.md): the merge policy key is gone, and each repository chooses its merge requirements.
 - **Validation (`validate`)** is out of this change and stays refused, so a workflow with `validate`, including the shipped default, still stops there; a follow-up defines it.
   That follow-up is [validate reads the forge's checks of the published head](0066-validate-stage.md).
 - **Forges and credentials.** GitHub on `github.com` is the only implementation, over the `gh` program, and any other remote is refused naming that limit; credentials stay in `gh`'s own sign-in store and Guildhall reads, stores and passes none (R1.10, R1.28).

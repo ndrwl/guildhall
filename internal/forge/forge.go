@@ -1,6 +1,6 @@
 // Package forge is Guildhall's boundary to the host of a repository's pull requests: pushing a task's head
 // to its branch, opening or updating its pull request, reading the checks of a pushed head and merging it under
-// the repository's merge policy (docs/contracts/forge.md).
+// the repository's merge requirements (docs/contracts/forge.md).
 //
 // Guildhall prescribes only these edges. It pushes only a task branch, never the base; it merges only the
 // head the Guildmaster's merge decision was bound to, with a squash merge; and it never bypasses the forge's

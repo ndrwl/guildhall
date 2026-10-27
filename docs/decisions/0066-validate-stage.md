@@ -22,3 +22,4 @@ The choices the implementation made within that shape:
   Validate already completes only on such a result, so the gate is deliberately redundant: it is kept as defence in depth, mirroring the review gate, and catches a workflow and records that disagree.
 
 Out of this change: the `auto` merge policy stays refused, the merge method stays squash, and nothing rebases a branch behind its base.
+The `auto` policy is superseded by [merge requirements](merge-requires.md).

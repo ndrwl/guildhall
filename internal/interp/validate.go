@@ -126,7 +126,7 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		}
 		return false, wait, err
 	}
-	blocked, err := r.mergeBlocked(pr, h)
+	_, blocked, err := r.mergeBlocked(pr, h)
 	if err != nil {
 		return false, Next{}, err
 	}

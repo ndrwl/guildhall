@@ -40,12 +40,15 @@ id = "site"
 path = '` + filepath.Join(root, "site") + `'
 remote = "https://github.com/example/site.git"
 owner_machine = "workstation"
-merge_policy = "auto"
 workflow = "careful"
 no_ci = true
 
 [repository.workflow_overrides.review]
 actor = "guildmaster"
+
+[repository.merge.requires]
+guildmaster_approval = false
+nothing_open = true
 `
 }
 
@@ -58,8 +61,8 @@ func TestDirectorConfig(t *testing.T) {
 		t.Fatalf("unexpected config %+v", cfg)
 	}
 	tool, site := cfg.Repositories[0], cfg.Repositories[1]
-	if tool.MergePolicy != MergeApproval {
-		t.Errorf("default merge policy = %q, want approval", tool.MergePolicy)
+	if r := tool.Merge.Requires; r != (MergeRequires{}) || !r.Guildmaster() || !r.Artisan() || !r.CI() || !r.Open() {
+		t.Errorf("merge requirements without a section = %+v, want every one required", r)
 	}
 	if tool.Workflow != DefaultWorkflow {
 		t.Errorf("default workflow = %q", tool.Workflow)
@@ -67,8 +70,11 @@ func TestDirectorConfig(t *testing.T) {
 	if tool.NoCI || !site.NoCI {
 		t.Errorf("no_ci = %v and %v, want false by default and true when set", tool.NoCI, site.NoCI)
 	}
-	if site.MergePolicy != MergeAuto || site.Workflow != "careful" {
+	if site.Workflow != "careful" {
 		t.Errorf("explicit repository settings lost: %+v", site)
+	}
+	if r := site.Merge.Requires; r.Guildmaster() || !r.Artisan() || !r.CI() || !r.Open() || r.ArtisanApproval != nil || r.NothingOpen == nil {
+		t.Errorf("site merge requirements = %+v, want guildmaster_approval off, missing keys and an explicit true required", r)
 	}
 	if got := site.WorkflowOverrides["review"]; got != (workflow.Override{Actor: workflow.GuildmasterActor}) {
 		t.Errorf("workflow override = %+v", got)
@@ -153,13 +159,12 @@ func TestValidationRefusals(t *testing.T) {
 		{"unknown mode", `mode = "director"`, `mode = "guildmaster"`, `mode must be "steward" or "director"`},
 		{"director without name", `name = "alpha"`, ``, `director needs a name`},
 		{"director with private config", `name = "alpha"`, "name = \"alpha\"\n[private_config]\nlocation = \"x\"", `private_config is for the steward only`},
-		{"unknown merge policy", `merge_policy = "auto"`, `merge_policy = "always"`, `merge_policy must be "approval" or "auto"`},
 		{"duplicate repository", `id = "site"`, `id = "tool"`, `duplicate repository id "tool"`},
 		{"invalid repository id", `id = "site"`, `id = "My Site"`, `invalid repository id`},
 		{"relative path", `path = '`, `path = 'relative/`, `path must be absolute`},
 		{"second owner machine", `owner_machine = "workstation"
-merge_policy`, `owner_machine = "laptop"
-merge_policy`, `one owner machine`},
+workflow`, `owner_machine = "laptop"
+workflow`, `one owner machine`},
 		{"missing remote", `remote = "git@github.com:example/tool.git"`, ``, `remote is required`},
 		{"credential in remote", `https://github.com/example/site.git`, `https://user:hunter2@github.com/example/site.git`, `must not contain credentials`},
 		{"credential-like key", `notes_dir = "notes"`, `github_token = "x"`, `looks like a credential`},
@@ -167,6 +172,48 @@ merge_policy`, `one owner machine`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			base := director(t)
+			if !strings.Contains(base, c.old) {
+				t.Fatalf("fixture does not contain %q", c.old)
+			}
+			_, err := Parse([]byte(strings.Replace(base, c.old, c.new, 1)))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %v does not mention %q", err, c.want)
+			}
+		})
+	}
+}
+
+// TestMergeRequires: [repository.merge.requires] decodes under the [[repository]] block it follows, an explicit
+// false turns one requirement off, and a non-boolean value, an unknown key and the removed merge_policy are refused.
+func TestMergeRequires(t *testing.T) {
+	const section = "[repository.merge.requires]\nartisan_approval = false\nci_green = false\n\n"
+	data := strings.Replace(director(t), "[[repository]]\nid = \"site\"", section+"[[repository]]\nid = \"site\"", 1)
+	cfg, err := Parse([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, site := cfg.Repositories[0].Merge.Requires, cfg.Repositories[1].Merge.Requires
+	if !tool.Guildmaster() || tool.Artisan() || tool.CI() || !tool.Open() {
+		t.Errorf("tool = %+v, want artisan_approval and ci_green off", tool)
+	}
+	if site.Guildmaster() || !site.Artisan() || !site.CI() || !site.Open() {
+		t.Errorf("site = %+v, want only guildmaster_approval off", site)
+	}
+	g, err := cfg.GuardRails()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := g.MergeRequires["tool"]; *e.GuildmasterApproval != true || *e.ArtisanApproval != false || *e.CIGreen != false || *e.NothingOpen != true {
+		t.Errorf("effective tool requirements = %+v", e)
+	}
+
+	for name, c := range map[string]struct{ old, new, want string }{
+		"string value": {"guildmaster_approval = false", `guildmaster_approval = "false"`, "guildmaster_approval"},
+		"unknown key":  {"guildmaster_approval = false", "guildmaster_approval = false\nsize = true", "unknown keys: repository.merge.requires.size"},
+		"merge_policy": {`workflow = "careful"`, "workflow = \"careful\"\nmerge_policy = \"approval\"", "unknown keys: repository.merge_policy"},
+	} {
+		t.Run(name, func(t *testing.T) {
 			base := director(t)
 			if !strings.Contains(base, c.old) {
 				t.Fatalf("fixture does not contain %q", c.old)

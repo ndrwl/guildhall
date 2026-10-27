@@ -172,7 +172,7 @@ var kinds = []Kind{
 		Actors:  engineOnly,
 	},
 	{
-		// Deliver takes no settings: the repository's merge policy decides, never the workflow.
+		// Deliver takes no settings: the repository's merge requirements decide, never the workflow.
 		Type: "deliver", Version: 1,
 		Inputs: []Port{
 			{Name: "head", Type: CodeHead},

@@ -210,7 +210,9 @@ id = "app"
 path = "/srv/app"
 remote = "git@github.com:example/app.git"
 owner_machine = "workstation"
-merge_policy = "auto"
+
+[repository.merge.requires]
+guildmaster_approval = false
 
 [[repository]]
 id = "lib"

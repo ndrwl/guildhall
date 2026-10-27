@@ -135,9 +135,10 @@ var (
 //   - validate reads the forge's checks of the published head and waits while they are pending; finished
 //     checks are recorded as a result, and a failed one follows the step's failed loop rule
 //     (docs/interpreter.md#validate);
-//   - deliver under the "approval" merge policy opens the merge decision and waits; a merge answer merges the
-//     published pull request through Forge and closes the task, and a hold answer or a refused merge waits for
-//     the Director (docs/interpreter.md#publish-and-deliver).
+//   - deliver checks the repository's merge requirements; when guildmaster_approval is required, or another
+//     requirement fails, it opens the merge decision and waits, and otherwise it records its authorization and
+//     merges by itself. A merge merges the published pull request through Forge and closes the task, and a hold
+//     answer or a refused merge waits for the Director (docs/interpreter.md#publish-and-deliver).
 //
 // A succeeded result copies the attempt's outputs into DocumentDir and records them as documents, the
 // first under the step's output port; a failed or stopped attempt waits for the Director, whose
@@ -173,7 +174,7 @@ type Engine struct {
 	Outbox   Outbox
 	// Workflow returns the definition a task's revision names; Advance refuses one with another digest (ErrRevision).
 	Workflow func(workflow.Revision) (*workflow.Definition, error)
-	// Config gives the profile adapters and the repositories' merge policies.
+	// Config gives the profile adapters and the repositories' merge requirements.
 	Config            *config.Config
 	StandardsRevision string
 	// CheckSettings, when set, refuses the model and effort of a step's profile that the profile's adapter cannot

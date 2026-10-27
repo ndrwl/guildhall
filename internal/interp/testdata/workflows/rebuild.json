@@ -1,0 +1,24 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "rebuild",
+  "description": "Plan, Guildmaster acceptance, a build that is published and validated, then a rebuild that is reviewed and published again, so deliver's head is not the head its validation result is for.",
+  "steps": [
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"]}},
+    {"id": "validate", "type": "validate", "version": 1,
+     "inputs": {"head": ["publish.head"]}},
+    {"id": "rebuild", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["accept.spec"], "head": ["rebuild.head"]}},
+    {"id": "republish", "type": "publish", "version": 1,
+     "inputs": {"head": ["rebuild.head"], "review": ["review.outcome"]}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["republish.head"], "review": ["review.outcome"], "validation": ["validate.result"]}}
+  ]
+}

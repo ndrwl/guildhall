@@ -25,7 +25,7 @@ Guildhall is for when you want several of them working while you don't:
 - **You make the calls.** Plans and questions wait for your answer, and so do merges unless you set a repository to merge automatically.
   Waiting costs no model tokens.
   Agents never merge on their own say-so.
-- **Your rules hold.** Each repository has its own merge policy and workflow, for example "a human reviews every change here", and a workflow cannot run arbitrary commands.
+- **Your rules hold.** Each repository has its own merge requirements and workflow, for example "a human reviews every change here" or "merge by itself once review and CI pass", and a workflow cannot run arbitrary commands.
 - **Nothing gets lost.** Task state lives in a file on disk, not in an agent's chat history or a terminal tab.
 - **Your machines, your agents.** It runs on hardware you own and is built to work with agent tools such as Claude Code, so you can switch runtimes without losing work.
 
@@ -65,7 +65,7 @@ The session below is illustrative, not a transcript of a real task: the conversa
 >
 > **You:** Merge it. And stop the build on t-3; I've changed my mind.
 
-Behind the scenes each task follows a workflow; the default one is research, plan, your approval, build, independent review, then delivery under the repository's merge policy.
+Behind the scenes each task follows a workflow; the default one is research, plan, your approval, build, independent review, then delivery under the repository's merge requirements.
 You can change it per repository, for example to review changes yourself instead of an agent.
 See [configuration and workflows](docs/configuration.md).
 
@@ -161,7 +161,7 @@ The commands are the Director's tools; you can also call them yourself to script
 ## Learn more
 
 - [Walkthrough](docs/walkthrough.md): drive a task by hand, step by step.
-- [Configuration and workflows](docs/configuration.md): set up repositories, merge policies and workflows.
+- [Configuration and workflows](docs/configuration.md): set up repositories, merge requirements and workflows.
 - [Architecture](docs/architecture.md): roles, what runs where, what is built, and what CI proves.
 - [Glossary](docs/glossary.md): Guildmaster, Director, Artisan, Steward and other terms.
 - [Requirements](docs/requirements.md): the full product specification.

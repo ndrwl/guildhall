@@ -29,7 +29,7 @@ Not provided yet:
 
 A message carries information only.
 Sending, reading or acknowledging a message never records a task or attempt result, answers a decision, approves a plan or a merge, or starts, stops or resumes anything.
-An Artisan's result still comes from its validated result file (R1.23), Guildmaster answers still go to decisions (R1.61) and merges still follow the repository's merge policy (R1.36), whatever a message says.
+An Artisan's result still comes from its validated result file (R1.23), Guildmaster answers still go to decisions (R1.61) and merges still follow the repository's merge requirements (R1.36), whatever a message says.
 The message `type` is a label for the reader; Guildhall does not interpret it.
 
 ## Recipients

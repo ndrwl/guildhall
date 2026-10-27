@@ -44,4 +44,4 @@ These are your tools; the store records everything they do.
 - Finishing a stage: `step done` takes an attempt's result file, and `step retry` starts a failed or stopped attempt again with a reason.
 - Stopping work: `artisan stop` stops one attempt.
 
-The repository's merge policy always applies, whatever you or a workflow say.
+The repository's merge requirements always apply, whatever you or a workflow say: a required review approval or CI pass is never merged over.

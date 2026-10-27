@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,27 +26,29 @@ type MergeabilityReader interface {
 // mergeBlocked records one immutable observation per head and state before
 // notifying the Director. A crash between record and send replays the same text;
 // a moving base cannot cause a mutation conflict or duplicate the notification.
-func (r *run) mergeBlocked(pr *pullRequestDoc, head string) (bool, error) {
+// It also returns the observed state: "not observed" without a reader or a pull
+// request, and "clear" for an observation that names no state.
+func (r *run) mergeBlocked(pr *pullRequestDoc, head string) (string, bool, error) {
 	reader, ok := r.e.Forge.(MergeabilityReader)
 	if !ok || pr == nil {
-		return false, nil
+		return "not observed", false, nil
 	}
 	repo, err := r.repository()
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
 	m, err := reader.Mergeability(r.ctx, forge.Merge{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Head: head})
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
 	if m.Head != head {
-		return false, fmt.Errorf("%w: mergeability head %s is not %s", ErrEvent, m.Head, head)
+		return "", false, fmt.Errorf("%w: mergeability head %s is not %s", ErrEvent, m.Head, head)
 	}
 	if m.State != "conflicting" && m.State != "behind" {
-		return false, nil
+		return cmp.Or(m.State, "clear"), false, nil
 	}
 	if !digest.ValidHead(m.Base) || m.Behind < 0 {
-		return false, fmt.Errorf("%w: invalid mergeability evidence", ErrEvent)
+		return "", false, fmt.Errorf("%w: invalid mergeability evidence", ErrEvent)
 	}
 	m.URL = pr.URL
 	id := "pr-blocked-" + head + "-" + m.State
@@ -56,24 +59,24 @@ func (r *run) mergeBlocked(pr *pullRequestDoc, head string) (bool, error) {
 			data, err = json.Marshal(m)
 		}
 		if err != nil {
-			return false, err
+			return "", false, err
 		}
 		if err := json.Unmarshal(data, &m); err != nil {
-			return false, err
+			return "", false, err
 		}
 		if err := r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: id, Path: p, SHA256: digest.Of(data).Hex()}, data); err != nil {
-			return false, err
+			return "", false, err
 		}
 	} else {
 		data, err := r.read(*d)
 		if err != nil {
-			return false, err
+			return "", false, err
 		}
 		if err := json.Unmarshal(data, &m); err != nil {
-			return false, err
+			return "", false, err
 		}
 	}
-	return true, r.notifyMergeBlocked(id, m)
+	return m.State, true, r.notifyMergeBlocked(id, m)
 }
 
 // replayMergeBlocked completes a notification lost after the observation was

@@ -76,7 +76,7 @@ func newValidateEnvDefinition(t *testing.T, b backend, def *workflow.Definition)
 		f.AddCommit(repoPath, h)
 	}
 	e.eng.Forge = f
-	e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote, MergePolicy: config.MergeApproval}}
+	e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote}}
 	return e, f
 }
 
@@ -508,7 +508,7 @@ func TestDefaultWorkflowDelivers(t *testing.T) {
 			f.AddCommit(repoPath, head2)
 			f.SetChecks(repoRemote, head, ciFailed...)
 			e.eng.Forge = f
-			e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote, MergePolicy: config.MergeApproval}}
+			e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote}}
 
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirectorStage, Step: "grill", Attempt: 1})
 			finishStage(t, e, "grill", 1, adapter.StatusSucceeded, interptest.File{Path: "notes.md", Data: notes})
