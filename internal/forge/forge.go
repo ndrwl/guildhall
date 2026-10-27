@@ -3,8 +3,8 @@
 // the repository's merge requirements (docs/contracts/forge.md).
 //
 // Guildhall prescribes only these edges. It pushes only a task branch, never the base; it merges only the
-// head the Guildmaster's merge decision was bound to, with a squash merge; and it never bypasses the forge's
-// branch protection, required checks or review rules. Anything the forge refuses is ErrRefused, for the
+// head its merge decision or recorded merge authorization (deliver-<k>-authorized) is bound to, with a squash
+// merge; and it never bypasses the forge's branch protection, required checks or review rules. Anything the forge refuses is ErrRefused, for the
 // Director to recover from. Credentials stay in the forge program's own sign-in store: nothing here reads,
 // stores or passes one.
 package forge

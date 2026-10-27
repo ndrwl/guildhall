@@ -3,7 +3,7 @@
 ## Contract
 
 The boundary to the host of a repository's pull requests, called by the interpreter's [publish and deliver](../interpreter.md#publish-and-deliver) and [validate](../interpreter.md#validate) through its `interp.Forge` seam.
-Guildhall prescribes only the edges: it pushes only a task branch, never the base; it merges only the head the Guildmaster's merge decision was bound to, with a squash merge; and it never bypasses the forge's branch protection, required checks or review rules ([decision](../decisions/0060-delivery-stage.md)).
+Guildhall prescribes only the edges: it pushes only a task branch, never the base; it merges only the head its merge decision or recorded merge authorization (`deliver-<k>-authorized`) is bound to, with a squash merge; and it never bypasses the forge's branch protection, required checks or review rules ([decision](../decisions/0060-delivery-stage.md), [merge requirements](../decisions/merge-requires.md)).
 Credentials stay in the forge program's own sign-in store: nothing here reads, stores or passes one (R1.10, R1.28).
 
 `Publish(ctx, Change)` pushes `Change.Head` to `refs/heads/<Change.Branch>` on `Change.Remote`, replacing whatever that task branch held, and returns the branch's open pull request, opening one against the remote's default branch when none is open.

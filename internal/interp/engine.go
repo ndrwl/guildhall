@@ -165,8 +165,7 @@ var (
 // recorded binding, and refuses one that fails with ErrPreparation, launching and removing nothing.
 // Only an unpublished prompt.partial, which no launch was given, is removed and rendered again.
 //
-// The checks gate, automatic merging and loops back to a step not run by an Artisan are
-// refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
+// The checks gate and loops back to a step not run by an Artisan are refused with ErrUnsupported. Advance is not safe for concurrent use on the same task.
 type Engine struct {
 	Records  Records
 	Launcher Launcher

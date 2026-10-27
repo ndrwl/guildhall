@@ -3,6 +3,7 @@ package interp_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -216,11 +217,14 @@ func rebuildEnv(t *testing.T, m config.MergeRequires, staleReview bool) (*env, *
 
 // TestMergeRequiresHardGates: a required ci_green or artisan_approval that does not hold is the gate's error,
 // whatever guildmaster_approval is, and nothing merges or is asked; a requirement turned off skips its gate, and the
-// merge question shows it as not required.
+// merge question shows it as not required. Deliver is fed a passed result for an earlier head: validate completes
+// only on a passed result for its own head, so this is how a result that is not passed for the delivered head
+// reaches deliver, and r.validated refuses a failed one by the same check.
 func TestMergeRequiresHardGates(t *testing.T) {
 	reviewDone := interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1}
 	for _, guildmaster := range []bool{false, true} {
-		t.Run("validation gate", func(t *testing.T) {
+		name := fmt.Sprintf("guildmaster_approval=%t/", guildmaster)
+		t.Run(name+"validation gate", func(t *testing.T) {
 			e, f := rebuildEnv(t, config.MergeRequires{GuildmasterApproval: ptr(guildmaster)}, false)
 			if err := advanceErr(t, e, reviewDone); !errors.Is(err, interp.ErrValidationGate) {
 				t.Fatalf("advance = %v, want ErrValidationGate", err)
@@ -229,7 +233,7 @@ func TestMergeRequiresHardGates(t *testing.T) {
 				t.Errorf("merges = %d, decisions = %q, want neither", merges, e.decisionIDs(t))
 			}
 		})
-		t.Run("review gate", func(t *testing.T) {
+		t.Run(name+"review gate", func(t *testing.T) {
 			e, f := rebuildEnv(t, config.MergeRequires{GuildmasterApproval: ptr(guildmaster), CIGreen: ptr(false)}, true)
 			if err := advanceErr(t, e, reviewDone); !errors.Is(err, interp.ErrReviewGate) {
 				t.Fatalf("advance = %v, want ErrReviewGate", err)

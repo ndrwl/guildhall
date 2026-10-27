@@ -164,6 +164,7 @@ A string such as `"true"`, an unknown key and the removed merge policy key are r
 - A behind or conflicting pull request waits for the Director with a `pr-blocked` report before anything is asked.
 - With `guildmaster_approval = true`, deliver opens the merge decision, whose question lists each requirement as `holds`, `fails: <reason>` or `not required`; a `merge` answer overrides a failing `nothing_open`, and nothing else.
 - With `guildmaster_approval = false` and every other required requirement holding, Guildhall records `deliver-<k>-authorized`, with the requirements in effect and the evidence it read, and merges by itself; otherwise it asks the Guildmaster, beginning the question "Guildhall did not merge by itself".
+  A recorded `deliver-<k>-authorized` is reused for its head on every later advance, before `guildmaster_approval` is read: a merge the forge refused after it was authorized is retried without a decision even if `guildmaster_approval` is turned back on. To have the Guildmaster decide instead, publish a new head.
 
 Turning a requirement off changes only what deliver demands, not which steps a workflow must have.
 No workflow can change a repository's merge requirements.
