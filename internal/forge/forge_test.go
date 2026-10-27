@@ -528,6 +528,8 @@ type ghPR struct {
 	State       string `json:"state"`
 	MergedHead  string `json:"merged_head,omitempty"`
 	MergeCommit string `json:"merge_commit,omitempty"`
+	// RecordedBase is the main tip at pr create. Like GitHub's baseRefOid, it goes stale when main moves.
+	RecordedBase string `json:"recorded_base,omitempty"`
 }
 
 func loadState(file string) (ghState, error) {
@@ -627,7 +629,7 @@ func runGH(s *ghState, bare string, args []string) int {
 		}
 		v := map[string]any{"number": p.Number, "url": fmt.Sprintf("https://github.com/acme/widgets/pull/%d", p.Number),
 			"state": p.State, "headRefName": p.Branch, "headRefOid": head, "mergeCommit": nil,
-			"baseRefOid": remoteBranch(bare, "main"), "mergeable": s.Mergeable, "mergeStateStatus": s.MergeStateStatus}
+			"baseRefOid": p.RecordedBase, "baseRefName": "main", "mergeable": s.Mergeable, "mergeStateStatus": s.MergeStateStatus}
 		if p.MergeCommit != "" {
 			v["mergeCommit"] = map[string]string{"oid": p.MergeCommit}
 		}
@@ -672,11 +674,11 @@ func runGH(s *ghState, bare string, args []string) int {
 			}
 		}
 		n := len(s.PRs) + 1
-		s.PRs = append(s.PRs, ghPR{Number: n, Branch: flags["--head"], State: "OPEN"})
+		s.PRs = append(s.PRs, ghPR{Number: n, Branch: flags["--head"], State: "OPEN", RecordedBase: remoteBranch(bare, "main")})
 		fmt.Printf("https://github.com/acme/widgets/pull/%d\n", n)
 		return 0
 	case "pr view":
-		if flags["--json"] != "number,url,state,headRefName,headRefOid,mergeCommit" && flags["--json"] != "url,state,headRefOid,baseRefOid,mergeable,mergeStateStatus" {
+		if flags["--json"] != "number,url,state,headRefName,headRefOid,mergeCommit" && flags["--json"] != "url,state,headRefOid,baseRefName,mergeable,mergeStateStatus" {
 			return fail(2, "fake gh: pr view --json %q", flags["--json"])
 		}
 		p, code := number()

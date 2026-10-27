@@ -155,15 +155,16 @@ Replay follows the general rule: a crash before `publish-<k>-head` publishes the
 
 ### Mergeability observations
 
-Before validate reads checks, and before deliver opens or follows a merge decision, a forge implementing `MergeabilityReader` reads the PR's `mergeable` and `mergeStateStatus` with `gh pr view <number> --repo <repository> --json url,state,headRefOid,baseRefOid,mergeable,mergeStateStatus`.
+Before validate reads checks, and before deliver opens or follows a merge decision, a forge implementing `MergeabilityReader` reads the PR's `mergeable` and `mergeStateStatus` with `gh pr view <number> --repo <repository> --json url,state,headRefOid,baseRefName,mergeable,mergeStateStatus`.
 A conflicting (`CONFLICTING` or `DIRTY`) PR, or a `BEHIND` PR blocked by strict branch protection, waits with `{"wait":"director","step":"<validate-or-deliver>"}` rather than waiting silently for checks GitHub may never run.
 `UNKNOWN` and an otherwise `BLOCKED` PR are not assumed to be conflicts or strict-behind states.
 Observations must match the published head; a moved PR or a failed observation is an error, not permission to merge.
-The forge fetches the exact base commit without updating a branch and computes the behind count with `rev-list` and conflicting paths with `merge-tree`; it never checks out, merges or rebases the task's worktree.
+For a conflicting or behind PR, the forge reads the base tip, the base branch's commit on the remote when measured, with `git ls-remote <remote> refs/heads/<baseRefName>` rather than trusting GitHub's possibly stale recorded base; a missing or ambiguous tip is an error.
+It fetches that exact tip without updating a branch and computes the behind count with `rev-list` and conflicting paths with `merge-tree`; it never checks out, merges or rebases the task's worktree.
 
 The observation is recorded as document `pr-blocked-<full-head>-<state>` before sending the Director a message with the same suffix and type `pr-blocked`.
-It includes the PR URL, full head/base commits, state, paths, behind count and the available commands and options.
-Validate and deliver share that identity: a replay, a changed base or reaching deliver does not notify again for the same head and state.
+It includes the PR URL, full head commit and base tip, state, paths, behind count and the available commands and options.
+Validate and deliver share that identity: a replay, a moved base tip or reaching deliver does not notify again for the same head and state.
 The first observation remains immutable; a different head or state gets a new report.
 If the observation file was written but its document record failed, the next blocked observation with that identity records the existing bytes rather than regenerating evidence against a moved base.
 An advance replays recorded observation messages before walking the workflow, so a notification lost after its document committed is recovered even if the forge has since cleared.

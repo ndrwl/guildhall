@@ -47,7 +47,7 @@ Refutation uses the existing Artisan `Launcher`, `Prompter` and `Records` seams;
 
 `MergeabilityReader` is the narrow forge-observation seam for validate and deliver; GitHub and the forge double implement it, while legacy forges without it retain existing checks/refusal behaviour.
 A conflicting or strict-behind PR records immutable evidence before sending a `pr-blocked` Director message, once per full head and state shared across steps, then waits for the Director.
-The evidence carries PR URL, full head/base, files, behind count and options; no automatic rebase occurs.
+The evidence carries PR URL, full head, base tip (the base branch's tip when measured), files, behind count and options; no automatic rebase occurs.
 Validate retains the Director wait in its refresh cache; errors are not conflicts and unknown state does not stop the normal checks wait.
 `StepSentBack` implements the [send-back admission, feedback and replay contract](../step-send-back.md); invalid requests and changed feedback are `ErrEvent`.
 

@@ -47,7 +47,12 @@ func TestGitHubMergeabilityEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.State != tc.want || got.Head != head || got.Base != base || got.URL != pr.URL {
+			// Base is the moved main tip, not the PR's stale recorded base, and empty when clear.
+			wantBase := base
+			if tc.want == "" {
+				wantBase = ""
+			}
+			if got.State != tc.want || got.Head != head || got.Base != wantBase || got.URL != pr.URL {
 				t.Fatalf("observation = %+v", got)
 			}
 			if tc.want != "" && (got.Behind != 1 || !slices.Equal(got.Files, []string{"one"})) {
@@ -65,5 +70,30 @@ func TestGitHubMergeabilityEvidence(t *testing.T) {
 	_, err = gh.Mergeability(ctx, forge.Merge{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: h.Heads[1]})
 	if !errors.Is(err, forge.ErrRefused) {
 		t.Fatalf("moved head = %v", err)
+	}
+}
+
+// A base branch deleted after pr create has no tip to measure against. Guildhall
+// reports a plain error rather than guessing a state from GitHub's stale base.
+func TestGitHubMergeabilityMissingBase(t *testing.T) {
+	g := newGitHub(t)
+	h := g.harness
+	ctx := context.Background()
+	gh := h.Forge.(forge.GitHub)
+	head := h.Heads[0]
+	pr, err := gh.Publish(ctx, forge.Change{Repository: h.Repository, Remote: h.Remote, Branch: "guildhall/conflict", Head: head, Title: "conflict"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.git(t, h.Repository, "--git-dir", g.bare, "update-ref", "-d", "refs/heads/main")
+	s := g.readState(t)
+	s.Mergeable, s.MergeStateStatus = "CONFLICTING", "DIRTY"
+	g.writeState(t, s)
+	got, err := gh.Mergeability(ctx, forge.Merge{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: head})
+	if err == nil || errors.Is(err, forge.ErrRefused) || errors.Is(err, forge.ErrInvalid) {
+		t.Fatalf("missing base = %v", err)
+	}
+	if got.State != "" {
+		t.Fatalf("missing base reported %+v", got)
 	}
 }

@@ -5,7 +5,7 @@ Validate and deliver report a conflicting PR or a branch-protection-blocked behi
 A report identifies the PR, head, base, behind count and conflicting paths, and offers send-back, hold and abandon as independent options rather than a recovery procedure.
 Reports are durable documents and inbox messages, deduplicated by head and state across validate and deliver.
 Unknown mergeability remains an ordinary wait rather than an assumed conflict.
-The forge reads mergeability through a narrow observation interface, using valid command-specific gh arguments, and computes local evidence against the exact fetched base commit without changing a worktree.
+The forge reads mergeability through a narrow observation interface, using valid command-specific gh arguments, and computes local evidence against the base branch's tip when measured, read with `git ls-remote` and fetched exactly, without changing a worktree.
 
 `step send-back` names a succeeded Artisan step and its attempt, and requires Director feedback.
 It records immutable feedback before starting a new attempt, retaining the old attempts and review evidence.
