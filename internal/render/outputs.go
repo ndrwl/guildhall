@@ -42,13 +42,17 @@ func outputInstructions(id Identity, revisions *workflow.Revisions) string {
 			}
 			outcome := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: workflow.VerdictApproved, Revisions: rev}
 			data, _ := json.MarshalIndent(outcome, "", "  ")
-			b.WriteString("Format: one strict JSON `guildhall.review-outcome/1` object, not Markdown or a prose verdict. Use reviewer `automated`; verdict is `approved`, `changes_requested`, or `rejected` (the latter two require findings). Findings have `id` and `summary`, and may cite `rule`, `file`, and `line`. For every previous finding, include a disposition with `finding` and `state` (`resolved`, `still-open`, or `withdrawn`); still-open findings must also remain in findings.\n\n")
+			b.WriteString("Format: one strict JSON `guildhall.review-outcome/1` object, not Markdown or a prose verdict. Use reviewer `automated`; verdict is `approved`, `changes_requested`, or `rejected` (the latter two require findings). Findings have `id` and `summary`, and may cite `rule`, `file`, and `line`. A finding `id` is lowercase letters, digits and hyphens, starting with a letter, at most 63 characters (e.g. `f1`, `must-1`); keep a finding's id in later rounds. For every previous finding, include a disposition with `finding` and `state` (`resolved`, `still-open`, or `withdrawn`); still-open findings must also remain in findings.\n\n")
 			if revisions == nil {
 				b.WriteString("The revision values below are illustrative: replace them with the exact reviewed input head/document digest, accepted spec digest (for code review), and standards revision. Never submit the illustrative zero hashes.\n\n")
 			} else {
 				b.WriteString("The revisions below are the exact bound revisions for this attempt; preserve them in your outcome.\n\n")
 			}
 			fmt.Fprintf(&b, "Minimal approval example (choose your actual verdict and findings):\n\n```json\n%s\n```\n", data)
+			outcome.Verdict = workflow.VerdictChangesRequested
+			outcome.Findings = []workflow.Finding{{ID: "f1", Summary: "What is wrong and what to change."}}
+			data, _ = json.MarshalIndent(outcome, "", "  ")
+			fmt.Fprintf(&b, "\nExample with a finding:\n\n```json\n%s\n```\n", data)
 		} else {
 			b.WriteString("Format: a UTF-8 Markdown document. Minimal example:\n\n```text\n# Notes\n\nThe requested work is recorded here.\n```\n")
 		}

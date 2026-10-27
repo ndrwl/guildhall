@@ -149,7 +149,7 @@ func (o ReviewOutcome) Validate() error {
 		}
 		switch {
 		case !ValidID(f.ID):
-			problems = append(problems, fmt.Sprintf("finding id %q must be lowercase letters, digits and hyphens", f.ID))
+			problems = append(problems, fmt.Sprintf("finding id %q must be lowercase letters, digits and hyphens, starting with a letter", f.ID))
 		case ids[f.ID]:
 			problems = append(problems, fmt.Sprintf("finding id %q is used twice", f.ID))
 		}
