@@ -496,6 +496,10 @@ func (p storeRecords) FullReviews(repo, id string) ([]store.FullReview, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.FullReview, error) { return s.FullReviews(repo, id) })
 }
 
+func (p storeRecords) DependencyOverride(repo, id string) (store.DependencyOverride, error) {
+	return withRecords(p, true, nil, func(s *store.Store) (store.DependencyOverride, error) { return s.DependencyOverride(repo, id) })
+}
+
 func (p storeRecords) StartAttempt(m, repo, id, step string) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
 }

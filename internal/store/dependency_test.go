@@ -24,13 +24,13 @@ func TestOverrideDependencies(t *testing.T) {
 		task, reason string
 		want         error
 	}{
-		"blank reason":       {"t-2", " ", ErrInvalid},
-		"oversized reason":   {"t-2", strings.Repeat("r", MaxTextBytes+1), ErrInvalid},
-		"no dependencies":    {"t-1", "Start anyway.", ErrInvalid},
-		"closed task":        {"t-3", "Start anyway.", ErrInvalid},
-		"unknown task":       {"t-9", "Start anyway.", ErrNotFound},
-		"invalid task id":    {"T 2", "Start anyway.", ErrInvalid},
-		"empty reason":       {"t-2", "", ErrInvalid},
+		"blank reason":     {"t-2", " ", ErrInvalid},
+		"oversized reason": {"t-2", strings.Repeat("r", MaxTextBytes+1), ErrInvalid},
+		"no dependencies":  {"t-1", "Start anyway.", ErrInvalid},
+		"closed task":      {"t-3", "Start anyway.", ErrInvalid},
+		"unknown task":     {"t-9", "Start anyway.", ErrNotFound},
+		"invalid task id":  {"T 2", "Start anyway.", ErrInvalid},
+		"empty reason":     {"t-2", "", ErrInvalid},
 	} {
 		if _, err := s.OverrideDependencies("bad-"+strings.ReplaceAll(name, " ", "-"), "app", tc.task, tc.reason); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", name, err, tc.want)

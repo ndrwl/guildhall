@@ -31,6 +31,7 @@ type Records struct {
 	decisions []store.Decision
 	rulings   []store.Ruling
 	full      []store.FullReview
+	overrides map[[2]string]store.DependencyOverride
 	// held is the Director's hold PauseDirector sets.
 	held bool
 }
@@ -219,6 +220,43 @@ func (r *Records) ConsumeFullReview(mutationID, repository, taskID string, numbe
 		r.full[i].ConsumedBy = by
 		return nil
 	})
+}
+
+// OverrideDependencies records a task's dependency override once, as store.OverrideDependencies does, without its
+// checks of the reason's text.
+func (r *Records) OverrideDependencies(mutationID, repository, taskID, reason string) (store.Receipt, error) {
+	o := store.DependencyOverride{Repository: repository, TaskID: taskID, Reason: reason}
+	return r.mutate(mutationID, "override-dependencies", o, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, store.DependencyOverrideRecord
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		case len(t.DependsOn) == 0:
+			return fmt.Errorf("%w: task %s/%s has no dependencies to override", store.ErrInvalid, repository, taskID)
+		}
+		if _, ok := r.overrides[[2]string{repository, taskID}]; ok {
+			return fmt.Errorf("%w: dependency override of %s/%s", store.ErrExists, repository, taskID)
+		}
+		if r.overrides == nil {
+			r.overrides = map[[2]string]store.DependencyOverride{}
+		}
+		r.overrides[[2]string{repository, taskID}] = o
+		return nil
+	})
+}
+
+// DependencyOverride implements interp.Records.
+func (r *Records) DependencyOverride(repository, taskID string) (store.DependencyOverride, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	o, ok := r.overrides[[2]string{repository, taskID}]
+	if !ok {
+		return store.DependencyOverride{}, fmt.Errorf("dependency override of %s/%s: %w", repository, taskID, store.ErrNotFound)
+	}
+	return o, nil
 }
 
 func list[T any](r *Records, repository, taskID string, all []T, key func(T) (string, string)) ([]T, error) {
@@ -494,6 +532,8 @@ type RecordsHarness struct {
 	AnswerDecision    func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
 	RuleFinding       func(mutationID string, r store.Ruling) (store.Receipt, error)
 	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
+	// OverrideDependencies records the Director's dependency override, as store.OverrideDependencies does.
+	OverrideDependencies func(mutationID, repository, taskID, reason string) (store.Receipt, error)
 	// PauseDirector pauses the Director, so a start with AttemptCaps.Hold is refused with store.ErrDirectorHeld.
 	PauseDirector func() error
 	// Clock stamps the receipts Records writes, so it decides the day the daily cap counts.
@@ -508,7 +548,7 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r, clock := NewRecords(), NewClock()
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, PauseDirector: r.PauseDirector, Clock: clock}
+		RequestFullReview: r.RequestFullReview, OverrideDependencies: r.OverrideDependencies, PauseDirector: r.PauseDirector, Clock: clock}
 }
 
 // Clock is a settable clock for a RecordsHarness; until Set it reads wall time.
@@ -883,6 +923,32 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		wantList := []store.FullReview{{Repository: "app", TaskID: "t7", Number: 1, ConsumedBy: "review-1"}, {Repository: "app", TaskID: "t7", Number: 2}}
 		if got, err := h.Records.FullReviews("app", "t7"); err != nil || !slices.Equal(got, wantList) {
 			t.Errorf("FullReviews = %+v, %v", got, err)
+		}
+	})
+
+	t.Run("reads a dependency override", func(t *testing.T) {
+		h := setup(t)
+		if h.OverrideDependencies == nil {
+			t.Skip("the harness records no dependency overrides")
+		}
+		dependent := task
+		dependent.ID, dependent.DependsOn = "t9", []store.TaskRef{{Repository: "app", ID: "t7"}}
+		if _, err := h.CreateTask("task-t9", dependent); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.Records.DependencyOverride("app", "t9")
+		want(t, "DependencyOverride before any", err, store.ErrNotFound)
+		_, err = h.OverrideDependencies("override-t7", "app", "t7", "Start anyway.")
+		want(t, "OverrideDependencies of a task with no dependencies", err, store.ErrInvalid)
+		rc, err := h.OverrideDependencies("dependency-override.app.t9", "app", "t9", "Start anyway.")
+		if err != nil || rc.Record != store.DependencyOverrideRecord || rc.TaskID != "t9" {
+			t.Fatalf("OverrideDependencies = %+v, %v", rc, err)
+		}
+		_, err = h.OverrideDependencies("dependency-override.app.t9", "app", "t9", "Another reason.")
+		want(t, "OverrideDependencies with another reason", err, store.ErrMutationConflict)
+		wantOverride := store.DependencyOverride{Repository: "app", TaskID: "t9", Reason: "Start anyway."}
+		if got, err := h.Records.DependencyOverride("app", "t9"); err != nil || got != wantOverride {
+			t.Errorf("DependencyOverride = %+v, %v; want %+v", got, err, wantOverride)
 		}
 	})
 

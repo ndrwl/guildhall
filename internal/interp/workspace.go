@@ -16,9 +16,10 @@ import (
 )
 
 // Workspaces makes a task's working directory a git worktree of its repository; git.Program implements it (its
-// contract is git.Program.Ensure), and gittest.Workspaces is its double.
+// contract is git.Program.Ensure, FastForward and Retire), and gittest.Workspaces is its double.
 type Workspaces interface {
 	Ensure(ctx context.Context, w git.Workspace) error
+	FastForward(ctx context.Context, w git.Workspace) (kept string, err error)
 	Retire(ctx context.Context, r git.Retirement) ([]string, error)
 }
 
