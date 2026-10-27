@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -19,7 +20,8 @@ type Snapshot struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// TaskHistory is a task, its attempts, documents, decisions, rulings and full-review requests, together with
+// TaskHistory is a task, its attempts, documents, decisions, rulings, full-review requests and dependency override,
+// together with
 // the receipt of every mutation that touched it; ownership records are read separately.
 // Its contents are read in one transaction and describe exactly the store state AsOf names.
 // Its lists are empty rather than nil when the task has no such records.
@@ -31,6 +33,8 @@ type TaskHistory struct {
 	Decisions   []Decision
 	Rulings     []Ruling
 	FullReviews []FullReview
+	// DependencyOverride is the task's dependency override, nil when it has none.
+	DependencyOverride *DependencyOverride
 	// Receipts are the receipts whose repository and task are this task's, in sequence order:
 	// its records' mutations and the messages sent to or acknowledged for it.
 	Receipts []Receipt
@@ -59,6 +63,13 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketFullReviews), prefix, &h.FullReviews); err != nil {
+			return err
+		}
+		var o DependencyOverride
+		switch err := getJSON(repoBucket(tx, repository, bucketDependencyOverrides), []byte(taskID), &o); {
+		case err == nil:
+			h.DependencyOverride = &o
+		case !errors.Is(err, ErrNotFound):
 			return err
 		}
 		return tx.Bucket(bucketReceipts).ForEach(func(k, v []byte) error {

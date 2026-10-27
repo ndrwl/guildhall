@@ -183,6 +183,71 @@ func (p Program) fetchDefault(ctx context.Context, w Workspace) error {
 	return ctx.Err()
 }
 
+// FastForward moves an untouched task branch to the commit the remote's default branch is at now, so a task that
+// waited for its dependencies starts from the main they merged into (docs/contracts/git.md#fastforward).
+//
+// A w.Dir that is not a worktree of w.Repository is left alone: a later Ensure creates the branch at the current
+// main anyway. Otherwise it fetches the remote's default branch and records it as DefaultRef(w.Branch), as Ensure
+// does, and when the worktree is on w.Branch and its HEAD is an ancestor of that commit it runs git merge --ff-only
+// in the worktree. That only fast-forwards, never rebases, and keeps untracked files, such as a Director stage's
+// outputs: git refuses rather than overwrite one.
+//
+// When the branch cannot be moved, nothing changes and kept says why: the remote could not be fetched, the worktree
+// is on another branch, the branch has commits that are not on the default branch, or git refused the fast-forward,
+// for example because an untracked file would be overwritten. That is not an error.
+//
+// FastForward is idempotent and replay safe: a branch already at or ahead of the default branch is left as it is.
+// It refuses a workspace that fails validation (ErrInvalidWorkspace); another git failure is an error naming git's
+// reason, and ctx ending is an error.
+func (p Program) FastForward(ctx context.Context, w Workspace) (kept string, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := p.validate(ctx, w); err != nil {
+		return "", err
+	}
+	if ok, err := p.isWorktree(ctx, w); err != nil || !ok {
+		return "", err
+	}
+	if _, err := p.git(ctx, w.Repository, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", w.Remote, "+HEAD:"+DefaultRef(w.Branch)); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "the remote's default branch could not be fetched: " + err.Error(), nil
+	}
+	out, err := p.git(ctx, w.Repository, "rev-parse", "--verify", DefaultRef(w.Branch)+"^{commit}")
+	if err != nil {
+		return "", err
+	}
+	main := strings.TrimSpace(string(out))
+	if out, err := p.git(ctx, w.Dir, "symbolic-ref", "--quiet", "HEAD"); err != nil || strings.TrimSpace(string(out)) != "refs/heads/"+w.Branch {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return fmt.Sprintf("the worktree is not on branch %s", w.Branch), nil
+	}
+	out, err = p.git(ctx, w.Dir, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", err
+	}
+	head := strings.TrimSpace(string(out))
+	if ahead, err := p.merged(ctx, w.Repository, main, head); err != nil || ahead {
+		return "", err
+	}
+	if behind, err := p.merged(ctx, w.Repository, head, main); err != nil {
+		return "", err
+	} else if !behind {
+		return fmt.Sprintf("branch %s is at %s, which has commits that are not on the default branch's %s", w.Branch, head, main), nil
+	}
+	if _, err := p.git(ctx, w.Dir, "merge", "--ff-only", "--quiet", main); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return fmt.Sprintf("git refused to fast-forward branch %s from %s to %s: %v", w.Branch, head, main, err), nil
+	}
+	return "", nil
+}
+
 // Base returns the base of the task on branch in the repository at repository: the merge base of the branch and
 // the remote's default branch as Ensure last recorded it, read without the remote. A branch that does not exist,
 // a workspace never ensured or retired, and an invalid branch name are errors.

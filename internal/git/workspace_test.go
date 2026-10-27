@@ -24,8 +24,10 @@ func TestWorkspaceContract(t *testing.T) {
 		gittest.RunWorkspaceContract(t, func(t *testing.T) gittest.WorkspaceHarness {
 			f := gittest.NewWorkspaces()
 			return gittest.WorkspaceHarness{
-				Ensure: f.Ensure,
-				Retire: f.Retire,
+				Ensure:         f.Ensure,
+				Retire:         f.Retire,
+				FastForward:    f.FastForward,
+				AdvanceDefault: func(t *testing.T, w git.Workspace, name string) string { return f.AdvanceDefault(w.Remote, name) },
 				Arrange: func(t *testing.T) (git.Workspace, string) {
 					base := strings.Repeat("b", 40)
 					f.SetDefault("remote", base)
@@ -75,8 +77,12 @@ func arrangeWorkspace(t *testing.T, repositories func(*testing.T) (string, strin
 func programHarness(t *testing.T, repositories func(*testing.T) (string, string, string)) gittest.WorkspaceHarness {
 	global := isolate(t)
 	return gittest.WorkspaceHarness{
-		Ensure:  git.Program{}.Ensure,
-		Retire:  git.Program{}.Retire,
+		Ensure:      git.Program{}.Ensure,
+		Retire:      git.Program{}.Retire,
+		FastForward: git.Program{}.FastForward,
+		AdvanceDefault: func(t *testing.T, w git.Workspace, name string) string {
+			return advanceDefault(t, global, w.Remote, name)
+		},
 		Arrange: func(t *testing.T) (git.Workspace, string) { return arrangeWorkspace(t, repositories) },
 		Head:    func(t *testing.T, dir string) string { return repo{t, dir, global}.run("rev-parse", "HEAD") },
 		Commit: func(t *testing.T, dir, name string) string {
@@ -86,6 +92,67 @@ func programHarness(t *testing.T, repositories func(*testing.T) (string, string,
 			return exec.Command("git", "-C", repository, "cat-file", "-e", head+"^{commit}").Run() == nil
 		},
 	}
+}
+
+// advanceDefault pushes a commit adding the file name onto the remote's default branch, trunk, from a clone of its
+// own, as a dependency's merge does, and returns it.
+func advanceDefault(t *testing.T, global, remote, name string) string {
+	t.Helper()
+	clone := filepath.Join(t.TempDir(), "merger")
+	repo{t, filepath.Dir(clone), global}.run("clone", "-q", remote, clone)
+	r := repo{t, clone, global}
+	commit := r.commit("merge "+name, map[string]string{name: name + "\n"})
+	r.run("push", "-q", "origin", "HEAD:trunk")
+	return commit
+}
+
+// TestFastForwardProgram pins what only git shows about FastForward: it records the remote's default branch as
+// DefaultRef, so Base moves with it, and tracked changes that do not conflict are carried along.
+func TestFastForwardProgram(t *testing.T) {
+	ctx := context.Background()
+	global := isolate(t)
+	repositories := gittest.Repositories(t)
+	w, base := arrangeWorkspace(t, repositories)
+	if err := (git.Program{}).Ensure(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	r := repo{t, w.Repository, global}
+	if got := r.run("rev-parse", git.DefaultRef(w.Branch)); got != base {
+		t.Fatalf("DefaultRef after Ensure = %s, want %s", got, base)
+	}
+	writeFile(t, filepath.Join(w.Dir, "a.txt"), "edited\n")
+	main := advanceDefault(t, global, w.Remote, "merged.txt")
+	if kept, err := (git.Program{}).FastForward(ctx, w); err != nil || kept != "" {
+		t.Fatalf("FastForward = %q, %v", kept, err)
+	}
+	if got := r.run("rev-parse", git.DefaultRef(w.Branch)); got != main {
+		t.Errorf("DefaultRef after FastForward = %s, want %s", got, main)
+	}
+	if got, err := (git.Program{}).Base(ctx, w.Repository, w.Branch); err != nil || got != main {
+		t.Errorf("Base after FastForward = %s, %v; want %s", got, err, main)
+	}
+	if got := r.run("rev-parse", "refs/heads/"+w.Branch); got != main {
+		t.Errorf("branch at %s, want %s", got, main)
+	}
+	if b, err := os.ReadFile(filepath.Join(w.Dir, "a.txt")); err != nil || string(b) != "edited\n" {
+		t.Errorf("FastForward lost a tracked change: %q, %v", b, err)
+	}
+	ended, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := (git.Program{}).FastForward(ended, w); err == nil {
+		t.Error("FastForward with an ended context succeeded")
+	}
+	t.Run("a worktree on another branch is kept", func(t *testing.T) {
+		w, _ := arrangeWorkspace(t, repositories)
+		if err := (git.Program{}).Ensure(ctx, w); err != nil {
+			t.Fatal(err)
+		}
+		repo{t, w.Dir, global}.run("checkout", "-q", "-b", "experiment")
+		advanceDefault(t, global, w.Remote, "merged.txt")
+		if kept, err := (git.Program{}).FastForward(ctx, w); err != nil || kept == "" {
+			t.Errorf("FastForward of a worktree on another branch = %q, %v; want it kept", kept, err)
+		}
+	})
 }
 
 // TestEnsureProgram pins the behaviour only real git shows: recovery from an interrupted creation, a branch kept
