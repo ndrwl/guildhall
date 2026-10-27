@@ -4,9 +4,9 @@
 // Every call names its session explicitly; the ambient HERDR_SESSION,
 // HERDR_SOCKET_PATH and pane context variables never choose the target.
 // The client creates workspaces and tabs, reads them, runs a command in an
-// owned tab, interrupts that command, closes only owned tabs, and reports
-// a pane's agent with its resume command.
-// It never starts, stops or deletes Herdr servers or sessions.
+// owned tab, interrupts that command, closes only owned tabs and the owned
+// Herdr workspaces they prove, and reports a pane's agent with its resume
+// command. It never starts, stops or deletes Herdr servers or sessions.
 package herdr
 
 import (
@@ -33,6 +33,9 @@ var (
 	// ErrServerNotRunning reports that the named session has no running server.
 	// The client never starts one.
 	ErrServerNotRunning = errors.New("herdr session has no running server")
+	// ErrMoved reports a recorded tab or pane id that now names a tab or pane
+	// somewhere other than the record says, so the record grants nothing there.
+	ErrMoved = errors.New("herdr recorded identity moved")
 )
 
 // sessionName is the accepted shape of an explicit session name.
@@ -474,7 +477,7 @@ func (c *Client) RecordedTab(ctx context.Context, workspaceID, tabID, paneID str
 		return OwnedTab{}, err
 	}
 	if tab.WorkspaceID != workspaceID {
-		return OwnedTab{}, fmt.Errorf("herdr tab %s is in workspace %s, not the recorded %s", tabID, tab.WorkspaceID, workspaceID)
+		return OwnedTab{}, fmt.Errorf("herdr tab %s is in workspace %s, not the recorded %s: %w", tabID, tab.WorkspaceID, workspaceID, ErrMoved)
 	}
 	return OwnedTab{session: c.session, workspaceID: workspaceID, tabID: tabID, paneID: paneID}, nil
 }
@@ -538,7 +541,7 @@ func (c *Client) CheckOwnedPane(ctx context.Context, t OwnedTab) error {
 		return err
 	}
 	if r.Pane.ID != t.paneID || r.Pane.Tab != t.tabID || r.Pane.Workspace != t.workspaceID {
-		return errors.New("herdr recorded pane no longer belongs to its tab and workspace")
+		return fmt.Errorf("herdr recorded pane no longer belongs to its tab and workspace: %w", ErrMoved)
 	}
 	return nil
 }
@@ -550,6 +553,25 @@ func (c *Client) CloseOwnedTab(ctx context.Context, t OwnedTab) error {
 		return err
 	}
 	_, err := c.call(ctx, "tab", "close", t.tabID)
+	return err
+}
+
+// CloseOwnedWorkspace closes a workspace through the tab that proves it was
+// created by this program: the owned tab must be in workspace ws. Closing does
+// not prove process termination, and the client checks nothing about the
+// workspace's other contents; callers must revalidate the whole workspace
+// immediately before calling it.
+func (c *Client) CloseOwnedWorkspace(ctx context.Context, t OwnedTab, ws string) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	if err := checkID("workspace", ws); err != nil {
+		return err
+	}
+	if t.workspaceID != ws {
+		return fmt.Errorf("herdr: tab %s is in workspace %s, not %s", t.tabID, t.workspaceID, ws)
+	}
+	_, err := c.call(ctx, "workspace", "close", ws)
 	return err
 }
 
