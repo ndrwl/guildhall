@@ -1,0 +1,28 @@
+# The Director the scenario test runs: one repository on the dogfood-shaped
+# fake-dogfood workflow, every Artisan profile on the fake adapter, whose
+# results a scenario file scripts.
+schema_version = 1
+mode = "director"
+name = "alpha"
+
+[local]
+standards_revision = "standards-1"
+
+[profile.researcher]
+adapter = "fake"
+
+[profile.planner]
+adapter = "fake"
+
+[profile.builder]
+adapter = "fake"
+
+[profile.reviewer]
+adapter = "fake"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+workflow = "fake-dogfood"

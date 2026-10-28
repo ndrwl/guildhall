@@ -10,5 +10,8 @@ internal/messaging/testdata/*.json binary
 # Skills ship with exact LF bytes because their tree digests pin them.
 skills/** text eol=lf
 
+# The scenario test's golden prompt is compared byte for byte, so Windows checkouts keep its LF endings.
+internal/cli/testdata/scenario/*.md -text
+
 # The release baseline ships with exact LF bytes because its digest golden pins them.
 baseline/** text eol=lf
