@@ -76,6 +76,12 @@ type timedOverride struct {
 	OverriddenAt *time.Time `json:"overridden_at,omitempty"`
 }
 
+// timedPriority is one priority change with the commit time it was set at.
+type timedPriority struct {
+	Priority store.Priority `json:"priority"`
+	SetAt    *time.Time     `json:"set_at,omitempty"`
+}
+
 // taskTimeline is what task timeline prints. Events are every receipt of the task in commit order:
 // the moves made on it, including those Guildhall records for the Director.
 type taskTimeline struct {
@@ -87,9 +93,12 @@ type taskTimeline struct {
 	Rulings     []timedRuling     `json:"rulings"`
 	FullReviews []timedFullReview `json:"full_reviews"`
 	// DependencyOverride is the Director's dependency override, with its reason; absent when there is none.
-	DependencyOverride *timedOverride    `json:"dependency_override,omitempty"`
-	Events             []store.Receipt   `json:"events"`
-	OmittedKinds       map[string]string `json:"omitted_kinds"`
+	DependencyOverride *timedOverride `json:"dependency_override,omitempty"`
+	// Priority is the task's priority now, and PriorityChanges every level set, in order.
+	Priority        store.Priority    `json:"priority"`
+	PriorityChanges []timedPriority   `json:"priority_changes"`
+	Events          []store.Receipt   `json:"events"`
+	OmittedKinds    map[string]string `json:"omitted_kinds"`
 }
 
 // taskFiles is what task files prints: the task's recorded documents and their digests.
@@ -166,6 +175,18 @@ func timeline(h store.TaskHistory) taskTimeline {
 	if o := h.DependencyOverride; o != nil {
 		out.DependencyOverride = &timedOverride{DependencyOverride: *o}
 		out.DependencyOverride.OverriddenAt, _, _, _ = span(byRecord[store.DependencyOverrideRecord], "override-dependencies", "")
+	}
+	out.Priority, out.PriorityChanges = store.DefaultPriority, []timedPriority{}
+	if p := h.Priority; p != nil {
+		out.Priority = p.Priority
+		set := byRecord[store.TaskPriorityRecord]
+		for i, level := range p.History {
+			t := timedPriority{Priority: level}
+			if i < len(set) {
+				t.SetAt = &set[i].CommittedAt
+			}
+			out.PriorityChanges = append(out.PriorityChanges, t)
+		}
 	}
 	slices.SortStableFunc(out.Attempts, func(a, b timedAttempt) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Decisions, func(a, b timedDecision) int { return byStart(a.seq, b.seq) })

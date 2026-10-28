@@ -9,7 +9,8 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or `GUILDHALL_COPY`, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] <task>` creates task `<task>` in repository `<id>` and prints the store's receipt as one JSON document.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` in repository `<id>` and prints the store's receipt as one JSON document.
+- `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
 - `guildhall task list --store <path> [--repo <id>] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
 - `guildhall task timeline --store <path> --repo <id> <task> --json` and `guildhall task files --store <path> --repo <id> <task> --json` are the [inspection reads](#inspection).
@@ -66,6 +67,26 @@ It is recorded as its own record, never by changing the task (R1.62), lasts for 
 A cancelled dependency never merges, so the override is the only way to start a task that depends on one.
 
 `--fixes <repo>/<task>` names the earlier task whose defect this one fixes, which must already exist; publish then adds "Fixes a defect introduced by task `<repo>/<task>`." to the pull request body ([quality rubric](quality.md#running-it)).
+
+## Priority
+
+Every task has a priority, one of six levels:
+
+| Level | Word |
+| --- | --- |
+| `p0` | `urgent` |
+| `p1` | `highest` |
+| `p2` | `high` |
+| `p3` | `normal`, the default |
+| `p4` | `low` |
+| `p5` | `someday` |
+
+A level may be given as `p1`, `1` or `highest`, in any letter case; anything else is a usage error.
+`task new --priority <level>` sets it when the task is created, and `task priority <task> <level>` changes it on an open task at any time.
+The priority is its own record, `task-priority`, never a change to the task (R1.62); it holds the latest level and every level set, and `task timeline` shows the levels with when each was set.
+`task list` and `task show` print `priority` on each task, and setting the level already in force prints the receipt that set it and records nothing.
+
+Priority orders the repository's [merge queue](interpreter.md#the-merge-queue): a lower number comes first, and tasks of the same priority keep the order in which they first became ready to merge.
 
 ## Retries
 

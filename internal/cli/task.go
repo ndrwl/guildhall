@@ -20,7 +20,8 @@ import (
 )
 
 const taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] <task>
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
+  guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task show --store <path> --repo <id> <task> --json
   guildhall task list --store <path> [--repo <id>] --json
   guildhall task timeline --store <path> --repo <id> <task> --json
@@ -61,7 +62,7 @@ func (f *fixes) Set(v string) error {
 
 // taskDetail is what task show prints: one task and every record it has.
 type taskDetail struct {
-	Task      store.Task           `json:"task"`
+	Task      taskView             `json:"task"`
 	Attempts  []store.StageAttempt `json:"attempts"`
 	Documents []store.DocumentRef  `json:"documents"`
 	Decisions []store.Decision     `json:"decisions"`
@@ -101,6 +102,7 @@ func (a *App) task(args []string) int {
 	move := flags.String("move", "", "ruling move")
 	reason := flags.String("reason", "", "ruling reason")
 	full := flags.Bool("full", false, "request a full review")
+	priority := flags.String("priority", "", "task priority, p0 to p5")
 	var deps dependsOn
 	flags.Var(&deps, "depends-on", "task this one depends on")
 	var fixed fixes
@@ -111,7 +113,9 @@ func (a *App) task(args []string) int {
 	var allowed map[string]bool
 	switch sub {
 	case "new":
-		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "depends-on": true, "fixes": true}
+		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "depends-on": true, "fixes": true, "priority": true}
+	case "priority":
+		want, allowed = 2, map[string]bool{"store": true, "repo": true}
 	case "show", "timeline", "files":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "json": true}
 	case "list":
@@ -172,10 +176,20 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("task finding rule requires --outcome, --finding, --move and --reason")
 	case sub == "review" && !*full:
 		return a.taskUsage("task review requires --full")
-	case sub != "new" && sub != "finding rule" && sub != "review" && !*asJSON:
+	case sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority" && !*asJSON:
 		return a.taskUsage(fmt.Sprintf("task %s prints JSON only; pass --json", sub))
 	case len(positional) != want:
 		return a.taskUsage(fmt.Sprintf("task %s takes %d arguments", sub, want))
+	}
+	level := store.DefaultPriority
+	if text := *priority; sub == "priority" || text != "" {
+		if sub == "priority" {
+			text = positional[1]
+		}
+		var err error
+		if level, err = store.ParsePriority(text); err != nil {
+			return a.taskUsage(strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": "))
+		}
 	}
 
 	fail := func(err error) int {
@@ -196,7 +210,7 @@ func (a *App) task(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(noStore(*path))
 	}
-	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule" && sub != "review", RequireStore: true})
+	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority", RequireStore: true})
 	if err != nil {
 		return fail(err)
 	}
@@ -211,10 +225,18 @@ func (a *App) task(args []string) int {
 		} else {
 			out, err = s.CreateTask(mutationID("task", task.Repository, task.ID), task)
 		}
+		if err == nil && *priority != "" {
+			_, err = s.SetTaskPriority(mutationID("priority", task.Repository, task.ID, "1"), task.Repository, task.ID, level)
+		}
+	case "priority":
+		out, err = setPriority(s, *repo, positional[0], level)
 	case "show":
 		out, err = showTask(s, *repo, positional[0])
 	case "list":
-		out, err = listTasks(s, *repo)
+		var tasks []store.Task
+		if tasks, err = listTasks(s, *repo); err == nil {
+			out, err = taskViews(s, tasks)
+		}
 	case "finding rule":
 		r := store.Ruling{Repository: *repo, TaskID: positional[0], Document: *outcome, Finding: *finding, Move: store.RulingMove(*move), Reason: *reason}
 		out, err = s.RuleFinding(mutationID("ruling", r.Repository, r.TaskID, r.Document, r.Finding), r)
@@ -251,6 +273,19 @@ func requestFullReview(s *store.Store, repo, id string) (store.Receipt, error) {
 		n = len(all)
 	}
 	return s.RequestFullReview(mutationID("full-review", repo, id, strconv.Itoa(n)), repo, id)
+}
+
+// setPriority records the task's next priority change with the mutation "priority:<repo>:<task>:<n>", n the change's
+// number; a retry of a level already in force prints the receipt that set it.
+func setPriority(s *store.Store, repo, id string, level store.Priority) (store.Receipt, error) {
+	tp, err := s.TaskPriority(repo, id)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return store.Receipt{}, err
+	}
+	if n := len(tp.History); n > 0 && tp.Priority == level {
+		return s.Receipt(mutationID("priority", repo, id, strconv.Itoa(n)))
+	}
+	return s.SetTaskPriority(mutationID("priority", repo, id, strconv.Itoa(len(tp.History)+1)), repo, id, level)
 }
 
 // acceptedWorkflow is a repository's effective workflow and, when it validates on its own, the file it came from.
@@ -371,9 +406,15 @@ func repositoryWorkflow(dir string, r config.Repository) (acceptedWorkflow, erro
 func showTask(s *store.Store, repo, id string) (taskDetail, error) {
 	d := taskDetail{Attempts: []store.StageAttempt{}, Documents: []store.DocumentRef{}, Decisions: []store.Decision{}}
 	var err error
-	if d.Task, err = s.Task(repo, id); err != nil {
+	t, err := s.Task(repo, id)
+	if err != nil {
 		return taskDetail{}, err
 	}
+	views, err := taskViews(s, []store.Task{t})
+	if err != nil {
+		return taskDetail{}, err
+	}
+	d.Task = views[0]
 	attempts, err := s.Attempts(repo, id)
 	if err != nil {
 		return taskDetail{}, err
@@ -390,6 +431,34 @@ func showTask(s *store.Store, repo, id string) (taskDetail, error) {
 	d.Documents = append(d.Documents, documents...)
 	d.Decisions = append(d.Decisions, decisions...)
 	return d, nil
+}
+
+// taskView is a task as task list and task show print it: the immutable record and its priority.
+type taskView struct {
+	store.Task
+	Priority store.Priority `json:"priority"`
+}
+
+// taskViews reads each task's priority, DefaultPriority when none was set.
+func taskViews(s *store.Store, tasks []store.Task) ([]taskView, error) {
+	priorities := map[string]map[string]store.Priority{}
+	out := []taskView{}
+	for _, t := range tasks {
+		ps, ok := priorities[t.Repository]
+		if !ok {
+			var err error
+			if ps, err = s.TaskPriorities(t.Repository); err != nil {
+				return nil, err
+			}
+			priorities[t.Repository] = ps
+		}
+		p, ok := ps[t.ID]
+		if !ok {
+			p = store.DefaultPriority
+		}
+		out = append(out, taskView{Task: t, Priority: p})
+	}
+	return out, nil
 }
 
 // listTasks lists one repository's tasks, or every repository's in repository order when repo is empty.
