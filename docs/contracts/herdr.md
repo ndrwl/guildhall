@@ -8,12 +8,15 @@ Every run ends when its context ends: the program is killed and its output pipes
 `ReportAgent` reports a pane's agent with `pane report-agent`, passing the resume command after `--` and refusing, before any call, a malformed pane, source, agent or state and a resume command that starts with a path or an option (`ErrResumeArgv`).
 `RecordedTab` makes an `OwnedTab` from a durable Guildhall record once `tab get` shows the tab still in the recorded workspace, refusing malformed ids before any call; a closed tab is not found.
 `CheckOwnedPane` reads `pane get` and refuses a recorded pane moved out of its tab or workspace before presentation cleanup.
+`RecordedTab`'s tab in another Herdr workspace and `CheckOwnedPane`'s moved pane are errors matching `ErrMoved`.
+`CloseOwnedWorkspace` runs `workspace close <id> --session <s>` only with an `OwnedTab` of this client's session in that Herdr workspace, refusing malformed ids before any call; it checks nothing else about the Herdr workspace, so its caller (`adapter.IdleWorkspaceCloser`) revalidates the whole Herdr workspace first.
+The client closes owned tabs and owned Herdr workspaces, never Herdr sessions or servers, and refuses the default session at `New`.
 `WorkspaceCreate` validates the workspace, starting tab and root pane from the same creation response and returns the initial tab's ownership proof; `WorkspaceList` never grants tab ownership.
 `PlaceWorkspace` is an optional presentation operation: it moves only a newly created workspace with response-derived ownership, after its exact Director and already adjacent, journal-bound siblings in launch order.
 It requires named-session status, protocol 16 or newer and an absolute socket path from that status, never ambient socket identity.
 It refuses missing or duplicate identities, renamed or detached siblings, interleaving and unowned child labels.
 An already-adjacent child needs no move; otherwise it verifies the entire returned order after exactly one `workspace.move` request.
-Errors grant no retry, rollback, rename, close or task-record authority; callers warn and continue launching.
+Ordering errors grant no retry, rollback, rename, close or task-record authority; callers warn and continue launching.
 `ShellCommand` renders argv so the named shell starts exactly that argv, or refuses (D20).
 
 ## Tests
@@ -25,3 +28,4 @@ The launcher child-label assertion failed against the [old label](../evidence/ar
 `TestArtisanChildWorkspaceHerdrLab` executes the real CLI adapter, recorded Director binding, presentation journal and socket transport in an isolated named session; the [live run](../evidence/artisan-child-workspaces-2026-10-26-live.txt) shows two children in launch order and the guarded teardown with its default-session tripwire intact.
 `runner_test.go` (shared contract test, real `execRun` and `fakeRunner`; the case of a program whose child outlives it and holds its pipes was written red first ([red run](../evidence/watcher-advance-and-wake-2026-10-22-red.txt)): the call returned only when the child exited, and now returns at its context), `herdr_test.go` (client against recorded Herdr 0.9.5 responses; the `ReportAgent` cases were written red first, and the malformed pane, source, agent and state refusals passed against the stub, which refused everything), `shell_test.go`, `shell_exec_test.go` (round trips executed in each installed shell, every argument's line typed in turn into one run of that shell and checked by its own echo file; a missing shell the runner requires fails; the Director's wake line is a round-trip argument, which passed on its first run).
 `TestRecordedTabChecksTheTabStillExists` was written red first against a stub ([red run](../evidence/director-wake-2026-10-22-red.txt))
+`TestCloseOwnedWorkspace` checks the exact argv `herdr workspace close w1 --session guildhall-lab`, the stripped ambient `HERDR_*` variables, refusals of a zero or foreign-session `OwnedTab`, another Herdr workspace and an option-shaped id before any call, and the default-session refusal; it was added with the implementation and was not run red.

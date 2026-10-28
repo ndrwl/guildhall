@@ -49,6 +49,7 @@ Director session mutations are outside any task and name the record `director/se
 It is not part of the request digest, so receipts written before it existed have no record and still replay; mutations outside a task, such as workflow approvals, have none.
 `TaskHistory` reads a task, its attempts, documents, decisions, rulings, full-review requests and dependency override, and every receipt for it in one read transaction, labelled with the newest committed sequence; ownership records are read separately with `Ownership`.
 It scans every receipt, so its cost grows with the store (see [inspection](tasks.md#inspection)).
+`FinishTimes` reads, for one repository in one read transaction, each finished attempt's first `finish-attempt` receipt time, matched by request digest so receipts without a record name match too; a later intake rejection does not move it. Like `TaskHistory` it scans every receipt.
 `DirectorView` reads, in one read transaction, every task and attempt, the unreleased ownership records, the open decisions, the Director's unacknowledged messages, the newest Director session and every receipt that names a task, labelled the same way; it is what [`director status`](director.md#status) reads, and it scans every receipt too.
 The launcher's [heartbeat](artisan.md#heartbeat) is a file in the attempt directory, not a store record, so it writes no receipt.
 Sending message `<id>` records the mutation `message:<id>`, and acknowledging it records `message-ack:<id>`; a message's sequence is its send receipt's sequence.

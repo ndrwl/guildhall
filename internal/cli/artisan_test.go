@@ -180,6 +180,20 @@ func TestArtisanStartRefusesExistingResultAndBadFlags(t *testing.T) {
 	if code := app.Run(append(append([]string{}, inTab...), "--allow-tool", "Bash(go test:*)")); code != 2 || !strings.Contains(stderr.String(), "allow-tool") {
 		t.Errorf("--allow-tool in a tab: exit %d, stderr %q; want 2 naming allow-tool", code, stderr)
 	}
+	// The close delay is the pane bridge's alone.
+	app, _, stderr = newArtisanApp(t)
+	if code := app.Run(append(append([]string{}, inTab...), "--workspace-close-after", "5m")); code != 2 || !strings.Contains(stderr.String(), "goes with --pane-launch") {
+		t.Errorf("--workspace-close-after without --pane-launch: exit %d, stderr %q", code, stderr)
+	}
+}
+
+// TestBridgeArgsDropTheBridgesOwnFlags: the launcher a --pane-launch bridge detaches is the
+// ordinary owned start, without --pane-launch or the close delay in either spelling.
+func TestBridgeArgsDropTheBridgesOwnFlags(t *testing.T) {
+	got := bridgeArgs([]string{"--task", "t", "--pane-launch", "--workspace-close-after", "5m0s", "--attempt", "a", "--pane-launch=true", "--workspace-close-after=0s", "--workdir", "w"})
+	if want := []string{"--task", "t", "--attempt", "a", "--workdir", "w"}; strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("bridgeArgs = %q, want %q", got, want)
+	}
 }
 
 type artisanTestWriter func([]byte) (int, error)

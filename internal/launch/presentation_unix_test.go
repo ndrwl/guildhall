@@ -47,7 +47,7 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 			t.Errorf("report = %+v", r)
 		}
 		return nil
-	}}
+	}, CloseAfter: 5 * time.Minute}
 	h, err := p.Launch(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +59,10 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 	}()
 	if pane == "" || len(panes.Sent()) != 1 || !strings.Contains(panes.Sent()[0], "--pane-launch") {
 		t.Fatalf("no pane-backed owned launch: pane %q lines %q", pane, panes.Sent())
+	}
+	// The bridge is told the configured close delay so its finish line can state it.
+	if !strings.Contains(panes.Sent()[0], "'--pane-launch' '--workspace-close-after' '5m0s'") {
+		t.Errorf("bridge line %q does not pass the close delay", panes.Sent()[0])
 	}
 	// A second launch, even from another Process after a caller restart, must
 	// not type anything while ownership is live or the API outcome is unknown.

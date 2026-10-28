@@ -7,12 +7,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -46,7 +48,8 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b = []byte(strings.Replace(string(b), "[local]\n", "[local]\nherdr_session = \""+session+"\"\n", 1))
+	// A short close delay, not "0", which would never close.
+	b = []byte(strings.Replace(string(b), "[local]\n", "[local]\nherdr_session = \""+session+"\"\nartisan_workspace_close_after = \"1s\"\n", 1))
 	if err := os.WriteFile(d.config, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -168,17 +171,55 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 			t.Fatal("finished pane did not return to shell")
 		}
 	}
-	if len(tabs) != 1 || tabs[0].PaneCount != 1 {
-		t.Fatal("refusing to close workspace with unexpected tabs or panes")
-	}
-	if _, err := client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID); err != nil {
+	// The supervisor's workspace close sweep closes it once the launcher is gone
+	// and the 1s delay has passed, and leaves the Director's workspace and tab.
+	cfg, err := config.Load(d.config)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("herdr", "workspace", "close", ref.WorkspaceID, "--session", session).CombinedOutput(); err != nil {
-		t.Fatalf("close owned finished workspace: %s, %v", out, err)
+	app, _, sweepErr := newTestApp(nil, nil)
+	sweep, err := app.workspaceCloseSweep(cfg, d.store, d.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(at.Dir(d.state), paneClosed)
+	for end := time.Now().Add(30 * time.Second); ; time.Sleep(500 * time.Millisecond) {
+		sweep.run()
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("the sweep did not close the finished workspace; stderr %s", sweepErr)
+		}
+	}
+	workspaces, err = client.WorkspaceList(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range workspaces {
+		if w.ID == ref.WorkspaceID {
+			t.Fatalf("finished Artisan workspace still listed: %+v", workspaces)
+		}
+	}
+	if _, err := client.RecordedTab(ctx, parent.ID, parent.InitialTab.ID(), parent.InitialTab.PaneID()); err != nil {
+		t.Fatalf("the Director's tab did not survive the sweep: %v", err)
 	}
 	if after := d.attempts(t); !reflect.DeepEqual(before, after) {
 		t.Fatalf("closing finished workspace changed records: %+v -> %+v", before, after)
 	}
-	t.Logf("finished Artisan workspace closed; attempt outcome and spend unchanged: %+v", before[0])
+	if msgs := directorMessages(t, d.store); slices.ContainsFunc(msgs, func(id string) bool { return strings.Contains(id, store.MessageHerdrLeftOpen) }) {
+		t.Fatalf("the sweep reported a left-open workspace: %v", msgs)
+	}
+	t.Logf("sweep closed finished Artisan workspace %s; Director workspace %s and tab %s remain; attempt unchanged: %+v", ref.WorkspaceID, parent.ID, parent.InitialTab.ID(), before[0])
+	// Evidence for whether Herdr reuses a closed workspace's id.
+	probe, err := client.WorkspaceCreate(ctx, "lab-id-probe", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if out, err := exec.Command("herdr", "workspace", "close", probe.ID, "--session", session).CombinedOutput(); err != nil {
+			t.Logf("close probe Herdr workspace %s: %v: %s", probe.ID, err, out)
+		}
+	})
+	t.Logf("herdr id after close: closed %s, next created %s, reused=%v", ref.WorkspaceID, probe.ID, probe.ID == ref.WorkspaceID)
 }

@@ -213,6 +213,14 @@ With no supervisor running, the task waits until someone runs the `task start` i
 A validate or deliver observation of a conflicting PR or a strict-protection-blocked behind PR instead records its mergeability and sends one `pr-blocked` message per head and state.
 The report gives the URL, head commit, base tip (the base branch's tip when measured), conflicting paths, behind count and options, and the task waits for the Director, so the checks watcher does not keep polling it.
 The Director chooses the response; Guildhall never rebases automatically.
+
+## Artisan Herdr workspace cleanup
+
+With [`herdr_session`](configuration.md#settings) set, the session supervisor also closes finished Artisans' Herdr workspaces with the [workspace close sweep](artisan.md#workflow-artisan-workspaces) ([decision](decisions/artisan-workspace-close-sweep.md)).
+It runs one sweep when each session starts, a reload's included, so a Herdr workspace that became due while no supervisor ran is closed, then one on the first tick at least 5 minutes after the previous sweep started.
+A sweep runs in the supervisor process, one at a time and off the decision path, so a slow Herdr never delays a stop or reload; the supervisor lets a running sweep end before it records the session stopped.
+Each attempt it leaves open is reported once with an unread `herdr-workspace-left-open` message that does not wake the Director; an unreachable Herdr writes one standard-error line and the next sweep tries again.
+`director start --tab`, the wrapper, does not sweep; the supervisor in its tab does.
 [`step send-back`](step-send-back.md) can start a new attempt of a succeeded Artisan step with Director feedback, followed by normal rebase-aware review and republishing to the same PR.
 Holding the task, leaving the work unadvanced, using the existing attempt stop or Director-stage abandonment paths, and rechecking after an external change are alternatives, not a prescribed recovery sequence.
 See the shipped `guildhall-director-tasks` skill for the commands and their limits.

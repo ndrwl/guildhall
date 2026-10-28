@@ -89,6 +89,14 @@ const ChecksRefreshKey = "checks_refresh"
 // DefaultChecksRefresh is the checks refresh of a config that does not set ChecksRefreshKey.
 const DefaultChecksRefresh = time.Minute
 
+// ArtisanWorkspaceCloseAfterKey is the setting that sets how long after an attempt finishes the supervisor's
+// workspace close sweep closes the attempt's Herdr workspace (docs/configuration.md#settings).
+const ArtisanWorkspaceCloseAfterKey = "artisan_workspace_close_after"
+
+// DefaultArtisanWorkspaceCloseAfter is the close delay of a config that does not set
+// ArtisanWorkspaceCloseAfterKey.
+const DefaultArtisanWorkspaceCloseAfter = 5 * time.Minute
+
 // LockWaitKey is the setting that bounds each advance's waits for its task lock and for the store's lock
 // (docs/configuration.md#settings).
 const LockWaitKey = "lock_wait"
@@ -376,6 +384,16 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	if m, ok := c.Managed[ArtisanWorkspaceCloseAfterKey]; ok {
+		if _, err := parseArtisanWorkspaceCloseAfter(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[ArtisanWorkspaceCloseAfterKey]; ok {
+		if _, err := parseArtisanWorkspaceCloseAfter(v); err != nil {
+			add("local %v", err)
+		}
+	}
 	if m, ok := c.Managed[LockWaitKey]; ok {
 		if _, err := parseLockWait(m.Value); err != nil {
 			add("managed %v", err)
@@ -566,6 +584,26 @@ func parseChecksRefresh(v string) (time.Duration, error) {
 	d, err := time.ParseDuration(v)
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"1m\", or \"0s\" to read at every advance", ChecksRefreshKey, v)
+	}
+	return d, nil
+}
+
+// ArtisanWorkspaceCloseAfter returns the effective ArtisanWorkspaceCloseAfterKey setting as a duration:
+// DefaultArtisanWorkspaceCloseAfter when it is not set, and zero, which never closes a Herdr workspace
+// automatically, for "0" or "0s". A value that is not a nonnegative Go duration is an error; Parse refuses one
+// already.
+func (c *Config) ArtisanWorkspaceCloseAfter() (time.Duration, error) {
+	v, ok := c.Setting(ArtisanWorkspaceCloseAfterKey)
+	if !ok {
+		return DefaultArtisanWorkspaceCloseAfter, nil
+	}
+	return parseArtisanWorkspaceCloseAfter(v)
+}
+
+func parseArtisanWorkspaceCloseAfter(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"5m\", or \"0\" never to close automatically", ArtisanWorkspaceCloseAfterKey, v)
 	}
 	return d, nil
 }

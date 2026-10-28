@@ -158,6 +158,10 @@ type App struct {
 	// VersionGit reads Guildhall's own repository for version and director status; nil means git.Program with a
 	// five-second bound on each run.
 	VersionGit VersionGit
+	// ArtisanWorkspaces opens the terminal host a Director session's supervisor closes finished Artisans' Herdr
+	// workspaces in, for the named Herdr session, after checking the session's server; nil means Herdr, found on
+	// PATH as herdr.
+	ArtisanWorkspaces func(ctx context.Context, session string) (WorkspaceCloseHost, error)
 }
 
 // New returns an App wired to the real process environment.

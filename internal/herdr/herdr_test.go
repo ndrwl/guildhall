@@ -348,6 +348,55 @@ func TestCloseTabOnlyOwnedBySameSession(t *testing.T) {
 	}
 }
 
+func TestCloseOwnedWorkspace(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"tab create":      {stdout: fixture(t, "tab_create.json")},
+		"workspace close": {stdout: fixture(t, "workspace_close.json")},
+	})
+	c.environ = func() []string {
+		return []string{"PATH=/bin", "HERDR_SESSION=default", "HERDR_SOCKET_PATH=/other.sock", "HERDR_WORKSPACE_ID=w9"}
+	}
+	tab, err := c.TabCreate(context.Background(), TabSpec{WorkspaceID: "w1", Label: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CloseOwnedWorkspace(context.Background(), OwnedTab{}, "w1"); err == nil {
+		t.Error("closing a workspace with a zero OwnedTab succeeded")
+	}
+	if err := c.CloseOwnedWorkspace(context.Background(), tab, "w2"); err == nil {
+		t.Error("closing a workspace the owned tab is not in succeeded")
+	}
+	if err := c.CloseOwnedWorkspace(context.Background(), tab, "--all"); err == nil {
+		t.Error("closing an option-shaped workspace id succeeded")
+	}
+	other, err := New(Options{Session: "other-lab", Command: []string{"herdr"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.run = f.run
+	if err := other.CloseOwnedWorkspace(context.Background(), tab, "w1"); err == nil {
+		t.Error("another session's client closed the workspace")
+	}
+	if len(f.calls) != 1 {
+		t.Fatalf("refused closes reached Herdr: %q", f.calls)
+	}
+	if err := c.CloseOwnedWorkspace(context.Background(), tab, "w1"); err != nil {
+		t.Fatal(err)
+	}
+	last := f.calls[len(f.calls)-1]
+	if want := []string{"herdr", "workspace", "close", "w1", "--session", "guildhall-lab"}; !slices.Equal(last.args, want) {
+		t.Errorf("argv = %q, want %q", last.args, want)
+	}
+	for _, e := range last.env {
+		if strings.HasPrefix(e, "HERDR_SESSION=default") || strings.HasPrefix(e, "HERDR_SOCKET_PATH=") || strings.HasPrefix(e, "HERDR_WORKSPACE_ID=") {
+			t.Errorf("ambient %q reached the Herdr call", e)
+		}
+	}
+	if _, err := New(Options{Session: "default", Command: []string{"herdr"}}); err == nil {
+		t.Error("a client for the default session was built")
+	}
+}
+
 func TestPaneProcessInfo(t *testing.T) {
 	c, f := newTestClient(t, map[string]response{"pane process-info": {stdout: fixture(t, "process_info_idle.json")}})
 	info, err := c.PaneProcessInfo(context.Background(), "w1:p2")

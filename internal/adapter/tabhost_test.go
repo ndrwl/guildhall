@@ -409,7 +409,8 @@ func stubHerdr(dir string, args []string) int {
 		}
 	}
 	tabFile := func(id string) string { return filepath.Join(dir, session+"-tab-"+strings.ReplaceAll(id, ":", "_")) }
-	workspaces := func() [][2]string {
+	closedWorkspace := func(id string) string { return filepath.Join(dir, session+"-closed-"+id) }
+	allWorkspaces := func() [][2]string {
 		list := [][2]string{{"w1", "lab"}}
 		b, _ := os.ReadFile(filepath.Join(dir, session+"-workspaces"))
 		for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
@@ -418,6 +419,43 @@ func stubHerdr(dir string, args []string) int {
 			}
 		}
 		return list
+	}
+	workspaces := func() [][2]string {
+		var open [][2]string
+		for _, w := range allWorkspaces() {
+			if _, err := os.Stat(closedWorkspace(w[0])); err != nil {
+				open = append(open, w)
+			}
+		}
+		return open
+	}
+	tabLabel := func(id string) string {
+		if b, err := os.ReadFile(tabFile(id) + "-label"); err == nil {
+			return string(b)
+		}
+		return "x"
+	}
+	paneCount := func(id string) int {
+		if _, err := os.Stat(tabFile(id) + "-split"); err == nil {
+			return 2
+		}
+		return 1
+	}
+	// tabsIn lists the tabs whose file records workspace ws.
+	tabsIn := func(ws string) []string {
+		entries, _ := os.ReadDir(dir)
+		var ids []string
+		for _, e := range entries {
+			name, ok := strings.CutPrefix(e.Name(), session+"-tab-")
+			if !ok || strings.Contains(name, "-") {
+				continue
+			}
+			id := strings.ReplaceAll(name, "_", ":")
+			if b, err := os.ReadFile(tabFile(id)); err == nil && string(b) == ws {
+				ids = append(ids, id)
+			}
+		}
+		return ids
 	}
 	flag := func(name string) string {
 		if i := slices.Index(args, name); i >= 0 && i+1 < len(args) {
@@ -438,7 +476,7 @@ func stubHerdr(dir string, args []string) int {
 			fmt.Fprintf(os.Stderr, "stub herdr: workspace create without --no-focus: %q\n", args)
 			return 2
 		}
-		id, label := fmt.Sprintf("w%d", len(workspaces())+1), flag("--label")
+		id, label := fmt.Sprintf("w%d", len(allWorkspaces())+1), flag("--label")
 		f, err := os.OpenFile(filepath.Join(dir, session+"-workspaces"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 		if err != nil {
 			return 2
@@ -467,10 +505,36 @@ func stubHerdr(dir string, args []string) int {
 		}
 		tab, paneID := fmt.Sprintf("%s:t%d", ws, k+1), fmt.Sprintf("%s:p%d", ws, k+1)
 		p, _ := pane(paneID)
-		if os.WriteFile(p, []byte("idle"), 0o600) != nil || os.WriteFile(tabFile(tab), []byte(ws), 0o600) != nil {
+		if os.WriteFile(p, []byte("idle"), 0o600) != nil || os.WriteFile(tabFile(tab), []byte(ws), 0o600) != nil ||
+			os.WriteFile(tabFile(tab)+"-label", []byte(flag("--label")), 0o600) != nil {
 			return 2
 		}
-		fmt.Printf(`{"id":"cli:tab:create","result":{"root_pane":{"pane_id":%[2]q,"tab_id":%[1]q,"workspace_id":%[3]q},"tab":{"label":"x","tab_id":%[1]q,"workspace_id":%[3]q,"pane_count":1},"type":"tab_created"}}`, tab, paneID, ws)
+		fmt.Printf(`{"id":"cli:tab:create","result":{"root_pane":{"pane_id":%[2]q,"tab_id":%[1]q,"workspace_id":%[3]q},"tab":{"label":%[4]q,"tab_id":%[1]q,"workspace_id":%[3]q,"pane_count":1},"type":"tab_created"}}`, tab, paneID, ws, flag("--label"))
+		return 0
+	case "tab list":
+		ws := flag("--workspace")
+		if !slices.ContainsFunc(workspaces(), func(w [2]string) bool { return w[0] == ws }) {
+			return fail("workspace_not_found", "workspace not found")
+		}
+		var items []string
+		for _, id := range tabsIn(ws) {
+			items = append(items, fmt.Sprintf(`{"label":%q,"pane_count":%d,"tab_id":%q,"workspace_id":%q}`, tabLabel(id), paneCount(id), id, ws))
+		}
+		fmt.Printf(`{"id":"cli:tab:list","result":{"tabs":[%s],"type":"tab_list"}}`, strings.Join(items, ","))
+		return 0
+	case "workspace close":
+		ws := args[2]
+		if !slices.ContainsFunc(workspaces(), func(w [2]string) bool { return w[0] == ws }) {
+			return fail("workspace_not_found", "workspace not found")
+		}
+		for _, id := range tabsIn(ws) {
+			_ = os.Remove(tabFile(id))
+		}
+		if os.WriteFile(closedWorkspace(ws), nil, 0o600) != nil {
+			return 2
+		}
+		logSent("close-workspace " + ws)
+		fmt.Print(`{"id":"cli:workspace:close","result":{"type":"ok"}}`)
 		return 0
 	case "tab close":
 		if err := os.Remove(tabFile(args[2])); err != nil {
@@ -484,11 +548,7 @@ func stubHerdr(dir string, args []string) int {
 		if err != nil {
 			return fail("tab_not_found", "tab "+args[2]+" not found")
 		}
-		count := 1
-		if _, err := os.Stat(tabFile(args[2]) + "-split"); err == nil {
-			count = 2
-		}
-		fmt.Printf(`{"id":"cli:tab:get","result":{"tab":{"agent_status":"unknown","focused":false,"label":"x","number":2,"pane_count":%d,"tab_id":%q,"workspace_id":%q},"type":"tab_info"}}`, count, args[2], ws)
+		fmt.Printf(`{"id":"cli:tab:get","result":{"tab":{"agent_status":"unknown","focused":false,"label":%q,"number":2,"pane_count":%d,"tab_id":%q,"workspace_id":%q},"type":"tab_info"}}`, tabLabel(args[2]), paneCount(args[2]), args[2], ws)
 		return 0
 	case "pane get":
 		if _, ok := pane(args[2]); !ok {

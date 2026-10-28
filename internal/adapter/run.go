@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"sync"
 	"time"
 
@@ -188,7 +189,7 @@ func (h *HerdrTabs) lookup(ref TabRef) (herdr.OwnedTab, error) {
 // AdoptTab accepts a tab Guildhall created and recorded in an earlier process.
 func (h *HerdrTabs) AdoptTab(ctx context.Context, ref TabRef) error {
 	if ref.Session != h.client.Session() {
-		return fmt.Errorf("tab %q is in session %q, not %q", ref.TabID, ref.Session, h.client.Session())
+		return leftOpen("tab %q is in session %q, not %q", ref.TabID, ref.Session, h.client.Session())
 	}
 	t, err := h.client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID)
 	if err != nil {
@@ -267,6 +268,19 @@ type IdleTabCloser interface {
 
 // CloseTab closes an owned idle shell, never an arbitrary tab selected by label.
 func (h *HerdrTabs) CloseTab(ctx context.Context, ref TabRef) error {
+	return h.closeTab(ctx, ref, "")
+}
+
+// CloseLabelledTab is CloseTab that also requires the tab to be labelled label.
+func (h *HerdrTabs) CloseLabelledTab(ctx context.Context, ref TabRef, label string) error {
+	if label == "" {
+		return errors.New("close tab: no label to match")
+	}
+	return h.closeTab(ctx, ref, label)
+}
+
+// closeTab revalidates ref, and its label unless label is empty, and closes it.
+func (h *HerdrTabs) closeTab(ctx context.Context, ref TabRef, label string) error {
 	if _, err := h.lookup(ref); err != nil {
 		return err
 	}
@@ -279,7 +293,10 @@ func (h *HerdrTabs) CloseTab(ctx context.Context, ref TabRef) error {
 		return err
 	}
 	if tab.ID != ref.TabID || tab.PaneCount != 1 {
-		return errors.New("tab identity changed or tab has multiple panes; tab left open")
+		return leftOpen("tab identity changed or tab has multiple panes; tab left open")
+	}
+	if label != "" && tab.Label != label {
+		return leftOpen("tab %s is labelled %q, not %q; tab left open", ref.TabID, tab.Label, label)
 	}
 	if err := h.client.CheckOwnedPane(ctx, t); err != nil {
 		return err
@@ -289,9 +306,113 @@ func (h *HerdrTabs) CloseTab(ctx context.Context, ref TabRef) error {
 		return err
 	}
 	if !info.ShellIdle() {
-		return errors.New("pane is not an idle shell; tab left open")
+		return leftOpen("pane is not an idle shell; tab left open")
 	}
 	if err := h.client.CloseOwnedTab(ctx, t); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	delete(h.owned, ref)
+	h.mu.Unlock()
+	return nil
+}
+
+// LeftOpenError is a close that revalidation refused because the live terminal
+// no longer matches the durable record: Reason says what differs. Retrying
+// later may succeed once the terminal matches again.
+type LeftOpenError struct {
+	Reason string
+}
+
+func (e *LeftOpenError) Error() string { return e.Reason }
+
+func leftOpen(format string, args ...any) error {
+	return &LeftOpenError{Reason: fmt.Sprintf(format, args...)}
+}
+
+// IsLeftOpen reports whether err is a close refused by revalidation, a
+// LeftOpenError or a recorded tab or pane that moved (herdr.ErrMoved), rather
+// than a terminal that could not be asked.
+func IsLeftOpen(err error) bool {
+	var l *LeftOpenError
+	return errors.As(err, &l) || errors.Is(err, herdr.ErrMoved)
+}
+
+// IdleWorkspaceCloser closes the Herdr workspace a finished Artisan attempt
+// was presented in, as its durable record names it. CloseWorkspace accepts
+// only a created or durably adopted tab identity and revalidates the whole
+// workspace immediately before closing: ref's session is the host's, the
+// workspace exists and is labelled one of workspaceLabels, it holds exactly
+// one tab, ref's, labelled tabLabel with one pane, the pane is still ref's and
+// its shell is idle. A mismatch is a LeftOpenError; a workspace, tab or pane
+// already gone is an error for which herdr.IsNotFound is true.
+// CloseLabelledTab closes only ref's tab, as IdleTabCloser does, once its
+// label is tabLabel. Callers must separately prove that the attempt finished
+// and its launcher is gone. Closing never updates a task, attempt or session
+// record.
+type IdleWorkspaceCloser interface {
+	CloseWorkspace(ctx context.Context, ref TabRef, workspaceLabels []string, tabLabel string) error
+	CloseLabelledTab(ctx context.Context, ref TabRef, tabLabel string) error
+}
+
+var _ IdleWorkspaceCloser = (*HerdrTabs)(nil)
+
+// workspaceNotFound is the not-found error of a workspace no longer listed.
+func workspaceNotFound(id string) error {
+	return &herdr.APIError{Code: "workspace_not_found", Message: fmt.Sprintf("workspace %s is not listed", id)}
+}
+
+// CloseWorkspace closes ref's workspace once it holds nothing but ref's idle tab.
+func (h *HerdrTabs) CloseWorkspace(ctx context.Context, ref TabRef, workspaceLabels []string, tabLabel string) error {
+	if ref.Session != h.client.Session() {
+		return leftOpen("workspace %s is recorded in session %q, not %q", ref.WorkspaceID, ref.Session, h.client.Session())
+	}
+	if _, err := h.lookup(ref); err != nil {
+		return err
+	}
+	if len(workspaceLabels) == 0 || tabLabel == "" {
+		return errors.New("close workspace: no labels to match")
+	}
+	list, err := h.client.WorkspaceList(ctx)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(list, func(w herdr.Workspace) bool { return w.ID == ref.WorkspaceID })
+	if i < 0 {
+		return workspaceNotFound(ref.WorkspaceID)
+	}
+	if label := list[i].Label; !slices.Contains(workspaceLabels, label) {
+		return leftOpen("workspace %s is labelled %q, not an attempt's workspace label", ref.WorkspaceID, label)
+	}
+	tabs, err := h.client.TabList(ctx, ref.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	switch {
+	case len(tabs) != 1:
+		return leftOpen("workspace %s holds %d tabs, not only the recorded tab %s", ref.WorkspaceID, len(tabs), ref.TabID)
+	case tabs[0].ID != ref.TabID:
+		return leftOpen("workspace %s holds tab %s, not the recorded tab %s", ref.WorkspaceID, tabs[0].ID, ref.TabID)
+	case tabs[0].Label != tabLabel:
+		return leftOpen("tab %s is labelled %q, not %q", ref.TabID, tabs[0].Label, tabLabel)
+	case tabs[0].PaneCount != 1:
+		return leftOpen("tab %s holds %d panes, not one", ref.TabID, tabs[0].PaneCount)
+	}
+	t, err := h.client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID)
+	if err != nil {
+		return err
+	}
+	if err := h.client.CheckOwnedPane(ctx, t); err != nil {
+		return err
+	}
+	info, err := h.client.PaneProcessInfo(ctx, ref.PaneID)
+	if err != nil {
+		return err
+	}
+	if !info.ShellIdle() {
+		return leftOpen("pane %s is not an idle shell", ref.PaneID)
+	}
+	if err := h.client.CloseOwnedWorkspace(ctx, t, ref.WorkspaceID); err != nil {
 		return err
 	}
 	h.mu.Lock()

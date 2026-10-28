@@ -499,6 +499,7 @@ const (
 	// MessageDependencyBranchKept: the gate opened but the task branch could not be moved to the current main.
 	MessageDependencyBranchKept = "dependency-branch-kept"
 	MessageDirectorStage        = "director-stage"
+	MessageHerdrLeftOpen        = "herdr-workspace-left-open"
 	MessageJudgeFailed          = "judge-failed"
 	MessageJudgement            = "judgement"
 	MessageJudgementRefused     = "judgement-refused"
@@ -515,8 +516,8 @@ const (
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
-// sender: "engine" for an advance (internal/interp), "launcher" for an attempt's launcher and "local" for the
-// documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
+// sender: "engine" for an advance (internal/interp), "launcher" for an attempt's launcher, "quality" for a judge,
+// "supervisor" for a Director session's supervisor and "local" for the documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
 // wake line carries no sender-chosen text. A type is added here by the change that sends it, never by a sender.
 var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
@@ -528,6 +529,7 @@ var MessageTypes = map[string]string{
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
 	MessageQuestion: "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
+	MessageHerdrLeftOpen: "supervisor",
 }
 
 // DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the types in
