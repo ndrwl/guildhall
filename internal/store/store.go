@@ -256,6 +256,18 @@ func storeErr(err error) error {
 
 var mutationIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
+// requestDigest is the digest a receipt records of operation op on request req.
+func requestDigest(op string, req any) (string, error) {
+	body, err := json.Marshal(struct {
+		Op  string `json:"op"`
+		Req any    `json:"req"`
+	}{op, req})
+	if err != nil {
+		return "", err
+	}
+	return string(digest.Of(body)), nil
+}
+
 // mutate runs apply and records its receipt in one transaction, or returns the
 // original receipt when mutationID was already committed for the same request.
 // apply fills the receipt's record fields and may read its sequence.
@@ -263,14 +275,10 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 	if !mutationIDPattern.MatchString(mutationID) {
 		return Receipt{}, fmt.Errorf("store: %w: mutation id %q must match %s", ErrInvalid, mutationID, mutationIDPattern)
 	}
-	body, err := json.Marshal(struct {
-		Op  string `json:"op"`
-		Req any    `json:"req"`
-	}{op, req})
+	requestDigest, err := requestDigest(op, req)
 	if err != nil {
 		return Receipt{}, fmt.Errorf("store: %w", err)
 	}
-	requestDigest := string(digest.Of(body))
 
 	var out Receipt
 	err = s.db.Update(func(tx *bolt.Tx) error {

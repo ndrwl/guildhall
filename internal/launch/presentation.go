@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/interp"
 )
@@ -32,6 +33,23 @@ type Presentation struct {
 // An ambiguous API call leaves it in place: neither a caller restart nor a
 // missing pane is permission to launch this attempt again.
 const PaneClaim = "pane-launch.json"
+
+// WorkspaceLabel is the label of the Herdr workspace an attempt is presented
+// in: "└ <task> · <step> #<n>".
+func WorkspaceLabel(k artisan.AttemptKey) string {
+	return fmt.Sprintf("└ %s · %s #%d", k.TaskID, k.Step, k.Attempt)
+}
+
+// TabLabel is the label of the tab an attempt runs in: "artisan <key>".
+func TabLabel(k artisan.AttemptKey) string { return "artisan " + k.String() }
+
+// AttemptWorkspaceLabels are the labels a Herdr workspace created for attempt
+// k alone has carried: WorkspaceLabel, and TabLabel, which releases from #140
+// to #145 gave the workspace too. Releases before #140 presented an attempt
+// as a tab in a shared workspace, whose label is neither.
+func AttemptWorkspaceLabels(k artisan.AttemptKey) []string {
+	return []string{WorkspaceLabel(k), TabLabel(k)}
+}
 
 func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, presentation *Presentation) (interp.Handle, error) {
 	if presentation.Host == nil || presentation.Report == nil {
@@ -55,9 +73,8 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	if err := claim.Close(); err != nil {
 		return interp.Handle{}, err
 	}
-	label := "artisan " + at.Key.String()
-	workspaceLabel := fmt.Sprintf("└ %s · %s #%d", at.Key.TaskID, at.Key.Step, at.Key.Attempt)
-	workspace, err := presentation.Host.CreateWorkspace(ctx, workspaceLabel, cmd.Dir)
+	label := TabLabel(at.Key)
+	workspace, err := presentation.Host.CreateWorkspace(ctx, WorkspaceLabel(at.Key), cmd.Dir)
 	if err != nil {
 		return interp.Handle{}, err
 	}
@@ -132,7 +149,7 @@ func Present(argv, env []string, logPath string, out io.Writer) error {
 		select {
 		case err := <-done:
 			_, _ = io.Copy(out, reader)
-			_, _ = fmt.Fprintln(out, "\nguildhall: Artisan launcher finished; result and work remain in Guildhall. This workspace may be closed.")
+			_, _ = fmt.Fprintln(out, "\nguildhall: Artisan launcher finished; result and work remain in Guildhall. This Herdr workspace closes automatically after the configured delay (artisan_workspace_close_after).")
 			return err
 		case <-time.After(100 * time.Millisecond):
 		}

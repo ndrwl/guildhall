@@ -182,6 +182,15 @@ func recordNextSession(storePath string, self artisan.Identity, cfg any, pane st
 // whether the session ended for a reload. A signal received before the runtime starts ends the session with no
 // runtime started.
 func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, signals <-chan os.Signal) (int, bool) {
+	// Every session, the first and each reload's, starts with a workspace close sweep, so a Herdr workspace that
+	// became due while no supervisor ran is closed; the session's end waits for a running sweep.
+	sweep, err := a.workspaceCloseSweep(p.cfg, storePath, state)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
+	closes := &workspaceCloseWatch{every: workspaceCloseEvery, round: sweep.run}
+	closes.tick(time.Now())
+	defer closes.wait()
 	status, err := readDirectorStatus(context.Background(), storePath, state, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: in-flight snapshot: %w", err)), false
@@ -272,7 +281,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps}
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, closes: closes}
 	if ep != nil {
 		w.turns = ep.Turns()
 	}
@@ -388,6 +397,8 @@ type sessionWatch struct {
 	// deps is the session's dependency watcher, a second checks watcher of the tasks the dependency gate holds,
 	// ticked with checks; nil without one.
 	deps *checksWatch
+	// closes is the session's workspace close sweep, ticked at every poll; nil without one.
+	closes *workspaceCloseWatch
 
 	// wanted is when an end now wanted was first seen, zero while none is, and signalled when the newest turn
 	// signal or wake arrived, or the first decision was made.
@@ -402,7 +413,7 @@ type sessionWatch struct {
 
 // waitSession waits for the started runtime c, in unit u, to end, passing its unit each termination among signals,
 // and returns the last termination passed on, if any, why the supervisor ended the runtime, if it did, and c's end.
-// Every App.SessionPoll it ticks the checks watcher, and every poll and at each turn signal it decides with
+// Every App.SessionPoll it ticks the checks watcher and the workspace close sweep, and every poll and at each turn signal it decides with
 // decideEnd whether to end the runtime's unit; once it has, it kills the unit if the runtime has not exited
 // stopKill later. However the runtime ends, it returns only once the unit is empty: whatever the runtime left
 // running is killed, and a unit not proven empty stopKill after the runtime's end is an error.
@@ -444,6 +455,7 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 			if w.deps != nil {
 				w.deps.tick(time.Now())
 			}
+			w.closes.tick(time.Now())
 			decide("")
 		case <-u.Exited():
 			err := errors.Join(empty(u, poll), u.Close())

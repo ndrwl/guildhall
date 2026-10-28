@@ -106,6 +106,64 @@ func (s *Store) Receipts() ([]Receipt, error) {
 	return out, nil
 }
 
+// AttemptName names one stage attempt within a repository.
+type AttemptName struct {
+	TaskID string
+	Step   string
+	Number int
+}
+
+// FinishTimes returns, for each finished attempt of a repository, the commit time of its finish-attempt receipt:
+// when FinishAttempt first recorded its outcome, however intake changed the outcome later. It reads in one
+// transaction without writing, matching receipts to attempts by request digest, so receipts committed before
+// receipts named their record are matched too. It scans every receipt in the store, so its cost grows with the
+// store's mutation count; read it once per repository and reuse it.
+func (s *Store) FinishTimes(repository string) (map[AttemptName]time.Time, error) {
+	out := map[AttemptName]time.Time{}
+	err := s.view(func(tx *bolt.Tx) error {
+		var attempts []StageAttempt
+		if err := scan(repoBucket(tx, repository, bucketAttempts), nil, &attempts); err != nil {
+			return err
+		}
+		finishes := map[string]AttemptName{}
+		for _, a := range attempts {
+			if a.Outcome == "" {
+				continue
+			}
+			for _, outcome := range []AttemptOutcome{AttemptSucceeded, AttemptFailed, AttemptStopped} {
+				req := StageAttempt{Repository: repository, TaskID: a.TaskID, Step: a.Step, Number: a.Number, Outcome: outcome}
+				d, err := requestDigest("finish-attempt", req)
+				if err != nil {
+					return err
+				}
+				finishes[d] = AttemptName{TaskID: a.TaskID, Step: a.Step, Number: a.Number}
+			}
+		}
+		if len(finishes) == 0 {
+			return nil
+		}
+		return tx.Bucket(bucketReceipts).ForEach(func(k, v []byte) error {
+			var r Receipt
+			if err := json.Unmarshal(v, &r); err != nil {
+				return fmt.Errorf("receipt %q: %w", k, err)
+			}
+			if r.Operation != "finish-attempt" || r.Repository != repository {
+				return nil
+			}
+			if name, ok := finishes[r.RequestDigest]; ok {
+				if at, seen := out[name]; !seen || r.CommittedAt.Before(at) {
+					out[name] = r.CommittedAt
+				}
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: finish times of %s: %w", repository, err)
+	}
+	return out, nil
+}
+
 // scan appends the records of bucket b whose keys start with prefix, in key order; a nil bucket has none.
 func scan[T any](b *bolt.Bucket, prefix []byte, out *[]T) error {
 	if b == nil {
