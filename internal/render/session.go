@@ -43,6 +43,9 @@ type SessionInput struct {
 	RuntimeFiles map[string][]byte
 	// InFlight is the in-flight snapshot, one line per item, in order.
 	InFlight []string
+	// Parked lists the attempts the Director parked, one line per attempt, in order: held on purpose, for
+	// information and not work. The section is left out when there are none.
+	Parked []string
 	// Handoff is the path of the newest handoff note, or empty when there is none.
 	Handoff string
 }
@@ -70,7 +73,7 @@ type SessionManifest struct {
 // Session renders a Director session into in.Dir: the role prompt at RoleFile with LF line endings; every
 // skill found in roots, by directory name, the first root holding a name winning, copied byte for byte under
 // in.SkillsDir; the runtime's files; StartupFile, which says the session is starting up, names the handoff
-// note or says there is none, and lists the in-flight snapshot; and ManifestFile.
+// note or says there is none, lists the in-flight snapshot and then any parked attempts, as information; and ManifestFile.
 // A root directory that does not exist holds no skills; a non-directory entry of a root, such as CREDITS.md, is not a skill and is skipped; a skill directory whose
 // name is not an id, or that holds a symbolic link or other non-regular file, is refused.
 // A non-empty in.Dir is refused with ErrNotEmpty, and a runtime file or skills directory path that is not
@@ -86,6 +89,11 @@ func Session(in SessionInput, roots []SkillRoot) (SessionRendered, error) {
 	for _, line := range in.InFlight {
 		if strings.ContainsAny(line, "\r\n") {
 			return SessionRendered{}, fmt.Errorf("render: in-flight item %q must be one line", line)
+		}
+	}
+	for _, line := range in.Parked {
+		if strings.ContainsAny(line, "\r\n") {
+			return SessionRendered{}, fmt.Errorf("render: parked item %q must be one line", line)
 		}
 	}
 	m := SessionManifest{Schema: SessionManifestSchema, Session: in.Number, Files: []File{}, Skills: []Skill{}}
@@ -226,6 +234,13 @@ func composeStartup(in SessionInput) string {
 	fmt.Fprintf(&b, "\n## In flight\n\n%s", orNone(items.String()))
 	if len(in.InFlight) == 0 {
 		b.WriteString("\n")
+	}
+	if len(in.Parked) > 0 {
+		b.WriteString("\n## Parked\n\n")
+		b.WriteString("These attempts are held on purpose and are not work: nothing here needs you until its hold ends.\n\n")
+		for _, line := range in.Parked {
+			fmt.Fprintf(&b, "- %s\n", line)
+		}
 	}
 	return b.String()
 }

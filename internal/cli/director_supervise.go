@@ -208,6 +208,12 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		}
 		inFlight = append(inFlight, fmt.Sprintf("%s: %s; run `%s`", it.Kind, oneLine(it.Reason), it.Command))
 	}
+	// Parked attempts come from the same status read, so what a session is told cannot drift from the feed (D71).
+	var parked []string
+	for _, p := range status.Parked {
+		parked = append(parked, fmt.Sprintf("parked: attempt %d of %s of %s/%s %s; reason: %s; retry with `%s`",
+			p.Attempt, p.Step, p.Repository, p.TaskID, p.Outcome, oneLine(p.Reason), p.Command))
+	}
 	handoff, err := withStore(storePath, true, func(s *store.Store) (string, error) {
 		note, err := s.LatestHandoffNote()
 		if errors.Is(err, store.ErrNotFound) {
@@ -229,7 +235,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	dir := sessionDir(copyDir, n)
 	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
-		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Handoff: handoff}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
+		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Parked: parked, Handoff: handoff}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}

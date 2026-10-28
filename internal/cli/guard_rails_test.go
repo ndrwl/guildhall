@@ -46,6 +46,8 @@ func TestUnlistedRepositoryRefusedByEveryCommand(t *testing.T) {
 		{"step done", append([]string{"step", "done"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1", "--result", "result.json")...), ""},
 		{"step finish", append([]string{"step", "finish"}, append(flags, "--task", "t-9", "--step", "grill", "--attempt", "1", "--summary", "Abandoned.", "--failed")...), ""},
 		{"step retry", append([]string{"step", "retry"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1")...), ""},
+		{"step park", append([]string{"step", "park"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1", "--reason", "Hold.")...), ""},
+		{"step unpark", append([]string{"step", "unpark"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1")...), ""},
 		{"messages send", []string{"messages", "send", "--store", d.store, "--config", d.config, "director", "-"}, note},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

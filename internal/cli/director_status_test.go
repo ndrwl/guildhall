@@ -48,7 +48,8 @@ func exitedLauncher(t *testing.T) store.ProcessIdentity {
 // worker-stalled message and an acknowledged note. app/t-7's plan attempt succeeded with its result file and app/t-8's
 // was stopped, while each task's next.json still waits on that attempt, as a watcher whose advance failed leaves them.
 // app/t-3's plan attempt reported a measured and estimated spend and its build attempt an unknown one. app/t-9's
-// plan attempt is a Director stage the engine handed to the Director, with no ownership record (F46).
+// plan attempt is a Director stage the engine handed to the Director, with no ownership record (F46). app/t-10's
+// build attempt failed and was parked, while its next.json waits for the Director on it.
 // The question woke the Director and the worker-stalled message, woken last, was queued.
 func statusCopy(t *testing.T) string {
 	t.Helper()
@@ -150,6 +151,14 @@ func statusCopy(t *testing.T) string {
 		},
 		func() (store.Receipt, error) { return s.CreateTask("i-34", task("app", "t-9", "Director stage")) },
 		func() (store.Receipt, error) { return s.StartAttempt("i-35", "app", "t-9", "plan") },
+		func() (store.Receipt, error) { return s.CreateTask("i-36", task("app", "t-10", "Parked")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-37", "app", "t-10", "build") },
+		func() (store.Receipt, error) {
+			return s.FinishAttempt("i-38", "app", "t-10", "build", 1, store.AttemptFailed)
+		},
+		func() (store.Receipt, error) {
+			return s.ParkAttempt("i-39", "app", "t-10", "build", 1, "Held until app/t-4 merges.", 0)
+		},
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
@@ -182,6 +191,10 @@ func statusCopy(t *testing.T) string {
 	}
 	writeFile(t, filepath.Join(handed, "launched.json"), `{"launcher":"director","identity":{"task_id":"t-9","attempt_id":"plan-1"}}`+"\n")
 	writeFile(t, filepath.Join(state, "app", "t-9", "next.json"), `{"wait":"director-stage","step":"plan","attempt":1}`+"\n")
+	if err := os.MkdirAll(filepath.Join(state, "app", "t-10"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(state, "app", "t-10", "next.json"), `{"wait":"director","step":"build","attempt":1}`+"\n")
 	return dir
 }
 
@@ -285,11 +298,11 @@ func TestDirectorStatusShowsSpend(t *testing.T) {
 	if got, want := spend["app/t-5"], (store.SpendTotal{Attempts: 1, TokensUnknown: 1, CostUnknown: 1, Tokens: store.SpendUnknown, Cost: store.SpendUnknown}); got != want {
 		t.Errorf("app/t-5 spend = %+v, want %+v", got, want)
 	}
-	// Every attempt in the fixture started today: of the six finished (t-3 twice, t-4, t-5, t-7 and t-8) only
-	// t-3's plan attempt reported its spend, so five are unknown.
+	// Every attempt in the fixture started today: of the seven finished (t-3 twice, t-4, t-5, t-7, t-8 and t-10)
+	// only t-3's plan attempt reported its spend, so six are unknown.
 	today := st.Session.GuardRails.SpendToday
 	want := t3
-	want.Attempts, want.TokensUnknown, want.CostUnknown = 6, 5, 5
+	want.Attempts, want.TokensUnknown, want.CostUnknown = 7, 6, 6
 	if today != want {
 		t.Errorf("spend_today = %+v, want %+v", today, want)
 	}
@@ -308,7 +321,7 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 		`"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22",` +
 		`"spend_today":{"attempts":0,"tokens_unknown":0,"cost_unknown":0,"tokens":"unknown","input_tokens":0,"output_tokens":0,` +
 		`"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost":"unknown","cost_usd":0}}},"mode":{"name":"standalone"},"tasks":[],"decisions":[],` +
-		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],` +
+		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],"parked":[],` +
 		`"version":{"version":"dev","revision":"` + testRevision + `","time":"2026-10-27T21:00:24Z","modified":false,"go_version":"go1.27.2",` +
 		`"platform":"linux/amd64","pr":null,"task":null,"behind_main":null}}` + "\n"
 	if out != want {

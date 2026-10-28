@@ -194,7 +194,7 @@ func newWorkAdmitted(records storeRecords, repo, task string) error {
 	return err
 }
 
-// step runs `guildhall step done|finish|retry`.
+// step runs `guildhall step done|finish|retry|send-back|park|unpark`.
 func (a *App) step(args []string) int {
 	switch {
 	case len(args) > 0 && args[0] == "done":
@@ -205,8 +205,12 @@ func (a *App) step(args []string) int {
 		return a.stepRetry(args[1:])
 	case len(args) > 0 && args[0] == "send-back":
 		return a.stepSendBack(args[1:])
+	case len(args) > 0 && args[0] == "park":
+		return a.stepPark(args[1:])
+	case len(args) > 0 && args[0] == "unpark":
+		return a.stepUnpark(args[1:])
 	}
-	return a.usageError("step: the commands are done, finish, retry and send-back")
+	return a.usageError("step: the commands are done, finish, retry, send-back, park and unpark")
 }
 
 // stepRetry runs `guildhall step retry`: it feeds attempt-retried for the Director's retry of a failed or
@@ -240,6 +244,124 @@ func (a *App) stepRetry(args []string) int {
 		return a.fail(fmt.Errorf("step retry: %w", err))
 	}
 	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptRetried, Repository: f.repo, Task: *task, Step: *step, Attempt: n, Reason: *reason}))
+}
+
+// stepPark runs `guildhall step park`: it records the Director's park of a failed or stopped attempt, with its
+// reason, so status leaves the attempt out of needs_me (docs/running.md#step-park). It takes no task lock and
+// writes no attempt outcome, next.json, decision or message.
+func (a *App) stepPark(args []string) int {
+	return a.parkCommand("step park", args, true)
+}
+
+// stepUnpark runs `guildhall step unpark`: it lifts a park, so the attempt is back in needs_me.
+func (a *App) stepUnpark(args []string) int {
+	return a.parkCommand("step unpark", args, false)
+}
+
+func (a *App) parkCommand(name string, args []string, park bool) int {
+	fl := flag.NewFlagSet(name, flag.ContinueOnError)
+	fl.SetOutput(io.Discard)
+	var f advanceFlags
+	f.register(fl)
+	task := fl.String("task", "", "task id")
+	step := fl.String("step", "", "step id")
+	attempt := fl.String("attempt", "", "attempt number")
+	var reason *string
+	if park {
+		reason = fl.String("reason", "", "the Director's reason")
+	}
+	if err := fl.Parse(args); err != nil {
+		return a.usageError(name + ": " + err.Error())
+	}
+	n, err := strconv.Atoi(*attempt)
+	switch ferr := f.resolve(a.Getenv); {
+	case ferr != nil:
+		return a.usageError(name + ": " + ferr.Error())
+	case fl.NArg() > 0:
+		return a.usageError(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
+	case *task == "" || *step == "" || *attempt == "":
+		return a.usageError(name + ": --task, --step and --attempt are required")
+	case !workflow.ValidID(*task) || !workflow.ValidID(*step):
+		return a.usageError(name + ": --task and --step must be ids")
+	case err != nil || n < 1:
+		return a.usageError(fmt.Sprintf("%s: --attempt %q must be a positive attempt number", name, *attempt))
+	case park && strings.TrimSpace(*reason) == "":
+		return a.usageError(name + ": --reason is required")
+	case park && len(*reason) > store.MaxTextBytes:
+		return a.usageError(fmt.Sprintf("%s: --reason is %d bytes; the limit is %d", name, len(*reason), store.MaxTextBytes))
+	}
+	if err := f.listed(); err != nil {
+		return a.fail(fmt.Errorf("%s: %w", name, err))
+	}
+	if _, err := os.Stat(f.store); errors.Is(err, fs.ErrNotExist) {
+		return a.fail(fmt.Errorf("%s: %w", name, noStore(f.store)))
+	}
+	records := storeRecords{path: f.store, wait: f.wait}
+	var p store.AttemptPark
+	if park {
+		p, err = parkAttempt(records, f.repo, *task, *step, n, *reason)
+	} else {
+		p, err = unparkAttempt(records, f.repo, *task, *step, n)
+	}
+	if err != nil {
+		return a.fail(fmt.Errorf("%s: %w", name, err))
+	}
+	return a.printJSON(p)
+}
+
+// parkAttempt parks an attempt under the mutation id of its park record's current cycle, so repeating an identical
+// park replays it, and refuses a park with another reason while the attempt is parked.
+func parkAttempt(records storeRecords, repo, task, step string, n int, reason string) (store.AttemptPark, error) {
+	return withRecords(records, false, nil, func(s *store.Store) (store.AttemptPark, error) {
+		prior, err := s.AttemptPark(repo, task, step, n)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return store.AttemptPark{}, err
+		}
+		alreadyParked := func(p store.AttemptPark) error {
+			return fmt.Errorf("attempt %d of %s of %s/%s is already parked, with reason %q; unpark it first", n, step, repo, task, p.Reason)
+		}
+		if prior.Parked && prior.Reason != reason {
+			return store.AttemptPark{}, alreadyParked(prior)
+		}
+		_, err = s.ParkAttempt(attemptParkMutation("park", repo, task, step, n, prior.Cycle), repo, task, step, n, reason, prior.Cycle)
+		if errors.Is(err, store.ErrMutationConflict) || errors.Is(err, store.ErrExists) {
+			// A park or unpark between the read and the write: report the record as it now stands.
+			if now, rerr := s.AttemptPark(repo, task, step, n); rerr == nil && now.Parked {
+				return store.AttemptPark{}, alreadyParked(now)
+			}
+		}
+		if err != nil {
+			return store.AttemptPark{}, err
+		}
+		return s.AttemptPark(repo, task, step, n)
+	})
+}
+
+// unparkAttempt unparks a parked attempt under the mutation id of its park record's current cycle.
+func unparkAttempt(records storeRecords, repo, task, step string, n int) (store.AttemptPark, error) {
+	return withRecords(records, false, nil, func(s *store.Store) (store.AttemptPark, error) {
+		prior, err := s.AttemptPark(repo, task, step, n)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return store.AttemptPark{}, err
+		}
+		if !prior.Parked {
+			return store.AttemptPark{}, fmt.Errorf("attempt %d of %s of %s/%s is not parked", n, step, repo, task)
+		}
+		if _, err := s.UnparkAttempt(attemptParkMutation("unpark", repo, task, step, n, prior.Cycle), repo, task, step, n, prior.Cycle); err != nil {
+			return store.AttemptPark{}, err
+		}
+		return s.AttemptPark(repo, task, step, n)
+	})
+}
+
+// attemptParkMutation is the mutation id of a park or unpark at a park record's cycle,
+// <op>.<repo>.<task>.<step>.<n>.<cycle>, hashed to fit the store's 128 bytes.
+func attemptParkMutation(op, repo, task, step string, n, cycle int) string {
+	id := fmt.Sprintf("%s.%s.%s.%s.%d.%d", op, repo, task, step, n, cycle)
+	if len(id) > 128 {
+		id = op + "." + digest.Of(fmt.Appendf(nil, "%s/%s/%s/%d/%d", repo, task, step, n, cycle)).Hex()
+	}
+	return id
 }
 
 // stepDone runs `guildhall step done`: it validates the attempt's result file and feeds attempt-result (docs/running.md).

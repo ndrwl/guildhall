@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -714,6 +715,55 @@ func TestDirectorResumeWithNothingWaitingTypesNothing(t *testing.T) {
 	}
 	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}) || len(panes.lines) != 0 {
 		t.Errorf("resume printed wake %+v and typed %q; want queued: nothing waiting", doc.Wake, panes.lines)
+	}
+}
+
+// TestDirectorResumeLeavesAParkedAttemptAsleep: a failed attempt whose task's next.json waits for the Director
+// wakes a resume, and once step park parks it, the attempt is out of needs_me and a resume types nothing.
+func TestDirectorResumeLeavesAParkedAttemptAsleep(t *testing.T) {
+	for _, parked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parked=%t", parked), func(t *testing.T) {
+			d := newRunDirector(t)
+			pausedInPane(t, d.store)
+			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+				if _, err := s.StartAttempt("m-1", "app", "t-1", "plan"); err != nil {
+					return store.Receipt{}, err
+				}
+				return s.FinishAttempt("m-2", "app", "t-1", "plan", 1, store.AttemptFailed)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			writeNext(t, d.state, "t-1", `{"wait":"director","step":"plan","attempt":1}`+"\n")
+			if parked {
+				park := append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "Held until app/t-9 merges.")...)
+				if code, _, stderr := d.run(t, park...); code != 0 {
+					t.Fatalf("step park: exit %d, stderr %s", code, stderr)
+				}
+			}
+			panes := &typedPanes{}
+			d.panes = panes
+			code, out, se := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
+			var doc struct {
+				NeedsMe []needsMeItem         `json:"needs_me"`
+				Wake    *messaging.ResumeWake `json:"wake"`
+			}
+			if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
+				t.Fatalf("resume: exit %d, %q (%v), stderr %s", code, out, err, se)
+			}
+			if parked {
+				if len(doc.NeedsMe) != 0 || doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}) || len(panes.lines) != 0 {
+					t.Errorf("resume with a parked attempt: needs_me %+v, wake %+v, typed %q; want nothing waiting", doc.NeedsMe, doc.Wake, panes.lines)
+				}
+				return
+			}
+			var kinds []string
+			for _, it := range doc.NeedsMe {
+				kinds = append(kinds, it.Kind)
+			}
+			if !slices.Equal(kinds, []string{"retry", "director"}) || doc.Wake == nil || doc.Wake.Decision != store.WakeWoke || len(panes.lines) != 1 {
+				t.Errorf("resume with a failed attempt: needs_me %v, wake %+v, typed %q; want retry and director, woke", kinds, doc.Wake, panes.lines)
+			}
+		})
 	}
 }
 

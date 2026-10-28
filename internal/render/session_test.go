@@ -88,6 +88,35 @@ func TestSessionStartupNamesNoHandoffAndNothingInFlight(t *testing.T) {
 			t.Errorf("startup.md lacks %q:\n%s", want, b)
 		}
 	}
+	if strings.Contains(string(b), "Parked") {
+		t.Errorf("startup.md with no parked attempts has a parked section:\n%s", b)
+	}
+}
+
+// TestSessionStartupListsParkedAttempts: parked attempts follow the in-flight list in their own section, which says
+// they are held on purpose, one line each.
+func TestSessionStartupListsParkedAttempts(t *testing.T) {
+	in := sessionInput(t)
+	in.Parked = []string{
+		"parked: attempt 3 of review of app/t-4 failed; reason: Held until app/t-11 merges.; retry with `guildhall step retry --repo app --task t-4 --step review --attempt 3`",
+		"parked: attempt 1 of build of lib/t-2 stopped; reason: Waiting on the Guildmaster.; retry with `guildhall step retry --repo lib --task t-2 --step build --attempt 1`",
+	}
+	r, err := Session(in, roots())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(r.StartupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "- messages: 2 unread Director messages: guildhall messages list director\n" +
+		"\n## Parked\n\n" +
+		"These attempts are held on purpose and are not work: nothing here needs you until its hold ends.\n\n" +
+		"- " + in.Parked[0] + "\n" +
+		"- " + in.Parked[1] + "\n"
+	if !strings.HasSuffix(string(b), want) {
+		t.Errorf("startup.md does not end with the parked section %q:\n%s", want, b)
+	}
 }
 
 // TestSessionSkillsMatchTheRelease renders the embedded release skills and compares each tree digest with the
@@ -188,6 +217,7 @@ func TestSessionRefusals(t *testing.T) {
 		"escaping skills dir":    func(in *SessionInput) { in.SkillsDir = "../skills" },
 		"number":                 func(in *SessionInput) { in.Number = 0 },
 		"multi-line item":        func(in *SessionInput) { in.InFlight = []string{"one\ntwo"} },
+		"multi-line parked item": func(in *SessionInput) { in.Parked = []string{"one\rtwo"} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

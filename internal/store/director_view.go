@@ -24,6 +24,8 @@ type DirectorView struct {
 	Owners []Ownership
 	// OpenDecisions are the decisions not yet answered, in repository, task and decision id order.
 	OpenDecisions []Decision
+	// Parks are every attempt's park record, parked or unparked, in repository, task, step and attempt order.
+	Parks []AttemptPark
 	// Unread are the Director's unacknowledged messages, in send order.
 	Unread []Message
 	// Receipts are the receipts that name a task, in sequence order.
@@ -42,7 +44,7 @@ type DirectorView struct {
 // DirectorView reads the Director's view of the whole store without writing.
 // Like TaskHistory it scans every receipt, so its cost grows with the store's mutation count.
 func (s *Store) DirectorView() (DirectorView, error) {
-	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Unread: []Message{}, Receipts: []Receipt{}}
+	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Unread: []Message{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var repos []string
 		_ = tx.Bucket(bucketRepos).ForEachBucket(func(k []byte) error { repos = append(repos, string(k)); return nil })
@@ -54,6 +56,7 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				scan(repoBucket(tx, repo, bucketAttempts), nil, &v.Attempts),
 				scan(repoBucket(tx, repo, bucketOwners), nil, &owners),
 				scan(repoBucket(tx, repo, bucketDecisions), nil, &decisions),
+				scan(repoBucket(tx, repo, bucketAttemptParks), nil, &v.Parks),
 			} {
 				if err != nil {
 					return err
