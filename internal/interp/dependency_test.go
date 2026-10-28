@@ -391,7 +391,7 @@ func TestDependencyGateFastForwards(t *testing.T) {
 			ws.SetDefault("origin", strings.Repeat("a", 40))
 			e.eng.Workspaces = ws
 			repoDir := t.TempDir()
-			e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoDir, Remote: "origin", MergePolicy: config.MergeApproval}}
+			e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoDir, Remote: "origin"}}
 			want(t, e.grilled(t), heldAt)
 			if got := ws.FastForwards(); len(got) != 0 {
 				t.Fatalf("a held advance fast-forwarded %+v", got)
