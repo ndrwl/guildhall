@@ -43,7 +43,7 @@ func TestMain(m *testing.M) {
 	case "herdr":
 		os.Exit(fakeHerdr(os.Args[1:]))
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.RunWithClaudeGuard(m))
 }
 
 // fakeHerdr replays recorded Herdr responses from internal/herdr/testdata. It

@@ -17,6 +17,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/cli"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
@@ -38,10 +39,10 @@ func TestMain(m *testing.M) {
 	if os.Getenv(guildhallEnv) != "" {
 		os.Exit(cli.New().Run(os.Args[1:]))
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.RunWithClaudeGuard(m))
 }
 
-var id = adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}
+var id =adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}
 
 // resultBody returns a valid version 1 result for id with status s.
 func resultBody(t *testing.T, rid adapter.Identity, s adapter.Status) string {
