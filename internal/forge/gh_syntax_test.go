@@ -23,6 +23,7 @@ func validateGHArgs(args []string) error {
 		"repo view":   {values: []string{"--json"}, positional: 1},
 		"pr list":     {values: []string{"--repo", "--head", "--state", "--json"}},
 		"pr create":   {values: []string{"--repo", "--head", "--title", "--body"}},
+		"pr edit":     {values: []string{"--repo", "--title", "--body"}, positional: 1},
 		"pr view":     {values: []string{"--repo", "--json"}, positional: 1},
 		"pr merge":    {values: []string{"--repo", "--match-head-commit"}, bools: []string{"--squash"}, positional: 1},
 		"api graphql": {values: []string{"--hostname", "-f"}},
@@ -57,12 +58,13 @@ func validateGHArgs(args []string) error {
 func ghCallShapes() [][]string {
 	return [][]string{
 		{"repo", "view", "github.com/acme/widgets", "--json", "defaultBranchRef"},
-		{"pr", "list", "--repo", "github.com/acme/widgets", "--head", "guildhall/t7", "--state", "open", "--json", "number,url,state,headRefName,headRefOid,mergeCommit"},
+		{"pr", "list", "--repo", "github.com/acme/widgets", "--head", "guildhall/t7", "--state", "open", "--json", "number,url,state,headRefName,headRefOid,mergeCommit,title,body"},
 		{"pr", "create", "--repo", "github.com/acme/widgets", "--head", "guildhall/t7", "--title", "Task t7", "--body", "Body text"},
 		{"pr", "view", "1", "--repo", "github.com/acme/widgets", "--json", "number,url,state,headRefName,headRefOid,mergeCommit"},
 		{"pr", "view", "1", "--repo", "github.com/acme/widgets", "--json", "url,state,headRefOid,baseRefName,mergeable,mergeStateStatus"},
 		{"pr", "merge", "1", "--repo", "github.com/acme/widgets", "--squash", "--match-head-commit", strings.Repeat("a", 40)},
 		{"api", "graphql", "--hostname", "github.com", "-f", "query=query { viewer { login } }", "-f", "owner=acme", "-f", "name=widgets", "-f", "oid=" + strings.Repeat("a", 40)},
+		{"pr", "edit", "1", "--repo", "github.com/acme/widgets", "--title", "Task t7", "--body", "Body text"},
 	}
 }
 

@@ -7,13 +7,15 @@ Guildhall prescribes only the edges: it pushes only a task branch, never the bas
 Credentials stay in the forge program's own sign-in store: nothing here reads, stores or passes one (R1.10, R1.28).
 
 `Publish(ctx, Change)` pushes `Change.Head` to `refs/heads/<Change.Branch>` on `Change.Remote`, replacing whatever that task branch held, and returns the branch's open pull request, opening one against the remote's default branch when none is open.
+`Change.Title` and `Change.Body` describe the pull request: publishing sets them on a new one and on the branch's open one, overwriting any edit made to the title or body on the forge; an open pull request that already reads them is not edited, so a replay costs no call.
 It refuses, pushing nothing:
 
-- a change missing its repository, remote or title, or naming an invalid branch (`ValidBranch`) or a head that is not a full commit id: `ErrInvalid`;
+- a change missing its repository, remote or title, with a title over `MaxTitle` (256) characters or a body over `MaxBody` (65,536) bytes, or naming an invalid branch (`ValidBranch`) or a head that is not a full commit id: `ErrInvalid`;
 - a branch that is the remote's default branch: `ErrInvalid`;
 - a head that is not a commit of `Change.Repository`: `ErrUnknownHead`.
 
-Repeating a change returns the same pull request, and a new head on the same branch, even one that rewrites it, updates the open pull request rather than opening another.
+Repeating a change returns the same pull request, and a new head on the same branch, even one that rewrites it, updates the open pull request, its title and its body rather than opening another.
+The title and body are not part of `PullRequest`, so they stay out of every recorded document.
 The returned pull request is at the head just published, because a forge may report its head a moment after the push.
 
 `Merge(ctx, Merge)` squash-merges pull request `Merge.Number` only while it is at `Merge.Head`, and returns it merged with its merge commit.
@@ -27,7 +29,7 @@ No checks is an empty list.
 A malformed commit is `ErrInvalid`; a head the remote does not hold is `ErrUnknownHead`.
 No operation is safe for concurrent calls on one branch; the interpreter calls them under the task's lock.
 
-`GitHub` is the implementation for `github.com`: git, found on `PATH` unless `GitHub.Git` names it, pushes with `git -C <repository> push --porcelain <remote> +<head>:refs/heads/<branch>`, and gh, found on `PATH` unless `GitHub.GH` names it, reads the default branch as described below, lists the branch's open pull request, creates one with `--head`, `--title` and `--body` (no `--base`, so the default branch), views it and merges it with `gh pr merge <n> --squash --match-head-commit <head>`.
+`GitHub` is the implementation for `github.com`: git, found on `PATH` unless `GitHub.Git` names it, pushes with `git -C <repository> push --porcelain <remote> +<head>:refs/heads/<branch>`, and gh, found on `PATH` unless `GitHub.GH` names it, reads the default branch as described below, lists the branch's open pull request with its title and body, creates one with `--head`, `--title` and `--body` (no `--base`, so the default branch), edits an open one whose title or body differs with `gh pr edit <n> --title <title> --body <body>`, views it and merges it with `gh pr merge <n> --squash --match-head-commit <head>`.
 Checks are read in one call, `gh api graphql --hostname github.com` with the owner, name and head as `-f` fields, of the commit's `statusCheckRollup`: a check run queued, in progress, waiting, pending or requested is pending; completed, its conclusion success, neutral or skipped is passed and failure, cancelled, timed out, action required, stale or startup failure is failed; a commit status, named by its context, is pending when expected or pending, passed on success and failed on failure or error.
 An unknown kind, status, conclusion or state, a missing repository, or more than the one page of 100 contexts the query reads is a plain error rather than a partial or guessed answer; a missing object, or one that is not a commit, is `ErrUnknownHead`.
 The default-branch lookup names the repository positionally as `gh repo view github.com/<owner>/<repo> --json defaultBranchRef`; `repo view` does not accept `--repo`.
@@ -60,7 +62,7 @@ The strict stand-in reproduced `repo view --repo` through `TestGitHubArguments` 
 The audit and its limits are recorded in the [command-syntax decision](../decisions/forge-gh-command-syntax.md).
 `TestInstalledGHFlags` additionally checks those flags, and `TestGitHubArguments` checks its recorded calls, against an installed gh with `--help`, without credentials or network; this checks flag parsing, not positional arity or server semantics.
 The installed-gh checks skip when gh is not on `PATH`; the stand-in checks still run.
-`TestGitHubArguments` pins the repository arguments described above, the checks query's `--hostname github.com`, owner, name and head, `--head`, `--title` and `--body` on create, `--squash` and `--match-head-commit <head>` on merge, and the absence of `--admin`, `--auto` and `--base`.
+`TestGitHubArguments` pins the repository arguments described above, the checks query's `--hostname github.com`, owner, name and head, `--head`, `--title` and `--body` on create, the number, `--title` and `--body` on edit, `--squash` and `--match-head-commit <head>` on merge, and the absence of `--admin`, `--auto` and `--base`.
 `TestGitHubMergeSignedOut` pins that a merge the fake gh refuses with exit 4, signed out, is a plain error and not `ErrRefused`, and `TestGitHubMergeUnreachable` that a merge failing with exit 1 whose follow-up view fails is a plain error too.
 `TestGitHubMergeTimeout`, red first against the `GitHub` without a timeout ([red run](../evidence/h10-exit-forge-2026-10-22-red.txt)), runs the fake gh hanging on merge past a 500 ms `Timeout`: the merge returns a plain error naming the program and the timeout, not `ErrRefused`, and the remote's `main` is unmoved.
 `TestGitHubCheckStates` pins the mapping of every check run status and conclusion and commit status state, the sorting, and the errors for an unknown state or kind and for a second page.

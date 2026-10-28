@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/digest"
 )
@@ -28,11 +29,19 @@ type Change struct {
 	Branch string
 	// Head is the full commit id to publish.
 	Head string
-	// Title and Body describe a new pull request; an open one keeps its own.
+	// Title and Body describe the pull request; publishing sets them on a new one and on the branch's open one.
 	Title, Body string
 }
 
-// Validate reports a change missing a field or naming an invalid branch or head, as ErrInvalid.
+// MaxTitle is the most characters a change's title may hold, and MaxBody the most bytes its body may hold:
+// GitHub's own limits.
+const (
+	MaxTitle = 256
+	MaxBody  = 65536
+)
+
+// Validate reports a change missing a field, naming an invalid branch or head, or with a title or body over
+// MaxTitle or MaxBody, as ErrInvalid.
 func (c Change) Validate() error {
 	switch {
 	case c.Repository == "" || c.Remote == "":
@@ -43,6 +52,10 @@ func (c Change) Validate() error {
 		return fmt.Errorf("%w: head %q is not a full commit id", ErrInvalid, c.Head)
 	case strings.TrimSpace(c.Title) == "":
 		return fmt.Errorf("%w: a change has a title", ErrInvalid)
+	case utf8.RuneCountInString(c.Title) > MaxTitle:
+		return fmt.Errorf("%w: a title holds at most %d characters", ErrInvalid, MaxTitle)
+	case len(c.Body) > MaxBody:
+		return fmt.Errorf("%w: a body holds at most %d bytes", ErrInvalid, MaxBody)
 	}
 	return nil
 }

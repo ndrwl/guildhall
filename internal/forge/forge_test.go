@@ -107,6 +107,23 @@ func newGitHub(t *testing.T) *gh {
 			}
 			g.setChecks(t, head, nodes)
 		},
+		Text: func(t *testing.T, number int) (string, string) {
+			for _, p := range g.readState(t).PRs {
+				if p.Number == number {
+					return p.Title, p.Body
+				}
+			}
+			return "", ""
+		},
+		Edits: func(t *testing.T) int {
+			n := 0
+			for _, c := range g.readState(t).Calls {
+				if len(c) > 1 && c[0] == "pr" && c[1] == "edit" {
+					n++
+				}
+			}
+			return n
+		},
 	}
 	return g
 }
@@ -214,6 +231,9 @@ func TestGitHubArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: remote, Branch: "guildhall/t7", Head: h.Heads[0], Title: "Task t7 again", Body: "Body text again"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := h.Forge.Checks(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]}); err != nil {
 		t.Fatal(err)
 	}
@@ -248,6 +268,10 @@ func TestGitHubArguments(t *testing.T) {
 	merge := slices.IndexFunc(calls, func(c []string) bool { return len(c) > 1 && c[0] == "pr" && c[1] == "merge" })
 	if create < 0 || !slices.Equal(flagValues(calls[create], "--head", "--title", "--body"), []string{"guildhall/t7", "Task t7", "Body text"}) {
 		t.Errorf("pr create = %v", calls)
+	}
+	edit := slices.IndexFunc(calls, func(c []string) bool { return len(c) > 1 && c[0] == "pr" && c[1] == "edit" })
+	if edit < 0 || calls[edit][2] != strconv.Itoa(pr.Number) || !slices.Equal(flagValues(calls[edit], "--title", "--body"), []string{"Task t7 again", "Body text again"}) {
+		t.Errorf("pr edit = %v", calls)
 	}
 	if merge < 0 || !slices.Contains(calls[merge], "--squash") || !slices.Equal(flagValues(calls[merge], "--match-head-commit"), []string{h.Heads[0]}) {
 		t.Errorf("pr merge = %v", calls)
@@ -530,6 +554,9 @@ type ghPR struct {
 	MergeCommit string `json:"merge_commit,omitempty"`
 	// RecordedBase is the main tip at pr create. Like GitHub's baseRefOid, it goes stale when main moves.
 	RecordedBase string `json:"recorded_base,omitempty"`
+	// Title and Body are what pr create and pr edit set.
+	Title string `json:"title"`
+	Body  string `json:"body"`
 }
 
 func loadState(file string) (ghState, error) {
@@ -629,7 +656,8 @@ func runGH(s *ghState, bare string, args []string) int {
 		}
 		v := map[string]any{"number": p.Number, "url": fmt.Sprintf("https://github.com/acme/widgets/pull/%d", p.Number),
 			"state": p.State, "headRefName": p.Branch, "headRefOid": head, "mergeCommit": nil,
-			"baseRefOid": p.RecordedBase, "baseRefName": "main", "mergeable": s.Mergeable, "mergeStateStatus": s.MergeStateStatus}
+			"baseRefOid": p.RecordedBase, "baseRefName": "main", "mergeable": s.Mergeable, "mergeStateStatus": s.MergeStateStatus,
+			"title": p.Title, "body": p.Body}
 		if p.MergeCommit != "" {
 			v["mergeCommit"] = map[string]string{"oid": p.MergeCommit}
 		}
@@ -674,8 +702,19 @@ func runGH(s *ghState, bare string, args []string) int {
 			}
 		}
 		n := len(s.PRs) + 1
-		s.PRs = append(s.PRs, ghPR{Number: n, Branch: flags["--head"], State: "OPEN", RecordedBase: remoteBranch(bare, "main")})
+		s.PRs = append(s.PRs, ghPR{Number: n, Branch: flags["--head"], State: "OPEN", RecordedBase: remoteBranch(bare, "main"), Title: flags["--title"], Body: flags["--body"]})
 		fmt.Printf("https://github.com/acme/widgets/pull/%d\n", n)
+		return 0
+	case "pr edit":
+		p, code := number()
+		if p == nil {
+			return code
+		}
+		if p.State != "OPEN" {
+			return fail(1, "fake gh: pull request %d is not open", p.Number)
+		}
+		p.Title, p.Body = flags["--title"], flags["--body"]
+		fmt.Printf("https://github.com/acme/widgets/pull/%d\n", p.Number)
 		return 0
 	case "pr view":
 		if flags["--json"] != "number,url,state,headRefName,headRefOid,mergeCommit" && flags["--json"] != "url,state,headRefOid,baseRefName,mergeable,mergeStateStatus" {

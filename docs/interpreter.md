@@ -175,9 +175,17 @@ Guildhall prescribes only the edges of delivery: what is pushed where, the pull 
 Inside its task copy an Artisan uses git as it likes, and the Director decides how to recover from anything the forge refuses.
 Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts/forge.md); with no `Engine.Forge`, publishing and merging are refused with `ErrUnsupported`.
 
-**Publish** reads its `head` input.
+**Publish** reads its `head` input, its optional `review` inputs and its optional `spec` input, the accepted spec (the default workflow wires `accept.spec`).
 When the step's latest round already published that head, the step is complete and nothing is called.
-Otherwise the [review gate](#review-gate) is checked first, over the review steps before publish; then round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, the task's title and a body naming the task, step and head, followed for a task created with `--fixes` by "Fixes a defect introduced by task `<repository>/<task>`.", the line the [quality rubric](quality.md)'s rework and change failure count from.
+Otherwise the [review gate](#review-gate) is checked first, over the review steps before publish; then round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, and a title and body assembled from records Guildhall already holds, with no model call:
+
+- the title is the spec's first `# ` heading, else the task's title, else its id, on one line and at most 256 characters;
+- the body's sections are `## Summary` (the spec's `## Goal` section, else its first paragraph), `## What changed` (the `summary` of the result of the attempt that recorded the head, read as a retry's is), `## How it was tested` (the spec's first section whose heading mentions testing, quoted, then a line saying validation runs after publish), `## Review` (each review outcome given that is bound to this head, with its findings and dispositions, then the Director's rulings on the task), and `## Guildhall` (the task, step, head and the accepted spec's document name and digest, with the spec inlined in a `<details>` block), each with a stated fallback when its source is missing;
+- for a task created with `--fixes`, the body ends with "Fixes a defect introduced by task `<repository>/<task>`.", the line the [quality rubric](quality.md)'s rework and change failure count from.
+
+Spec, build summary and review text are model-written, so `@` mentions and GitHub closing keywords before an issue reference are made inert with a word joiner and any line holding "Fixes a defect introduced by task" is dropped from them.
+The body is capped at 24,000 bytes, so it fits Windows's command line, by cutting the inlined spec, then the build summary, then the review list, each cut marked `… (truncated)`; the Guildhall section's names and head and the fix line are never cut.
+The text is deterministic, so a replayed round asks the forge for no edit, and every new head rewrites the open pull request's title and body.
 The forge pushes the head to that branch, replacing whatever the task branch held but never touching another branch, and opens a pull request against the remote's default branch or updates the open one.
 A head that is not a commit of the repository at `path` is refused with `forge.ErrUnknownHead` and records nothing; a commit an Artisan made in the task's [working directory](#the-working-directory) is one, because that directory is a worktree of the repository.
 The engine then records, in order:

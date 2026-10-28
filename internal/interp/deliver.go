@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
@@ -114,16 +115,12 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 	if r.e.Forge == nil {
 		return false, Next{}, fmt.Errorf("%w: publishing without a forge", ErrUnsupported)
 	}
-	title := r.task.Title
-	if strings.TrimSpace(title) == "" {
-		title = r.task.ID
+	text, err := r.prText(s, h)
+	if err != nil {
+		return false, Next{}, err
 	}
+	title, body := pullRequestText(text)
 	branch := branchPrefix + r.task.ID
-	body := fmt.Sprintf("Guildhall task %s/%s, published by step %s at %s.\n", r.task.Repository, r.task.ID, s.ID, h)
-	if f := r.task.Fixes; f != nil {
-		// The fix line that rework (C5) and change failure (E2) count from (docs/quality.md).
-		body += fmt.Sprintf("\nFixes a defect introduced by task `%s/%s`.\n", f.Repository, f.ID)
-	}
 	pr, err := r.e.Forge.Publish(r.ctx, forge.Change{
 		Repository: repo.Path, Remote: repo.Remote, Branch: branch, Head: h, Title: title, Body: body,
 	})
@@ -159,6 +156,55 @@ func (r *run) publishGate(s workflow.Step, id, h string, required bool) error {
 		return err
 	}
 	return nil
+}
+
+// prText gathers what publish step s's pull request text for head h is made from: its accepted spec when one is
+// wired, the summary of the attempt that recorded its head, its review outcomes and the task's rulings.
+func (r *run) prText(s workflow.Step, h string) (prText, error) {
+	p := prText{Rulings: r.rulings, Task: r.task, Step: s.ID, Head: h}
+	if refs := s.Inputs["spec"]; len(refs) > 0 {
+		in, err := r.input(s, "spec")
+		if err != nil {
+			return prText{}, err
+		}
+		from, out, _ := strings.Cut(refs[0], ".")
+		doc, _, err := r.output(from, out)
+		if err != nil {
+			return prText{}, err
+		}
+		data, err := r.read(doc)
+		if err != nil {
+			return prText{}, err
+		}
+		p.Spec, p.SpecName, p.SpecPath, p.SpecSHA256 = string(data), doc.Name, in.Name, in.SHA256
+	}
+	// The head's summary is read from the result of the attempt that recorded it, as retryContext reads one; it
+	// is not a recorded document, so a result that no longer reads leaves the fallback.
+	from, out, _ := strings.Cut(s.Inputs["head"][0], ".")
+	if _, source, err := r.output(from, out); err == nil {
+		if a, ok := parseDecision(source); ok && !a.exit && r.attempt(a.step, a.round) != nil {
+			if res, err := adapter.ReadResult(r.resultFile(a.step, a.round), r.identity(a.step, a.round)); err == nil {
+				p.Summary = res.Summary
+			}
+		}
+	}
+	for _, ref := range s.Inputs["review"] {
+		from, out, _ := strings.Cut(ref, ".")
+		doc, _, err := r.output(from, out)
+		if err != nil {
+			continue
+		}
+		data, err := r.read(doc)
+		if err != nil {
+			return prText{}, err
+		}
+		o, err := workflow.ParseReviewOutcome(data)
+		if err != nil {
+			return prText{}, fmt.Errorf("document %s: %w", doc.Name, err)
+		}
+		p.Outcomes = append(p.Outcomes, *o)
+	}
+	return p, nil
 }
 
 func (r *run) putPullRequest(name, p string, d pullRequestDoc) error {

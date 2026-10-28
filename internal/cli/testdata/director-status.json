@@ -93,7 +93,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "steps": [],
       "spend": {
@@ -116,7 +116,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "next": {
         "wait": "director",
@@ -151,7 +151,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "steps": [
         {
@@ -183,7 +183,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "next": {
         "wait": "director",
@@ -222,7 +222,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "next": {
         "wait": "decision",
@@ -256,7 +256,7 @@
       "state": "done",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "steps": [
         {
@@ -285,7 +285,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "steps": [
         {
@@ -317,7 +317,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "next": {
         "wait": "attempt",
@@ -351,7 +351,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "next": {
         "wait": "attempt",
@@ -385,7 +385,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "next": {
         "wait": "director-stage",
@@ -422,7 +422,7 @@
       "state": "open",
       "workflow": {
         "name": "default",
-        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
       },
       "steps": [],
       "spend": {

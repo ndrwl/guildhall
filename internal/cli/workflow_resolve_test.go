@@ -61,7 +61,7 @@ func profiledDefault(t *testing.T) *workflow.Definition {
      "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
      "on": {"changes_requested": {"goto": "build", "max": 3}}},
     {"id": "publish", "type": "publish", "version": 1,
-     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}},
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"], "spec": ["accept.spec"]}},
     {"id": "validate", "type": "validate", "version": 1,
      "inputs": {"head": ["publish.head"]},
      "on": {"failed": {"goto": "build", "max": 3}}},

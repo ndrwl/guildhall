@@ -104,7 +104,8 @@ func TestWeakeningsOfTheDefault(t *testing.T) {
 			step(d, "accept").ID = "sign"
 			step(d, "build").Inputs["spec"] = Refs{"sign.spec"}
 			step(d, "review").Inputs["spec"] = Refs{"sign.spec"}
-		}, want: []Weakening{{"accept", "removed"}, {"review", "input spec"}}},
+			step(d, "publish").Inputs["spec"] = Refs{"sign.spec"}
+		}, want: []Weakening{{"accept", "removed"}, {"review", "input spec"}, {"publish", "input spec"}}},
 		{name: "reordering validate before publish", change: func(d *Definition) {
 			i, j := d.stepIndex("publish"), d.stepIndex("validate")
 			d.Steps[i], d.Steps[j] = d.Steps[j], d.Steps[i]
