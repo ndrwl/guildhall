@@ -106,6 +106,7 @@ The newest Director session is the Director's current one; the session superviso
 `StartDirectorSession` records session `<n>` as `recovering` when `<n>` is one more than the newest session's number, or 1 in a store with none; the store sets its start time and refuses a session given any time or state sequence.
 Starting it records every earlier session that has not stopped as `stopped`, with the end reason `superseded`, in the same transaction, so exactly one session is current.
 The end reason is set only by the store: a session its supervisor recorded `stopped` has none, and a session given one is refused.
+A session also records the runtime adapter it runs (`adapter`, such as `claude`) and its absolute directory (`dir`), where its supervisor's endpoint listens; the adapter chooses how a [wake](messaging.md#waking-the-director) reaches it, typed only for `fake`, and a session recorded before these were kept has neither.
 
 `SetDirectorState` moves only the newest session, and only forward: `recovering`, then `running` or `paused`, then `stopping`, then `stopped`, except that `running` and `paused` move to each other.
 `paused` starts no new work while running attempts finish, and `stopping` lasts until the runtime ends; `stopped` never changes.

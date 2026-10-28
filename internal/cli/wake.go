@@ -10,6 +10,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/messaging"
+	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -46,6 +47,51 @@ func (h herdrPanes) TypeLine(ctx context.Context, p store.DirectorPane, line str
 	}
 	return err
 }
+
+// HandWake hands line to the waiter of session d through its supervisor's endpoint in the session's recorded
+// directory; a session recorded with no directory has no endpoint to reach, so no waiter.
+func (herdrPanes) HandWake(ctx context.Context, d store.DirectorSession, line string) error {
+	if d.Dir == "" {
+		return session.ErrNoWaiter
+	}
+	return session.Wake(ctx, d.Dir, d.Number, line)
+}
+
+var _ messaging.EndpointWaker = herdrPanes{}
+
+// noticeSource is the source Guildhall reports the wake notice under in the pane's metadata.
+const noticeSource = "guildhall"
+
+// wakeNotice is the wake notice for the Director's recorded pane: App.WakeNotice when set, otherwise its Herdr
+// pane title.
+func (a *App) wakeNotice(p store.DirectorPane) wakeNotice {
+	if a.WakeNotice != nil {
+		return a.WakeNotice(p)
+	}
+	return herdrNotice{pane: p, command: []string{"herdr"}}
+}
+
+// herdrNotice shows the wake notice as the title of the Director's recorded pane, outside its input box, adopting
+// the recorded tab as a wake does.
+type herdrNotice struct {
+	pane    store.DirectorPane
+	command []string
+}
+
+func (h herdrNotice) title(ctx context.Context, text string) error {
+	c, err := herdr.New(herdr.Options{Session: h.pane.Session, Command: h.command})
+	if err != nil {
+		return err
+	}
+	t, err := c.RecordedTab(ctx, h.pane.Workspace, h.pane.Tab, h.pane.Pane)
+	if err != nil {
+		return err
+	}
+	return c.PaneTitle(ctx, t, noticeSource, text)
+}
+
+func (h herdrNotice) Show(ctx context.Context, text string) error { return h.title(ctx, text) }
+func (h herdrNotice) Clear(ctx context.Context) error             { return h.title(ctx, "") }
 
 // wakingOutbox is the launcher's outbox: it sends through records and then wakes the Director for a message
 // addressed to it (docs/messaging.md#waking-the-director). A failed wake does not fail the send: the message

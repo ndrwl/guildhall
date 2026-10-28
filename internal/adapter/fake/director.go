@@ -101,6 +101,13 @@ func DirectorMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 // first message starts, and "<pid> input" for each non-blank line it reads but the ending /exit, as a runtime
 // takes a model turn for each line typed to it.
 func RunScript(prefix, text string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return RunScriptRewake(prefix, text, stdin, stdout, stderr, nil)
+}
+
+// RunScriptRewake is RunScript for a runtime with async rewake hooks, such as the Claude Code stand-in: while it
+// reads stdin, each line received on rewake is a turn too, as a hook's exit 2 starts one, logged to TurnLogEnv as
+// "<pid> rewake: <line>". The box's input and the rewake are separate, so a rewake never reads or consumes stdin.
+func RunScriptRewake(prefix, text string, stdin io.Reader, stdout, stderr io.Writer, rewake <-chan string) int {
 	steps, err := parseScript(prefix, text)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "session script: %v\n", err)
@@ -143,17 +150,31 @@ func RunScript(prefix, text string, stdin io.Reader, stdout, stderr io.Writer) i
 	if stdin == nil {
 		return 0
 	}
-	sc := bufio.NewScanner(stdin)
-	for sc.Scan() {
-		switch strings.TrimSpace(sc.Text()) {
-		case "/exit":
-			return 0
-		case "":
-		default:
-			turn("input")
+	lines := make(chan string)
+	go func() {
+		defer close(lines)
+		sc := bufio.NewScanner(stdin)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+	}()
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				return 0
+			}
+			switch strings.TrimSpace(line) {
+			case "/exit":
+				return 0
+			case "":
+			default:
+				turn("input")
+			}
+		case line := <-rewake:
+			turn("rewake: " + line)
 		}
 	}
-	return 0
 }
 
 func parseScript(prefix, text string) ([][]string, error) {

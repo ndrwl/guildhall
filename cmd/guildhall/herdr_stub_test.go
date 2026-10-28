@@ -17,6 +17,8 @@ import (
 //   - `pane process-info --pane herdrPane` reports shell pid 10 and the runtime as pid 11.
 //   - `pane run herdrPane <line>` appends line to the file typed in the directory HerdrStubEnv names, accepting
 //     it as Herdr accepts typed input; the check plays the pane's terminal and hands it to the runtime.
+//   - `pane report-metadata herdrPane --source <id> --title <t>|--clear-title` appends "--title <t>" or
+//     "--clear-title" to the file notices there: the wake notice.
 //
 // Every call must name herdrSession with --session. Another tab or pane is refused as Herdr refuses one it does
 // not have, {"error":{"code":"<kind>_not_found",...}} on stderr with exit 1, and any other call exits 2.
@@ -69,17 +71,27 @@ func herdrStub(args []string) int {
 		if args[2] != herdrPane {
 			return fail("pane_not_found", "pane "+args[2]+" not found")
 		}
-		f, err := os.OpenFile(filepath.Join(os.Getenv(HerdrStubEnv), "typed"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if err == nil {
-			_, err = fmt.Fprintln(f, args[3])
-			err = errors.Join(err, f.Close())
+		return record("typed", args[3])
+	case len(args) >= 5 && args[0] == "pane" && args[1] == "report-metadata" && args[3] == "--source":
+		if args[2] != herdrPane {
+			return fail("pane_not_found", "pane "+args[2]+" not found")
 		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "stub herdr: %v\n", err)
-			return 2
-		}
-		return 0
+		return record("notices", strings.Join(args[5:], " "))
 	}
 	fmt.Fprintf(os.Stderr, "stub herdr: unexpected call %q\n", args)
 	return 2
+}
+
+// record appends line to the stand-in's file name in the directory HerdrStubEnv names.
+func record(name, line string) int {
+	f, err := os.OpenFile(filepath.Join(os.Getenv(HerdrStubEnv), name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err == nil {
+		_, err = fmt.Fprintln(f, line)
+		err = errors.Join(err, f.Close())
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "stub herdr: %v\n", err)
+		return 2
+	}
+	return 0
 }

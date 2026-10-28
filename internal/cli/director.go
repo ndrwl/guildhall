@@ -27,7 +27,7 @@ import (
 )
 
 // director runs `guildhall director status|start|ready|pause|resume|stop|handoff|reload|turn-started|turn-ended|
-// context-report`
+// wait-wake|context-report`
 // (docs/director.md).
 func (a *App) director(args []string) int {
 	if len(args) > 0 {
@@ -52,11 +52,13 @@ func (a *App) director(args []string) int {
 			return a.directorTurnSignal(session.TurnStarted, args[1:])
 		case "turn-ended":
 			return a.directorTurnSignal(session.TurnEnded, args[1:])
+		case "wait-wake":
+			return a.directorWaitWake(args[1:])
 		case "context-report":
 			return a.directorContextReport(args[1:])
 		}
 	}
-	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, handoff, reload, turn-started, turn-ended and context-report")
+	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, handoff, reload, turn-started, turn-ended, wait-wake and context-report")
 }
 
 // fakeDirector runs the fake Director session: `guildhall fake-director --role <file> <first message>`.

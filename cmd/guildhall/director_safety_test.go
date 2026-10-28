@@ -110,6 +110,8 @@ type safetyCopy struct {
 	t                *testing.T
 	dir, path, turns string
 	inventory, herdr string
+	// rt is the runtime the last session started with.
+	rt string
 }
 
 func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
@@ -254,6 +256,7 @@ func (c *safetyCopy) start(rt string, args ...string) *session {
 	if err != nil {
 		c.t.Fatal(err)
 	}
+	c.rt = rt
 	s := &session{c: c, stdin: w, done: make(chan struct{})}
 	s.cmd = c.command(r, append([]string{"director", "start", rt, "--copy", c.dir}, args...)...)
 	s.cmd.Stdout, s.cmd.Stderr = s, s
@@ -418,9 +421,15 @@ func (c *safetyCopy) stopAttempt(task, step string, n int) {
 	})
 }
 
-// finish proves no fake Artisan process outlives the check and records the counts the check ends with.
+// finish proves no fake Artisan process outlives the check and records the counts the check ends with. A Claude
+// session's pane is never typed into: no `pane run` reached the Herdr stand-in (d8 done-test 1).
 func (c *safetyCopy) finish(wantTurns int) {
 	c.t.Helper()
+	if c.rt == "claude" {
+		if typed := c.typed(); len(typed) != 0 {
+			c.t.Errorf("pane run typed %q into a Claude session's pane", typed)
+		}
+	}
 	c.waitFor("every owned process gone", func() bool { return len(c.liveProcesses()) == 0 })
 	entries, _ := artisantest.Inventory(c.inventory)
 	turns := c.turnLines()
@@ -636,7 +645,8 @@ func TestSafetyCrashRecovery(t *testing.T) {
 
 // TestSafetyZeroIdleTurns: with one open decision and nothing else, a ready Director in a bound pane takes no turn
 // and is sent no wake over a 30 s hold; a Guildmaster note then records exactly one wake, woke, which types one
-// line into the pane, and the runtime takes exactly one turn from it (docs/director.md#safety-checks).
+// line into the fake runtime's pane or is handed to the Claude session's rewake hook, and the runtime takes exactly
+// one turn from it (docs/director.md#safety-checks).
 func TestSafetyZeroIdleTurns(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "", "")
@@ -681,6 +691,20 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 			t.Errorf("wakes for the note %+v, want exactly one, woke", got)
 		}
 		want := messaging.WakeLine(map[string]int{"note": 1})
+		if rt == "claude" {
+			// A Claude session is woken by its rewake hook, and nothing is typed into its pane.
+			c.waitFor("the runtime's rewake turn", func() bool { return len(c.turnLines()) >= 2 })
+			turns := c.turnLines()
+			first, _, _ := strings.Cut(turns[0], " ")
+			if len(turns) != 2 || turns[1] != first+" rewake: "+want {
+				t.Errorf("turns after the note %q, want the first message's and one rewake turn on %q", turns, want)
+			}
+			if code := s.end(); code != 0 {
+				t.Fatalf("director start exited %d", code)
+			}
+			c.finish(2)
+			return
+		}
 		typed := c.typed()
 		if len(typed) != 1 || typed[0] != want {
 			t.Fatalf("typed into the pane %q, want only %q", typed, want)

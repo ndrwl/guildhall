@@ -453,6 +453,43 @@ func TestPaneRunAndInterruptUseOwnedPane(t *testing.T) {
 	}
 }
 
+// TestPaneTitleUsesOwnedPane: the wake notice is the pane's title, set and cleared only on a pane this client
+// owns (d8).
+func TestPaneTitleUsesOwnedPane(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{
+		"tab create":           {stdout: fixture(t, "tab_create.json")},
+		"pane report-metadata": {},
+	})
+	tab, err := c.TabCreate(context.Background(), TabSpec{WorkspaceID: "w1", Label: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := c.PaneTitle(ctx, tab, "guildhall", "guildhall: 2 unread (note 2)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PaneTitle(ctx, tab, "guildhall", ""); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range [][]string{
+		{"herdr", "pane", "report-metadata", "w1:p2", "--source", "guildhall", "--title", "guildhall: 2 unread (note 2)", "--session", "guildhall-lab"},
+		{"herdr", "pane", "report-metadata", "w1:p2", "--source", "guildhall", "--clear-title", "--session", "guildhall-lab"},
+	} {
+		if !slices.Equal(f.calls[i+1].args, want) {
+			t.Errorf("call %d argv = %q, want %q", i+1, f.calls[i+1].args, want)
+		}
+	}
+	if err := c.PaneTitle(ctx, OwnedTab{}, "guildhall", "x"); err == nil {
+		t.Error("PaneTitle accepted a zero tab")
+	}
+	if err := c.PaneTitle(ctx, tab, "guildhall", "two\nlines"); err == nil {
+		t.Error("PaneTitle accepted a multi-line title")
+	}
+	if len(f.calls) != 3 {
+		t.Errorf("refusals reached Herdr: %d calls", len(f.calls))
+	}
+}
+
 func TestReportAgentRegistersTheResumeCommand(t *testing.T) {
 	c, f := newTestClient(t, map[string]response{"pane report-agent": {stdout: `{"id":"cli:request","result":{"type":"ok"}}`}})
 	resume := []string{"guildhall", "artisan", "resume", "--store", "/s/g.store", "--state", "/s/st", "--attempt", "1"}

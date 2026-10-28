@@ -9,6 +9,7 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -55,21 +56,27 @@ func Settings(copyDir string) []byte {
 		Deny  []string `json:"deny"`
 	}
 	type command struct {
-		Type    string `json:"type"`
-		Command string `json:"command"`
+		Type        string `json:"type"`
+		Command     string `json:"command"`
+		Async       bool   `json:"async,omitempty"`
+		AsyncRewake bool   `json:"asyncRewake,omitempty"`
+		Timeout     int    `json:"timeout,omitempty"`
 	}
 	type matcher struct {
 		Hooks []command `json:"hooks"`
 	}
+	waiter := command{Type: "command", Command: WaitWakeCommand, Async: true, AsyncRewake: true, Timeout: WaitWakeTimeout}
 	b, _ := json.MarshalIndent(struct {
 		Permissions permissions          `json:"permissions"`
 		Hooks       map[string][]matcher `json:"hooks"`
 		StatusLine  command              `json:"statusLine"`
 	}{permissions{allow, deny}, map[string][]matcher{
-		"UserPromptSubmit": {{[]command{{"command", TurnStartCommand}}}},
-		"Stop":             {{[]command{{"command", TurnEndCommand}}}},
-		"StopFailure":      {{[]command{{"command", TurnEndCommand}}}},
-	}, command{"command", ContextReportCommand + " --lanterns"}}, "", "  ")
+		"SessionStart":     {{[]command{waiter}}},
+		"Notification":     {{[]command{waiter}}},
+		"UserPromptSubmit": {{[]command{{Type: "command", Command: TurnStartCommand}, waiter}}},
+		"Stop":             {{[]command{{Type: "command", Command: TurnEndCommand}, waiter}}},
+		"StopFailure":      {{[]command{{Type: "command", Command: TurnEndCommand}}}},
+	}, command{Type: "command", Command: ContextReportCommand + " --lanterns"}}, "", "  ")
 	return append(b, '\n')
 }
 
@@ -133,6 +140,19 @@ var versionCommand []byte
 // StartupMessage is the first message of a Claude Code Director session whose startup instructions are at the
 // absolute path startup: the /version command with startup and that path, so the version line comes first.
 func StartupMessage(startup string) string { return fmt.Sprintf("/version startup %q", startup) }
+
+// WaitWakeCommand is the Director session's async rewake hook (docs/decisions/director-wake-hook.md): it waits
+// for the supervisor to hand it a wake and exits 2 with the counts-only line, which wakes the Director without
+// touching its input box. Settings arms it on SessionStart, UserPromptSubmit, Stop and Notification.
+const WaitWakeCommand = "guildhall director wait-wake"
+
+// WaitWakeTimeout is the hook timeout of WaitWakeCommand, in seconds: 24 hours, which the Phase 0 probe showed
+// Claude Code accepts (docs/evidence/director-input-2026-10-27.txt). WaitWakeRefresh is when a waiter still
+// registered refreshes itself, five minutes before Claude Code would end it.
+const (
+	WaitWakeTimeout = 24 * 60 * 60
+	WaitWakeRefresh = WaitWakeTimeout*time.Second - 5*time.Minute
+)
 
 // SessionFiles are the files a Claude Code Director session needs beside its skills, by slash path relative to
 // the session directory: merged settings at SettingsFile, a policy receipt at SkillPolicyFile, the /version

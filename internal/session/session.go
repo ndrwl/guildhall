@@ -55,14 +55,22 @@ const (
 
 type request struct {
 	Schema  string `json:"schema"`
-	Op      Turn   `json:"op"`
+	Op      string `json:"op"`
 	Session int    `json:"session"`
+	// Waiter is a wait-wake or refresh request's waiter id, and Line a wake request's counts-only line.
+	Waiter string `json:"waiter,omitempty"`
+	Line   string `json:"line,omitempty"`
 }
 
 type reply struct {
 	Schema  string `json:"schema"`
 	Session int    `json:"session"`
 	Error   string `json:"error,omitempty"`
+	// Line is the wake line a wait-wake poll was handed, Retired set for a waiter a newer one replaced, and
+	// Delivered set for a wake a registered waiter was handed.
+	Line      string `json:"line,omitempty"`
+	Retired   bool   `json:"retired,omitempty"`
+	Delivered bool   `json:"delivered,omitempty"`
 }
 
 // EndpointPath returns the endpoint's socket path for the absolute session directory dir: dir/EndpointFile.
@@ -83,6 +91,14 @@ type Endpoint struct {
 	*endpoint.Endpoint
 	turns chan Turn
 	mu    sync.Mutex
+	w     waiters
+}
+
+// Close answers every open wait-wake poll as retired, then stops the endpoint and removes its socket file,
+// idempotently.
+func (e *Endpoint) Close() error {
+	e.w.release()
+	return e.Endpoint.Close()
 }
 
 // Listen binds the endpoint of session number in the absolute session directory dir. A leftover socket file
@@ -116,10 +132,15 @@ func (s signalServer) Refuse(msg string) reply {
 }
 
 func (s signalServer) Serve(req request) reply {
-	if req.Op != TurnStarted && req.Op != TurnEnded {
+	switch Turn(req.Op) {
+	case TurnStarted, TurnEnded:
+	default:
+		if req.Op == OpWaitWake || req.Op == OpWake || req.Op == OpRefresh {
+			return s.serveWaiter(req)
+		}
 		return s.Refuse(fmt.Sprintf("unknown op %q", req.Op))
 	}
-	s.e.deliver(req.Op)
+	s.e.deliver(Turn(req.Op))
 	return reply{Schema: sessionProtocol.Current(), Session: s.number}
 }
 
@@ -147,7 +168,7 @@ func Signal(ctx context.Context, dir string, number int, turn Turn) error {
 	if err != nil {
 		return err
 	}
-	req := request{Schema: sessionProtocol.Current(), Op: turn, Session: number}
+	req := request{Schema: sessionProtocol.Current(), Op: string(turn), Session: number}
 	rep, err := endpoint.Call(ctx, p, sessionProtocol, req, func(rep reply) bool { return rep.Session == number })
 	switch {
 	case errors.Is(err, endpoint.ErrNotListening):

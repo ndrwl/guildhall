@@ -554,7 +554,8 @@ func pausedInPane(t *testing.T, path string) {
 	}
 	_, err = withStore(path, false, func(s *store.Store) (store.Receipt, error) {
 		r, err := s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity(self), Release: "test",
-			ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t1", Pane: "w1:p1"}})
+			ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t1", Pane: "w1:p1"},
+			Adapter: store.TypedWakeAdapter})
 		if err == nil {
 			r, err = s.SetDirectorState(1, store.DirectorRunning, r.Sequence)
 		}

@@ -14,10 +14,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -493,5 +495,87 @@ func session(args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	return fake.RunScript(Directive, string(text), os.Stdin, os.Stdout, os.Stderr)
+	rewake, stop, err := armRewake(settings)
+	if err != nil {
+		return fail("session settings: %v", err)
+	}
+	defer stop()
+	return fake.RunScriptRewake(Directive, string(text), os.Stdin, os.Stdout, os.Stderr, rewake)
+}
+
+// armRewake plays Claude Code's async rewake hooks from the session settings: it runs the SessionStart hook
+// marked asyncRewake in the background with the hook input on stdin and, when it exits 2, sends its standard error
+// as a rewake turn and runs the Stop hook's asyncRewake command for the next one, as the turn's end would. An exit 0,
+// such as a retired waiter, arms nothing. stop ends the running hook. A command is run from PATH, split on spaces.
+func armRewake(settings []byte) (<-chan string, func(), error) {
+	var s struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command     string `json:"command"`
+				AsyncRewake bool   `json:"asyncRewake"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(settings, &s); err != nil {
+		return nil, nil, err
+	}
+	command := func(event string) []string {
+		for _, m := range s.Hooks[event] {
+			for _, h := range m.Hooks {
+				if h.AsyncRewake {
+					return strings.Fields(h.Command)
+				}
+			}
+		}
+		return nil
+	}
+	out := make(chan string, 16)
+	done := make(chan struct{})
+	start, next := command("SessionStart"), command("Stop")
+	if len(start) == 0 {
+		return out, func() {}, nil
+	}
+	var running *exec.Cmd
+	var mu sync.Mutex
+	go func() {
+		argv, event := start, "SessionStart"
+		for len(argv) > 0 {
+			prog, err := exec.LookPath(argv[0])
+			if err != nil {
+				return
+			}
+			c := exec.Command(prog, argv[1:]...)
+			c.Stdin = strings.NewReader(`{"hook_event_name":"` + event + `"}`)
+			var stderr strings.Builder
+			c.Stderr = &stderr
+			mu.Lock()
+			select {
+			case <-done:
+				mu.Unlock()
+				return
+			default:
+			}
+			err = c.Start()
+			running = c
+			mu.Unlock()
+			if err != nil {
+				return
+			}
+			err = c.Wait()
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 2 {
+				return
+			}
+			out <- strings.TrimSpace(stderr.String())
+			argv, event = next, "Stop"
+		}
+	}()
+	return out, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		close(done)
+		if running != nil && running.Process != nil {
+			_ = running.Process.Kill()
+		}
+	}, nil
 }

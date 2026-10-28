@@ -626,6 +626,26 @@ func (c *Client) RunInOwnedTab(ctx context.Context, t OwnedTab, line string) err
 	return err
 }
 
+// PaneTitle sets the title of the root pane of a tab this client created, as display-only metadata reported by
+// source (`herdr pane report-metadata <pane> --source <source> --title <title>`), or clears it for "".
+func (c *Client) PaneTitle(ctx context.Context, t OwnedTab, source, title string) error {
+	if err := c.checkOwned(t); err != nil {
+		return err
+	}
+	if !labelShape.MatchString(source) {
+		return fmt.Errorf("herdr metadata source %q: need letters, digits, '.', '_' or '-'", source)
+	}
+	if strings.ContainsAny(title, "\r\n") {
+		return errors.New("herdr pane title must be one line")
+	}
+	args := []string{"pane", "report-metadata", t.paneID, "--source", source, "--clear-title"}
+	if title != "" {
+		args = []string{"pane", "report-metadata", t.paneID, "--source", source, "--title", title}
+	}
+	_, err := c.call(ctx, args...)
+	return err
+}
+
 // InterruptOwnedTab sends Ctrl+C to the root pane of a tab this client created.
 func (c *Client) InterruptOwnedTab(ctx context.Context, t OwnedTab) error {
 	if err := c.checkOwned(t); err != nil {

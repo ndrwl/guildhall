@@ -263,28 +263,43 @@ func TestSessionSettingsKeepGitReadOnly(t *testing.T) {
 
 // TestSessionSettingsSignalEveryTurn reads the settings as Claude Code does: a prompt runs the turn-start
 // command, and a turn's end runs the turn-end command whether it ends normally (Stop) or in an API error
-// (StopFailure).
+// (StopFailure); the session's start, every prompt and every normal turn end also arm the async rewake waiter
+// with the 24-hour timeout, so an idle Director always has one (docs/decisions/director-wake-hook.md).
 func TestSessionSettingsSignalEveryTurn(t *testing.T) {
+	type hook struct {
+		Type        string `json:"type"`
+		Command     string `json:"command"`
+		Async       bool   `json:"async"`
+		AsyncRewake bool   `json:"asyncRewake"`
+		Timeout     int    `json:"timeout"`
+	}
 	var settings struct {
 		Hooks map[string][]struct {
-			Hooks []struct {
-				Type    string `json:"type"`
-				Command string `json:"command"`
-			} `json:"hooks"`
+			Hooks []hook `json:"hooks"`
 		} `json:"hooks"`
 	}
 	if err := json.Unmarshal(claude.Settings("/home/g/copy"), &settings); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"UserPromptSubmit": claude.TurnStartCommand, "Stop": claude.TurnEndCommand, "StopFailure": claude.TurnEndCommand}
+	waiter := hook{Type: "command", Command: claude.WaitWakeCommand, Async: true, AsyncRewake: true, Timeout: 86400} // timing:allow the hook's timeout in seconds, a settings value, not a test wait.
+	want := map[string][]hook{
+		"SessionStart":     {waiter},
+		"Notification":     {waiter},
+		"UserPromptSubmit": {{Type: "command", Command: claude.TurnStartCommand}, waiter},
+		"Stop":             {{Type: "command", Command: claude.TurnEndCommand}, waiter},
+		"StopFailure":      {{Type: "command", Command: claude.TurnEndCommand}},
+	}
 	if len(settings.Hooks) != len(want) {
 		t.Errorf("hook events = %v, want %v", settings.Hooks, want)
 	}
-	for event, command := range want {
+	for event, hooks := range want {
 		m := settings.Hooks[event]
-		if len(m) != 1 || len(m[0].Hooks) != 1 || m[0].Hooks[0].Type != "command" || m[0].Hooks[0].Command != command {
-			t.Errorf("%s hooks = %+v, want the one command %q", event, m, command)
+		if len(m) != 1 || !slices.Equal(m[0].Hooks, hooks) {
+			t.Errorf("%s hooks = %+v, want %+v", event, m, hooks)
 		}
+	}
+	if claude.WaitWakeCommand != "guildhall director wait-wake" {
+		t.Errorf("waiter command = %q", claude.WaitWakeCommand)
 	}
 	if claude.TurnStartCommand != "guildhall director turn-started" || claude.TurnEndCommand != "guildhall director turn-ended" {
 		t.Errorf("hook commands = %q, %q", claude.TurnStartCommand, claude.TurnEndCommand)

@@ -133,10 +133,16 @@ A message to the Director is stored first and wakes second: storing never depend
 After every send to `director`, by the engine's outbox (`task start`, `step done`, `step retry`), by an attempt's launcher sending [`worker-stalled`](artisan.md#heartbeat) or [`advance-failed`](running.md#the-watcher) or by `messages send ... director`, the sending command decides whether to wake the Director and records that decision; nothing waits in the background (R1.29).
 The session supervisor's `herdr-workspace-left-open` report, sent by the [workspace close sweep](artisan.md#workflow-artisan-workspaces), is the exception: it is only queued unread and never wakes, so the first sweep after an upgrade cannot flood the Director's pane; the Director reads it at its next turn.
 An advance records its sends under the task lock and wakes for them, one wake per message in send order, after releasing the lock, whether or not the advance succeeded, so the lock is held for records and launches only; the others wake straight after the send.
-Each wake is bounded by ten seconds, and each `herdr` call within it ends with its context ([herdr](contracts/herdr.md)), so a slow or hung pane holds neither the task nor the sender past that bound; a wake past it is recorded `queued` with the pane's error.
+Each wake is bounded by ten seconds, and each `herdr` or endpoint call within it ends with its context ([herdr](contracts/herdr.md)), so a slow or hung pane or supervisor holds neither the task nor the sender past that bound; a wake past it is recorded `queued` with the error.
 
 The command reads the Director's newest [session](store.md#director-sessions).
-When it is `running` or `recovering` and has a bound pane, the command types one line and Enter into that pane, which Guildhall created for the Director's session (R1.54), and records `woke`:
+When it is `running` or `recovering` and has a bound pane, the command wakes the Director with one line and records `woke`.
+How the line reaches the Director depends on the runtime the session records ([decision](decisions/director-wake-hook.md)):
+
+- A Claude Code session is never typed into, whatever its input box holds. Its runtime keeps an async rewake hook, `guildhall director wait-wake`, armed with the session's supervisor; the command hands the line to that waiter over the session endpoint, and the waiter prints it and exits 2, which wakes the Director without touching the input box.
+- Only the fake runtime, which is test-only and has no hooks, has the line typed into its pane, which Guildhall created for the Director's session (R1.54), with Enter.
+
+The line:
 
 ```text
 guildhall: 3 unread (attempt-failed 1, question 2)
@@ -147,7 +153,7 @@ Because a sender chooses its message's type, the line names only the types in `s
 The engine sends `dependency-held` while the [dependency gate](interpreter.md#the-dependency-gate) holds a task, once per state of its unmerged dependencies, and `dependency-branch-kept` once when the gate opens but the task branch could not be fast-forwarded to the current main; neither is the between-Directors [`dependency-notice`](#message-types).
 The engine and the launcher refuse to send a Director message whose type is not in the registry, so a type is added to the registry by the change that sends it and never by a sender; a local sender's `messages send` still chooses any type, which counts as `other`.
 When an [automatic handoff](director.md#automatic-handoff) trigger holds, the line ends `; handoff due (<reason>)`, such as `; handoff due (context 72%)`, and the wake records the crossing, so the reminder rides on a line the Director reads anyway; the reason is Guildhall's own text, never a sender's.
-Otherwise nothing is typed and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
+Otherwise nothing is delivered and the wake is recorded `queued` with its reason, and the message waits for the Director's next turn:
 
 | Reason | When |
 |---|---|
@@ -155,13 +161,17 @@ Otherwise nothing is typed and the wake is recorded `queued` with its reason, an
 | `paused`, `stopping`, `stopped` | The newest session is in that state; a paused Director is not woken. |
 | `no pane` | The session has no bound pane: it runs in a terminal Guildhall did not create. |
 | `nothing unread` | The Director has no unread message: this one was acknowledged before the wake counted unread messages. |
+| `no waiter` | A session that is not typed into had no waiter registered with its supervisor, or no supervisor listening. |
 | `runtime not running` | The pane's shell is idle, so the Director's runtime has ended and the line would reach a shell prompt. |
-| `pane: <error>` | Herdr refused or failed the typing, for example a closed tab. |
+| `pane: <error>` | Herdr refused or failed the typing, or the endpoint failed the hand-off, for example a closed tab. |
 
-A message is woken for at most once: the wake records the mutation `wake:<id>`, and a retried send finds the recorded wake and types nothing new.
-The line is typed before the decision is recorded, so a send retried after a crash between the two may type it again.
+A wake recorded `no waiter` is not lost: while no waiter is registered and messages are unread, the supervisor shows a wake notice in the pane's Herdr title, outside the input box, such as `guildhall: 2 unread (note 2)`, and once a waiter registers it hands it one wake of the current counts and clears the notice.
+The notice is also cleared when nothing is unread.
+
+A message is woken for at most once: the wake records the mutation `wake:<id>`, and a retried send finds the recorded wake and wakes nothing new.
+The line is delivered before the decision is recorded, so a send retried after a crash between the two may deliver it again.
 A failed wake never fails the send; the command reports the wake's failure on standard error, and `messages send` still prints the receipt as usual.
-The pane is reached through the Herdr session it was recorded in, with `herdr` found on `PATH`.
+The pane is reached through the Herdr session it was recorded in, with `herdr` found on `PATH`, and the endpoint at `supervisor.sock` in the session's recorded directory.
 
 The separate [resume wake](director.md#pause-and-resume) leaves each message's recorded wake unchanged.
 

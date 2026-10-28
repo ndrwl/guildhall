@@ -243,6 +243,10 @@ func readRecorded(t *testing.T, log string) []recorded {
 		if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
 			t.Fatal(err)
 		}
+		// The runtime's own async rewake hook, which a session arms at its start, is not a script step.
+		if slices.Equal(r.Args, []string{"director", "wait-wake"}) {
+			continue
+		}
 		calls = append(calls, r)
 	}
 	return calls

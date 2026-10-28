@@ -4,12 +4,45 @@
     "cc-plugin-plugin-authoring@builtin": false
   },
   "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "guildhall director wait-wake",
+            "async": true,
+            "asyncRewake": true,
+            "timeout": 86400
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "guildhall director wait-wake",
+            "async": true,
+            "asyncRewake": true,
+            "timeout": 86400
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "guildhall director turn-ended"
+          },
+          {
+            "type": "command",
+            "command": "guildhall director wait-wake",
+            "async": true,
+            "asyncRewake": true,
+            "timeout": 86400
           }
         ]
       }
@@ -30,6 +63,13 @@
           {
             "type": "command",
             "command": "guildhall director turn-started"
+          },
+          {
+            "type": "command",
+            "command": "guildhall director wait-wake",
+            "async": true,
+            "asyncRewake": true,
+            "timeout": 86400
           }
         ]
       }

@@ -35,7 +35,7 @@ func TestSkillPolicyDirectorSettingsAndFlag(t *testing.T) {
 	if err := json.Unmarshal(files[claude.SettingsFile], &settings); err != nil {
 		t.Fatal(err)
 	}
-	if !settings.Disable || settings.Sync || len(settings.Plugins) != 1 || settings.Plugins["cc-plugin-plugin-authoring@builtin"] || len(settings.Hooks) != 3 || settings.Status == nil || len(settings.Permissions.Allow) == 0 || len(settings.Permissions.Deny) == 0 {
+	if !settings.Disable || settings.Sync || len(settings.Plugins) != 1 || settings.Plugins["cc-plugin-plugin-authoring@builtin"] || len(settings.Hooks) != 5 || settings.Status == nil || len(settings.Permissions.Allow) == 0 || len(settings.Permissions.Deny) == 0 {
 		t.Fatalf("controls damaged session: %+v", settings)
 	}
 	if len(files[claude.SkillPolicyFile]) == 0 {

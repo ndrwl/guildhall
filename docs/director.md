@@ -185,13 +185,13 @@ The hold is read in the same store transaction that records a new attempt, so an
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works using each item's recovery command.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
-A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies` and `decision` items, and the session has a bound pane, it types one line of counts by kind, never any text, and prints `"wake":{"decision":"woke"}` in its line:
+A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies` and `decision` items, and the session has a bound pane, it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
 
 ```text
 guildhall: resumed, 2 waiting (messages 1, paused 1)
 ```
 
-Otherwise it types nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session and pane reasons, and the work waits for the Director's next turn.
+Otherwise it delivers nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session, waiter and pane reasons, and the work waits for the Director's next turn.
 If reading the session for the wake fails, resume reports the error on standard error and omits `wake`, without failing or undoing the resume.
 The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/0086-director-checks-watch.md)).
 A `checks` or `dependencies` item is the supervisor's and a `decision` item the Guildmaster's, so none counts or wakes.
@@ -283,7 +283,7 @@ guildhall director reload [--now] [--copy <dir> | --store <file> --state <dir>]
 
 `director reload` asks the session supervisor to end the runtime and start a new session, on the copy's current settings, as [release upgrades](releases.md#guildhall-director-reload) design.
 It records a `director-reload` request and prints it as one JSON line; requests made before one is applied collapse into it, and `--now` turns a pending plain request into a `--now` one.
-The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake typed into the Director's pane, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
+The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake reached the Director, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
 `--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the handoff: write the note, then reload.
 `--now` is refused with exit 1 unless the newest handoff note was recorded by the newest session, which is not `stopped`, and, while a Director stage attempt is running, unless the note was recorded after that attempt started, so a reload never drops an open grill.
 The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers.
@@ -293,7 +293,8 @@ The [status feed](#status)'s session section carries the newest request as `relo
 A stop or a reload `--now` ends the runtime at the end of the Director's current turn, not in the middle of it.
 A runtime with turn hooks says when a turn starts and ends: Claude Code's `UserPromptSubmit` hook runs `guildhall director turn-started` and its `Stop` and `StopFailure` hooks `guildhall director turn-ended`, the second for a turn that ends in an API error, each of which finds the newest session from the copy in `GUILDHALL_COPY` and signals its supervisor over the session endpoint, an AF_UNIX socket at `supervisor.sock` in the session directory, bound as an [Artisan's endpoint](artisan.md#control-endpoint) is, on Windows as on Unix.
 Each is exit 0 once the supervisor has answered and exit 1 otherwise, including for a usage error, because a `Stop` hook's exit 2 tells Claude Code to keep going and a `UserPromptSubmit` hook's exit 2 blocks the prompt.
-The Director is idle while the newest of these signals is a turn end and no wake has typed into its pane since.
+Beside them, the `SessionStart`, `UserPromptSubmit`, `Stop` and `Notification` hooks arm `guildhall director wait-wake`, Claude Code's async rewake hook, which waits on the same endpoint for a [wake](messaging.md#waking-the-director) and exits 2 to deliver it ([decision](decisions/director-wake-hook.md)); a rewake turn runs the `UserPromptSubmit` hooks as a typed prompt does.
+The Director is idle while the newest of these signals is a turn end and no wake has reached it since: none has been typed into its pane, and none has been taken by its waiter, nor a waiter refreshed itself.
 A turn the captain interrupts with Esc runs no hook at its end, so a runtime with hooks also counts as idle once no turn signal and no wake has arrived for [`[director] idle_after`](configuration.md#the-director-table), 5 minutes unless set; a turn that runs that long without a signal counts as idle too.
 The supervisor decides at each signal and about once a second:
 
@@ -305,6 +306,12 @@ The supervisor decides at each signal and about once a second:
 `director stop --now` is the escape when the runtime must end before then: it ends the runtime at once, mid-turn if need be.
 
 The fake runtime has no hooks, so its sessions wait out the 60 seconds unless their script runs `turn-started` and `turn-ended` itself; without a turn-start hook a turn the captain starts is not seen, so once a turn has ended the Director counts as idle until a wake types into its pane.
+It is the one runtime a wake is typed into.
+
+A Claude Code session keeps one waiter registered with its supervisor: a newer registration retires the older, which exits 0, and a waiter whose supervisor is restarting polls again rather than exit.
+Five minutes before its 24-hour hook timeout a waiter still registered exits 2 with a counts-only line, `guildhall: <n> unread ...`, which the supervisor counts as a wake, so the short turn that follows arms a new one through its `Stop` hook and an idle Director is never left without a waiter.
+A waiter only ends without a replacement when it is killed: while none is registered and messages are unread, the supervisor shows the wake notice in the pane's title, outside the input box, and hands the next waiter to register one wake for what it missed.
+What another runtime would need for the same is a [design note](director-input-runtimes.md).
 A session directory whose socket path would pass the platform's AF_UNIX limit gets no endpoint; the supervisor says so when it starts and waits out the 60 seconds as for a runtime without a hook.
 
 ## Automatic handoff
@@ -320,10 +327,10 @@ Three triggers tell the Director a handoff is due before its context runs out ([
 - `handoff_idle` (off unless set): the Director has had no turn signal and no wake for that long and, with turn hooks, its turn is over.
 
 A trigger never ends the session itself: it asks the Director to run the [`guildhall-handoff`](#skills) skill, which writes a [note](#handoff), carrying any open grill questions, and then runs `director reload --now`.
-The first two ride on a [wake](messaging.md#waking-the-director): when a wake types its line and a trigger holds, the line ends `; handoff due (<reason>)`, such as `guildhall: 2 unread (question 2); handoff due (context 72%)`, with two reasons joined by `, ` when both hold, so no model turn is spent on the reminder alone.
-The idle trigger is the session supervisor's one timer: once the Director has been quiet for `handoff_idle` it types the same line, the unread counts with `; handoff due (idle <duration>)`, into the Director's pane.
+The first two ride on a [wake](messaging.md#waking-the-director): when a wake delivers its line and a trigger holds, the line ends `; handoff due (<reason>)`, such as `guildhall: 2 unread (question 2); handoff due (context 72%)`, with two reasons joined by `, ` when both hold, so no model turn is spent on the reminder alone.
+The idle trigger is the session supervisor's one timer: once the Director has been quiet for `handoff_idle` it wakes it with the same line, the unread counts with `; handoff due (idle <duration>)`, handed to a Claude Code session's waiter and typed only into the fake runtime's pane.
 Each crossing is announced once and recorded as a [handoff due](store.md#handoff-dues): the task trigger's crossings are every `handoff_after_tasks` finished tasks, so a Director that carries on is reminded again after as many more; the context trigger crosses once per session; the idle trigger once per quiet period, which a turn signal or a wake ends.
-A wake that fails to type records no crossing, so the next one carries it.
+A wake that fails to deliver records no crossing, so the next one carries it.
 The thresholds are recorded in the session when it starts, so a changed setting takes effect at the next session.
 
 The context percent comes from the runtime, an optional capability (R1.24).
