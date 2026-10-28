@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -120,9 +121,22 @@ const (
 	TurnEndCommand   = "guildhall director turn-ended"
 )
 
+// VersionCommandFile is the Director session's /version slash command, relative to the session directory.
+const VersionCommandFile = ".claude/commands/version.md"
+
+// versionCommand runs `guildhall version`, or `guildhall version --startup` when its first argument is startup,
+// has the model reply with only the output, then read and follow the startup file a further argument names.
+//
+//go:embed version.md
+var versionCommand []byte
+
+// StartupMessage is the first message of a Claude Code Director session whose startup instructions are at the
+// absolute path startup: the /version command with startup and that path, so the version line comes first.
+func StartupMessage(startup string) string { return fmt.Sprintf("/version startup %q", startup) }
+
 // SessionFiles are the files a Claude Code Director session needs beside its skills, by slash path relative to
-// the session directory: merged settings at SettingsFile, a policy receipt at SkillPolicyFile,
-// and the embedded Lanterns plugin at PluginDir.
+// the session directory: merged settings at SettingsFile, a policy receipt at SkillPolicyFile, the /version
+// command at VersionCommandFile and the embedded Lanterns plugin at PluginDir.
 func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 	p := a.SkillPolicy
 	if p == nil {
@@ -130,7 +144,8 @@ func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 		policy.Key = config.ClaudeSkillsDirectorKey
 		p = &policy
 	}
-	files := map[string][]byte{SettingsFile: mergePolicy(Settings(copyDir), *p), SkillPolicyFile: p.Receipt()}
+	files := map[string][]byte{SettingsFile: mergePolicy(Settings(copyDir), *p), SkillPolicyFile: p.Receipt(),
+		VersionCommandFile: append([]byte(nil), versionCommand...)}
 	for name, data := range lanterns.Files() {
 		files[filepath.ToSlash(filepath.Join(PluginDir, name))] = data
 	}

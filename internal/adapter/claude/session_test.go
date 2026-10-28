@@ -32,18 +32,18 @@ func TestSessionCommand(t *testing.T) {
 	c := t.TempDir()
 	dir := filepath.Join(c, "director", "session-2")
 	spec := adapter.SessionSpec{Dir: dir, Copy: c, RolePrompt: filepath.Join(dir, "role.md"),
-		FirstMessage: "You are starting up.", Model: "opus", Effort: "high", Env: []string{"A=1"}}
+		FirstMessage: claude.StartupMessage(filepath.Join(dir, "startup.md")), Model: "opus", Effort: "high", Env: []string{"A=1"}}
 	cmd, err := claude.Adapter{}.Session(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--model", "opus", "--effort", "high", "--", "You are starting up."}
+	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--model", "opus", "--effort", "high", "--", spec.FirstMessage}
 	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
 		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
 	}
 	spec.Model, spec.Effort = "", ""
 	named := filepath.Join(c, "claude")
-	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--", "You are starting up."}) {
+	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--", spec.FirstMessage}) {
 		t.Errorf("named claude, no model: %+v, %v", cmd, err)
 	}
 	if cmd, err := (claude.Adapter{Claude: "bin/claude"}).Session(spec); err == nil || len(cmd.Argv) > 0 {
@@ -59,6 +59,30 @@ func TestSessionCommand(t *testing.T) {
 	a := claude.Adapter{}
 	if a.Program() != "claude" || a.SkillsDir() != ".claude/skills" || !a.TurnEndHook() {
 		t.Errorf("Program, SkillsDir, TurnEndHook = %q, %q, %v; want the Stop hook", a.Program(), a.SkillsDir(), a.TurnEndHook())
+	}
+}
+
+// TestVersionCommand pins the session's /version command: its frontmatter allows only guildhall version, it maps
+// startup to --startup, asks for the output verbatim and nothing else, then has the model follow the startup file;
+// the first message is that command with startup and the quoted absolute path.
+func TestVersionCommand(t *testing.T) {
+	text := string(claude.Adapter{}.SessionFiles("/home/g/copy")[claude.VersionCommandFile])
+	front, body, ok := strings.Cut(strings.TrimPrefix(text, "---\n"), "\n---\n")
+	if !strings.HasPrefix(text, "---\n") || !ok {
+		t.Fatalf("%s has no frontmatter:\n%s", claude.VersionCommandFile, text)
+	}
+	for _, want := range []string{"description: ", "argument-hint: ", "allowed-tools: Bash(guildhall version:*)"} {
+		if !strings.Contains(front, "\n"+want) && !strings.HasPrefix(front, want) {
+			t.Errorf("frontmatter lacks %q:\n%s", want, front)
+		}
+	}
+	for _, want := range []string{"$ARGUMENTS", "`startup`", "`guildhall version --startup`", "`guildhall version`", "only the command's output, verbatim, and no commentary", "read the file at that exact path and follow it"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("command body lacks %q:\n%s", want, body)
+		}
+	}
+	if got, want := claude.StartupMessage("/home/g/copy/director/session-3/startup.md"), `/version startup "/home/g/copy/director/session-3/startup.md"`; got != want {
+		t.Errorf("StartupMessage = %q, want %q", got, want)
 	}
 }
 
@@ -89,7 +113,8 @@ func TestSessionStubRequiresMessageSeparator(t *testing.T) {
 				if separator {
 					args = append(args, "--")
 				}
-				args = append(args, "You are starting up.")
+				first := claude.StartupMessage(filepath.Join(dir, "startup.md"))
+				args = append(args, first)
 				cmd := exec.Command("claude", args...)
 				cmd.Dir = dir
 				cmd.Env = append(os.Environ(), "GUILDHALL_COPY="+dir)
@@ -97,6 +122,9 @@ func TestSessionStubRequiresMessageSeparator(t *testing.T) {
 				if separator {
 					if err != nil {
 						t.Fatalf("valid argv: %v\n%s", err, out)
+					}
+					if got, err := os.ReadFile(filepath.Join(dir, claudetest.FirstMessageFile)); err != nil || string(got) != first {
+						t.Errorf("recorded first message = %q, %v; want %q", got, err, first)
 					}
 				} else {
 					var exit *exec.ExitError

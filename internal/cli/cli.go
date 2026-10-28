@@ -26,7 +26,8 @@ var version = "dev"
 const usage = `Usage: guildhall <command>
 
 Commands:
-  version        print the guildhall version and platform
+  version [--startup | --json] [--copy <dir>]
+                 print the guildhall version, revision, latest merge and how far it is behind main
   doctor         report the platform and the tools guildhall uses
   store init <path>
                  create and initialize an empty store file
@@ -151,6 +152,12 @@ type App struct {
 	// session, after checking the session's server, and returns the server's version; nil means Herdr, found
 	// on PATH as herdr.
 	DirectorTabs func(ctx context.Context, session string) (adapter.TabHost, string, error)
+	// BuildInfo reads the running binary's build information for version and director status; nil means
+	// debug.ReadBuildInfo.
+	BuildInfo func() (*debug.BuildInfo, bool)
+	// VersionGit reads Guildhall's own repository for version and director status; nil means git.Program with a
+	// five-second bound on each run.
+	VersionGit VersionGit
 }
 
 // New returns an App wired to the real process environment.
@@ -165,6 +172,7 @@ func New() *App {
 		},
 		Executable: os.Executable,
 		Getenv:     os.Getenv,
+		BuildInfo:  debug.ReadBuildInfo,
 	}
 }
 
@@ -195,10 +203,7 @@ func (a *App) Run(args []string) int {
 	case "help", "-h", "--help":
 		out = usage
 	case "version":
-		if len(rest) > 0 {
-			return a.usageError("version takes no arguments")
-		}
-		out = fmt.Sprintf("guildhall %s %s/%s %s\n", Version(), runtime.GOOS, runtime.GOARCH, runtime.Version())
+		return a.versionCmd(rest)
 	case "doctor":
 		if len(rest) > 0 {
 			return a.usageError("doctor takes no arguments")

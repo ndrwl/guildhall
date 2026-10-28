@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/baseline"
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -197,6 +198,15 @@ func TestDirectorStartClaudeWithoutModel(t *testing.T) {
 	got := sessions(t, dir)
 	if len(got) != 1 || got[0].ReadyAt.IsZero() || got[0].State != store.DirectorStopped {
 		t.Fatalf("sessions = %+v; want startup turn ready then stopped", got)
+	}
+	// The one first message is the /version command, naming startup.md by its absolute path.
+	workspace := filepath.Join(dir, "director", "claude")
+	first, err := os.ReadFile(filepath.Join(workspace, claudetest.FirstMessageFile))
+	if want := fmt.Sprintf("/version startup %q", filepath.Join(dir, "director", "session-1", render.StartupFile)); err != nil || string(first) != want {
+		t.Errorf("first message = %q, %v; want %q", first, err, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(claude.VersionCommandFile))); err != nil || !strings.Contains(string(b), "guildhall version --startup") {
+		t.Errorf("workspace /version command = %q, %v", b, err)
 	}
 }
 

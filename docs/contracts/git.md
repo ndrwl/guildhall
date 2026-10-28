@@ -80,11 +80,24 @@ Directories are compared by file identity, not by path text, so symbolic links s
 `w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/0011-repository-paths-are-absolute-in-the.md), is `ErrInvalidWorkspace` there.
 Paths with spaces are passed as single arguments, never through a shell.
 
-Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `Tip`, `IsAncestor`, `FinalHead` and `Retire` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
+Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `Tip`, `IsAncestor`, `FinalHead`, `Retire`, `Subject`, `FetchDefault` and `Behind` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
 A run past its bound is ended and is a plain error naming git's command and the bound; for `Classify` that is a full scope with that reason, since its context did not end.
 `forge.GitHub` keeps the same rule for `gh` and `git` ([forge](forge.md)); the shared runner both would use waits for a third consumer that runs a program under a bound, and is done when `exec.CommandContext` in `internal/forge`, `internal/git` and `internal/herdr` is found only in it.
 
+### Version reads
+
+[`guildhall version`](cli.md#version) reads Guildhall's own repository through three operations:
+
+- `Program.Subject(ctx, repo, rev)` is the subject line of the full commit id `rev` (`git log -1 --format=%s <rev>^{commit}`); an invalid id, a commit the repository lacks and any git failure are errors.
+- `Program.FetchDefault(ctx, repo, remote, ref)` records the commit `remote`'s default branch is at as `ref` with `git fetch --no-tags --no-write-fetch-head --no-recurse-submodules <remote> +HEAD:<ref>`; `ref` must be under `refs/guildhall/` and `remote` must not be empty or start with `-`, and an unreachable remote, a run past the bound and any git failure are errors that leave `ref` as it was.
+- `Program.Behind(ctx, repo, rev, ref)` is how many first-parent commits `ref` has after `rev` and their subjects, newest first (`git rev-list --count --first-parent` and `git log --first-parent --format=%s` of `rev..ref`), read with no network call; a missing ref, an unknown commit and any git failure are errors.
+
+The CLI declares its own narrow interface over them, `cli.VersionGit`, and bounds each run at five seconds.
+
 ## Tests
+
+`history_test.go`'s `TestVersionReads` covers the version reads over `gittest.Repository`: a subject, an unknown commit and a name that is not a full id refused, `Behind` before any fetch failing, a fetch that names two new commits with and without a pull request number, none behind at the tip, and a fetch from a missing remote failing with the ref unmoved and invalid refs and remotes refused.
+It was written with the operations and passed on its first run.
 
 `head_test.go` adds green-first boundary coverage for `FinalHead`: committed and detached HEAD, untracked notes, modified/staged/deleted/renamed/added tracked paths, unborn HEAD, non-repository directories, missing executable, cancellation and process timeout.
 The red-first integration regression that drove this new operation is linked from the [interpreter contract](interp.md).

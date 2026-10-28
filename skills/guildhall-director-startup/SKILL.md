@@ -1,12 +1,13 @@
 ---
 name: guildhall-director-startup
-description: Use as the Director when a session starts and its first message names startup.md, to read the handoff note, work every in-flight item with the command it names, then run guildhall director ready.
+description: Use as the Director when a session starts and its first message names startup.md, directly or as /version startup "<path>", to read the handoff note, work every in-flight item with the command it names, then run guildhall director ready.
 ---
 
 # Director startup
 
 A new Director session starts `recovering`: it starts no new work until you say it is ready.
 The first message names the numbered session's `startup.md`; use that exact path, which may be outside your stable runtime working directory.
+In Claude Code the first message is `/version startup "<path>"`: reply first with only the version output, as that command says, then read `startup.md` at that path.
 It holds the handoff note your previous session left, if any, and the in-flight snapshot, which is the `needs_me` list of `guildhall director status --json` with the command for each item.
 The binary refuses `guildhall task new`, and `guildhall task start` of a task with no attempt yet, until you run `guildhall director ready`, so recover first and start new work after.
 

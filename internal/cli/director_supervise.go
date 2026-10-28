@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -224,7 +225,9 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		if err != nil {
 			return a.fail(fmt.Errorf("director start: prepare workspace: %w", err)), false
 		}
-		firstMessage = fmt.Sprintf("You are starting up: read %q and follow it.", r.StartupPath)
+		// Claude Code, the one persistent runtime, shows the binary's version first with its /version command,
+		// which then reads startup.md by its absolute path.
+		firstMessage = claude.StartupMessage(r.StartupPath)
 	}
 	cmd, err := p.runtime.Session(adapter.SessionSpec{Dir: workDir, Copy: copyDir, RolePrompt: r.RolePath,
 		FirstMessage: firstMessage, Model: model, Effort: p.cfg.EffectiveEffort(effort), Env: []string{session.NumberEnv + "=" + strconv.Itoa(n)}})

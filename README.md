@@ -89,6 +89,16 @@ go build -o guildhall ./cmd/guildhall
 ```
 
 ```console
+$ ./guildhall version
+guildhall v0.0.0-20261027210024-abd974855ac9 linux/amd64 go1.27.2
+revision: abd974855ac9d1e8f0c0a7b6e2f5d4c3b2a19087 (2026-10-27T21:00:24Z)
+latest merge: #158 (task d10)
+behind main: 2 merges (#160, #159)
+```
+
+The latest merge and behind-main lines need a [copy](docs/running.md#copies) whose config lists this repository; `guildhall version --json` prints the same fields as JSON ([version](docs/contracts/cli.md#version)).
+
+```console
 $ ./guildhall doctor
 os: linux
 arch: amd64
@@ -137,7 +147,7 @@ It needs a small Director config naming your repository; see [configuration and 
 The commands are the Director's tools; you can also call them yourself to script, inspect or drive work by hand.
 `guildhall help` lists them, and each links to its own page.
 
-- `guildhall version` and `guildhall doctor`: version, platform and which tools are installed.
+- `guildhall version` and `guildhall doctor`: version, revision, latest merge, how far behind main, platform and which tools are installed.
 - `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks; see [tasks](docs/tasks.md).
 - `guildhall task start` and `guildhall step done`: advance a task through its workflow; see [running a task](docs/running.md).
 - `guildhall step retry`: start the next attempt of a step after a failed or stopped one; see [running a task](docs/running.md#step-retry).

@@ -41,6 +41,9 @@ type directorStatus struct {
 	Messages  statusMessages   `json:"messages"`
 	Recent    []recentReceipt  `json:"recent"`
 	NeedsMe   []needsMeItem    `json:"needs_me"`
+	// Version is the binary printing the feed, from its build info and local git reads only
+	// (docs/contracts/cli.md#version); the session supervisor's own snapshot leaves it out.
+	Version *versionInfo `json:"version,omitempty"`
 }
 
 // recentReceipt is a receipt without its request digest, which only replay checks need.
@@ -218,6 +221,8 @@ func (a *App) directorStatusCmd(args []string) int {
 		return a.fail(fmt.Errorf("director status: %w", err))
 	}
 	out.Session.GuardRails.GuardRails, out.Quality, out.Session.GuardRails.ConfigError = statusConfig(*cfg, named)
+	v := a.versionInfo(context.Background(), *cfg, *state, false)
+	out.Version = &v
 	return a.printJSON(out)
 }
 
