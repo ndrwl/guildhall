@@ -178,9 +178,6 @@ func (a *App) printJSON(v any) int {
 	return 0
 }
 
-// artisanStart launches one Artisan attempt: owned by this process as its
-// launcher, or with --herdr-session in a new tab of a named Herdr session,
-// waiting for its result file.
 // bridgeArgs are the artisan start arguments of a --pane-launch bridge without
 // the bridge's own flags, --pane-launch and launch.WorkspaceCloseAfterFlag, so
 // the launcher it detaches is the ordinary owned start.
@@ -199,6 +196,9 @@ func bridgeArgs(args []string) []string {
 	return out
 }
 
+// artisanStart launches one Artisan attempt: owned by this process as its
+// launcher, or with --herdr-session in a new tab of a named Herdr session,
+// waiting for its result file.
 func (a *App) artisanStart(args []string) int {
 	fl := flag.NewFlagSet("artisan start", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)

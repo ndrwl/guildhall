@@ -216,5 +216,10 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if out, err := exec.Command("herdr", "workspace", "close", probe.ID, "--session", session).CombinedOutput(); err != nil {
+			t.Logf("close probe Herdr workspace %s: %v: %s", probe.ID, err, out)
+		}
+	})
 	t.Logf("herdr id after close: closed %s, next created %s, reused=%v", ref.WorkspaceID, probe.ID, probe.ID == ref.WorkspaceID)
 }

@@ -467,8 +467,8 @@ The pane runs an internal `artisan start --pane-launch` bridge that starts the o
 The [Claude adapter](adapters.md#claude-adapter) defines the plain live stream's contents and limits; richer formatting is a later stage.
 This is a watchable print-mode Artisan, not an interactive model session.
 Closing the workspace or tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
-After the launcher and its watcher finish, the bridge prints a finished line and leaves the workspace open for inspection until the Director session's supervisor closes it.
-The launcher passes the bridge the effective `artisan_workspace_close_after` as the internal `--workspace-close-after` flag, so the line states it: `This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep workspaces open.`, or, when the setting is `0`, that the workspace stays open.
+After the launcher and its watcher finish, the bridge prints a finished line and leaves the Herdr workspace open for inspection until the Director session supervisor's workspace close sweep closes it.
+The launcher passes the bridge the effective `artisan_workspace_close_after` as the internal `--workspace-close-after` flag, so the line states it: `This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open.`, or, when the setting is `0`, that the Herdr workspace stays open.
 A person may close the presentation sooner without losing the attempt's log, result or isolated copy.
 
 An attempt-local `pane-launch.json` single-use claim is written before opening a pane, then records the tab binding before typing.
@@ -480,10 +480,10 @@ A claimed attempt with no owner needs operator inspection of the preserved launc
 The supervisor's **workspace close sweep** closes a finished attempt's Herdr workspace only after its result is recorded and its work is preserved, and only what Guildhall created (R1.54; [decision](decisions/artisan-workspace-close-sweep.md)).
 It runs when each Director session starts, a reload's included, and every 5 minutes, off the supervisor's decision path, and only when `herdr_session` is set.
 An attempt is due once its outcome is `succeeded`, `failed` or `stopped`, its owner is proven gone, and [`artisan_workspace_close_after`](configuration.md#settings), default 5 minutes, has passed since its `finish-attempt` receipt; `"0"` never closes.
-Immediately before closing it revalidates `pane-launch.json` against the live session: a workspace labelled `└ <task> · <step> #<n>`, or `artisan <key>` from #140 to #145, closes only while it holds exactly the recorded tab, labelled `artisan <key>`, with its one recorded pane at an idle shell.
-A record from before #140 names a tab in a shared workspace, possibly the Director's: only that tab closes, after the same tab checks, and the workspace never does.
+Immediately before closing it revalidates `pane-launch.json` against the live session: a Herdr workspace labelled `└ <task> · <step> #<n>`, or `artisan <key>` from #140 to #145, closes only while it holds exactly the recorded tab, labelled `artisan <key>`, with its one recorded pane at an idle shell.
+A record from before #140 names a tab in a shared Herdr workspace, possibly the Director's: only that tab closes, after the same tab checks, and the Herdr workspace never does.
 A closed or already-gone attempt gets a presentation-only `pane-closed.json` marker, which is never read as task state, so later sweeps skip it.
-A launching claim, an unreadable record, a record from another session or any mismatch stays open and is reported once with an unread [`herdr-workspace-left-open`](messaging.md) message that does not wake the Director; a later sweep closes it once it matches.
+A launching claim, an unreadable record, a record from another session or any mismatch leaves the Herdr workspace open and is reported once with an unread [`herdr-workspace-left-open`](messaging.md) message that does not wake the Director; a later workspace close sweep closes it once it matches.
 An unreachable Herdr abandons the round with one standard-error line and writes nothing; a held workspace-order lock skips the round.
 Closing never writes a task, attempt, ownership or session record and never touches the attempt's files or git working directories; the default Herdr session is refused.
 

@@ -48,7 +48,7 @@ func FinishLine(closeAfter time.Duration) string {
 	case closeAfter < 0:
 		return done + " This Herdr workspace closes automatically after the configured delay (artisan_workspace_close_after)."
 	}
-	return fmt.Sprintf("%s This Herdr workspace closes automatically in about %s (artisan_workspace_close_after); set it to 0 to keep workspaces open.", done, closeAfter)
+	return fmt.Sprintf("%s This Herdr workspace closes automatically in about %s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open.", done, closeAfter)
 }
 
 // PaneClaim is the attempt-local, single-use presentation launch intent.

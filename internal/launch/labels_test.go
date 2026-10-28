@@ -30,8 +30,8 @@ func TestFinishLineStatesTheConfiguredDelay(t *testing.T) {
 		after time.Duration
 		want  string
 	}{
-		{5 * time.Minute, done + "This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep workspaces open."},
-		{90 * time.Second, done + "This Herdr workspace closes automatically in about 1m30s (artisan_workspace_close_after); set it to 0 to keep workspaces open."},
+		{5 * time.Minute, done + "This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open."},
+		{90 * time.Second, done + "This Herdr workspace closes automatically in about 1m30s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open."},
 		{0, done + "This Herdr workspace stays open (artisan_workspace_close_after is 0); close it yourself when done."},
 		{-1, done + "This Herdr workspace closes automatically after the configured delay (artisan_workspace_close_after)."},
 	} {
