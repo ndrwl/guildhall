@@ -6,6 +6,7 @@
 Its process boundary, `Client.run`, passes argv and env exactly, keeps stdout and stderr apart, reports a nonzero exit with its output, errors when a program cannot start, and reports cancellation as the context's error.
 Every run ends when its context ends: the program is killed and its output pipes, which a child of the program may still hold, are closed five seconds later at most (`WaitDelay`), so a call is bounded by its caller's context.
 `ReportAgent` reports a pane's agent with `pane report-agent`, passing the resume command after `--` and refusing, before any call, a malformed pane, source, agent or state and a resume command that starts with a path or an option (`ErrResumeArgv`).
+Why Herdr lost a running Artisan pane's reported agent, and the fix options, are in the [agent report loss findings](../evidence/herdr-agent-report-loss-2026-10.md).
 `RecordedTab` makes an `OwnedTab` from a durable Guildhall record once `tab get` shows the tab still in the recorded workspace, refusing malformed ids before any call; a closed tab is not found.
 On an owned pane, as `RunInOwnedTab` is, `PaneTitle` sets the pane's display title under a source with `pane report-metadata <pane> --source <id> --title <title>`, or clears it with `--clear-title` for "", refusing a malformed source or a multi-line title before any call.
 It exists in Herdr 0.9.5, the floor ([Phase 0 probes](../evidence/director-input-2026-10-27.txt)); the session supervisor's wake notice is the pane title ([decision](../decisions/director-wake-hook.md)).
