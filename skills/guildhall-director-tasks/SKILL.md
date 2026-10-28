@@ -86,7 +86,7 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 
 ## Retrying, stopping and resuming attempts
 
-- Retry a failed or stopped attempt with the reason you retry, which the next attempt reads:
+- Retry a failed or stopped attempt with the reason you retry, which appears in the next attempt's prompt, with the previous rejection or failure summary:
   `guildhall step retry --repo app --task t-12 --step build --attempt 1 --reason "The test runner timed out; the flaky network test is now skipped."`
 - Stop one running attempt when the Guildmaster asks or it is truly stuck:
   `guildhall artisan stop --repo app --task t-12 --step build --attempt 2`.

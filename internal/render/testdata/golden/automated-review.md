@@ -49,7 +49,7 @@ A succeeded result must provide every required output below. A verdict in the re
 
 Write `outcome.json` and list it in result outputs.
 
-Format: one strict JSON `guildhall.review-outcome/1` object, not Markdown or a prose verdict. Use reviewer `automated`; verdict is `approved`, `changes_requested`, or `rejected` (the latter two require findings). Findings have `id` and `summary`, and may cite `rule`, `file`, and `line`. For every previous finding, include a disposition with `finding` and `state` (`resolved`, `still-open`, or `withdrawn`); still-open findings must also remain in findings.
+Format: one strict JSON `guildhall.review-outcome/1` object, not Markdown or a prose verdict. Use reviewer `automated`; verdict is `approved`, `changes_requested`, or `rejected` (the latter two require findings). Findings have `id` and `summary`, and may cite `rule`, `file`, and `line`. A finding `id` is lowercase letters, digits and hyphens, starting with a letter, at most 63 characters (e.g. `f1`, `must-1`); keep a finding's id in later rounds. For every previous finding, include a disposition with `finding` and `state` (`resolved`, `still-open`, or `withdrawn`); still-open findings must also remain in findings.
 
 The revision values below are illustrative: replace them with the exact reviewed input head/document digest, accepted spec digest (for code review), and standards revision. Never submit the illustrative zero hashes.
 
@@ -60,6 +60,29 @@ Minimal approval example (choose your actual verdict and findings):
   "schema": "guildhall.review-outcome/1",
   "reviewer": "automated",
   "verdict": "approved",
+  "revisions": {
+    "subject": {
+      "code_head": "0000000000000000000000000000000000000000"
+    },
+    "spec_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "standards_revision": "example-standards-revision"
+  }
+}
+```
+
+Example with a finding:
+
+```json
+{
+  "schema": "guildhall.review-outcome/1",
+  "reviewer": "automated",
+  "verdict": "changes_requested",
+  "findings": [
+    {
+      "id": "f1",
+      "summary": "What is wrong and what to change."
+    }
+  ],
   "revisions": {
     "subject": {
       "code_head": "0000000000000000000000000000000000000000"

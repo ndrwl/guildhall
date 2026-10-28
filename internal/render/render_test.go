@@ -89,22 +89,28 @@ func TestPromptGoldenPerKind(t *testing.T) {
 		step     workflow.Step
 		inputs   []Input
 		baseline Baseline
+		retry    *Retry
 	}{
-		{"grill", step(t, "grill", "grill", `{"actor":"director"}`), nil, baseline("grill")},
-		{"research", step(t, "research", "research", ""), nil, baseline("research")},
+		{"grill", step(t, "grill", "grill", `{"actor":"director"}`), nil, baseline("grill"), nil},
+		{"research", step(t, "research", "research", ""), nil, baseline("research"), nil},
 		{"plan", step(t, "plan", "plan", `{"profile": "planner", "skills": ["guildhall-contributing"]}`),
-			[]Input{input(t, "context", "tasks/t7/grill-notes.md", "notes.md")}, baseline("plan")},
+			[]Input{input(t, "context", "tasks/t7/grill-notes.md", "notes.md")}, baseline("plan"), nil},
 		{"build", step(t, "build", "build", `{"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]}`),
-			[]Input{input(t, "spec", "tasks/t7/spec.md", "spec.md")}, baseline("build")},
+			[]Input{input(t, "spec", "tasks/t7/spec.md", "spec.md")}, baseline("build"), nil},
+		{"build-retry", step(t, "build", "build", `{"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]}`),
+			[]Input{input(t, "spec", "tasks/t7/spec.md", "spec.md")}, baseline("build"),
+			&Retry{Attempt: 1, Outcome: "failed", Reason: "The flaky test is fixed on main; try again.",
+				Rejection: "output spec.md: no such file", Summary: "Tests failed:\n```\nFAIL TestSort\n```"}},
 		{"automated-review", step(t, "review-astra", "review",
 			`{"actor":"artisan", "profile": "reviewer-astra", "instructions": "Check the JSON output on Windows too.\r\nCite S1 or S2."}`),
 			[]Input{input(t, "spec", "tasks/t7/spec.md", "spec.md")},
 			Baseline{Role: source("roles/reviewer.md"), Guide: source("stages/automated-review.md"),
-				Standards: []Source{source("standards/review.md")}}},
+				Standards: []Source{source("standards/review.md")}}, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.kind, func(t *testing.T) {
 			stage := attempt(t, c.step)
+			stage.Retry = c.retry
 			r, err := Prompt(stage, c.inputs, c.baseline, roots())
 			if err != nil {
 				t.Fatal(err)

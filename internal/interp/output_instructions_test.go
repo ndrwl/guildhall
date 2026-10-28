@@ -86,17 +86,29 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 						t.Fatalf("%s example rejected by engine: %v", port.Name, err)
 					}
 					if port.Type == workflow.ReviewResult {
-						outcome, err := workflow.ParseReviewOutcome([]byte(content))
-						if err != nil {
-							t.Fatal(err)
+						// Every example must pass intake, the finding example included.
+						examples := fencedExamples(section, language)
+						findings := 0
+						for _, content := range examples {
+							if err := checkPort(port.Type, []byte(content)); err != nil {
+								t.Fatalf("%s example rejected by engine: %v\n%s", port.Name, err, content)
+							}
+							outcome, err := workflow.ParseReviewOutcome([]byte(content))
+							if err != nil {
+								t.Fatal(err)
+							}
+							findings += len(outcome.Findings)
+							if err := outcome.BoundTo(*revisions); err != nil {
+								t.Fatalf("example changed the bound revisions: %v", err)
+							}
+							moved := *revisions
+							moved.StandardsRevision += "-changed"
+							if err := outcome.BoundTo(moved); err == nil {
+								t.Fatal("example accepted against different standards")
+							}
 						}
-						if err := outcome.BoundTo(*revisions); err != nil {
-							t.Fatalf("example changed the bound revisions: %v", err)
-						}
-						moved := *revisions
-						moved.StandardsRevision += "-changed"
-						if err := outcome.BoundTo(moved); err == nil {
-							t.Fatal("example accepted against different standards")
+						if len(examples) < 2 || findings == 0 {
+							t.Errorf("port %s has %d examples with %d findings; want an approval and a finding example", port.Name, len(examples), findings)
 						}
 					}
 					if port.Type == workflow.CodeHead {
@@ -156,4 +168,21 @@ func fencedExample(t *testing.T, text, language string) string {
 		t.Fatal("unclosed example")
 	}
 	return example
+}
+
+// fencedExamples returns every complete example fenced as language in text, in order.
+func fencedExamples(text, language string) []string {
+	var out []string
+	for {
+		_, rest, ok := strings.Cut(text, "```"+language+"\n")
+		if !ok {
+			return out
+		}
+		example, after, ok := strings.Cut(rest, "\n```")
+		if !ok {
+			return out
+		}
+		out = append(out, example)
+		text = after
+	}
 }

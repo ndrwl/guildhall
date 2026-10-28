@@ -1,0 +1,62 @@
+{
+  "schema": "guildhall.prompt-manifest/1",
+  "identity": {
+    "repository": "cli",
+    "task": "t7",
+    "step": "build",
+    "kind": "build",
+    "kind_version": 1,
+    "attempt": 2,
+    "profile": "builder"
+  },
+  "prompt": {
+    "path": "prompt.md",
+    "digest": "sha256:10cfc8fb7674e56a9529178d93e1c86ae15d4f0a29943fa5e586443368b30795"
+  },
+  "role": {
+    "path": "roles/artisan.md",
+    "digest": "sha256:617fae11efe1587423bd4dd4a81c8e14927a63369b790a6f1d72446b245585f0"
+  },
+  "guide": {
+    "path": "stages/build.md",
+    "digest": "sha256:0c8a625b5256dd691f111f4660c09d6d1befac1fce3051225c7532b2811e2343"
+  },
+  "standards": [],
+  "inputs": [
+    {
+      "port": "spec",
+      "path": "tasks/t7/spec.md",
+      "digest": "sha256:242df7188ef036fb7f2376eda94382b23f989a04a61db84ae59acba315fc21be"
+    }
+  ],
+  "skills": [
+    {
+      "name": "go-tdd",
+      "root": "release",
+      "path": "skills/go-tdd",
+      "digest": "sha256:5771b0a0a8393288c7caeea797aea949d98ec66b2193390a826a6e9f6be1b33b",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "digest": "sha256:c1d1160a457c78f3b61c3fa11040ee710f0bb38ef40a60f24e233cc2abf73060"
+        },
+        {
+          "path": "scripts/check.sh",
+          "digest": "sha256:ca4b5179596dc897c978e4d062b631dd0848f5159e5fe879d45ec477ae60b04a"
+        }
+      ]
+    },
+    {
+      "name": "guildhall-contributing",
+      "root": "managed",
+      "path": "skills/guildhall-contributing",
+      "digest": "sha256:0c385355800932af2d91f9f247c393032ab5909542166fa7c75a3812c9364039",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "digest": "sha256:1cb89ac2ac84c9e435221f4fdc51a63b194c0d856dd30f4f0ffa47b1ad7e0def"
+        }
+      ]
+    }
+  ]
+}

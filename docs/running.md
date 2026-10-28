@@ -105,8 +105,10 @@ This includes a launcher-succeeded attempt whose result intake was rejected: run
 The failure's `intake_rejection`, the `attempt-failed` message and the status feed's retry reason explain why it was rejected; no hand-written replacement verdict is needed.
 It feeds [`attempt-retried`](interpreter.md#events) for attempt `--attempt` of `--step`: valid only when that attempt is the step's latest and finished `failed` or `stopped`, and the task is open.
 The engine then starts the next attempt exactly as `task start` starts a first one, and prints `{"wait":"attempt",...}` for it.
-`--reason`, when given, is recorded as the Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the next attempt has launched, so `task timeline` shows why the attempt was retried.
-A retry whose start or launch fails exits 1 and sends no reason, so it can be repeated with another reason; when the next attempt was recorded but not launched, the repeat launches it.
+The next attempt's prompt opens with a "Why this is a retry" section quoting `--reason` (or "None given."), the retried attempt's intake rejection when it had one, and its result summary (or "None recorded.", as for a stopped attempt); the section is recorded in the next attempt's binding, so a resumed advance renders it too.
+`--reason`, when given, is also recorded as the Director message `<repo>.<task>.attempt-retried.<step>-<n>` once the next attempt has launched, so `task timeline` shows why the attempt was retried.
+A retry whose start or launch fails exits 1 and sends no reason message, so it can be repeated; when the next attempt was recorded but not launched, the repeat launches it.
+A retry refused once the next attempt's inputs were bound, such as by a guard rail or a failed launch, keeps the first reason: a repeat with another reason renders and sends the first, as a send-back's feedback is fixed once recorded.
 A running or succeeded attempt, or one a later attempt already follows, is refused with exit status 1 and nothing is recorded; repeating the command after the next attempt launched prints what the task waits for and writes nothing beyond the reason, if an interrupted retry had not yet sent it.
 An attempt whose launcher died is first settled with [`artisan resume`](artisan.md#commands).
 
