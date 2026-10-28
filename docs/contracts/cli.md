@@ -93,7 +93,44 @@ Unknown flags, extra arguments and missing or malformed required fields exit 2; 
 It starts a new attempt only for a succeeded Artisan step, preserves old attempts and passes the Director's feedback as an input document; identical replay starts nothing extra and conflicting feedback is refused.
 See [the command](../step-send-back.md).
 
+### Version
+
+`guildhall version [--startup | --json] [--copy <dir>]` says which revision the binary is, which pull request it ends at and how far it is behind the repository's main ([decision](../decisions/version-from-build-info.md)).
+`--copy` defaults to `GUILDHALL_COPY`, as for `director status`.
+A positional argument, an unknown flag, and `--startup` with `--json` are usage errors (exit 2 with the usage text); stdout that cannot be written is exit 1; nothing else makes it exit non-zero.
+
+**Build fields** come from the binary's build information through the `App.BuildInfo` seam, `debug.ReadBuildInfo` when nil: `vcs.revision` in full, `vcs.time`, `vcs.modified`, the Go version and `GOOS/GOARCH`, falling back to the running toolchain's for the last two.
+`Version()` and its precedence (the release tag injected by the linker, then the module version, then `dev`) are unchanged, so `doctor` and the session record's `release` are unchanged.
+A build with no `vcs.*` settings, such as a module-proxy install, `-buildvcs=false` or a tree without `.git`, has empty revision fields and shows the release only.
+
+**Repository fields** are read only when a copy resolves and the build has a revision, from the copy's one repository whose `remote` names the binary's module path (`github.com/ndrwl/guildhall`), compared after dropping a URL scheme, a user, the colon of `git@host:path` and a trailing `.git` or `/`, in lower case.
+No match, or more than one, gives no repository fields; there is no config key for it.
+
+- *Latest merge:* the subject of the binary's revision in the repository's `path`; a trailing ` (#N)` is the pull request, and any other subject is none.
+- *Task:* the task whose store document `tasks/<repo>/<task>/<step>/pull-request.json`, under the copy's `state/documents`, records that pull request number; none when this copy did not deliver it.
+  No network or forge call is made.
+- *Behind main:* `git rev-list --count --first-parent` and `git log --first-parent --format=%s` of `<revision>..refs/guildhall/version/main`, the remote's default branch fetched into that private ref with `git fetch --no-tags --no-write-fetch-head <remote> +HEAD:refs/guildhall/version/main`.
+  Only plain `version` and `--startup` fetch; `--json` and `director status` read the ref as last fetched.
+  A fetch that succeeds is recorded in `state/version-fetch.json` with its time; a fetch that fails leaves the ref as it was and the count says "as of" that recorded time, or "as of an earlier fetch" with no record; with no ref at all, behind main is omitted.
+  The missing pull requests are the numbers ending the subjects behind, newest first; the text forms name at most ten, then "and N more".
+
+Every git run goes through `App.VersionGit` (`VersionGit`: `Subject`, `FetchDefault` and `Behind`), `git.Program` with a five-second bound on each run when nil, so a hung remote costs at most five seconds.
+Any repository failure, such as an unreadable path, an unknown revision or an unreachable remote, leaves those fields empty and never changes the exit code.
+
+**Plain** prints `guildhall <version> <os>/<arch> <go version>`, then the lines it has: `revision: <revision> (<time>[, modified])`, `latest merge: #<pr>[ (task <id>)]` and `behind main: <n> merge[s][ (#<pr>, …)][ as of <time>]`.
+**`--startup`** prints one line, `guildhall <first 8 of the revision, else the version>[ #<pr>][ <task>][ <commit date>][, modified]` with `, up to date with main` or `, <n> behind main[ (#<pr>, …)]` and any "as of", then at most one line `warning: ` joining with `; ` each of: behind main by one or more merges; modified, that is built with uncommitted or untracked files; and a release other than the one the current session's supervisor recorded, the session numbered by `GUILDHALL_SESSION` (`session.NumberEnv`) read read-only from the copy's store.
+Warnings never change the exit code.
+**`--json`** prints one object with every field present: `version`, `revision`, `time`, `modified`, `go_version`, `platform`, `pr` (number or null), `task` (string or null) and `behind_main` (null, or `count`, `missing_prs` in full and `as_of`, the recorded fetch time or `""`).
+
+`director status --json` adds the same object as `version`, for the binary printing the feed, with no fetch; the supervisor's in-flight snapshot does not compute it.
+
 ## Tests
+
+`version_test.go` was written red first against the one-line `version` ([red run](../evidence/version-from-build-info-2026-10-28-red.txt)).
+`TestVersionForms` pins the plain, `--startup` and `--json` output over the `App.BuildInfo` seam and a recording `VersionGit` double for a full build, no vcs information, a modified build, no copy, a copy with no matching repository, an unreadable repository path, subjects with and without ` (#N)`, a pull request with and without a `pull-request.json`, behind 0, 2 and 12 (ten named), a failed fetch falling back to the recorded ref "as of" its fetch, and no ref at all, and that only plain and `--startup` fetch.
+`TestVersionSupervisorRelease` covers a session whose recorded release matches and one whose release differs; `TestVersionCopyFlag` `--copy` over `GUILDHALL_COPY`; `TestRemoteModule` the remote forms; `TestVersionUsage` the usage errors and an unwritable stdout.
+`TestVersionRepositoryGit` runs the real `git.Program` over a repository and a local bare remote reached through `url.<base>.insteadOf`, with no network, then removes the remote and reads the count "as of" the earlier fetch.
+`TestDirectorStatusVersionReadsLocally` checks the feed's block reads the repository without fetching; the status goldens gained only the block.
 
 `sendback_test.go` exercises help without store access, unknown/missing/invalid flags, actual new-attempt launch through the CLI and replay without an extra attempt.
 These CLI tests were added after implementation; the initial interpreter API red run and focused integration green run are in [the evidence](../evidence/pr-conflicts-2026-10-26).

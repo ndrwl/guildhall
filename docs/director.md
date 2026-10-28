@@ -62,6 +62,9 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory (for Claude, in the stable workspace described below), inside a containment unit of its own ([runtime containment](decisions/0084-director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
 For Claude Code that is `claude --append-system-prompt-file <session-directory>/role.md --add-dir <copy> --settings <copy>/director/claude/.claude/settings.json [--model <model>] [--effort <level>] -- "<first message>"`; see [runtime settings](adapters.md#runtime-settings) for effort resolution and preflight refusals.
 Claude runs in **`<copy>/director/claude`**, a stable workspace reused by starts, reloads and handoffs, with the first message naming the numbered session's `startup.md` by absolute path.
+That first message is `/version startup "<absolute startup.md path>"`: the session's `/version` command, `.claude/commands/version.md`, runs `guildhall version --startup`, the model replies with only its line and any warning, then reads `startup.md` and recovers as before, all in that one turn ([version](contracts/cli.md#version)).
+The line names the `guildhall` binary on `PATH`: its short revision, the pull request and task it ends at, its commit date and how far it is behind main; the warning says when it is behind main, was built modified, or is not the release this session's supervisor recorded, as after installing a new binary without restarting.
+Typing `/version` in the session shows the fuller form, and `/version startup` the same line again.
 A Director's very first start shows Claude's native folder-trust dialog: review the generated settings, then choose **Yes, I trust this folder** once.
 Choosing **No, exit** ends the runtime; Guildhall reports its nonzero exit status.
 After approval, later starts, reloads and handoffs keep the same folder identity and do not show the folder-trust prompt again.
@@ -447,6 +450,7 @@ The document has these sections:
 
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
   Done and cancelled tasks contribute no `advance`, `retry`, `resume`, `director`, `paused`, `checks` or `dependencies` item.
+- `version`: the binary printing the feed, the object `guildhall version --json` prints ([version](contracts/cli.md#version)): its `revision`, `time`, `modified`, `go_version`, `platform`, the `pr` and `task` of its latest merge and `behind_main`, read from the repository's last fetched default branch with no fetch, its `as_of` naming when that fetch was.
 
 Times are commit times of the store's receipts, in UTC.
 The feed reads every receipt in the store, so its cost grows with the store's mutation count, as `task timeline`'s does.

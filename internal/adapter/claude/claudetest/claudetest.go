@@ -31,6 +31,10 @@ import (
 // Directive starts the prompt line that chooses the stub's behaviour.
 const Directive = "claude-stub:"
 
+// FirstMessageFile is the record, in an interactive Director session's working directory, of the first message
+// the session was started with, written before the session plays its script.
+const FirstMessageFile = "claude-stub-first-message.txt"
+
 // Summary is the summary of every result the stub writes.
 const Summary = "The stub did the task."
 
@@ -458,6 +462,9 @@ func session(args []string) int {
 	}
 	if len(rest) != 2 || rest[0] != "--" || strings.TrimSpace(rest[1]) == "" || strings.ContainsAny(rest[1], "\r\n") {
 		return fail("want -- followed by one first message line last, got %q", rest)
+	}
+	if err := os.WriteFile(FirstMessageFile, []byte(rest[1]), 0o600); err != nil {
+		return fail("first message record: %v", err)
 	}
 	if !filepath.IsAbs(role) || !filepath.IsAbs(copyDir) {
 		return fail("role %q and copy %q must be absolute", role, copyDir)

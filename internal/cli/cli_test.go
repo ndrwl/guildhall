@@ -346,7 +346,7 @@ func TestUsageErrors(t *testing.T) {
 	}{
 		{"no command", nil, "guildhall: missing command\n"},
 		{"unknown command", []string{"frobnicate"}, "guildhall: unknown command \"frobnicate\"\n"},
-		{"extra argument", []string{"version", "extra"}, "guildhall: version takes no arguments\n"},
+		{"extra argument", []string{"version", "extra"}, "guildhall: version: unexpected argument \"extra\"\n"},
 		{"doctor argument", []string{"doctor", "--fix"}, "guildhall: doctor takes no arguments\n"},
 	}
 	for _, tt := range tests {

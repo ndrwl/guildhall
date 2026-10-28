@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,20 @@ func TestBinaryVersionFromLinkerFlag(t *testing.T) {
 	}
 	if want := "guildhall v0.0.0-test " + runtime.GOOS + "/" + runtime.GOARCH + " "; !strings.HasPrefix(string(out), want) {
 		t.Errorf("output = %q, want prefix %q", out, want)
+	}
+	// The JSON form parses and, built from a git checkout, carries the revision Go stamped into the build.
+	version := exec.Command(bin, "version", "--json")
+	version.Env = append(os.Environ(), "GUILDHALL_COPY=")
+	out, err = version.Output()
+	var info struct {
+		Version  string `json:"version"`
+		Revision string `json:"revision"`
+	}
+	if err != nil || json.Unmarshal(out, &info) != nil || info.Version != "v0.0.0-test" {
+		t.Errorf("guildhall version --json = %q, %v", out, err)
+	}
+	if exec.Command("git", "rev-parse", "--is-inside-work-tree").Run() == nil && len(info.Revision) < 40 {
+		t.Errorf("guildhall version --json revision = %q, want the checkout's commit", info.Revision)
 	}
 
 	testReleaseRendering(t, bin)

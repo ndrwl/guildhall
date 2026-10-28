@@ -719,5 +719,16 @@
       "reason": "the last advance waits for the Director",
       "command": "guildhall task timeline --repo app --json t-3"
     }
-  ]
+  ],
+  "version": {
+    "version": "dev",
+    "revision": "abd974855ac9d1e8f0c0a7b6e2f5d4c3b2a19087",
+    "time": "2026-10-27T21:00:24Z",
+    "modified": false,
+    "go_version": "go1.27.2",
+    "platform": "linux/amd64",
+    "pr": null,
+    "task": null,
+    "behind_main": null
+  }
 }
