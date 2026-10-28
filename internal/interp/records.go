@@ -52,6 +52,9 @@ type Records interface {
 	FullReviews(repository, taskID string) ([]store.FullReview, error)
 	ConsumeFullReview(mutationID, repository, taskID string, number int, by string) (store.Receipt, error)
 	SetTaskState(mutationID, repository, taskID string, state store.TaskState) (store.Receipt, error)
+	// DependencyOverride returns the Director's dependency override of a task, or store.ErrNotFound when it has
+	// none; the Director records it (guildhall task start --ignore-deps), never the engine.
+	DependencyOverride(repository, taskID string) (store.DependencyOverride, error)
 }
 
 var _ Records = (*store.Store)(nil)

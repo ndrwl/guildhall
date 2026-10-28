@@ -493,20 +493,25 @@ const (
 	MessageChecksPending    = "checks-pending"
 	MessagePRBlocked        = "pr-blocked"
 	MessageDecision         = "decision"
-	MessageDirectorStage    = "director-stage"
-	MessageJudgeFailed      = "judge-failed"
-	MessageJudgement        = "judgement"
-	MessageJudgementRefused = "judgement-refused"
-	MessageLoopExitRejected = "loop-exit-rejected"
-	MessageMergeHeld        = "merge-held"
-	MessageMergeRefused     = "merge-refused"
-	MessageMerged           = "merged"
-	MessagePublished        = "published"
-	MessageStall            = "stall"
-	MessageWorkerStalled    = "worker-stalled"
-	MessageWorkspaceKept    = "workspace-kept"
-	MessageQuestion         = "question"
-	MessageNote             = "note"
+	// MessageDependencyHeld: the dependency gate holds a task until its dependencies merge; it is not the
+	// between-Directors dependency-notice.
+	MessageDependencyHeld = "dependency-held"
+	// MessageDependencyBranchKept: the gate opened but the task branch could not be moved to the current main.
+	MessageDependencyBranchKept = "dependency-branch-kept"
+	MessageDirectorStage        = "director-stage"
+	MessageJudgeFailed          = "judge-failed"
+	MessageJudgement            = "judgement"
+	MessageJudgementRefused     = "judgement-refused"
+	MessageLoopExitRejected     = "loop-exit-rejected"
+	MessageMergeHeld            = "merge-held"
+	MessageMergeRefused         = "merge-refused"
+	MessageMerged               = "merged"
+	MessagePublished            = "published"
+	MessageStall                = "stall"
+	MessageWorkerStalled        = "worker-stalled"
+	MessageWorkspaceKept        = "workspace-kept"
+	MessageQuestion             = "question"
+	MessageNote                 = "note"
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
@@ -517,6 +522,7 @@ var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
 	MessageBudgetRefused: "engine", MessageChangesRequested: "engine", MessageChecksFailed: "engine",
 	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
+	MessageDependencyHeld: "engine", MessageDependencyBranchKept: "engine",
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",

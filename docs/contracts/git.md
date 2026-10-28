@@ -47,6 +47,22 @@ The caller must hold exclusive custody while reading; it does not lock out exter
 `Program.Base(ctx, repository, branch)` is the task's base: `git merge-base refs/heads/<branch> refs/guildhall/default/<branch>`, the commit where the task branch left the default branch as `Ensure` last recorded it, read with no network call, so it moves when the branch is rebased onto a newer default branch the workspace fetched.
 An invalid branch (`ErrInvalidWorkspace`), a branch or recorded default branch that does not exist, such as before the first `Ensure` or after `Retire`, and any git failure are errors.
 
+### FastForward
+
+`Program.FastForward(ctx, w) (kept string, err error)` moves an untouched task branch to the commit the remote's default branch is at now, so a task the [dependency gate](../interpreter.md#the-dependency-gate) held starts from the main its dependencies merged into ([the working directory](../interpreter.md#the-working-directory)).
+It is beside `Ensure` and `Retire`, whose contracts it does not change.
+
+- **No worktree.** A `w.Dir` that is not a worktree of `w.Repository`, including a missing one, is left alone and nothing is returned: a later `Ensure` creates the branch at the current main anyway.
+- **The default branch.** It fetches `w.Remote`'s HEAD as `Ensure` does and records it as `DefaultRef(w.Branch)`, so `Base` and rebase-aware review stay current.
+- **Move.** When the worktree is on `w.Branch` and its HEAD is an ancestor of that commit, it runs `git merge --ff-only` in the worktree. That only fast-forwards and never rebases; untracked files, such as a Director stage's outputs, are kept, and tracked changes that do not conflict are carried along.
+- **Keep.** When the remote cannot be fetched, the worktree is on another branch, the branch has commits that are not on the default branch, or git refuses the fast-forward, for example because an untracked file would be overwritten, nothing changes and `kept` says why; that is not an error.
+- **Replay.** It is idempotent: a branch already at or ahead of the default branch is left as it is and nothing is returned.
+- **Errors.** An invalid workspace is `ErrInvalidWorkspace`; another git failure is an error naming git's reason, and an ended context is its error.
+
+The double `gittest.Workspaces` implements it over its own directories: `AdvanceDefault(remote, name)` adds a commit adding the file `name` to the remote's default branch, `FastForward` refuses a move over a file one of those commits adds that already exists in the directory, as git refuses to overwrite an untracked file, and `FastForwards` lists the calls.
+
+### Retire
+
 `Program.Retire(ctx, r)` removes a merged task's worktree and local branch when nothing in them would be lost, and otherwise removes nothing and returns why it kept them ([the working directory](../interpreter.md#the-working-directory)).
 
 - **What is work.** A changed or staged tracked file (`git status --porcelain -z --untracked-files=all`); an untracked file that is not one of `r.Outputs`, the outputs Guildhall recorded, with the same sha256; a worktree HEAD or branch tip that is not `r.Head` or its ancestor (`git merge-base --is-ancestor`).
@@ -59,7 +75,7 @@ Directories are compared by file identity, not by path text, so symbolic links s
 `w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/0011-repository-paths-are-absolute-in-the.md), is `ErrInvalidWorkspace` there.
 Paths with spaces are passed as single arguments, never through a shell.
 
-Every git run of `Classify`, `Ensure`, `Base`, `FinalHead` and `Retire` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
+Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `FinalHead` and `Retire` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
 A run past its bound is ended and is a plain error naming git's command and the bound; for `Classify` that is a full scope with that reason, since its context did not end.
 `forge.GitHub` keeps the same rule for `gh` and `git` ([forge](forge.md)); the shared runner both would use waits for a third consumer that runs a program under a bound, and is done when `exec.CommandContext` in `internal/forge`, `internal/git` and `internal/herdr` is found only in it.
 
@@ -75,6 +91,8 @@ The cases are an identical-patch rebase (rebase, with a diff), a rebase that als
 Submodule histories with both diff-wide and per-submodule ignore settings enabled cover a valid rebase whose reviewer diff includes the pointer and a base/task gitlink overlap requiring full review.
 `gittest.RunWorkspaceContract` runs against `Program`, over a bare remote whose default branch `trunk` has moved past what the repository fetched (`gittest.Repository`), and against the double `gittest.Workspaces`: creation at the remote's default branch, reuse across attempts keeping a commit and an uncommitted file with the commit a commit of the repository, an empty directory, a refused plain directory left untouched, a directory with spaces, two independent workspaces of one repository, invalid workspaces creating nothing and an ended context creating nothing.
 `workspace_test.go`'s `TestEnsureProgram` covers what only git shows: a registered and an unregistered leftover `<dir>.partial` finished, a removed worktree and one deleted without git (the latter case added with its fix during review, with no recorded red run) each created again on its branch's commits, an agent's own branch kept on reuse, another repository's worktree and subdirectories of checkouts refused, an unreachable remote creating nothing, and the edge publish needs, the worktree's commit found in and pushed from the repository exactly as `forge.GitHub.Publish` pushes it.
+The suite's fast-forward cases: an untouched branch moved to a default branch that moved, keeping an untracked output, and moved again to nothing; a missing worktree left missing; a diverged branch and a branch an untracked file blocks each kept with a reason; an invalid workspace refused.
+`TestFastForwardProgram` covers `DefaultRef` and `Base` moving with the fast-forward, a tracked change carried along, an ended context and a worktree on another branch kept.
 The suite's retirement cases: a merged workspace retired, twice; a workspace never created already retired; an untracked file that is not an output, an output with other bytes and a commit after the merged head each keeping the workspace with a reason; an invalid head or directory and a plain directory refused.
 `TestRetireProgram` covers the worktree and its branch removed with an ignored file present and another branch kept, a worktree behind the merged head retired, a changed tracked file and an unmerged branch tip each kept, an interrupted retirement deleting the left branch, and a head the repository lacks failing with nothing removed.
 They were written red first against a stub `Retire` returning nothing ([red run](../evidence/worktree-custody-2026-10-22-red.txt)): every `program` case failed except a workspace never created and a worktree behind the merged head, which the stub satisfied by removing nothing where nothing existed; the latter was then given its removal assertions, which the implementation passes.

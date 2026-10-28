@@ -58,6 +58,9 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 		RequestFullReview: func(m, repo, id string) (store.Receipt, error) {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.RequestFullReview(m, repo, id) })
 		},
+		OverrideDependencies: func(m, repo, id, reason string) (store.Receipt, error) {
+			return write(func(s *store.Store) (store.Receipt, error) { return s.OverrideDependencies(m, repo, id, reason) })
+		},
 		PauseDirector: func() error {
 			_, err := write(func(s *store.Store) (store.Receipt, error) { return store.Receipt{}, interptest.PauseStoreDirector(s) })
 			return err

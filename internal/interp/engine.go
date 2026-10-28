@@ -80,6 +80,9 @@ const (
 	WaitDirectorStage Wait = "director-stage"
 	// WaitPaused: Engine.Hold held the step's next attempt; advancing the task again once the hold lifts starts it.
 	WaitPaused Wait = "paused"
+	// WaitDependencies: the dependency gate holds the step, the task's first not run by the Director, until every
+	// task it depends on is done or the Director overrides (docs/interpreter.md#the-dependency-gate).
+	WaitDependencies Wait = "dependencies"
 )
 
 // Next is where a task stands after an advance.
@@ -125,6 +128,10 @@ var (
 // Advance takes one event, validates it against the records, records what it carries and then
 // moves the task forward through the steps in order until something must be waited for:
 //
+//   - before the first step not run by the Director, a task with dependencies passes the dependency gate: until
+//     every task it depends on is done, or the Director overrides, it records nothing, sends one dependency-held
+//     message per state of its dependencies and waits (WaitDependencies); as it first passes, its untouched branch
+//     is fast-forwarded to the current main (docs/interpreter.md#the-dependency-gate);
 //   - an Artisan step records a new attempt, renders its prompt (Prompter) and launches it (Launcher),
 //     then waits for its result;
 //   - a Director stage records and prepares an attempt as an Artisan step does but launches nothing: it sends the
@@ -276,7 +283,20 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 			}
 		}
 	}
+	gated := false
 	for _, step := range def.Steps {
+		// The dependency gate stands before the first step not run by the Director, whatever its kind, and before
+		// anything of it is recorded or held.
+		if !gated && step.Actor() != workflow.DirectorActor {
+			gated = true
+			held, next, err := r.dependencyGate(step)
+			if err != nil {
+				return Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)
+			}
+			if held {
+				return next, nil
+			}
+		}
 		done, next, err := r.step(step)
 		if err != nil {
 			return Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)

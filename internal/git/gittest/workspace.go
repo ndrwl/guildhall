@@ -18,10 +18,15 @@ import (
 	"github.com/ndrwl/guildhall/internal/git"
 )
 
-// WorkspaceHarness is one implementation of git.Program.Ensure under the workspace contract suite.
+// WorkspaceHarness is one implementation of git.Program.Ensure, FastForward and Retire under the workspace contract suite.
 type WorkspaceHarness struct {
 	Ensure func(ctx context.Context, w git.Workspace) error
 	Retire func(ctx context.Context, r git.Retirement) ([]string, error)
+	// FastForward is git.Program.FastForward.
+	FastForward func(ctx context.Context, w git.Workspace) (string, error)
+	// AdvanceDefault adds a commit adding the file name to the default branch of w's remote, as a dependency's
+	// merge does, and returns it.
+	AdvanceDefault func(t *testing.T, w git.Workspace, name string) string
 	// Arrange returns a workspace whose remote's default branch is at base, whose Dir and branch do not exist yet
 	// and whose Dir's parent does.
 	Arrange func(t *testing.T) (w git.Workspace, base string)
@@ -33,7 +38,7 @@ type WorkspaceHarness struct {
 	Contains func(t *testing.T, repository, head string) bool
 }
 
-// RunWorkspaceContract runs the workspace contract (git.Program.Ensure) against harnesses from newHarness.
+// RunWorkspaceContract runs the workspace contract (git.Program.Ensure, FastForward and Retire) against harnesses from newHarness.
 func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceHarness) {
 	ctx := context.Background()
 	ensure := func(t *testing.T, h WorkspaceHarness, w git.Workspace) {
@@ -147,6 +152,87 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 			t.Errorf("Ensure with an ended context created the working directory: %v", err)
 		}
 	})
+	forward := func(t *testing.T, h WorkspaceHarness, w git.Workspace) string {
+		t.Helper()
+		kept, err := h.FastForward(ctx, w)
+		if err != nil {
+			t.Fatalf("FastForward(%+v) = %v", w, err)
+		}
+		return kept
+	}
+	t.Run("fast-forwards an untouched branch and keeps untracked outputs", func(t *testing.T) {
+		h := newHarness(t)
+		w, _ := h.Arrange(t)
+		ensure(t, h, w)
+		writeFile(t, filepath.Join(w.Dir, "notes.md"), "the grill's notes\n")
+		main := h.AdvanceDefault(t, w, "merged.txt")
+		if kept := forward(t, h, w); kept != "" {
+			t.Fatalf("FastForward kept the branch: %s", kept)
+		}
+		if got := h.Head(t, w.Dir); got != main {
+			t.Errorf("worktree at %s after FastForward, want the default branch's %s", got, main)
+		}
+		if b, err := os.ReadFile(filepath.Join(w.Dir, "notes.md")); err != nil || string(b) != "the grill's notes\n" {
+			t.Errorf("FastForward lost an untracked output: %q, %v", b, err)
+		}
+		if kept := forward(t, h, w); kept != "" || h.Head(t, w.Dir) != main {
+			t.Errorf("repeated FastForward = %q at %s, want nothing done at %s", kept, h.Head(t, w.Dir), main)
+		}
+	})
+	t.Run("fast-forward of a missing worktree does nothing", func(t *testing.T) {
+		h := newHarness(t)
+		w, _ := h.Arrange(t)
+		if kept := forward(t, h, w); kept != "" {
+			t.Errorf("FastForward of a missing worktree kept %q", kept)
+		}
+		if _, err := os.Stat(w.Dir); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("FastForward created the working directory: %v", err)
+		}
+	})
+	t.Run("fast-forward keeps a diverged branch", func(t *testing.T) {
+		h := newHarness(t)
+		w, _ := h.Arrange(t)
+		ensure(t, h, w)
+		commit := h.Commit(t, w.Dir, "task.txt")
+		h.AdvanceDefault(t, w, "merged.txt")
+		kept := forward(t, h, w)
+		if kept == "" {
+			t.Fatal("FastForward of a diverged branch kept nothing")
+		}
+		t.Logf("kept: %s", kept)
+		if got := h.Head(t, w.Dir); got != commit {
+			t.Errorf("diverged worktree moved to %s, want %s", got, commit)
+		}
+		if again := forward(t, h, w); again == "" || h.Head(t, w.Dir) != commit {
+			t.Errorf("repeated FastForward = %q at %s", again, h.Head(t, w.Dir))
+		}
+	})
+	t.Run("fast-forward keeps a branch an untracked file blocks", func(t *testing.T) {
+		h := newHarness(t)
+		w, base := h.Arrange(t)
+		ensure(t, h, w)
+		writeFile(t, filepath.Join(w.Dir, "merged.txt"), "the grill's own file\n")
+		h.AdvanceDefault(t, w, "merged.txt")
+		kept := forward(t, h, w)
+		if kept == "" {
+			t.Fatal("FastForward over an untracked file in the way kept nothing")
+		}
+		t.Logf("kept: %s", kept)
+		if got := h.Head(t, w.Dir); got != base {
+			t.Errorf("blocked worktree moved to %s, want %s", got, base)
+		}
+		if b, err := os.ReadFile(filepath.Join(w.Dir, "merged.txt")); err != nil || string(b) != "the grill's own file\n" {
+			t.Errorf("FastForward overwrote an untracked file: %q, %v", b, err)
+		}
+	})
+	t.Run("fast-forward refuses an invalid workspace", func(t *testing.T) {
+		h := newHarness(t)
+		w, _ := h.Arrange(t)
+		w.Dir = "work"
+		if _, err := h.FastForward(ctx, w); !errors.Is(err, git.ErrInvalidWorkspace) {
+			t.Errorf("FastForward = %v, want ErrInvalidWorkspace", err)
+		}
+	})
 	retired := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
 		t.Helper()
 		if kept, err := h.Retire(ctx, r); err != nil || len(kept) > 0 {
@@ -246,7 +332,10 @@ type Workspaces struct {
 	trees    map[string]tree
 	commits  map[string]map[string]bool
 	parents  map[string]string
+	// adds names the file each AdvanceDefault commit adds.
+	adds     map[string]string
 	calls    []git.Workspace
+	forwards []git.Workspace
 	n        int
 }
 
@@ -346,6 +435,67 @@ func (f *Workspaces) Commit(dir string) string {
 	return tr.head
 }
 
+// AdvanceDefault adds a commit adding the file name to remote's default branch, as a merge into main does, and
+// returns it.
+func (f *Workspaces) AdvanceDefault(remote, name string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.n++
+	parent := f.defaults[remote]
+	sum := sha1.Sum([]byte(parent + strconv.Itoa(f.n)))
+	next := hex.EncodeToString(sum[:])
+	f.parents[next] = parent
+	if f.adds == nil {
+		f.adds = map[string]string{}
+	}
+	f.adds[next] = name
+	f.defaults[remote] = next
+	return next
+}
+
+// FastForward implements the contract over the double's directories: a tree it created on w.Branch whose head is
+// behind the remote's default branch moves to it, unless a file one of the commits between adds already exists in
+// the directory, as git refuses to overwrite an untracked file.
+func (f *Workspaces) FastForward(ctx context.Context, w git.Workspace) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(w.Repository) || !filepath.IsAbs(w.Dir) || w.Remote == "" || w.Branch == "" || strings.ContainsAny(w.Branch, " ~^:?*[\\") {
+		return "", fmt.Errorf("%w: %+v", git.ErrInvalidWorkspace, w)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forwards = append(f.forwards, w)
+	dir := filepath.Clean(w.Dir)
+	tr, ok := f.trees[dir]
+	if _, err := os.Stat(dir); !ok || err != nil {
+		return "", nil
+	}
+	main, ok := f.defaults[w.Remote]
+	switch {
+	case !ok:
+		return "the remote " + w.Remote + " has no default branch", nil
+	case tr.branch != w.Branch:
+		return "the worktree is not on branch " + w.Branch, nil
+	case f.merged(main, tr.head):
+		return "", nil
+	case !f.merged(tr.head, main):
+		return "branch " + w.Branch + " is at " + tr.head + ", which has commits that are not on the default branch", nil
+	}
+	for c := main; c != tr.head; c = f.parents[c] {
+		if name := f.adds[c]; name != "" {
+			if _, err := os.Lstat(filepath.Join(dir, filepath.FromSlash(name))); err == nil {
+				return "untracked " + name + " would be overwritten", nil
+			}
+		}
+	}
+	tr.head = main
+	f.trees[dir] = tr
+	f.branches[[2]string{tr.repository, tr.branch}] = main
+	f.add(tr.repository, main)
+	return "", nil
+}
+
 // Contains reports whether head is a commit of repository.
 func (f *Workspaces) Contains(repository, head string) bool {
 	f.mu.Lock()
@@ -358,6 +508,13 @@ func (f *Workspaces) Calls() []git.Workspace {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]git.Workspace(nil), f.calls...)
+}
+
+// FastForwards returns every workspace FastForward was asked for after validation, in order.
+func (f *Workspaces) FastForwards() []git.Workspace {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]git.Workspace(nil), f.forwards...)
 }
 
 // Repository builds, with real git and without the user's or system's git configuration, a bare remote whose

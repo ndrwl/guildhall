@@ -6,7 +6,7 @@ When the advance runs from a [copy](#copies), each attempt's launcher is also th
 Over explicit `--store`, `--config` and `--state` paths nothing advances in the background, and the caller runs `step done` once the result file exists.
 
 ```sh
-guildhall task start --store <file> --config <director.toml> --state <dir> --repo <id> [--decision <id>] <task>
+guildhall task start --store <file> --config <director.toml> --state <dir> --repo <id> [--decision <id>] [--ignore-deps --reason <text>] <task>
 guildhall step done --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> --result <file>
 guildhall step finish --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> --summary <text> (--output <port>=<file>... | --failed)
 guildhall step retry --store <file> --config <director.toml> --state <dir> --repo <id> --task <id> --step <id> --attempt <n> [--reason <text>]
@@ -77,6 +77,12 @@ An attempt [`artisan resume`](artisan.md#resume) settles after its launcher died
 It can also recover intake for a launcher-completed successful attempt and continue the workflow; see [recovery](interpreter.md#replay-and-recovery).
 With `--decision <id>` it feeds `decision-answered` for that answered decision instead, which is how a task continues after [`decide answer`](decisions-cli.md) (answering never advances a task by itself).
 
+A task whose [dependencies](tasks.md#dependencies) have not all merged waits at the [dependency gate](interpreter.md#the-dependency-gate) after its grill and prints `{"wait":"dependencies","step":"<step>"}`.
+`--ignore-deps --reason <text>` starts it anyway: before advancing, the command records the Director's dependency override, with the reason, under mutation id `dependency-override.<repo>.<task>`, then advances as usual, so the task passes the gate, its branch is fast-forwarded to the current main, and it is never held again.
+The override shows in [`task timeline`](tasks.md#inspection) as `dependency_override`, with its `reason` and `overridden_at`, and as an `override-dependencies` event.
+Repeating the command with the same reason replays the override; there is no engine event for it.
+The command refuses, recording nothing: `--ignore-deps` without `--reason` or with an empty one, `--reason` without `--ignore-deps` and a reason over 64 KiB, each a usage error (exit 2); a task that is done or cancelled, a task with no `depends_on`, a second override with another reason ("already overridden"), and new work while the Director session is [recovering](director.md#ready), each exit 1.
+
 ## `step done`
 
 `step done` is the result intake for one attempt.
@@ -120,7 +126,7 @@ This is one option after a `pr-blocked` report from validate or deliver, not an 
 
 ## Output and exit status
 
-All five print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"director-stage","step":"grill","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start`, or a Director session's [checks watcher](director.md#checks), reads again once `checks_refresh` has passed, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
+All five print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"director-stage","step":"grill","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start`, or a Director session's [checks watcher](director.md#checks), reads again once `checks_refresh` has passed, `{"wait":"dependencies","step":"research"}` while the [dependency gate](interpreter.md#the-dependency-gate) holds the task, which a Director session's [dependency watcher](director.md#dependencies) advances again, or, once the merge landed, `{"wait":"done","step":"deliver"}`.
 A conflicting PR or one behind under strict branch protection instead waits with `{"wait":"director","step":"validate"}` (or `deliver`) and sends one `pr-blocked` report per head and state, with URL, head commit, base tip, paths, behind count and options.
 The Director chooses what to do; Guildhall does not rebase automatically or keep polling the task after that wait.
 

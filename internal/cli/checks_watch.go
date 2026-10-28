@@ -81,6 +81,18 @@ func (w *checksWatch) wait() { w.running.Wait() }
 // checks, while the newest session is running or recovering; none while it is paused, stopping or stopped, which
 // hold new work.
 func checksWaiting(path, state string) func() ([]taskRef, error) {
+	return waitingFor(path, state, interp.WaitChecks)
+}
+
+// dependenciesWaiting lists, as checksWaiting does, the open tasks whose next.json says the dependency gate holds
+// them (docs/director.md#dependencies).
+func dependenciesWaiting(path, state string) func() ([]taskRef, error) {
+	return waitingFor(path, state, interp.WaitDependencies)
+}
+
+// waitingFor lists the open tasks whose next.json under state says wait, while the newest session of the store at
+// path is running or recovering.
+func waitingFor(path, state string, wait interp.Wait) func() ([]taskRef, error) {
 	return func() ([]taskRef, error) {
 		tasks, err := withStore(path, true, func(s *store.Store) ([]store.Task, error) {
 			d, err := s.LatestDirectorSession()
@@ -108,7 +120,7 @@ func checksWaiting(path, state string) func() ([]taskRef, error) {
 				return out, err
 			}
 			var n next
-			if json.Unmarshal(b, &n) == nil && n.Wait == interp.WaitChecks {
+			if json.Unmarshal(b, &n) == nil && n.Wait == wait {
 				out = append(out, taskRef{t.Repository, t.ID})
 			}
 		}
@@ -120,6 +132,18 @@ func checksWaiting(path, state string) func() ([]taskRef, error) {
 // than every App.ChecksWatchFloor, checksWatchFloor when zero, it advances each task waiting for checks as `task start` does, over the copy's store, config
 // and state, with the advance's standard-error output and each failure appended to checks.log in the session directory dir.
 func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
+	return a.watchWaiting(p, dir, copyDir, storePath, state, checksWaiting(storePath, state), checksLog)
+}
+
+// watchDependencies is session n's dependency watcher: a second checks watcher, on the same interval, advancing each
+// task the dependency gate holds, so a task whose dependencies merged starts with no model turn; it logs to
+// dependencies.log in dir (docs/director.md#dependencies).
+func (a *App) watchDependencies(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
+	return a.watchWaiting(p, dir, copyDir, storePath, state, dependenciesWaiting(storePath, state), dependenciesLog)
+}
+
+// watchWaiting is a watcher of the tasks waiting lists, logging to the file log in dir.
+func (a *App) watchWaiting(p startPlan, dir, copyDir, storePath, state string, waiting func() ([]taskRef, error), log string) (*checksWatch, error) {
 	every, err := p.cfg.ChecksRefresh()
 	if err != nil {
 		return nil, err
@@ -129,7 +153,7 @@ func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state str
 		floor = checksWatchFloor
 	}
 	every = max(every, floor)
-	logPath := filepath.Join(dir, checksLog)
+	logPath := filepath.Join(dir, log)
 	logf := func(format string, args ...any) {
 		f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 		if err != nil {
@@ -139,7 +163,7 @@ func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state str
 		_ = f.Close()
 	}
 	f := advanceFlags{store: storePath, config: p.cfgPath, state: state, copy: copyFlags{dir: copyDir}}
-	return &checksWatch{every: every, waiting: checksWaiting(storePath, state), now: time.Now,
+	return &checksWatch{every: every, waiting: waiting, now: time.Now,
 		advance: func(t taskRef) error {
 			f := f
 			f.repo = t.repo
@@ -174,3 +198,6 @@ const checksWatchFloor = 30 * time.Second
 
 // checksLog is the file in a session's directory its checks watcher logs to (docs/director.md#checks).
 const checksLog = "checks.log"
+
+// dependenciesLog is the file in a session's directory its dependency watcher logs to (docs/director.md#dependencies).
+const dependenciesLog = "dependencies.log"
