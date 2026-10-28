@@ -71,18 +71,25 @@ type timedFullReview struct {
 	ConsumedAt  *time.Time `json:"consumed_at,omitempty"`
 }
 
+type timedOverride struct {
+	store.DependencyOverride
+	OverriddenAt *time.Time `json:"overridden_at,omitempty"`
+}
+
 // taskTimeline is what task timeline prints. Events are every receipt of the task in commit order:
 // the moves made on it, including those Guildhall records for the Director.
 type taskTimeline struct {
-	AsOf         inspectLabel      `json:"as_of"`
-	Task         store.Task        `json:"task"`
-	Attempts     []timedAttempt    `json:"attempts"`
-	Decisions    []timedDecision   `json:"decisions"`
-	Findings     []timedFindings   `json:"findings"`
-	Rulings      []timedRuling     `json:"rulings"`
-	FullReviews  []timedFullReview `json:"full_reviews"`
-	Events       []store.Receipt   `json:"events"`
-	OmittedKinds map[string]string `json:"omitted_kinds"`
+	AsOf        inspectLabel      `json:"as_of"`
+	Task        store.Task        `json:"task"`
+	Attempts    []timedAttempt    `json:"attempts"`
+	Decisions   []timedDecision   `json:"decisions"`
+	Findings    []timedFindings   `json:"findings"`
+	Rulings     []timedRuling     `json:"rulings"`
+	FullReviews []timedFullReview `json:"full_reviews"`
+	// DependencyOverride is the Director's dependency override, with its reason; absent when there is none.
+	DependencyOverride *timedOverride    `json:"dependency_override,omitempty"`
+	Events             []store.Receipt   `json:"events"`
+	OmittedKinds       map[string]string `json:"omitted_kinds"`
 }
 
 // taskFiles is what task files prints: the task's recorded documents and their digests.
@@ -155,6 +162,10 @@ func timeline(h store.TaskHistory) taskTimeline {
 		t := timedFullReview{FullReview: f}
 		t.RequestedAt, t.ConsumedAt, _, _ = span(byRecord["full-review/"+strconv.Itoa(f.Number)], "request-full-review", "consume-full-review")
 		out.FullReviews = append(out.FullReviews, t)
+	}
+	if o := h.DependencyOverride; o != nil {
+		out.DependencyOverride = &timedOverride{DependencyOverride: *o}
+		out.DependencyOverride.OverriddenAt, _, _, _ = span(byRecord[store.DependencyOverrideRecord], "override-dependencies", "")
 	}
 	slices.SortStableFunc(out.Attempts, func(a, b timedAttempt) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Decisions, func(a, b timedDecision) int { return byStart(a.seq, b.seq) })

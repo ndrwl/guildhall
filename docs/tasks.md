@@ -54,6 +54,16 @@ Later edits to either file, or to the workflow file, apply to new tasks only.
 Each `--depends-on <repo>/<task>` names a task of this Director, in any repository, that must already exist in the store.
 An unknown dependency refuses the task and writes nothing; a task cannot depend on itself.
 The dependency order is preserved as given.
+Dependencies are fixed at creation.
+
+A dependent task waits for its dependencies: its grill runs at once, but research, or whatever its first step not run by the Director is, does not start until every dependency is `done`, that is, merged.
+That is the [dependency gate](interpreter.md#the-dependency-gate): while it holds the task, advancing it records nothing and prints `{"wait":"dependencies","step":"<step>"}`, and the Director gets one `dependency-held` message for each change in the dependencies' coarse state (in progress, waiting for the Guildmaster or the Director, cancelled), never one per advance.
+The session supervisor's [dependency watcher](director.md#dependencies) advances the task once its dependencies merge, with no model turn, and research then runs on a branch fast-forwarded to the main they merged into; there is no automatic rebase of a branch that already has commits.
+A task already past research, with an attempt of a step not run by the Director, is never held, so a loop, retry or send-back back to research runs while a dependency is still open.
+
+The Director can start a held task anyway with [`task start --ignore-deps --reason <text>`](running.md#task-start), the **dependency override**.
+It is recorded as its own record, never by changing the task (R1.62), lasts for the rest of the task's life, starts the task from the current main and shows with its reason in `task timeline`.
+A cancelled dependency never merges, so the override is the only way to start a task that depends on one.
 
 `--fixes <repo>/<task>` names the earlier task whose defect this one fixes, which must already exist; publish then adds "Fixes a defect introduced by task `<repo>/<task>`." to the pull request body ([quality rubric](quality.md#running-it)).
 
@@ -90,6 +100,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `findings`: every review outcome document with its findings (`id`, `rule`, `file`, `line`, `summary`) and its `dispositions` of the previous round's findings, read from the store's projection, with `recorded_at`, ordered by when they were recorded.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
+- `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
 - `events`: every receipt of the task in commit order, each naming its operation, mutation id, sequence, commit time and the record it wrote (`record`, for example `attempt/build/2`, `decision/accept-plan` or `message/q-1`).
   These are the moves made on the task, including messages sent and acknowledged for it.
 

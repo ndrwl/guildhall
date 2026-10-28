@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -93,14 +95,25 @@ func (a *App) taskStart(args []string) int {
 	var f advanceFlags
 	f.register(fl)
 	decision := fl.String("decision", "", "answered decision id")
+	ignoreDeps := fl.Bool("ignore-deps", false, "start without waiting for the task's dependencies to merge")
+	reason := fl.String("reason", "", "the Director's reason for --ignore-deps")
 	if err := parseInterspersed(fl, args); err != nil {
 		return a.taskUsage("task start: " + err.Error())
 	}
+	reasonSet := false
+	fl.Visit(func(fl *flag.Flag) { reasonSet = reasonSet || fl.Name == "reason" })
 	if err := f.resolve(a.Getenv); err != nil {
 		return a.taskUsage("task start: " + err.Error())
 	}
-	if fl.NArg() != 1 || !workflow.ValidID(fl.Arg(0)) {
+	switch {
+	case fl.NArg() != 1 || !workflow.ValidID(fl.Arg(0)):
 		return a.taskUsage("task start takes one task id")
+	case *ignoreDeps && strings.TrimSpace(*reason) == "":
+		return a.taskUsage("task start: --ignore-deps needs a nonempty --reason")
+	case reasonSet && !*ignoreDeps:
+		return a.taskUsage("task start: --reason is only given with --ignore-deps")
+	case len(*reason) > store.MaxTextBytes:
+		return a.taskUsage(fmt.Sprintf("task start: --reason is %d bytes; the limit is %d", len(*reason), store.MaxTextBytes))
 	}
 	if err := f.listed(); err != nil {
 		return a.fail(fmt.Errorf("task start: %w", err))
@@ -109,10 +122,56 @@ func (a *App) taskStart(args []string) int {
 	if *decision != "" {
 		ev.Kind, ev.Decision = interp.DecisionAnswered, *decision
 	}
-	if err := newWorkAdmitted(storeRecords{path: f.store, wait: f.wait}, f.repo, ev.Task); err != nil {
+	records := storeRecords{path: f.store, wait: f.wait}
+	if err := newWorkAdmitted(records, f.repo, ev.Task); err != nil {
 		return a.fail(fmt.Errorf("task start: %w", err))
 	}
+	if *ignoreDeps {
+		if err := overrideDependencies(records, f.repo, ev.Task, *reason); err != nil {
+			return a.fail(fmt.Errorf("task start: %w", err))
+		}
+	}
 	return a.advanced(a.advance(f, ev))
+}
+
+// overrideDependencies records the Director's dependency override of an open task that has dependencies, under a
+// mutation id derived from the task, so repeating the command with the same reason replays it and the advance that
+// follows passes the dependency gate (docs/running.md#task-start). A second override with another reason is refused.
+func overrideDependencies(records storeRecords, repo, task, reason string) error {
+	if _, err := os.Stat(records.path); errors.Is(err, fs.ErrNotExist) {
+		return noStore(records.path)
+	}
+	_, err := withRecords(records, false, nil, func(s *store.Store) (struct{}, error) {
+		t, err := s.Task(repo, task)
+		switch {
+		case err != nil:
+			return struct{}{}, err
+		case t.State != store.TaskOpen:
+			return struct{}{}, fmt.Errorf("--ignore-deps: task %s/%s is %s", repo, task, t.State)
+		case len(t.DependsOn) == 0:
+			return struct{}{}, fmt.Errorf("--ignore-deps: task %s/%s has no dependencies", repo, task)
+		}
+		_, err = s.OverrideDependencies(dependencyOverrideMutation(repo, task), repo, task, reason)
+		if errors.Is(err, store.ErrMutationConflict) || errors.Is(err, store.ErrExists) {
+			prior, perr := s.DependencyOverride(repo, task)
+			if perr != nil {
+				return struct{}{}, errors.Join(err, perr)
+			}
+			return struct{}{}, fmt.Errorf("--ignore-deps: task %s/%s was already overridden, with reason %q", repo, task, prior.Reason)
+		}
+		return struct{}{}, err
+	})
+	return err
+}
+
+// dependencyOverrideMutation is the mutation id of a task's dependency override, dependency-override.<repo>.<task>,
+// hashed to fit the store's 128 bytes.
+func dependencyOverrideMutation(repo, task string) string {
+	id := "dependency-override." + repo + "." + task
+	if len(id) > 128 {
+		id = "dependency-override." + digest.Of([]byte(repo+"/"+task)).Hex()
+	}
+	return id
 }
 
 // newWorkAdmitted refuses to start a task with no attempt yet while the newest Director session is recovering;

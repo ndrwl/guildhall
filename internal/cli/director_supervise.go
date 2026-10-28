@@ -252,6 +252,10 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
+	deps, err := a.watchDependencies(p, n, dir, copyDir, storePath, state)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
 	u, err := startRuntime(c, n, storePath)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
@@ -265,12 +269,13 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks}
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps}
 	if ep != nil {
 		w.turns = ep.Turns()
 	}
 	ended, ending, err := a.waitSession(u, c, signals, &w)
 	checks.wait()
+	deps.wait()
 	var exit *exec.ExitError
 	switch {
 	case errors.Is(err, errRuntimeOutlived):
@@ -377,6 +382,9 @@ type sessionWatch struct {
 	turns <-chan session.Turn
 	// checks is the session's checks watcher, ticked at every poll; nil without one.
 	checks *checksWatch
+	// deps is the session's dependency watcher, a second checks watcher of the tasks the dependency gate holds,
+	// ticked with checks; nil without one.
+	deps *checksWatch
 
 	// wanted is when an end now wanted was first seen, zero while none is, and signalled when the newest turn
 	// signal or wake arrived, or the first decision was made.
@@ -429,6 +437,9 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 			w.refreshLabels(time.Now())
 			if w.checks != nil {
 				w.checks.tick(time.Now())
+			}
+			if w.deps != nil {
+				w.deps.tick(time.Now())
 			}
 			decide("")
 		case <-u.Exited():

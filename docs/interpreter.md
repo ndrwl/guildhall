@@ -11,14 +11,14 @@ The engine consumes eight narrow interfaces, declared in `internal/interp` besid
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents, decisions and rulings; start and finish attempts, record documents, open decisions and contest rulings | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
+| `Records`: read a task, its attempts, documents, decisions, rulings and dependency override; start and finish attempts, record documents, open decisions and contest rulings | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 | `Forge`: [publish and deliver](#publish-and-deliver), [validate](#validate) | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunForgeContract` |
 | `MergeabilityReader`: [mergeability observations](#mergeability-observations), optional on the forge | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunMergeabilityContract` |
-| `Workspaces`: [the working directory](#the-working-directory) | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
+| `Workspaces`: [the working directory](#the-working-directory), `Ensure`, `FastForward` and `Retire` | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
@@ -68,6 +68,7 @@ So `attempt-retried` is refused for a running or succeeded attempt, for one a la
 ## Advance
 
 After intake, the engine walks the steps in order, from the records, and stops at the first one that must be waited for.
+Just before the first step whose actor is not the Director, whatever its kind, it checks the [dependency gate](#the-dependency-gate).
 
 - **Artisan step.** With no attempt yet, the engine checks the profile's adapter with `CheckAdapter` and resolves the inputs, then records the attempt's [binding](#rounds-and-loops) and attempt `n`, [prepares](#attempt-preparation) its prompt in `<state>/<repo>/<task>/<step>-<n>/prompt` and launches it with its result file at `<step>-<n>/result.json`; the task waits for the attempt.
   A succeeded attempt completes the step while it is current; a review step's outcome must also not block (see [rounds and loops](#rounds-and-loops)).
@@ -99,6 +100,39 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
 Every attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails); one refused at a cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, naming `step retry` for a refused retry and `task start` otherwise, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.
 Publishing, validating and merging send `published`, `pr-blocked`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, described below.
+
+## The dependency gate
+
+A task created with [`depends_on`](tasks.md#dependencies) does not run research, or any later step, until every task it depends on is `done`, that is, merged (R1.14, R1.58).
+The gate stands in the walk over the steps, just before the first step whose actor is not `director`, so it holds an Artisan, Guildmaster or engine step alike, and also a send-back or retry, which pass through the same walk.
+Director stages, such as the grill, are never held: the grill, its `step finish` and the watcher's advance after it run while dependencies are open.
+
+The gate passes when any of these is true, each read from the records:
+
+1. The task has no `depends_on`. Nothing more is read, so a task without dependencies behaves as before.
+2. The Director recorded a [dependency override](tasks.md#dependencies) for the task, which lasts for the rest of its life.
+3. The task already has an attempt of a step not run by the Director. A task already past research is unaffected, and a loop, send-back or retry back to research is never held again.
+4. Every dependency's task state is `done`, read through `Records.Task`, which reads a task of any repository in the same store.
+
+Otherwise the task is held: the advance records nothing, and returns `{"wait":"dependencies","step":<step>}` for the held step (`WaitDependencies`).
+The gate runs before the step itself, so before the [pause hold](director.md#pause-and-resume), the caps, preparation and any record: a held task never reaches them.
+
+While held, each advance sends the Director one message, type `dependency-held`, listing every unmerged dependency as `<repo>/<id>: <state>`, in repository then id order, followed by the override command.
+The state is coarse, read from the dependency's records, so a dependency moving through its normal steps sends nothing new:
+
+- `cancelled; it can never merge; start anyway with guildhall task start --ignore-deps --reason <reason> --repo <r> <t>`;
+- `waiting for the Guildmaster: decision <id> open`;
+- `waiting for the Director: <step> attempt <n> <failed|stopped>`, for a step whose latest attempt failed or stopped;
+- `in progress` otherwise.
+
+Its id is `<repo>.<task>.dependency-held.<hex>`, where `<hex>` is the first 12 hex digits of the sha256 of the state lines: the same states send the same message again, which is a replay and sends nothing, and a change sends a new one.
+This is not the between-Directors [`dependency-notice`](messaging.md#message-types).
+
+When the gate passes by rule 2 or 4 before the task's first attempt of a step not run by the Director, the engine first [fast-forwards](#the-working-directory) the task branch to the current main, so research runs on the main its dependencies merged into.
+A crash before that attempt is recorded repeats the fast-forward at the next advance, which is harmless; nothing is fast-forwarded once the attempt exists, and nothing without `Engine.Workspaces`.
+
+Nothing advances a held task from inside its dependency's own advance, which would take a second task lock inside the first.
+The session supervisor's [dependency watcher](director.md#dependencies) advances held tasks with no model turn, and `director status` lists each as a `dependencies` item.
 
 ## Director stages
 
@@ -330,6 +364,10 @@ Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`int
 
 Ensure is replay safe: the worktree is built beside the working directory and moved into place only when complete, so a crash leaves no working directory or a complete one, and the attempt, recorded but not marked launched, is launched by the next advance.
 When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.
+A task held by the [dependency gate](#the-dependency-gate) already has its worktree, made for its grill at the main of that time.
+When the gate opens, by the dependencies merging or the Director's override, and before the task's first attempt of a step not run by the Director, the engine calls `Workspaces.FastForward` with the same workspace: an untouched branch moves to the commit the remote's default branch is at now, with `git merge --ff-only`, keeping the grill's untracked outputs, and `DefaultRef` is refreshed so the task's base stays current.
+This only fast-forwards and never rebases: a branch that has commits not on main, is not checked out in the worktree, or that git refuses to move, for example because an untracked file would be overwritten, is kept as it is, the Director is sent `<repo>.<task>.dependency-branch-kept`, type `dependency-branch-kept`, naming why, and research proceeds on the existing branch.
+A working directory that is not yet a worktree is left alone: `Ensure` creates the branch at the current main anyway.
 When a merge closes the task, the engine calls `Workspaces.Retire` with the merged head and the task's recorded documents, before marking the task `done`, so a replay retires it again.
 It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.
 Otherwise it removes nothing, and the Director is sent `<repo>.<task>.workspace-kept.<merge>.<digest>`, type `workspace-kept`, naming the directory, the branch and what they hold, where `<digest>` is the first 12 hex digits of the text's sha256; the Director decides what happens to them.

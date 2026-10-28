@@ -46,6 +46,14 @@ A finished outcome without a readable result is refused, not guessed.
 - A Director copy is one directory holding `config.toml`, `director.store` and `state/`, selected with `--copy <dir>` or `GUILDHALL_COPY` ([copies](running.md#copies)).
 - `store init --copy <dir>` creates its store; a copy is not a release install, which [release upgrades](releases.md) design.
 
+## Dependency
+
+- A task's dependencies are the tasks named by `task new --depends-on`, fixed at creation ([dependencies](tasks.md#dependencies)).
+- The **dependency gate** stands before a task's first step not run by the Director, such as research after the grill: it passes once every dependency is `done` (merged), or the Director overrides ([the dependency gate](interpreter.md#the-dependency-gate)).
+- A task **held by a dependency** is one the gate holds: its last advance recorded nothing and waits `{"wait":"dependencies"}`, the Director has a `dependency-held` message and `director status` a `dependencies` item.
+- A **dependency override** is the Director's recorded decision, with a reason, to start a held task anyway, `task start --ignore-deps --reason <text>`; it lasts for the rest of the task's life ([`task start`](running.md#task-start)).
+- None of these is the `dependency-notice`, a designed message type between Directors ([Director messaging](messaging.md#message-types)).
+
 ## Session
 
 - A Director session is one run of the Director's runtime under its supervisor, `director start`, recorded in the store and numbered from 1 ([Director sessions](store.md#director-sessions), [D67](decisions/0067-director-session-record.md)).
