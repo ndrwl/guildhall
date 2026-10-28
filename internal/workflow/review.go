@@ -63,7 +63,8 @@ type Revisions struct {
 //
 // ID is the reviewer's stable name for the finding, kept across rounds so a later review can
 // disposition it; Rule cites the rule it breaks (a requirement id such as "R1.27" or a docs/review.md
-// rule such as "S4") and is required: a comment that cites no rule is a Suggestion.
+// rule such as "S4") and is required: a comment that cites no rule is a Suggestion. The verdict, not the
+// findings, decides whether the outcome blocks (Blocking).
 type Finding struct {
 	ID      string `json:"id"`
 	Rule    string `json:"rule,omitempty"`
@@ -146,12 +147,12 @@ type ReviewOutcome struct {
 	Revisions    Revisions     `json:"revisions"`
 }
 
-// Blocking reports whether the outcome holds the task back: a changes_requested verdict with at
-// least one finding that cites a rule. Comments without a rule are mechanically non-blocking
-// (docs/review.md), so a /1 changes_requested verdict carrying only those does not block.
-// A rejected verdict is not a request for changes and is not Blocking.
+// Blocking reports whether the outcome holds the task back: its verdict is changes_requested, whatever
+// its findings cite (docs/decisions/review-verdict-routes.md), so a /1 changes_requested verdict whose
+// findings all became suggestions still blocks. A reviewer with suggestions only records approved and
+// lists them. A rejected verdict is not a request for changes and is not Blocking.
 func (o ReviewOutcome) Blocking() bool {
-	return o.Verdict == VerdictChangesRequested && slices.ContainsFunc(o.Findings, func(f Finding) bool { return f.Rule != "" })
+	return o.Verdict == VerdictChangesRequested
 }
 
 // ParseReviewOutcome strictly decodes and validates a review outcome of either version.

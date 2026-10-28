@@ -133,7 +133,7 @@ func TestParseReviewOutcome(t *testing.T) {
 }
 
 // TestParseReviewOutcomeV1: old documents still read, with the /2 meaning: rule-less findings become suggestions,
-// still-open becomes unresolved and withdrawn resolved; Schema stays /1 and Blocking is unchanged.
+// still-open becomes unresolved and withdrawn resolved; Schema stays /1 and a changes_requested verdict blocks.
 func TestParseReviewOutcomeV1(t *testing.T) {
 	data := `{"schema": "guildhall.review-outcome/1", "reviewer": "automated", "verdict": "changes_requested",
 	  "findings": [{"id": "f3", "rule": "S4", "file": "a.go", "line": 7, "summary": "claim without acceptance"},
@@ -159,8 +159,8 @@ func TestParseReviewOutcomeV1(t *testing.T) {
 	}
 	suggestionsOnly := strings.Replace(strings.Replace(data, `"rule": "S4", `, "", 1), `{"finding": "f3", "state": "still-open"}, `, "", 1)
 	o, err = ParseReviewOutcome([]byte(suggestionsOnly))
-	if err != nil || o.Blocking() || len(o.Findings) != 0 || len(o.Suggestions) != 2 {
-		t.Fatalf("/1 change request with only rule-less findings = %+v, %v; want two suggestions, not blocking", o, err)
+	if err != nil || !o.Blocking() || len(o.Findings) != 0 || len(o.Suggestions) != 2 {
+		t.Fatalf("/1 change request with only rule-less findings = %+v, %v; want two suggestions, blocking on the verdict", o, err)
 	}
 	for name, c := range map[string]struct{ from, to, want string }{
 		"summary":           {`"verdict"`, `"summary": "Fine.", "verdict"`, "summary"},
@@ -193,7 +193,7 @@ func TestBlockingAcrossVersions(t *testing.T) {
 	}{
 		{"approved", `[{"id": "f1", "rule": "S2", "summary": "x"}]`, false},
 		{"changes_requested", `[{"id": "f1", "rule": "S2", "summary": "x"}, {"id": "f2", "summary": "y"}]`, true},
-		{"changes_requested", `[{"id": "f2", "summary": "y"}]`, false},
+		{"changes_requested", `[{"id": "f2", "summary": "y"}]`, true},
 		{"rejected", `[{"id": "f1", "rule": "S2", "summary": "x"}]`, false},
 	} {
 		data := `{"schema": "guildhall.review-outcome/1", "reviewer": "human", "verdict": "` + c.verdict + `", "findings": ` + c.findings + `, ` + revisionsJSON + `}`

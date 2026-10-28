@@ -125,7 +125,7 @@ var (
 	// ErrOutcome reports a review outcome that breaks its round's contract: it is stale (not bound to the
 	// revisions its attempt was given) or leaves a finding of the previous round without a disposition.
 	ErrOutcome = errors.New("review outcome refused")
-	// ErrReviewGate reports a deliver step reached without a current, non-blocking, non-rejected
+	// ErrReviewGate reports a publish or deliver step reached without a current, non-blocking, non-rejected
 	// outcome for every preceding review or document-review step (docs/interpreter.md#review-gate).
 	ErrReviewGate = errors.New("review gate")
 	// ErrValidationGate reports a deliver step whose validation input is not a passed result for the delivered

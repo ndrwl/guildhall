@@ -403,8 +403,9 @@ Every writer writes /2; readers still accept `guildhall.review-outcome/1` ([deci
 | `revisions.spec_digest` | `sha256:<hex>` digest of the specification the build was given, the accepted one where the workflow has an acceptance step; required for a code head, optional for a document. |
 | `revisions.standards_revision` | Central standards revision reviewed against; `""` means no standards revision is configured; nonempty whitespace-only values are invalid. |
 
-An outcome blocks the task only when its verdict is `changes_requested` and at least one finding cites a rule.
+An outcome blocks the task exactly when its verdict is `changes_requested`, whatever its findings cite; a reviewer with suggestions only records `approved` and lists them under `suggestions` ([decision](decisions/review-verdict-routes.md)).
 A /1 outcome is read with the /2 meaning, in memory only: a finding without a rule is a suggestion, `still-open` is `unresolved` and `withdrawn` is `resolved`; its schema stays /1, it has no summary, and a /2-only key in it is refused.
+A /1 `changes_requested` outcome whose findings all became suggestions still blocks.
 An outcome counts only for the exact subject, specification digest and standards revision it names, so a document review never counts for a code head or the reverse.
 
 ### Workflow-edit authority

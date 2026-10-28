@@ -122,7 +122,7 @@ func want(t *testing.T, got, want interp.Next) {
 // TestRoundTraceThreeReviews is the round trace of report.md §7.1 with the Guildhall repository's three
 // code reviews on distinct profiles: review 1 finds f1 (S2) and f2 (S10); build 2 fixes both; review 2
 // resolves them and finds f3 (S4) and f4, a suggestion with no rule; build 3 fixes f3; review 3 approves
-// with f4 still open; the strict review asks for changes with a suggestion only, which does not block;
+// with f4 still open; the strict review approves with a suggestion listed, which does not block;
 // the Astra review approves and the merge decision opens for head 3.
 // The trace runs again with step ids that end in -<digits> and -x<digits> beside a step of the same prefix.
 func TestRoundTraceThreeReviews(t *testing.T) {
@@ -142,8 +142,8 @@ func roundTraceThreeReviews(t *testing.T, ids [3]string) {
 	o2.Suggestions = []workflow.Suggestion{f4}
 	o3 := bound(t, workflow.VerdictApproved, head3, nil, workflow.Disposition{Finding: "f3", State: workflow.Resolved})
 	o3.Suggestions = []workflow.Suggestion{f4}
-	// A reviewer that still writes /1 is accepted: its changes_requested with a rule-less finding only does not block.
-	strict := bound(t, workflow.VerdictChangesRequested, head3, nil)
+	// A reviewer that still writes /1 is accepted: it approves with a rule-less finding listed, which reads as a suggestion.
+	strict := bound(t, workflow.VerdictApproved, head3, nil)
 	strict.Schema, strict.Summary = workflow.ReviewOutcomeSchemaV1, ""
 	strict.Suggestions = []workflow.Suggestion{{ID: "s1", Summary: "Consider a table."}}
 	design := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: workflow.VerdictApproved, Summary: "The design holds.",
@@ -184,7 +184,7 @@ func roundTraceThreeReviews(t *testing.T, ids [3]string) {
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 3}), interp.Next{Wait: interp.WaitAttempt, Step: ids[0], Attempt: 3})
 			// Round 3 approves; the second and third reviews run on the same head.
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[0], Attempt: 3}), interp.Next{Wait: interp.WaitAttempt, Step: ids[1], Attempt: 1})
-			// A changes_requested verdict with suggestions only does not block.
+			// An approved verdict with a suggestion listed does not block.
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[1], Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: ids[2], Attempt: 1})
 			next := e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: ids[2], Attempt: 1})
 			want(t, next, interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
