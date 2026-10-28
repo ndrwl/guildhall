@@ -91,6 +91,11 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 - Stop one running attempt when the Guildmaster asks or it is truly stuck:
   `guildhall artisan stop --repo app --task t-12 --step build --attempt 2`.
   A stopped attempt waits for you; retry it or tell the Guildmaster.
+- Park a failed or stopped attempt you are deliberately not retrying yet, such as one waiting for another task to merge, so it leaves `needs_me` and stops waking you:
+  `guildhall step park --repo app --task t-12 --step build --attempt 1 --reason "Retry after app/t-11 merges."`
+  `director status` lists it under `parked` with its reason, and a new session's `startup.md` lists it as information.
+  When the hold ends, retry it with the `guildhall step retry` its `parked` entry names, which clears the park, or put it back in `needs_me` with `guildhall step unpark` and the same flags without `--reason`.
+  To change the reason, unpark it and park it again.
 - Resume an attempt whose launcher is stuck or gone, as `needs_me` names it:
   `guildhall artisan resume --repo app --task t-12 --step build --attempt 2`.
 - When an attempt finished with a result that no advance has taken, take it:
@@ -109,7 +114,7 @@ You may choose any appropriate recovery; the available options are not a fixed p
   The same request with identical feedback is replay-safe; different feedback for that identity is refused.
   No attempt in the task may still be running when you make a new request.
   The next review keeps its previous evidence and scopes to the resolution only when the rebase classifier proves it appropriate; other changes receive full review, and republish updates the same open PR.
-- Hold the task by leaving it waiting, or put a Guildmaster-requested `hold` on an existing merge decision.
+- Hold a failed or stopped attempt on purpose with `guildhall step park` and a reason, or put a Guildmaster-requested `hold` on an existing merge decision.
 - Abandon pursuing the work by leaving it unadvanced; there is no task-cancellation CLI.
   Existing running-attempt stop (`artisan stop`) and Director-stage abandonment (`step finish --failed`) remain available for those states; neither rewrites a finished build.
 - Recheck after an external change with `guildhall task start --repo app t-12`.

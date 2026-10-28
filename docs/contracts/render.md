@@ -3,7 +3,7 @@
 ## Contract
 
 `Prompt` and `Question`: the [rendering contract](../rendering.md) (rationale: [Rendered prompts, skills and their digests](../decisions/0025-rendered-prompts-skills-and-digests.md)).
-`Session` renders a Director session ([Director sessions](../rendering.md#director-sessions)): the LF role prompt, every skill of the roots byte for byte under the runtime's skills directory, the runtime's files, `startup.md` and `manifest.json`, refusing a non-empty directory, colliding or non-portable paths and multi-line in-flight items, and leaving nothing behind on error; `StartupMessage` names `startup.md` relative to the rendered directory; see [rendering](../rendering.md#director-sessions) for launches outside that directory.
+`Session` renders a Director session ([Director sessions](../rendering.md#director-sessions)): the LF role prompt, every skill of the roots byte for byte under the runtime's skills directory, the runtime's files, `startup.md`, with a `Parked` section after the in-flight list only when `SessionInput.Parked` has items, and `manifest.json`, refusing a non-empty directory, colliding or non-portable paths and multi-line in-flight or parked items, and leaving nothing behind on error; `StartupMessage` names `startup.md` relative to the rendered directory; see [rendering](../rendering.md#director-sessions) for launches outside that directory.
 The [Artisan prompt contract](../rendering.md#artisan-prompts) owns the code-review base field.
 Pure over files: no interface and no double.
 The [required outputs and result template contract](../rendering.md#required-outputs-and-result-template) owns the generated Artisan completion instructions and their actor boundary.

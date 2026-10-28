@@ -151,6 +151,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks; see [tasks](docs/tasks.md).
 - `guildhall task start` and `guildhall step done`: advance a task through its workflow; see [running a task](docs/running.md).
 - `guildhall step retry`: start the next attempt of a step after a failed or stopped one; see [running a task](docs/running.md#step-retry).
+- `guildhall step park` and `guildhall step unpark`: hold a failed or stopped attempt on purpose, with a reason, so it leaves what needs the Director, and lift the hold; see [running a task](docs/running.md#step-park-and-step-unpark).
 - `guildhall step send-back`: send a succeeded Artisan step back with Director feedback; see [send-back](docs/step-send-back.md).
 - `guildhall decide list|show|answer`: decisions waiting for you; see [decisions](docs/decisions-cli.md).
 - `guildhall director status --json`: everything in flight and what needs the Director or you, in one JSON document; see [the Director](docs/director.md#status).
