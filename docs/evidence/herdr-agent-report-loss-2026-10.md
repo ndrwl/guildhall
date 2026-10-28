@@ -8,7 +8,7 @@ These facts come from the d28 grill; they are not reproduced here.
 d28 is an investigation only (grill decision "d28 - b").
 It delivers this evidence and a recommendation; the fix is a follow-up task for the Director to open.
 
-Every claim below cites a file and line at `c12e3682`, a state or log path, or Herdr's help.
+Every claim below cites a file and line at `78323ce2`, a state or log path, or Herdr's help.
 A claim that needs a source this investigation could not read is marked **needs state read** (readable without a lab, by a session allowed to read the copy's `state/`, `~/.claude/` and Herdr's help) or **needs the lab run** (needs a guarded `fm-lab-` Herdr session).
 
 ## Summary
@@ -120,7 +120,8 @@ Confirming it from the attempt's files **needs state read** of `state/guildhall/
 ## Q4: does Herdr reuse or renumber workspace ids?
 
 - The repository asserts that "Herdr ids are short ordinals that a restart may reuse" ([`docs/decisions/artisan-workspace-close-sweep.md:31`](../decisions/artisan-workspace-close-sweep.md)) without a source.
-- The recorded ids point to **one counter per server run, never reused within it**: d23 used `w2Y`, `w3A`, `w3G` and `w3H`, while d8 build-8 had `w3E` and d22 build-5 had `w3F` (grill facts and the research notes).
+- The recorded ids point to **one counter per server run, never reused within it**: d23 used `w2Y`, `w3A`, `w3G` and `w3H`, while d8 build-8 had `w3E` and d22 build-5 had `w3F`.
+  These ids come from the d28 grill and the research notes, not a primary record; confirming them **needs state read** of each attempt's `pane-launch.json` and of `state/artisan-workspaces.json`.
   Other tasks' workspaces fill the gaps, and `w2Y` → `w3A` suggests a counter whose last place runs over letters.
   The 0.9.5 fixtures start at `w1` (`workspace_create.json:9,18`).
 - Whether a **restart** reuses ids is not covered by anything here and **needs the lab run**.
@@ -155,7 +156,7 @@ The tests that pin today's behaviour are `TestReportAgentRegistersTheResumeComma
 
 ## Sources
 
-Code and docs were re-checked at the build head, `c12e3682`; the line numbers above are from that revision.
+Code and docs were re-checked at `78323ce2`, the `main` commit this branch is rebased onto; the line numbers above are from that revision.
 
 The d28 build attempt (build-1, builder profile) attempted each state read in the spec on 2026-10-28; the sandbox refused all of them:
 
