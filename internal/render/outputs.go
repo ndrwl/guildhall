@@ -20,6 +20,7 @@ func outputInstructions(id Identity, revisions *workflow.Revisions) string {
 	for _, port := range kind.Outputs {
 		fmt.Fprintf(&b, "\n### Output port `%s`\n\n", port.Name)
 		if port.Type == workflow.CodeHead {
+			fmt.Fprintf(&b, "Commit on the task branch `guildhall/%s` in your working directory; Guildhall refuses a HEAD that is not that branch's tip or does not descend from the attempt's base. ", id.Task)
 			b.WriteString("Commit all tracked work. Guildhall takes the final Git HEAD automatically; no file is needed. Leave no uncommitted tracked changes (untracked notes alone are allowed). Do not list source files as outputs. The recorded format is a full 40- or 64-character lowercase hexadecimal commit id, for example:\n\n```text\n" + strings.Repeat("0", 40) + "\n```\n")
 			continue
 		}

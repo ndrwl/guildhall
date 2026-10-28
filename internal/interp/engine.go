@@ -699,6 +699,9 @@ func (r *run) launch(s workflow.Step, n int, rt artisanRuntime, inputs []render.
 	if err != nil {
 		return fmt.Errorf("working directory: %w", err)
 	}
+	if err := r.recordBase(s, n); err != nil {
+		return err
+	}
 	p, err := r.preparation(s, n, inputs)
 	if err != nil {
 		return err
@@ -848,6 +851,12 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		if i == 0 {
 			if err := checkPort(port.Type, data); err != nil {
 				return rejectOutput(err)
+			}
+			// A head already recorded stands on replay, even after the branch moved on.
+			if port.Type == workflow.CodeHead && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
+				if err := r.checkHead(s, n, strings.TrimSpace(string(data))); err != nil {
+					return err
+				}
 			}
 			if isReview(s) {
 				o, err := r.checkOutcome(s, n, data)

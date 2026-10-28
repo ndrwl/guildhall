@@ -66,7 +66,7 @@ A succeeded result must provide every required output below. A verdict in the re
 
 ### Output port `head`
 
-Commit all tracked work. Guildhall takes the final Git HEAD automatically; no file is needed. Leave no uncommitted tracked changes (untracked notes alone are allowed). Do not list source files as outputs. The recorded format is a full 40- or 64-character lowercase hexadecimal commit id, for example:
+Commit on the task branch `guildhall/t7` in your working directory; Guildhall refuses a HEAD that is not that branch's tip or does not descend from the attempt's base. Commit all tracked work. Guildhall takes the final Git HEAD automatically; no file is needed. Leave no uncommitted tracked changes (untracked notes alone are allowed). Do not list source files as outputs. The recorded format is a full 40- or 64-character lowercase hexadecimal commit id, for example:
 
 ```text
 0000000000000000000000000000000000000000

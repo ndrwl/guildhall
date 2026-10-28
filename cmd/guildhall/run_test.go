@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,9 @@ type binDirector struct {
 	repository, base string
 }
 
+// fixtureHead is the head the run fixture's fake build reports (internal/cli/testdata/run/baseline/stages/build.md).
+const fixtureHead = "0123456789abcdef0123456789abcdef01234567"
+
 // newBinDirector builds the binary and creates an empty store and a short state directory for cfg, a copy of a
 // run config that it points at a new real repository and remote (gittest.Repository) in place.
 func newBinDirector(t *testing.T, cfg string) *binDirector {
@@ -47,6 +51,16 @@ func newBinDirector(t *testing.T, cfg string) *binDirector {
 	b = bytes.Replace(b, []byte(`path = "/srv/app"`), []byte("path = '"+repository+"'"), 1)
 	b = bytes.Replace(b, []byte(`remote = "git@github.com:example/app.git"`), []byte("remote = '"+remote+"'"), 1)
 	if err := os.WriteFile(cfg, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The fake build commits nothing, so the head it reports must be the task branch's tip, the default branch, for
+	// intake's head check to accept it.
+	build := filepath.Join(filepath.Dir(cfg), "baseline", "stages", "build.md")
+	if b, err := os.ReadFile(build); err == nil {
+		if err := os.WriteFile(build, bytes.Replace(b, []byte(fixtureHead), []byte(base), 1), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
 	}
 	gobin, err := exec.LookPath("go")
