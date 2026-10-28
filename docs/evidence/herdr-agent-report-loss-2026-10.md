@@ -51,7 +51,7 @@ The sequence is `launch.(*Process).launchPane` ([`internal/launch/presentation.g
    In production `Report` is `herdr.Client.ReportAgent` ([`internal/cli/artisan_presentation.go:34`](../../internal/cli/artisan_presentation.go)).
 6. Only then does it type `guildhall artisan start … --pane-launch --workspace-close-after <d>` into the idle shell (`presentation.go:118-124`, `run.go:478-487`).
 
-`herdr.Client.ReportAgent` ([`internal/herdr/herdr.go:655-679`](../../internal/herdr/herdr.go)) validates its inputs and runs `herdr pane report-agent --source guildhall --agent artisan --state working <pane> --session <s> -- <resume argv>` (`herdr.go:677`).
+`herdr.Client.ReportAgent` ([`internal/herdr/herdr.go:675-699`](../../internal/herdr/herdr.go)) validates its inputs and runs `herdr pane report-agent --source guildhall --agent artisan --state working <pane> --session <s> -- <resume argv>` (`herdr.go:697`).
 It goes through `callTail` (`herdr.go:144-169`), which takes **exit 0 as success and discards stdout**.
 Nothing checks the response body, and nothing reads the agent back.
 
@@ -60,7 +60,7 @@ The report is made **once** in an attempt's life.
 **No event or log line records it**: `launchPane` writes nothing to `events.jsonl` or `launcher.log` about the report or Herdr's answer.
 
 `ResumeArgv` ([`internal/launch/resume.go:225-237`](../../internal/launch/resume.go)) is `guildhall artisan resume --store … --state … --repo … --task … --step … --attempt …`.
-It starts with a plain command name because Herdr refuses a path (`herdr.go:638-641`, [`docs/decisions/0048-artisan-resume.md:10`](../decisions/0048-artisan-resume.md)).
+It starts with a plain command name because Herdr refuses a path (`herdr.go:658-661`, `herdr.go:692-694`, [`docs/decisions/0048-artisan-resume.md:10`](../decisions/0048-artisan-resume.md)).
 
 ### What runs in the pane after the report
 
@@ -96,14 +96,14 @@ Confirming it from the attempt's files **needs state read** of `state/guildhall/
 
 ## Q2: was the resume command lost too, and what does that mean for recovery?
 
-- The agent and the resume command are registered by the same `report-agent` call (`presentation.go:115`, `herdr.go:677`).
+- The agent and the resume command are registered by the same `report-agent` call (`presentation.go:115`, `herdr.go:697`).
   Whether Herdr keeps `resume_argv` when the agent record goes is unknown from the code.
   The recorded Herdr 0.9.5 pane responses show `agent_status` and no resume field ([`internal/herdr/testdata/workspace_create.json:4-19`](../../internal/herdr/testdata/workspace_create.json)), and Guildhall never reads it back.
   Whether `pane get` shows `resume_argv` **needs state read** of `herdr pane get --help`; treat it as lost until Herdr's output or the lab run shows otherwise.
 - **The effect on crash recovery is small.**
   The resume command only reconciles and never starts a worker ([`docs/artisan.md:424-448`](../artisan.md#resume)).
   The launcher is detached from the pane, and losing Herdr cannot signal it (`docs/artisan.md:466-469`).
-  The Director's status feed lists every `stuck`, `exited` or `unknown` attempt as a `resume` item with the exact `guildhall artisan resume …` command ([`docs/director.md:450`](../director.md), [`internal/cli/director_status.go:393`](../../internal/cli/director_status.go)).
+  The Director's status feed lists every `stuck`, `exited` or `unknown` attempt as a `resume` item with the exact `guildhall artisan resume …` command ([`docs/director.md:457`](../director.md), [`internal/cli/director_status.go:393`](../../internal/cli/director_status.go)).
   So a lost `resume_argv` loses only Herdr's automatic resume after a Herdr restart; the attempt is still settled when the Director works its status feed or someone runs `artisan resume` by hand.
 - The lost label's real cost is **presentation**: the Guildmaster and Herdr's sidebar cannot see that the pane holds a working Artisan.
 
@@ -151,7 +151,7 @@ Any fix must keep these constraints:
 - **Never type a second command or launch twice.** An ambiguous response leaves the claim and types nothing more (`presentation.go:119-124`, `docs/artisan.md:474-478`); a re-report is a `report-agent` call, never typed input.
 - **Never treat a pane or label as liveness evidence.** The terminal is a presentation binding only (`presentation.go:20-26`, [`docs/decisions/workflow-artisan-tabs.md:5`](../decisions/workflow-artisan-tabs.md)); a missing label must not change an attempt's classification, and a re-report must not imply the worker is alive.
 
-The tests that pin today's behaviour are `TestReportAgentRegistersTheResumeCommand`, `TestReportAgentRefusesWhatHerdrWouldReject` and `TestReportAgentReturnsHerdrsRefusal` ([`internal/herdr/herdr_test.go:456-511`](../../internal/herdr/herdr_test.go)), and [`internal/launch/presentation_unix_test.go`](../../internal/launch/presentation_unix_test.go).
+The tests that pin today's behaviour are `TestReportAgentRegistersTheResumeCommand`, `TestReportAgentRefusesWhatHerdrWouldReject` and `TestReportAgentReturnsHerdrsRefusal` ([`internal/herdr/herdr_test.go:493-548`](../../internal/herdr/herdr_test.go)), and [`internal/launch/presentation_unix_test.go`](../../internal/launch/presentation_unix_test.go).
 
 ## Sources
 
