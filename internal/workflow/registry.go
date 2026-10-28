@@ -144,6 +144,18 @@ var kinds = []Kind{
 		Actors:   artisanOnly,
 	},
 	{
+		// Rebase resolves the conflicts of a replay of the task's change onto the base tip
+		// (docs/interpreter.md#tiered-rebase). The engine runs it under a deliver or validate step, as the synthetic step
+		// <step>-rebase, never from a workflow: its conflicts input is the conflict-marked files and the commits of both
+		// sides that touch them, and besides its head it writes rebase.json, which says whether the resolution changes
+		// behaviour.
+		Type: "rebase", Version: 1,
+		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}, {Name: "conflicts", Type: Document}},
+		Outputs:  []Port{{Name: "head", Type: CodeHead}},
+		Settings: artisan,
+		Actors:   artisanOnly,
+	},
+	{
 		// Review reviews a code head against the accepted spec; its outcome is bound to the head (Subject.CodeHead).
 		Type: "review", Version: 1,
 		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}, {Name: "head", Type: CodeHead}},

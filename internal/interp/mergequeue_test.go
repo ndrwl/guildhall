@@ -346,3 +346,77 @@ func TestQueueWaitsBehindTheFront(t *testing.T) {
 		t.Fatal("not merged")
 	}
 }
+
+// TestQueueTier1CrashReplay: an advance interrupted before each record of a tier 1 rebase at the front (the rebase
+// document, the push, the checks read, the carried authorization and the merge) replays to the same records, pushing
+// and merging once.
+func TestQueueTier1CrashReplay(t *testing.T) {
+	for _, b := range backends {
+		for _, name := range []string{"deliver-1-rebase-1", "deliver-1-rebase-1-pr", "deliver-1-checks-" + head2, "deliver-2-authorized", "deliver-2-merge"} {
+			t.Run(b.name+"/"+name, func(t *testing.T) {
+				e, f, ws := queueEnv(t, b)
+				base := baseN(1)
+				clean(ws, base, head, head2)
+				f.SetMergeability(forge.Mergeability{Head: head, Base: base, State: "behind", Behind: 1})
+				e.answer(t, "deliver-1", "merge")
+				records := e.eng.Records
+				ev := answeredMerge
+				interrupted := false
+				for i := 0; i < 6; i++ {
+					if i == 1 {
+						f.SetChecks(repoRemote, head2, ciPassed...)
+						f.SetMergeability(forge.Mergeability{})
+					}
+					if _, ok := e.documents(t)[name]; !ok && !interrupted {
+						e.eng.Records = &interruptedDocumentRecord{Records: records, name: name}
+						err := advanceErr(t, e, ev)
+						interrupted = err != nil
+						if interrupted && !strings.Contains(err.Error(), "interrupted before document record") {
+							t.Fatalf("interrupted advance = %v", err)
+						}
+						e.eng.Records = records
+					}
+					if next := e.advance(t, ev); next == done {
+						break
+					}
+					ev = interp.Event{Kind: interp.TaskCreated}
+				}
+				if !interrupted {
+					t.Fatalf("no advance was interrupted before %s", name)
+				}
+				if mergedHead(f) != head2 {
+					t.Fatalf("merged head = %q", mergedHead(f))
+				}
+				// A crash after the forge call and before its record repeats the call on replay, with the same head,
+				// as publish and merge do today; nothing else is pushed.
+				if publishes, merges := f.Calls(); publishes < 2 || publishes > 3 || merges < 1 || merges > 2 {
+					t.Fatalf("publishes = %d, merges = %d", publishes, merges)
+				}
+				if prs := f.PullRequests(repoRemote); len(prs) != 1 || prs[0].Head != head2 {
+					t.Fatalf("pull requests = %+v", prs)
+				}
+				if a := e.pullRequestDoc(t, "deliver-2-authorized"); a["carried_from"] != "deliver-1" {
+					t.Fatalf("authorization = %v", a)
+				}
+			})
+		}
+	}
+}
+
+// TestQueueRebaseRefusedWhileAnAttemptRuns: the front does not rebase while an attempt of the task runs.
+func TestQueueRebaseRefusedWhileAnAttemptRuns(t *testing.T) {
+	e, f, ws := queueEnv(t, backends[1])
+	clean(ws, baseN(1), head, head2)
+	f.SetMergeability(forge.Mergeability{Head: head, Base: baseN(1), State: "behind", Behind: 1})
+	// An attempt the walk does not own, such as a judge's, still runs in the task's worktree.
+	if _, err := e.h.Records.StartCappedAttempt("running", "app", "t7", "judge", store.AttemptCaps{}); err != nil {
+		t.Fatal(err)
+	}
+	e.answer(t, "deliver-1", "merge")
+	if err := advanceErr(t, e, answeredMerge); err == nil || !strings.Contains(err.Error(), "cannot rebase while an attempt runs") {
+		t.Fatalf("advance = %v, want the rebase refused", err)
+	}
+	if len(ws.Replays()) != 0 {
+		t.Fatal("replayed while an attempt runs")
+	}
+}

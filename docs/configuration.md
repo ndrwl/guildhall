@@ -326,6 +326,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 | `document-review` | `artisan` or `guildmaster` | a review outcome for a document, such as the plan's spec |
 | `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` and refutation documents as `findings` |
 | `review` | `artisan` or `guildmaster` | a review outcome for a code head against the accepted spec |
+| `rebase` | `artisan` | a code head resolving a rebase's minor conflicts, and `rebase.json`; run by the engine as `<step>-rebase` under deliver or validate ([tiered rebase](interpreter.md#tiered-rebase)), never as a workflow step |
 | `publish` | `engine` | the same head, pushed to the repository's remote branch with its pull request opened or updated |
 | `validate`, `deliver` | `engine` | a validation result, the landed change |
 | `handoff-wait` | `guildmaster` | a handoff document |

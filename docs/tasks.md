@@ -137,6 +137,9 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
+- `priority` and `priority_changes`: the task's [priority](#priority) now and every level set, each with `set_at`.
+- `merge_holds`: every [hold-merge](#holding-a-merge) value set, `held` true or false, each with `set_at`.
+- `merged`: once the task merged, the `merged` message the engine sent, its `message` id, `text` and `merged_at`; the text says what allowed the merge, for example "merged by carried-over approval of deliver-1 after no_conflicts rebase, deliver-2-authorized".
 - `events`: every receipt of the task in commit order, each naming its operation, mutation id, sequence, commit time and the record it wrote (`record`, for example `attempt/build/2`, `decision/accept-plan` or `message/q-1`).
   These are the moves made on the task, including messages sent and acknowledged for it.
 

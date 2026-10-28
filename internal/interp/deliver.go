@@ -403,9 +403,16 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 			return false, next, err
 		}
 		if n := len(links); n > 0 && links[n-1].head == "" {
-			next, done, err := r.resolvePending(s, k, repo, id, links[n-1])
-			if err != nil || !done {
+			next, fail, err := r.resolveRebase(s, repo, links[n-1])
+			switch {
+			case err != nil:
+				return false, Next{}, err
+			case fail != nil:
+				fail.Authorization = id
+				next, err := r.escalate(s, k, *fail)
 				return false, next, err
+			case next != (Next{}):
+				return false, next, nil
 			}
 			continue
 		}
@@ -552,7 +559,12 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		return false, Next{}, err
 	}
 	needs := requires.Guildmaster() && repo.Merge.NeedsReapproval(kind)
-	if !needs && holds && spec {
+	// A narrowed review's findings, advisory ones included, reach the Guildmaster whatever the threshold.
+	findings := 0
+	for _, l := range x.links {
+		findings += l.findings
+	}
+	if !needs && holds && spec && findings == 0 {
 		if err := r.carry(s, id, x, conditions, from, links, kind); err != nil {
 			return false, Next{}, err
 		}
@@ -564,6 +576,9 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		why = append(why, fmt.Sprintf("a %s rebase is at or above reapprove_after_rebase = %s", kind, repo.Merge.Reapprove()))
 	case !spec:
 		why = append(why, "the accepted spec changed since "+from)
+	}
+	if findings > 0 {
+		why = append(why, fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s)", findings))
 	}
 	for _, c := range conditions[1:] {
 		if !c.Holds {

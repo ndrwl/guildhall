@@ -182,4 +182,12 @@ func TestSquashAndAdoptProgram(t *testing.T) {
 	if err != nil || !strings.Contains(string(diff), "+line b") && !strings.Contains(string(diff), "+main and task two") {
 		t.Fatalf("resolution diff = %s, %v", diff, err)
 	}
+	// The rebaser is told the commits of each side that touch the conflicting files.
+	log, err := p.Log(ctx, r.dir, rb.MergeBase, main, "a.txt")
+	if err != nil || !strings.Contains(string(log), "commit "+main) || !strings.Contains(string(log), "+main two") {
+		t.Fatalf("base side log = %s, %v", log, err)
+	}
+	if log, err := p.Log(ctx, r.dir, rb.MergeBase, main, "b.txt"); err != nil || len(log) != 0 {
+		t.Fatalf("log of an untouched file = %q, %v", log, err)
+	}
 }

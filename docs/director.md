@@ -185,7 +185,7 @@ The hold is read in the same store transaction that records a new attempt, so an
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works using each item's recovery command.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
-A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies` and `decision` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
+A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies`, `merge-queue` and `decision` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
 
 ```text
 guildhall: resumed, 2 waiting (messages 1, paused 1)
@@ -194,7 +194,7 @@ guildhall: resumed, 2 waiting (messages 1, paused 1)
 Otherwise it delivers nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session, waiter and pane reasons, and the work waits for the Director's next turn.
 If reading the session for the wake fails, resume reports the error on standard error and omits `wake`, without failing or undoing the resume.
 The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/0086-director-checks-watch.md)).
-A `checks` or `dependencies` item is the supervisor's and a `decision` item the Guildmaster's, so none counts or wakes.
+A `checks`, `dependencies` or `merge-queue` item is the supervisor's and a `decision` item the Guildmaster's, so none counts or wakes.
 
 A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0, with no `wake` and nothing typed.
 Both are exit 1 for no session, a session that is `recovering` (run `director ready`), `stopping` or `stopped`, and a session whose supervisor is gone, naming `director stop`.
@@ -242,6 +242,7 @@ The advance claims the front for the first task in queue order, and the front th
 A paused or stopping Director pauses the queue: the watcher advances nothing, and nothing else advances a queued task but `task start`.
 The order is not the watcher's: the front is chosen in one store mutation from priority, ready time and task id, so the order in which the watcher advances tasks does not matter.
 A failed advance is appended to `merge-queue.log` in the session's directory and tried again the next round.
+[`needs_me`](#status) lists such a task as a `merge-queue` item, after the `dependencies` ones; like them it is the supervisor's, so it neither counts nor wakes the Director on resume.
 The Director hears of a queued task through `merge-queued`, `rebased`, `rebase-escalated`, `approval-carried`, `merged` and, for a front that rebased three times, `rebase-stuck`.
 [`task priority`](tasks.md#priority) reorders the tasks behind the front, and [`task hold-merge`](tasks.md#holding-a-merge) takes a task out of turn without cancelling it.
 

@@ -112,6 +112,14 @@ func (f *Workspaces) Diff(ctx context.Context, repository, a, b string) ([]byte,
 	return []byte(fmt.Sprintf("diff %s..%s\n", a, b)), nil
 }
 
+// Log implements git.Program.Log with one line naming the range and paths.
+func (f *Workspaces) Log(ctx context.Context, repository, a, b string, paths ...string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []byte(fmt.Sprintf("log %s..%s %v\n", a, b, paths)), nil
+}
+
 // Adopt implements git.Program.Adopt over the double's directories: a tree on w.Branch at from moves to to, one
 // already at to is unchanged, and any other is refused. Files in the directory are never touched.
 func (f *Workspaces) Adopt(ctx context.Context, w git.Workspace, from, to string) error {

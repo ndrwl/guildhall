@@ -70,6 +70,9 @@ type rebaseLink struct {
 	// rebase is proven to change nothing the review approved, or a narrowed review approved its resolution.
 	head    string
 	covered bool
+	// findings counts the findings of the narrowed review that approved a resolution; any sends the merge to the
+	// Guildmaster.
+	findings int
 }
 
 // parseRebaseName reads <step>-<k>-rebase-<n> for step, n and k positive numbers.

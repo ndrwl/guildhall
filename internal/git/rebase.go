@@ -149,6 +149,16 @@ func (p Program) Diff(ctx context.Context, repository, a, b string) ([]byte, err
 	return p.read(ctx, repository, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--full-index", a, b, "--")
 }
 
+// Log returns git log -p of the commits in a..b that touch paths, every commit when paths is empty, with no colour
+// or external diff: what the rebaser is told about each side of a conflict.
+func (p Program) Log(ctx context.Context, repository, a, b string, paths ...string) ([]byte, error) {
+	if !digest.ValidHead(a) || !digest.ValidHead(b) {
+		return nil, fmt.Errorf("git: log of %q..%q: not full object ids", a, b)
+	}
+	args := append([]string{"log", "-p", "--no-color", "--no-ext-diff", "--no-renames", "--format=commit %H%nAuthor: %an <%ae>%nDate: %aI%n%n%B", a + ".." + b, "--"}, paths...)
+	return p.read(ctx, repository, args...)
+}
+
 // Adopt moves the worktree w.Dir, on w.Branch at from, to commit to with git reset --keep, which keeps local and
 // untracked files and refuses rather than overwrite one, so no stage output is lost. A worktree already at to is
 // left as it is; one at neither commit, or on another branch, is refused unchanged.
