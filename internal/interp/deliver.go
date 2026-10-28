@@ -161,17 +161,19 @@ func (r *run) published(s workflow.Step, h string) (*pullRequestDoc, error) {
 	return &pr, nil
 }
 
-// deliver checks the review and validation gates and, under the approval policy, opens the merge decision bound to the head.
-// A merge answer squash-merges the published pull request at that head and closes the task; a hold answer, or a
-// merge the forge refuses, waits for the Director. The auto policy is not supported.
+// deliver checks the repository's merge requirements (docs/configuration.md#merge-requirements) and merges the
+// head. A required artisan_approval or ci_green that does not hold is a hard error, and a behind or conflicting pull
+// request waits for the Director, before anything is asked. With guildmaster_approval required, or when nothing_open
+// fails, it opens the merge decision bound to the head, whose question lists every requirement; a merge answer
+// squash-merges the published pull request at that head and closes the task, and a hold answer waits for the
+// Director. Otherwise it records the merge's authorization, <step>-<k>-authorized, and merges without a decision.
+// A merge the forge refuses waits for the Director.
 func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	repo, err := r.repository()
 	if err != nil {
 		return false, Next{}, err
 	}
-	if repo.MergePolicy != config.MergeApproval {
-		return false, Next{}, fmt.Errorf("%w: merge policy %q", ErrUnsupported, repo.MergePolicy)
-	}
+	requires := repo.Merge.Requires
 	inputs, err := r.inputs(s)
 	if err != nil {
 		return false, Next{}, err
@@ -184,28 +186,80 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
-	if err := r.gate(s, h); err != nil {
+	outcomes, err := r.reviewOutcomes(s)
+	if err != nil {
 		return false, Next{}, err
 	}
-	if err := r.validated(s, h); err != nil {
+	artisan, err := gateCondition("artisan_approval", requires.Artisan(), ErrReviewGate, r.gate(s, h))
+	if err != nil {
 		return false, Next{}, err
+	}
+	for _, o := range outcomes {
+		artisan.Evidence = append(artisan.Evidence, o.name)
+	}
+	ci, err := gateCondition("ci_green", requires.CI(), ErrValidationGate, r.validated(s, h))
+	if err != nil {
+		return false, Next{}, err
+	}
+	if refs := s.Inputs["validation"]; len(refs) > 0 {
+		step, port, _ := strings.Cut(refs[0], ".")
+		if v, _, err := r.output(step, port); err == nil {
+			ci.Evidence = []string{v.Name}
+		}
 	}
 	pr, err := r.published(s, h)
 	if err != nil {
 		return false, Next{}, err
 	}
-	if blocked, err := r.mergeBlocked(pr, h); err != nil || blocked {
+	state, blocked, err := r.mergeBlocked(pr, h)
+	if err != nil || blocked {
 		return false, Next{Wait: WaitDirector, Step: s.ID}, err
+	}
+	guildmaster := condition{Requirement: "guildmaster_approval", Required: requires.Guildmaster()}
+	if guildmaster.Required {
+		guildmaster.Reason = "this decision is not answered yet"
+	}
+	conditions := []condition{guildmaster, artisan, ci, r.nothingOpen(s, requires.Open(), outcomes)}
+	if id, err := r.authorization(s, h); err != nil || id != "" {
+		if err != nil {
+			return false, Next{}, err
+		}
+		return r.merge(s, id, repo, h, pr)
 	}
 	d := r.latestDecision(s.ID)
 	switch {
 	case d == nil || d.Subject == nil || d.Subject.Digest != h:
-		k := r.nextRound(s.ID)
+		k := r.deliverRound(s)
+		var failed []string
+		for _, c := range conditions[1:] {
+			if c.Required && !c.Holds {
+				failed = append(failed, fmt.Sprintf("%s (%s)", c.Requirement, c.Reason))
+			}
+		}
+		if !requires.Guildmaster() && len(failed) == 0 {
+			if pr == nil {
+				return false, Next{}, fmt.Errorf("%w: merging head %s, which no publish step pushed", ErrUnsupported, h)
+			}
+			id := decisionID(s.ID, k, false)
+			if err := r.authorize(id, authorizationDoc{Schema: authorizationSchema, Head: h, PullRequest: pr, Requires: requires.Effective(),
+				Mergeability: state, Conditions: conditions}); err != nil {
+				return false, Next{}, err
+			}
+			return r.merge(s, id, repo, h, pr)
+		}
 		question := fmt.Sprintf("Merge needed for %s/%s, step %s, attempt %d: head %s.\n", r.task.Repository, r.task.ID, s.ID, k, h)
+		if !requires.Guildmaster() {
+			question = fmt.Sprintf("Guildhall did not merge by itself: %s.\n", strings.Join(failed, "; ")) + question
+		}
 		if pr != nil {
 			question += fmt.Sprintf("Pull request: %s\n", pr.URL)
 		}
-		ask := render.Ask{Question: question + fmt.Sprintf("\nAnswer with one of: %s.\n", strings.Join(mergeOptions, ", ")), Options: mergeOptions}
+		question += "\nMerge requirements of repository " + r.task.Repository + ":\n"
+		for _, c := range conditions {
+			question += "- " + c.Requirement + ": " + c.line() + "\n"
+		}
+		question += "A merge answer overrides a failing nothing_open, and nothing else."
+		ask := render.Ask{Question: boundedQuestion(question, mergeOptions), Options: mergeOptions}
 		next, err := r.open(s, k, inputs, ask)
 		return false, next, err
 	case !d.Answered:
@@ -216,13 +270,177 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	case d.Choice != "merge":
 		return false, Next{}, fmt.Errorf("decision %s: %w: outcome %s", d.ID, ErrUnsupported, d.Choice)
 	}
-	return r.merge(s, *d, repo, h, pr)
+	return r.merge(s, d.ID, repo, h, pr)
 }
 
-// merge merges the pull request the merge decision d approved, records it as <decision>-merge and closes the task.
-// A merge the forge refuses is recorded and waits for the Director.
-func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h string, pr *pullRequestDoc) (bool, Next, error) {
-	name := d.ID + "-merge"
+// authorizationSchema versions the authorization deliver records before a merge Guildhall makes by itself.
+const authorizationSchema = "guildhall.merge-authorization/1"
+
+// condition is one merge requirement as deliver found it, with the names of the evidence it read.
+type condition struct {
+	Requirement string `json:"requirement"`
+	Required    bool   `json:"required"`
+	Holds       bool   `json:"holds"`
+	// Reason says why the requirement does not hold; empty when it holds.
+	Reason   string   `json:"reason,omitempty"`
+	Evidence []string `json:"evidence,omitempty"`
+}
+
+// line is the condition as the merge question lists it.
+func (c condition) line() string {
+	switch {
+	case !c.Required:
+		return "not required"
+	case c.Holds:
+		return "holds"
+	}
+	return "fails: " + c.Reason
+}
+
+// authorizationDoc is <step>-<k>-authorized: what allowed a merge Guildhall made without a decision. Deliver reads
+// the requirements from the current configuration at every advance, so this is the only record of the ones in effect.
+type authorizationDoc struct {
+	Schema      string          `json:"schema"`
+	Head        string          `json:"head"`
+	PullRequest *pullRequestDoc `json:"pull_request"`
+	// Requires are the effective requirements; Mergeability is the pull request's observed state.
+	Requires     config.MergeRequires `json:"requires"`
+	Mergeability string               `json:"mergeability"`
+	Conditions   []condition          `json:"conditions"`
+}
+
+// gateCondition is the condition of a gate requirement from the gate's error: a required gate that fails returns
+// its error, so no answer merges over it, and an error that is not the gate's own is returned whatever is required.
+func gateCondition(requirement string, required bool, gate, err error) (condition, error) {
+	c := condition{Requirement: requirement, Required: required, Holds: err == nil}
+	switch {
+	case err == nil:
+	case !errors.Is(err, gate) || required:
+		return condition{}, err
+	default:
+		c.Reason = strings.TrimPrefix(err.Error(), gate.Error()+": ")
+	}
+	return c, nil
+}
+
+// reviewOutcome is the latest outcome of a review step before deliver, by document name.
+type reviewOutcome struct {
+	name    string
+	outcome *workflow.ReviewOutcome
+}
+
+// reviewOutcomes returns the latest outcome of every review and document-review step before deliver that has one.
+func (r *run) reviewOutcomes(deliver workflow.Step) ([]reviewOutcome, error) {
+	var out []reviewOutcome
+	for _, s := range r.def.Steps {
+		if s.ID == deliver.ID {
+			break
+		}
+		if !isReview(s) {
+			continue
+		}
+		d, _, err := r.output(s.ID, "outcome")
+		if err != nil {
+			continue
+		}
+		data, err := r.read(d)
+		if err != nil {
+			return nil, err
+		}
+		o, err := workflow.ParseReviewOutcome(data)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, reviewOutcome{name: d.Name, outcome: o})
+	}
+	return out, nil
+}
+
+// nothingOpen is the nothing_open condition: the review outcomes list no findings, advisory ones included, and the
+// task has no unanswered decision but deliver step s's own.
+func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutcome) condition {
+	c := condition{Requirement: "nothing_open", Required: required}
+	var open []string
+	for _, o := range outcomes {
+		c.Evidence = append(c.Evidence, o.name)
+		if n := len(o.outcome.Findings); n > 0 {
+			open = append(open, fmt.Sprintf("%s lists %d finding(s)", o.name, n))
+		}
+	}
+	for i, d := range r.decisions {
+		if p := r.decisionPlaces[i]; d.Answered || (p.ok && p.step == s.ID && !p.exit) {
+			continue
+		}
+		c.Evidence = append(c.Evidence, d.ID)
+		open = append(open, fmt.Sprintf("decision %s is unanswered", d.ID))
+	}
+	c.Holds, c.Reason = len(open) == 0, strings.Join(open, ", ")
+	return c
+}
+
+// deliverRound is the round deliver step s's next merge opens: after its latest decision and its latest authorization.
+func (r *run) deliverRound(s workflow.Step) int {
+	k := r.nextRound(s.ID)
+	for _, p := range r.docPlaces {
+		if p.ok && p.step == s.ID && p.part == "authorized" && !p.exit && p.index == 0 && p.round >= k {
+			k = p.round + 1
+		}
+	}
+	return k
+}
+
+// authorization returns the id of deliver step s's latest merge Guildhall authorized at head h, or "".
+func (r *run) authorization(s workflow.Step, h string) (string, error) {
+	id := ""
+	for i, p := range r.docPlaces {
+		if !p.ok || p.step != s.ID || p.part != "authorized" || p.exit || p.index != 0 {
+			continue
+		}
+		data, err := r.read(r.documents[i])
+		if err != nil {
+			return "", err
+		}
+		var a authorizationDoc
+		if err := json.Unmarshal(data, &a); err != nil {
+			return "", fmt.Errorf("document %s: %w", r.documents[i].Name, err)
+		}
+		if a.Schema != authorizationSchema {
+			return "", fmt.Errorf("document %s is not a %s authorization", r.documents[i].Name, authorizationSchema)
+		}
+		if a.Head == h {
+			id = decisionID(p.step, p.round, false)
+		}
+	}
+	return id, nil
+}
+
+// authorize records a, the authorization of merge id, as <id>-authorized.
+func (r *run) authorize(id string, a authorizationDoc) error {
+	data, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: id + "-authorized",
+		Path: path.Join("tasks", r.task.Repository, r.task.ID, id, "authorized.json"), SHA256: digest.Of(data).Hex()}, data)
+}
+
+// mergedBy says what allowed merge id: the Guildmaster's merge decision, or Guildhall's recorded authorization.
+func (r *run) mergedBy(id string) string {
+	if r.decision(id) != nil {
+		return "decision " + id
+	}
+	return "merged by Guildhall, " + id + "-authorized"
+}
+
+// merge merges the pull request merge id allows, records it as <id>-merge and closes the task. The id is the merge
+// decision's, or <step>-<k> for a merge Guildhall authorized. A merge the forge refuses is recorded and waits for
+// the Director.
+func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string, pr *pullRequestDoc) (bool, Next, error) {
+	decision := ""
+	if r.decision(id) != nil {
+		decision = id
+	}
+	name := id + "-merge"
 	if r.document(name) == nil {
 		switch {
 		case pr == nil:
@@ -233,24 +451,24 @@ func (r *run) merge(s workflow.Step, d store.Decision, repo config.Repository, h
 		merged, err := r.e.Forge.Merge(r.ctx, forge.Merge{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Head: h})
 		if errors.Is(err, forge.ErrRefused) {
 			reason := err.Error()
-			if err := r.recordRefusal(d, refusalDoc{Schema: refusalSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: h, Reason: reason}); err != nil {
+			if err := r.recordRefusal(id, refusalDoc{Schema: refusalSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: h, Reason: reason}); err != nil {
 				return false, Next{}, err
 			}
-			return false, Next{Wait: WaitDirector, Step: s.ID, Decision: d.ID},
-				r.notify(fmt.Sprintf("merge-refused.%s.%s", d.ID, digest.Of([]byte(reason)).Hex()[:12]), store.MessageMergeRefused,
+			return false, Next{Wait: WaitDirector, Step: s.ID, Decision: decision},
+				r.notify(fmt.Sprintf("merge-refused.%s.%s", id, digest.Of([]byte(reason)).Hex()[:12]), store.MessageMergeRefused,
 					fmt.Sprintf("The forge refused to merge pull request %s at head %s: %s\nThe Director decides how to recover; advancing the task again retries the merge.", pr.URL, h, reason))
 		}
 		if err != nil {
 			return false, Next{}, err
 		}
-		if err := r.putPullRequest(name, path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "merge.json"), pullRequestDoc{Schema: pullRequestSchema, Remote: pr.Remote, PullRequest: merged}); err != nil {
+		if err := r.putPullRequest(name, path.Join("tasks", r.task.Repository, r.task.ID, id, "merge.json"), pullRequestDoc{Schema: pullRequestSchema, Remote: pr.Remote, PullRequest: merged}); err != nil {
 			return false, Next{}, err
 		}
 	}
-	if err := r.notify("merged."+d.ID, store.MessageMerged, fmt.Sprintf("Merged head %s (decision %s); the task is done.", h, d.ID)); err != nil {
+	if err := r.notify("merged."+id, store.MessageMerged, fmt.Sprintf("Merged head %s (%s); the task is done.", h, r.mergedBy(id))); err != nil {
 		return false, Next{}, err
 	}
-	if err := r.retire(d, repo, h); err != nil {
+	if err := r.retire(id, repo, h); err != nil {
 		return false, Next{}, err
 	}
 	if err := r.audit(s, h, pr); err != nil {
@@ -294,15 +512,15 @@ func (r *run) audit(s workflow.Step, h string, pr *pullRequestDoc) error {
 	return r.notifyDecision(*d, s.ID)
 }
 
-// recordRefusal records a refusal of the merge decision d as its next refusal document, unless one of its refusals
+// recordRefusal records a refusal of merge id as its next refusal document, <id>-refused[-n], unless one of its refusals
 // already holds the same content, so a refusal repeated or replayed for the same reason is recorded once.
-func (r *run) recordRefusal(d store.Decision, doc refusalDoc) error {
+func (r *run) recordRefusal(id string, doc refusalDoc) error {
 	data, err := json.Marshal(doc)
 	if err != nil {
 		return err
 	}
 	sum := digest.Of(data).Hex()
-	p, _ := parseDecision(d.ID)
+	p, _ := parseDecision(id)
 	p.part = "refused"
 	for ; ; p.index = max(2, p.index+1) {
 		ref := r.document(documentName(p))
@@ -315,6 +533,6 @@ func (r *run) recordRefusal(d store.Decision, doc refusalDoc) error {
 	}
 	return r.put(store.DocumentRef{
 		Repository: r.task.Repository, TaskID: r.task.ID, Name: documentName(p),
-		Path: path.Join("tasks", r.task.Repository, r.task.ID, d.ID, "refused-"+sum[:12]+".json"), SHA256: sum,
+		Path: path.Join("tasks", r.task.Repository, r.task.ID, id, "refused-"+sum[:12]+".json"), SHA256: sum,
 	}, data)
 }

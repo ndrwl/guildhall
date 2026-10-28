@@ -37,8 +37,10 @@ func TestGuardRails(t *testing.T) {
 			if strings.Join(g.Repositories, ",") != "tool,site" {
 				t.Errorf("Repositories = %q, want the listed ids in config order", g.Repositories)
 			}
-			if g.MergePolicies["tool"] != MergeApproval || g.MergePolicies["site"] != MergeAuto || len(g.MergePolicies) != 2 {
-				t.Errorf("MergePolicies = %v", g.MergePolicies)
+			tool, site := g.MergeRequires["tool"], g.MergeRequires["site"]
+			if len(g.MergeRequires) != 2 || tool.GuildmasterApproval == nil || !*tool.GuildmasterApproval || site.GuildmasterApproval == nil || *site.GuildmasterApproval ||
+				site.ArtisanApproval == nil || !*site.ArtisanApproval {
+				t.Errorf("MergeRequires = %+v, want every effective value set", g.MergeRequires)
 			}
 		})
 	}

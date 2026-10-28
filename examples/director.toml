@@ -46,16 +46,20 @@ path = '/srv/src/cli'
 remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"
 workflow = "profiled"
-# merge_policy defaults to "approval".
+# No [repository.merge.requires] section: every requirement is on, so the Guildmaster answers every merge.
 
 [[repository]]
 id = "docs-site"
 path = '/srv/src/docs-site'
 remote = "https://github.com/example/docs-site.git"
 owner_machine = "workstation"
-merge_policy = "auto"
 workflow = "profiled"
 
 # This repository has the Guildmaster review every change instead of an Artisan.
 [repository.workflow_overrides.review]
 actor = "guildmaster"
+
+# Guildhall merges this repository's work by itself once the review approves the exact head, CI passes and
+# nothing is open; otherwise it asks the Guildmaster. A missing key is true.
+[repository.merge.requires]
+guildmaster_approval = false

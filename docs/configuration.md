@@ -127,18 +127,47 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 | `path` | Absolute path of the repository on the owner machine. |
 | `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. `publish` pushes task branches there, and the [GitHub forge](contracts/forge.md) supports only `github.com` remotes. |
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
-| `merge_policy` | `approval` (default) or `auto`. |
 | `workflow` | Name of the Director's workflow definition; defaults to `default`. |
 | `no_ci` | `true` declares that the repository runs no CI, so [validate](interpreter.md#validate) passes a published head its forge reports no checks for, recording that it had no CI; default `false`, where no checks reported waits as pending. |
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
+| `[repository.merge.requires]` | What a task's pull request needs before Guildhall merges it; see [merge requirements](#merge-requirements). |
 
 Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.
 Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case.
 Other letter case is compared exactly.
 
-`approval` means the Director asks the Guildmaster before every merge.
-`auto` means a merge happens only when checks pass, the independent review is complete for the exact head and the work is within accepted scope; otherwise the Director asks.
-No workflow can change a repository's merge policy.
+#### Merge requirements
+
+Each repository chooses what a task's pull request needs before Guildhall merges it ([decision](decisions/merge-requires.md)).
+The section sits under the repository's `[[repository]]` block, like `workflow_overrides`:
+
+```toml
+[repository.merge.requires]
+guildmaster_approval = true   # the Guildmaster said "merge"
+artisan_approval     = true   # the review Artisan approved this exact head, accepted spec and standards
+ci_green             = true   # required CI passed on this head
+nothing_open         = true   # no findings on the approving reviews and no unanswered decision on the task
+```
+
+| Requirement | Holds when |
+|---|---|
+| `guildmaster_approval` | The Guildmaster answered `merge` on the deliver decision `deliver-<k>` for this head. |
+| `artisan_approval` | Every review and document-review step before deliver has a latest outcome that approves and is bound to the delivered head, the accepted spec digest and the current standards revision. "Artisan" means the independent review Artisan: the review step runs as its own attempt, never the author's build attempt. |
+| `ci_green` | Deliver's `validation` input is a `passed` result for the delivered head. |
+| `nothing_open` | Those review outcomes list no findings, advisory ones included, and the task has no unanswered decision but the deliver step's own. |
+
+Each key is a TOML boolean; a missing key is `true`, and a missing section requires everything, so by default the Guildmaster approves every merge.
+A string such as `"true"`, an unknown key and the removed merge policy key are refused when the config is parsed.
+
+- A required `artisan_approval` or `ci_green` that does not hold stops deliver with a review or validation gate error, whatever `guildmaster_approval` says; no answer merges over it.
+  Setting it to `false` skips that gate, and the merge question still shows its state.
+- A behind or conflicting pull request waits for the Director with a `pr-blocked` report before anything is asked.
+- With `guildmaster_approval = true`, deliver opens the merge decision, whose question lists each requirement as `holds`, `fails: <reason>` or `not required`; a `merge` answer overrides a failing `nothing_open`, and nothing else.
+- With `guildmaster_approval = false` and every other required requirement holding, Guildhall records `deliver-<k>-authorized`, with the requirements in effect and the evidence it read, and merges by itself; otherwise it asks the Guildmaster, beginning the question "Guildhall did not merge by itself".
+  A recorded `deliver-<k>-authorized` is reused for its head on every later advance, before `guildmaster_approval` is read: a merge the forge refused after it was authorized is retried without a decision even if `guildmaster_approval` is turned back on. To have the Guildmaster decide instead, publish a new head.
+
+Turning a requirement off changes only what deliver demands, not which steps a workflow must have.
+No workflow can change a repository's merge requirements.
 
 ### Profiles
 
@@ -272,7 +301,7 @@ The director actor on `grill` is part of the accepted workflow design's stage ta
 The director grill is a live interview in rounds of numbered questions until the Director and the Guildmaster share an understanding, recorded as the stage's notes (R1.13); the `artisan` actor is the opt-in for a repository meant to run unattended; with `guildhall-grill-unattended` listed in the grill step's `skills`, its Artisan answers its own questions with recommendations the Guildmaster reviews at acceptance ([decision](decisions/0061-grill-live-interview.md)).
 A kind with more than one actor requires the `actor` setting; a kind with one actor refuses it.
 `publish` comes before `validate` so forge checks have a pushed head to read; it never merges.
-`publish` and `deliver` have no settings: the repository's configuration and merge policy decide where work goes and how it lands.
+`publish` and `deliver` have no settings: the repository's configuration and merge requirements decide where work goes and how it lands.
 
 ### Opt-in plan refutation
 

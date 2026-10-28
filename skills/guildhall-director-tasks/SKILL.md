@@ -69,7 +69,7 @@ Only the Guildmaster answers a decision: never answer one on your own judgement,
 
 Merging is answering the merge decision, `deliver-<round>`, whose question names the pull request.
 When the Guildmaster says to merge, answer `merge`; when they want to wait or change something, answer `hold` with their words, then give the change as work.
-The repository's merge policy and the forge's protection always apply: a refused merge comes back as a `merge-refused` message with the forge's reason, and `guildhall-director-inbox` handles it.
+The repository's merge requirements and the forge's protection always apply, and a required review approval or CI pass is never merged over: a refused merge comes back as a `merge-refused` message with the forge's reason, and `guildhall-director-inbox` handles it.
 
 ## Audits
 

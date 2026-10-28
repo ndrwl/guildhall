@@ -48,7 +48,7 @@ func (r *run) workDir() (string, error) {
 // after a crash retires it again. A kept or unremovable workspace never fails the merge: the Director is told, by a
 // workspace-kept message, what it holds or why it could not be removed. Only a failed message or the advance's
 // context ending is an error, so an interrupted retirement leaves the task open and a replay retires it again.
-func (r *run) retire(d store.Decision, repo config.Repository, head string) error {
+func (r *run) retire(id string, repo config.Repository, head string) error {
 	if r.e.Workspaces == nil {
 		return nil
 	}
@@ -63,9 +63,9 @@ func (r *run) retire(d store.Decision, repo config.Repository, head string) erro
 	if len(kept) == 0 {
 		return nil
 	}
-	text := fmt.Sprintf("Kept the working directory %s and branch %s after merging head %s (decision %s), because %s.\nNothing was removed; the Director decides what happens to them.",
-		w.Dir, w.Branch, head, d.ID, strings.Join(kept, "; "))
-	return r.notify(fmt.Sprintf("workspace-kept.%s.%s", d.ID, digest.Of([]byte(text)).Hex()[:12]), store.MessageWorkspaceKept, text)
+	text := fmt.Sprintf("Kept the working directory %s and branch %s after merging head %s (%s), because %s.\nNothing was removed; the Director decides what happens to them.",
+		w.Dir, w.Branch, head, r.mergedBy(id), strings.Join(kept, "; "))
+	return r.notify(fmt.Sprintf("workspace-kept.%s.%s", id, digest.Of([]byte(text)).Hex()[:12]), store.MessageWorkspaceKept, text)
 }
 
 // outputs are the task's recorded documents by their path below their record directory, the path an output had

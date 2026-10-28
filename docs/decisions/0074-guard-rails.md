@@ -11,7 +11,8 @@ Every command that acts on a repository finds it through `config.ListedRepositor
 
 ## Merge rule
 
-The merge rule is the repository's `merge_policy`, which `deliver` already enforces; this change only reports it with the other rails.
+The merge rule is the repository's merge policy, which `deliver` already enforces; this change only reports it with the other rails.
+Superseded by [merge requirements](merge-requires.md): the merge rule is now the repository's effective merge requirements, reported as `merge_requires`.
 
 ## Attempt caps
 

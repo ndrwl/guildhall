@@ -18,7 +18,7 @@ The Steward stays optional for the whole guild: a Guildmaster with one machine a
 On `main` today:
 
 - `config.Load` falls back to `config.Parse` when no sibling `managed.toml` exists, so a copy with only `config.toml` loads ([configuration](configuration.md)).
-- Repositories, their paths, owner machine, merge policy and workflow, and the Artisan profiles are all in `config.toml`, so a standalone copy already holds its own guard rails for repositories and merging.
+- Repositories, their paths, owner machine, merge requirements and workflow, and the Artisan profiles are all in `config.toml`, so a standalone copy already holds its own guard rails for repositories and merging.
 - `Config.Setting` gives a local value only where the managed key allows it, and a local value for a non-overridable managed key is refused, so managed keys win.
 - Rollouts write only `managed.toml` and never `config.toml` (D14), and refuse a copy whose repositories differ from the roster.
 - `guildhall task new` loads the combined config and binds its digest to the task, so a changed managed revision reaches new tasks only (R1.62).
@@ -28,7 +28,7 @@ On `main` today:
 - Nothing records which mode a copy is in; the mode is implied by whether `managed.toml` exists.
 - The config key `mode` already means the copy's role, `steward` or `director` (R1.9), so the management mode cannot reuse it.
 - `config.Parse` still accepts legacy inline `[managed]` settings in `config.toml`; in a standalone copy no Steward owns them.
-- Managed settings are flat string keys, so repositories and merge policy cannot be managed today: they are local in both modes, and a Director copy's own files are the only record of them.
+- Managed settings are flat string keys, so repositories and merge requirements cannot be managed today: they are local in both modes, and a Director copy's own files are the only record of them.
 - Nothing stops a local edit of `managed.toml`: its checksum line detects a damaged transfer, not who wrote it.
 - There are no enrol or leave commands, no store events for them and no status feed.
 - Tests load config one way per case; nothing runs a suite in both modes.
@@ -60,7 +60,7 @@ The binary enforces the same guard rails in both modes; only where their values 
 | Guard rail | Standalone | Managed |
 |---|---|---|
 | Allowed repositories | `[[repository]]` in `config.toml` | The same, checked against the roster at each rollout |
-| Merge rule | `merge_policy` per repository | The same; a future managed key may only tighten it to `approval` |
+| Merge rule | `[repository.merge.requires]` per repository | The same; a future managed key may only turn requirements on |
 | Attempt caps | `max_running_attempts` and `max_attempts_per_day` under `[local]` | Managed keys, read-only to the Director |
 
 The binary's enforcement is described in [the Director's guard rails](director.md#guard-rails).

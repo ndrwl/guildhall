@@ -1,10 +1,10 @@
 // Package forge is Guildhall's boundary to the host of a repository's pull requests: pushing a task's head
 // to its branch, opening or updating its pull request, reading the checks of a pushed head and merging it under
-// the repository's merge policy (docs/contracts/forge.md).
+// the repository's merge requirements (docs/contracts/forge.md).
 //
 // Guildhall prescribes only these edges. It pushes only a task branch, never the base; it merges only the
-// head the Guildmaster's merge decision was bound to, with a squash merge; and it never bypasses the forge's
-// branch protection, required checks or review rules. Anything the forge refuses is ErrRefused, for the
+// head its merge decision or recorded merge authorization (deliver-<k>-authorized) is bound to, with a squash
+// merge; and it never bypasses the forge's branch protection, required checks or review rules. Anything the forge refuses is ErrRefused, for the
 // Director to recover from. Credentials stay in the forge program's own sign-in store: nothing here reads,
 // stores or passes one.
 package forge

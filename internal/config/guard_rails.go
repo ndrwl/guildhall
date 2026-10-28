@@ -30,23 +30,23 @@ var ErrRepositoryNotListed = errors.New("guard rail repositories: the config doe
 type GuardRails struct {
 	// Repositories are the ids of the listed repositories, in config order; every other repository is refused.
 	Repositories []string `json:"repositories"`
-	// MergePolicies is each listed repository's merge_policy, which deliver enforces.
-	MergePolicies map[string]MergePolicy `json:"merge_policies"`
+	// MergeRequires is each listed repository's effective merge requirements, which deliver enforces.
+	MergeRequires map[string]MergeRequires `json:"merge_requires"`
 	// MaxRunningAttempts and MaxAttemptsPerDay are the attempt caps. MaxRunningAttempts is at least 1;
 	// MaxAttemptsPerDay is at least 0, and 0 is no daily cap.
 	MaxRunningAttempts int `json:"max_running_attempts"`
 	MaxAttemptsPerDay  int `json:"max_attempts_per_day"`
 }
 
-// GuardRails returns the effective guard rails: the listed repositories and their merge policies, and each cap's
+// GuardRails returns the effective guard rails: the listed repositories and their merge requirements, and each cap's
 // effective setting, its default when unset. MaxAttemptsPerDay may be 0, which is no daily cap. A cap that is not a
 // plain decimal integer in its range (at least 1, or at least 0 for max_attempts_per_day) is an error naming its
 // key; Parse refuses one already.
 func (c *Config) GuardRails() (GuardRails, error) {
-	g := GuardRails{Repositories: []string{}, MergePolicies: map[string]MergePolicy{}}
+	g := GuardRails{Repositories: []string{}, MergeRequires: map[string]MergeRequires{}}
 	for _, r := range c.Repositories {
 		g.Repositories = append(g.Repositories, r.ID)
-		g.MergePolicies[r.ID] = r.MergePolicy
+		g.MergeRequires[r.ID] = r.Merge.Requires.Effective()
 	}
 	var err error
 	if g.MaxRunningAttempts, err = c.capSetting(MaxRunningAttemptsKey, DefaultMaxRunningAttempts); err != nil {

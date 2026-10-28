@@ -31,7 +31,9 @@ id = "site"
 path = 'C:/src/site'
 remote = "https://github.com/example/site.git"
 owner_machine = "workstation"
-merge_policy = "auto"
+
+[repository.merge.requires]
+guildmaster_approval = false
 `
 
 const managedFixture = `schema_version = 1

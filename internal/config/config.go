@@ -37,16 +37,41 @@ const (
 	ModeDirector Mode = "director"
 )
 
-// MergePolicy decides how a repository's finished work is merged.
-type MergePolicy string
+// MergeOptions are a repository's merge settings, [repository.merge] (docs/configuration.md#merge-requirements).
+type MergeOptions struct {
+	Requires MergeRequires `toml:"requires"`
+}
 
-const (
-	// MergeApproval asks the Guildmaster before every merge; it is the default.
-	MergeApproval MergePolicy = "approval"
-	// MergeAuto merges only when checks pass, the independent review is complete
-	// for the exact head and the work is within accepted scope; otherwise it asks.
-	MergeAuto MergePolicy = "auto"
-)
+// MergeRequires is what a task's pull request needs before deliver merges it, [repository.merge.requires].
+// A nil field is a key the config does not set, which is required, so the zero value requires everything, as a
+// config without the section does. Read a requirement through its method, never its field.
+type MergeRequires struct {
+	// GuildmasterApproval requires the Guildmaster's merge answer at the deliver decision; when false, deliver
+	// merges by itself once every other requirement holds.
+	GuildmasterApproval *bool `toml:"guildmaster_approval" json:"guildmaster_approval"`
+	// ArtisanApproval requires every earlier review step's latest outcome, from the independent review Artisan,
+	// to approve the delivered head, the accepted spec and the current standards; no answer merges over it.
+	ArtisanApproval *bool `toml:"artisan_approval" json:"artisan_approval"`
+	// CIGreen requires the validation input to be a passed result for the delivered head; no answer merges over it.
+	CIGreen *bool `toml:"ci_green" json:"ci_green"`
+	// NothingOpen requires those review outcomes to list no findings and the task to have no unanswered decision
+	// but deliver's own; the Guildmaster's merge answer overrides it.
+	NothingOpen *bool `toml:"nothing_open" json:"nothing_open"`
+}
+
+func required(b *bool) bool { return b == nil || *b }
+
+// Guildmaster reports whether guildmaster_approval is required; Artisan, CI and Open report the others.
+func (m MergeRequires) Guildmaster() bool { return required(m.GuildmasterApproval) }
+func (m MergeRequires) Artisan() bool     { return required(m.ArtisanApproval) }
+func (m MergeRequires) CI() bool          { return required(m.CIGreen) }
+func (m MergeRequires) Open() bool        { return required(m.NothingOpen) }
+
+// Effective returns m with every requirement set to its effective value.
+func (m MergeRequires) Effective() MergeRequires {
+	b := func(v bool) *bool { return &v }
+	return MergeRequires{GuildmasterApproval: b(m.Guildmaster()), ArtisanApproval: b(m.Artisan()), CIGreen: b(m.CI()), NothingOpen: b(m.Open())}
+}
 
 // DefaultWorkflow is the workflow a repository runs when it names none.
 const DefaultWorkflow = "default"
@@ -180,11 +205,12 @@ type ManagedSetting struct {
 
 // Repository is one repository a Director owns.
 type Repository struct {
-	ID           string      `toml:"id"`
-	Path         string      `toml:"path"`
-	Remote       string      `toml:"remote"`
-	OwnerMachine string      `toml:"owner_machine"`
-	MergePolicy  MergePolicy `toml:"merge_policy"`
+	ID           string `toml:"id"`
+	Path         string `toml:"path"`
+	Remote       string `toml:"remote"`
+	OwnerMachine string `toml:"owner_machine"`
+	// Merge holds what deliver requires before it merges; a missing section requires everything.
+	Merge MergeOptions `toml:"merge"`
 	// Workflow names the Director's workflow definition this repository runs.
 	Workflow string `toml:"workflow"`
 	// WorkflowOverrides chooses step actors for this repository only, keyed by step id (workflow.ApplyOverrides).
@@ -256,9 +282,6 @@ func Parse(data []byte) (*Config, error) {
 func (c *Config) applyDefaults() {
 	for i := range c.Repositories {
 		r := &c.Repositories[i]
-		if r.MergePolicy == "" {
-			r.MergePolicy = MergeApproval
-		}
 		if r.Workflow == "" {
 			r.Workflow = DefaultWorkflow
 		}
@@ -456,9 +479,6 @@ func (c *Config) validate() []string {
 			add("%s: owner_machine is required", name)
 		} else if !slices.Contains(machines, r.OwnerMachine) {
 			machines = append(machines, r.OwnerMachine)
-		}
-		if r.MergePolicy != MergeApproval && r.MergePolicy != MergeAuto {
-			add(`%s: merge_policy must be "approval" or "auto", not %q`, name, r.MergePolicy)
 		}
 		if !workflow.ValidID(r.Workflow) {
 			add("%s: invalid workflow name %q", name, r.Workflow)

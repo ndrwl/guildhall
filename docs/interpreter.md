@@ -2,7 +2,7 @@
 
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
-It follows `changes_requested` and `failed` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review and validation gates before `deliver`, [publishes and merges](#publish-and-deliver) through the forge and [validates](#validate) the published head against the forge's checks; it hands [Director stages](#director-stages) to the Director; the checks gate, automatic merging and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
+It follows `changes_requested` and `failed` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review and validation gates before `deliver`, [publishes and merges](#publish-and-deliver) through the forge and [validates](#validate) the published head against the forge's checks; it hands [Director stages](#director-stages) to the Director; the checks gate and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
 [`task start`, `step done`, `step finish`, `step retry` and `step send-back`](running.md) run it from the command line; from a copy, each attempt's launcher runs them itself as the task's [watcher](running.md#the-watcher).
 
 ## Seams
@@ -23,7 +23,7 @@ The engine consumes eight narrow interfaces, declared in `internal/interp` besid
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
 `Engine.Workflow` returns the definition a task's revision names, and the engine refuses one whose name or digest differs (`ErrRevision`).
-`Engine.Config` gives each profile's adapter and each repository's path, remote and merge policy; an Artisan step without a profile is refused before admission or advancement, with a remedy to set a profile on that step in a custom workflow.
+`Engine.Config` gives each profile's adapter and each repository's path, remote and merge requirements, read at every advance; an Artisan step without a profile is refused before admission or advancement, with a remedy to set a profile on that step in a custom workflow.
 `Engine.StandardsRevision` supplies the central standards revision presented for human reviews, following the [review outcome revision contract](configuration.md#review-outcome).
 The engine persists that revision, the subject, and (for code review) the accepted-spec digest before opening the decision, so later configuration changes cannot change its provenance.
 
@@ -81,9 +81,9 @@ After intake, the engine walks the steps in order, from the records, and stops a
   File and record writes are replay-safe.
 - **Publish.** The engine pushes the head to the task branch and records its pull request; see [publish and deliver](#publish-and-deliver).
 - **Validate.** The engine reads the forge's checks of the published head and waits while they are pending; see [validate](#validate).
-- **Deliver.** The [review gate](#review-gate) and the [validation gate](#validate) are checked first.
-  Under the `approval` merge policy the engine then opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits; a head that moved since the last merge decision opens the next round.
-  The answer is acted on as in [publish and deliver](#publish-and-deliver); the `auto` policy is refused with `ErrUnsupported`.
+- **Deliver.** The [review gate](#review-gate) and the [validation gate](#validate) are checked first, each unless the repository's [merge requirements](configuration.md#merge-requirements) turn it off.
+  When `guildmaster_approval` is required, or another requirement fails, the engine then opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits; a head that moved since the last merge decision opens the next round.
+  The answer is acted on as in [publish and deliver](#publish-and-deliver), which also describes the merge Guildhall makes by itself.
 
 A `rejected` outcome, or any Guildmaster answer other than `approved` and `changes_requested`, fails with `ErrUnsupported`.
 
@@ -120,7 +120,7 @@ A stage the Director abandons is finished `--failed`: the task waits for the Dir
 
 ## Publish and deliver
 
-Guildhall prescribes only the edges of delivery: what is pushed where, the pull request, and merging under the repository's merge policy without bypassing the forge's protection ([decision](decisions/0060-delivery-stage.md)).
+Guildhall prescribes only the edges of delivery: what is pushed where, the pull request, and merging under the repository's merge requirements without bypassing the forge's protection ([decision](decisions/0060-delivery-stage.md)).
 Inside its task copy an Artisan uses git as it likes, and the Director decides how to recover from anything the forge refuses.
 Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts/forge.md); with no `Engine.Forge`, publishing and merging are refused with `ErrUnsupported`.
 
@@ -137,21 +137,33 @@ The engine then records, in order:
 
 A new head, such as a build round after review findings, publishes the next round and updates the same open pull request.
 
-**Deliver** finds the pull request through its `head` input: when that input is a publish step's output, the merge decision's question names the pull request URL.
+**Deliver** reads the repository's [merge requirements](configuration.md#merge-requirements) from the current configuration and evaluates them in order on every advance ([decision](decisions/merge-requires.md)):
+
+1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; when one is not required its gate is skipped, but its state is still reported.
+2. The pull request's [mergeability](#mergeability-observations): a behind or conflicting pull request waits for the Director before any decision opens.
+3. `nothing_open`: the latest outcomes of the review steps before deliver list no findings, advisory ones included, and the task has no unanswered decision but the deliver step's own.
+4. `guildmaster_approval`: when required, the engine opens the merge decision as described above.
+   When not required and every other required requirement holds, it records `deliver-<k>-authorized` (`tasks/<repo>/<task>/deliver-<k>/authorized.json`), schema `guildhall.merge-authorization/1`, holding the head, the pull request, the four effective requirements, the mergeability state and each requirement's condition with the names of its evidence (the review outcome documents, the validation result and any unanswered decisions), then merges with no decision under the merge id `deliver-<k>`.
+   When not required but `nothing_open` fails, it falls back: it opens the merge decision as if `guildmaster_approval` were required, and the question begins "Guildhall did not merge by itself: " and the failed requirements.
+
+When that input is a publish step's output, the merge decision's question names the pull request URL.
+Its question lists each requirement as `holds`, `fails: <reason>` or `not required`; a `merge` answer overrides a failing `nothing_open`, and nothing else.
+A merge authorized for a head is reused on replay, so a crash after the authorization merges the same head with no decision, whatever the requirements say by then.
+Below, the merge id `<merge>` is the decision's id, or `deliver-<k>` for a merge Guildhall made by itself.
 A `hold` answer merges nothing: the task waits for the Director (`director`, naming the decision) and the Director is told as `<repo>.<task>.merge-held.<decision>`.
-A `merge` answer calls `Forge.Merge` for the recorded remote and pull request number at the decision's head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
+A `merge` answer, or a merge Guildhall authorized, calls `Forge.Merge` for the recorded remote and pull request number at the head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
 A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
-When the forge merges, the engine records `<decision>-merge` (`tasks/<repo>/<task>/<decision>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<decision>`, type `merged`, [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
+When the forge merges, the engine records `<merge>-merge` (`tasks/<repo>/<task>/<merge>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<merge>`, type `merged`, saying "(decision <merge>)" or "(merged by Guildhall, <merge>-authorized)", [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
 Before marking it `done`, when `quality_audit_sample` (default 5, 0 off, 1 every task), independently of self-review, [samples](configuration.md#quality-settings) the task for the Guildmaster's audit ([G4](quality.md#honesty-and-evidence-g)), it opens decision `audit`, kind `audit`, bound to the head that merged and naming the pull request, with options `yes` and `no` for its first question, and sends it to the Director like every decision; the wait is still `done`, and answering it records the answer only.
 A later advance of a done task is refused with `ErrTaskClosed`.
 
 When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is merged.
-The engine records the refusal as `<decision>-refused`, then `<decision>-refused-2` and on (`tasks/<repo>/<task>/<decision>/refused-<digest>.json`, where `<digest>` is the first 12 hex digits of the document's sha256), holding schema `guildhall.merge-refusal/1`, the remote, pull request number and URL, the head and the forge's reason; a refusal whose content one of the decision's refusals already holds is not recorded again, so a repeated or replayed refusal for the same reason is recorded once.
-The task then waits for the Director and the Director is sent `<repo>.<task>.merge-refused.<decision>.<digest>`, type `merge-refused`, with the forge's reason, where `<digest>` is the first 12 hex digits of the reason's sha256, so a repeated refusal for the same reason sends nothing new.
+The engine records the refusal as `<merge>-refused`, then `<merge>-refused-2` and on (`tasks/<repo>/<task>/<merge>/refused-<digest>.json`, where `<digest>` is the first 12 hex digits of the document's sha256), holding schema `guildhall.merge-refusal/1`, the remote, pull request number and URL, the head and the forge's reason; a refusal whose content one of the merge's refusals already holds is not recorded again, so a repeated or replayed refusal for the same reason is recorded once.
+The task then waits for the Director and the Director is sent `<repo>.<task>.merge-refused.<merge>.<digest>`, type `merge-refused`, with the forge's reason, where `<digest>` is the first 12 hex digits of the reason's sha256, so a repeated refusal for the same reason sends nothing new.
 There is no automatic rebase or retry: each later advance, such as `task start` once the Director has dealt with the reason, asks the forge to merge again.
 Any other forge error, such as a forge it could not reach, fails the advance, records nothing and sends no `merge-refused` message.
 
-Replay follows the general rule: a crash before `publish-<k>-head` publishes the same head again, and the forge returns the same pull request; a crash after the forge merged but before `<decision>-merge` asks again, and the forge returns the merge it already made.
+Replay follows the general rule: a crash before `publish-<k>-head` publishes the same head again, and the forge returns the same pull request; a crash after the forge merged but before `<merge>-merge` asks again, and the forge returns the merge it already made.
 
 ### Mergeability observations
 
@@ -320,7 +332,7 @@ Ensure is replay safe: the worktree is built beside the working directory and mo
 When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.
 When a merge closes the task, the engine calls `Workspaces.Retire` with the merged head and the task's recorded documents, before marking the task `done`, so a replay retires it again.
 It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.
-Otherwise it removes nothing, and the Director is sent `<repo>.<task>.workspace-kept.<decision>.<digest>`, type `workspace-kept`, naming the directory, the branch and what they hold, where `<digest>` is the first 12 hex digits of the text's sha256; the Director decides what happens to them.
+Otherwise it removes nothing, and the Director is sent `<repo>.<task>.workspace-kept.<merge>.<digest>`, type `workspace-kept`, naming the directory, the branch and what they hold, where `<digest>` is the first 12 hex digits of the text's sha256; the Director decides what happens to them.
 A retirement that fails, such as git refusing to remove the worktree, is reported the same way and never fails the merge or keeps the task open.
 A retirement cut short by an interrupt is not: the advance fails before the task is marked `done`, no `workspace-kept` message is sent, and running the command again replays the merge and retires the working directory again.
 With no `Engine.Workspaces` the working directory is a plain directory, which is how the engine's own tests run; publish cannot push from one.

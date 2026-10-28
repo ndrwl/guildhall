@@ -120,7 +120,7 @@ func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*s
 				"reviewer-opus-strict": {Adapter: interp.MockAdapter},
 				"reviewer-astra":       {Adapter: interp.MockAdapter},
 			},
-			Repositories: []config.Repository{{ID: "app", MergePolicy: config.MergeApproval}},
+			Repositories: []config.Repository{{ID: "app"}},
 		},
 		StandardsRevision: "standards-1",
 		DocumentDir:       t.TempDir(),
