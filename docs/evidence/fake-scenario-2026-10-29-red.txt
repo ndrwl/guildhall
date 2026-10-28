@@ -1,0 +1,155 @@
+--- FAIL: TestLoadScenarioRefusesBadFiles (0.03s)
+    --- FAIL: TestLoadScenarioRefusesBadFiles/header_absent (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "always present"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/absolute_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/escaping_exact (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "exact"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/review_and_status (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "no status"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_step (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "needs a step"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/empty_check (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "exactly one"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/two_operators (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "has 2"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_status (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "status"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/dot-dot_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/dot_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/file_twice (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "twice"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/duplicate_key (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "listed twice"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_schema (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "schema"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/attempt_zero (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "needs a step"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/check_no_section (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "no section"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/unknown_section (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "not header"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_summary (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "summary is empty"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/backslash_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/oversized_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "larger than"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/invalid_review (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "review"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/missing_exact_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "exact"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/not_JSON (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "JSON"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/another_schema (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "newer"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/unknown_field (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "extra"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/unknown_check_key (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "has"
+    scenario_test.go:111: relative path: <nil>, want a refusal
+    scenario_test.go:115: loadScenario of a good file = &{path:/tmp/TestLoadScenarioRefusesBadFiles2664570056/001/scenario.json launches:[] exact:map[]}, <nil>
+--- FAIL: TestScenarioChecks (0.00s)
+panic: runtime error: index out of range [0] with length 0 [recovered, repanicked]
+
+goroutine 71 [running]:
+testing.tRunner.func1.2({0x90de60, 0x7e81ee587e0})
+	/home/andrew/.local/go/src/testing/testing.go:2125 +0x232
+testing.tRunner.func1()
+	/home/andrew/.local/go/src/testing/testing.go:2128 +0x329
+panic({0x90de60?, 0x7e81ee587e0?})
+	/home/andrew/.local/go/src/runtime/panic.go:859 +0x125
+github.com/ndrwl/guildhall/internal/adapter/fake.(*loadedScenario).failures(0x7e81f079380?, 0x33?, {0x7e81eed4960?, 0xf?, 0x7001b0?})
+	/home/andrew/guildhall-director/copy/state/guildhall/d19/work/internal/adapter/fake/scenario.go:305 +0x92a
+github.com/ndrwl/guildhall/internal/adapter/fake.TestScenarioChecks(0x7e81f06f448)
+	/home/andrew/guildhall-director/copy/state/guildhall/d19/work/internal/adapter/fake/scenario_test.go:168 +0xf2
+testing.tRunner(0x7e81f06f448, 0x920358)
+	/home/andrew/.local/go/src/testing/testing.go:2195 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/andrew/.local/go/src/testing/testing.go:2260 +0x4d4
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	0.040s
+FAIL
+--- FAIL: TestLoadScenarioRefusesBadFiles (0.03s)
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_schema (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "schema"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/attempt_zero (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "needs a step"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/two_operators (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "has 2"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/absolute_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/dot-dot_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/backslash_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/not_JSON (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "JSON"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/invalid_review (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "review"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/unknown_check_key (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "has"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/empty_check (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "exactly one"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/unknown_section (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "not header"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/duplicate_key (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "listed twice"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/another_schema (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "newer"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_step (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "needs a step"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/check_no_section (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "no section"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/header_absent (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "always present"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_status (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "status"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/no_summary (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "summary is empty"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/file_twice (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "twice"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/escaping_exact (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "exact"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/unknown_field (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "extra"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/dot_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "relative"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/missing_exact_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "exact"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/oversized_file (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "larger than"
+    --- FAIL: TestLoadScenarioRefusesBadFiles/review_and_status (0.00s)
+        scenario_test.go:106: loadScenario = <nil>, want an error containing "no status"
+    scenario_test.go:111: relative path: <nil>, want a refusal
+    scenario_test.go:115: loadScenario of a good file = &{path:/tmp/TestLoadScenarioRefusesBadFiles3109953311/001/scenario.json launches:[] exact:map[]}, <nil>
+--- FAIL: TestScenarioResponds (0.02s)
+    scenario_test.go:233: plan result = {Identity:{TaskID:t-1 AttemptID:plan-1} Status:succeeded Summary:fake artisan read 9 bytes of prompt, sha256 e68c94e8131c4c0f45b0ff543e76d9b381107b5505fe3e42dba06b3e17e92d31 Outputs:[] LandedRef:}, <nil>
+    scenario_test.go:236: spec.md = "", open spec.md: no such file or directory
+    scenario_test.go:247: build result = {Identity:{TaskID:t-1 AttemptID:build-1} Status:succeeded Summary:fake artisan read 10 bytes of prompt, sha256 0c2558221675df997f23b3c68d5cac2fb9b18a875ab1eeb092f7780bb320a7a3 Outputs:[] LandedRef:}, <nil>
+    scenario_test.go:256: review result = {Identity:{TaskID:t-1 AttemptID:sign-off-2} Status:succeeded Summary:fake artisan read 11 bytes of prompt, sha256 0c9e0381aa08968adb6c7c0d13921758c9b68506cdc05b3bc62e6bdad6b6c23c Outputs:[] LandedRef:}, <nil>
+    scenario_test.go:260: open review-outcome.json: no such file or directory
+--- FAIL: TestScenarioRefusesAFileAliasingTheResult (0.01s)
+    scenario_test.go:284: Run = <nil>, want the alias refused
+--- FAIL: TestScenarioCheckFailureFailsTheAttempt (0.01s)
+    scenario_test.go:302: result = {Identity:{TaskID:t-1 AttemptID:plan-1} Status:succeeded Summary:fake artisan read 57 bytes of prompt, sha256 f94abcab3fb3723b8fb2b8e1585344312436f7297b874a788f651523a788a025 Outputs:[] LandedRef:}, <nil>; want failed with summary "fake scenario: step plan attempt 1: section \"Inputs\" does not contain \"context: inputs/\"; section \"Role\" is present" and no outputs
+    scenario_test.go:307: open /tmp/TestScenarioCheckFailureFailsTheAttempt1670278757/001/scenario.json.records/plan-1.json: no such file or directory
+--- FAIL: TestScenarioRecords (0.01s)
+    scenario_test.go:329: open /tmp/TestScenarioRecords1998645251/001/scenario.json.records/plan-1.json: no such file or directory
+--- FAIL: TestScenarioLoadFailureFailsTheAttempt (0.01s)
+    scenario_test.go:375: Run = <nil>, want the scenario error
+    scenario_test.go:378: result = {Identity:{TaskID:t-1 AttemptID:plan-1} Status:succeeded Summary:fake artisan read 9 bytes of prompt, sha256 e68c94e8131c4c0f45b0ff543e76d9b381107b5505fe3e42dba06b3e17e92d31 Outputs:[] LandedRef:}, <nil>
+    scenario_test.go:380: open /tmp/TestScenarioLoadFailureFailsTheAttempt2506362119/001/scenario.json.records/plan-1.json: no such file or directory
+--- FAIL: TestScenarioRefusesTheOutputDirective (0.01s)
+    scenario_test.go:391: Run = <nil>, want a conflict
+    scenario_test.go:394: result = {Identity:{TaskID:t-1 AttemptID:plan-1} Status:succeeded Summary:fake artisan read 37 bytes of prompt, sha256 77441e27a5f3317f3aace3248eee66086d41d0c2e0178ca9af0bda745ab94c0b Outputs:[{Path:spec.md Description:}] LandedRef:}, <nil>
+    scenario_test.go:397: spec.md: <nil>, want no output written
+--- FAIL: TestScenarioKeepsLifecycleDirectives (0.01s)
+    scenario_test.go:414: result = {Identity:{TaskID:t-1 AttemptID:plan-1} Status:succeeded Summary:fake artisan read 25 bytes of prompt, sha256 9011ec63feda3c1e4c6829e0329c293847b8409f9b7c3c969c6be19b4cf6a46f Outputs:[] LandedRef:}, <nil>
+--- FAIL: TestScenarioInAChildProcess (0.01s)
+    scenario_test.go:458: result = {Identity:{TaskID:t-1 AttemptID:sign-off-2} Status:succeeded Summary:fake artisan read 51 bytes of prompt, sha256 7fdb48ede053c37d56156056f69a6c03c1d71732b676b8dd67b37308066aaa73 Outputs:[] LandedRef:}, <nil>
+    scenario_test.go:460: open /tmp/TestScenarioInAChildProcess3648022792/001/scenario.json.records/sign-off-2.json: no such file or directory
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/adapter/fake	0.138s
+FAIL
