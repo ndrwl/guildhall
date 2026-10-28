@@ -8,7 +8,7 @@ These facts come from the d28 grill; they are not reproduced here.
 d28 is an investigation only (grill decision "d28 - b").
 It delivers this evidence and a recommendation; the fix is a follow-up task for the Director to open.
 
-Every claim below cites a file and line at `78323ce2`, a state or log path, or Herdr's help.
+Every claim below cites a file and line at `ee8ee571`, a state or log path, or Herdr's help.
 A claim that needs a source this investigation could not read is marked **needs state read** (readable without a lab, by a session allowed to read the copy's `state/`, `~/.claude/` and Herdr's help) or **needs the lab run** (needs a guarded `fm-lab-` Herdr session).
 
 ## Summary
@@ -156,7 +156,7 @@ The tests that pin today's behaviour are `TestReportAgentRegistersTheResumeComma
 
 ## Sources
 
-Code and docs were re-checked at `78323ce2`, the `main` commit this branch is rebased onto; the line numbers above are from that revision.
+Code and docs were re-checked at `ee8ee571`, the `main` commit this branch is rebased onto; the line numbers above are from that revision (unchanged from `78323ce2`, since `ee8ee571` only adds `docs/evidence/github-merge-queue-2026-10.md`).
 
 The d28 build attempt (build-1, builder profile) attempted each state read in the spec on 2026-10-28; the sandbox refused all of them:
 
