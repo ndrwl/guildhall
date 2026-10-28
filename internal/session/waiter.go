@@ -77,6 +77,12 @@ func (w *waiters) poll(id string, hold time.Duration) (string, error) {
 		w.id, w.retire = id, make(chan struct{})
 		w.polls = 0
 	}
+	// A spent id polls again only after an orphaned server-side poll: the client's call context ended, but poll has
+	// no context, so it went on to take a line the client never saw (recorded woke, handed++). The client then repolls
+	// with the same id, and clearing spent registers it again. Nothing is lost: the message stays unread, and the
+	// coming refresh wakes the Director with the unread counts, since Refresh accepts the newest id; any later wake
+	// also reaches the re-registered waiter. No missed-wake notice is shown for that wake, because it was recorded
+	// woke and not no waiter.
 	w.spent = false
 	if w.wake == nil {
 		w.wake = make(chan struct{})
