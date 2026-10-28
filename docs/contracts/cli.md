@@ -31,6 +31,7 @@ Ordering and journal failures warn on stderr and return the created workspace su
 `artisan_order_lab_test.go` exercises the production host and socket boundary in the guarded named-session lab ([evidence](../evidence/artisan-child-workspaces-2026-10-26-live.txt)).
 No session retains hidden mode; result-only advances and cancellation do not resolve Herdr.
 The internal owned `artisan start --pane-launch` bridge detaches the same start invocation without that flag and streams `launcher.log`; it never forwards terminal closure as a stop request.
+Its internal `--workspace-close-after <duration>` flag, refused without `--pane-launch` and also dropped from the detached invocation, is the effective `artisan_workspace_close_after` its finish line states (`launch.FinishLine`); `artisan_test.go` and `labels_test.go` pin the flag and the line.
 The opt-in `TestWorkflowArtisanHerdrLab` and ordinary CI's pane stand-in are described in the [launch contract](launch.md#tests).
 The `artisan` verbs follow the [role grammar](../decisions/0053-cli-role-grammar.md): help lists every one, and `artisan run`, the pre-release name of `start`, is a usage error that names `artisan start`; their repository flag is `--repo`, and the pre-release `--repository` is a usage error that names `--repo`.
 `artisan harness inventory|kill-owned|probe --lab` is the lab's [test tooling](../artisan.md#harness), refused without `--lab`.

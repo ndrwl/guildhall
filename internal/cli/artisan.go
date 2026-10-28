@@ -181,6 +181,24 @@ func (a *App) printJSON(v any) int {
 // artisanStart launches one Artisan attempt: owned by this process as its
 // launcher, or with --herdr-session in a new tab of a named Herdr session,
 // waiting for its result file.
+// bridgeArgs are the artisan start arguments of a --pane-launch bridge without
+// the bridge's own flags, --pane-launch and launch.WorkspaceCloseAfterFlag, so
+// the launcher it detaches is the ordinary owned start.
+func bridgeArgs(args []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		switch arg := args[i]; {
+		case arg == "--pane-launch" || strings.HasPrefix(arg, "--pane-launch="),
+			strings.HasPrefix(arg, launch.WorkspaceCloseAfterFlag+"="):
+		case arg == launch.WorkspaceCloseAfterFlag:
+			i++
+		default:
+			out = append(out, arg)
+		}
+	}
+	return out
+}
+
 func (a *App) artisanStart(args []string) int {
 	fl := flag.NewFlagSet("artisan start", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
@@ -190,7 +208,7 @@ func (a *App) artisanStart(args []string) int {
 		herdrExec                            stringList
 		profile                              string
 		settings                             adapter.Settings
-		timeout, stall                       time.Duration
+		timeout, stall, closeAfter           time.Duration
 		stopOnTimeout, advance, paneLaunch   bool
 		id                                   adapter.Identity
 		owned                                attemptFlags
@@ -206,6 +224,7 @@ func (a *App) artisanStart(args []string) int {
 	fl.Var(&herdrExec, "herdr-exec", "Herdr program, then leading arguments (repeat per word)")
 	fl.StringVar(&label, "tab-label", "", "tab label")
 	fl.BoolVar(&paneLaunch, "pane-launch", false, "internal pane bridge: detach ownership and stream the launcher log")
+	fl.DurationVar(&closeAfter, strings.TrimPrefix(launch.WorkspaceCloseAfterFlag, "--"), -1, "internal pane bridge: the artisan_workspace_close_after its finish line states; negative is unknown")
 	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
 	fl.DurationVar(&stall, "stall-interval", 0, "send the Director worker-stalled when the worker is silent this long; zero observes nothing")
 	fl.StringVar(&profile, "profile", "", "profile declared by the Director copy")
@@ -216,7 +235,11 @@ func (a *App) artisanStart(args []string) int {
 		return a.usageError("artisan start: " + err.Error())
 	}
 	id.TaskID, id.AttemptID = owned.task, owned.attempt
+	closeAfterSet := false
+	fl.Visit(func(f *flag.Flag) { closeAfterSet = closeAfterSet || "--"+f.Name == launch.WorkspaceCloseAfterFlag })
 	switch {
+	case closeAfterSet && !paneLaunch:
+		return a.usageError("artisan start: " + launch.WorkspaceCloseAfterFlag + " goes with --pane-launch")
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("artisan start: unexpected argument %q", fl.Arg(0)))
 	case !slices.Contains(runtimes.Names(), adapterName):
@@ -258,13 +281,8 @@ func (a *App) artisanStart(args []string) int {
 			if err != nil {
 				return a.fail(err)
 			}
-			argv := []string{exe, "artisan", "start"}
-			for _, arg := range args {
-				if arg != "--pane-launch" && !strings.HasPrefix(arg, "--pane-launch=") {
-					argv = append(argv, arg)
-				}
-			}
-			if err := launch.Present(argv, os.Environ(), filepath.Join(at.Dir(), launch.LogFile), a.Stderr); err != nil {
+			argv := append([]string{exe, "artisan", "start"}, bridgeArgs(args)...)
+			if err := launch.Present(argv, os.Environ(), filepath.Join(at.Dir(), launch.LogFile), closeAfter, a.Stderr); err != nil {
 				return a.fail(err)
 			}
 			return 0

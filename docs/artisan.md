@@ -468,6 +468,7 @@ The [Claude adapter](adapters.md#claude-adapter) defines the plain live stream's
 This is a watchable print-mode Artisan, not an interactive model session.
 Closing the workspace or tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
 After the launcher and its watcher finish, the bridge prints a finished line and leaves the workspace open for inspection until the Director session's supervisor closes it.
+The launcher passes the bridge the effective `artisan_workspace_close_after` as the internal `--workspace-close-after` flag, so the line states it: `This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep workspaces open.`, or, when the setting is `0`, that the workspace stays open.
 A person may close the presentation sooner without losing the attempt's log, result or isolated copy.
 
 An attempt-local `pane-launch.json` single-use claim is written before opening a pane, then records the tab binding before typing.
