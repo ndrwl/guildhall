@@ -23,3 +23,4 @@ The choices the implementation made within that shape:
 
 Out of this change: the `auto` merge policy stays refused, the merge method stays squash, and nothing rebases a branch behind its base.
 The `auto` policy is superseded by [merge requirements](merge-requires.md).
+"Nothing rebases a branch behind its base" is superseded by [the merge queue and tiered rebase](merge-queue-rebase.md): validate rebases a conflicting pull request, and the merge queue rebases its front; a pull request that is only behind still reads its checks unrebased at validate.

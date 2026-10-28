@@ -15,9 +15,10 @@ import (
 	"github.com/ndrwl/guildhall/internal/git"
 )
 
-// Workspaces makes a task's working directory a git worktree of its repository and reads the task branch's tip,
-// base and ancestry for the code-head check; git.Program implements it (its contract is git.Program.Ensure,
-// FastForward, Retire, Tip, IsAncestor and Base), and gittest.Workspaces is its double.
+// Workspaces makes a task's working directory a git worktree of its repository, reads the task branch's tip,
+// base and ancestry for the code-head check, and replays the task's change onto a base tip for the tiered rebase;
+// git.Program implements it (its contract is git.Program.Ensure, FastForward, Retire, Tip, IsAncestor, Base,
+// Rebase, Squash, Adopt and Diff), and gittest.Workspaces is its double.
 type Workspaces interface {
 	Ensure(ctx context.Context, w git.Workspace) error
 	FastForward(ctx context.Context, w git.Workspace) (kept string, err error)
@@ -25,6 +26,10 @@ type Workspaces interface {
 	Tip(ctx context.Context, repository, branch string) (string, error)
 	IsAncestor(ctx context.Context, repository, commit, head string) (bool, error)
 	Base(ctx context.Context, repository, branch string) (string, error)
+	Rebase(ctx context.Context, r git.Replay) (git.Rebased, error)
+	Squash(ctx context.Context, repository, base, head string) (string, error)
+	Adopt(ctx context.Context, w git.Workspace, from, to string) error
+	Diff(ctx context.Context, repository, a, b string) ([]byte, error)
 }
 
 var _ Workspaces = git.Program{}

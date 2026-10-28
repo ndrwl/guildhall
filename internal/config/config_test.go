@@ -2,8 +2,10 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -219,6 +221,60 @@ func TestMergeRequires(t *testing.T) {
 				t.Fatalf("fixture does not contain %q", c.old)
 			}
 			_, err := Parse([]byte(strings.Replace(base, c.old, c.new, 1)))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %v does not mention %q", err, c.want)
+			}
+		})
+	}
+}
+
+// TestRebaseSettings: [repository.merge] defaults to reapprove_after_rebase = major_conflicts and 3 files and 50 lines
+// for minor_conflicts; every kind is accepted and orders the threshold, and an unknown kind, never without
+// artisan_approval, a bound below 1 and an unknown key are refused.
+func TestRebaseSettings(t *testing.T) {
+	cfg, err := Parse([]byte(director(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := cfg.Repositories[1].Merge
+	if m.Reapprove() != RebaseMajorConflicts || m.MinorFiles() != 3 || m.MinorLines() != 50 {
+		t.Fatalf("defaults = %s, %d, %d", m.Reapprove(), m.MinorFiles(), m.MinorLines())
+	}
+	kinds := []RebaseKind{RebaseNoConflicts, RebaseMinorConflicts, RebaseMajorConflicts, RebaseNever}
+	for _, threshold := range kinds {
+		section := fmt.Sprintf("[repository.merge]\nreapprove_after_rebase = %q\nminor_conflict_files = 2\nminor_conflict_lines = 7\n\n[repository.merge.requires]\n", threshold)
+		cfg, err := Parse([]byte(strings.Replace(director(t), "[repository.merge.requires]\n", section, 1)))
+		if err != nil {
+			t.Fatalf("%s: %v", threshold, err)
+		}
+		m := cfg.Repositories[1].Merge
+		if m.Reapprove() != threshold || m.MinorFiles() != 2 || m.MinorLines() != 7 {
+			t.Fatalf("%s: parsed %+v", threshold, m)
+		}
+		for _, k := range kinds[:3] {
+			if got, want := m.NeedsReapproval(k), k.Rank() >= threshold.Rank(); got != want {
+				t.Errorf("threshold %s, kind %s: needs reapproval %v, want %v", threshold, k, got, want)
+			}
+		}
+		if threshold == RebaseNever && slices.ContainsFunc(kinds[:3], m.NeedsReapproval) {
+			t.Errorf("never asks for a %v rebase", kinds[:3])
+		}
+	}
+	for name, c := range map[string]struct{ section, want string }{
+		"unknown kind":   {"reapprove_after_rebase = \"always\"", "must be no_conflicts, minor_conflicts, major_conflicts or never"},
+		"never":          {"reapprove_after_rebase = \"never\"\n\n[repository.merge.requires]\nartisan_approval = false", "needs merge.requires.artisan_approval"},
+		"files":          {"minor_conflict_files = 0", "minor_conflict_files must be at least 1"},
+		"lines":          {"minor_conflict_lines = -1", "minor_conflict_lines must be at least 1"},
+		"unknown key":    {"conflict_budget = 3", "unknown keys: repository.merge.conflict_budget"},
+		"not a string":   {"reapprove_after_rebase = 3", "reapprove_after_rebase"},
+		"not an integer": {"minor_conflict_lines = \"50\"", "minor_conflict_lines"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			data := strings.Replace(director(t), "[repository.merge.requires]\n", "[repository.merge]\n"+c.section+"\n\n[repository.merge.requires]\n", 1)
+			if name == "never" {
+				data = strings.Replace(director(t), "[repository.merge.requires]\n", "[repository.merge]\n"+c.section+"\n", 1)
+			}
+			_, err := Parse([]byte(data))
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("error %v does not mention %q", err, c.want)
 			}

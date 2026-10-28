@@ -22,6 +22,7 @@ import (
 const taskUsage = `usage:
   guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
   guildhall task priority --store <path> --repo <id> <task> <level>
+  guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> --repo <id> <task> --json
   guildhall task list --store <path> [--repo <id>] --json
   guildhall task timeline --store <path> --repo <id> <task> --json
@@ -116,6 +117,8 @@ func (a *App) task(args []string) int {
 		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "depends-on": true, "fixes": true, "priority": true}
 	case "priority":
 		want, allowed = 2, map[string]bool{"store": true, "repo": true}
+	case "hold-merge":
+		want, allowed = 1, map[string]bool{"store": true, "repo": true}
 	case "show", "timeline", "files":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "json": true}
 	case "list":
@@ -176,7 +179,7 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("task finding rule requires --outcome, --finding, --move and --reason")
 	case sub == "review" && !*full:
 		return a.taskUsage("task review requires --full")
-	case sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority" && !*asJSON:
+	case sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority" && sub != "hold-merge" && !*asJSON:
 		return a.taskUsage(fmt.Sprintf("task %s prints JSON only; pass --json", sub))
 	case len(positional) != want:
 		return a.taskUsage(fmt.Sprintf("task %s takes %d arguments", sub, want))
@@ -210,7 +213,7 @@ func (a *App) task(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(noStore(*path))
 	}
-	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority", RequireStore: true})
+	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority" && sub != "hold-merge", RequireStore: true})
 	if err != nil {
 		return fail(err)
 	}
@@ -230,6 +233,8 @@ func (a *App) task(args []string) int {
 		}
 	case "priority":
 		out, err = setPriority(s, *repo, positional[0], level)
+	case "hold-merge":
+		out, err = toggleMergeHold(s, *repo, positional[0])
 	case "show":
 		out, err = showTask(s, *repo, positional[0])
 	case "list":
@@ -245,7 +250,9 @@ func (a *App) task(args []string) int {
 	case "timeline", "files":
 		var h store.TaskHistory
 		if h, err = s.TaskHistory(*repo, positional[0]); err == nil && sub == "timeline" {
-			out = timeline(h)
+			tl := timeline(h)
+			tl.Merged, err = mergedMessage(s, h)
+			out = tl
 		} else if err == nil {
 			out = files(h)
 		}
@@ -433,15 +440,27 @@ func showTask(s *store.Store, repo, id string) (taskDetail, error) {
 	return d, nil
 }
 
-// taskView is a task as task list and task show print it: the immutable record and its priority.
+// taskView is a task as task list and task show print it: the immutable record, its priority and, while it waits
+// in its repository's merge queue, its entry there.
 type taskView struct {
 	store.Task
-	Priority store.Priority `json:"priority"`
+	Priority   store.Priority   `json:"priority"`
+	MergeQueue *mergeQueueEntry `json:"merge_queue,omitempty"`
 }
 
-// taskViews reads each task's priority, DefaultPriority when none was set.
+// taskViews reads each task's priority, DefaultPriority when none was set, and merge-queue entry.
 func taskViews(s *store.Store, tasks []store.Task) ([]taskView, error) {
 	priorities := map[string]map[string]store.Priority{}
+	var repos []string
+	for _, t := range tasks {
+		if !slices.Contains(repos, t.Repository) {
+			repos = append(repos, t.Repository)
+		}
+	}
+	queued, err := queueEntries(s, repos)
+	if err != nil {
+		return nil, err
+	}
 	out := []taskView{}
 	for _, t := range tasks {
 		ps, ok := priorities[t.Repository]
@@ -456,7 +475,7 @@ func taskViews(s *store.Store, tasks []store.Task) ([]taskView, error) {
 		if !ok {
 			p = store.DefaultPriority
 		}
-		out = append(out, taskView{Task: t, Priority: p})
+		out = append(out, taskView{Task: t, Priority: p, MergeQueue: queued[t.Repository+"/"+t.ID]})
 	}
 	return out, nil
 }

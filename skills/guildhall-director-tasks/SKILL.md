@@ -105,9 +105,12 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 
 ## Published PR conflicts and sending work back
 
-A `pr-blocked` message is information for you to judge, not an instruction to rebase.
+Guildhall brings a behind or conflicting PR up to date itself: an authorized merge waits in its repository's merge queue, and the front is rebased onto the base tip, by Guildhall with no conflicts, by a `rebaser` Artisan for minor conflicts, and by an automatic build send-back for major ones (`rebased`, `rebase-escalated` and `approval-carried` messages tell you what happened).
+A PR that conflicts before it is ready is rebased the same way at validate.
+`guildhall task hold-merge --repo app t-12` toggles a hold on a queued merge: the task stays authorized and keeps its place by ready time, but the queue skips it; it is not the `hold` answer on a merge decision.
+A `pr-blocked` or `rebase-stuck` message means Guildhall could not do this itself, because the copy cannot rebase or the front rebased three times in one stay, and is information for you to judge.
 It names the PR URL, head commit and base tip (the base branch's tip when Guildhall measured it), whether it is conflicting or behind under strict branch protection, the conflicting paths and how many commits it is behind.
-Guildhall records one report per head and state, waits for you and never rebases automatically.
+Guildhall records one report per head and state and waits for you.
 You may choose any appropriate recovery; the available options are not a fixed procedure:
 
 - Send a succeeded Artisan step back as a new attempt with your instructions as feedback:

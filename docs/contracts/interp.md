@@ -46,9 +46,17 @@ The [plan-refutation contract](../interpreter.md#plan-refutation) owns document 
 Refutation uses the existing Artisan `Launcher`, `Prompter` and `Records` seams; deterministic tests substitute a scripted launcher or fake runtime rather than calling a model.
 
 `MergeabilityReader` is the narrow forge-observation seam for validate and deliver; GitHub and the forge double implement it, while legacy forges without it retain existing checks/refusal behaviour.
-A conflicting or strict-behind PR records immutable evidence before sending a `pr-blocked` Director message, once per full head and state shared across steps, then waits for the Director.
-The evidence carries PR URL, full head, base tip (the base branch's tip when measured), files, behind count and options; no automatic rebase occurs.
+A conflicting or strict-behind PR that Guildhall cannot [rebase itself](../interpreter.md#tiered-rebase), a front that rebased three times in one stay or a copy that cannot rebase, records immutable evidence before sending a `pr-blocked` (or `rebase-stuck`) Director message, once per full head and state shared across steps, then waits for the Director.
+The evidence carries PR URL, full head, base tip (the base branch's tip when measured), files, behind count and options.
+Otherwise validate rebases a conflicting PR and reads a behind one's checks, and deliver queues the authorized merge and rebases only the front.
 Validate retains the Director wait in its refresh cache; errors are not conflicts and unknown state does not stop the normal checks wait.
+
+[The merge queue](../interpreter.md#the-merge-queue) and [tiered rebase](../interpreter.md#tiered-rebase) ([decision](../decisions/merge-queue-rebase.md)): `MergeQueue`, an optional `Records` extension that `*store.Store` and `cli.storeRecords` implement, with `MergeQueue`, `JoinMergeQueue`, `LeaveMergeQueue`, `ClaimMergeFront` and `ReleaseMergeFront`; records without it make every task its own queue's front.
+Deliver authorizes before it queues, returns `WaitMergeQueue` behind the front, and at the front replays the head onto `Mergeability.Base` through `Workspaces.Rebase`, recording `<deliver>-<k>-rebase-<n>` (`guildhall.rebase/1`), `<deliver>-<k>-rebase-<n>-pr`, `<deliver>-<k>-checks-<head>` and, for a rebase it cannot stand, `<deliver>-<k>-escalated-<n>` (`guildhall.rebase-escalation/1`) with an automatic send-back of the build step.
+A carried-over approval is `<deliver>-<k>-authorized`, `guildhall.merge-authorization/2`, with `carried_from`, `rebase`, `kind` and `spec_digest`.
+Validate records `<validate>-<k>-rebase-<n>` for a conflicting PR, and its result is bound to the rebased head.
+A rebase is refused while any attempt of the task runs, and a front that already rebased three times in one stay waits for the Director instead of rebasing again.
+The messages are `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`.
 `StepSentBack` implements the [send-back admission, feedback and replay contract](../step-send-back.md); invalid requests and changed feedback are `ErrEvent`.
 
 ## Tests

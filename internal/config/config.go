@@ -6,6 +6,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -40,6 +41,57 @@ const (
 // MergeOptions are a repository's merge settings, [repository.merge] (docs/configuration.md#merge-requirements).
 type MergeOptions struct {
 	Requires MergeRequires `toml:"requires"`
+	// ReapproveAfterRebase is the rebase kind from which a rebased head needs a new merge decision; empty is
+	// RebaseMajorConflicts. Read it through Reapprove.
+	ReapproveAfterRebase RebaseKind `toml:"reapprove_after_rebase" json:"reapprove_after_rebase,omitempty"`
+	// MinorConflictFiles and MinorConflictLines bound a minor_conflicts rebase; nil is the default, 3 files and 50
+	// lines. Read them through MinorFiles and MinorLines.
+	MinorConflictFiles *int `toml:"minor_conflict_files" json:"minor_conflict_files,omitempty"`
+	MinorConflictLines *int `toml:"minor_conflict_lines" json:"minor_conflict_lines,omitempty"`
+}
+
+// RebaseKind is how hard a rebase onto the base tip was (docs/interpreter.md#tiered-rebase), and, as
+// reapprove_after_rebase, the kind from which a rebased head needs a new merge decision.
+type RebaseKind string
+
+// The rebase kinds, in order: a later kind is harder. RebaseNever is a threshold only: no rebase reaches it.
+const (
+	RebaseNoConflicts    RebaseKind = "no_conflicts"
+	RebaseMinorConflicts RebaseKind = "minor_conflicts"
+	RebaseMajorConflicts RebaseKind = "major_conflicts"
+	RebaseNever          RebaseKind = "never"
+)
+
+// rebaseKinds are the kinds in order.
+var rebaseKinds = []RebaseKind{RebaseNoConflicts, RebaseMinorConflicts, RebaseMajorConflicts, RebaseNever}
+
+// Rank orders the kinds: no_conflicts is 0 and never 3; an unknown kind is -1.
+func (k RebaseKind) Rank() int { return slices.Index(rebaseKinds, k) }
+
+// The defaults of [repository.merge].
+const (
+	DefaultReapproveAfterRebase = RebaseMajorConflicts
+	DefaultMinorConflictFiles   = 3
+	DefaultMinorConflictLines   = 50
+)
+
+// Reapprove is the effective reapprove_after_rebase.
+func (m MergeOptions) Reapprove() RebaseKind {
+	return cmp.Or(m.ReapproveAfterRebase, DefaultReapproveAfterRebase)
+}
+
+// MinorFiles and MinorLines are the effective minor_conflict_files and minor_conflict_lines.
+func (m MergeOptions) MinorFiles() int { return intOr(m.MinorConflictFiles, DefaultMinorConflictFiles) }
+func (m MergeOptions) MinorLines() int { return intOr(m.MinorConflictLines, DefaultMinorConflictLines) }
+
+// NeedsReapproval reports whether a rebase of kind k needs a new merge decision: k is at or above the threshold.
+func (m MergeOptions) NeedsReapproval(k RebaseKind) bool { return k.Rank() >= m.Reapprove().Rank() }
+
+func intOr(p *int, def int) int {
+	if p == nil {
+		return def
+	}
+	return *p
 }
 
 // MergeRequires is what a task's pull request needs before deliver merges it, [repository.merge.requires].
@@ -500,6 +552,19 @@ func (c *Config) validate() []string {
 		}
 		if !workflow.ValidID(r.Workflow) {
 			add("%s: invalid workflow name %q", name, r.Workflow)
+		}
+		m := r.Merge
+		switch k := m.ReapproveAfterRebase; {
+		case k != "" && k.Rank() < 0:
+			add("%s: merge.reapprove_after_rebase %q must be no_conflicts, minor_conflicts, major_conflicts or never", name, k)
+		case k == RebaseNever && !m.Requires.Artisan():
+			add("%s: merge.reapprove_after_rebase = \"never\" needs merge.requires.artisan_approval", name)
+		}
+		if p := m.MinorConflictFiles; p != nil && *p < 1 {
+			add("%s: merge.minor_conflict_files must be at least 1", name)
+		}
+		if p := m.MinorConflictLines; p != nil && *p < 1 {
+			add("%s: merge.minor_conflict_lines must be at least 1", name)
 		}
 	}
 	if len(machines) > 1 {

@@ -23,6 +23,7 @@ The Guildmaster chose every default to be `true` so that an unattended merge is 
 - **A required `artisan_approval` or `ci_green` is never merged over.** When one does not hold, deliver fails the advance with `ErrReviewGate` or `ErrValidationGate`, as before, whatever `guildmaster_approval` says, and no decision answer can merge over it.
   Only turning the requirement off in the repository's own configuration skips its gate, and the merge question still shows its state.
 - **Behind and conflicting pull requests** still record `pr-blocked-<head>-<state>` and wait for the Director before any decision opens.
+  Superseded by [the merge queue and tiered rebase](merge-queue-rebase.md): the decision opens, or the authorization is recorded, whatever the mergeability, and the merge queue rebases the front.
 - **The Guildmaster's `merge` overrides only `nothing_open`.** With `guildmaster_approval` on, the merge question lists each requirement as `holds`, `fails: <reason>` or `not required`.
 - **Merging without the Guildmaster.** With `guildmaster_approval` off and every other required requirement holding, deliver records `deliver-<k>-authorized` (`guildhall.merge-authorization/1`: the head, the pull request, the effective requirements, the mergeability state and each condition with its evidence) and merges without a decision.
   The merged message says "merged by Guildhall, deliver-<k>-authorized", so `task timeline` shows what allowed the merge.
@@ -36,6 +37,8 @@ Red checks reach the Guildmaster through validate's failed loop and its loop exi
 
 - No size requirement: the engine measures no diff, and the quality size budgets are flagged, never blocked.
 - No head option: the delivered head is always the reviewed head, and a rebase gets a new review round ([D42](0042-rebase-classification.md)).
+  Amended by [the merge queue and tiered rebase](merge-queue-rebase.md): the delivered head may also be one Guildhall rebased from the reviewed head, covered by its recorded rebase, and `[repository.merge]` gains `reapprove_after_rebase`, `minor_conflict_files` and `minor_conflict_lines` beside `requires`.
+  A rebuilt build head still gets a new review round.
 - No CI "if present" option: `no_ci` already passes a head with no checks.
 - No merge method option: squash stays fixed ([D60](0060-delivery-stage.md)).
 - No change to the workflow floor: turning a requirement off changes only what deliver demands, not which steps a workflow must have.

@@ -37,6 +37,8 @@ type TaskHistory struct {
 	DependencyOverride *DependencyOverride
 	// Priority is the task's recorded priority, nil when none was set (DefaultPriority).
 	Priority *TaskPriority
+	// MergeHold is the task's hold-merge record, nil when its merge was never held.
+	MergeHold *MergeHold
 	// Receipts are the receipts whose repository and task are this task's, in sequence order:
 	// its records' mutations and the messages sent to or acknowledged for it.
 	Receipts []Receipt
@@ -78,6 +80,13 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 		switch err := getJSON(repoBucket(tx, repository, bucketTaskPriorities), []byte(taskID), &p); {
 		case err == nil:
 			h.Priority = &p
+		case !errors.Is(err, ErrNotFound):
+			return err
+		}
+		var mh MergeHold
+		switch err := getJSON(repoBucket(tx, repository, bucketMergeHolds), []byte(taskID), &mh); {
+		case err == nil:
+			h.MergeHold = &mh
 		case !errors.Is(err, ErrNotFound):
 			return err
 		}

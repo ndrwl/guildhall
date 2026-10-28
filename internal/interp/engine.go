@@ -83,6 +83,10 @@ const (
 	// WaitDependencies: the dependency gate holds the step, the task's first not run by the Director, until every
 	// task it depends on is done or the Director overrides (docs/interpreter.md#the-dependency-gate).
 	WaitDependencies Wait = "dependencies"
+	// WaitMergeQueue: deliver authorized the task's merge and it waits in its repository's merge queue for the
+	// front, or its merge is held (docs/interpreter.md#the-merge-queue); advancing it again, as the supervisor's
+	// merge-queue watcher does, claims the front when the task is first.
+	WaitMergeQueue Wait = "merge-queue"
 )
 
 // Next is where a task stands after an advance.

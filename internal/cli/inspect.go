@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/store"
@@ -95,10 +96,28 @@ type taskTimeline struct {
 	// DependencyOverride is the Director's dependency override, with its reason; absent when there is none.
 	DependencyOverride *timedOverride `json:"dependency_override,omitempty"`
 	// Priority is the task's priority now, and PriorityChanges every level set, in order.
-	Priority        store.Priority    `json:"priority"`
-	PriorityChanges []timedPriority   `json:"priority_changes"`
-	Events          []store.Receipt   `json:"events"`
-	OmittedKinds    map[string]string `json:"omitted_kinds"`
+	Priority        store.Priority  `json:"priority"`
+	PriorityChanges []timedPriority `json:"priority_changes"`
+	// MergeHolds is every task hold-merge value set, in order: true holds the merge, false releases it.
+	MergeHolds []timedHold `json:"merge_holds"`
+	// Merged says what allowed the task's merge, as the merged message told the Director: a decision,
+	// Guildhall's authorization, or an approval carried over to a rebased head; absent until it merges.
+	Merged       *timedMerge       `json:"merged,omitempty"`
+	Events       []store.Receipt   `json:"events"`
+	OmittedKinds map[string]string `json:"omitted_kinds"`
+}
+
+// timedHold is one hold-merge value with the commit time it was set at.
+type timedHold struct {
+	Held  bool       `json:"held"`
+	SetAt *time.Time `json:"set_at,omitempty"`
+}
+
+// timedMerge is the task's merge as the merged message reported it.
+type timedMerge struct {
+	Message  string    `json:"message"`
+	Text     string    `json:"text"`
+	MergedAt time.Time `json:"merged_at"`
 }
 
 // taskFiles is what task files prints: the task's recorded documents and their digests.
@@ -188,11 +207,41 @@ func timeline(h store.TaskHistory) taskTimeline {
 			out.PriorityChanges = append(out.PriorityChanges, t)
 		}
 	}
+	out.MergeHolds = []timedHold{}
+	if m := h.MergeHold; m != nil {
+		set := byRecord[store.MergeHoldRecord]
+		for i, held := range m.History {
+			t := timedHold{Held: held}
+			if i < len(set) {
+				t.SetAt = &set[i].CommittedAt
+			}
+			out.MergeHolds = append(out.MergeHolds, t)
+		}
+	}
 	slices.SortStableFunc(out.Attempts, func(a, b timedAttempt) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Decisions, func(a, b timedDecision) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Findings, func(a, b timedFindings) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Rulings, func(a, b timedRuling) int { return byStart(a.seq, b.seq) })
 	return out
+}
+
+// mergedMessage reads the merged message the engine sent the Director for the task, the last when there are several,
+// or nil when it has not merged.
+func mergedMessage(s *store.Store, h store.TaskHistory) (*timedMerge, error) {
+	prefix := "message/" + h.Task.Repository + "." + h.Task.ID + "." + store.MessageMerged + "."
+	var out *timedMerge
+	for _, r := range h.Receipts {
+		id, ok := strings.CutPrefix(r.Record, "message/")
+		if r.Operation != "send-message" || !ok || !strings.HasPrefix(r.Record, prefix) {
+			continue
+		}
+		m, err := s.Message(id)
+		if err != nil {
+			return nil, err
+		}
+		out = &timedMerge{Message: id, Text: m.Text, MergedAt: r.CommittedAt}
+	}
+	return out, nil
 }
 
 func files(h store.TaskHistory) taskFiles {

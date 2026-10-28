@@ -279,6 +279,10 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
+	queue, err := a.watchMergeQueue(p, n, dir, copyDir, storePath, state)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
 	u, err := startRuntime(c, n, storePath)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
@@ -292,7 +296,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, closes: closes}
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, closes: closes}
 	if ep != nil {
 		w.turns = ep.Turns()
 		// A session that is not typed into is woken through its waiter, with the notice in its pane while none is
@@ -308,6 +312,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	w.setNotice("")
 	checks.wait()
 	deps.wait()
+	queue.wait()
 	var exit *exec.ExitError
 	switch {
 	case errors.Is(err, errRuntimeOutlived):
@@ -417,6 +422,9 @@ type sessionWatch struct {
 	// deps is the session's dependency watcher, a second checks watcher of the tasks the dependency gate holds,
 	// ticked with checks; nil without one.
 	deps *checksWatch
+	// queue is the session's merge-queue watcher, a third checks watcher of the tasks waiting in a merge queue,
+	// ticked with checks; nil without one.
+	queue *checksWatch
 	// closes is the session's workspace close sweep, ticked at every poll; nil without one.
 	closes *workspaceCloseWatch
 
@@ -496,6 +504,9 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 			}
 			if w.deps != nil {
 				w.deps.tick(time.Now())
+			}
+			if w.queue != nil {
+				w.queue.tick(time.Now())
 			}
 			w.closes.tick(time.Now())
 			decide("")

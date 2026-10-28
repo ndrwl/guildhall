@@ -126,9 +126,17 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		}
 		return false, wait, err
 	}
-	_, blocked, err := r.mergeBlocked(pr, h)
+	// A behind pull request reads its checks as usual: the merge queue rebases it at the front. A conflicting one
+	// runs no checks, so it can never become ready, and waits for the Director.
+	m, err := r.observe(repo, pr, h)
 	if err != nil {
 		return false, Next{}, err
+	}
+	blocked := false
+	if m.State == "conflicting" {
+		if _, blocked, err = r.mergeBlocked(pr, h); err != nil {
+			return false, Next{}, err
+		}
 	}
 	if blocked {
 		if err := r.checksRead(s, h, true); err != nil {
