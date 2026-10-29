@@ -454,8 +454,8 @@ func TestDirectorStatusUsage(t *testing.T) {
 		code int
 		want string
 	}{
-		{"no subcommand", nil, 2, "director: the commands are status, start, ready, pause, resume, stop, handoff, reload, turn-started, turn-ended, wait-wake and context-report"},
-		{"unknown subcommand", []string{"enrol"}, 2, "director: the commands are status, start, ready, pause, resume, stop, handoff, reload, turn-started, turn-ended, wait-wake and context-report"},
+		{"no subcommand", nil, 2, "director: the commands are status, start, ready, pause, resume, stop, handoff, note, reload, turn-started, turn-ended, wait-wake and context-report"},
+		{"unknown subcommand", []string{"enrol"}, 2, "director: the commands are status, start, ready, pause, resume, stop, handoff, note, reload, turn-started, turn-ended, wait-wake and context-report"},
 		{"no json", []string{"status", "--copy", dir}, 2, "prints JSON only; pass --json"},
 		{"no store", []string{"status", "--json"}, 2, "--store and --state are required, or --copy"},
 		{"store without state", []string{"status", "--json", "--store", filepath.Join(dir, "director.store")}, 2, "--store and --state are required, or --copy"},

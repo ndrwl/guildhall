@@ -20,6 +20,13 @@ import (
 // sessionArgs parses the flags of `director pause`, `resume` and `stop`: a copy, or --store and, when withState,
 // --state. It returns the store and state paths, or the usage error's exit status.
 func (a *App) sessionArgs(name string, args []string, withState bool, register func(*flag.FlagSet)) (string, string, int) {
+	path, state, _, code := a.sessionOperands(name, args, withState, nil, register)
+	return path, state, code
+}
+
+// sessionOperands is sessionArgs for a command that also takes exactly the operands named, such as "<id>", which
+// may come before or after its flags. It returns the operands' values in order.
+func (a *App) sessionOperands(name string, args []string, withState bool, operands []string, register func(*flag.FlagSet)) (string, string, []string, int) {
 	fl := flag.NewFlagSet(name, flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
@@ -32,27 +39,36 @@ func (a *App) sessionArgs(name string, args []string, withState bool, register f
 	if register != nil {
 		register(fl)
 	}
-	if err := fl.Parse(args); err != nil {
-		return "", "", a.usageError(name + ": " + err.Error())
+	var values []string
+	for rest := args; ; {
+		if err := fl.Parse(rest); err != nil {
+			return "", "", nil, a.usageError(name + ": " + err.Error())
+		}
+		if fl.NArg() == 0 || len(values) == len(operands) {
+			break
+		}
+		values, rest = append(values, fl.Arg(0)), fl.Args()[1:]
 	}
 	switch err := cp.apply(a.Getenv, path, nil, state); {
 	case fl.NArg() > 0:
-		return "", "", a.usageError(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
+		return "", "", nil, a.usageError(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
+	case len(values) < len(operands):
+		return "", "", nil, a.usageError(fmt.Sprintf("%s: %s is required", name, operands[len(values)]))
 	case err != nil:
-		return "", "", a.usageError(name + ": " + err.Error())
+		return "", "", nil, a.usageError(name + ": " + err.Error())
 	case *path == "" || withState && *state == "":
 		if withState {
-			return "", "", a.usageError(name + ": --store and --state are required, or --copy")
+			return "", "", nil, a.usageError(name + ": --store and --state are required, or --copy")
 		}
-		return "", "", a.usageError(name + ": --store is required, or --copy")
+		return "", "", nil, a.usageError(name + ": --store is required, or --copy")
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
-		return "", "", a.fail(fmt.Errorf("%s: %w", name, noStore(*path)))
+		return "", "", nil, a.fail(fmt.Errorf("%s: %w", name, noStore(*path)))
 	}
 	if !withState {
-		return *path, "", -1
+		return *path, "", values, -1
 	}
-	return *path, *state, -1
+	return *path, *state, values, -1
 }
 
 // liveSession reads the newest session for pause, resume and stop, refusing no session and a stopped one whose

@@ -288,6 +288,22 @@ It prints the record as one JSON line.
 No session, or a newest session that is `stopped`, is exit 1 and records nothing; recording the same note twice in a row in the same session prints the first record, and recording it again after another note records it anew as the newest.
 Each new session's `startup.md` names the newest note, and the [status feed](#status)'s session section carries it as `handoff_note`.
 
+## Notes
+
+```sh
+guildhall director note add --kind promised|guildmaster|plan [--task <repo>/<id>] <text> [--copy <dir> | --store <file>]
+guildhall director note edit <id> <text> [--copy <dir> | --store <file>]
+guildhall director note remove <id> [--reason <text>] [--copy <dir> | --store <file>]
+guildhall director note list [--copy <dir> | --store <file>]
+```
+
+A note is one small record the Director keeps of something no other record holds: a promise to the Guildmaster (`promised`), a preference or context the Guildmaster gave (`guildmaster`), or Director intent (`plan`), optionally about one task.
+Its text is one line of at most 1024 bytes; an edit replaces it, and a remove, with an optional one-line reason of at most 256 bytes, takes the note out of the live notes while the store keeps every version ([store](store.md#director-notes)).
+Only the newest session that is not `stopped` writes notes; any other is exit 1 and records nothing, as is a note naming a task that does not exist.
+To keep tokens low, `add`, `edit` and `remove` print only a receipt such as `n7 added`, and making the same change again prints the same receipt.
+`note list` prints the live notes grouped by kind, each kind under a `### <kind>` line, one line per note, such as `- n7 guildhall/d20 (s16, 2d): rebase after d18 merges`: the id, the task if any, the session that last changed it and its age, then the text, with `[task done, check it]` at the end when the task is `done` or `cancelled`; notes are never removed automatically.
+With no live notes it prints `No notes.`
+
 ## Reload
 
 ```sh

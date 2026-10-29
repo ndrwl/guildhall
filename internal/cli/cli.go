@@ -81,6 +81,14 @@ Commands:
                  stop the Director session and its running attempts
   director handoff --note-file <path|-> --copy <dir>
                  record a handoff note for the Director's next session
+  director note add --kind promised|guildmaster|plan [--task <repo>/<id>] <text> --copy <dir>
+                 keep a one-line note, given to every new Director session at startup
+  director note edit <id> <text> --copy <dir>
+                 replace a note's text
+  director note remove <id> [--reason <text>] --copy <dir>
+                 remove a note; its history stays in the store
+  director note list --copy <dir>
+                 print the live notes, grouped by kind
   director reload [--now] --copy <dir>
                  restart the Director session at a quiet point, or at the end of the turn
   director turn-started --copy <dir>

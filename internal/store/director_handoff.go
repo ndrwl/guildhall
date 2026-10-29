@@ -135,18 +135,8 @@ func (s *Store) RecordHandoffNote(n int, sha256 string, write func(path string) 
 	}{n, sha256, after}
 	r, err := s.mutate(fmt.Sprintf("handoff:%d:%s:%d", n, sha256, after), opRecordHandoffNote, req, func(tx *bolt.Tx, r *Receipt) error {
 		r.Record = handoffRecord(r.Sequence)
-		d, err := latestSession(tx)
-		switch {
-		case errors.Is(err, ErrNotFound):
-			return fmt.Errorf("director session %d: %w", n, ErrNotFound)
-		case err != nil:
+		if err := checkWriterSession(tx, n); err != nil {
 			return err
-		case d.Number < n:
-			return fmt.Errorf("director session %d: %w", n, ErrNotFound)
-		case d.Number > n:
-			return invalid("director session %d is superseded by session %d", n, d.Number)
-		case d.State == DirectorStopped:
-			return invalid("director session %d is stopped", n)
 		}
 		handoffs, err := createDirectorBucket(tx, bucketHandoffs)
 		if err != nil {
