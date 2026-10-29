@@ -96,7 +96,7 @@ func newBinDirector(t *testing.T, cfg string) *binDirector {
 }
 
 func (d *binDirector) try(stdin string, args ...string) (string, string, error) {
-	cmd := exec.Command(d.bin, args...)
+	cmd := binCommand(d.t, d.bin, args...)
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

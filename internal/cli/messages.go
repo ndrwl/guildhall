@@ -20,7 +20,7 @@ const messagesUsage = `usage:
   guildhall messages read --store <path> <message-id>
   guildhall messages ack --store <path> <recipient> <message-id>
 a recipient is "director" or "artisan:<repository>/<task>/<step>/<attempt>"
---copy <dir>, or GUILDHALL_COPY, may stand in for --store and --config: the copy's director.store and config.toml`
+--copy <dir>, or the copy found from the current directory, may stand in for --store and --config: the copy's director.store and config.toml`
 
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
 // It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
@@ -51,10 +51,12 @@ func (a *App) messages(args []string) int {
 	}
 	set := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) { set[f.Name] = true })
-	cerr := cp.apply(a.Getenv, path, cfgPath, nil)
+	cerr := cp.apply(a, path, cfgPath, nil)
 	switch {
 	case cerr != nil:
 		return a.messagesUsage(cerr.Error())
+	case cp.searched:
+		return a.messagesUsage(cp.missing(a).Error())
 	case *path == "":
 		return a.messagesUsage("--store is required, or --copy")
 	case flags.NArg() != want:

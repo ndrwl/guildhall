@@ -33,7 +33,8 @@ var readOnlyGit = []string{"status", "log", "diff", "show", "rev-parse", "ls-fil
 // read-only git commands and `git remote -v` without asking but no git command writing an --output file, no
 // edit tool may change the copy's config.toml or managed.toml, the UserPromptSubmit hook runs TurnStartCommand
 // at the start of every turn, the Stop and StopFailure hooks TurnEndCommand at the end of every turn, the second
-// when a turn ends in an API error, and the status line runs ContextReportCommand with --lanterns.
+// when a turn ends in an API error, and the status line runs ContextReportCommand with --lanterns; each of these
+// and WaitWakeCommand names the copy as CopyCommand does.
 // It is JSON with a trailing newline, the same bytes for the same copy.
 func Settings(copyDir string) []byte {
 	allow := []string{"Bash(guildhall)", "Bash(guildhall *)"}
@@ -65,7 +66,9 @@ func Settings(copyDir string) []byte {
 	type matcher struct {
 		Hooks []command `json:"hooks"`
 	}
-	waiter := command{Type: "command", Command: WaitWakeCommand, Async: true, AsyncRewake: true, Timeout: WaitWakeTimeout}
+	waiter := command{Type: "command", Command: CopyCommand(WaitWakeCommand, copyDir), Async: true, AsyncRewake: true, Timeout: WaitWakeTimeout}
+	turnStart := command{Type: "command", Command: CopyCommand(TurnStartCommand, copyDir)}
+	turnEnd := command{Type: "command", Command: CopyCommand(TurnEndCommand, copyDir)}
 	b, _ := json.MarshalIndent(struct {
 		Permissions permissions          `json:"permissions"`
 		Hooks       map[string][]matcher `json:"hooks"`
@@ -73,11 +76,18 @@ func Settings(copyDir string) []byte {
 	}{permissions{allow, deny}, map[string][]matcher{
 		"SessionStart":     {{[]command{waiter}}},
 		"Notification":     {{[]command{waiter}}},
-		"UserPromptSubmit": {{[]command{{Type: "command", Command: TurnStartCommand}, waiter}}},
-		"Stop":             {{[]command{{Type: "command", Command: TurnEndCommand}, waiter}}},
-		"StopFailure":      {{[]command{{Type: "command", Command: TurnEndCommand}}}},
-	}, command{Type: "command", Command: ContextReportCommand + " --lanterns"}}, "", "  ")
+		"UserPromptSubmit": {{[]command{turnStart, waiter}}},
+		"Stop":             {{[]command{turnEnd, waiter}}},
+		"StopFailure":      {{[]command{turnEnd}}},
+	}, command{Type: "command", Command: CopyCommand(ContextReportCommand, copyDir) + " --lanterns"}}, "", "  ")
 	return append(b, '\n')
+}
+
+// CopyCommand is a hook or status-line command given the copy explicitly, `<command> --copy '<copy>'`, so it does
+// not depend on the directory Claude Code runs it in (docs/decisions/copy-discovery.md). The copy is single-quoted
+// for a POSIX shell, with any ' in it escaped.
+func CopyCommand(command, copyDir string) string {
+	return command + " --copy '" + strings.ReplaceAll(copyDir, "'", `'\''`) + "'"
 }
 
 // absoluteRule writes an absolute path as a Claude Code permission rule path: slash-separated after a leading
@@ -121,8 +131,8 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 func (Adapter) TurnEndHook() bool { return true }
 
 // TurnStartCommand and TurnEndCommand are the UserPromptSubmit and Stop (and StopFailure) hooks of a Director
-// session. They name
-// no copy: the hooks inherit the session's GUILDHALL_COPY, so no path crosses the shell Claude Code runs hooks in.
+// session. Settings gives each the copy with CopyCommand, so a turn's end reaches its supervisor wherever the
+// session has moved its working directory.
 const (
 	TurnStartCommand = "guildhall director turn-started"
 	TurnEndCommand   = "guildhall director turn-ended"
@@ -169,7 +179,23 @@ func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 	for name, data := range lanterns.Files() {
 		files[filepath.ToSlash(filepath.Join(PluginDir, name))] = data
 	}
+	files[CalmFile] = calmFile(copyDir)
 	return files
+}
+
+// CalmFile tells the Lanterns plugin where the copy's Calm preference is, relative to the session directory; a
+// plugin with no CalmFile offers no Calm (docs/lanterns.md).
+const CalmFile = PluginDir + "/calm.json"
+
+// CalmPreference is the copy's Calm preference file, relative to the copy.
+const CalmPreference = "director/lanterns-calm"
+
+// calmFile is CalmFile's JSON for copyDir: {"preference":"<copy>/director/lanterns-calm"}.
+func calmFile(copyDir string) []byte {
+	b, _ := json.Marshal(struct {
+		Preference string `json:"preference"`
+	}{filepath.Join(copyDir, filepath.FromSlash(CalmPreference))})
+	return append(b, '\n')
 }
 
 // PluginDir is the bundled Guildhall plugin in a generated Director workspace.

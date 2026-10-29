@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "guildhall director wait-wake",
+            "command": "guildhall director wait-wake --copy '/home/g/copy'",
             "async": true,
             "asyncRewake": true,
             "timeout": 86400
@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "guildhall director wait-wake",
+            "command": "guildhall director wait-wake --copy '/home/g/copy'",
             "async": true,
             "asyncRewake": true,
             "timeout": 86400
@@ -35,11 +35,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "guildhall director turn-ended"
+            "command": "guildhall director turn-ended --copy '/home/g/copy'"
           },
           {
             "type": "command",
-            "command": "guildhall director wait-wake",
+            "command": "guildhall director wait-wake --copy '/home/g/copy'",
             "async": true,
             "asyncRewake": true,
             "timeout": 86400
@@ -52,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "guildhall director turn-ended"
+            "command": "guildhall director turn-ended --copy '/home/g/copy'"
           }
         ]
       }
@@ -62,11 +62,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "guildhall director turn-started"
+            "command": "guildhall director turn-started --copy '/home/g/copy'"
           },
           {
             "type": "command",
-            "command": "guildhall director wait-wake",
+            "command": "guildhall director wait-wake --copy '/home/g/copy'",
             "async": true,
             "asyncRewake": true,
             "timeout": 86400
@@ -146,7 +146,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "guildhall director context-report --lanterns"
+    "command": "guildhall director context-report --copy '/home/g/copy' --lanterns"
   },
   "syncClaudeAiSkills": false
 }

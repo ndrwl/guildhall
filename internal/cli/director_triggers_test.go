@@ -19,11 +19,13 @@ import (
 )
 
 // contextReport runs `director context-report` in this process with stdin as Claude Code's status-line input
-// and env as its environment.
+// and env as its environment, from a working directory in no copy.
 func contextReport(t *testing.T, stdin string, env map[string]string, args ...string) (int, string, string) {
 	t.Helper()
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Getenv = func(k string) string { return env[k] }
+	wd := t.TempDir()
+	app.Getwd = func() (string, error) { return wd, nil }
 	app.Now = func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }
 	app.Stdin = strings.NewReader(stdin)
 	code := app.Run(append([]string{"director", "context-report"}, args...))
@@ -40,7 +42,7 @@ func fixture(t *testing.T, name string) string {
 }
 
 // TestContextReportWritesTheSessionsReport: over Claude Code's recorded status-line input, context-report writes
-// the session's context.json from GUILDHALL_COPY and GUILDHALL_SESSION and prints the percent as the status line;
+// the session's context.json from --copy and GUILDHALL_SESSION and prints the percent as the status line;
 // input with no percent yet writes and prints nothing; it never opens a store.
 func TestContextReportWritesTheSessionsReport(t *testing.T) {
 	copyDir := t.TempDir()
@@ -48,8 +50,8 @@ func TestContextReportWritesTheSessionsReport(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	env := map[string]string{"GUILDHALL_COPY": copyDir, session.NumberEnv: "3"}
-	code, out, stderr := contextReport(t, fixture(t, "statusline.json"), env)
+	env := map[string]string{session.NumberEnv: "3"}
+	code, out, stderr := contextReport(t, fixture(t, "statusline.json"), env, "--copy", copyDir)
 	if code != 0 || out != "context 72%\n" {
 		t.Fatalf("context-report = %d, %q, stderr %s; want the percent", code, out, stderr)
 	}
@@ -66,7 +68,7 @@ func TestContextReportWritesTheSessionsReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	env[session.NumberEnv] = "4"
-	if code, out, stderr := contextReport(t, fixture(t, "statusline-fresh.json"), env); code != 0 || out != "" {
+	if code, out, stderr := contextReport(t, fixture(t, "statusline-fresh.json"), env, "--copy", copyDir); code != 0 || out != "" {
 		t.Fatalf("no percent yet = %d, %q, stderr %s; want nothing", code, out, stderr)
 	}
 	if _, err := os.Stat(filepath.Join(fresh, session.ContextFile)); !errors.Is(err, fs.ErrNotExist) {
@@ -79,18 +81,19 @@ func TestContextReportRefusals(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(copyDir, "director", "session-1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ok := map[string]string{"GUILDHALL_COPY": copyDir, session.NumberEnv: "1"}
+	ok := map[string]string{session.NumberEnv: "1"}
+	withCopy := []string{"--copy", copyDir}
 	cases := []struct {
 		name, stdin string
 		env         map[string]string
 		args        []string
 		want        string
 	}{
-		{"no copy", fixture(t, "statusline.json"), map[string]string{session.NumberEnv: "1"}, nil, "--copy is required, or GUILDHALL_COPY"},
-		{"no session", fixture(t, "statusline.json"), map[string]string{"GUILDHALL_COPY": copyDir}, nil, "GUILDHALL_SESSION"},
-		{"bad session", fixture(t, "statusline.json"), map[string]string{"GUILDHALL_COPY": copyDir, session.NumberEnv: "one"}, nil, "GUILDHALL_SESSION"},
-		{"not json", "context: lots", ok, nil, "status line"},
-		{"argument", fixture(t, "statusline.json"), ok, []string{"extra"}, `unexpected argument "extra"`},
+		{"no copy", fixture(t, "statusline.json"), ok, nil, "no Guildhall copy found from "},
+		{"no session", fixture(t, "statusline.json"), map[string]string{}, withCopy, "GUILDHALL_SESSION"},
+		{"bad session", fixture(t, "statusline.json"), map[string]string{session.NumberEnv: "one"}, withCopy, "GUILDHALL_SESSION"},
+		{"not json", "context: lots", ok, withCopy, "status line"},
+		{"argument", fixture(t, "statusline.json"), ok, append(append([]string{}, withCopy...), "extra"), `unexpected argument "extra"`},
 	}
 	for _, c := range cases {
 		code, out, stderr := contextReport(t, c.stdin, c.env, c.args...)

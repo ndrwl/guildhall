@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 import {register} from '../hooks/register.js';
 import {assertS2} from './s2-contract.mjs';
 
+const calmPath='/workspace/plugin/calm.json';
+
 function engine(flag='1', preference='off\n', copy='/copy') {
  const handlers=[]; let writes=0, writtenPath, writtenValue; const calls=[];
  const on=(event,filter,handler)=>{if(typeof filter==='function'){handler=filter;filter={}}; handlers.push({event,filter,handler});return {catch(){}}};
  register(on);
  const element=kind=>props=>({kind,...props});
- const $={env:{get:async key=>key==='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS'?flag:key==='GUILDHALL_COPY'?copy:undefined},plugin:{root:'/workspace/plugin'},
- fs:{exists:async()=>preference!==null,read:async()=>preference,write:async(path,value)=>{writes++;writtenPath=path;writtenValue=value}},
+ // The session renders calm.json beside the plugin, naming the copy's preference; a null copy has none.
+ const calmFile=JSON.stringify({preference:copy+'/director/lanterns-calm'});
+ const $={env:{get:async key=>key==='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS'?flag:undefined},plugin:{root:'/workspace/plugin'},
+ fs:{exists:async path=>path===calmPath?copy!==null:preference!==null,read:async path=>path===calmPath?calmFile:preference,write:async(path,value)=>{writes++;writtenPath=path;writtenValue=value}},
  command:{register:async e=>calls.push(e)},clock:{every:(ms,fn)=>{calls.push({ms,fn});return {cancel(){calls.push('canceled')}}}},
  config:{list:async()=>[{key:'theme',value:'dark'}]},
  ui:{resolve:()=>({Box:element('Box'),Text:element('Text'),Raster:element('Raster')}),invalidate:()=>{},toast:text=>calls.push(text),blit:async()=>({deny:true})}};
@@ -42,9 +46,9 @@ test('persisted off; toggle, tool hiding, original frame contents and restoratio
  await e.run('command.run',{command:'calm'});
  assert.deepEqual(await e.run('ui.render',{component:'Spinner'}),{kind:'original'});
 });
-test('without a Director copy Calm has no persistence or presentation mode',async()=>{
+test('without calm.json Calm has no persistence or presentation mode',async()=>{
  const e=engine('1','on\n',null);
- e.$.fs.exists=()=>{throw Error('unexpected preference read')};
+ e.$.fs.exists=async path=>{if(path!==calmPath)throw Error('unexpected preference read');return false};
  await e.run('session.start');
  assert.deepEqual(await e.run('command.run',{command:'calm'}),{kind:'original'});
  for(const component of ['ToolUse','ToolResult','ToolGroup','Spinner'])assert.deepEqual(await e.run('ui.render',{component}),{kind:'original'});

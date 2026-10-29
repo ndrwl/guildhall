@@ -61,7 +61,7 @@ func (a *App) stepFinish(args []string) int {
 		return a.usageError("step finish: " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError("step finish: " + ferr.Error())
 	case fl.NArg() > 0:

@@ -40,20 +40,19 @@ const recorderLogEnv = "GUILDHALL_ADAPTERTEST_RECORDER"
 type recorded struct {
 	Args []string `json:"args"`
 	Dir  string   `json:"dir"`
-	Copy string   `json:"copy"`
 }
 
 // RunIfRecorder makes the test binary act as the recording guildhall the session suite puts on PATH, and exit,
-// when it was started as `guildhall` with the recorder's log named. The recorder appends its arguments, working
-// directory and adapter.CopyEnv to the log and exits 1 when its first argument is "fail". Call it first in
-// TestMain of a package that runs RunSessionContract.
+// when it was started as `guildhall` with the recorder's log named. The recorder appends its arguments and
+// working directory to the log and exits 1 when its first argument is "fail". Call it first in TestMain of a
+// package that runs RunSessionContract.
 func RunIfRecorder() {
 	log := os.Getenv(recorderLogEnv)
 	if log == "" || strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe") != "guildhall" {
 		return
 	}
 	dir, _ := os.Getwd()
-	b, _ := json.Marshal(recorded{Args: os.Args[1:], Dir: dir, Copy: os.Getenv(adapter.CopyEnv)})
+	b, _ := json.Marshal(recorded{Args: os.Args[1:], Dir: dir})
 	f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err == nil {
 		_, err = f.Write(append(b, '\n'))
@@ -66,7 +65,7 @@ func RunIfRecorder() {
 }
 
 // RunSessionContract runs the Director session contract against the runtimes newSubject returns: the command
-// runs in the session directory with the copy named in its environment, plays the role prompt's script against
+// runs in the session directory, which lies under the copy, plays the role prompt's script against
 // guildhall on PATH, goes on past a failing command, ends with the scripted status, at a typed /exit or at the
 // end of input, and an invalid spec gets no command. It makes no model calls.
 func RunSessionContract(t *testing.T, newSubject func(t *testing.T) SessionSubject) {
@@ -81,8 +80,8 @@ func RunSessionContract(t *testing.T, newSubject func(t *testing.T) SessionSubje
 			t.Fatalf("calls = %+v, want %q", calls, want)
 		}
 		for i, c := range calls {
-			if !slices.Equal(c.Args, want[i]) || !samePath(c.Dir, spec.Dir) || c.Copy != spec.Copy {
-				t.Errorf("call %d = %+v, want %q in %s with copy %s", i, c, want[i], spec.Dir, spec.Copy)
+			if !slices.Equal(c.Args, want[i]) || !samePath(c.Dir, spec.Dir) || !adapter.Under(spec.Copy, c.Dir) {
+				t.Errorf("call %d = %+v, want %q in %s under the copy %s", i, c, want[i], spec.Dir, spec.Copy)
 			}
 		}
 	})
@@ -200,8 +199,8 @@ func runSession(t *testing.T, s SessionSubject, spec adapter.SessionSpec, stdin 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.ContainsFunc(cmd.Env, func(kv string) bool { return kv == adapter.CopyEnv+"="+spec.Copy }) {
-		t.Errorf("session environment %q does not set %s", cmd.Env, adapter.CopyEnv)
+	if !adapter.Under(spec.Copy, cmd.Dir) {
+		t.Errorf("session directory %s does not lie under the copy %s", cmd.Dir, spec.Copy)
 	}
 	c := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
 	c.Dir, c.Env, c.Stdin = cmd.Dir, append(os.Environ(), cmd.Env...), stdin
@@ -244,7 +243,7 @@ func readRecorded(t *testing.T, log string) []recorded {
 			t.Fatal(err)
 		}
 		// The runtime's own async rewake hook, which a session arms at its start, is not a script step.
-		if slices.Equal(r.Args, []string{"director", "wait-wake"}) {
+		if len(r.Args) >= 2 && slices.Equal(r.Args[:2], []string{"director", "wait-wake"}) {
 			continue
 		}
 		calls = append(calls, r)

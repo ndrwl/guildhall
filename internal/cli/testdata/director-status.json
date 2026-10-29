@@ -9,6 +9,7 @@
     "sequence": 46,
     "committed_at": "2026-10-22T09:49:00Z"
   },
+  "copy": "$COPY",
   "session": {
     "state": "running",
     "number": 1,

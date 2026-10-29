@@ -25,7 +25,7 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
    ```
 
    From them take the head that merged, the pull request in the `publish-<k>-pr` document, the review outcomes, the validation results, and each attempt's `duration_seconds` and spend.
-2. Choose the next number `n`: one more than the `self-review-<n>.json` files already under `$GUILDHALL_COPY/quality/<repo>/<task>/`, starting at 1.
+2. Choose the next number `n`: one more than the `self-review-<n>.json` files already under `<copy>/quality/<repo>/<task>/`, starting at 1, where `<copy>` is the absolute copy directory in the `copy` field of `guildhall director status --json`.
    Write every file of this review into that directory.
 3. Write the merged change's diff against the base it merged onto, from the repository's path in the config:
 

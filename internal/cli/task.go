@@ -35,8 +35,8 @@ var taskUsage = `usage:
   guildhall task cancel --store <path> --config <director.toml> --state <dir> --repo <id> --reason <text> <task>
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
   guildhall task context add|list ... (guildhall task context for its usage)
---copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
-config.toml and state
+--copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
+the copy's director.store, config.toml and state
 --title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
 from a file or - for standard input
 --kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
@@ -238,12 +238,14 @@ func (a *App) task(args []string) int {
 	if sub == "new" {
 		copyConfig = cfgPath
 	}
-	cerr := cp.apply(a.Getenv, path, copyConfig, nil)
+	cerr := cp.apply(a, path, copyConfig, nil)
 	switch {
 	case extra != "":
 		return a.taskUsage(fmt.Sprintf("--%s does not apply to task %s", extra, sub))
 	case cerr != nil:
 		return a.taskUsage(cerr.Error())
+	case cp.searched:
+		return a.taskUsage(cp.missing(a).Error())
 	case *path == "":
 		return a.taskUsage("--store is required, or --copy")
 	case sub == "new" && (*cfgPath == "" || *repo == "" || *title == ""):

@@ -30,8 +30,11 @@ func (a *App) storeCmd(args []string) int {
 	if fl.NArg() == 1 {
 		path = fl.Arg(0)
 	}
-	if err := cp.apply(a.Getenv, &path, nil, nil); err != nil {
+	if err := cp.apply(a, &path, nil, nil); err != nil {
 		return a.usageError("store " + args[0] + ": " + err.Error())
+	}
+	if cp.searched && fl.NArg() == 0 {
+		return a.usageError("store " + args[0] + ": " + cp.missing(a).Error())
 	}
 	if fl.NArg() > 1 || path == "" {
 		return a.usageError(usage)

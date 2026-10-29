@@ -32,7 +32,9 @@ const statusLimit = 20
 
 // directorStatus is what `director status` prints (docs/director.md#status).
 type directorStatus struct {
-	AsOf    statusLabel   `json:"as_of"`
+	AsOf statusLabel `json:"as_of"`
+	// Copy is the absolute copy directory, when the feed was read from a copy rather than explicit paths.
+	Copy    string        `json:"copy,omitempty"`
 	Session statusSession `json:"session"`
 	Mode    statusMode    `json:"mode"`
 	// Quality is the config's quality settings (docs/configuration.md#quality-settings), when the copy has a config.
@@ -326,13 +328,15 @@ func (a *App) directorStatusCmd(args []string) int {
 	}
 	named := false
 	fl.Visit(func(f *flag.Flag) { named = named || f.Name == "config" })
-	switch err := cp.apply(a.Getenv, path, cfg, state); {
+	switch err := cp.apply(a, path, cfg, state); {
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("director status: unexpected argument %q", fl.Arg(0)))
 	case !*asJSON:
 		return a.usageError("director status prints JSON only; pass --json")
 	case err != nil:
 		return a.usageError("director status: " + err.Error())
+	case *path == "" && *state == "" && *cfg == "":
+		return a.usageError("director status: " + cp.missing(a).Error())
 	case *path == "" || *state == "":
 		return a.usageError("director status: --store and --state are required, or --copy")
 	}
@@ -342,6 +346,11 @@ func (a *App) directorStatusCmd(args []string) int {
 	out, err := readDirectorStatus(context.Background(), *path, *state, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director status: %w", err))
+	}
+	if cp.dir != "" {
+		if out.Copy, err = filepath.Abs(cp.dir); err != nil {
+			return a.fail(fmt.Errorf("director status: %w", err))
+		}
 	}
 	out.Session.GuardRails.GuardRails, out.Quality, out.Session.GuardRails.ConfigError = statusConfig(*cfg, named)
 	if *cfg != "" {

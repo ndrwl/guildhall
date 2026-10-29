@@ -319,6 +319,40 @@ func TestDirectorStartOpensTheDirectorTab(t *testing.T) {
 	}
 }
 
+// TestDirectorTabRestartsBare: the tab opens in the copy directory, so once its Director exits, a bare
+// `guildhall director start` typed in the tab's shell finds the copy by discovery and starts the next session on
+// it, with no pane recorded, the accepted limitation of a bare restart (docs/director.md#start).
+func TestDirectorTabRestartsBare(t *testing.T) {
+	dir := tabCopy(t, "/exit")
+	host := newDirectorTabs()
+	host.onRun = func(tab adapter.TabRef, line string) {
+		if code, out, stderr := runDirectorCmd(t, supervisorArgv(t, dir, tab)[2:]...); code != 0 {
+			t.Errorf("supervisor in the tab: exit %d\n%s\n%s", code, out, stderr)
+		}
+	}
+	code, out, stderr := runWrapper(t, host, "--tab", "--copy", dir)
+	host.runs.Wait()
+	if code != 0 {
+		t.Fatalf("start --tab: exit %d\nstdout %s\nstderr %s", code, out, stderr)
+	}
+	if len(host.created) != 1 || host.created[0].Cwd != dir {
+		t.Fatalf("tab created = %+v; want one in the copy %s", host.created, dir)
+	}
+	app, stdout, stderr2 := newTestApp(nil, nil)
+	app.Executable = os.Executable
+	app.LookPath = exec.LookPath
+	app.InstallSkills = skills.Install
+	app.InstallBaseline = baseline.Install
+	app.Stdin = strings.NewReader("")
+	app.Getwd = func() (string, error) { return host.created[0].Cwd, nil }
+	if code := app.Run([]string{"director", "start"}); code != 0 {
+		t.Fatalf("bare director start in the tab: exit %d\nstdout %s\nstderr %s", code, stdout, stderr2)
+	}
+	if got := sessions(t, dir); len(got) != 2 || got[1].Pane != (store.DirectorPane{}) {
+		t.Errorf("sessions = %+v; want a second session on the copy with no pane", got)
+	}
+}
+
 // TestDirectorStartWaitsOutTheShellsStartup types the line while the tab's shell is still running a
 // subprocess from its startup files: that subprocess ending is not the typed command ending, so the wrapper
 // waits for the supervisor and prints its session.

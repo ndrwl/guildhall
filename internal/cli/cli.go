@@ -163,8 +163,11 @@ type App struct {
 	// Workspaces makes each task's working directory a worktree of its repository for task start, step done and
 	// step retry; nil means git.Program over git found on PATH.
 	Workspaces interp.Workspaces
-	// Getenv reads the environment, such as GUILDHALL_COPY; nil means an empty environment.
+	// Getenv reads the environment, such as GUILDHALL_SESSION; nil means an empty environment.
 	Getenv func(string) string
+	// Getwd returns the working directory copy discovery starts from (docs/running.md#copies); nil means no
+	// directory, so discovery finds no copy.
+	Getwd func() (string, error)
 	// DirectorPane types wake lines into the Director's recorded pane; nil means Herdr, found on PATH as herdr.
 	DirectorPane messaging.DirectorPane
 	// WakeNotice is the wake notice of a Director's recorded pane, shown while no waiter is registered; nil means
@@ -219,6 +222,7 @@ func New() *App {
 		},
 		Executable: os.Executable,
 		Getenv:     os.Getenv,
+		Getwd:      os.Getwd,
 		BuildInfo:  debug.ReadBuildInfo,
 	}
 }

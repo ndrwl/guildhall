@@ -91,13 +91,13 @@ func (a *App) directorStart(args []string) int {
 		return a.usageError("director start: " + err.Error())
 	}
 	var storePath, cfgPath, state string
-	switch err := cp.apply(a.Getenv, &storePath, &cfgPath, &state); {
+	switch err := cp.apply(a, &storePath, &cfgPath, &state); {
 	case err != nil:
 		return a.usageError("director start: " + err.Error())
 	case fl.NArg() > 1:
 		return a.usageError("director start takes at most one runtime")
 	case cp.dir == "":
-		return a.usageError("director start: --copy is required, or GUILDHALL_COPY")
+		return a.usageError("director start: " + cp.missing(a).Error())
 	case pane != (store.DirectorPane{}) && (pane.Session == "" || pane.Workspace == "" || pane.Tab == "" || pane.Pane == ""):
 		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane go together")
 	case pane != (store.DirectorPane{}) && *tab:
@@ -774,13 +774,13 @@ func (a *App) directorReady(args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("director ready: " + err.Error())
 	}
-	switch err := cp.apply(a.Getenv, path, nil, nil); {
+	switch err := cp.apply(a, path, nil, nil); {
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("director ready: unexpected argument %q", fl.Arg(0)))
 	case err != nil:
 		return a.usageError("director ready: " + err.Error())
 	case *path == "":
-		return a.usageError("director ready: --store is required, or --copy")
+		return a.usageError("director ready: " + cp.missing(a).Error())
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return a.fail(fmt.Errorf("director ready: %w", noStore(*path)))

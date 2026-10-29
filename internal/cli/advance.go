@@ -46,9 +46,12 @@ func (f *advanceFlags) register(fl *flag.FlagSet) {
 }
 
 // resolve fills the paths from the copy, if one is selected, and checks every flag is given.
-func (f *advanceFlags) resolve(getenv func(string) string) error {
-	if err := f.copy.apply(getenv, &f.store, &f.config, &f.state); err != nil {
+func (f *advanceFlags) resolve(a *App) error {
+	if err := f.copy.apply(a, &f.store, &f.config, &f.state); err != nil {
 		return err
+	}
+	if f.store == "" && f.config == "" && f.state == "" {
+		return f.copy.missing(a)
 	}
 	if f.store == "" || f.config == "" || f.state == "" || f.repo == "" {
 		return errors.New("--store, --config, --state and --repo are required, or --copy and --repo")
@@ -103,7 +106,7 @@ func (a *App) taskStart(args []string) int {
 	}
 	reasonSet := false
 	fl.Visit(func(fl *flag.Flag) { reasonSet = reasonSet || fl.Name == "reason" })
-	if err := f.resolve(a.Getenv); err != nil {
+	if err := f.resolve(a); err != nil {
 		return a.taskUsage("task start: " + err.Error())
 	}
 	switch {
@@ -230,7 +233,7 @@ func (a *App) stepRetry(args []string) int {
 		return a.usageError("step retry: " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError("step retry: " + ferr.Error())
 	case fl.NArg() > 0:
@@ -278,7 +281,7 @@ func (a *App) parkCommand(name string, args []string, park bool) int {
 		return a.usageError(name + ": " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError(name + ": " + ferr.Error())
 	case fl.NArg() > 0:
@@ -387,7 +390,7 @@ func (a *App) stepDone(args []string) int {
 		return a.usageError("step done: " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError("step done: " + ferr.Error())
 	case fl.NArg() > 0:

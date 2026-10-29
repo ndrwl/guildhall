@@ -79,7 +79,7 @@ func TestDirectorNoteCommands(t *testing.T) {
 			t.Errorf("%s: exit %d, stderr %s; want a usage error", name, code, stderr)
 		}
 	}
-	if code, _, stderr := runCLI(t, "director", "note", "list"); code != 2 || !strings.Contains(stderr, "--store is required, or --copy") {
+	if code, _, stderr := runCLI(t, "director", "note", "list"); code != 2 || !strings.Contains(stderr, "director note list: no Guildhall copy found") {
 		t.Errorf("list without a store: exit %d, stderr %s", code, stderr)
 	}
 }

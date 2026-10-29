@@ -20,7 +20,7 @@ import (
 )
 
 const spendHelp = `Usage: guildhall spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]
-  --copy <dir>       Director copy (or GUILDHALL_COPY)
+  --copy <dir>       Director copy (default: the copy found from the current directory)
   --store <path>     explicit existing store instead of --copy
   --state <dir>      attempt state directory (required with --store)
   --repo <name>      repository filter (default: all)
@@ -135,8 +135,11 @@ func (a *App) spend(args []string) int {
 			return a.usageError("spend report: --since must be RFC3339")
 		}
 	}
-	if err := cp.apply(a.Getenv, path, nil, state); err != nil {
+	if err := cp.apply(a, path, nil, state); err != nil {
 		return a.usageError(err.Error())
+	}
+	if cp.searched {
+		return a.usageError("spend report: " + cp.missing(a).Error())
 	}
 	if *path == "" || *state == "" {
 		return a.usageError("spend report: --copy or both --store and --state required\n" + spendHelp)

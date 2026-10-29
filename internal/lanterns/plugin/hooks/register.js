@@ -22,8 +22,12 @@ let activated,loading,preference,calm=false,ticker,tick=0,theme='light';
   }
   async function load($) {
     if(!loading)loading=(async()=>{
-      const copy=await $.env.get('GUILDHALL_COPY');
-      preference=copy?copy+'/director/lanterns-calm':undefined;
+      // The session's calm.json, rendered beside the plugin, names the copy's preference; without it Calm is unavailable.
+      try {
+        const file=$.plugin.root+'/calm.json';
+        const saved=await $.fs.exists(file)&&JSON.parse(await $.fs.read(file)).preference;
+        preference=typeof saved==='string'&&saved?saved:undefined;
+      }catch {preference=undefined}
       try {calm=!!preference&&(!await $.fs.exists(preference)||(await $.fs.read(preference)).trim()==='on')}catch {calm=false}
       try {theme=(await $.config.list()).find(r=>r.key==='theme')?.value??'light'}catch {}
       timer($);

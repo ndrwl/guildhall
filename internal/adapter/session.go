@@ -4,19 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
-
-// CopyEnv names the Director copy a session's commands run against (docs/running.md#copies).
-const CopyEnv = "GUILDHALL_COPY"
 
 // SessionSpec is what Guildhall gives a runtime for one interactive Director session (docs/director.md#start).
 // Unlike an attempt, a session has no result file: it ends when its runtime ends.
 type SessionSpec struct {
 	// Dir is the absolute session directory the runtime runs in; its skills are already rendered under the
-	// runtime's skills directory.
+	// runtime's skills directory. It lies under Copy, so the session's commands find the copy by copy discovery
+	// (docs/running.md#copies).
 	Dir string
-	// Copy is the absolute Director copy directory; the session's environment sets CopyEnv to it.
+	// Copy is the absolute Director copy directory.
 	Copy string
 	// RolePrompt is the absolute path of the rendered role prompt the runtime adds to its system prompt.
 	RolePrompt string
@@ -47,7 +46,23 @@ func (s SessionSpec) Validate() error {
 	return nil
 }
 
-// SessionEnv is the session's environment entries: CopyEnv set to the copy, then spec's own.
+// Under reports whether path is base or lies under it, compared cleaned, with symbolic links resolved where both
+// exist, and ignoring case on Windows: the rule that a session directory lies under its copy.
+func Under(base, path string) bool {
+	if rb, err := filepath.EvalSymlinks(base); err == nil {
+		if rp, err := filepath.EvalSymlinks(path); err == nil {
+			base, path = rb, rp
+		}
+	}
+	base, path = filepath.Clean(base), filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		base, path = strings.ToLower(base), strings.ToLower(path)
+	}
+	rel, err := filepath.Rel(base, path)
+	return err == nil && filepath.IsLocal(rel)
+}
+
+// SessionEnv is the session's environment entries, spec's own; no entry names the copy.
 func (s SessionSpec) SessionEnv() []string {
-	return append([]string{CopyEnv + "=" + s.Copy}, s.Env...)
+	return append([]string(nil), s.Env...)
 }

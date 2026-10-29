@@ -21,8 +21,8 @@ const workflowUsage = `usage:
   guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
   guildhall workflow approve --store <path> --config <director.toml> --repo <id> [--kind feature|bug] --words-file <path|->
   guildhall workflow approvals --store <path> [--json]
---copy <dir>, or GUILDHALL_COPY, may stand in for --store, and for --config with --repo: the copy's director.store
-and config.toml`
+--copy <dir>, or the copy found from the current directory, may stand in for --store, and for --config with
+--repo: the copy's director.store and config.toml`
 
 // listedApproval is one line of workflow approvals: a definition shipped with this release
 // ("release") or one the Guildmaster approved in this store ("guildmaster").
@@ -69,10 +69,12 @@ func (a *App) workflowCmd(args []string) int {
 	if sub == "approve" && *file == "" && *repo != "" {
 		copyConfig = cfgPath
 	}
-	cerr := cp.apply(a.Getenv, path, copyConfig, nil)
+	cerr := cp.apply(a, path, copyConfig, nil)
 	switch {
 	case cerr != nil:
 		return a.workflowUsage(cerr.Error())
+	case cp.searched:
+		return a.workflowUsage(cp.missing(a).Error())
 	case *path == "":
 		return a.workflowUsage("--store is required, or --copy")
 	case flags.NArg() != 0:

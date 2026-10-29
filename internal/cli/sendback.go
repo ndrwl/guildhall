@@ -16,7 +16,7 @@ const sendBackUsage = `usage: guildhall step send-back --repo <id> --task <id> -
 Start a new attempt of a succeeded Artisan step with Director feedback.
 --attempt identifies the succeeded attempt, not the new one; replay with identical feedback is safe.
 A running attempt anywhere in the task refuses a new request. Pauses and attempt caps still apply.
-Examples (with GUILDHALL_COPY set):
+Examples (run inside the copy):
   guildhall step send-back --repo app --task t-12 --step build --attempt 1 --feedback "Resolve the base conflict"
   guildhall step send-back --repo app --task t-12 --step build --attempt 2 --feedback "Revise the implementation"
 Flags: --repo, --task, --step, --attempt, --feedback are required; --copy, --store, --config, --state default to the selected copy; --help needs no store.`
@@ -43,7 +43,7 @@ func (a *App) stepSendBack(args []string) int {
 		return a.usageError("step send-back: " + err.Error() + "\n" + sendBackUsage)
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError("step send-back: " + ferr.Error())
 	case fl.NArg() != 0:

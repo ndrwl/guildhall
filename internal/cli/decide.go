@@ -21,7 +21,7 @@ const decideUsage = `usage:
   guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
   guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
   guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
---copy <dir>, or GUILDHALL_COPY, may stand in for --store: the copy's director.store`
+--copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store`
 
 // decide runs a decide subcommand against an existing store and prints its result as one JSON document
 // (docs/decisions-cli.md). list prints the open decisions, the per-machine inbox (R1.20), by repository,
@@ -71,8 +71,11 @@ func (a *App) decide(args []string) int {
 			usageErr = fmt.Sprintf("--%s does not apply to decide %s", f.Name, sub)
 		}
 	})
-	if err := cp.apply(a.Getenv, path, nil, nil); err != nil {
+	if err := cp.apply(a, path, nil, nil); err != nil {
 		return a.decideUsage(err.Error())
+	}
+	if cp.searched {
+		return a.decideUsage(cp.missing(a).Error())
 	}
 	for _, name := range required {
 		if flags.Lookup(name).Value.String() == "" {
