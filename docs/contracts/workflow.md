@@ -9,6 +9,11 @@ The `profile` and `skills` settings and their `Step` accessors follow the per-ki
 Invalid types, invalid names, duplicate skills and undeclared settings are refused during validation; omitted settings remain valid.
 Grill steps accept optional `skills` with the shared distinct-name-list validation for either allowed actor, without adding `profile` or `instructions` ([decision](../decisions/0029-grill-step-skills.md)).
 The release skills for a grill follow its actor: `guildhall-grill` with `guildhall-domain-model` for the Director, `guildhall-grill-unattended` for an Artisan ([decision](../decisions/0061-grill-live-interview.md)); the registry does not bind skills to actors, so a step lists the ones it renders, and the shipped default's Director grill lists `guildhall-grill` and `guildhall-domain-model` (`TestDefaultGrillIsTheDirectorsLiveGrill`, red first against the default with no skills, [red run](../evidence/director-stages-2026-10-22-red.txt)).
+`Default` and `Bug` return the shipped definitions, embedded from `default.json` and `bug.json`: `bug` is the default's steps with `instructions` on research (reproduce the defect and identify its cause, or record that it could not), build (a regression test first, failing before the fix and passing after it, named in the commit) and review (check that test), the workflow of a [bug task](../tasks.md#task-kinds).
+`research` and `build` accept `instructions` ([decision](../decisions/research-build-instructions.md)); `research` still refuses `skills`.
+`RoleProfile` maps a step type to its role profile name: `research` to `researcher`, `plan` to `planner`, `build` to `builder` and `review` to `reviewer`, and every other type to none.
+`ApplyProfileDefaults(def, declared)` returns a copy of `def` in which each step run by an Artisan, with no `profile` setting and a type with a role profile that `declared` reports declared, names that profile; an explicit profile always wins, a step overridden to the Guildmaster gets none, and `def` is not modified.
+The caller applies it after `ApplyOverrides` and before `Validate`, so the default is part of the effective digest ([configuration](../configuration.md#profiles)).
 `ValidateStepSettings` checks an isolated step's kind, version and settings with the same actor, allowed-key, required-setting, type, name and duplicate rules as `Validate`, without requiring the surrounding workflow's input and loop wiring.
 
 `ReviewOutcome.Validate` and `ReviewOutcome.BoundTo` enforce the [review outcome revision contract](../configuration.md#review-outcome).
@@ -27,12 +32,16 @@ See [configuration](../configuration.md#opt-in-plan-refutation) for opting in, t
 
 ## Tests
 
-`workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`
+`workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`, `defaults_test.go`, `bug_test.go`
+
+`TestBugIsTheDefaultWithInstructions` checks that `bug` validates and differs from the default only in its name, description and the research, build and review instructions; `TestBuildAcceptsInstructions` covers build's `instructions` alone and beside a profile and skills, and refuses a non-string.
+
+`defaults_test.go` covers the role mapping, defaults only for declared role profiles, an explicit profile winning, no default for a review overridden to the Guildmaster, an unmodified input and the default changing the digest.
 
 `TestUnconfiguredStandardsBinding` covers parsing and exact bidirectional empty/configured standards binding for both subjects and both reviewers.
 `internal/interp/TestUnconfiguredStandardsReviewExample` is red-first evidence for copied-example intake through persistence, human review, replay and delivery gating on both record backends.
 
-`TestResearchAcceptsOnlyProfile` covers omitted and valid profiles, invalid profile types and names, and refusal of skills both alone and alongside a profile, through full-workflow and isolated-step validation.
+`TestResearchAcceptsProfileAndInstructions` covers omitted and valid profiles, instructions beside a profile, a non-string instructions value, invalid profile types and names, and refusal of skills both alone and alongside a profile, through full-workflow and isolated-step validation.
 The original broader research settings tests captured [red](../evidence/research-profile-2026-10-23-red.txt) and [green](../evidence/research-profile-2026-10-23-green.txt) runs before the scope was narrowed to profile only; those runs are historical evidence, not verification of skills refusal.
 
 `authority_test.go` was written red first against stub bodies ([red run](../evidence/s10-approval-enforcement-2026-10-21-red.txt)): which kinds are guarded, each weakening and non-weakening edit of the shipped default, the floor on the shipped and example workflows and on edits below it, and admission and refusal for each basis.

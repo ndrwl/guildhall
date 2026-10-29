@@ -104,9 +104,18 @@ type Revision struct {
 //go:embed default.json
 var defaultJSON []byte
 
-// Default returns Guildhall's shipped default workflow.
-func Default() (*Definition, error) {
-	def, err := Parse(defaultJSON)
+//go:embed bug.json
+var bugJSON []byte
+
+// Default returns Guildhall's shipped default workflow, the workflow of a feature task.
+func Default() (*Definition, error) { return shipped(defaultJSON) }
+
+// Bug returns Guildhall's shipped bug workflow: the default's steps, with research, build and review instructed to
+// reproduce the defect, test it first and check that test.
+func Bug() (*Definition, error) { return shipped(bugJSON) }
+
+func shipped(data []byte) (*Definition, error) {
+	def, err := Parse(data)
 	if err != nil {
 		return nil, err
 	}

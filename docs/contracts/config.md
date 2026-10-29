@@ -9,7 +9,7 @@ Duplicate comparison normalizes dot segments and, for drive paths, separators an
 `Load` follows the filesystem fallback and error rules in [configuration](../configuration.md).
 
 `Profile` and `CheckProfiles` refuse an unknown profile name (`ErrUnknownProfile`).
-`CheckArtisanAdapters` checks profile references, then refuses the first Artisan step without a profile (`ErrMissingAdapter`), naming the workflow and step and directing the user to set a profile on that step in a custom workflow.
+`CheckArtisanAdapters` checks profile references, then refuses the first Artisan step without a profile (`ErrMissingAdapter`), naming the workflow and step; for a step type with a role profile (`workflow.RoleProfile`) the remedy is to declare `[profile.<role>]` or set a profile on that step, and otherwise to set a profile on that step in a custom workflow.
 It is read-only, does not launch anything, and does not require an adapter for other actors.
 Explicit fake profiles remain valid; no default adapter fallback is supported.
 A profile's `AllowedTools` is a pointer to its `allowed_tools` list in order: nil when the key is unset, and non-nil, possibly empty, when it is set, which `Parse` decides with the decode metadata's `IsDefined`, so `allowed_tools = []` survives a JSON round trip as set (`AllowedToolsSet`, `AllowedToolsList`); `Parse` refuses an entry `CheckAllowedTool` refuses, a tool name with an optional non-empty parenthesised specifier and no control characters that does not allow every shell command (`Bash`, `Bash(*)`, `Bash(:*)`), and a duplicate, naming the profile; profiles are read only from the copy's own config, never from `managed.toml`.
@@ -30,6 +30,8 @@ A profile's `AllowedTools` is a pointer to its `allowed_tools` list in order: ni
 A repository's `NoCI` is its `no_ci` setting, `false` by default.
 A repository's `Profiles` are its repository grants, `[repository.profiles.<name>]`, each a `RepositoryProfile` whose `AllowedTools` are added to that profile's effective grant for the repository's tasks ([D93](../decisions/0093-shipped-default-grants.md)); omitted from JSON when unset, so a config without them keeps its digest, and refusing an unknown key under a profile; `Parse` refuses a rule `CheckAllowedTool` refuses, a duplicate within one repository profile, a profile the config does not declare and a profile whose adapter is not `claude`, naming the repository and profile.
 `TestProfileAllowedToolsEmptyIsSet`, `TestRepositoryProfileGrant` and `TestInvalidRepositoryProfileGrantRefused` check these.
+A repository's `Kinds` is its [`[repository.kinds]`](../configuration.md#repositories) table, omitted from JSON when unset so a config without it keeps its digest; `Parse` refuses a `feature` key, any key but `bug` and a value that is not a workflow name.
+`TaskKinds` lists the task kinds, `TaskKindFeature` first, and `Repository.TaskKindWorkflow` names the workflow a kind runs: `Workflow` for a feature, `Kinds["bug"]` or the shipped `bug` for a bug, and none for an unknown kind.
 `Director` is the optional [`[director]` table](../configuration.md#the-director-table): an adapter that is an id when set, a config-relative role path, an `idle_after` that is a positive Go duration when set, and none in a Steward config; it is omitted from JSON when unset, as `idle_after` is, so a config without them keeps its digest.
 `IdleAfter` returns the effective `[director] idle_after`, `DefaultIdleAfter` (5 minutes) when unset.
 `Handoff` returns the effective [automatic handoff](../director.md#automatic-handoff) triggers: `handoff_after_tasks` (0, off, when unset), `handoff_context_percent` (`DefaultHandoffContextPercent`, 70, when unset; 0 is off) and `handoff_idle` (`0s`, off, when unset); `Parse` refuses a negative task count, a percent outside 0 to 100 and an idle period that is not a non-negative duration.
@@ -46,7 +48,9 @@ See the focused [Claude policy contract](config-claude-skills.md) for validation
 
 `TestArtisanAdapterAdmission` in `artisan_test.go` rejects the profile-less shipped workflow even when a manually constructed config contains a local `default_adapter` value of fake, Claude or mock; that setting does not provide admission.
 It accepts explicit profiles for those adapters, removes each Artisan step's profile in turn to assert a step-named refusal, and checks unknown-profile errors.
-`TestShippedDirectorSelectsRealArtisan` loads the example Director config, parses each selected custom workflow, applies repository overrides, validates and checks admission, and asserts every Artisan step selects a Claude profile.
+`TestArtisanAdapterRemedyNamesTheRoleProfile` refuses the shipped default, defaulted with the reviewer's profile undeclared, with the remedy naming `[profile.reviewer]`, and a refute step with the custom-workflow remedy.
+`TestShippedDirectorSelectsRealArtisan` loads the example Director config, resolves each repository's workflow for each task kind, applies repository overrides and role profile defaults, validates and checks admission, and asserts every Artisan step selects a Claude profile.
+`TestTaskKindWorkflow` pins each kind's workflow with and without a kinds table and that a config without one encodes no `Kinds`; `TestValidationRefusals` covers a `feature` key, an unknown kind and an invalid kind workflow name.
 These focused configuration tests were added after the implementation; the original CLI regressions drove the change red first.
 They do not test default-adapter precedence or malformed-default validation, which are not supported admission paths.
 

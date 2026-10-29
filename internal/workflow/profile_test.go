@@ -43,13 +43,15 @@ func TestProfileAndSkillsAcceptedOnArtisanKinds(t *testing.T) {
 	}
 }
 
-func TestResearchAcceptsOnlyProfile(t *testing.T) {
+func TestResearchAcceptsProfileAndInstructions(t *testing.T) {
 	for _, tc := range []struct {
 		settings string
 		want     string
 	}{
 		{`{}`, ""},
 		{`{"profile":"researcher"}`, ""},
+		{`{"profile":"researcher","instructions":"Reproduce it."}`, ""},
+		{`{"instructions":3}`, `setting "instructions" must be a string`},
 		{`{"profile":3}`, `setting "profile" must be a name`},
 		{`{"profile":"Reviewer"}`, `setting "profile" must be a name`},
 		{`{"profile":""}`, `setting "profile" must be a name`},

@@ -1,1 +1,1 @@
-[{"source":"release","name":"default","digest":"{{DEFAULT_DIGEST}}"},{"source":"guildmaster","name":"human-review","digest":"{{EXAMPLE_DIGEST}}","words":"Approved: human review on app.\n","recorded_at":"2026-10-20T09:30:00Z"}]
+[{"source":"release","name":"default","digest":"{{DEFAULT_DIGEST}}"},{"source":"release","name":"bug","digest":"{{BUG_DIGEST}}"},{"source":"guildmaster","name":"human-review","digest":"{{EXAMPLE_DIGEST}}","words":"Approved: human review on app.\n","recorded_at":"2026-10-20T09:30:00Z"}]

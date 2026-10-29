@@ -8,6 +8,13 @@ This page says which is meant where.
 - `artisan.Launcher` is the per-attempt process that owns one Artisan worker: it runs the worker in its containment unit, answers the control endpoint, writes the heartbeat and decides the attempt with the [stop ladder](artisan.md#stop-ladder).
 - `interp.Launcher` is the interpreter's seam for starting and stopping attempts ([mock agent](mock-agent.md)); its real implementation, `launch.Process`, runs `guildhall artisan start`, whose process is an `artisan.Launcher`.
 
+## Kind
+
+- A **task kind** is what a task is created as, `feature` or `bug`, chosen with `task new --kind`; it chooses the task's workflow ([task kinds](tasks.md#task-kinds)).
+  In Go it is `taskKind`, `config.TaskKindFeature` and `config.TaskKindBug`, never a bare `Kind`.
+- A **step kind** is a built-in, versioned step type a workflow names, such as `research` or `review`: `workflow.Kind` in the [registry](configuration.md#built-in-step-kinds).
+  A task kind's workflow is made of step kinds.
+
 ## Outcome
 
 How an attempt ended is spelled three ways, and `launch.attemptOutcome` is the one translation between them:

@@ -98,7 +98,7 @@ var (
 
 var kinds = []Kind{
 	{Type: "grill", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Settings: map[string]Setting{"skills": artisan["skills"]}, Actors: []Actor{DirectorActor, ArtisanActor}},
-	{Type: "research", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Settings: map[string]Setting{"profile": artisan["profile"]}, Actors: artisanOnly},
+	{Type: "research", Version: 1, Outputs: []Port{{Name: "notes", Type: Document}}, Settings: map[string]Setting{"profile": artisan["profile"], "instructions": instructions["instructions"]}, Actors: artisanOnly},
 	{
 		Type: "plan", Version: 1,
 		Inputs:   []Port{{Name: "context", Type: Document, Optional: true, Many: true}},
@@ -140,7 +140,7 @@ var kinds = []Kind{
 		Type: "build", Version: 1,
 		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}},
 		Outputs:  []Port{{Name: "head", Type: CodeHead}},
-		Settings: artisan,
+		Settings: map[string]Setting{"profile": artisan["profile"], "skills": artisan["skills"], "instructions": instructions["instructions"]},
 		Actors:   artisanOnly,
 	},
 	{

@@ -9,7 +9,7 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or `GUILDHALL_COPY`, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` in repository `<id>` and prints the store's receipt as one JSON document.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
 - `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
 - `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
@@ -29,19 +29,37 @@ A title is non-blank UTF-8 of at most 64 KiB.
 Exit codes are those of the messages commands: 0 on success, 1 when the configuration, the workflow or the store refuses or fails, and 2 on a usage error.
 Errors are written to standard error and nothing is written to standard output.
 
+## Task kinds
+
+A task is created as a **task kind**, which chooses its workflow; it is not a step kind, which is a built-in step type in a workflow.
+`--kind` chooses it; with no `--kind`, a task with `--fixes` is a `bug` and any other a `feature`.
+`--kind feature --fixes <repo>/<task>` is a feature that still records the task it fixes.
+An unknown `--kind` is a usage error.
+
+| Task kind | Workflow | What it is for |
+|---|---|---|
+| `feature` | The repository's `workflow` setting, `default` when it names none | New or changed behaviour: grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver. |
+| `bug` | The repository's [`[repository.kinds]`](configuration.md#repositories) `bug` workflow, the shipped `bug` when it names none | A fix for a defect in behaviour that should already work: the default's steps, with research reproducing the defect and finding its cause, build writing a regression test that fails before the fix and passes after it, and review checking that test. |
+
+The descriptions are in the binary, `task new --help`, not in the workflows, so rewording them changes no digest.
+The task records no kind: its bound workflow's name says what it was created as.
+A repository with no `kinds` table, and a `task new` with neither `--kind` nor `--fixes`, bind exactly the workflow they did before kinds.
+
 ## The bound workflow
 
 `task new` loads the configuration with the [configuration loader](configuration.md), including a Steward-owned `managed.toml` beside it, and finds the repository there.
-The repository's `workflow` setting, `default` when it names none, selects the effective workflow:
+The task's kind names the effective workflow: the repository's `workflow` setting, `default` when it names none, for a feature, and its `kinds` table's `bug`, `bug` when it names none, for a bug.
+A name resolves to:
 
-- `default` is the definition shipped with this Guildhall release.
-  Any `workflows/default.json` beside the configuration is ignored.
-- Any other name is the file `workflows/<name>.json` in the configuration file's directory, and the file's `name` must equal it.
+- the definition of that name shipped with this Guildhall release, for `default` and `bug`.
+  Any `workflows/default.json` or `workflows/bug.json` beside the configuration is ignored.
+- the file `workflows/<name>.json` in the configuration file's directory for any other name, and the file's `name` must equal it.
 
-The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, and the result is checked with `workflow.Validate` (R1.59).
+The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, [role profile defaults](configuration.md#profiles) are applied with `workflow.ApplyProfileDefaults`, and the result is checked with `workflow.Validate` (R1.59).
 The effective workflow is then checked with `config.CheckArtisanAdapters`: every named profile must be declared in the loaded Director configuration, and every Artisan step must name a profile.
-A profile-less Artisan is refused with the workflow and step named and a remedy to set a profile on that step in a custom workflow; no default adapter, real or fake, supplies a missing profile.
-The shipped `default` workflow is profile-neutral, so select a custom workflow with explicit profiles before creating a task; the example Director config selects `workflows/profiled.json` with Claude profiles.
+A research, plan, build or Artisan review step with no `profile` names its role profile, `researcher`, `planner`, `builder` or `reviewer`, when the configuration declares it.
+A profile-less Artisan is refused with the workflow and step named and a remedy to declare its role profile or set a profile on that step; no default adapter, real or fake, supplies a missing profile.
+The shipped `default` and `bug` workflows name no profiles, so a copy that declares the four role profiles runs them with no custom workflow; each with a defaulted reviewer's profile [needs the Guildmaster's approval](configuration.md#enforcement-at-task-creation) once, with `workflow approve --config --repo` and `--kind bug` for the bug workflow.
 For deterministic tests or demos, name a profile whose `adapter` is `fake`; other actors need no Artisan profile.
 A missing or unreadable file, a parse error, a refused override, a validation problem, an undeclared profile or a profile-less Artisan refuses the task with the problems named, and the store is not opened, so nothing is written.
 
@@ -51,6 +69,8 @@ The task binds `workflow.Revision` of the overridden definition, its name and di
 It also binds the configuration digest: `sha256:` and the lowercase hex sha256 of the loaded configuration's canonical JSON encoding.
 The digest covers the local and managed settings together and not the files' formatting; it is computed by this release, so a release that adds configuration fields may compute a different digest for the same files.
 Later edits to either file, or to the workflow file, apply to new tasks only.
+Every later advance resolves the task's workflow by its bound name, not the repository's current `workflow` setting, so changing that setting leaves open tasks on the workflow they were created with ([running](running.md#what-an-advance-runs-over)).
+Editing the bound workflow's file, the repository's `workflow_overrides` or the profiles its steps were defaulted from changes the digest, and the task's next advance is refused naming its bound workflow; keep a workflow's file until every task bound to it has closed.
 
 ## Dependencies
 
@@ -69,7 +89,7 @@ The Director can start a held task anyway with [`task start --ignore-deps --reas
 It is recorded as its own record, never by changing the task (R1.62), lasts for the rest of the task's life, starts the task from the current main and shows with its reason in `task timeline`.
 A cancelled dependency never merges, so the override is the only way to start a task that depends on one.
 
-`--fixes <repo>/<task>` names the earlier task whose defect this one fixes, which must already exist; publish then adds "Fixes a defect introduced by task `<repo>/<task>`." to the pull request body ([quality rubric](quality.md#running-it)).
+`--fixes <repo>/<task>` names the earlier task whose defect this one fixes, which must already exist; publish then adds "Fixes a defect introduced by task `<repo>/<task>`." to the pull request body ([quality rubric](quality.md#running-it)), whatever the task's kind; without `--kind` it also makes the task a [bug](#task-kinds).
 
 ## Priority
 
@@ -109,7 +129,7 @@ A held task also keeps its dependents waiting, whose `dependency-held` message r
 For longer strings it records `task:sha256:<digest>`, using the lowercase hex SHA-256 of the full original string.
 Repository and task ids cannot contain `:`, so the input is unambiguous; short ids remain unchanged and every valid pair has a bounded, deterministic mutation id.
 Running the same `task new` again, for example after losing its output, prints the original receipt and writes nothing, even after a restart.
-Reusing a task id with a different title, dependencies, workflow revision or configuration digest is refused with the store's mutation conflict and changes nothing.
+Reusing a task id with a different title, dependencies, workflow revision, such as another `--kind`'s, or configuration digest is refused with the store's mutation conflict and changes nothing.
 
 The store has one writer at a time; each command holds it only for its own operation (see [the store](store.md#one-writer)).
 

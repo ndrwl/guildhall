@@ -18,6 +18,8 @@ claude_skills_profile_reviewer = '{"preset":"reviewer-v1"}'
 claude_skills_profile_rebaser = '{"preset":"builder-v1"}'
 
 # Artisan profiles that workflow steps name with "profile"; no credentials.
+# A research, plan, build or Artisan review step that names none runs as researcher, planner, builder or reviewer,
+# so these four run the shipped default and bug workflows with no custom workflow.
 # These well-known claude profiles set no allowed_tools, so each gets its shipped default grant: read-only git,
 # plus web search and fetch for the researcher and committing and rebasing git for the builder. Setting
 # allowed_tools on a profile replaces its default; allowed_tools = [] grants nothing.
@@ -53,7 +55,7 @@ id = "cli"
 path = '/srv/src/cli'
 remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"
-workflow = "profiled"
+# No workflow key: feature tasks run the shipped default and bug tasks the shipped bug workflow.
 # No [repository.merge.requires] section: every requirement is on, so the Guildmaster answers every merge.
 
 # How the merge queue rebases this repository's pull requests; these are the defaults. A rebase at or above
@@ -72,7 +74,6 @@ id = "docs-site"
 path = '/srv/src/docs-site'
 remote = "https://github.com/example/docs-site.git"
 owner_machine = "workstation"
-workflow = "profiled"
 
 # This repository has the Guildmaster review every change instead of an Artisan.
 [repository.workflow_overrides.review]

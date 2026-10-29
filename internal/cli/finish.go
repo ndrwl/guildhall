@@ -105,7 +105,11 @@ func finishStage(f advanceFlags, k artisan.AttemptKey, summary string, outputs s
 	if err != nil {
 		return err
 	}
-	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(f.config), "workflows"), r)
+	t, err := withRecords(storeRecords{path: f.store, wait: wait}, true, nil, func(s *store.Store) (store.Task, error) { return s.Task(k.Repository, k.TaskID) })
+	if err != nil {
+		return err
+	}
+	def, err := boundWorkflow(filepath.Join(filepath.Dir(f.config), "workflows"), cfg, r, t.Workflow)
 	if err != nil {
 		return fmt.Errorf("repository %s: %w", f.repo, err)
 	}

@@ -134,20 +134,24 @@ func TestWorkflowApproveShippedRevision(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("list: exit %d, stderr %q", code, stderr)
 	}
+	bug, err := workflow.Bug()
+	if err != nil {
+		t.Fatal(err)
+	}
 	listed := decodeJSON[[]listedApproval](t, stdout)
-	if len(listed) != 2 {
+	if len(listed) != 3 {
 		t.Fatalf("listed approvals = %+v", listed)
 	}
-	for i, source := range []string{"release", "guildmaster"} {
-		if listed[i].Source != source || listed[i].Name != def.Name || listed[i].Digest != def.Digest() {
-			t.Fatalf("listed approval = %+v", listed[i])
+	for i, l := range []listedApproval{{Source: "release", Name: def.Name, Digest: def.Digest()}, {Source: "release", Name: bug.Name, Digest: bug.Digest()}, {Source: "guildmaster", Name: def.Name, Digest: def.Digest()}} {
+		if listed[i].Source != l.Source || listed[i].Name != l.Name || listed[i].Digest != l.Digest {
+			t.Fatalf("listed approval %d = %+v, want %+v", i, listed[i], l)
 		}
 	}
-	if listed[0].Words != "" || listed[0].RecordedAt != nil || listed[1].Words != words || listed[1].RecordedAt == nil || !listed[1].RecordedAt.Equal(recorded[0].RecordedAt) {
+	if listed[0].Words != "" || listed[0].RecordedAt != nil || listed[1].Words != "" || listed[1].RecordedAt != nil || listed[2].Words != words || listed[2].RecordedAt == nil || !listed[2].RecordedAt.Equal(recorded[0].RecordedAt) {
 		t.Fatalf("listed approval metadata = %+v", listed)
 	}
 	code, stdout, stderr = runWorkflow(t, "", "approvals", "--store", path)
-	want := "release default " + def.Digest() + " guildmaster default " + def.Digest() + " " + recorded[0].RecordedAt.Format(time.RFC3339)
+	want := "release default " + def.Digest() + " release bug " + bug.Digest() + " guildmaster default " + def.Digest() + " " + recorded[0].RecordedAt.Format(time.RFC3339)
 	if code != 0 || strings.Join(strings.Fields(stdout), " ") != want {
 		t.Fatalf("text list: exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
@@ -230,8 +234,12 @@ func TestWorkflowApprovalsList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bug, err := workflow.Bug()
+	if err != nil {
+		t.Fatal(err)
+	}
 	expand := func(golden string) string {
-		return strings.NewReplacer("{{DEFAULT_DIGEST}}", def.Digest(), "{{EXAMPLE_DIGEST}}", exampleDigest(t)).Replace(golden)
+		return strings.NewReplacer("{{DEFAULT_DIGEST}}", def.Digest(), "{{BUG_DIGEST}}", bug.Digest(), "{{EXAMPLE_DIGEST}}", exampleDigest(t)).Replace(golden)
 	}
 
 	code, stdout, stderr := runWorkflow(t, "", "approvals", "--store", path, "--json")
@@ -247,6 +255,7 @@ func TestWorkflowApprovalsList(t *testing.T) {
 		t.Fatalf("text: exit %d, stderr %q", code, stderr)
 	}
 	want := expand("release      default       {{DEFAULT_DIGEST}}\n" +
+		"release      bug           {{BUG_DIGEST}}\n" +
 		"guildmaster  human-review  {{EXAMPLE_DIGEST}}  2026-10-20T09:30:00Z\n")
 	if stdout != want {
 		t.Errorf("text stdout =\n%s\nwant\n%s", stdout, want)

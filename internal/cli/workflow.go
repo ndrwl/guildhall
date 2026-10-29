@@ -19,7 +19,7 @@ import (
 
 const workflowUsage = `usage:
   guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
-  guildhall workflow approve --store <path> --config <director.toml> --repo <id> --words-file <path|->
+  guildhall workflow approve --store <path> --config <director.toml> --repo <id> [--kind feature|bug] --words-file <path|->
   guildhall workflow approvals --store <path> [--json]
 --copy <dir>, or GUILDHALL_COPY, may stand in for --store, and for --config with --repo: the copy's director.store
 and config.toml`
@@ -36,7 +36,8 @@ type listedApproval struct {
 
 // workflowCmd runs a workflow subcommand against an existing store.
 // approve validates the definition, computes its digest and records the Guildmaster's words before printing the receipt;
-// with --config and --repo the definition is the repository's effective workflow, resolved as task new resolves it.
+// with --config and --repo the definition is the repository's effective workflow for --kind, feature when not given,
+// resolved as task new resolves it.
 // Explicit approvals of shipped definitions are recorded like any other approval.
 // approvals lists the shipped definitions as approved by release, then the recorded approvals.
 // It exits 0 on success, 1 when the definition, words or store refuse or fail and 2 on a usage error.
@@ -56,6 +57,8 @@ func (a *App) workflowCmd(args []string) int {
 	repo := flags.String("repo", "", "repository id")
 	wordsFile := flags.String("words-file", "", "approval words file, or - for standard input")
 	asJSON := flags.Bool("json", false, "print JSON")
+	var kind taskKind
+	flags.Var(&kind, "kind", "task kind: feature or bug")
 	var cp copyFlags
 	cp.register(flags)
 	if err := flags.Parse(args[1:]); err != nil {
@@ -82,6 +85,8 @@ func (a *App) workflowCmd(args []string) int {
 		return a.workflowUsage("--file is required, or --config and --repo")
 	case sub == "approve" && *wordsFile == "":
 		return a.workflowUsage("--words-file is required")
+	case kind != "" && *repo == "":
+		return a.workflowUsage("--kind applies only to workflow approve with --config and --repo")
 	case sub == "approve" && *asJSON:
 		return a.workflowUsage("--json applies only to workflow approvals")
 	case sub == "approvals" && (*file != "" || *wordsFile != ""):
@@ -104,7 +109,7 @@ func (a *App) workflowCmd(args []string) int {
 		if *file != "" {
 			def, err = readDefinition(*file)
 		} else {
-			def, err = repositoryEffective(*cfgPath, *repo)
+			def, err = repositoryEffective(*cfgPath, *repo, kind.resolve(nil))
 		}
 		if err == nil {
 			approval, err = a.readApproval(def, *wordsFile)
@@ -159,7 +164,11 @@ func shippedDefinitions() ([]*workflow.Definition, error) {
 	if err != nil {
 		return nil, fmt.Errorf("shipped default workflow: %w", err)
 	}
-	return []*workflow.Definition{def}, nil
+	bug, err := workflow.Bug()
+	if err != nil {
+		return nil, fmt.Errorf("shipped bug workflow: %w", err)
+	}
+	return []*workflow.Definition{def, bug}, nil
 }
 
 // readDefinition parses and validates a workflow file.
@@ -178,13 +187,14 @@ func readDefinition(file string) (*workflow.Definition, error) {
 	return def, nil
 }
 
-// repositoryEffective returns repository repo's effective workflow from the Director config at cfgPath.
-func repositoryEffective(cfgPath, repo string) (*workflow.Definition, error) {
-	_, r, err := loadRepository(cfgPath, repo)
+// repositoryEffective returns repository repo's effective workflow for task kind taskKind from the Director config at
+// cfgPath.
+func repositoryEffective(cfgPath, repo, taskKind string) (*workflow.Definition, error) {
+	cfg, r, err := loadRepository(cfgPath, repo)
 	if err != nil {
 		return nil, err
 	}
-	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), r)
+	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), cfg, r, taskKind)
 	if err != nil {
 		return nil, fmt.Errorf("repository %s: %w", repo, err)
 	}
