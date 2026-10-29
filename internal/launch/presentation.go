@@ -1,11 +1,13 @@
 package launch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,9 +63,12 @@ func FinishLine(closeAfter time.Duration) string {
 	return fmt.Sprintf("%s This Herdr workspace closes automatically in about %s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open.", done, closeAfter)
 }
 
-// PaneClaim is the attempt-local, single-use presentation launch intent.
-// An ambiguous API call leaves it in place: neither a caller restart nor a
-// missing pane is permission to launch this attempt again.
+// PaneClaim is the attempt-local presentation launch intent, single-use once it
+// holds a tab binding: an ambiguous API call after that leaves it in place, and
+// neither a caller restart nor a missing pane is permission to launch this
+// attempt again. A launching claim, written before the binding, proves nothing
+// was typed: a caller holding the task lock (Process.TaskLocked) that finds one
+// with no owner recovers it and launches again.
 const PaneClaim = "pane-launch.json"
 
 // WorkspaceLabel is the label of the Herdr workspace an attempt is presented
@@ -83,6 +88,28 @@ func AttemptWorkspaceLabels(k artisan.AttemptKey) []string {
 	return []string{WorkspaceLabel(k), TabLabel(k)}
 }
 
+// launchingClaim is the PaneClaim a launch writes before it has a tab binding.
+const launchingClaim = "{\"state\":\"launching\"}\n"
+
+// staleLaunchingClaim reports whether the claim at path is exactly a launching
+// claim: one JSON object whose state is "launching", with no tab binding.
+func staleLaunchingClaim(path string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var c struct {
+		State                               string `json:"state"`
+		Session, WorkspaceID, TabID, PaneID string
+	}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	if d.Decode(&c) != nil || d.Decode(&struct{}{}) != io.EOF {
+		return false
+	}
+	return c.State == "launching" && c.Session == "" && c.WorkspaceID == "" && c.TabID == "" && c.PaneID == ""
+}
+
 func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, presentation *Presentation) (interp.Handle, error) {
 	if presentation.Host == nil || presentation.Report == nil {
 		return interp.Handle{}, errors.New("launch: incomplete pane presentation")
@@ -93,17 +120,28 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		classification, statusErr := Status(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: %s already owned (%+v): %w", at.Key, classification, errors.Join(err, statusErr, errors.New("reconcile with artisan status/resume before retrying")))
 	}
-	claim, err := os.OpenFile(filepath.Join(at.Dir(), PaneClaim), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
+	claimPath := filepath.Join(at.Dir(), PaneClaim)
+	claim, err := os.OpenFile(claimPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	switch {
+	case err == nil:
+		if _, err := claim.WriteString(launchingClaim); err != nil {
+			_ = claim.Close()
+			return interp.Handle{}, err
+		}
+		if err := claim.Close(); err != nil {
+			return interp.Handle{}, err
+		}
+	case errors.Is(err, fs.ErrExist) && p.TaskLocked && staleLaunchingClaim(claimPath):
+		// The task lock proves the claimant's launch has ended, and a launching
+		// claim proves it typed nothing, so no worker exists for that launch.
+		// The claim is overwritten, never removed, so it is never absent.
+		if err := os.WriteFile(claimPath, []byte(launchingClaim), 0o600); err != nil {
+			return interp.Handle{}, err
+		}
+		presentation.recovered(at)
+	default:
 		classification, statusErr := Status(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: pane launch already claimed or unavailable (%+v): %w", classification, errors.Join(err, statusErr))
-	}
-	if _, err := claim.WriteString("{\"state\":\"launching\"}\n"); err != nil {
-		_ = claim.Close()
-		return interp.Handle{}, err
-	}
-	if err := claim.Close(); err != nil {
-		return interp.Handle{}, err
 	}
 	label := TabLabel(at.Key)
 	workspace, err := presentation.Host.CreateWorkspace(ctx, WorkspaceLabel(at.Key), cmd.Dir)
@@ -187,6 +225,15 @@ func (pr *Presentation) readBack(ctx context.Context, r *artisan.PresentationRep
 func (pr *Presentation) log(at Attempt, r artisan.PresentationReport) {
 	if err := artisan.LogPresentationReport(at.Dir(), r); err != nil {
 		pr.warn("record Herdr report for %s: %v", at.Key, err)
+	}
+}
+
+// recovered warns that at's stale launching claim was recovered and appends
+// that to at's events; a failed event write only warns.
+func (pr *Presentation) recovered(at Attempt) {
+	pr.warn("recovered a stale launching claim for %s: no command was typed for it; an earlier Herdr workspace %q may have been left behind by a lost create response, so close it by hand", at.Key, WorkspaceLabel(at.Key))
+	if err := artisan.LogPaneClaimRecovered(at.Dir(), WorkspaceLabel(at.Key)); err != nil {
+		pr.warn("record pane claim recovery for %s: %v", at.Key, err)
 	}
 }
 

@@ -4,7 +4,9 @@ package launch_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,26 +98,37 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 	}
 }
 
+// taskLocking runs fn as subtests with Process.TaskLocked unset and set: a
+// claim holding a tab binding is refused either way.
+func taskLocking(t *testing.T, fn func(t *testing.T, locked bool)) {
+	for _, locked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("task-locked=%t", locked), func(t *testing.T) { fn(t, locked) })
+	}
+}
+
 func TestAmbiguousPaneLaunchNeverTypesTwice(t *testing.T) {
-	p := newProcess(t)
-	spec := prepared(t, p, fixtureSpec(t, ""))
-	panes := adaptertest.NewShellPanes(t, "lab", "director")
-	refused := errors.New("report refused")
-	p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
-		return herdr.ReportOutcome{}, refused
-	}}
-	if _, err := p.Launch(context.Background(), spec); !errors.Is(err, refused) {
-		t.Fatalf("Launch = %v", err)
-	}
-	if len(panes.Sent()) != 0 {
-		t.Fatal("typed before resume registered")
-	}
-	if _, err := p.Launch(context.Background(), spec); err == nil {
-		t.Fatal("uncertain launch retried")
-	}
-	if len(panes.Sent()) != 0 {
-		t.Fatal("typed on retry")
-	}
+	taskLocking(t, func(t *testing.T, locked bool) {
+		p := newProcess(t)
+		p.TaskLocked = locked
+		spec := prepared(t, p, fixtureSpec(t, ""))
+		panes := adaptertest.NewShellPanes(t, "lab", "director")
+		refused := errors.New("report refused")
+		p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
+			return herdr.ReportOutcome{}, refused
+		}}
+		if _, err := p.Launch(context.Background(), spec); !errors.Is(err, refused) {
+			t.Fatalf("Launch = %v", err)
+		}
+		if len(panes.Sent()) != 0 {
+			t.Fatal("typed before resume registered")
+		}
+		if _, err := p.Launch(context.Background(), spec); err == nil {
+			t.Fatal("uncertain launch retried")
+		}
+		if len(panes.Sent()) != 0 {
+			t.Fatal("typed on retry")
+		}
+	})
 }
 
 // uncertainTabs models an API response lost after the pane accepted its line.
@@ -130,29 +143,32 @@ func (h uncertainTabs) RunInTab(ctx context.Context, ref adapter.TabRef, line st
 }
 
 func TestPaneLostResponsePreservesWorkerAndNeverRetypes(t *testing.T) {
-	p := newProcess(t)
-	spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=200ms"))
-	panes := adaptertest.NewShellPanes(t, "lab", "director")
-	p.Presentation = &launch.Presentation{Host: uncertainTabs{panes}, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
-		return herdr.ReportOutcome{}, nil
-	}}
-	if _, err := p.Launch(context.Background(), spec); err == nil {
-		t.Fatal("lost API response not returned")
-	}
-	if _, err := p.Launch(context.Background(), spec); err == nil {
-		t.Fatal("uncertain launch retried")
-	}
-	if len(panes.Sent()) != 1 {
-		t.Fatalf("commands = %q", panes.Sent())
-	}
-	for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		if a := runningAttempt(t, p); a.Outcome == store.AttemptSucceeded {
-			break
+	taskLocking(t, func(t *testing.T, locked bool) {
+		p := newProcess(t)
+		p.TaskLocked = locked
+		spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=200ms"))
+		panes := adaptertest.NewShellPanes(t, "lab", "director")
+		p.Presentation = &launch.Presentation{Host: uncertainTabs{panes}, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
+			return herdr.ReportOutcome{}, nil
+		}}
+		if _, err := p.Launch(context.Background(), spec); err == nil {
+			t.Fatal("lost API response not returned")
 		}
-		if time.Now().After(end) {
-			t.Fatal("uncertain launch did not preserve its running worker")
+		if _, err := p.Launch(context.Background(), spec); err == nil {
+			t.Fatal("uncertain launch retried")
 		}
-	}
+		if len(panes.Sent()) != 1 {
+			t.Fatalf("commands = %q", panes.Sent())
+		}
+		for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+			if a := runningAttempt(t, p); a.Outcome == store.AttemptSucceeded {
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatal("uncertain launch did not preserve its running worker")
+			}
+		}
+	})
 }
 
 func TestRelativeStorePaneLaunchAndResume(t *testing.T) {
@@ -253,6 +269,9 @@ func (h *timeoutTabs) InterruptTab(ctx context.Context, ref adapter.TabRef) erro
 	return h.TabHost.InterruptTab(ctx, ref)
 }
 
+// TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop leaves
+// Process.TaskLocked unset: a caller not holding the task lock never recovers
+// even a launching claim.
 func TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop(t *testing.T) {
 	for _, phase := range []string{"workspace", "create", "shell", "report", "type"} {
 		t.Run(phase, func(t *testing.T) {
@@ -326,4 +345,199 @@ func runningAttempt(t *testing.T, p *launch.Process) store.StageAttempt {
 		t.Fatal(err)
 	}
 	return attempts[0]
+}
+
+// staleClaimKey is the attempt every pane test launches.
+var staleClaimKey = artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
+
+// waitSucceeded waits for p's attempt to record a succeeded outcome.
+func waitSucceeded(t *testing.T, p *launch.Process) {
+	t.Helper()
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		a := runningAttempt(t, p)
+		if a.Outcome == store.AttemptSucceeded {
+			return
+		}
+		if a.Outcome != "" || time.Now().After(end) {
+			t.Fatalf("attempt did not succeed: %+v", a)
+		}
+	}
+}
+
+// claimRecoveredEvents counts the pane-claim-recovered lines in p's attempt events.
+func claimRecoveredEvents(t *testing.T, p *launch.Process) int {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), artisan.EventsFile))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	return strings.Count(string(b), `"event":"pane-claim-recovered"`)
+}
+
+func healthyPresentation(host adapter.TabHost, warnings *strings.Builder) *launch.Presentation {
+	return &launch.Presentation{Host: host, Warnings: warnings, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
+		return herdr.ReportOutcome{}, nil
+	}}
+}
+
+// recoversClaim launches p's attempt over its existing launching claim through
+// a healthy presentation on panes and checks it runs once to success.
+func recoversClaim(t *testing.T, p *launch.Process, spec interp.Spec, panes *adaptertest.ShellPanes) {
+	t.Helper()
+	var warnings strings.Builder
+	p.Presentation = healthyPresentation(panes, &warnings)
+	if _, err := p.Launch(context.Background(), spec); err != nil {
+		t.Fatalf("task-locked launch over a stale launching claim: %v", err)
+	}
+	if len(panes.Sent()) != 1 {
+		t.Fatalf("commands = %q, want exactly one", panes.Sent())
+	}
+	b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tab adapter.TabRef
+	if err := json.Unmarshal(b, &tab); err != nil || tab.PaneID == "" || tab.TabID == "" || tab.WorkspaceID == "" {
+		t.Fatalf("claim %s does not hold the new tab binding: %v", b, err)
+	}
+	waitSucceeded(t, p)
+	if n := claimRecoveredEvents(t, p); n != 1 {
+		t.Fatalf("pane-claim-recovered events = %d, want 1", n)
+	}
+	if w := warnings.String(); !strings.Contains(w, "stale launching claim") || !strings.Contains(w, "close it by hand") {
+		t.Fatalf("warnings = %q", w)
+	}
+}
+
+// TestTaskLockedLaunchRecoversLaunchingClaim: a pane launch that failed before
+// recording its tab binding leaves a launching claim, and a caller holding the
+// task lock launches the same attempt again over it, typing once (d48).
+func TestTaskLockedLaunchRecoversLaunchingClaim(t *testing.T) {
+	for _, phase := range []string{"workspace", "create", "shell"} {
+		t.Run(phase, func(t *testing.T) {
+			p := newProcess(t)
+			p.TaskLocked = true
+			spec := prepared(t, p, fixtureSpec(t, ""))
+			panes := adaptertest.NewShellPanes(t, "lab", "director")
+			p.Presentation = &launch.Presentation{Host: &timeoutTabs{TabHost: panes, phase: phase}, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
+				return herdr.ReportOutcome{}, nil
+			}}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second) // timing:allow the host blocks until this deadline; expiry is the injected failure, never success.
+			defer cancel()
+			if _, err := p.Launch(ctx, spec); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("Launch = %v", err)
+			}
+			b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim))
+			if err != nil || string(b) != launchingClaim {
+				t.Fatalf("claim = %q, %v", b, err)
+			}
+			recoversClaim(t, p, spec, panes)
+		})
+	}
+}
+
+// TestTaskLockedLaunchStillRefusesBoundClaim: a claim holding a tab binding may
+// have had its command typed, so even a task-locked caller never relaunches it.
+func TestTaskLockedLaunchStillRefusesBoundClaim(t *testing.T) {
+	for _, phase := range []string{"report", "type"} {
+		t.Run(phase, func(t *testing.T) {
+			p := newProcess(t)
+			p.TaskLocked = true
+			spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=400ms"))
+			panes := adaptertest.NewShellPanes(t, "lab", "director")
+			host := &timeoutTabs{TabHost: panes, phase: phase}
+			p.Presentation = &launch.Presentation{Host: host, Report: func(ctx context.Context, _ string, _ herdr.AgentReport) (herdr.ReportOutcome, error) {
+				if phase == "report" {
+					<-ctx.Done()
+					return herdr.ReportOutcome{Exit: -1}, ctx.Err()
+				}
+				return herdr.ReportOutcome{}, nil
+			}}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second) // timing:allow the host blocks until this deadline; expiry is the injected failure, never success.
+			defer cancel()
+			if _, err := p.Launch(ctx, spec); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("Launch = %v", err)
+			}
+			sent := len(panes.Sent())
+			if _, err := p.Launch(context.Background(), spec); err == nil {
+				t.Fatal("bound claim relaunched")
+			}
+			if len(panes.Sent()) != sent || host.workspaces != 1 || claimRecoveredEvents(t, p) != 0 {
+				t.Fatalf("sent=%q workspaces=%d", panes.Sent(), host.workspaces)
+			}
+			if phase == "type" {
+				waitSucceeded(t, p)
+			}
+		})
+	}
+}
+
+// launchingClaim is the claim a pane launch writes before its tab binding.
+const launchingClaim = "{\"state\":\"launching\"}\n"
+
+// TestTaskLockedLaunchRecoversOnlyAnUnownedLaunchingClaim: a hand-written
+// legacy launching claim, as guildhall/d14 plan-1 left, launches under the task
+// lock; any other claim, or any claim without the lock, is refused untouched.
+func TestTaskLockedLaunchRecoversOnlyAnUnownedLaunchingClaim(t *testing.T) {
+	t.Run("legacy", func(t *testing.T) {
+		p := newProcess(t)
+		p.TaskLocked = true
+		spec := prepared(t, p, fixtureSpec(t, ""))
+		if err := os.WriteFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim), []byte(launchingClaim), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		recoversClaim(t, p, spec, adaptertest.NewShellPanes(t, "lab", "director"))
+	})
+	for name, c := range map[string]struct {
+		claim  string
+		locked bool
+	}{
+		"unlocked":    {launchingClaim, false},
+		"unparseable": {"{\"state\":\"launch", true},
+		"empty":       {"", true},
+		"other state": {"{\"state\":\"typed\"}\n", true},
+		"binding":     {"{\"state\":\"launching\",\"PaneID\":\"p1\"}\n", true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := newProcess(t)
+			p.TaskLocked = c.locked
+			spec := prepared(t, p, fixtureSpec(t, ""))
+			path := filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim)
+			if err := os.WriteFile(path, []byte(c.claim), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			panes := adaptertest.NewShellPanes(t, "lab", "director")
+			p.Presentation = healthyPresentation(panes, &strings.Builder{})
+			if _, err := p.Launch(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "already claimed") {
+				t.Fatalf("Launch = %v", err)
+			}
+			if b, err := os.ReadFile(path); err != nil || string(b) != c.claim {
+				t.Fatalf("claim changed to %q, %v", b, err)
+			}
+			if workspaces, err := panes.Workspaces(context.Background()); err != nil || len(workspaces) != 1 || len(panes.Sent()) != 0 {
+				t.Fatalf("workspaces %+v (%v) sent %q", workspaces, err, panes.Sent())
+			}
+		})
+	}
+	t.Run("owned", func(t *testing.T) {
+		p := newProcess(t)
+		p.TaskLocked = true
+		spec := prepared(t, p, fixtureSpec(t, ""))
+		panes := adaptertest.NewShellPanes(t, "lab", "director")
+		p.Presentation = healthyPresentation(panes, &strings.Builder{})
+		if _, err := p.Launch(context.Background(), spec); err != nil {
+			t.Fatal(err)
+		}
+		waitSucceeded(t, p)
+		path := filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim)
+		if err := os.WriteFile(path, []byte(launchingClaim), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Launch(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "already owned") {
+			t.Fatalf("Launch = %v", err)
+		}
+		if len(panes.Sent()) != 1 || claimRecoveredEvents(t, p) != 0 {
+			t.Fatalf("sent %q", panes.Sent())
+		}
+	})
 }

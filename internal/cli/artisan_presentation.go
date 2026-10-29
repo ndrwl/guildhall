@@ -3,12 +3,21 @@ package cli
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/launch"
 )
+
+// taskLockedProcess is the launch.Process an advance or a judge launches Artisans with. Each holds the task lock
+// for the whole launch, so it is TaskLocked and recovers a stale launching pane claim.
+func taskLockedProcess(cfg *config.Config, exe, storePath, state, copyDir string, stall, wait time.Duration, warnings io.Writer) *launch.Process {
+	return &launch.Process{Executable: exe, Store: storePath, StateDir: state, Copy: copyDir, StallInterval: stall, LockWait: wait, TaskLocked: true, OpenPresentation: func(ctx context.Context) (*launch.Presentation, error) {
+		return artisanPresentation(ctx, cfg, storePath, state, warnings)
+	}}
+}
 
 // artisanPresentation selects only the Director's explicit non-default session
 // for each attempt's new workspace. No session retains the process-only launcher mode.

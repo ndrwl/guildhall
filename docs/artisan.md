@@ -231,7 +231,7 @@ The [event table](#events) describes the rung observations recorded in `events.j
 
 ### Events
 
-The launcher appends one JSON object per line to `events.jsonl`, except `presentation-report`, appended by the process that starts a pane launch; every line carries `event`, its name, and `at`, an RFC 3339 UTC time, plus the fields below.
+The launcher appends one JSON object per line to `events.jsonl`, except `presentation-report` and `pane-claim-recovered`, appended by the process that starts a pane launch; every line carries `event`, its name, and `at`, an RFC 3339 UTC time, plus the fields below.
 An event is observation only; a reader must tolerate unknown events.
 The file carries no schema field.
 Contract tests already read it, but no command reads it yet; it gains a schema when a command reads it.
@@ -258,6 +258,7 @@ Contract tests already read it, but no command reads it yet; it gains a schema w
 | `advance` | A run of the launcher's advance of the task (`--advance`) has exited or failed to start, after the outcome was recorded; a failed advance logs two | `command`, `exit` when it ran, `error` when it failed |
 | `settled` | Resume settlement publishes a new outcome after the launcher is gone and the unit is proven empty; returning an existing outcome does not emit it | `outcome` |
 | `presentation-report` | A pane launch has registered the attempt's pane with Herdr (`herdr pane report-agent`), once per launch that reaches the report: at once when the report fails, which still fails the launch before anything is typed; when typing or ownership fails, with the read-back skipped; otherwise after the launcher owns the attempt, with one `herdr pane get` read-back. Diagnosis only: a failed read-back or event write only warns on the starting process's stderr, and the pane is never liveness evidence | `pane`, `exit` (-1 when Herdr did not run or was stopped), `stdout` (at most 4 KiB), `stdout_truncated` when cut, `error` when the report failed, `readback_agent_status` and `readback_pane` (the raw pane object, or a string of its first 4 KiB when cut) when read back, `readback_error` when the read-back failed or was skipped |
+| `pane-claim-recovered` | A pane launch holding the task lock found the attempt's stale `{"state":"launching"}` `pane-launch.json` claim with no owner and launched over it ([claim recovery](#workflow-artisan-workspaces)); an earlier Herdr workspace with the same label may have been left behind by a lost create response and should be closed by hand | `workspace`, that label |
 
 `rung-emptied` is written once for the rung that ends the stop: rung 1 can be found empty before the ladder's first check, during its wait or during cooperative supervision, and each of those paths returns after writing it.
 `TestEventsDocumented` pins the launcher's typed event vocabulary to this table in both directions.
@@ -472,11 +473,15 @@ After the launcher and its watcher finish, the bridge prints a finished line and
 The launcher passes the bridge the effective `artisan_workspace_close_after` as the internal `--workspace-close-after` flag, so the line states it: `This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open.`, or, when the setting is `0`, that the Herdr workspace stays open.
 A person may close the presentation sooner without losing the attempt's log, result or isolated copy.
 
-An attempt-local `pane-launch.json` single-use claim is written before opening a pane, then records the tab binding before typing.
+An attempt-local `pane-launch.json` claim, `{"state":"launching"}`, is written before opening a pane, then replaced by the tab binding before typing; once it holds a tab binding it is single-use.
 An ambiguous API response, startup timeout or caller interruption leaves that claim in place and returns an error without stopping an unverified launcher or typing another command.
 A duplicate launch reconciles the attempt's files and durable ownership for diagnosis and refuses to launch again; a missing pane is never permission to duplicate work.
 Inspect with `artisan status` and, only for an exited owner, reconcile with `artisan resume`; normal workflow retries have a new attempt number and their own claim.
-A claimed attempt with no owner needs operator inspection of the preserved launch intent rather than an automatic retry of the same launch.
+A claim still `launching` proves nothing was typed, so no worker exists for that launch: when workspace or tab creation or shell readiness failed or timed out, or the process died before the binding was written.
+The advance and the judge hold the task lock for the whole launch, so one that finds a `launching` claim and no ownership record knows the claimant's launch has ended: it overwrites the claim, never removing it, and launches the same attempt again, so the engine's replay on the next advance unblocks the step.
+It warns on stderr and logs a [`pane-claim-recovered`](#events) event: an earlier Herdr workspace with the same label may have been left behind by a lost create response, and Guildhall neither finds nor closes it, so close it by hand.
+Any other claim is still refused: a launch without the task lock, an unparseable or empty claim, or an attempt with an ownership record.
+A claim holding a tab binding and no owner may have had its command typed; it still needs operator inspection of the preserved launch intent rather than an automatic retry of the same launch.
 
 The supervisor's **workspace close sweep** closes a finished attempt's Herdr workspace only after its result is recorded and its work is preserved, and only what Guildhall created (R1.54; [decision](decisions/artisan-workspace-close-sweep.md)).
 It runs when each Director session starts, a reload's included, and every 5 minutes, off the supervisor's decision path, and only when `herdr_session` is set.

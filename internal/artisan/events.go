@@ -14,6 +14,7 @@ const (
 	eventEnded
 	eventHeartbeatFailed
 	eventLadder
+	eventPaneClaimRecovered
 	eventPresentationReport
 	eventResultAccepted
 	eventRung
@@ -37,6 +38,7 @@ var eventNames = []eventName{
 	eventEnded,
 	eventHeartbeatFailed,
 	eventLadder,
+	eventPaneClaimRecovered,
 	eventPresentationReport,
 	eventResultAccepted,
 	eventRung,
@@ -67,6 +69,8 @@ func (n eventName) String() string {
 		return "heartbeat-failed"
 	case eventLadder:
 		return "ladder"
+	case eventPaneClaimRecovered:
+		return "pane-claim-recovered"
 	case eventPresentationReport:
 		return "presentation-report"
 	case eventResultAccepted:
@@ -114,6 +118,18 @@ func LogAdvance(dir, command string, exit int, err error) error {
 	}
 	l := &Launcher{c: LauncherConfig{Dir: dir}}
 	l.event(eventAdvance, fields)
+	return l.logErr
+}
+
+// LogPaneClaimRecovered appends a "pane-claim-recovered" event to EventsFile
+// in the attempt directory dir: a pane launch holding the task lock found the
+// attempt's stale launching claim, with no owner, and launched over it; an
+// earlier Herdr workspace labelled workspace may have been left behind by a
+// lost create response. It is appended like LogPresentationReport and returns
+// the error of the write.
+func LogPaneClaimRecovered(dir, workspace string) error {
+	l := &Launcher{c: LauncherConfig{Dir: dir}}
+	l.event(eventPaneClaimRecovered, map[string]any{"workspace": workspace})
 	return l.logErr
 }
 
