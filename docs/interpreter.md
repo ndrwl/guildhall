@@ -244,6 +244,7 @@ Validate and deliver share that identity: a replay, a moved base tip or reaching
 The first observation remains immutable; a different head or state gets a new report.
 If the observation file was written but its document record failed, the next blocked observation with that identity records the existing bytes rather than regenerating evidence against a moved base.
 An advance replays recorded observation messages before walking the workflow, so a notification lost after its document committed is recovered even if the forge has since cleared.
+A replayed message whose id the Director already holds with other text, such as a report an older binary sent before the template changed, counts as already reported: the earlier message stands, the new text is not delivered and the advance goes on. This holds for every Director message the engine sends; any other send error still fails the advance.
 Replay recognizes only the full-head identity with state `conflicting` or `behind`, not ordinary workflow documents whose names also begin with `pr-blocked-`.
 Validate's refresh cache retains the Director wait between reads, and the checks watcher no longer polls a task waiting on the Director.
 A Director-initiated advance rechecks when due; deliver rechecks on each advance.

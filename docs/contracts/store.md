@@ -39,6 +39,7 @@ The message types `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` 
 
 The engine-origin `pr-blocked` message type is registered for Director inbox counting and wake delivery.
 Its head/state replay identity and observation document are owned by the interpreter; no new store mutation or schema is introduced.
+`SendMessage` keeps its semantics: the same request replays its receipt and a different request under the same id is `ErrMutationConflict`. The interpreter treats that conflict, or `ErrExists`, on a Director message as already reported, so a re-sent message whose text changed never fails an advance ([interpreter](../interpreter.md)).
 
 ## Tests
 
