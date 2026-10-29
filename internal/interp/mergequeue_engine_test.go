@@ -520,7 +520,7 @@ func (r *judgeAfter) PutDocument(id string, d store.DocumentRef) (store.Receipt,
 	rc, err := r.Records.PutDocument(id, d)
 	if err == nil && d.Name == r.name && !r.started {
 		r.started = true
-		_, err = r.Records.StartCappedAttempt("judge-"+d.Name, "app", "t7", "judge", store.AttemptCaps{})
+		_, err = r.StartCappedAttempt("judge-"+d.Name, "app", "t7", "judge", store.AttemptCaps{})
 	}
 	return rc, err
 }
