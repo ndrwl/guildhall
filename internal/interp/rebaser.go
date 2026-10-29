@@ -153,8 +153,13 @@ func (r *run) resolveRebase(owner workflow.Step, repo config.Repository, l rebas
 				return Next{}, fail(true, "%s; rebaser attempt %d of %s %s", l.doc.Reason, a.Number, rs.ID, a.Outcome), nil
 			}
 			var report rebaseReport
-			if _, err := r.readJSONDoc(documentName(place{step: rs.ID, round: a.Number, part: "rebase"}), &report); err != nil {
+			name := documentName(place{step: rs.ID, round: a.Number, part: "rebase"})
+			ok, err := r.readJSONDoc(name, &report)
+			switch {
+			case err != nil:
 				return Next{}, nil, err
+			case !ok || report.BehaviourChange == nil:
+				return Next{}, nil, fmt.Errorf("rebaser attempt %d of %s recorded no %s saying whether its resolution changes behaviour", a.Number, rs.ID, name)
 			}
 			if *report.BehaviourChange {
 				return Next{}, fail(false, "the rebaser reports that resolving %s changes behaviour: %s", strings.Join(files, ", "), report.Reason), nil
@@ -165,6 +170,9 @@ func (r *run) resolveRebase(owner workflow.Step, repo config.Repository, l rebas
 			}
 			h, err := r.head(render.Input{Name: hd.Path, SHA256: hd.SHA256})
 			if err != nil {
+				return Next{}, nil, err
+			}
+			if err := r.refuseRunning(); err != nil {
 				return Next{}, nil, err
 			}
 			squashed, err := r.e.Workspaces.Squash(r.ctx, repo.Path, l.doc.Onto, h)
@@ -293,11 +301,14 @@ func docInput(port string, d store.DocumentRef, dir string) render.Input {
 	return render.Input{Port: port, Name: d.Path, SHA256: d.SHA256, Path: filepath.Join(dir, filepath.FromSlash(d.Path))}
 }
 
-// adopt moves the task's worktree from commit from to commit to, keeping untracked stage outputs; without
-// Workspaces there is no worktree to move.
+// adopt moves the task's worktree from commit from to commit to, keeping untracked stage outputs, and refuses while
+// any attempt of the task runs in it; without Workspaces there is no worktree to move.
 func (r *run) adopt(repo config.Repository, from, to string) error {
 	if r.e.Workspaces == nil || from == to {
 		return nil
+	}
+	if err := r.refuseRunning(); err != nil {
+		return err
 	}
 	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: TaskBranch(r.task.ID), Dir: r.workPath()}
 	if err := r.e.Workspaces.Adopt(r.ctx, w, from, to); err != nil {

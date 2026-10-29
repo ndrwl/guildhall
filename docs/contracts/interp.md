@@ -53,9 +53,11 @@ Validate retains the Director wait in its refresh cache; errors are not conflict
 
 [The merge queue](../interpreter.md#the-merge-queue) and [tiered rebase](../interpreter.md#tiered-rebase) ([decision](../decisions/merge-queue-rebase.md)): `MergeQueue`, an optional `Records` extension that `*store.Store` and `cli.storeRecords` implement, with `MergeQueue`, `JoinMergeQueue`, `LeaveMergeQueue`, `ClaimMergeFront` and `ReleaseMergeFront`; records without it make every task its own queue's front.
 Deliver authorizes before it queues, returns `WaitMergeQueue` behind the front, and at the front replays the head onto `Mergeability.Base` through `Workspaces.Rebase`, recording `<deliver>-<k>-rebase-<n>` (`guildhall.rebase/1`), `<deliver>-<k>-rebase-<n>-pr`, `<deliver>-<k>-checks-<head>` and, for a rebase it cannot stand, `<deliver>-<k>-escalated-<n>` (`guildhall.rebase-escalation/1`) with an automatic send-back of the build step.
-A carried-over approval is `<deliver>-<k>-authorized`, `guildhall.merge-authorization/2`, with `carried_from`, `rebase`, `kind` and `spec_digest`.
+A carried-over approval is `<deliver>-<k>-authorized`, `guildhall.merge-authorization/2`, with `carried_from`, `rebase`, `kind` and `spec_digest`; one already recorded for the rebased head is merged under again on replay or retry, never recorded twice.
 Validate records `<validate>-<k>-rebase-<n>` for a conflicting PR, and its result is bound to the rebased head.
-A rebase is refused while any attempt of the task runs, and a front that already rebased three times in one stay waits for the Director instead of rebasing again.
+A rebase, a squash and every worktree move are refused while any attempt of the task runs, read afresh from `Records.Attempts`, and a front that already rebased three times in one stay waits for the Director instead of rebasing again.
+A held front keeps the front until its own next advance releases it.
+`mergequeue_test.go`, `mergequeue_engine_test.go` and `tier2_test.go` cover the queue, each tier at deliver and validate, every `reapprove_after_rebase` against every kind, the `never` carry-over across a major send-back, crash and replay before each record of tier 1, tier 2 and the validate rebase, the refusals while an attempt runs, hold, priority, rejoin, cancellation and the race for the front; the fixes after review 7 were run red first ([red runs](../evidence/merge-queue-review-7-2026-10-29-red.txt)).
 The messages are `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`.
 `StepSentBack` implements the [send-back admission, feedback and replay contract](../step-send-back.md); invalid requests and changed feedback are `ErrEvent`.
 

@@ -54,7 +54,8 @@ func TestMergeQueueViews(t *testing.T) {
 	if code != 0 || len(st.MergeQueues) != 1 || st.MergeQueues[0].Repository != "app" || len(st.MergeQueues[0].Entries) != 1 {
 		t.Fatalf("status: exit %d, %s", code, out)
 	}
-	if e := st.MergeQueues[0].Entries[0]; e.Task != "t-1" || !e.Held || e.Front || e.WaitingOn != "queue" {
+	// A held front keeps the front until its own next advance releases it.
+	if e := st.MergeQueues[0].Entries[0]; e.Task != "t-1" || !e.Held || !e.Front || e.WaitingOn != "ci" {
 		t.Fatalf("status entry after hold = %+v", e)
 	}
 

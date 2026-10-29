@@ -150,8 +150,9 @@ func TestMergeQueueRejoinKeepsReadyTime(t *testing.T) {
 	}
 }
 
-// TestMergeQueueHoldAndCancel: a held front does not stand and the next task may claim it, keeping the held task's
-// place by ready time; a cancelled front's task leaves the queue.
+// TestMergeQueueHoldAndCancel: a held front stands until its task releases it at its next advance, so no other task
+// can claim it before then; after the release the next task not held may claim it, and the held task keeps its place
+// by ready time. A cancelled front's task leaves the queue.
 func TestMergeQueueHoldAndCancel(t *testing.T) {
 	s := queueStore(t, "a", "b", "c")
 	authorize(t, s, "a", 1)
@@ -165,6 +166,17 @@ func TestMergeQueueHoldAndCancel(t *testing.T) {
 		t.Fatalf("SetMergeHold = %+v, %v", rc, err)
 	}
 	q, _ := s.MergeQueue("app")
+	if q.Front == nil || q.Front.TaskID != "a" || !q.Entries[0].Held || !q.Entries[0].Front {
+		t.Fatalf("held front before its next advance = %+v", q)
+	}
+	if _, err := s.ClaimMergeFront("front-b-early", "app", "b"); !errors.Is(err, ErrMergeQueued) {
+		t.Fatalf("claim by b while the held front stands = %v", err)
+	}
+	// The held task's own release, at its next advance, frees the front.
+	if _, err := s.ReleaseMergeFront("release-a", "app", "a"); err != nil {
+		t.Fatal(err)
+	}
+	q, _ = s.MergeQueue("app")
 	if q.Front != nil || !q.Entries[0].Held || q.Entries[0].TaskID != "a" {
 		t.Fatalf("held = %+v", q)
 	}
@@ -176,10 +188,6 @@ func TestMergeQueueHoldAndCancel(t *testing.T) {
 	}
 	if _, err := s.ClaimMergeFront("front-b", "app", "b"); err != nil {
 		t.Fatalf("claim by b, the first task not held = %v", err)
-	}
-	// The held task's own release, at its next advance, leaves b's front standing.
-	if _, err := s.ReleaseMergeFront("release-a", "app", "a"); err != nil {
-		t.Fatal(err)
 	}
 	if _, err := s.SetMergeHold("unhold-a", "app", "a", false); err != nil {
 		t.Fatal(err)

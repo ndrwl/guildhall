@@ -31,7 +31,7 @@ The merge queue ([interpreter](../interpreter.md#the-merge-queue), [decision](..
 `JoinMergeQueue` queues an open task under the decision or authorization id that allowed its merge, taking as its ready time, the first time only, the commit time of the receipt with the record it names (`decision/<id>` or `document/<name>`); a rejoin keeps it.
 `LeaveMergeQueue` takes a task out, keeping its entry and ready time with `keepReady`, as after a build send-back, or removing it, as after a merge or cancellation, and releases the front it holds.
 `ClaimMergeFront` makes the first queued, unheld task in `OrderMergeQueue` order (priority, ready time, task id) the front in one mutation, refusing any other with `ErrMergeQueued` and recording nothing, and counts its stays; `ReleaseMergeFront` gives the front up and leaves the task queued.
-`MergeQueue` reads a repository's queue in one transaction, front first; a front whose task left, is held or is closed does not stand.
+`MergeQueue` reads a repository's queue in one transaction, front first; a front whose task left or is closed does not stand, and a held front stands until its task releases it at its next advance, so no other task claims the front while the held one may still be pushing or merging.
 `SetMergeHold` records a task's hold-merge with its history, receipt record `merge-hold`; the queue's own receipts name `merge-queue`.
 The message types `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried` are registered in `MessageTypes` as the engine's.
 

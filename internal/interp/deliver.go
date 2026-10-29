@@ -282,6 +282,18 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 	return []condition{guildmaster, artisan, ci, r.nothingOpen(s, requires.Open(), outcomes)}, nil
 }
 
+// carryRefusals lists every condition after guildmaster_approval that does not hold, required or not: a carried-over
+// approval needs them all, nothing_open with no new findings included.
+func carryRefusals(conditions []condition) []string {
+	var out []string
+	for _, c := range conditions[1:] {
+		if !c.Holds {
+			out = append(out, fmt.Sprintf("%s does not hold (%s)", c.Requirement, c.Reason))
+		}
+	}
+	return out
+}
+
 // failing lists the required conditions after guildmaster_approval that do not hold.
 func failing(conditions []condition) []string {
 	var out []string
@@ -317,16 +329,27 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 		k := r.deliverRound(s)
 		failed := failing(conditions)
 		id := decisionID(s.ID, k, false)
-		if len(failed) == 0 && requires.Guildmaster() && repo.Merge.Reapprove() == config.RebaseNever {
-			from, err := r.carryKind(s)
+		lead := ""
+		if requires.Guildmaster() && repo.Merge.Reapprove() == config.RebaseNever {
+			e, ok, err := r.carryFrom(s)
 			if err != nil {
 				return "", "", Next{}, err
 			}
-			if from != "" {
-				if err := r.carry(s, id, x, conditions, from, nil, config.RebaseMajorConflicts); err != nil {
-					return "", "", Next{}, err
+			if ok {
+				// The carry-over holds only as reauthorize's does: every condition holds, nothing_open included even
+				// when it is not required, and the accepted spec is the one the approval was given under.
+				why := carryRefusals(conditions)
+				if spec := r.specDigest(s); e.SpecDigest == "" || spec != e.SpecDigest {
+					why = append(why, fmt.Sprintf("the accepted spec %s is not %s, the one %s was approved under", cmp.Or(spec, "(none)"), cmp.Or(e.SpecDigest, "(none recorded)"), e.Authorization))
 				}
-				return id, "document/" + id + "-authorized", Next{}, nil
+				if len(why) == 0 {
+					if err := r.carry(s, id, x, conditions, e.Authorization, nil, config.RebaseMajorConflicts); err != nil {
+						return "", "", Next{}, err
+					}
+					return id, "document/" + id + "-authorized", Next{}, nil
+				}
+				lead = fmt.Sprintf("Head %s was rebuilt after a major_conflicts rebase of the head merge %s authorized; under reapprove_after_rebase = never the authorization would carry over, but it does not: %s.\n",
+					x.head, e.Authorization, strings.Join(why, "; "))
 			}
 		}
 		if !requires.Guildmaster() && len(failed) == 0 {
@@ -343,7 +366,6 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 			}
 			return id, "document/" + id + "-authorized", Next{}, nil
 		}
-		lead := ""
 		if !requires.Guildmaster() {
 			lead = fmt.Sprintf("Guildhall did not merge by itself: %s.\n", strings.Join(failed, "; "))
 		}
@@ -523,7 +545,7 @@ func (r *run) stuck(s workflow.Step, head string, m forge.Mergeability, why erro
 	if !errors.Is(why, errRebaseStuck) {
 		return r.notifyMergeBlocked(id, m)
 	}
-	text := fmt.Sprintf("Pull request: %s\nHead: %s\nBase: %s\nState: %s\nCommits behind: %d\nConflicting files: %s\nStep %s rebased this task %d times in one stay at the front of the merge queue and the pull request is still %s, so Guildhall stops rebasing it. The task keeps the front and waits for the Director: guildhall task hold-merge --repo %s %s releases the front, and holding it again later starts a new stay with %d more rebases; guildhall step send-back sends the build back to rebase it.",
+	text := fmt.Sprintf("Pull request: %s\nHead: %s\nBase: %s\nState: %s\nCommits behind: %d\nConflicting files: %s\nStep %s rebased this task %d times in one stay at the front of the merge queue and the pull request is still %s, so Guildhall stops rebasing it. The task keeps the front and waits for the Director: guildhall task hold-merge --repo %s %s holds it and its next advance releases the front, and unholding it later starts a new stay with %d more rebases; guildhall step send-back sends the build back to rebase it.",
 		m.URL, m.Head, m.Base, m.State, m.Behind, strings.Join(m.Files, ", "), s.ID, maxRebaseRounds, m.State, r.task.Repository, r.task.ID, maxRebaseRounds)
 	return r.notify("rebase-stuck."+id, store.MessageRebaseStuck, text)
 }
@@ -534,6 +556,14 @@ func (r *run) stuck(s workflow.Step, head string, m forge.Mergeability, why erro
 // asked.
 func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, x deliverHead, links []rebaseLink, outcomes []reviewOutcome) (bool, Next, error) {
 	requires := repo.Merge.Requires
+	// An authorization already recorded for x stands, so a replay after a crash, or a retry after the forge refused
+	// the merge, merges under it again and never records a second one.
+	if id, err := r.authorization(s, x.head); err != nil || id != "" {
+		if err != nil {
+			return false, Next{}, err
+		}
+		return r.merge(s, id, repo, x.head, x.pr)
+	}
 	conditions, err := r.conditions(s, requires, outcomes, x, nil)
 	if err != nil {
 		return false, Next{}, err
@@ -553,7 +583,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 	kind := chainKind(links)
 	k := r.deliverRound(s)
 	id := decisionID(s.ID, k, false)
-	holds := !slices.ContainsFunc(conditions[1:], func(c condition) bool { return !c.Holds })
+	holds := len(carryRefusals(conditions)) == 0
 	spec, err := r.sameSpec(s, from)
 	if err != nil {
 		return false, Next{}, err
@@ -580,11 +610,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 	if findings > 0 {
 		why = append(why, fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s)", findings))
 	}
-	for _, c := range conditions[1:] {
-		if !c.Holds {
-			why = append(why, fmt.Sprintf("%s does not hold (%s)", c.Requirement, c.Reason))
-		}
-	}
+	why = append(why, carryRefusals(conditions)...)
 	lead := fmt.Sprintf("Head %s is a %s rebase of the head merge %s authorized; the authorization does not carry over: %s.\n", x.head, kind, from, strings.Join(why, "; "))
 	next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, lead))
 	return false, next, err

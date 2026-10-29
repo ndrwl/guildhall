@@ -71,12 +71,13 @@ The double `gittest.Workspaces` implements it over its own directories: `Advance
 The interpreter's [tiered rebase](../interpreter.md#tiered-rebase) replays a task's whole change as one commit onto a base tip, through five operations beside the workspace ones ([decision](../decisions/merge-queue-rebase.md)).
 None runs `git rebase`, and only `Adopt` touches a worktree.
 
-- `Program.Rebase(ctx, git.Replay{Repository, Base, Head})` runs `git merge-tree --write-tree -z --no-messages <base> <head>`, so there is one conflict round, against exactly the base tip given, which is the one [mergeability](forge.md) measured.
+- `Program.Rebase(ctx, git.Replay{Repository, Base, Head})` runs `git -c merge.conflictStyle=merge merge-tree --write-tree -z --no-messages <base> <head>`, so there is one conflict round, against exactly the base tip given, which is the one [mergeability](forge.md) measured; the conflict style is forced, so a user's `diff3` or `zdiff3` config never adds the merge base's lines to a region and the count is the same on every machine.
   It returns `git.Rebased`: the base, the head, their merge base, the result tree, the conflicts and the patch-ids.
   - With no conflicts, `Commit` is `commit-tree <tree> -p <base>`, and `PatchID` is `git patch-id --stable` of `base..commit`.
   - With conflicts, `Marked` is that commit of the tree with conflict markers written in, and `Commit` and `PatchID` are empty.
   - `HeadPatchID` is `git patch-id --stable` of `merge-base..head`, the change that was reviewed; equal ids mean the replay changes exactly what the head changed, context lines included and line numbers not.
-  - Each conflict is a path, sorted, with `Lines`, the lines between `<<<<<<<` and `>>>>>>>` on both sides without the marker lines (`=======` and diff3 `|||||||` lines are markers too), and `Markers`, false for a binary, delete/modify or rename conflict, whose `Lines` is 0.
+  - Each conflict is a path, sorted, with `Lines`, the lines between `<<<<<<<` and `>>>>>>>` on both sides without the marker lines (`=======` is a marker too, and a diff3 region's common-ancestor section, from `|||||||` to `=======`, is never counted), and `Markers`, false for a binary, delete/modify or rename conflict, whose `Lines` is 0.
+    Only a path the merged tree does not hold as a blob, or a blob without markers, is such a conflict; any other `ls-tree` or `cat-file` failure, a timeout included, is an error rather than a major conflict.
   - The commit takes the head's message, author and author date, and as its committer date the later of the head's and the base's, so replaying the same commits again writes the same commit.
 - `Program.Squash(ctx, repository, base, head)` writes one commit of `head`'s tree on parent `base`, dated as `Rebase` dates its commit: a resolution committed on a marked head becomes one commit on the base, `resolved`.
 - `Program.Diff(ctx, repository, a, b)` is `git diff --no-color --no-ext-diff --no-renames --full-index a b`; the narrowed review reads `Diff(marked, resolved)`, exactly the resolved hunks.
@@ -87,7 +88,7 @@ None runs `git rebase`, and only `Adopt` touches a worktree.
 `Rebase`, `Squash`, `Diff` and `PatchID` write only objects and move no branch, so repeating them is safe.
 Both commits must be full object ids the repository holds; an invalid id, a git failure, a `merge-tree` exit other than 0 or 1 and an ended context are errors.
 Each git run is bounded by `Program.Timeout` with `GIT_TERMINAL_PROMPT=0`, as below; `merge-tree`'s conflict exit 1 is read through a runner that also returns the exit code.
-The engine, not git, refuses a rebase while any attempt of the task runs.
+The engine, not git, refuses a rebase, a squash and every worktree move while any attempt of the task runs, from a fresh read of its attempts.
 The double `gittest.Workspaces` implements all five: `SetRebase(base, head, rebased)` scripts a replay, a replay without a script is clean with equal patch-ids, `SetDiff` scripts a diff and `Replays` lists the calls.
 
 ### Retire

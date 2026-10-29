@@ -259,6 +259,13 @@ func TestRebaseSettings(t *testing.T) {
 		if threshold == RebaseNever && slices.ContainsFunc(kinds[:3], m.NeedsReapproval) {
 			t.Errorf("never asks for a %v rebase", kinds[:3])
 		}
+		// An unknown kind fails closed, whatever the threshold.
+		if !m.NeedsReapproval("rebased_somehow") || !m.NeedsReapproval("") {
+			t.Errorf("threshold %s: an unknown kind carries the approval over", threshold)
+		}
+	}
+	if !(MergeOptions{ReapproveAfterRebase: "always"}).NeedsReapproval(RebaseNoConflicts) {
+		t.Error("an unknown threshold carries the approval over")
 	}
 	for name, c := range map[string]struct{ section, want string }{
 		"unknown kind":   {"reapprove_after_rebase = \"always\"", "must be no_conflicts, minor_conflicts, major_conflicts or never"},

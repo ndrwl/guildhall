@@ -78,7 +78,9 @@ func (p Program) Rebase(ctx context.Context, r Replay) (Rebased, error) {
 	if out.HeadPatchID, err = p.patchID(ctx, r.Repository, out.MergeBase, r.Head); err != nil {
 		return Rebased{}, err
 	}
-	stdout, code, err := p.status(ctx, r.Repository, nil, nil, "merge-tree", "--write-tree", "-z", "--no-messages", r.Base, r.Head)
+	// The conflict style is forced to merge, whatever the user's git config says: diff3 or zdiff3 would write the
+	// merge base's lines into each region too, and the count would depend on the machine.
+	stdout, code, err := p.status(ctx, r.Repository, nil, nil, "-c", "merge.conflictStyle=merge", "merge-tree", "--write-tree", "-z", "--no-messages", r.Base, r.Head)
 	if code != 0 && code != 1 {
 		return Rebased{}, fmt.Errorf("git merge-tree %s %s: exit %d: %v", r.Base, r.Head, code, err)
 	}
@@ -104,8 +106,17 @@ func (p Program) Rebase(ctx context.Context, r Replay) (Rebased, error) {
 	slices.Sort(paths)
 	for _, path := range paths {
 		c := Conflict{Path: path}
-		blob, err := p.read(ctx, r.Repository, "cat-file", "blob", out.Tree+":"+path)
-		if err == nil {
+		// Only a path the merged tree does not hold as a blob (a delete/modify, a rename, a submodule) is a conflict
+		// without markers; any other git failure is an error, not a reason to send the build back.
+		entry, err := p.read(ctx, r.Repository, "ls-tree", "-z", out.Tree, "--", path)
+		if err != nil {
+			return Rebased{}, err
+		}
+		if fields := strings.Fields(string(entry)); len(fields) >= 2 && fields[1] == "blob" {
+			blob, err := p.read(ctx, r.Repository, "cat-file", "blob", out.Tree+":"+path)
+			if err != nil {
+				return Rebased{}, err
+			}
 			c.Lines, c.Markers = conflictLines(blob)
 		}
 		out.Conflicts = append(out.Conflicts, c)
@@ -229,19 +240,23 @@ func (p Program) patchID(ctx context.Context, repository, a, b string) (string, 
 }
 
 // conflictLines counts the lines between conflict markers, without the marker lines, and reports whether there were
-// any markers. A region runs from a "<<<<<<< " line to a ">>>>>>> " line; the "=======" and diff3 "|||||||" lines
-// inside it are markers too.
+// any markers. A region runs from a "<<<<<<< " line to a ">>>>>>> " line; the "=======" line inside it is a marker
+// too. Rebase forces the merge conflict style, but a diff3 region's common-ancestor section, from its "|||||||"
+// line to the "=======" line, is skipped all the same: only the two sides count.
 func conflictLines(blob []byte) (int, bool) {
-	n, in, markers := 0, false, false
+	n, in, ancestor, markers := 0, false, false, false
 	for line := range strings.Lines(string(blob)) {
 		line = strings.TrimRight(line, "\r\n")
 		switch {
 		case strings.HasPrefix(line, "<<<<<<< ") || line == "<<<<<<<":
-			in, markers = true, true
+			in, ancestor, markers = true, false, true
 		case in && (strings.HasPrefix(line, ">>>>>>> ") || line == ">>>>>>>"):
 			in = false
-		case in && (line == "=======" || strings.HasPrefix(line, "||||||| ") || line == "|||||||"):
-		case in:
+		case in && line == "=======":
+			ancestor = false
+		case in && (strings.HasPrefix(line, "||||||| ") || line == "|||||||"):
+			ancestor = true
+		case in && !ancestor:
 			n++
 		}
 	}

@@ -79,11 +79,11 @@ func tier2(t *testing.T, e *env, f *forgetest.Fake, ws *queueWorkspaces, o func(
 
 // TestQueueTier2 runs a minor_conflicts rebase at the front end to end: the rebaser resolves the marked replay, the
 // resolution is squashed onto the base tip, a narrowed review approves exactly the resolved hunks, and the head is
-// pushed, its checks read and merged under the carried-over approval; under reapprove_after_rebase = minor_conflicts
-// it asks a new decision instead.
+// pushed, its checks read and merged under the carried-over approval, under every reapprove_after_rebase above
+// minor_conflicts; under no_conflicts and minor_conflicts it asks a new decision instead.
 func TestQueueTier2(t *testing.T) {
 	for _, b := range backends {
-		for _, threshold := range []config.RebaseKind{"", config.RebaseMinorConflicts} {
+		for _, threshold := range thresholds {
 			t.Run(b.name+"/"+string(threshold), func(t *testing.T) {
 				e, f, ws := queueEnv(t, b)
 				e.eng.Config.Repositories[0].Merge.ReapproveAfterRebase = threshold
@@ -98,8 +98,11 @@ func TestQueueTier2(t *testing.T) {
 				f.SetChecks(repoRemote, resolved, ciPassed...)
 				f.SetMergeability(forge.Mergeability{})
 				next := e.advance(t, interp.Event{Kind: interp.TaskCreated})
-				if threshold == config.RebaseMinorConflicts {
+				if threshold == config.RebaseMinorConflicts || threshold == config.RebaseNoConflicts {
 					want(t, next, interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-2"})
+					if d := e.decision(t, "deliver-2"); !strings.Contains(d.Question, "a minor_conflicts rebase is at or above reapprove_after_rebase = "+string(threshold)) {
+						t.Fatalf("question = %q", d.Question)
+					}
 					e.answer(t, "deliver-2", "merge")
 					next = e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-2"})
 				} else if a := e.pullRequestDoc(t, "deliver-2-authorized"); a["kind"] != "minor_conflicts" {

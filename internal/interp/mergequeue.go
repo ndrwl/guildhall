@@ -176,10 +176,13 @@ func chainHead(h string, links []rebaseLink) string {
 	return h
 }
 
-// chainKind is the hardest kind among links.
+// chainKind is the hardest kind among links; an unknown kind is harder than any, so it always needs a new decision.
 func chainKind(links []rebaseLink) config.RebaseKind {
 	k := config.RebaseNoConflicts
 	for _, l := range links {
+		if l.doc.Kind.Rank() < 0 {
+			return l.doc.Kind
+		}
 		if l.doc.Kind.Rank() > k.Rank() {
 			k = l.doc.Kind
 		}
@@ -210,9 +213,8 @@ func (r *run) replay(repo config.Repository, head, base string) (rebaseDoc, erro
 	if r.e.Workspaces == nil {
 		return rebaseDoc{}, fmt.Errorf("%w: rebasing without workspaces", ErrUnsupported)
 	}
-	if running := slices.IndexFunc(r.attempts, func(a store.StageAttempt) bool { return a.Outcome == "" }); running >= 0 {
-		a := r.attempts[running]
-		return rebaseDoc{}, fmt.Errorf("%w: step %s attempt %d is still running", errRebaseRunning, a.Step, a.Number)
+	if err := r.refuseRunning(); err != nil {
+		return rebaseDoc{}, err
 	}
 	rb, err := r.e.Workspaces.Rebase(r.ctx, git.Replay{Repository: repo.Path, Base: base, Head: head})
 	if err != nil {
@@ -248,6 +250,19 @@ func (r *run) replay(repo config.Repository, head, base string) (rebaseDoc, erro
 
 // errRebaseRunning reports a rebase refused because an attempt of the task is running.
 var errRebaseRunning = errors.New("cannot rebase while an attempt runs")
+
+// refuseRunning refuses a rebase, squash or worktree move while any attempt of the task runs, from a fresh read of
+// its attempts rather than the list the advance began with, since another process may have started one since.
+func (r *run) refuseRunning() error {
+	attempts, err := r.e.Records.Attempts(r.task.Repository, r.task.ID)
+	if err != nil {
+		return err
+	}
+	if i := slices.IndexFunc(attempts, func(a store.StageAttempt) bool { return a.Outcome == "" }); i >= 0 {
+		return fmt.Errorf("%w: step %s attempt %d is still running", errRebaseRunning, attempts[i].Step, attempts[i].Number)
+	}
+	return nil
+}
 
 // putJSONDoc records v as document name of the task at <tasks>/<repo>/<task>/<dir>/<file>.
 func (r *run) putJSONDoc(name, dir, file string, v any) error {
@@ -285,11 +300,8 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 	if pr == nil {
 		return nil, fmt.Errorf("%w: rebasing head %s, which no publish step pushed", ErrUnsupported, l.doc.From)
 	}
-	if r.e.Workspaces != nil {
-		w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: TaskBranch(r.task.ID), Dir: r.workPath()}
-		if err := r.e.Workspaces.Adopt(r.ctx, w, l.doc.From, l.head); err != nil {
-			return nil, fmt.Errorf("move %s to rebased head %s: %w", w.Branch, l.head, err)
-		}
+	if err := r.adopt(repo, l.doc.From, l.head); err != nil {
+		return nil, err
 	}
 	title := cmp.Or(strings.TrimSpace(r.task.Title), r.task.ID)
 	body := fmt.Sprintf("Guildhall task %s/%s, rebased by step %s onto %s at %s (%s).\n", r.task.Repository, r.task.ID, s.ID, l.doc.Onto, l.head, l.doc.Kind)
@@ -473,6 +485,10 @@ type escalationDoc struct {
 	// Carry reports that the rebuilt head may carry the authorization over under reapprove_after_rebase = never:
 	// true for major conflicts, false for red CI, findings or a behaviour change, which need a new decision.
 	Carry bool `json:"carry"`
+	// SpecDigest is the accepted spec the authorization was given under: its -authorized document's, or, for a merge
+	// decision, the one the review outcomes of the approved head were bound to when it escalated. A carry-over to the
+	// rebuilt head needs the same spec.
+	SpecDigest string `json:"spec_digest,omitempty"`
 }
 
 // escalations returns step's recorded escalations in order.
@@ -523,6 +539,15 @@ func (r *run) escalate(s workflow.Step, k int, e escalationDoc) (Next, error) {
 	if e.Files == nil {
 		e.Files = []string{}
 	}
+	if e.SpecDigest == "" {
+		e.SpecDigest = r.specDigest(s)
+		var a authorizationDoc
+		if ok, err := r.readJSONDoc(e.Authorization+"-authorized", &a); err != nil {
+			return Next{}, err
+		} else if ok && a.SpecDigest != "" {
+			e.SpecDigest = a.SpecDigest
+		}
+	}
 	n := 1
 	es, _, err := r.escalations(s.ID)
 	if err != nil {
@@ -569,17 +594,18 @@ func (r *run) escalate(s workflow.Step, k int, e escalationDoc) (Next, error) {
 	return r.start(build)
 }
 
-// carryKind returns, for a head d with no authorization of its own, the authorization a build send-back of an
-// earlier authorized head left to carry over under reapprove_after_rebase = never, or "".
-func (r *run) carryKind(s workflow.Step) (string, error) {
+// carryFrom returns, for a head with no authorization of its own, the escalation whose build send-back of an earlier
+// authorized head left that authorization to carry over under reapprove_after_rebase = never; false when there is
+// none.
+func (r *run) carryFrom(s workflow.Step) (escalationDoc, bool, error) {
 	es, _, err := r.escalations(s.ID)
 	if err != nil || len(es) == 0 {
-		return "", err
+		return escalationDoc{}, false, err
 	}
 	if e := es[len(es)-1]; e.Carry && e.Authorization != "" {
-		return e.Authorization, nil
+		return e, true, nil
 	}
-	return "", nil
+	return escalationDoc{}, false, nil
 }
 
 // openMerge opens deliver step s's merge decision for round k bound to head x.

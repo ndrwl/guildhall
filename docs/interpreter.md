@@ -243,7 +243,7 @@ Deliver then joins the queue, `JoinMergeQueue`, under that decision or authoriza
 - **Order.** The queue is ordered by [priority](tasks.md#priority), `p0` first, then ready time, then task id (`store.OrderMergeQueue`).
 - **Front.** The first task in queue order that is not held claims the front with `ClaimMergeFront`, in one store mutation, so two tasks advancing at once never both hold it; any other claim is refused with `store.ErrMergeQueued` and records nothing.
   A claim counts the task's stays at the front.
-  The front stands while its task is queued and not held: until it merges, is held, is sent back or is cancelled.
+  The front stands while its task is queued: until it merges, is sent back or is cancelled, or, once it is held, until its next advance releases it; no other task can claim the front before then, so a held front still pushing or merging never shares it.
   A later priority change reorders only the tasks behind it; nothing is preempted.
 - **Behind the front.** A task that is not the front records nothing more and returns `{"wait":"merge-queue","step":"<deliver>"}` (`WaitMergeQueue`), with one `merge-queued` message per place and front, naming its place and the task at the front.
 - **Held.** A task whose merge is held with [`task hold-merge`](tasks.md#holding-a-merge) waits the same way, with a `merge-queued` message saying it is held; a held front releases the front, `ReleaseMergeFront`, at its next advance.
@@ -264,7 +264,7 @@ A behind or conflicting PR at the front of the queue, or a conflicting one at [v
 It is the only time Guildhall rebases a PR: one that is only behind at validate, or that is further back in the queue, is not rebased.
 
 **Replay.** A rebase replays the task's whole change as one commit onto the base tip that mergeability measured, `Mergeability.Base`, with [`Workspaces.Rebase`](contracts/git.md#rebase): `git merge-tree --write-tree`, never `git rebase`, so there is one conflict round and the measurement matches the operation.
-It is refused while any attempt of the task runs.
+It is refused while any attempt of the task runs, and so are the squash of a resolution and every move of the task's worktree, `Workspaces.Adopt`: each reads the task's attempts afresh, so an attempt started during the advance still refuses it.
 Each rebase is recorded once it is classified as the immutable document `<step>-<k>-rebase-<n>` (`tasks/<repo>/<task>/<step>-<k>/rebase-<n>.json`), schema `guildhall.rebase/1`: the authorization and front stay it was made under (at deliver), from, onto, merge base, kind, reason, the marked head, each conflicting path with its lines and whether it has markers, the total lines, both patch-ids and the rebased head once known.
 `<step>` is the deliver step at the front, or the validate step for a conflicting PR there; `<k>` is the step's round and `<n>` counts its rebases.
 A later rebase of a rebased head is the next link of a chain that runs from the reviewed head to the head merged.
@@ -296,13 +296,13 @@ Both synthetic steps are Artisan attempts owned by the step that rebases, not wo
 A copy without a `rebaser` profile escalates a minor rebase to `major_conflicts` and says so; so do a failed rebaser attempt and `behaviour_change: true`.
 A clean replay with unequal patch-ids has no conflicts to resolve, so it skips the rebaser and its narrowed review reads the whole diff.
 
-**`major_conflicts`.** Guildhall records `<step>-<k>-escalated-<n>`, schema `guildhall.rebase-escalation/1`, holding the authorization, from, onto, kind, files and reason, and sends the build step that produced the head back, as [`step send-back`](step-send-back.md) does, with feedback naming the base, the conflicting files and the reason; the Director is sent `rebase-escalated`.
+**`major_conflicts`.** Guildhall records `<step>-<k>-escalated-<n>`, schema `guildhall.rebase-escalation/1`, holding the authorization, from, onto, kind, files, reason, whether the authorization may carry over to the rebuilt head (`carry`) and the spec it was given under (`spec_digest`), and sends the build step that produced the head back, as [`step send-back`](step-send-back.md) does, with feedback naming the base, the conflicting files and the reason; the Director is sent `rebase-escalated`.
 At deliver the task leaves the queue, keeping its ready time, and releases the front; normal propagation then reruns review, publish and validate, and the task rejoins the queue at its first ready time once the new head is authorized.
 At validate the escalation follows the step's `failed` [loop rule](#rounds-and-loops) back to build, with the same feedback.
 Red checks on the rebased head, a narrowed review that requests changes, a failed rebaser and a behaviour change escalate the same way; the next head then needs a new merge decision.
 
 **Again and stuck.** When the base moves again while the front waits for checks, someone having merged outside Guildhall, the front rebases the latest head of its chain again, as rebase `n+1`.
-After three rebases in one stay at the front, the task keeps the front, records `pr-blocked-<head>-<state>` and waits for the Director with `rebase-stuck`; [`task hold-merge`](tasks.md#holding-a-merge) releases the front, and a later claim starts a new stay with three more.
+After three rebases in one stay at the front, the task keeps the front, records `pr-blocked-<head>-<state>` and waits for the Director with `rebase-stuck`; [`task hold-merge`](tasks.md#holding-a-merge) holds it and its next advance releases the front, and a later claim starts a new stay with three more.
 
 **At validate.** A conflicting PR at validate runs the same tiers, with the base tip from mergeability, publishes the rebased head to the same PR and reads checks on it; the validate result is bound to the rebased head and names the rebase chain, and deliver delivers that head.
 There is no approval yet, so no threshold applies and the later merge decision is for the rebased head.
@@ -325,8 +325,11 @@ Otherwise the chain's kind, the hardest of its links, is compared with the repos
 - At or above it, where `guildmaster_approval` is required, deliver opens a new merge decision for h′, whose question begins by saying why the authorization does not carry over.
 - Below it, deliver records `<step>-<k>-authorized`, schema `guildhall.merge-authorization/2`, which adds to the [authorization document](#publish-and-deliver) `carried_from` (the original decision or authorization id), `rebase` (the rebase documents of the chain), `kind` and `spec_digest`, sends `approval-carried` and merges.
   It does so only when every gate holds for h′, `nothing_open` holds with no new findings, and the accepted spec digest equals the one at the original authorization; otherwise it asks the merge decision.
+  An authorization already recorded for h′ stands: a replay after a crash, or a retry after the forge refused the merge, merges under it again and never records another.
 - A narrowed review that approves with findings fails `nothing_open`, so it opens a new merge decision for h′; a `merge` answer overrides it as usual.
-- Under `never`, which config parse refuses unless `artisan_approval` is required, a head rebuilt after a major send-back of an authorized head carries over that authorization too.
+- An unknown rebase kind, or an unknown threshold, always needs a new decision.
+- Under `never`, which config parse refuses unless `artisan_approval` is required, a head rebuilt after a major send-back of an authorized head carries over that authorization too, under the same checks: every condition after `guildmaster_approval` holds, `nothing_open` with no findings included even where it is not required, and the accepted spec is the one the authorization was given under.
+  The escalation records that spec as `spec_digest`: the `-authorized` document's, or, for a merge decision, the one the approved head's review outcomes were bound to; otherwise the merge decision for the rebuilt head says why it does not carry over.
 
 The threshold matters only where `guildmaster_approval` is required; without it, deliver authorizes h′ by itself whenever the requirements hold.
 `task timeline` shows a carried-over merge as merged by the carried-over approval of the original decision after a rebase of its kind.

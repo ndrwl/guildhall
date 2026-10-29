@@ -117,6 +117,29 @@ func TestRebaseProgram(t *testing.T) {
 	}
 }
 
+// TestRebaseIgnoresConflictStyle: a repository configured with the diff3 or zdiff3 conflict style counts a one-line
+// conflict as two lines, as the merge style does, so the classification does not depend on the machine.
+func TestRebaseIgnoresConflictStyle(t *testing.T) {
+	for _, style := range []string{"diff3", "zdiff3"} {
+		t.Run(style, func(t *testing.T) {
+			r, main, task := rebaseRepo(t, func(r repo) {
+				r.commit("main", map[string]string{"a.txt": lines(10, map[int]string{2: "main two"})})
+			})
+			r.run("config", "merge.conflictStyle", style)
+			got, err := (git.Program{}).Rebase(context.Background(), git.Replay{Repository: r.dir, Base: main, Head: task})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := []git.Conflict{{Path: "a.txt", Lines: 2, Markers: true}}; !slices.Equal(got.Conflicts, want) {
+				t.Fatalf("conflicts = %+v, want %+v", got.Conflicts, want)
+			}
+			if blob := r.run("cat-file", "blob", got.Marked+":a.txt"); strings.Contains(blob, "|||||||") {
+				t.Fatalf("marked a.txt has a common-ancestor section:\n%s", blob)
+			}
+		})
+	}
+}
+
 func TestRebaseRefusesNonObjectIDs(t *testing.T) {
 	if _, err := (git.Program{}).Rebase(context.Background(), git.Replay{Repository: t.TempDir(), Base: "main", Head: strings.Repeat("a", 40)}); err == nil {
 		t.Fatal("Rebase of a branch name succeeded")

@@ -94,13 +94,13 @@ func OrderMergeQueue(entries []QueuedEntry) {
 	})
 }
 
-// FrontStands reports whether front still holds the front of entries: its task is queued and not held.
+// FrontStands reports whether front still holds the front of entries: its task is queued. A held front still stands,
+// since its task may be mid-advance, pushing or merging; it releases the front itself at its next advance.
 func FrontStands(front *MergeFront, entries []QueuedEntry) bool {
 	if front == nil {
 		return false
 	}
-	i := slices.IndexFunc(entries, func(e QueuedEntry) bool { return e.TaskID == front.TaskID })
-	return i >= 0 && !entries[i].Held
+	return slices.ContainsFunc(entries, func(e QueuedEntry) bool { return e.TaskID == front.TaskID })
 }
 
 // JoinMergeQueue queues an open task under authorization, the decision or authorization id that allowed its merge.
@@ -240,8 +240,8 @@ func (s *Store) ReleaseMergeFront(mutationID, repository, taskID string) (Receip
 }
 
 // ClaimMergeFront makes a queued task the front of its repository's queue, in one write, so two tasks advancing at
-// once never both hold it. The front stands while its task is queued and not held; otherwise the first task in queue
-// order that is not held may claim it. A claim by any other task is refused with ErrMergeQueued, recording nothing, and a claim by the
+// once never both hold it. The front stands while its task is queued, held or not, until the task releases it;
+// otherwise the first task in queue order that is not held may claim it. A claim by any other task is refused with ErrMergeQueued, recording nothing, and a claim by the
 // task at the front changes nothing. A claim counts the task's stays.
 func (s *Store) ClaimMergeFront(mutationID, repository, taskID string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
@@ -290,7 +290,8 @@ func (s *Store) MergeQueue(repository string) (MergeQueue, error) {
 }
 
 // readMergeQueue reads the queue: entries of open tasks with their priority and hold, in queue order with a standing
-// front first. A front whose task left the queue, is held or is closed does not stand and is read as no front.
+// front first. A front whose task left the queue or is closed does not stand and is read as no front; a held front
+// stands until its task releases it.
 func readMergeQueue(tx *bolt.Tx, repository string) (MergeQueue, error) {
 	q := MergeQueue{Entries: []QueuedEntry{}, Out: []MergeQueueEntry{}, Holds: map[string]bool{}}
 	var holds []MergeHold

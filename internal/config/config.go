@@ -84,8 +84,14 @@ func (m MergeOptions) Reapprove() RebaseKind {
 func (m MergeOptions) MinorFiles() int { return intOr(m.MinorConflictFiles, DefaultMinorConflictFiles) }
 func (m MergeOptions) MinorLines() int { return intOr(m.MinorConflictLines, DefaultMinorConflictLines) }
 
-// NeedsReapproval reports whether a rebase of kind k needs a new merge decision: k is at or above the threshold.
-func (m MergeOptions) NeedsReapproval(k RebaseKind) bool { return k.Rank() >= m.Reapprove().Rank() }
+// NeedsReapproval reports whether a rebase of kind k needs a new merge decision: k is at or above the threshold. An
+// unknown kind, or an unknown threshold, always needs one, so a carry-over fails closed.
+func (m MergeOptions) NeedsReapproval(k RebaseKind) bool {
+	if k.Rank() < 0 || m.Reapprove().Rank() < 0 {
+		return true
+	}
+	return k.Rank() >= m.Reapprove().Rank()
+}
 
 func intOr(p *int, def int) int {
 	if p == nil {

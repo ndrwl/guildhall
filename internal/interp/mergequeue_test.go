@@ -2,8 +2,10 @@ package interp_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,9 +25,24 @@ import (
 // constant heads pass the code-head check; Adopt records each move.
 type queueWorkspaces struct {
 	*gittest.Workspaces
-	mu      sync.Mutex
-	tip     string
-	adopted [][2]string
+	mu       sync.Mutex
+	tip      string
+	adopted  [][2]string
+	squashes int
+	// afterSquash, when set, runs after each squash.
+	afterSquash func()
+}
+
+func (w *queueWorkspaces) Squash(ctx context.Context, repository, base, head string) (string, error) {
+	c, err := w.Workspaces.Squash(ctx, repository, base, head)
+	w.mu.Lock()
+	w.squashes++
+	after := w.afterSquash
+	w.mu.Unlock()
+	if after != nil {
+		after()
+	}
+	return c, err
 }
 
 func (w *queueWorkspaces) Ensure(_ context.Context, ws git.Workspace) error {
@@ -274,8 +291,9 @@ func TestQueueBaseMovesDuringChecks(t *testing.T) {
 	}
 }
 
-// TestQueueHoldFront: holding the front's merge releases the front at its next advance, keeping the task's
-// authorization and ready time; unholding it claims the front again in a new stay, and the merge completes.
+// TestQueueHoldFront: holding the front's merge releases the front at its next advance, not before, so another task
+// cannot claim it while the held one may still be pushing or merging; the task keeps its authorization and ready
+// time, and unholding it claims the front again in a new stay, and the merge completes.
 func TestQueueHoldFront(t *testing.T) {
 	e, f, ws := queueEnv(t, backends[1])
 	s := e.h.Records.(*store.Store)
@@ -284,12 +302,19 @@ func TestQueueHoldFront(t *testing.T) {
 	f.SetMergeability(forge.Mergeability{Head: head, Base: base, State: "behind", Behind: 1})
 	e.answer(t, "deliver-1", "merge")
 	want(t, e.advance(t, answeredMerge), deliverWait)
+	peer(t, e, "t9")
 	if _, err := s.SetMergeHold("hold-1", "app", "t7", true); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.ClaimMergeFront("front-t9", "app", "t9"); !errors.Is(err, store.ErrMergeQueued) {
+		t.Fatalf("claim by t9 before the held front's next advance = %v, want it refused", err)
+	}
+	if view, _ := s.MergeQueue("app"); view.Front == nil || view.Front.TaskID != "t7" {
+		t.Fatalf("front before the held front's next advance = %+v", view.Front)
+	}
 	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitMergeQueue, Step: "deliver"})
 	view, err := s.MergeQueue("app")
-	if err != nil || view.Front != nil || len(view.Entries) != 1 || !view.Entries[0].Held {
+	if err != nil || view.Front != nil || len(view.Entries) != 2 || view.Entries[0].TaskID != "t7" || !view.Entries[0].Held {
 		t.Fatalf("held queue = %+v, %v", view, err)
 	}
 	ready := view.Entries[0].ReadyAt
@@ -398,8 +423,66 @@ func TestQueueTier1CrashReplay(t *testing.T) {
 				if a := e.pullRequestDoc(t, "deliver-2-authorized"); a["carried_from"] != "deliver-1" {
 					t.Fatalf("authorization = %v", a)
 				}
+				onceEach(t, e)
 			})
 		}
+	}
+}
+
+// onceEach checks that the carried merge was authorized and recorded once: deliver-2-authorized and deliver-2-merge,
+// one approval-carried message, and no record of a later round.
+func onceEach(t *testing.T, e *env) {
+	t.Helper()
+	if got := e.authorizations(t); !slices.Equal(got, []string{"deliver-2-authorized"}) {
+		t.Fatalf("authorizations = %q, want only deliver-2-authorized", got)
+	}
+	var merges []string
+	for name := range e.documents(t) {
+		if strings.HasSuffix(name, "-merge") {
+			merges = append(merges, name)
+		}
+		if strings.HasPrefix(name, "deliver-3-") {
+			t.Fatalf("document %s records a third round", name)
+		}
+	}
+	if !slices.Equal(merges, []string{"deliver-2-merge"}) {
+		t.Fatalf("merge records = %q, want only deliver-2-merge", merges)
+	}
+	carried := 0
+	for id := range e.messages(t) {
+		if strings.Contains(id, "approval-carried.") {
+			carried++
+		}
+	}
+	if carried != 1 {
+		t.Fatalf("approval-carried messages = %d, want 1", carried)
+	}
+}
+
+// TestQueueCarriedMergeRefusedRetries: a merge the forge refuses after an approval carried over waits for the
+// Director, and each retry merges under the same carried authorization instead of minting a new one.
+func TestQueueCarriedMergeRefusedRetries(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, f, ws := queueEnv(t, b)
+			base := baseN(1)
+			clean(ws, base, head, head2)
+			f.SetMergeability(forge.Mergeability{Head: head, Base: base, State: "behind", Behind: 1})
+			e.answer(t, "deliver-1", "merge")
+			want(t, e.advance(t, answeredMerge), deliverWait)
+			f.SetChecks(repoRemote, head2, ciPassed...)
+			f.SetMergeability(forge.Mergeability{})
+			f.Refuse("Required review is missing")
+			director := interp.Next{Wait: interp.WaitDirector, Step: "deliver"}
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), director)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), director)
+			f.Refuse("")
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+			if mergedHead(f) != head2 {
+				t.Fatalf("merged head = %q", mergedHead(f))
+			}
+			onceEach(t, e)
+		})
 	}
 }
 
