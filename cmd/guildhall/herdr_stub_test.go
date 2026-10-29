@@ -19,6 +19,7 @@ import (
 //     it as Herdr accepts typed input; the check plays the pane's terminal and hands it to the runtime.
 //   - `pane report-metadata herdrPane --source <id> --title <t>|--clear-title` appends "--title <t>" or
 //     "--clear-title" to the file notices there: the wake notice.
+//   - `notification show <title> [--body=<body>]` appends its arguments to the file toasts there: a surfaced note.
 //
 // Every call must name herdrSession with --session. Another tab or pane is refused as Herdr refuses one it does
 // not have, {"error":{"code":"<kind>_not_found",...}} on stderr with exit 1, and any other call exits 2.
@@ -77,6 +78,8 @@ func herdrStub(args []string) int {
 			return fail("pane_not_found", "pane "+args[2]+" not found")
 		}
 		return record("notices", strings.Join(args[5:], " "))
+	case len(args) >= 3 && args[0] == "notification" && args[1] == "show":
+		return record("toasts", strings.Join(args[2:], " "))
 	}
 	fmt.Fprintf(os.Stderr, "stub herdr: unexpected call %q\n", args)
 	return 2

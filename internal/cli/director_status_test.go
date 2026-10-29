@@ -118,7 +118,8 @@ func statusCopy(t *testing.T) string {
 			return s.AckMessage(store.Recipient{Role: store.RecipientDirector}, "n-1")
 		},
 		func() (store.Receipt, error) {
-			return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "lib", TaskID: "t-1", Type: "question", Text: "Which parser?"})
+			return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "lib", TaskID: "t-1", Type: "question", Text: "Which parser?",
+				Sender: store.SenderArtisan})
 		},
 		func() (store.Receipt, error) {
 			return s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 4242, Token: "boot:4242"},

@@ -15,11 +15,12 @@ type StoreMailbox struct {
 var _ Mailbox = (*StoreMailbox)(nil)
 
 // Send implements Mailbox.Send.
-func (b *StoreMailbox) Send(to store.Recipient, e Envelope) (store.Receipt, error) {
+func (b *StoreMailbox) Send(to store.Recipient, sender string, e Envelope) (store.Receipt, error) {
 	m, err := Message(to, e)
 	if err != nil {
 		return store.Receipt{}, err
 	}
+	m.Sender = sender
 	r, err := b.Store.SendMessage(m)
 	if err != nil {
 		return store.Receipt{}, fmt.Errorf("messaging: %w", err)
@@ -58,7 +59,7 @@ func (b *StoreMailbox) Ack(to store.Recipient, id string) (store.Receipt, error)
 	return r, nil
 }
 
-// Message converts an envelope sent to to into the store record. It refuses an
+// Message converts an envelope sent to to into the store record, with no sender. It refuses an
 // unsupported schema and an envelope that names a different recipient than to,
 // so a message cannot land in an inbox its sender did not name; the store checks the rest.
 func Message(to store.Recipient, e Envelope) (store.Message, error) {
@@ -78,6 +79,7 @@ func StoredMessage(m store.Message) Stored {
 	return Stored{
 		Envelope: Envelope{Schema: SchemaPrefix + strconv.Itoa(SchemaVersion), ID: m.ID, Recipient: m.Recipient, Repository: m.Repository, Task: m.TaskID,
 			Step: m.Step, Attempt: m.Attempt, Type: m.Type, Text: m.Text, Artifacts: m.Artifacts},
+		Sender:       m.Sender,
 		Sequence:     m.Sequence,
 		Acknowledged: m.Acknowledged,
 	}

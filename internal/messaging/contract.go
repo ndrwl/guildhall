@@ -62,6 +62,10 @@ type Envelope struct {
 // Stored is an envelope as recorded in the store.
 type Stored struct {
 	Envelope
+	// Sender is where the message was sent from, one of store.MessageSenders, as Send's caller gave it; it is
+	// never read from the envelope, which has no such field. It is empty for a message recorded before senders
+	// were, which reads as store.SenderUnknown.
+	Sender string `json:"sender,omitempty"`
 	// Sequence orders messages in the store; pass the last one seen as List's after.
 	Sequence     uint64 `json:"sequence"`
 	Acknowledged bool   `json:"acknowledged"`
@@ -76,11 +80,13 @@ type Page struct {
 
 // Mailbox is local Director–Artisan messaging as its consumers see it.
 //
-// Send stores an envelope addressed to to and returns its receipt only once the
-// message is durable. The envelope must name the same recipient as to; the task
+// Send stores an envelope addressed to to, recording sender, one of
+// store.MessageSenders, as where it was sent from, and returns its receipt only
+// once the message is durable. The sender comes from the caller, never from the
+// envelope. The envelope must name the same recipient as to; the task
 // must exist, a named attempt must exist, and an Artisan recipient's attempt must
-// be running. Resending the same envelope returns the original receipt and stores
-// nothing new; reusing its id for a different envelope fails with
+// be running. Resending the same envelope, from any sender, returns the original
+// receipt and stores nothing new, keeping the first sender; reusing its id for a different envelope fails with
 // store.ErrMutationConflict. A receipt means stored, not read.
 //
 // List returns at most limit (1 to store.MaxInboxLimit) unacknowledged messages
@@ -94,7 +100,7 @@ type Page struct {
 // ErrInvalid, ErrNotFound and ErrMutationConflict under errors.Is.
 // Implementations are safe for concurrent use.
 type Mailbox interface {
-	Send(to store.Recipient, e Envelope) (store.Receipt, error)
+	Send(to store.Recipient, sender string, e Envelope) (store.Receipt, error)
 	List(to store.Recipient, after uint64, limit int) (Page, error)
 	Read(id string) (Stored, error)
 	Ack(to store.Recipient, id string) (store.Receipt, error)

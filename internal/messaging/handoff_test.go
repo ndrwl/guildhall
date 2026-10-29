@@ -82,19 +82,19 @@ func TestWakeCarriesTheTaskTriggerOncePerCrossing(t *testing.T) {
 	h := handoffHarness(t, store.HandoffPolicy{AfterTasks: 2})
 	pane := &recordingPane{}
 	finishTask(t, h, "t-2")
-	if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1)" {
+	if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1 from guildmaster)" {
 		t.Fatalf("one task finished: typed %q", got)
 	}
 	finishTask(t, h, "t-3")
-	if got := wakeFor(t, h, pane, "n-2"); got != "guildhall: 2 unread (note 2); handoff due (2 tasks finished)" {
+	if got := wakeFor(t, h, pane, "n-2"); got != "guildhall: 2 unread (note 2 from guildmaster); handoff due (2 tasks finished)" {
 		t.Fatalf("two tasks finished: typed %q", got)
 	}
-	if got := wakeFor(t, h, pane, "n-3"); got != "guildhall: 3 unread (note 3)" {
+	if got := wakeFor(t, h, pane, "n-3"); got != "guildhall: 3 unread (note 3 from guildmaster)" {
 		t.Fatalf("the crossing again: typed %q", got)
 	}
 	finishTask(t, h, "t-4")
 	finishTask(t, h, "t-5")
-	if got := wakeFor(t, h, pane, "n-4"); got != "guildhall: 4 unread (note 4); handoff due (4 tasks finished)" {
+	if got := wakeFor(t, h, pane, "n-4"); got != "guildhall: 4 unread (note 4 from guildmaster); handoff due (4 tasks finished)" {
 		t.Fatalf("four tasks finished: typed %q", got)
 	}
 	got := dues(t, h)
@@ -110,7 +110,7 @@ func TestWakeCarriesTheContextTriggerOncePerSession(t *testing.T) {
 	file := filepath.Join(t.TempDir(), session.ContextFile)
 	h := handoffHarness(t, store.HandoffPolicy{ContextPercent: 70, ContextFile: file})
 	pane := &recordingPane{}
-	if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1)" {
+	if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1 from guildmaster)" {
 		t.Fatalf("no report: typed %q", got)
 	}
 	reportContext(t, file, 69)
@@ -118,7 +118,7 @@ func TestWakeCarriesTheContextTriggerOncePerSession(t *testing.T) {
 		t.Fatalf("below the threshold: typed %q", got)
 	}
 	reportContext(t, file, 72)
-	if got := wakeFor(t, h, pane, "n-3"); got != "guildhall: 3 unread (note 3); handoff due (context 72%)" {
+	if got := wakeFor(t, h, pane, "n-3"); got != "guildhall: 3 unread (note 3 from guildmaster); handoff due (context 72%)" {
 		t.Fatalf("at 72%%: typed %q", got)
 	}
 	reportContext(t, file, 90)
@@ -128,7 +128,7 @@ func TestWakeCarriesTheContextTriggerOncePerSession(t *testing.T) {
 	if err := os.WriteFile(file, []byte("{torn"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := wakeFor(t, h, pane, "n-5"); got != "guildhall: 5 unread (note 5)" {
+	if got := wakeFor(t, h, pane, "n-5"); got != "guildhall: 5 unread (note 5 from guildmaster)" {
 		t.Fatalf("unreadable report: typed %q", got)
 	}
 	if got := dues(t, h); len(got) != 1 || got[0].Trigger != store.HandoffContext || got[0].Reason != "context 72%" || got[0].MessageID != "n-3" {
@@ -144,7 +144,7 @@ func TestWakeJoinsTriggersThatHoldTogether(t *testing.T) {
 	pane := &recordingPane{}
 	finishTask(t, h, "t-2")
 	reportContext(t, file, 75)
-	if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1); handoff due (context 75%, 1 task finished)" {
+	if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1 from guildmaster); handoff due (context 75%, 1 task finished)" {
 		t.Fatalf("typed %q", got)
 	}
 	if got := dues(t, h); len(got) != 2 || got[0].Trigger != store.HandoffContext || got[1].Trigger != store.HandoffTasks {
@@ -164,7 +164,7 @@ func TestTriggersThatAreOffNeverHold(t *testing.T) {
 		pane := &recordingPane{}
 		finishTask(t, h, "t-2")
 		reportContext(t, file, 99)
-		if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1)" {
+		if got := wakeFor(t, h, pane, "n-1"); got != "guildhall: 1 unread (note 1 from guildmaster)" {
 			t.Errorf("%s: typed %q", name, got)
 		}
 		if got := dues(t, h); len(got) != 0 {
@@ -186,7 +186,7 @@ func TestAFailedWakeLeavesTheCrossingForTheNext(t *testing.T) {
 	if got := dues(t, h); len(got) != 0 {
 		t.Fatalf("a failed wake recorded %+v", got)
 	}
-	if got := wakeFor(t, h, &recordingPane{}, "n-2"); got != "guildhall: 2 unread (note 2); handoff due (1 task finished)" {
+	if got := wakeFor(t, h, &recordingPane{}, "n-2"); got != "guildhall: 2 unread (note 2 from guildmaster); handoff due (1 task finished)" {
 		t.Fatalf("next wake typed %q", got)
 	}
 }

@@ -468,6 +468,7 @@
       {
         "id": "app.t-2.worker-stalled.plan-1.abc",
         "type": "worker-stalled",
+        "sender": "unknown",
         "repository": "app",
         "task_id": "t-2",
         "step": "plan",
@@ -477,6 +478,7 @@
       {
         "id": "q-1",
         "type": "question",
+        "sender": "artisan",
         "repository": "lib",
         "task_id": "t-1",
         "sequence": 23

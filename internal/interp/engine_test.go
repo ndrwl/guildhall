@@ -102,7 +102,7 @@ func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*s
 		Records:  h.Records,
 		Launcher: e.script,
 		Prompter: interp.PromptFunc(e.prompt),
-		Outbox:   registeredOutbox{Outbox: mailbox, t: t},
+		Outbox:   registeredOutbox{Outbox: interp.GuildhallOutbox{Mailbox: mailbox}, t: t},
 		Workflow: func(rev workflow.Revision) (*workflow.Definition, error) {
 			if rev.Name != def.Name {
 				return nil, errors.New("unknown workflow")

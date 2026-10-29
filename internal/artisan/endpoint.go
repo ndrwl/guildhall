@@ -79,6 +79,15 @@ func (k AttemptKey) String() string {
 	return fmt.Sprintf("%s/%s/%s/%d", k.Repository, k.TaskID, k.Step, k.Attempt)
 }
 
+// AttemptEnv names, in an attempt's launcher and worker environment, the attempt they run, as
+// "<repository>/<task>/<step>/<n>" (AttemptKey.String). The launcher sets it over any inherited value, so
+// `guildhall messages send` run inside an attempt records the sender "artisan", even when the attempt inherited a
+// Director session's GUILDHALL_SESSION and GUILDHALL_COPY. It is asserted, not authenticated.
+const AttemptEnv = "GUILDHALL_ATTEMPT"
+
+// Env returns the AttemptEnv entry naming k.
+func (k AttemptKey) Env() string { return AttemptEnv + "=" + k.String() }
+
 // AttemptID returns "<step>-<n>", the attempt's adapter identity within its
 // task and its directory's name.
 func (k AttemptKey) AttemptID() string { return fmt.Sprintf("%s-%d", k.Step, k.Attempt) }

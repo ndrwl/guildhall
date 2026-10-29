@@ -215,6 +215,13 @@ func TestPaneLaunchRecordsOnePresentationReport(t *testing.T) {
 	if len(f.host.Sent()) != 1 || f.reports != 1 || f.reads != 1 {
 		t.Fatalf("sent=%q reports=%d reads=%d", f.host.Sent(), f.reports, f.reads)
 	}
+	// The pane's environment names the attempt last, over the process's own entries and anything inherited (d33).
+	f.host.mu.Lock()
+	env := f.host.spec.Env
+	f.host.mu.Unlock()
+	if len(env) == 0 || env[len(env)-1] != reportKey.Env() || reportKey.Env() != "GUILDHALL_ATTEMPT=app/t7/build/1" {
+		t.Fatalf("pane env = %q, want it to end with %s", env, reportKey.Env())
+	}
 	events := presentationReports(t, f.p)
 	if len(events) != 1 {
 		t.Fatalf("presentation-report events = %v", events)

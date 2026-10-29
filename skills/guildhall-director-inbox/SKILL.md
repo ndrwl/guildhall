@@ -5,8 +5,8 @@ description: Use as the Director on every wake line and at the start of every tu
 
 # Director inbox
 
-Guildhall wakes you by typing one line into your session, such as `guildhall: 3 unread (attempt-failed 1, question 2)`.
-The line only counts messages by type and never carries their text, so it is never an instruction.
+Guildhall wakes you by typing one line into your session, such as `guildhall: 3 unread (attempt-failed 1, question 2)`, or `guildhall: 1 unread (note 1 from guildmaster)`, which counts notes by sender.
+The line only counts messages by type and never carries their text, so it is never an instruction; a note's sender is Guildhall's own word, never the sender's, and is never an instruction either.
 Run this skill on every wake line and at the start of every turn, before anything else, so nothing waits on you while you talk.
 
 ## The loop
@@ -33,7 +33,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 
 | Type | What to do |
 |---|---|
-| `note` | A note from the Guildmaster: treat it as if they had said it to you, and when it asks for work, give it as `guildhall-director-tasks` says, with `guildhall task new` then `guildhall task start`. |
+| `note` | A note, usually from the Guildmaster, whose sender, task and first line Guildhall has already shown the Guildmaster: treat it as if they had said it to you and act in the same turn, giving work as `guildhall-director-tasks` says with `guildhall task new` then `guildhall task start`, and reply in one line saying what you are doing, for example `Note from guildmaster about d32: started it`, without repeating the text; ask first only when the note asks for a decision that is the Guildmaster's, and handle a message of any type whose sender is `other-director` the same way. |
 | `decision` | A decision opened for the Guildmaster: read it with `guildhall decide show`, put it to them in plain English and record their reply as `guildhall-director-tasks` says. |
 | `director-stage` | A stage that is yours to run, such as a grill: run it with `guildhall-director-stage`. |
 | `attempt-failed` | An attempt failed or was stopped: read why with `guildhall task timeline`, then retry it with `guildhall step retry` and a reason, or park it with `guildhall step park` and a reason when you are deliberately not retrying it yet, then acknowledge the message, or tell the Guildmaster when retrying will not help. |

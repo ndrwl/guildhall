@@ -156,16 +156,16 @@ func TestAMissedWakeIsHandedOnceWithTheNotice(t *testing.T) {
 		t.Fatalf("wakes = %+v, want queued: no waiter", ws)
 	}
 	w.decide("")
-	if want := []string{"guildhall: 1 unread (note 1)"}; !slices.Equal(notice.shown, want) || len(waiter.handed) != 0 {
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)"}; !slices.Equal(notice.shown, want) || len(waiter.handed) != 0 {
 		t.Fatalf("notice %q, handed %q; want the notice %q", notice.shown, waiter.handed, want)
 	}
 	waiter.state.Registered = true
 	w.decide("")
 	w.decide("")
-	if want := []string{"guildhall: 1 unread (note 1)"}; !slices.Equal(waiter.handed, want) {
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)"}; !slices.Equal(waiter.handed, want) {
 		t.Fatalf("handed %q, want once %q", waiter.handed, want)
 	}
-	if want := []string{"guildhall: 1 unread (note 1)", ""}; !slices.Equal(notice.shown, want) {
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)", ""}; !slices.Equal(notice.shown, want) {
 		t.Fatalf("notice %q, want shown then cleared", notice.shown)
 	}
 }
@@ -178,7 +178,7 @@ func TestAWaiterEndingWithoutAReplacementShowsTheNotice(t *testing.T) {
 	waiter.state.Registered = true
 	w.decide(session.TurnEnded)
 	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
-		return s.SendMessage(store.Message{ID: "n-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-1", Type: "note", Text: "x"})
+		return s.SendMessage(store.Message{ID: "n-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-1", Type: "note", Text: "x", Sender: store.SenderGuildmaster})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestAWaiterEndingWithoutAReplacementShowsTheNotice(t *testing.T) {
 	}
 	waiter.state.Registered = false
 	w.decide("")
-	if want := []string{"guildhall: 1 unread (note 1)"}; !slices.Equal(notice.shown, want) {
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)"}; !slices.Equal(notice.shown, want) {
 		t.Fatalf("notice %q, want %q", notice.shown, want)
 	}
 	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
@@ -197,7 +197,7 @@ func TestAWaiterEndingWithoutAReplacementShowsTheNotice(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.decide("")
-	if want := []string{"guildhall: 1 unread (note 1)", ""}; !slices.Equal(notice.shown, want) {
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)", ""}; !slices.Equal(notice.shown, want) {
 		t.Fatalf("notice %q, want it cleared at zero unread", notice.shown)
 	}
 }
@@ -253,7 +253,7 @@ func TestASecondWakeWithinTheLeaseIsCaughtUpOnceByTheNextWaiter(t *testing.T) {
 	if ws := readWakes(t, path); len(ws) != 1 || ws[0].Decision != store.WakeWoke {
 		t.Fatalf("wakes = %+v, want n-1 woke", ws)
 	}
-	if r := <-w1; r.err != nil || r.line != "guildhall: 1 unread (note 1)" {
+	if r := <-w1; r.err != nil || r.line != "guildhall: 1 unread (note 1 from guildmaster)" {
 		t.Fatalf("w-1 = %+v, want the line of note 1", r)
 	}
 	if st := ep.Waiter(); st.Handed != 1 {
@@ -272,7 +272,7 @@ func TestASecondWakeWithinTheLeaseIsCaughtUpOnceByTheNextWaiter(t *testing.T) {
 	if !w.missed {
 		t.Fatal("the no-waiter wake was not counted missed")
 	}
-	if want := []string{"guildhall: 2 unread (note 2)"}; !slices.Equal(notice.shown, want) {
+	if want := []string{"guildhall: 2 unread (note 2 from guildmaster)"}; !slices.Equal(notice.shown, want) {
 		t.Fatalf("notice %q, want %q", notice.shown, want)
 	}
 	if st := ep.Waiter(); st.Handed != 1 {
@@ -282,10 +282,10 @@ func TestASecondWakeWithinTheLeaseIsCaughtUpOnceByTheNextWaiter(t *testing.T) {
 	w2 := waitAs(dir, "w-2")
 	waitRegistered(t, ep)
 	w.decide("")
-	if r := <-w2; r.err != nil || r.line != "guildhall: 2 unread (note 2)" {
+	if r := <-w2; r.err != nil || r.line != "guildhall: 2 unread (note 2 from guildmaster)" {
 		t.Fatalf("w-2 = %+v, want the catch-up line of 2 notes", r)
 	}
-	if want := []string{"guildhall: 2 unread (note 2)", ""}; !slices.Equal(notice.shown, want) {
+	if want := []string{"guildhall: 2 unread (note 2 from guildmaster)", ""}; !slices.Equal(notice.shown, want) {
 		t.Fatalf("notice %q, want shown then cleared", notice.shown)
 	}
 

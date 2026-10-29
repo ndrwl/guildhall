@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 
 	bolt "go.etcd.io/bbolt"
 
@@ -80,11 +81,44 @@ type Message struct {
 	Type      string        `json:"type"`
 	Text      string        `json:"text"`
 	Artifacts []ArtifactRef `json:"artifacts,omitempty"`
+	// Sender is where the message was sent from, one of MessageSenders, set by Guildhall and never by the
+	// envelope. It is asserted, not authenticated. A record written before senders were recorded has none and
+	// reads as SenderUnknown (MessageSender).
+	Sender string `json:"sender,omitempty"`
 	// Sequence is set by the store to the send receipt's sequence.
 	Sequence uint64 `json:"sequence"`
 	// Acknowledged is set by AckMessage. It means the recipient consumed the
 	// message, not that any work it mentions succeeded.
 	Acknowledged bool `json:"acknowledged"`
+}
+
+// Message senders: where a message was sent from (docs/messaging.md#senders). Guildhall sets one on every
+// message from where it was sent; none is chosen by the sender's envelope.
+const (
+	// SenderGuildhall is Guildhall in process: the engine's outbox, the launcher, a quality judge and the
+	// workspace close sweep.
+	SenderGuildhall = "guildhall"
+	// SenderArtisan is `messages send` run inside an Artisan attempt, which the launcher marks with GUILDHALL_ATTEMPT.
+	SenderArtisan = "artisan"
+	// SenderDirector is `messages send` run in a session of the Director whose copy it sends to.
+	SenderDirector = "director"
+	// SenderOtherDirector is `messages send` run in a session of another copy's Director.
+	SenderOtherDirector = "other-director"
+	// SenderGuildmaster is `messages send` run outside any Guildhall session or attempt.
+	SenderGuildmaster = "guildmaster"
+	// SenderUnknown is a sender Guildhall cannot tell, and what a message recorded with no sender reads as.
+	SenderUnknown = "unknown"
+)
+
+// MessageSenders is the fixed sender vocabulary; no other value is stored, so no free text reaches a sender.
+var MessageSenders = []string{SenderGuildhall, SenderArtisan, SenderDirector, SenderOtherDirector, SenderGuildmaster, SenderUnknown}
+
+// MessageSender returns m's sender, SenderUnknown for a message recorded with none.
+func MessageSender(m Message) string {
+	if m.Sender == "" {
+		return SenderUnknown
+	}
+	return m.Sender
 }
 
 // To returns the inbox the message is addressed to.
@@ -116,11 +150,15 @@ func ackMutationID(id string) string  { return "message-ack:" + id }
 // anything else. Resending the same message returns the original receipt, and
 // reusing its id for a different message returns ErrMutationConflict.
 // The receipt means the message is stored, not that the recipient has read it.
+// The sender is not part of the request: resending the same message from elsewhere returns the original receipt
+// and keeps the first sender, and a message with no sender digests as it did before senders were recorded.
 func (s *Store) SendMessage(m Message) (Receipt, error) {
 	if err := ValidateMessage(m); err != nil {
 		return Receipt{}, err
 	}
-	return s.mutate(sendMutationID(m.ID), opSendMessage, m, func(tx *bolt.Tx, r *Receipt) error {
+	req := m
+	req.Sender = ""
+	return s.mutate(sendMutationID(m.ID), opSendMessage, req, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Attempt, r.Record = m.Repository, m.TaskID, m.Attempt, "message/"+m.ID
 		if _, err := getTask(tx, m.Repository, m.TaskID); err != nil {
 			return err
@@ -361,6 +399,9 @@ func ValidateMessage(m Message) error {
 		if _, err := digest.ParseHex(a.SHA256); err != nil {
 			return invalid("artifact sha256 %q must be 64 lowercase hex characters", a.SHA256)
 		}
+	}
+	if m.Sender != "" && !slices.Contains(MessageSenders, m.Sender) {
+		return invalid("message sender %q must be one of %s", m.Sender, strings.Join(MessageSenders, ", "))
 	}
 	if m.Sequence != 0 || m.Acknowledged {
 		return invalid("a new message has no sequence and is not acknowledged")

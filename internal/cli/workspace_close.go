@@ -296,7 +296,7 @@ func leftOpenMessage(c closeCandidate, record []byte, reason string) store.Messa
 	text := fmt.Sprintf("Guildhall left the Herdr presentation of attempt %s open: %s. It records %s. Inspect it and close it by hand if it is no longer needed; the attempt's records and work are unaffected.",
 		c.key, reason, recordedIDs(record))
 	return store.Message{ID: id, Recipient: store.RecipientDirector, Repository: c.key.Repository, TaskID: c.key.TaskID,
-		Step: c.key.Step, Attempt: c.key.Attempt, Type: store.MessageHerdrLeftOpen, Text: text}
+		Step: c.key.Step, Attempt: c.key.Attempt, Type: store.MessageHerdrLeftOpen, Text: text, Sender: store.SenderGuildhall}
 }
 
 // recordedIDs names the Herdr ids a pane record holds, for a report.

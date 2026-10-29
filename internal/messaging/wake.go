@@ -19,7 +19,8 @@ const (
 	// SenderGuildhall is Guildhall itself: the engine's outbox and the launcher.
 	SenderGuildhall = "guildhall"
 	// SenderLocal is `guildhall messages send`, run by anyone who can write the store: the Guildmaster,
-	// firstmate or an Artisan. It is asserted, not authenticated.
+	// firstmate or an Artisan. It is asserted, not authenticated. The message's own sender (store.MessageSenders)
+	// is the finer field that tells them apart.
 	SenderLocal = "local"
 )
 
@@ -188,7 +189,9 @@ func paneReason(err error) string {
 }
 
 // WakeLine is the line a wake types: "guildhall: <n> unread (<type> <count>, ...)", types in name order, or
-// "guildhall: 0 unread" with nothing unread.
+// "guildhall: 0 unread" with nothing unread. A count DirectorUnread keys by sender, store.UnreadFrom, reads
+// "<type> <count> from <sender>", as in "note 1 from guildmaster"; the sender is one of store.MessageSenders,
+// Guildhall's own word, never message text.
 func WakeLine(unread map[string]int) string {
 	if len(unread) == 0 {
 		return "guildhall: 0 unread"
@@ -197,11 +200,16 @@ func WakeLine(unread map[string]int) string {
 	return fmt.Sprintf("guildhall: %d unread (%s)", total, parts)
 }
 
-// counts sums n and lists it as "<name> <count>, ..." in name order.
+// counts sums n and lists it as "<name> <count>, ..." in name order, a name "<type> from <sender>" as
+// "<type> <count> from <sender>".
 func counts(n map[string]int) (int, string) {
 	total, parts := 0, make([]string, 0, len(n))
 	for _, name := range slices.Sorted(maps.Keys(n)) {
 		total += n[name]
+		if t, sender, ok := strings.Cut(name, " from "); ok {
+			parts = append(parts, fmt.Sprintf("%s %d from %s", t, n[name], sender))
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s %d", name, n[name]))
 	}
 	return total, strings.Join(parts, ", ")

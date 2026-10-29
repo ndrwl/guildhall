@@ -59,6 +59,7 @@ func RunMailboxContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		run  func(t *testing.T, h Harness)
 	}{
 		{"SendThenRead", contractSendThenRead},
+		{"SendRecordsTheCallersSender", contractSender},
 		{"SendRequiresMatchingRecipient", contractMatchingRecipient},
 		{"SendChecksTaskAndAttempt", contractTaskAndAttempt},
 		{"SendRefusesInvalidContent", contractInvalidContent},
@@ -75,7 +76,7 @@ func RunMailboxContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 
 func mustSend(t *testing.T, b messaging.Mailbox, to store.Recipient, e messaging.Envelope) store.Receipt {
 	t.Helper()
-	r, err := b.Send(to, e)
+	r, err := b.Send(to, store.SenderGuildmaster, e)
 	if err != nil {
 		t.Fatalf("Send(%s): %v", e.ID, err)
 	}
@@ -121,6 +122,47 @@ func contractSendThenRead(t *testing.T, h Harness) {
 	}
 }
 
+// contractSender: Send records the sender its caller gives, never one from the envelope; a resend from another
+// sender returns the original receipt and keeps the first sender; a message with no sender, as one recorded before
+// senders were, reads without one; and a sender outside the vocabulary is refused (d33).
+func contractSender(t *testing.T, h Harness) {
+	b := h.Mailbox()
+	first, err := b.Send(Director, store.SenderGuildmaster, Envelope("q-1", store.RecipientDirector))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustSend(t, b, BuildArtisan, Envelope("n-1", store.RecipientArtisan))
+	h.Restart(t)
+	b = h.Mailbox()
+	again, err := b.Send(Director, store.SenderArtisan, Envelope("q-1", store.RecipientDirector))
+	if err != nil || again != first {
+		t.Fatalf("resend from another sender = %+v, %v; want %+v", again, err, first)
+	}
+	if m, err := b.Read("q-1"); err != nil || m.Sender != store.SenderGuildmaster {
+		t.Fatalf("Read after resend = %+v, %v; want sender %q", m, err, store.SenderGuildmaster)
+	}
+	page, err := b.List(Director, 0, 10)
+	if err != nil || len(page.Messages) != 1 || page.Messages[0].Sender != store.SenderGuildmaster {
+		t.Fatalf("List = %+v, %v", page, err)
+	}
+	old, err := b.Send(Director, "", Envelope("q-none", store.RecipientDirector))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A message sent before senders were recorded and replayed after, as the engine's outbox replays, is the same request.
+	if replay, err := b.Send(Director, store.SenderGuildhall, Envelope("q-none", store.RecipientDirector)); err != nil || replay != old {
+		t.Fatalf("replay of a message with no sender = %+v, %v; want %+v", replay, err, old)
+	}
+	if m, err := b.Read("q-none"); err != nil || m.Sender != "" || store.MessageSender(store.Message{Sender: m.Sender}) != store.SenderUnknown {
+		t.Fatalf("message with no sender = %+v, %v", m, err)
+	}
+	for _, sender := range []string{"Guildmaster", "director:copy-2", "x\x1b[2J"} {
+		if _, err := b.Send(Director, sender, Envelope("q-bad", store.RecipientDirector)); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("sender %q: err = %v, want store.ErrInvalid", sender, err)
+		}
+	}
+}
+
 func contractMatchingRecipient(t *testing.T, h Harness) {
 	b := h.Mailbox()
 	toArtisan := Envelope("n-1", store.RecipientArtisan)
@@ -129,16 +171,16 @@ func contractMatchingRecipient(t *testing.T, h Harness) {
 		{Role: store.RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 2},
 		{Role: store.RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "review", Attempt: 1},
 	} {
-		if _, err := b.Send(to, toArtisan); !errors.Is(err, messaging.ErrInvalid) {
+		if _, err := b.Send(to, store.SenderGuildmaster, toArtisan); !errors.Is(err, messaging.ErrInvalid) {
 			t.Errorf("artisan envelope sent to %s: err = %v, want messaging.ErrInvalid", messaging.FormatRecipient(to), err)
 		}
 	}
-	if _, err := b.Send(BuildArtisan, Envelope("q-1", store.RecipientDirector)); !errors.Is(err, messaging.ErrInvalid) {
+	if _, err := b.Send(BuildArtisan, store.SenderGuildmaster, Envelope("q-1", store.RecipientDirector)); !errors.Is(err, messaging.ErrInvalid) {
 		t.Errorf("director envelope sent to an Artisan: err = %v, want messaging.ErrInvalid", err)
 	}
 	wrongSchema := Envelope("q-2", store.RecipientDirector)
 	wrongSchema.Schema = messaging.SchemaPrefix + "2"
-	if _, err := b.Send(Director, wrongSchema); !errors.Is(err, messaging.ErrInvalid) {
+	if _, err := b.Send(Director, store.SenderGuildmaster, wrongSchema); !errors.Is(err, messaging.ErrInvalid) {
 		t.Errorf("unsupported schema: err = %v, want messaging.ErrInvalid", err)
 	}
 	for _, id := range []string{"n-1", "q-1", "q-2"} {
@@ -164,7 +206,7 @@ func contractTaskAndAttempt(t *testing.T, h Harness) {
 			if role == store.RecipientArtisan {
 				to = store.Recipient{Role: role, Repository: e.Repository, TaskID: e.Task, Step: e.Step, Attempt: e.Attempt}
 			}
-			if _, err := b.Send(to, e); !errors.Is(err, store.ErrNotFound) {
+			if _, err := b.Send(to, store.SenderGuildmaster, e); !errors.Is(err, store.ErrNotFound) {
 				t.Errorf("%s to %s: err = %v, want store.ErrNotFound", name, role, err)
 			}
 		}
@@ -177,7 +219,7 @@ func contractTaskAndAttempt(t *testing.T, h Harness) {
 
 	// An Artisan inbox takes messages only while its attempt runs; the Director may still hear about a finished attempt.
 	h.FinishAttempt(t, "app", "t-1", "build", 1)
-	if _, err := b.Send(BuildArtisan, Envelope("n-late", store.RecipientArtisan)); !errors.Is(err, store.ErrInvalid) {
+	if _, err := b.Send(BuildArtisan, store.SenderGuildmaster, Envelope("n-late", store.RecipientArtisan)); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("send to finished attempt: err = %v, want store.ErrInvalid", err)
 	}
 	mustSend(t, b, Director, Envelope("q-late", store.RecipientDirector))
@@ -200,7 +242,7 @@ func contractInvalidContent(t *testing.T, h Harness) {
 		e := Envelope("q-1", store.RecipientDirector)
 		e.Artifacts = append([]store.ArtifactRef(nil), e.Artifacts...)
 		mod(&e)
-		if _, err := b.Send(Director, e); !errors.Is(err, store.ErrInvalid) {
+		if _, err := b.Send(Director, store.SenderGuildmaster, e); !errors.Is(err, store.ErrInvalid) {
 			t.Errorf("%s: err = %v, want store.ErrInvalid", name, err)
 		}
 	}
@@ -219,7 +261,7 @@ func contractRetryAndConflict(t *testing.T, h Harness) {
 
 	// An exact retry after restart, acknowledgement and the attempt finishing returns the original receipt and resends nothing.
 	b := h.Mailbox()
-	again, err := b.Send(BuildArtisan, Envelope("n-1", store.RecipientArtisan))
+	again, err := b.Send(BuildArtisan, store.SenderGuildmaster, Envelope("n-1", store.RecipientArtisan))
 	if err != nil || again != first {
 		t.Fatalf("retry = %+v, %v; want %+v", again, err, first)
 	}
@@ -228,7 +270,7 @@ func contractRetryAndConflict(t *testing.T, h Harness) {
 	}
 	changed := Envelope("n-1", store.RecipientArtisan)
 	changed.Text = "Something else."
-	if _, err := b.Send(BuildArtisan, changed); !errors.Is(err, store.ErrMutationConflict) {
+	if _, err := b.Send(BuildArtisan, store.SenderGuildmaster, changed); !errors.Is(err, store.ErrMutationConflict) {
 		t.Fatalf("reused id: err = %v, want store.ErrMutationConflict", err)
 	}
 	if m, _ := b.Read("n-1"); m.Text != Envelope("n-1", "").Text {
@@ -285,8 +327,12 @@ func contractConcurrentSends(t *testing.T, h Harness) {
 	receipts := make([]store.Receipt, 2*n)
 	var wg sync.WaitGroup
 	for i := range n {
-		wg.Go(func() { _, errs[i] = b.Send(Director, Envelope(fmt.Sprintf("q-%02d", i), store.RecipientDirector)) })
-		wg.Go(func() { receipts[n+i], errs[n+i] = b.Send(BuildArtisan, Envelope("n-same", store.RecipientArtisan)) })
+		wg.Go(func() {
+			_, errs[i] = b.Send(Director, store.SenderGuildmaster, Envelope(fmt.Sprintf("q-%02d", i), store.RecipientDirector))
+		})
+		wg.Go(func() {
+			receipts[n+i], errs[n+i] = b.Send(BuildArtisan, store.SenderGuildmaster, Envelope("n-same", store.RecipientArtisan))
+		})
 	}
 	wg.Wait()
 	for i, err := range errs {

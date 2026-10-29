@@ -99,14 +99,18 @@ func fixtureSpec(t *testing.T, instructions string) interp.Spec {
 	return a.Render(t)
 }
 
-// argvEnv makes the test binary record its arguments as JSON in the file it names and exit 2,
-// as `guildhall artisan start` exits on refused arguments.
+// argvEnv makes the test binary record its arguments as JSON in the file it names, and its attempt marker
+// (artisan.AttemptEnv) in that file with ".attempt" added, and exit 2, as `guildhall artisan start` exits on
+// refused arguments.
 const argvEnv = "GUILDHALL_LAUNCH_TEST_ARGV"
 
 func recordArgv(path string) {
 	b, err := json.Marshal(os.Args[1:])
 	if err == nil {
 		err = os.WriteFile(path, b, 0o600)
+	}
+	if err == nil {
+		err = os.WriteFile(path+".attempt", []byte(os.Getenv(artisan.AttemptEnv)), 0o600)
 	}
 	if err != nil {
 		os.Exit(1)
@@ -141,6 +145,25 @@ func TestProcessStartsArtisanStartOnTheAdapterSpec(t *testing.T) {
 		"--adapter", spec.Adapter, "--prompt", as.PromptFile, "--workdir", as.WorkDir}
 	if !slices.Equal(got, want) {
 		t.Errorf("argv = %q\nwant %q", got, want)
+	}
+}
+
+// TestProcessMarksTheLauncherWithItsAttempt: the launcher's environment names its attempt in GUILDHALL_ATTEMPT,
+// over a value the launching process inherited, so a send from inside the attempt is the Artisan's (d33).
+func TestProcessMarksTheLauncherWithItsAttempt(t *testing.T) {
+	t.Setenv(artisan.AttemptEnv, "other/t-9/plan/4")
+	p := newProcess(t)
+	argv := filepath.Join(t.TempDir(), "argv.json")
+	p.Env = []string{argvEnv + "=" + argv}
+	if _, err := p.Launch(context.Background(), prepared(t, p, fixtureSpec(t, ""))); err == nil {
+		t.Fatal("Launch of a refusing launcher succeeded")
+	}
+	b, err := os.ReadFile(argv + ".attempt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != "app/t7/build/1" {
+		t.Fatalf("%s = %q, want app/t7/build/1", artisan.AttemptEnv, got)
 	}
 }
 

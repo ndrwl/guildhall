@@ -25,7 +25,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/launch/launchtest"
-	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
@@ -211,7 +210,8 @@ func (c *safetyCopy) command(stdin io.Reader, args ...string) *exec.Cmd {
 func (c *safetyCopy) guildhall(stdin string, args ...string) string {
 	c.t.Helper()
 	cmd := c.command(strings.NewReader(stdin), args...)
-	cmd.Env = append(cmd.Env, "GUILDHALL_COPY="+c.dir)
+	// Run as the Guildmaster's shell would, whatever session or attempt runs these tests (d33).
+	cmd.Env = append(cmd.Env, "GUILDHALL_COPY="+c.dir, "GUILDHALL_SESSION=", "GUILDHALL_ATTEMPT=")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -318,9 +318,15 @@ func (c *safetyCopy) waitFor(what string, cond func() bool) {
 }
 
 // typed are the lines the Herdr stand-in accepted for the Director's pane.
-func (c *safetyCopy) typed() []string {
+func (c *safetyCopy) typed() []string { return c.stubLines("typed") }
+
+// toasts are the notifications the Herdr stand-in showed, each its arguments joined by spaces.
+func (c *safetyCopy) toasts() []string { return c.stubLines("toasts") }
+
+// stubLines are the lines the Herdr stand-in recorded in its file name.
+func (c *safetyCopy) stubLines(name string) []string {
 	c.t.Helper()
-	b, err := os.ReadFile(filepath.Join(c.herdr, "typed"))
+	b, err := os.ReadFile(filepath.Join(c.herdr, name))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -702,7 +708,11 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 		if len(got) != 1 || got[0].Decision != store.WakeWoke || got[0].Reason != "" {
 			t.Errorf("wakes for the note %+v, want exactly one, woke", got)
 		}
-		want := messaging.WakeLine(map[string]int{"note": 1})
+		// Guildhall surfaced the note to the Guildmaster on the session's Herdr server, outside the model (d33).
+		if got, want := c.toasts(), []string{"guildhall: note from guildmaster about t-1 --body=Take t-2 next. · guildhall messages read n-1"}; !slices.Equal(got, want) {
+			t.Errorf("toasts %q, want %q", got, want)
+		}
+		want := "guildhall: 1 unread (note 1 from guildmaster)"
 		if rt == "claude" {
 			// A Claude session is woken by its rewake hook, and nothing is typed into its pane.
 			c.waitFor("the runtime's rewake turn", func() bool { return len(c.turnLines()) >= 2 })

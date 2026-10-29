@@ -66,13 +66,21 @@ type Records interface {
 
 var _ Records = (*store.Store)(nil)
 
-// Outbox is how the engine tells the Director what changed: the send half of messaging.Mailbox.
+// Outbox is how the engine tells the Director what changed: the send half of messaging.Mailbox, with the sender
+// fixed to store.SenderGuildhall, since every Outbox send is Guildhall's own (GuildhallOutbox).
 // Resending the same envelope returns the original receipt, so a replayed advance sends nothing new.
 type Outbox interface {
 	Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error)
 }
 
-var _ Outbox = messaging.Mailbox(nil)
+// GuildhallOutbox is the Outbox that sends through a Mailbox as store.SenderGuildhall.
+type GuildhallOutbox struct{ Mailbox messaging.Mailbox }
+
+func (o GuildhallOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
+	return o.Mailbox.Send(to, store.SenderGuildhall, e)
+}
+
+var _ Outbox = GuildhallOutbox{}
 
 // Prompter renders one Artisan attempt: render.Prompt with the task baseline and skill roots the caller chose.
 // Its contract is render.Prompt's, including ErrNotEmpty for a directory that already holds files.

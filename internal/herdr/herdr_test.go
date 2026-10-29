@@ -490,6 +490,35 @@ func TestPaneTitleUsesOwnedPane(t *testing.T) {
 	}
 }
 
+// TestNotifyShowsOneLineToast: surfacing a note is one `notification show` on the session's server, its body
+// joined to its flag; a title or body of more than one line, or an empty title, never reaches Herdr (d33).
+func TestNotifyShowsOneLineToast(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{"notification show": {}})
+	ctx := context.Background()
+	if err := c.Notify(ctx, "guildhall: note from guildmaster about d32", "-- start it · guildhall messages read n-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Notify(ctx, "title only", ""); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range [][]string{
+		{"herdr", "notification", "show", "guildhall: note from guildmaster about d32", "--body=-- start it · guildhall messages read n-1", "--session", "guildhall-lab"},
+		{"herdr", "notification", "show", "title only", "--session", "guildhall-lab"},
+	} {
+		if !slices.Equal(f.calls[i].args, want) {
+			t.Errorf("call %d argv = %q, want %q", i, f.calls[i].args, want)
+		}
+	}
+	for _, bad := range [][2]string{{"", "body"}, {"two\nlines", "body"}, {"title", "two\rlines"}} {
+		if err := c.Notify(ctx, bad[0], bad[1]); err == nil {
+			t.Errorf("Notify(%q, %q) was accepted", bad[0], bad[1])
+		}
+	}
+	if len(f.calls) != 2 {
+		t.Errorf("refusals reached Herdr: %d calls", len(f.calls))
+	}
+}
+
 func TestReportAgentRegistersTheResumeCommand(t *testing.T) {
 	c, f := newTestClient(t, map[string]response{"pane report-agent": {stdout: `{"id":"cli:request","result":{"type":"ok"}}`}})
 	resume := []string{"guildhall", "artisan", "resume", "--store", "/s/g.store", "--state", "/s/st", "--attempt", "1"}

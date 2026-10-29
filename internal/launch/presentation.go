@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
@@ -110,7 +111,7 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		return interp.Handle{}, err
 	}
 	l := adapter.TabLauncher{Host: presentation.Host, WorkspaceID: workspace.ID}
-	tab, shell, err := l.Open(ctx, label, cmd.Dir, p.Env)
+	tab, shell, err := l.Open(ctx, label, cmd.Dir, append(slices.Clone(p.Env), at.Key.Env()))
 	if err != nil {
 		return interp.Handle{}, err
 	}

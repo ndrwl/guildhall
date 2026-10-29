@@ -342,7 +342,8 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	}
 	recorded.own = own
 	cmd := exec.Command(c.Command.Argv[0], c.Command.Argv[1:]...)
-	cmd.Dir, cmd.Env = c.Command.Dir, append(os.Environ(), c.Command.Env...)
+	// The attempt marker goes last, over any inherited value, so the worker's sends are the Artisan's (d33).
+	cmd.Dir, cmd.Env = c.Command.Dir, append(append(os.Environ(), c.Command.Env...), k.Env())
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = c.Stdin, c.Stdout, c.Stderr
 	stopOnEnd := context.AfterFunc(ctx, func() { _, _ = l.Stop() })
 	out, runErr := l.Run(cmd, c.Signals)

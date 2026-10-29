@@ -165,6 +165,10 @@ func (h *storeOutboxHarness) Restart(*testing.T) {}
 // which the engine never calls, open the store per call as storeRecords does.
 type storeOutbox struct{ storeRecords }
 
+func (b storeOutbox) Send(to store.Recipient, sender string, e messaging.Envelope) (store.Receipt, error) {
+	return b.sendFrom(to, sender, e)
+}
+
 func (b storeOutbox) List(to store.Recipient, after uint64, limit int) (messaging.Page, error) {
 	return withStore(b.path, true, func(s *store.Store) (messaging.Page, error) {
 		return (&messaging.StoreMailbox{Store: s}).List(to, after, limit)

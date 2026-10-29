@@ -14,7 +14,7 @@ import (
 func sendEarlier(t *testing.T, e *env, id, typ, text string) {
 	t.Helper()
 	m := messaging.Envelope{Schema: "guildhall.message/1", ID: id, Recipient: store.RecipientDirector, Repository: "app", Task: "t7", Type: typ, Text: text}
-	if _, err := e.mailbox.Send(store.Recipient{Role: store.RecipientDirector}, m); err != nil {
+	if _, err := e.mailbox.Send(store.Recipient{Role: store.RecipientDirector}, store.SenderGuildhall, m); err != nil {
 		t.Fatal(err)
 	}
 }

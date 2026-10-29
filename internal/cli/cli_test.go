@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/skills"
 )
 
@@ -25,7 +26,9 @@ import (
 func newTestApp(paths map[string]string, outputs map[string]result) (*App, *bytes.Buffer, *bytes.Buffer) {
 	var stdout, stderr bytes.Buffer
 	f := &fakeTools{paths: paths, outputs: outputs}
-	app := &App{Stdout: &stdout, Stderr: &stderr, LookPath: f.lookPath, Output: f.output}
+	app := &App{Stdout: &stdout, Stderr: &stderr, LookPath: f.lookPath, Output: f.output,
+		// No test reaches a real Herdr server's toasts; surfacing tests record their own.
+		Notify: func(context.Context, store.DirectorPane, string, string) error { return nil }}
 	return app, &stdout, &stderr
 }
 

@@ -153,7 +153,7 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapter
 		if effort != "" {
 			cmd.Args = append(cmd.Args, "--effort", effort)
 		}
-		cmd.Env = append(os.Environ(), p.Env...)
+		cmd.Env = append(append(os.Environ(), p.Env...), k.Env())
 		cmd.Stdout, cmd.Stderr = log, log
 		return cmd
 	}
