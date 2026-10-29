@@ -38,10 +38,11 @@ The repository's `workflow` setting, `default` when it names none, selects the e
   Any `workflows/default.json` beside the configuration is ignored.
 - Any other name is the file `workflows/<name>.json` in the configuration file's directory, and the file's `name` must equal it.
 
-The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, and the result is checked with `workflow.Validate` (R1.59).
+The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, [role profile defaults](configuration.md#profiles) are applied with `workflow.ApplyProfileDefaults`, and the result is checked with `workflow.Validate` (R1.59).
 The effective workflow is then checked with `config.CheckArtisanAdapters`: every named profile must be declared in the loaded Director configuration, and every Artisan step must name a profile.
-A profile-less Artisan is refused with the workflow and step named and a remedy to set a profile on that step in a custom workflow; no default adapter, real or fake, supplies a missing profile.
-The shipped `default` workflow is profile-neutral, so select a custom workflow with explicit profiles before creating a task; the example Director config selects `workflows/profiled.json` with Claude profiles.
+A research, plan, build or Artisan review step with no `profile` names its role profile, `researcher`, `planner`, `builder` or `reviewer`, when the configuration declares it.
+A profile-less Artisan is refused with the workflow and step named and a remedy to declare its role profile or set a profile on that step; no default adapter, real or fake, supplies a missing profile.
+The shipped `default` workflow names no profiles, so a copy that declares the four role profiles runs it with no custom workflow; the default with a defaulted reviewer's profile [needs the Guildmaster's approval](configuration.md#enforcement-at-task-creation) once.
 For deterministic tests or demos, name a profile whose `adapter` is `fake`; other actors need no Artisan profile.
 A missing or unreadable file, a parse error, a refused override, a validation problem, an undeclared profile or a profile-less Artisan refuses the task with the problems named, and the store is not opened, so nothing is written.
 
@@ -51,6 +52,8 @@ The task binds `workflow.Revision` of the overridden definition, its name and di
 It also binds the configuration digest: `sha256:` and the lowercase hex sha256 of the loaded configuration's canonical JSON encoding.
 The digest covers the local and managed settings together and not the files' formatting; it is computed by this release, so a release that adds configuration fields may compute a different digest for the same files.
 Later edits to either file, or to the workflow file, apply to new tasks only.
+Every later advance resolves the task's workflow by its bound name, not the repository's current `workflow` setting, so changing that setting leaves open tasks on the workflow they were created with ([running](running.md#what-an-advance-runs-over)).
+Editing the bound workflow's file, the repository's `workflow_overrides` or the profiles its steps were defaulted from changes the digest, and the task's next advance is refused naming its bound workflow; keep a workflow's file until every task bound to it has closed.
 
 ## Dependencies
 

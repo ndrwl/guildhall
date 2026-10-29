@@ -219,10 +219,21 @@ The rules belong to the Director whose copy's `config.toml` sets them, the copy 
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
 `config.CheckArtisanAdapters` additionally refuses an Artisan stage without a profile, before task creation or advance mutates task records.
 Director, Guildmaster and engine stages do not require an Artisan adapter.
-The shipped default workflow is profile-neutral: declaring profiles alone does not select one.
-Set each Artisan step's `profile` in a custom workflow and select that workflow on the repository; the shipped example selects `examples/workflows/profiled.json` with real Claude profiles.
-Existing copies without step profiles must select a custom workflow before creating or advancing tasks.
-Changing the reviewer's profile requires approval of the effective workflow revision with `guildhall workflow approve --repo <id> --words-file <file>`; this includes the example's `profiled` workflow.
+
+Profiles keep role names, and each step type with a role has a **role profile**:
+
+| Step type | Role profile |
+|---|---|
+| `research` | `researcher` |
+| `plan` | `planner` |
+| `build` | `builder` |
+| `review` | `reviewer` |
+
+When a repository's effective workflow is resolved, after its `workflow_overrides` and before validation, a step of one of these types that an Artisan runs and that names no `profile` gets its role profile, if the config declares `[profile.<role>]` (`workflow.ApplyProfileDefaults`).
+An explicit step profile always wins, a review overridden to the Guildmaster gets none, and other step types, such as `refute` and `document-review`, get none.
+So a copy that declares `[profile.researcher]`, `[profile.planner]`, `[profile.builder]` and `[profile.reviewer]` runs the shipped default workflow with no custom workflow; a step whose role profile is not declared is refused naming the profile to declare.
+The default is part of the effective workflow's digest, so declaring or removing a role profile changes which revision a new task binds, and strands a task whose steps were defaulted from it.
+Changing the reviewer's profile, including by defaulting it, requires approval of the effective workflow revision with `guildhall workflow approve --repo <id> --words-file <file>`.
 To deliberately run a no-model demo, name an explicit profile whose `adapter = "fake"`.
 
 One profile is chosen by name rather than by a workflow step: `rebaser` runs the rebaser Artisan of a `minor_conflicts` [rebase](#rebase-settings), the synthetic step `<step>-rebase`, which resolves a few conflicts and reports whether resolving them changed behaviour.
@@ -393,7 +404,7 @@ An outcome counts only for the exact subject, specification digest and standards
 Directors may propose workflow changes.
 Guildmaster approval is required before applying changes that affect review requirements, required checks or approval steps.
 No blanket delegated authority or automatic self-approval is granted.
-A task keeps its pinned workflow revision when a workflow is edited.
+A task keeps its pinned workflow revision when a workflow is edited or the repository's `workflow` setting changes: it resolves its workflow by the bound name, and an edit that changes the bound revision's digest refuses its next advance rather than changing it.
 Approvals are recorded per Director, against a definition's exact digest:
 
 ```sh

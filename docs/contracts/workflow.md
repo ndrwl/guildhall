@@ -9,6 +9,9 @@ The `profile` and `skills` settings and their `Step` accessors follow the per-ki
 Invalid types, invalid names, duplicate skills and undeclared settings are refused during validation; omitted settings remain valid.
 Grill steps accept optional `skills` with the shared distinct-name-list validation for either allowed actor, without adding `profile` or `instructions` ([decision](../decisions/0029-grill-step-skills.md)).
 The release skills for a grill follow its actor: `guildhall-grill` with `guildhall-domain-model` for the Director, `guildhall-grill-unattended` for an Artisan ([decision](../decisions/0061-grill-live-interview.md)); the registry does not bind skills to actors, so a step lists the ones it renders, and the shipped default's Director grill lists `guildhall-grill` and `guildhall-domain-model` (`TestDefaultGrillIsTheDirectorsLiveGrill`, red first against the default with no skills, [red run](../evidence/director-stages-2026-10-22-red.txt)).
+`RoleProfile` maps a step type to its role profile name: `research` to `researcher`, `plan` to `planner`, `build` to `builder` and `review` to `reviewer`, and every other type to none.
+`ApplyProfileDefaults(def, declared)` returns a copy of `def` in which each step run by an Artisan, with no `profile` setting and a type with a role profile that `declared` reports declared, names that profile; an explicit profile always wins, a step overridden to the Guildmaster gets none, and `def` is not modified.
+The caller applies it after `ApplyOverrides` and before `Validate`, so the default is part of the effective digest ([configuration](../configuration.md#profiles)).
 `ValidateStepSettings` checks an isolated step's kind, version and settings with the same actor, allowed-key, required-setting, type, name and duplicate rules as `Validate`, without requiring the surrounding workflow's input and loop wiring.
 
 `ReviewOutcome.Validate` and `ReviewOutcome.BoundTo` enforce the [review outcome revision contract](../configuration.md#review-outcome).
@@ -27,7 +30,9 @@ See [configuration](../configuration.md#opt-in-plan-refutation) for opting in, t
 
 ## Tests
 
-`workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`
+`workflow_test.go`, `strict_test.go`, `review_test.go`, `actor_test.go`, `profile_test.go`, `grill_test.go`, `defaults_test.go`
+
+`defaults_test.go` covers the role mapping, defaults only for declared role profiles, an explicit profile winning, no default for a review overridden to the Guildmaster, an unmodified input and the default changing the digest.
 
 `TestUnconfiguredStandardsBinding` covers parsing and exact bidirectional empty/configured standards binding for both subjects and both reviewers.
 `internal/interp/TestUnconfiguredStandardsReviewExample` is red-first evidence for copied-example intake through persistence, human review, replay and delivery gating on both record backends.

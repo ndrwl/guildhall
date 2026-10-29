@@ -15,6 +15,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -307,7 +308,7 @@ func acceptTask(cfgPath, repo string) (store.Task, acceptedWorkflow, error) {
 	if err != nil {
 		return store.Task{}, acceptedWorkflow{}, err
 	}
-	w, err := repositoryWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), r)
+	w, err := repositoryWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), cfg, r)
 	if err != nil {
 		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
@@ -368,23 +369,44 @@ func admitWorkflow(s *store.Store, w acceptedWorkflow) error {
 	return err
 }
 
-// effectiveWorkflow returns the repository's workflow with its overrides applied and validated.
-func effectiveWorkflow(dir string, r config.Repository) (*workflow.Definition, error) {
-	w, err := repositoryWorkflow(dir, r)
+// effectiveWorkflow returns the workflow a task created now in repository r would bind, with its overrides and
+// profile defaults applied and validated.
+func effectiveWorkflow(dir string, cfg *config.Config, r config.Repository) (*workflow.Definition, error) {
+	w, err := repositoryWorkflow(dir, cfg, r)
 	return w.effective, err
 }
 
-// repositoryWorkflow returns the repository's workflow with its overrides applied and validated, and the
-// definition before its overrides when that validates too: the shipped definition for "default",
+// repositoryWorkflow returns the workflow a task created now in repository r binds, as resolveWorkflow resolves it.
+func repositoryWorkflow(dir string, cfg *config.Config, r config.Repository) (acceptedWorkflow, error) {
+	return resolveWorkflow(dir, r.Workflow, cfg, r)
+}
+
+// boundWorkflow returns the definition of rev, the revision a task in repository r bound: rev's workflow resolved by
+// name, with the repository's current overrides and profile defaults, refused unless its digest is rev's.
+// A task therefore keeps its workflow when the repository's workflow setting changes, and strands only when the
+// file, the overrides or the profiles it was defaulted from change after it was created.
+func boundWorkflow(dir string, cfg *config.Config, r config.Repository, rev workflow.Revision) (*workflow.Definition, error) {
+	w, err := resolveWorkflow(dir, rev.Name, cfg, r)
+	if err != nil {
+		return nil, fmt.Errorf("bound %w", err)
+	}
+	if got := w.effective.Digest(); got != rev.Digest {
+		return nil, fmt.Errorf("%w: bound workflow %q is %s but now resolves to %s; its file, the repository's workflow_overrides or the profiles its steps were defaulted from changed after the task was created",
+			interp.ErrRevision, rev.Name, rev.Digest, got)
+	}
+	return w.effective, nil
+}
+
+// resolveWorkflow returns workflow name with repository r's overrides and cfg's profile defaults applied and
+// validated, and the definition before them when that validates too: the shipped definition of that name, or
 // otherwise <dir>/<name>.json, whose name must match.
-func repositoryWorkflow(dir string, r config.Repository) (acceptedWorkflow, error) {
-	name := r.Workflow
+func resolveWorkflow(dir, name string, cfg *config.Config, r config.Repository) (acceptedWorkflow, error) {
 	file := filepath.Join(dir, name+".json")
 	var def *workflow.Definition
-	var err error
-	if name == config.DefaultWorkflow {
-		def, err = workflow.Default()
-	} else {
+	shipped, err := shippedDefinitions()
+	if i := slices.IndexFunc(shipped, func(d *workflow.Definition) bool { return d.Name == name }); err == nil && i >= 0 {
+		def = shipped[i]
+	} else if err == nil {
 		var data []byte
 		if data, err = os.ReadFile(file); err == nil {
 			def, err = workflow.Parse(data)
@@ -400,6 +422,7 @@ func repositoryWorkflow(dir string, r config.Repository) (acceptedWorkflow, erro
 	if err != nil {
 		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}
+	effective = workflow.ApplyProfileDefaults(effective, func(p string) bool { _, ok := cfg.Profiles[p]; return ok })
 	if err := workflow.Validate(effective); err != nil {
 		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}

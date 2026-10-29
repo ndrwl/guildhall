@@ -84,3 +84,22 @@ func TestShippedDirectorSelectsRealArtisan(t *testing.T) {
 		}
 	}
 }
+
+// TestArtisanAdapterRemedyNamesTheRoleProfile: an Artisan step left without a profile because its role profile is not
+// declared is refused with a remedy naming that profile; a step type with no role profile keeps the custom remedy.
+func TestArtisanAdapterRemedyNamesTheRoleProfile(t *testing.T) {
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Config{Profiles: map[string]Profile{"researcher": {Adapter: "fake"}, "planner": {Adapter: "fake"}, "builder": {Adapter: "fake"}}}
+	def = workflow.ApplyProfileDefaults(def, func(n string) bool { _, ok := c.Profiles[n]; return ok })
+	err = c.CheckArtisanAdapters(def)
+	if !errors.Is(err, ErrMissingAdapter) || !strings.Contains(err.Error(), `step "review"`) || !strings.Contains(err.Error(), "declare [profile.reviewer] with adapter, or set a profile on that step") {
+		t.Fatalf("missing reviewer: %v", err)
+	}
+	refute := &workflow.Definition{Schema: "guildhall.workflow/1", Name: "refuting", Steps: []workflow.Step{{ID: "refute", Type: "refute", Version: 1}}}
+	if err := c.CheckArtisanAdapters(refute); !errors.Is(err, ErrMissingAdapter) || !strings.Contains(err.Error(), "custom workflow, referencing a declared [profile.<name>]") {
+		t.Fatalf("refute: %v", err)
+	}
+}

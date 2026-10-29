@@ -466,10 +466,6 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		return interp.Next{}, fmt.Errorf("config %s: %w", f.config, err)
 	}
 	cfgDir := filepath.Dir(f.config)
-	def, err := effectiveWorkflow(filepath.Join(cfgDir, "workflows"), r)
-	if err != nil {
-		return interp.Next{}, fmt.Errorf("repository %s: %w", f.repo, err)
-	}
 	state, err := filepath.Abs(f.state)
 	if err != nil {
 		return interp.Next{}, err
@@ -548,8 +544,11 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		}},
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
-		Workflow: func(workflow.Revision) (*workflow.Definition, error) { return def, nil },
-		Config:   cfg, StandardsRevision: standards, CheckSettings: runtimeSettings,
+		// The task's bound revision is resolved by its name, not the repository's current workflow setting.
+		Workflow: func(rev workflow.Revision) (*workflow.Definition, error) {
+			return boundWorkflow(filepath.Join(cfgDir, "workflows"), cfg, r, rev)
+		},
+		Config: cfg, StandardsRevision: standards, CheckSettings: runtimeSettings,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
 		Workspaces: ws,
 		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the

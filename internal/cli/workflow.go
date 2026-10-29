@@ -180,11 +180,11 @@ func readDefinition(file string) (*workflow.Definition, error) {
 
 // repositoryEffective returns repository repo's effective workflow from the Director config at cfgPath.
 func repositoryEffective(cfgPath, repo string) (*workflow.Definition, error) {
-	_, r, err := loadRepository(cfgPath, repo)
+	cfg, r, err := loadRepository(cfgPath, repo)
 	if err != nil {
 		return nil, err
 	}
-	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), r)
+	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), cfg, r)
 	if err != nil {
 		return nil, fmt.Errorf("repository %s: %w", repo, err)
 	}

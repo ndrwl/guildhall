@@ -2,8 +2,8 @@
 
 ## Contract
 
-`Engine.Advance` checks `config.CheckArtisanAdapters` before event intake or any mutation: an Artisan without a profile is refused with a custom-workflow remedy.
-A missing profile is `config.ErrMissingAdapter`, not an implicit fake; the refusal names the step and directs the user to set a profile on that step in a custom workflow.
+`Engine.Advance` checks `config.CheckArtisanAdapters` before event intake or any mutation: an Artisan without a profile is refused with the remedy `config.CheckArtisanAdapters` gives.
+A missing profile is `config.ErrMissingAdapter`, not an implicit fake; the refusal names the step and directs the user to declare its role profile or set a profile on that step.
 Explicit fake/mock profiles remain usable, including tests; there is no profile-less exemption for test binaries.
 `TestAdvanceRefusesProfilelessLegacyTask` exercises a task bound to a profile-less workflow over both records backends and asserts the refusal records and launches no attempts.
 
