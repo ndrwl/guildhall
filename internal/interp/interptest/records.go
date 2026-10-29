@@ -1017,7 +1017,7 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if _, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", caps); err != nil {
 			t.Fatal(err)
 		}
-		queued(t, "site's start", func() error {
+		_ = queued(t, "site's start", func() error {
 			_, err := h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", caps)
 			return err
 		}(), 1)
@@ -1027,7 +1027,7 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		// A slot is free, but site waits ahead of app's next step, queued later.
 		h.Clock.Set(h.Clock.Now().Add(time.Minute))
 		_, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", caps)
-		queued(t, "a start behind the queue's front with a free slot", err, 2)
+		_ = queued(t, "a start behind the queue's front with a free slot", err, 2)
 		r, err := h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", caps)
 		if err != nil || r.Attempt != 1 {
 			t.Fatalf("the front's start = %+v, %v; want it admitted", r, err)
@@ -1061,7 +1061,7 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		for i, id := range []string{"t9", "t10", "t11"} {
 			h.Clock.Set(h.Clock.Now().Add(time.Minute))
 			_, err := h.Records.StartCappedAttempt("start-"+id, "app", id, "plan", caps)
-			queued(t, id+"'s start", err, i+1)
+			_ = queued(t, id+"'s start", err, i+1)
 		}
 		if got := order(t, h); !slices.Equal(got, []string{"app/t9/plan-1", "app/t10/plan-1", "app/t11/plan-1"}) {
 			t.Errorf("StartQueue at one priority = %v, want queue time order", got)
