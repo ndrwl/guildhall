@@ -36,7 +36,7 @@ func TestMergeabilityRecoversFileBeforeDocumentRecord(t *testing.T) {
 				}
 				t.Run(b.name+"/"+state+"/"+step, func(t *testing.T) {
 					e, f := newValidateEnv(t, b)
-					ev := interp.Event{Kind: interp.TaskCreated}
+					var ev interp.Event
 					if step == "deliver" {
 						// At the front, this copy without workspaces cannot rebase and records the observation.
 						f.SetChecks(repoRemote, head, ciPassed...)
