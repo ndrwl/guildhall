@@ -9,7 +9,14 @@ import (
 )
 
 func TestExactJSONFields(t *testing.T) {
-	outcome, err := json.Marshal(ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: HumanReviewer, Verdict: VerdictRejected, Findings: []Finding{{ID: "f1", File: "a.go", Line: 1, Summary: "fix"}}, Revisions: revisions})
+	// An old /1 document still reads strictly; its rule-less finding is the /1 shape.
+	outcome, err := json.Marshal(ReviewOutcome{Schema: ReviewOutcomeSchemaV1, Reviewer: HumanReviewer, Verdict: VerdictRejected, Findings: []Finding{{ID: "f1", File: "a.go", Line: 1, Summary: "fix"}}, Revisions: revisions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome2, err := json.Marshal(ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: HumanReviewer, Verdict: VerdictRejected, Summary: "Not this.",
+		Findings: []Finding{{ID: "f1", Rule: "S2", File: "a.go", Line: 1, Summary: "fix"}}, Suggestions: []Suggestion{{ID: "s1", Summary: "maybe"}},
+		Dispositions: []Disposition{{Finding: "f1", State: Disputed, Reason: "still"}}, Revisions: revisions})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,6 +27,7 @@ func TestExactJSONFields(t *testing.T) {
 	}{
 		{"workflow", strings.Replace(valid, `"name": "small"`, `"description": "test", "name": "small"`, 1), []string{"schema", "name", "description", "steps", "id", "type", "version", "settings", "inputs", "on", "goto", "max"}, func(b []byte) error { _, err := Parse(b); return err }},
 		{"outcome", string(outcome), []string{"schema", "reviewer", "verdict", "findings", "revisions", "file", "line", "summary", "subject", "code_head", "spec_digest", "standards_revision"}, func(b []byte) error { _, err := ParseReviewOutcome(b); return err }},
+		{"outcome/2", string(outcome2), []string{"schema", "reviewer", "verdict", "summary", "findings", "rule", "suggestions", "dispositions", "finding", "state", "reason", "revisions", "subject"}, func(b []byte) error { _, err := ParseReviewOutcome(b); return err }},
 	}
 	for _, c := range cases {
 		if err := c.parse([]byte(c.data)); err != nil {
@@ -43,8 +51,8 @@ func TestExactJSONFields(t *testing.T) {
 	for _, c := range cases {
 		newer := strings.Replace(c.data, `/1"`, `/2"`, 1)
 		prefix := SchemaPrefix
-		if c.name == "outcome" {
-			prefix = reviewOutcomePrefix
+		if strings.HasPrefix(c.name, "outcome") {
+			newer, prefix = strings.Replace(strings.Replace(c.data, `/1"`, `/3"`, 1), `/2"`, `/3"`, 1), reviewOutcomePrefix
 		}
 		newer = strings.TrimSuffix(newer, "}") + `,"Schema":"` + prefix + `1"}`
 		if err := c.parse([]byte(newer)); !errors.Is(err, ErrNewerSchema) {

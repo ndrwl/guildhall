@@ -178,17 +178,23 @@ A new head, such as a build round after review findings, publishes the next roun
 
 1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; when one is not required its gate is skipped, but its state is still reported.
 2. The delivered head: the published head, or the head validate [rebased](#tiered-rebase) it to, followed through validate's rebase documents; the review and CI gates of a rebased head are read as below.
-3. `nothing_open`: the latest outcomes of the review steps before deliver list no findings, advisory ones included, and the task has no unanswered decision but the deliver step's own.
+3. `nothing_open`: the latest outcomes of the review steps before deliver have no open finding, and the task has no unanswered decision but the deliver step's own.
+   Every finding is open, unresolved or newly raised, except a `disputed` one with a standing (uncontested) Director ruling of any move on that finding of that document; suggestions never count.
+   The reason names the counts, such as "review-3-outcome has 1 unresolved and 1 disputed finding(s)", and adds "N suggestion(s), not counted" when suggestions exist, even when the condition holds, so an authorization records them.
+   An approval recorded by a loop-exit `accept` keeps its findings unresolved, so it still holds the merge for the Guildmaster: the accept covered the loop, not the merge.
 4. `guildmaster_approval`: when required, the engine opens the merge decision as described above.
    When not required and every other required requirement holds, it records `deliver-<k>-authorized` (`tasks/<repo>/<task>/deliver-<k>/authorized.json`), schema `guildhall.merge-authorization/1`, holding the head, the pull request, the four effective requirements, the mergeability state and each requirement's condition with the names of its evidence (the review outcome documents, the validation result and any unanswered decisions), then merges with no decision under the merge id `deliver-<k>`.
    When not required but `nothing_open` fails, it falls back: it opens the merge decision as if `guildmaster_approval` were required, and the question begins "Guildhall did not merge by itself: " and the failed requirements.
+   While that decision is unanswered, every advance evaluates the requirements again; once they all hold, such as after the Director rules on a disputed finding, it records the next `deliver-<k>-authorized`, whose `supersedes` names the unanswered decision, and the merge proceeds without it; the merged message says that decision is no longer needed.
+   An answer given before that still merges or holds as below.
 5. The [merge queue](#the-merge-queue): the authorized merge joins its repository's queue, and only the front reads mergeability and is merged or [rebased](#tiered-rebase).
 
 The decision opens, or the authorization is recorded, whatever the pull request's mergeability: a behind or conflicting pull request no longer waits for the Director before it.
 
 When that input is a publish step's output, the merge decision's question names the pull request URL.
-Its question lists each requirement as `holds`, `fails: <reason>` or `not required`; a `merge` answer overrides a failing `nothing_open`, and nothing else.
-It ends by saying that an authorized merge joins the repository's merge queue and that Guildhall may rebase the head onto the base before it merges.
+Its question lists each requirement as `holds`, `fails: <reason>` or `not required` (a holding `nothing_open` adds its suggestion count); a `merge` answer overrides a failing `nothing_open`, and nothing else.
+It then says that an authorized merge joins the repository's merge queue and that Guildhall may rebase the head onto the base before it merges.
+It ends by listing each finding of the latest review outcomes with its rule and state, and each suggestion as `id: summary`, abbreviated as the store text limit requires.
 A merge authorized for a head is reused on replay, so a crash after the authorization merges the same head with no decision, whatever the requirements say by then.
 Below, the merge id `<merge>` is the decision's id, or `deliver-<k>` for a merge Guildhall made by itself.
 A `hold` answer merges nothing: the task waits for the Director (`director`, naming the decision) and the Director is told as `<repo>.<task>.merge-held.<decision>`.
@@ -326,7 +332,7 @@ Otherwise the chain's kind, the hardest of its links, is compared with the repos
 - Below it, deliver records `<step>-<k>-authorized`, schema `guildhall.merge-authorization/2`, which adds to the [authorization document](#publish-and-deliver) `carried_from` (the original decision or authorization id), `rebase` (the rebase documents of the chain), `kind` and `spec_digest`, sends `approval-carried` and merges.
   It does so only when every gate holds for h′, `nothing_open` holds with no new findings, and the accepted spec digest equals the one at the original authorization; otherwise it asks the merge decision.
   An authorization already recorded for h′ stands: a replay after a crash, or a retry after the forge refused the merge, merges under it again and never records another.
-- A narrowed review that approves with findings fails `nothing_open`, so it opens a new merge decision for h′; a `merge` answer overrides it as usual.
+- A narrowed review that approves with findings or suggestions fails `nothing_open`, so it opens a new merge decision for h′; a `merge` answer overrides it as usual.
 - An unknown rebase kind, or an unknown threshold, always needs a new decision.
 - Under `never`, which config parse refuses unless `artisan_approval` is required, a head rebuilt after a major send-back of an authorized head carries over that authorization too, under the same checks: every condition after `guildmaster_approval` holds, `nothing_open` with no findings included even where it is not required, and the accepted spec is the one the authorization was given under.
   The escalation records that spec as `spec_digest`: the `-authorized` document's, or, for a merge decision, the one the approved head's review outcomes were bound to; otherwise the merge decision for the rebuilt head says why it does not carry over.
@@ -392,7 +398,7 @@ A succeeded attempt stays current while its wired inputs, and for a review its r
 So when a looped build lands a new head, every review after it runs again on that head.
 
 A result is **blocking** when it is a `changes_requested` outcome with at least one finding that cites a rule, or a Guildmaster's `changes_requested` answer.
-Findings without a rule are suggestions: an outcome requesting changes with only those completes the step (`docs/review.md`).
+Comments without a rule are suggestions and never block (`docs/review.md`): in /2 they are listed in `suggestions`, and a /1 outcome requesting changes with only rule-less findings completes the step.
 A `validate` step's `failed` result is blocking too, and is one round of its `on.failed` rule ([validate](#validate)).
 Each blocking result of a step is one round of its `on.changes_requested` rule (`on.failed` for validate); the step may loop `max` rounds, plus one for every loop exit answered `continue`.
 
@@ -400,7 +406,7 @@ Each blocking result of a step is one round of its `on.changes_requested` rule (
   When the target has run and the step's inputs did not change, as when a build returns the same head, the step runs again on the same subject with its previous outcome.
 - **Past `max`.** The engine opens decision `<step>-x<round>`, kind `loop-exit`, bound to the round's subject, with options `continue` (one more round), `accept` and `reject`.
   `accept` on a review step records the Guildmaster's approval as `<step>-x<round>-outcome`, an outcome by reviewer `human` bound to the originating review's recorded revisions, and completes the step.
-  It retains that review's findings with `still-open` dispositions, so acceptance does not erase findings or claim they were fixed, and later rounds must disposition them.
+  It retains that review's findings with `unresolved` dispositions and its suggestions unchanged, with the summary "Accepted by the Guildmaster at loop exit in decision `<id>`; `<n>` finding(s) stay unresolved.", so acceptance does not erase findings or claim they were fixed, and later rounds must disposition them.
   The revisions come from the originating human decision's binding or Artisan outcome, never from the configuration at answer-processing time, so stale acceptance cannot satisfy the delivery gate.
   On a `guildmaster-approval` step, `accept` records `<step>-x<round>-spec`, checked against the exit decision's document subject by the spec gate.
   Output resolution orders an exit output immediately after its originating round, before later rounds, for all downstream consumers.
@@ -408,21 +414,23 @@ Each blocking result of a step is one round of its `on.changes_requested` rule (
 - **No rule.** The task waits for the Director, told as `<repo>.<task>.changes-requested.<step>-<n>` (or `.<decision>`).
 
 When an attempt's review outcome arrives, it is refused with `ErrOutcome`, recording nothing, if it is not bound to the revisions in its binding (a stale outcome) or if it gives no disposition for a finding id of the previous outcome it was given.
+Suggestions need no disposition; when the previous outcome is a /1 document, only its rule-cited findings are findings, so a /2 reviewer dispositions only those.
 
 ### Director rulings
 
 A review step's attempt is given the [rulings](tasks.md#director-rulings) captured in its recorded `rulings` input on its previous outcome.
 Review starts resume an existing immutable binding before creating extras; launch and contest processing both consume that binding, so later rulings cannot enter a replayed attempt.
-When its outcome keeps a ruled finding `still-open`, the attempt contests that ruling: the engine records it once, before the attempt is finished, naming the attempt.
+When its outcome keeps a ruled finding open, `unresolved` or `disputed`, the attempt contests that ruling: the engine records it once, before the attempt is finished, naming the attempt.
 A contested ruling on a rule-cited finding of a blocking outcome is a dispute: the engine opens that round's loop exit `<step>-x<round>`, even within `max`, and neither the loop's target nor the step runs until it is answered.
 The question identifies the head or document and includes compact finding/rule/move details and references to persisted outcomes and ruling records for complete evidence.
 Questions are bounded to the store text limit; long fields and, for very large questions, remaining details are abbreviated.
 `continue` upholds the finding and the loop goes on, with one more round allowed; `accept` and `reject` are as at any loop exit.
-A finding the attempt withdraws or resolves leaves its ruling uncontested.
+A finding the attempt resolves leaves its ruling uncontested.
+A ruling never resolves a finding, with one exception: a `disputed` finding of an approving outcome with a standing ruling no longer counts for [`nothing_open`](#publish-and-deliver).
 
 ### Stall signals
 
-When a review round within its allowed loop count (`max` plus answered `continue` exits) requests changes again, the engine compares its outcome with the previous one and sends the Director message `<repo>.<task>.stall.<step>-<n>`, type `stall`, naming every signal found: the head (or document) is unchanged, no finding was resolved or withdrawn, or a finding is still open for two rounds (report §5.3).
+When a review round within its allowed loop count (`max` plus answered `continue` exits) requests changes again, the engine compares its outcome with the previous one and sends the Director message `<repo>.<task>.stall.<step>-<n>`, type `stall`, naming every signal found: the head (or document) is unchanged, no finding was resolved, or a finding is still open, `unresolved` or `disputed`, for two rounds (report §5.3).
 A stall is information only: it never changes the loop or itself asks the Guildmaster; loop exits follow `max` or a [dispute](#director-rulings).
 
 ## Code-head output intake
@@ -481,7 +489,8 @@ Output reads are rooted in the working directory: file and parent-directory syml
 All outputs, including supplemental ones, are read and checked before any are copied or recorded.
 The first output is the step's output port, named `<step>-<n>-<port>`; later outputs add `-<index>`, from 2.
 A code-head output must hold a 40 or 64 lowercase hex object id and pass [the head check](#the-head-check), and a review outcome must parse, or nothing is recorded.
-Every review outcome, including human review and loop-exit acceptance, projects findings and dispositions in its document reference for inspection.
+Every review outcome, including human review and loop-exit acceptance, projects its summary, findings, suggestions and dispositions in its document reference for inspection and rulings.
+A human approval's summary is "Approved by the Guildmaster in decision `<id>`.".
 An input `step.port` resolves to that port's document of the latest round, and its file is checked against the recorded digest before it is used.
 
 ## The working directory
@@ -575,6 +584,6 @@ It checks each event's effect on the records, the approval bound to the plan doc
 `loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`) against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
 Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
 Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
-`rulings_test.go` checks [Director rulings](#director-rulings) on both backends: a ruling given to the next review, withdrawn or contested once, and a contested blocker opening the loop exit within `max`.
+`rulings_test.go` checks [Director rulings](#director-rulings) on both backends: a ruling given to the next review, resolved or contested once by an unresolved or disputed finding, and a contested blocker opening the loop exit within `max`.
 See the [interpreter contract tests](contracts/interp.md#tests) for history-view and per-write replay coverage.
 `TestRecordsContract` runs `interptest.RunRecordsContract` against the store and the double, including concurrent list readers and record writers.

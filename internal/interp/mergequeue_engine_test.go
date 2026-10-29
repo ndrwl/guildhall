@@ -126,7 +126,7 @@ func TestQueueNeverCarryChecksEveryCondition(t *testing.T) {
 		e.eng.Config.Repositories[0].Merge.ReapproveAfterRebase = config.RebaseNever
 		e.requires(config.MergeRequires{NothingOpen: ptr(false)})
 		toMajor(t, e, f, ws)
-		next := rebuild(t, e, f, ws, bound(t, workflow.VerdictApproved, head3, []workflow.Finding{{ID: "smell-1", Summary: "A comment could say why."}}))
+		next := rebuild(t, e, f, ws, bound(t, workflow.VerdictApproved, head3, []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "No red test shown."}}))
 		want(t, next, interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-2"})
 		if d := e.decision(t, "deliver-2"); !strings.Contains(d.Question, "but it does not") || !strings.Contains(d.Question, "nothing_open does not hold") {
 			t.Fatalf("question = %q", d.Question)

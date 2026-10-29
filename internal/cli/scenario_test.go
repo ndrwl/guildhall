@@ -96,6 +96,7 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 		buildFails = "tests failed: TestSort compares titles"
 	)
 	outcome := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: workflow.VerdictApproved,
+		Summary:   "Approved.",
 		Revisions: workflow.Revisions{Subject: workflow.Subject{CodeHead: base}, SpecDigest: string(digest.Of([]byte(spec))), StandardsRevision: "standards-1"}}
 	noRetry := fake.Check{Section: "Why this is a retry", Absent: true}
 	noDirectives := fake.Check{Section: "prompt", NotContains: "guildhall-fake:"}
@@ -125,7 +126,7 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 			{Section: fake.SectionHeader, Contains: "Step: review (review version 1)\nAttempt: 1\nReview base: " + base + "\nProfile: reviewer\n"},
 			{Section: "Standards", Contains: "### standards/go.md\n\n# Go\n\nRun gofmt."},
 			{Section: "Stage guide", Contains: "The verdict is `approved`, `changes_requested` or `rejected`, not `APPROVE`."},
-			{Section: "Required outputs", Contains: "A finding `id` is lowercase letters, digits and hyphens, starting with a letter, at most 63 characters"},
+			{Section: "Required outputs", Contains: "An `id` is lowercase letters, digits and hyphens, starting with a letter, at most 63 characters"},
 			{Section: "Required outputs", Contains: "keep a finding's id in later rounds"}},
 			Respond: fake.Respond{Review: &outcome}},
 	}}

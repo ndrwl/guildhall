@@ -77,6 +77,43 @@ func Review(outcome workflow.ReviewOutcome) Response {
 	return Succeed("review "+string(outcome.Verdict), File{Path: ReviewOutcomeFile, Data: indent(outcome)})
 }
 
+// ReviewV1 writes outcome as the guildhall.review-outcome/1 document of a reviewer that still writes /1: no summary,
+// its suggestions listed as findings that cite no rule and its unresolved dispositions as still-open. It panics
+// unless outcome is a valid /1 outcome, with the /2 meaning workflow.ParseReviewOutcome gives it.
+func ReviewV1(outcome workflow.ReviewOutcome) Response {
+	return Succeed("review "+string(outcome.Verdict), File{Path: ReviewOutcomeFile, Data: ReviewV1Data(outcome)})
+}
+
+// ReviewV1Data is the outcome file ReviewV1 writes.
+func ReviewV1Data(outcome workflow.ReviewOutcome) []byte {
+	if err := outcome.Validate(); err != nil || outcome.Schema != workflow.ReviewOutcomeSchemaV1 {
+		panic(fmt.Sprintf("interptest.ReviewV1: schema %s: %v", outcome.Schema, err))
+	}
+	type disposition struct {
+		Finding string `json:"finding"`
+		State   string `json:"state"`
+	}
+	v1 := struct {
+		Schema       string             `json:"schema"`
+		Reviewer     workflow.Reviewer  `json:"reviewer"`
+		Verdict      workflow.Verdict   `json:"verdict"`
+		Findings     []workflow.Finding `json:"findings,omitempty"`
+		Dispositions []disposition      `json:"dispositions,omitempty"`
+		Revisions    workflow.Revisions `json:"revisions"`
+	}{Schema: outcome.Schema, Reviewer: outcome.Reviewer, Verdict: outcome.Verdict, Findings: outcome.Findings, Revisions: outcome.Revisions}
+	for _, s := range outcome.Suggestions {
+		v1.Findings = append(v1.Findings, workflow.Finding{ID: s.ID, File: s.File, Line: s.Line, Summary: s.Summary})
+	}
+	for _, d := range outcome.Dispositions {
+		state := string(d.State)
+		if d.State == workflow.Unresolved {
+			state = "still-open"
+		}
+		v1.Dispositions = append(v1.Dispositions, disposition{Finding: d.Finding, State: state})
+	}
+	return indent(v1)
+}
+
 // Blocked writes the question to interp.BlockedQuestionFile, then a failed result listing it.
 func Blocked(question string, options ...string) Response {
 	q := interp.BlockedQuestion{Schema: interp.BlockedQuestionSchema, Question: question, Options: options}

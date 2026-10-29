@@ -32,7 +32,7 @@ func TestRulingAfterBindingDoesNotReachReplay(t *testing.T) {
 		t.Run(b.name, func(t *testing.T) {
 			f := workflow.Finding{ID: "f1", Rule: "S2", Summary: "Missing test"}
 			o1 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f})
-			o2 := bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f}, workflow.Disposition{Finding: "f1", State: workflow.StillOpen})
+			o2 := bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f}, workflow.Disposition{Finding: "f1", State: workflow.Unresolved})
 			def := loadWorkflow(t, "loop")
 			def.Steps[3].On["changes_requested"] = workflow.Rule{Goto: "build", Max: 3}
 			e := newEnvDefinition(t, b, def,
@@ -72,7 +72,7 @@ func TestLargeDisputeAndAcceptedProjection(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
 			fs := []workflow.Finding{{ID: "f1", Rule: "S2", Summary: strings.Repeat("a", 20<<10)}, {ID: "f2", Rule: "S3", Summary: strings.Repeat("b", 20<<10)}}
-			ds := []workflow.Disposition{{Finding: "f1", State: workflow.StillOpen}, {Finding: "f2", State: workflow.StillOpen}}
+			ds := []workflow.Disposition{{Finding: "f1", State: workflow.Unresolved}, {Finding: "f2", State: workflow.Disputed, Reason: "The builder disagrees; S3 still applies."}}
 			o1 := bound(t, workflow.VerdictChangesRequested, head, fs)
 			o2 := bound(t, workflow.VerdictChangesRequested, head2, fs, ds...)
 			rs := []store.Ruling{}
@@ -108,7 +108,8 @@ func TestLargeDisputeAndAcceptedProjection(t *testing.T) {
 			}
 			e.answer(t, "review-x2", "accept")
 			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
-			if got := e.documents(t)["review-x2-outcome"].Review; !reflect.DeepEqual(got, &store.Review{Findings: fs, Dispositions: ds}) {
+			if got := e.documents(t)["review-x2-outcome"].Review; !reflect.DeepEqual(got, &store.Review{Summary: "Accepted by the Guildmaster at loop exit in decision review-x2; 2 finding(s) stay unresolved.",
+				Findings: fs, Dispositions: []workflow.Disposition{{Finding: "f1", State: workflow.Unresolved}, {Finding: "f2", State: workflow.Unresolved}}}) {
 				t.Fatalf("accepted projection = %+v", got)
 			}
 		})

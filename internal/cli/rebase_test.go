@@ -129,7 +129,7 @@ func reviewAfterRebase(t *testing.T, requestedFull bool) {
 	step("", "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", "accept-1", "--answer-file", answer)
 	step(`{"wait":"attempt","step":"build","attempt":1}`, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...)
 	spec := "sha256:" + documents()["plan-1-spec"].SHA256
-	guide("review", fmt.Sprintf(`outcome.json:{"schema":"guildhall.review-outcome/1","reviewer":"automated","verdict":"changes_requested","findings":[{"id":"f1","rule":"S2","summary":"Another round."}],"revisions":{"subject":{"code_head":%q},"spec_digest":%q,"standards_revision":"standards-1"}}`, h1, spec))
+	guide("review", fmt.Sprintf(`outcome.json:{"schema":"guildhall.review-outcome/2","reviewer":"automated","verdict":"changes_requested","summary":"One more round.","findings":[{"id":"f1","rule":"S2","summary":"Another round."}],"revisions":{"subject":{"code_head":%q},"spec_digest":%q,"standards_revision":"standards-1"}}`, h1, spec))
 	done("build", 1, `{"wait":"attempt","step":"review","attempt":1}`)
 	if b := binding("review-1-inputs"); b.Scope != git.ScopeFull || b.Range == nil || *b.Range != (git.Range{Base: b1, Head: h1}) {
 		t.Errorf("review-1 binding = %+v, want full over %s..%s", b, b1, h1)

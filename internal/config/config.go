@@ -112,14 +112,15 @@ type MergeRequires struct {
 	ArtisanApproval *bool `toml:"artisan_approval" json:"artisan_approval"`
 	// CIGreen requires the validation input to be a passed result for the delivered head; no answer merges over it.
 	CIGreen *bool `toml:"ci_green" json:"ci_green"`
-	// NothingOpen requires those review outcomes to list no findings and the task to have no unanswered decision
-	// but deliver's own; the Guildmaster's merge answer overrides it.
+	// NothingOpen requires those review outcomes to have no open finding (unresolved, or disputed without a standing
+	// Director ruling; suggestions never count) and the task to have no unanswered decision but deliver's own;
+	// the Guildmaster's merge answer overrides it.
 	NothingOpen *bool `toml:"nothing_open" json:"nothing_open"`
 }
 
 func required(b *bool) bool { return b == nil || *b }
 
-// Guildmaster reports whether guildmaster_approval is required; Artisan, CI and Open report the others.
+// Guildmaster reports whether guildmaster_approval is required; Artisan, CI and Open (nothing_open) report the others.
 func (m MergeRequires) Guildmaster() bool { return required(m.GuildmasterApproval) }
 func (m MergeRequires) Artisan() bool     { return required(m.ArtisanApproval) }
 func (m MergeRequires) CI() bool          { return required(m.CIGreen) }

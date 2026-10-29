@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -31,10 +32,13 @@ func TestArtisanExitPreservesFindings(t *testing.T) {
 		for _, b := range backends {
 			t.Run(b.name+"/"+kind, func(t *testing.T) {
 				def := loadWorkflow(t, "loop")
-				findings := []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "Missing regression"}, {ID: "f2", Summary: "Naming suggestion"}}
-				dispositions := []workflow.Disposition{{Finding: "f1", State: workflow.StillOpen}, {Finding: "f2", State: workflow.StillOpen}}
+				findings := []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "Missing regression"}}
+				suggestions := []workflow.Suggestion{{ID: "f2", Summary: "Naming suggestion"}}
+				dispositions := []workflow.Disposition{{Finding: "f1", State: workflow.Unresolved}}
 				o1 := bound(t, workflow.VerdictChangesRequested, head, findings)
+				o1.Suggestions = suggestions
 				o2 := bound(t, workflow.VerdictChangesRequested, head2, findings, dispositions...)
+				o2.Suggestions = suggestions
 				if kind == "document-review" {
 					def.Steps[3].Type = kind
 					def.Steps[3].Inputs = map[string]workflow.Refs{"subject": {"plan.spec"}}
@@ -48,7 +52,12 @@ func TestArtisanExitPreservesFindings(t *testing.T) {
 					r2.Inputs = map[string]string{"subject": specDigest(t), "previous": outcomeDigest(o1)}
 					r1.Standards, r2.Standards = []string{"standards/go.md"}, []string{"standards/go.md"}
 				}
-				accepted := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.VerdictApproved, Findings: findings, Dispositions: dispositions, Revisions: o2.Revisions}
+				accepted := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.VerdictApproved,
+					Summary:  "Accepted by the Guildmaster at loop exit in decision review-x2; 1 finding(s) stay unresolved.",
+					Findings: findings, Suggestions: suggestions, Dispositions: dispositions, Revisions: o2.Revisions}
+				if err := accepted.Validate(); err != nil {
+					t.Fatal(err)
+				}
 				acceptedData, err := json.Marshal(accepted)
 				if err != nil {
 					t.Fatal(err)
@@ -74,8 +83,16 @@ func TestArtisanExitPreservesFindings(t *testing.T) {
 				for range 2 {
 					want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "review-x2"}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
 					o := recordedExitOutcome(t, e)
-					if o.Reviewer != workflow.HumanReviewer || o.Verdict != workflow.VerdictApproved || o.Blocking() || o.Revisions != o2.Revisions || !reflect.DeepEqual(o.Findings, findings) || !reflect.DeepEqual(o.Dispositions, dispositions) {
+					if o.Reviewer != workflow.HumanReviewer || o.Verdict != workflow.VerdictApproved || o.Blocking() || o.Revisions != o2.Revisions || !reflect.DeepEqual(o.Findings, findings) || !reflect.DeepEqual(o.Suggestions, suggestions) || !reflect.DeepEqual(o.Dispositions, dispositions) || o.Summary != accepted.Summary {
 						t.Fatalf("accepted outcome lost originating review: %+v", o)
+					}
+				}
+				// The Guildmaster accepted f1 for the loop, not for the merge: it still holds nothing_open and is listed.
+				q := e.decision(t, "deliver-1").Question
+				for _, part := range []string{"- nothing_open: fails: review-x2-outcome has 1 unresolved and 0 disputed finding(s), 1 suggestion(s), not counted\n",
+					"- review-x2-outcome finding f1 (S2, unresolved): Missing regression\n", "- review-x2-outcome suggestion f2: Naming suggestion\n"} {
+					if !strings.Contains(q, part) {
+						t.Errorf("merge question %q does not contain %q", q, part)
 					}
 				}
 				e.eng.StandardsRevision = "standards-2"

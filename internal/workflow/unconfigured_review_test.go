@@ -6,12 +6,16 @@ import (
 )
 
 func TestUnconfiguredStandardsBinding(t *testing.T) {
-	for _, reviewer := range []Reviewer{HumanReviewer, AutomatedReviewer} {
+	for i, reviewer := range []Reviewer{HumanReviewer, AutomatedReviewer} {
 		for _, subject := range []Subject{revisions.Subject, {DocumentDigest: documentDigest}} {
 			want := revisions
 			want.Subject = subject
 			want.StandardsRevision = ""
-			outcome := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: reviewer, Verdict: VerdictApproved, Revisions: want}
+			// Old /1 documents still bind the same way as /2 ones.
+			outcome := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: reviewer, Verdict: VerdictApproved, Summary: summary, Revisions: want}
+			if i == 0 {
+				outcome.Schema, outcome.Summary = ReviewOutcomeSchemaV1, ""
+			}
 			data, err := json.Marshal(outcome)
 			if err != nil {
 				t.Fatal(err)

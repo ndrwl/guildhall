@@ -45,7 +45,7 @@ func specDigest(t *testing.T) string { return "sha256:" + sum(specV1(t)) }
 // bound is an automated code review outcome bound to head h, the accepted spec and the engine's standards.
 func bound(t *testing.T, v workflow.Verdict, h string, findings []workflow.Finding, dispositions ...workflow.Disposition) workflow.ReviewOutcome {
 	return workflow.ReviewOutcome{
-		Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: v,
+		Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: v, Summary: "Reviewed " + string(v) + ".",
 		Findings: findings, Dispositions: dispositions,
 		Revisions: workflow.Revisions{Subject: workflow.Subject{CodeHead: h}, SpecDigest: specDigest(t), StandardsRevision: "standards-1"},
 	}
@@ -81,6 +81,13 @@ func reviewExp(t *testing.T, step, profile string, n int, h string, previous *wo
 		Step: step, Attempt: n, Profile: profile, Inputs: inputs,
 		Standards: []string{"standards/go.md", "standards/review.md"}, Respond: interptest.Review(o),
 	}
+}
+
+// reviewV1Exp is reviewExp for a reviewer that still writes guildhall.review-outcome/1.
+func reviewV1Exp(t *testing.T, step, profile string, n int, h string, previous *workflow.ReviewOutcome, o workflow.ReviewOutcome) interptest.Expectation {
+	e := reviewExp(t, step, profile, n, h, previous, bound(t, workflow.VerdictApproved, h, nil))
+	e.Respond = interptest.ReviewV1(o)
+	return e
 }
 
 // accepted runs plan and the Guildmaster's approval of loop.json or straight.json and returns the next wait.
@@ -128,13 +135,18 @@ func roundTraceThreeReviews(t *testing.T, ids [3]string) {
 	f1 := workflow.Finding{ID: "f1", Rule: "S2", File: "internal/cli/task.go", Line: 40, Summary: "No red test shown."}
 	f2 := workflow.Finding{ID: "f2", Rule: "S10", File: "docs/tasks.md", Line: 12, Summary: "Two sentences on one line."}
 	f3 := workflow.Finding{ID: "f3", Rule: "S4", File: "docs/tasks.md", Line: 30, Summary: "Claim without acceptance."}
-	f4 := workflow.Finding{ID: "f4", File: "internal/cli/task.go", Line: 7, Summary: "Prefer a shorter name."}
+	f4 := workflow.Suggestion{ID: "f4", File: "internal/cli/task.go", Line: 7, Summary: "Prefer a shorter name."}
 	o1 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1, f2})
-	o2 := bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f3, f4},
+	o2 := bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f3},
 		workflow.Disposition{Finding: "f1", State: workflow.Resolved}, workflow.Disposition{Finding: "f2", State: workflow.Resolved})
-	o3 := bound(t, workflow.VerdictApproved, head3, []workflow.Finding{f4},
-		workflow.Disposition{Finding: "f3", State: workflow.Resolved}, workflow.Disposition{Finding: "f4", State: workflow.StillOpen})
-	design := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: workflow.VerdictApproved,
+	o2.Suggestions = []workflow.Suggestion{f4}
+	o3 := bound(t, workflow.VerdictApproved, head3, nil, workflow.Disposition{Finding: "f3", State: workflow.Resolved})
+	o3.Suggestions = []workflow.Suggestion{f4}
+	// A reviewer that still writes /1 is accepted: its changes_requested with a rule-less finding only does not block.
+	strict := bound(t, workflow.VerdictChangesRequested, head3, nil)
+	strict.Schema, strict.Summary = workflow.ReviewOutcomeSchemaV1, ""
+	strict.Suggestions = []workflow.Suggestion{{ID: "s1", Summary: "Consider a table."}}
+	design := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: workflow.VerdictApproved, Summary: "The design holds.",
 		Revisions: workflow.Revisions{Subject: workflow.Subject{DocumentDigest: specDigest(t)}, StandardsRevision: "standards-1"}}
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -148,8 +160,7 @@ func roundTraceThreeReviews(t *testing.T, ids [3]string) {
 				reviewExp(t, ids[0], "reviewer-opus", 2, head2, &o1, o2),
 				buildExp(t, 3, head3, outcomeDigest(o2)),
 				reviewExp(t, ids[0], "reviewer-opus", 3, head3, &o2, o3),
-				reviewExp(t, ids[1], "reviewer-opus-strict", 1, head3, nil,
-					bound(t, workflow.VerdictChangesRequested, head3, []workflow.Finding{{ID: "s1", Summary: "Consider a table."}})),
+				reviewV1Exp(t, ids[1], "reviewer-opus-strict", 1, head3, nil, strict),
 				reviewExp(t, ids[2], "reviewer-astra", 1, head3, nil, bound(t, workflow.VerdictApproved, head3, nil)),
 			)
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})
@@ -258,6 +269,33 @@ func TestOutcomeMustDispositionEveryPriorFinding(t *testing.T) {
 	assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}, `"f1"`)
 }
 
+// TestUpgradeFromV1Previous: a task whose review 1 wrote a /1 outcome gets a /2 review 2. Review 2 dispositions only
+// the rule-cited finding of its /1 previous outcome; the rule-less one is a suggestion and needs no disposition.
+func TestUpgradeFromV1Previous(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			o1 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "No red test shown."}})
+			o1.Schema, o1.Summary = workflow.ReviewOutcomeSchemaV1, ""
+			o1.Suggestions = []workflow.Suggestion{{ID: "f2", Summary: "Prefer a shorter name."}}
+			v1 := "sha256:" + sum(interptest.ReviewV1Data(o1))
+			o2 := bound(t, workflow.VerdictApproved, head2, nil, workflow.Disposition{Finding: "f1", State: workflow.Resolved})
+			r2 := reviewExp(t, "review", "reviewer", 2, head2, nil, o2)
+			r2.Inputs["previous"] = v1
+			e := newEnvDefinition(t, b, loadWorkflow(t, "loop"),
+				planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
+				buildExp(t, 1, head, ""), reviewV1Exp(t, "review", "reviewer", 1, head, nil, o1), buildExp(t, 2, head2, v1), r2)
+			e.accepted(t)
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+			if got := e.documents(t)["review-1-outcome"].Review; got == nil || len(got.Findings) != 1 || len(got.Suggestions) != 1 {
+				t.Fatalf("/1 review-1-outcome projects %+v, want its rule-less finding as a suggestion", got)
+			}
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+		})
+	}
+}
+
 // TestStallSignals: builds that return the same head make the review run again on it; each round below
 // the cap that requests changes again is reported to the Director as a stall, and the loop goes on.
 func TestStallSignals(t *testing.T) {
@@ -266,10 +304,12 @@ func TestStallSignals(t *testing.T) {
 			def := loadWorkflow(t, "loop")
 			def.Steps[3].On["changes_requested"] = workflow.Rule{Goto: "build", Max: 3}
 			f1 := workflow.Finding{ID: "f1", Rule: "S2", Summary: "No red test shown."}
-			still := workflow.Disposition{Finding: "f1", State: workflow.StillOpen}
+			// Unresolved then disputed: open in both rounds.
+			still := workflow.Disposition{Finding: "f1", State: workflow.Unresolved}
+			disputed := workflow.Disposition{Finding: "f1", State: workflow.Disputed, Reason: "The builder says it is tested elsewhere; it is not."}
 			o1 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1})
 			o2 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1}, still)
-			o3 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1}, still)
+			o3 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1}, disputed)
 			e := newEnvDefinition(t, b, def, planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
 				buildExp(t, 1, head, ""), reviewExp(t, "review", "reviewer", 1, head, nil, o1),
 				buildExp(t, 2, head, outcomeDigest(o1)), reviewExp(t, "review", "reviewer", 2, head, &o1, o2),
@@ -291,7 +331,7 @@ func TestStallSignals(t *testing.T) {
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 3})
 			msgs := e.messages(t)
 			stall, ok := msgs["app.t7.stall.review-2"]
-			if !ok || !strings.Contains(stall, "head unchanged") || !strings.Contains(stall, "no finding resolved or withdrawn") || strings.Contains(stall, "two rounds") {
+			if !ok || !strings.Contains(stall, "head unchanged") || !strings.Contains(stall, "no finding resolved.") || strings.Contains(stall, "two rounds") {
 				t.Fatalf("stall message after round 2 = %q (inbox %v)", stall, msgs)
 			}
 			if _, ok := msgs["app.t7.stall.review-1"]; ok {
@@ -312,7 +352,7 @@ func TestStallSignals(t *testing.T) {
 // review gate, and reject leaves the task to the Director.
 func TestMaxOpensLoopExit(t *testing.T) {
 	f1 := workflow.Finding{ID: "f1", Rule: "S2", Summary: "No red test shown."}
-	still := workflow.Disposition{Finding: "f1", State: workflow.StillOpen}
+	still := workflow.Disposition{Finding: "f1", State: workflow.Unresolved}
 	o1 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1})
 	o2 := bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f1}, still)
 	o3 := bound(t, workflow.VerdictChangesRequested, head3, []workflow.Finding{f1}, still)

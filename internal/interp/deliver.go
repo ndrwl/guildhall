@@ -168,8 +168,10 @@ func (r *run) published(s workflow.Step, h string) (*pullRequestDoc, error) {
 // A required artisan_approval or ci_green that does not hold is a hard error. With guildmaster_approval required, or
 // when nothing_open fails, it opens the merge decision bound to the head, whose question lists every requirement,
 // whether or not the pull request is behind or conflicting; a hold answer waits for the Director. Otherwise it
-// records the merge's authorization, <step>-<k>-authorized. An authorized merge joins the queue, and only the front
-// is brought up to date and merged; a merge the forge refuses waits for the Director.
+// records the merge's authorization, <step>-<k>-authorized; so it does too when, without guildmaster_approval, every
+// requirement comes to hold while the merge decision it opened is unanswered, such as after the Director rules on a
+// disputed finding, and the authorization records the decision it supersedes. An authorized merge joins the queue,
+// and only the front is brought up to date and merged; a merge the forge refuses waits for the Director.
 func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	repo, err := r.repository()
 	if err != nil {
@@ -218,7 +220,7 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	}
 	if id == "" {
 		var next Next
-		id, record, next, err = r.authorizeHead(s, repo, dl, conditions)
+		id, record, next, err = r.authorizeHead(s, repo, dl, conditions, outcomes)
 		if err != nil || id == "" {
 			return false, next, err
 		}
@@ -318,16 +320,18 @@ func (r *run) authorizedAs(s workflow.Step, x string) (id, record string, err er
 }
 
 // authorizeHead authorizes the merge of the delivered head, or waits: with guildmaster_approval required, or a
-// requirement failing, the merge decision is asked; otherwise Guildhall records the authorization itself. Under
+// requirement failing, the merge decision is asked; otherwise Guildhall records the authorization itself, also while
+// a merge decision it asked when a requirement failed is unanswered, which the authorization then supersedes. Under
 // reapprove_after_rebase = never, a head rebuilt after a build send-back of an authorized head carries that
 // authorization over. It returns the authorization's id and receipt record, or "" and the wait.
-func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHead, conditions []condition) (string, string, Next, error) {
+func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHead, conditions []condition, outcomes []reviewOutcome) (string, string, Next, error) {
 	requires := repo.Merge.Requires
+	failed := failing(conditions)
+	unattended := !requires.Guildmaster() && len(failed) == 0
 	dec := r.decisionOn(s, x.head)
 	switch {
-	case dec == nil:
+	case dec == nil || !dec.Answered && unattended:
 		k := r.deliverRound(s)
-		failed := failing(conditions)
 		id := decisionID(s.ID, k, false)
 		lead := ""
 		if requires.Guildmaster() && repo.Merge.Reapprove() == config.RebaseNever {
@@ -352,7 +356,7 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 					x.head, e.Authorization, strings.Join(why, "; "))
 			}
 		}
-		if !requires.Guildmaster() && len(failed) == 0 {
+		if unattended {
 			if x.pr == nil {
 				return "", "", Next{}, fmt.Errorf("%w: merging head %s, which no publish step pushed", ErrUnsupported, x.head)
 			}
@@ -360,8 +364,12 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 			if err != nil {
 				return "", "", Next{}, err
 			}
-			if err := r.authorize(id, authorizationDoc{Schema: authorizationSchema, Head: x.head, PullRequest: x.pr, Requires: requires.Effective(),
-				Mergeability: m.State, Conditions: conditions, SpecDigest: r.specDigest(s)}); err != nil {
+			a := authorizationDoc{Schema: authorizationSchema, Head: x.head, PullRequest: x.pr, Requires: requires.Effective(),
+				Mergeability: m.State, Conditions: conditions, SpecDigest: r.specDigest(s)}
+			if dec != nil {
+				a.Supersedes = dec.ID
+			}
+			if err := r.authorize(id, a); err != nil {
 				return "", "", Next{}, err
 			}
 			return id, "document/" + id + "-authorized", Next{}, nil
@@ -369,7 +377,7 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 		if !requires.Guildmaster() {
 			lead = fmt.Sprintf("Guildhall did not merge by itself: %s.\n", strings.Join(failed, "; "))
 		}
-		next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, lead))
+		next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, outcomes, lead))
 		return "", "", next, err
 	case !dec.Answered:
 		return "", "", Next{Wait: WaitDecision, Step: s.ID, Decision: dec.ID}, r.notifyDecision(*dec, s.ID)
@@ -589,7 +597,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		return false, Next{}, err
 	}
 	needs := requires.Guildmaster() && repo.Merge.NeedsReapproval(kind)
-	// A narrowed review's findings, advisory ones included, reach the Guildmaster whatever the threshold.
+	// A narrowed review's findings and suggestions reach the Guildmaster whatever the threshold.
 	findings := 0
 	for _, l := range x.links {
 		findings += l.findings
@@ -608,11 +616,11 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		why = append(why, "the accepted spec changed since "+from)
 	}
 	if findings > 0 {
-		why = append(why, fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s)", findings))
+		why = append(why, fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s) or suggestion(s)", findings))
 	}
 	why = append(why, carryRefusals(conditions)...)
 	lead := fmt.Sprintf("Head %s is a %s rebase of the head merge %s authorized; the authorization does not carry over: %s.\n", x.head, kind, from, strings.Join(why, "; "))
-	next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, lead))
+	next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, outcomes, lead))
 	return false, next, err
 }
 
@@ -708,7 +716,8 @@ type condition struct {
 	Requirement string `json:"requirement"`
 	Required    bool   `json:"required"`
 	Holds       bool   `json:"holds"`
-	// Reason says why the requirement does not hold; empty when it holds.
+	// Reason says why the requirement does not hold; empty when it holds, but for nothing_open naming the
+	// suggestions it did not count.
 	Reason   string   `json:"reason,omitempty"`
 	Evidence []string `json:"evidence,omitempty"`
 }
@@ -718,6 +727,8 @@ func (c condition) line() string {
 	switch {
 	case !c.Required:
 		return "not required"
+	case c.Holds && c.Reason != "":
+		return "holds (" + c.Reason + ")"
 	case c.Holds:
 		return "holds"
 	}
@@ -742,6 +753,9 @@ type authorizationDoc struct {
 	CarriedFrom string            `json:"carried_from,omitempty"`
 	Rebase      []string          `json:"rebase,omitempty"`
 	Kind        config.RebaseKind `json:"kind,omitempty"`
+	// Supersedes is the merge decision deliver left unanswered when the requirements it was opened for came to hold
+	// before the Guildmaster answered it, such as a disputed finding the Director ruled on after the fallback.
+	Supersedes string `json:"supersedes,omitempty"`
 }
 
 // gateCondition is the condition of a gate requirement from the gate's error: a required gate that fails returns
@@ -791,16 +805,28 @@ func (r *run) reviewOutcomes(deliver workflow.Step) ([]reviewOutcome, error) {
 	return out, nil
 }
 
-// nothingOpen is the nothing_open condition: the review outcomes list no findings, advisory ones included, and the
-// task has no unanswered decision but deliver step s's own.
+// nothingOpen is the nothing_open condition: no review outcome has an open finding, and the task has no unanswered
+// decision but deliver step s's own. Every finding is open but a disputed one with a standing Director ruling on it;
+// suggestions never count, though the reason names how many there are, whether the condition holds or not.
 func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutcome) condition {
 	c := condition{Requirement: "nothing_open", Required: required}
 	var open []string
+	suggestions := 0
 	for _, o := range outcomes {
 		c.Evidence = append(c.Evidence, o.name)
-		if n := len(o.outcome.Findings); n > 0 {
-			open = append(open, fmt.Sprintf("%s lists %d finding(s)", o.name, n))
+		unresolved, disputed := 0, 0
+		for _, f := range o.outcome.Findings {
+			switch state, _ := r.findingState(o, f.ID); state {
+			case workflow.Disputed:
+				disputed++
+			case "":
+				unresolved++
+			}
 		}
+		if unresolved+disputed > 0 {
+			open = append(open, fmt.Sprintf("%s has %d unresolved and %d disputed finding(s)", o.name, unresolved, disputed))
+		}
+		suggestions += len(o.outcome.Suggestions)
 	}
 	for i, d := range r.decisions {
 		if p := r.decisionPlaces[i]; d.Answered || (p.ok && p.step == s.ID && !p.exit) {
@@ -809,8 +835,52 @@ func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutco
 		c.Evidence = append(c.Evidence, d.ID)
 		open = append(open, fmt.Sprintf("decision %s is unanswered", d.ID))
 	}
-	c.Holds, c.Reason = len(open) == 0, strings.Join(open, ", ")
+	c.Holds = len(open) == 0
+	if suggestions > 0 {
+		open = append(open, fmt.Sprintf("%d suggestion(s), not counted", suggestions))
+	}
+	c.Reason = strings.Join(open, ", ")
 	return c
+}
+
+// findingState is what keeps finding id of outcome o open for nothing_open: Disputed for a disputed finding with no
+// standing ruling, "" for any other finding, an unresolved or newly raised one; and the move of the standing
+// ruling that released a disputed finding, with state Resolved.
+func (r *run) findingState(o reviewOutcome, id string) (workflow.DispositionState, store.RulingMove) {
+	if !slices.ContainsFunc(o.outcome.Dispositions, func(d workflow.Disposition) bool { return d.Finding == id && d.State == workflow.Disputed }) {
+		return "", ""
+	}
+	for _, g := range r.rulingsOn(o.name) {
+		if g.Finding == id && g.ContestedBy == "" {
+			return workflow.Resolved, g.Move
+		}
+	}
+	return workflow.Disputed, ""
+}
+
+// openItems lists, for the merge question, each finding and suggestion of the latest review outcomes.
+func (r *run) openItems(outcomes []reviewOutcome) string {
+	var lines []string
+	for _, o := range outcomes {
+		for _, f := range o.outcome.Findings {
+			state, move := r.findingState(o, f.ID)
+			what := "unresolved"
+			switch state {
+			case workflow.Disputed:
+				what = "disputed, no ruling"
+			case workflow.Resolved:
+				what = fmt.Sprintf("disputed, ruled %s", move)
+			}
+			lines = append(lines, fmt.Sprintf("- %s finding %s (%s, %s): %s", o.name, f.ID, shortText(f.Rule, 256), what, shortText(f.Summary, 512)))
+		}
+		for _, sg := range o.outcome.Suggestions {
+			lines = append(lines, fmt.Sprintf("- %s suggestion %s: %s", o.name, sg.ID, shortText(sg.Summary, 512)))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\nFindings and suggestions of the latest review outcomes:\n" + strings.Join(lines, "\n") + "\n"
 }
 
 // deliverRound is the round deliver step s's next merge opens: after its latest decision and its latest authorization.
@@ -905,7 +975,15 @@ func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string
 			return false, Next{}, err
 		}
 	}
-	if err := r.notify("merged."+id, store.MessageMerged, fmt.Sprintf("Merged head %s (%s); the task is done.", h, r.mergedBy(id))); err != nil {
+	msg := fmt.Sprintf("Merged head %s (%s); the task is done.", h, r.mergedBy(id))
+	var a authorizationDoc
+	if _, err := r.readJSONDoc(id+"-authorized", &a); err != nil {
+		return false, Next{}, err
+	}
+	if a.Supersedes != "" {
+		msg += fmt.Sprintf(" Merge decision %s, opened while the requirements did not all hold, is no longer needed.", a.Supersedes)
+	}
+	if err := r.notify("merged."+id, store.MessageMerged, msg); err != nil {
 		return false, Next{}, err
 	}
 	if err := r.retire(id, repo, h); err != nil {

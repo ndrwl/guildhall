@@ -47,11 +47,13 @@ type timedDocument struct {
 	RecordedAt *time.Time `json:"recorded_at,omitempty"`
 }
 
-// timedFindings is one review outcome document's findings and its dispositions of the previous round's,
-// from the store's projection, with the commit time it was recorded at.
+// timedFindings is one review outcome document's summary, findings, suggestions and its dispositions of the
+// previous round's, from the store's projection, with the commit time it was recorded at.
 type timedFindings struct {
 	Document     string                 `json:"document"`
+	Summary      string                 `json:"summary,omitempty"`
 	Findings     []workflow.Finding     `json:"findings"`
+	Suggestions  []workflow.Suggestion  `json:"suggestions"`
 	Dispositions []workflow.Disposition `json:"dispositions"`
 	RecordedAt   *time.Time             `json:"recorded_at,omitempty"`
 	seq          uint64
@@ -177,7 +179,8 @@ func timeline(h store.TaskHistory) taskTimeline {
 		if d.Review == nil {
 			continue
 		}
-		t := timedFindings{Document: d.Name, Findings: append([]workflow.Finding{}, d.Review.Findings...), Dispositions: append([]workflow.Disposition{}, d.Review.Dispositions...)}
+		t := timedFindings{Document: d.Name, Summary: d.Review.Summary, Findings: append([]workflow.Finding{}, d.Review.Findings...),
+			Suggestions: append([]workflow.Suggestion{}, d.Review.Suggestions...), Dispositions: append([]workflow.Disposition{}, d.Review.Dispositions...)}
 		t.RecordedAt, _, _, t.seq = span(byRecord["document/"+d.Name], "put-document", "")
 		out.Findings = append(out.Findings, t)
 	}

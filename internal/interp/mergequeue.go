@@ -630,8 +630,8 @@ func (r *run) decisionOn(s workflow.Step, x string) *store.Decision {
 	return out
 }
 
-// mergeQuestion is the text of a merge decision for head x.
-func (r *run) mergeQuestion(s workflow.Step, k int, x string, pr *pullRequestDoc, conditions []condition, lead string) string {
+// mergeQuestion is the text of a merge decision for head x, listing the findings and suggestions of outcomes.
+func (r *run) mergeQuestion(s workflow.Step, k int, x string, pr *pullRequestDoc, conditions []condition, outcomes []reviewOutcome, lead string) string {
 	question := lead + fmt.Sprintf("Merge needed for %s/%s, step %s, attempt %d: head %s.\n", r.task.Repository, r.task.ID, s.ID, k, x)
 	if pr != nil {
 		question += fmt.Sprintf("Pull request: %s\n", pr.URL)
@@ -640,5 +640,5 @@ func (r *run) mergeQuestion(s workflow.Step, k int, x string, pr *pullRequestDoc
 	for _, c := range conditions {
 		question += "- " + c.Requirement + ": " + c.line() + "\n"
 	}
-	return question + "A merge answer overrides a failing nothing_open, and nothing else. An authorized merge joins the repository's merge queue, and Guildhall may rebase the head onto the base before it merges."
+	return question + "A merge answer overrides a failing nothing_open, and nothing else. An authorized merge joins the repository's merge queue, and Guildhall may rebase the head onto the base before it merges.\n" + r.openItems(outcomes)
 }

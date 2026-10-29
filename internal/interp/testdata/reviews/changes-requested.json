@@ -1,13 +1,23 @@
 {
-  "schema": "guildhall.review-outcome/1",
+  "schema": "guildhall.review-outcome/2",
   "reviewer": "automated",
   "verdict": "changes_requested",
+  "summary": "The list is not sorted as the specification requires; otherwise the change is complete.",
   "findings": [
     {
       "id": "f1",
+      "rule": "R1.27",
       "file": "internal/cli/task.go",
       "line": 42,
       "summary": "The list is not sorted by id, as the specification requires."
+    }
+  ],
+  "suggestions": [
+    {
+      "id": "s1",
+      "file": "internal/cli/task.go",
+      "line": 50,
+      "summary": "A shorter name would read better."
     }
   ],
   "revisions": {

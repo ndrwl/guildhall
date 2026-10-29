@@ -39,47 +39,69 @@ Then match the diff against the smell baseline in `smells.md`.
 A smell is always a labelled judgement call ("possible Feature Envy") and a suggestion, never a blocker.
 A written standard overrides the baseline: where one endorses the pattern, drop the smell, and where one forbids it, as S6 and S11 forbid speculative abstractions, report a finding citing that rule instead.
 
-## Findings
+## Findings and suggestions
 
-Each finding names its `id`, `rule`, `file` and `line`, and its summary states a concrete failure: the input or state and the wrong result.
-A finding with no rule behind it is a suggestion: leave `rule` out, and it never blocks.
-An id is lowercase letters, digits and hyphens, names one problem, and keeps that name in every later round.
+The outcome keeps blockers and suggestions in two lists.
+
+`findings` are the blockers.
+Each names its `id`, `rule`, `file` and `line`, and its summary states a concrete failure: the input or state and the wrong result.
+A finding must cite a rule; intake refuses one that does not.
+
+`suggestions` are everything with no rule behind it, and every `smell-` item.
+Each names its `id` and `summary`, and may give `file` and `line`.
+A suggestion never blocks, never holds the merge and needs no disposition in a later round.
+
+An id is lowercase letters, digits and hyphens, names one problem, is used once across both lists, and keeps that name in every later round.
+
+## Summary
+
+Give the outcome a `summary`: one paragraph, with no blank line, saying your overall verdict and why.
+Name the worst finding on each axis, if there is one, and say whether only suggestions remain.
 
 ## Rounds
 
 When the inputs include `previous`, disposition every finding of that outcome before you write new ones, so the Director can see a stall.
+Suggestions of the previous outcome need no disposition.
 
-- `resolved`: this head fixes it; do not list it again.
-- `still-open`: it stands, including when the builder disputed it without fixing it; list it again under the same id.
-- `withdrawn`: you no longer hold it, for example because the dispute showed it wrong; do not list it again.
+- `resolved`: this head fixes it, or you no longer hold it; do not list it again.
+- `unresolved`: it stands; list it again under the same id.
+- `disputed`: the builder argued against it without fixing it, and you find the argument plausible but still hold the finding; list it again under the same id, and give the disposition a `reason` saying what the builder argued and why the rule still applies.
 
-With a `rulings` input, keeping a ruled finding `still-open` contests the Director's ruling and stops the loop for the Guildmaster, so do that only when the cited rule still plainly applies, and say why.
+A disputed finding stays open.
+With `changes_requested` the loop goes on; with `approved` it holds the merge until the Director rules on it.
+
+With a `rulings` input, keeping a ruled finding open, `unresolved` or `disputed`, contests the Director's ruling and stops the loop for the Guildmaster, so do that only when the cited rule still plainly applies, and say why.
 
 ## Verdict and result
 
-- `approved`: no rule-cited finding stands; suggestions may remain.
-- `changes_requested`: at least one rule-cited finding stands.
+- `approved`: no finding stands that you hold as a blocker; suggestions may remain.
+- `changes_requested`: at least one finding stands.
 - `rejected`: the change should not go on in this form, such as an empty range or work that contradicts the spec throughout; at least one finding says why.
 
 Bind the outcome to the head, the spec input's digest and the standards revision the prompt gives, with reviewer `automated`.
-Write it as `review-outcome.json` and list it as the first output of your result file.
+Write it as `review-outcome.json`, schema `guildhall.review-outcome/2`, and list it as the first output of your result file.
 The result's summary is one line: the findings on each axis and the worst one within each axis, never one winner across both.
 
 ```json
 {
-  "schema": "guildhall.review-outcome/1",
+  "schema": "guildhall.review-outcome/2",
   "reviewer": "automated",
   "verdict": "changes_requested",
+  "summary": "The --json output is still a table for two tasks (spec-json-output), and the new test has no red run (std-no-red-run), which the builder disputes; the poll race is fixed and one smell is suggested.",
   "findings": [
     {"id": "spec-json-output", "rule": "S1", "file": "internal/cli/status.go", "line": 42,
      "summary": "Spec: \"status --json prints one object per task\"; with two tasks the head prints a table, so a script decoding the output fails."},
     {"id": "std-no-red-run", "rule": "S2", "file": "internal/cli/status_test.go", "line": 18,
-     "summary": "The --json test was added with the code and the description shows no red run, so nothing shows it failed before the change."},
+     "summary": "The --json test was added with the code and the description shows no red run, so nothing shows it failed before the change."}
+  ],
+  "suggestions": [
     {"id": "smell-data-clump", "file": "internal/cli/status.go", "line": 60,
      "summary": "Possible Data Clumps: repository, task and step travel together through four functions; one small type would carry them."}
   ],
   "dispositions": [
-    {"finding": "spec-json-output", "state": "still-open"},
+    {"finding": "spec-json-output", "state": "unresolved"},
+    {"finding": "std-no-red-run", "state": "disputed",
+     "reason": "The builder says the test is obviously new; S2 still asks for the red run to be shown."},
     {"finding": "std-poll-race", "state": "resolved"}
   ],
   "revisions": {

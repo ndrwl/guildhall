@@ -95,14 +95,17 @@ type DocumentRef struct {
 	Path string `json:"path"`
 	// SHA256 is the lowercase hex sha256 of the file's content.
 	SHA256 string `json:"sha256"`
-	// Review projects a review outcome document's findings and dispositions, so inspection reads them
-	// from the store without opening the file; nil for every other document.
+	// Review projects a review outcome document's summary, findings, suggestions and dispositions, so inspection
+	// and rulings read them from the store without opening the file; nil for every other document.
 	Review *Review `json:"review,omitempty"`
 }
 
-// Review is the part of a review outcome a document reference projects.
+// Review is the part of a review outcome a document reference projects. A projection recorded from a /1 outcome
+// before guildhall.review-outcome/2 has no summary or suggestions and may hold the /1 disposition state names.
 type Review struct {
+	Summary      string                 `json:"summary,omitempty"`
 	Findings     []workflow.Finding     `json:"findings,omitempty"`
+	Suggestions  []workflow.Suggestion  `json:"suggestions,omitempty"`
 	Dispositions []workflow.Disposition `json:"dispositions,omitempty"`
 }
 
@@ -708,11 +711,17 @@ func validateDecision(d Decision) error {
 	return nil
 }
 
-// validateReview checks a projection's finding ids, summaries and disposition states; the outcome's
-// own rules (ids used once, still-open findings listed) are checked by workflow.ParseReviewOutcome.
+// validateReview checks a projection's summary, finding and suggestion ids and summaries, and disposition states,
+// the /1 state names of old projections included; the outcome's own rules (ids used once, open findings listed)
+// are checked by workflow.ParseReviewOutcome.
 func validateReview(r *Review) error {
 	if r == nil {
 		return nil
+	}
+	if r.Summary != "" {
+		if err := validateText("review summary", r.Summary, MaxTextBytes); err != nil {
+			return err
+		}
 	}
 	for _, f := range r.Findings {
 		if err := validateIDs(f.ID); err != nil {
@@ -722,8 +731,16 @@ func validateReview(r *Review) error {
 			return err
 		}
 	}
+	for _, s := range r.Suggestions {
+		if err := validateIDs(s.ID); err != nil {
+			return err
+		}
+		if err := validateText("suggestion summary", s.Summary, MaxTextBytes); err != nil {
+			return err
+		}
+	}
 	for _, d := range r.Dispositions {
-		if !d.State.Valid() {
+		if !d.State.Normalized().Valid() {
 			return invalid("disposition of %q has unknown state %q", d.Finding, d.State)
 		}
 	}
