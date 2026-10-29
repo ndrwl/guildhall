@@ -594,8 +594,8 @@ func armRewake(settings []byte) (<-chan string, func(), error) {
 }
 
 // shellWords splits a hook command into words as a POSIX shell does for words that are plain or single-quoted,
-// the only quoting the session settings use (claude.CopyCommand): `a --copy '/my copy'\''s'` is
-// [a --copy /my copy's].
+// the only quoting the session settings use (claude.CopyCommand), where a quote in the copy is written as
+// quote, backslash, quote, quote.
 func shellWords(command string) []string {
 	var words []string
 	var word strings.Builder

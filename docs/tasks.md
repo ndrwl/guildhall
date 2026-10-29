@@ -7,7 +7,7 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 ## Commands
 
-Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or `GUILDHALL_COPY`, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
+Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or found from the current directory, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
 - `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
   The title is a short name; the task's full statement, such as a bug's symptom and exact error, goes in its detail, given as text with `--detail` or read with `--detail-file` from a file, or from standard input for `-`, with the same rules as [`decide answer --answer-file`](decisions-cli.md) (a leading byte order mark is dropped, UTF-16 is refused and CRLF becomes LF).

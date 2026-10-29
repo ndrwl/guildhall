@@ -238,7 +238,7 @@ For how the copy/profile reference reaches the runtime, see [Artisan permissions
 
 Each `allowed_tools` entry is a tool name, optionally with a specifier in parentheses, with no control characters and listed once; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused, so a grant names its commands.
 A tool one task needs for a while, such as a probe build's `Bash(go:*)`, is a [task grant](tasks.md#task-grants) the Guildmaster approves, not an edit to a profile here: it reaches only that task's attempts and expires by itself ([decision](decisions/task-grants.md)).
-The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or `GUILDHALL_COPY` selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
+The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or [copy discovery](running.md#copies) selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare and Guildhall does not ship, listing every such step.
 `config.CheckArtisanAdapters` additionally refuses an Artisan stage that resolves no profile, before task creation or advance mutates task records.
 Director, Guildmaster and engine stages do not require an Artisan adapter.
@@ -290,7 +290,7 @@ A config without the table has the same config digest as before the table existe
 ## Lanterns presentation preference
 
 The automatically installed [Lanterns plugin](lanterns.md) keeps its per-Director `/calm` preference in `<copy>/director/lanterns-calm`, not in `config.toml`.
-With `GUILDHALL_COPY` set, an absent preference means Calm is on; `/calm` toggles and remembers both `on` and `off`, so a saved `off` keeps native drawings.
+In a Director session, whose plugin directory holds the `calm.json` naming that file, an absent preference means Calm is on; `/calm` toggles and remembers both `on` and `off`, so a saved `off` keeps native drawings.
 Function hooks still require explicit opt-in with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; without it, Calm has no effect.
 The preference survives generated workspace refreshes and handoffs.
 

@@ -16,17 +16,27 @@ With a [copy](#copies), `--copy <dir> --repo <id>` replaces `--store`, `--config
 
 ## Copies
 
-A Director copy is one directory holding `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)), and, once a session has run, `director/session-<n>/` for each [Director session](director.md#start).
-Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, `director`, the owned `artisan` commands and `store init|doctor`) accepts `--copy <dir>`, or, when that flag is absent, the environment variable `GUILDHALL_COPY`.
+A Director copy is one directory holding its [copy marker](#the-copy-marker) `.guildhall-copy`, `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)), and, once a session has run, `director/session-<n>/` for each [Director session](director.md#start).
+Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, `director`, `spend`, `quality`, `version`, the owned `artisan` commands and `store init|doctor`) selects its copy with `--copy <dir>`, or, when that flag is absent, by **copy discovery** from the current directory.
 The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/config.toml` and `--state` to `<dir>/state`, for each of those flags the command takes; `workflow approve` takes the copy's config only with `--repo` and no `--file`.
 `config.Load` reads the copy's config as it reads any other.
 
-- `--copy` overrides `GUILDHALL_COPY`.
-- `GUILDHALL_COPY` is only a default: a command given any of its path flags (`--store`, `--config`, `--state`, or the `store init|doctor` path) without `--copy` ignores it entirely, so a launched child given explicit paths keeps them, and its other path flags stay required.
-- When `GUILDHALL_COPY` is used it must be an absolute path, so a child that inherits it in another working directory selects the same copy; a relative value is a usage error.
+- `--copy` comes first, then copy discovery ([decision](decisions/copy-discovery.md)).
+- Copy discovery starts from the cleaned absolute current directory and walks up one parent at a time to the filesystem root (on Windows, the drive root), stopping at the first directory that holds `.guildhall-copy`: that directory is the copy, so a command run anywhere inside a copy, such as in a session's `director/claude` workspace, finds it.
+- A start at or under that copy's `state/` finds no copy, and the search does not go on past it: every Artisan working directory and attempt directory lies under `<copy>/state/`, so nothing an Artisan runs can reach the Director's store. The paths are compared absolute and cleaned, ignoring case on Windows.
+- Explicit path flags bypass copy selection: a command given any of its path flags (`--store`, `--config`, `--state`, or the `store init|doctor` path) without `--copy` does no discovery, so a launched child given explicit paths keeps them, and its other path flags stay required.
+- The environment never selects a copy.
 - A path flag given with `--copy` must name the copy's own file, compared absolute and cleaned (ignoring case on Windows); one elsewhere, such as a `--store` outside the copy, is a usage error, exit 2.
-- With neither `--copy` nor `GUILDHALL_COPY`, the path flags are required as before.
+- With no `--copy`, no path flags and no copy found, the command refuses with one line, `no Guildhall copy found from <cwd>; pass --copy <dir> or cd into a copy`, after its command name, with the exit status it gave for a missing copy before.
 - A copy, like a `--store`, without a store file is refused with exit 1, naming `guildhall store init <dir>/director.store`; no command but `store init` creates a store.
+
+### The copy marker
+
+The copy marker is the file `.guildhall-copy` at the copy root, one JSON object: `{"schema":"guildhall.copy","version":1,"name":"<copy name>"}`.
+A command run with `--copy <dir>` writes it, named for the directory's base name, when `<dir>` has none, so `store init --copy <dir>` gives a new copy its marker and every existing copy gets one at its first use with `--copy`; a bare `store init <path>` writes none, since it cannot tell it is making a copy.
+The marker is created exclusively, so concurrent first uses cannot race, and an existing marker is never rewritten.
+A copy that cannot be written, such as a read-only one, gets one warning line on standard error and the command goes on.
+Discovery refuses a marker that cannot be read, is not JSON or has an unknown schema or version, with an error naming the file; it does not skip it to look further up.
 
 ## What an advance runs over
 

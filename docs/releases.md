@@ -51,8 +51,8 @@ A directory whose binary no longer matches its `SHA256` file is reported as dama
 ## The pin
 
 The pin names the release that new work uses in one Director copy.
-Commands select the copy as every command that takes a store does today ([copies](running.md#copies)): with `--copy <dir>`, or, when that flag is absent, the absolute path in `GUILDHALL_COPY`; the current directory never selects a copy.
-A command given an explicit `--store` without `--copy` ignores `GUILDHALL_COPY`, and a path flag given with `--copy` must name the copy's own file.
+Commands select the copy as every command that takes a store does today ([copies](running.md#copies)): with `--copy <dir>`, or, when that flag is absent, by copy discovery, the nearest copy marker at or above the current directory, outside that copy's `state/` ([decision](decisions/copy-discovery.md)).
+A command given an explicit `--store` without `--copy` does no discovery, and a path flag given with `--copy` must name the copy's own file.
 This selection applies to release commands, configuration reload, task creation and Director lifecycle commands.
 
 - **Standalone**: `guildhall release use <version>` sets it.

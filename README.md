@@ -113,18 +113,18 @@ Prebuilt binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, will b
 ## Try it today
 
 You can also run the steps the Director runs yourself.
-A Director's copy is a directory holding its `config.toml`, its store `director.store` and its `state/` directory.
-The quickest look needs nothing but the binary: create an empty store with `store init`, which refuses anything already at that path, and inspect it.
+A Director's copy is a directory holding its copy marker `.guildhall-copy`, its `config.toml`, its store `director.store` and its `state/` directory.
+The quickest look needs nothing but the binary: create an empty store and the copy's marker with `store init --copy`, which refuses a store already there, and inspect it.
 
 ```sh
 mkdir -p demo/state
-./guildhall store init demo/director.store
+./guildhall store init --copy demo
 ./guildhall task list --copy demo --json
 ./guildhall decide list --copy demo
-./guildhall store doctor --copy demo
+cd demo && ../guildhall store doctor
 ```
 
-Every command that takes a store accepts `--copy demo` in place of `--store demo/director.store`, `--config demo/config.toml` and `--state demo/state`, or reads the copy from the environment variable `GUILDHALL_COPY`, which must be an absolute path; see [copies](docs/running.md#copies).
+Every command that takes a store accepts `--copy demo` in place of `--store demo/director.store`, `--config demo/config.toml` and `--state demo/state`, or, run anywhere inside the copy, finds it from the current directory by its marker; see [copies](docs/running.md#copies).
 
 To go further (create a task in your own repository, launch an agent for a stage, answer its decisions, send messages, preview a Steward rollout), follow the [walkthrough](docs/walkthrough.md).
 It needs a small Director config naming your repository; see [configuration and workflows](docs/configuration.md).
