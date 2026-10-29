@@ -1,0 +1,22 @@
+{
+  "id": "cli:pane:get",
+  "result": {
+    "pane": {
+      "agent_status": "working",
+      "cwd": "/home/user",
+      "focused": false,
+      "foreground_cwd": "/home/user",
+      "pane_id": "w1:p2",
+      "revision": 0,
+      "scroll": {
+        "max_offset_from_bottom": 0,
+        "offset_from_bottom": 0,
+        "viewport_rows": 40
+      },
+      "tab_id": "w1:t2",
+      "terminal_id": "term_65e4796b043432",
+      "workspace_id": "w1"
+    },
+    "type": "pane_info"
+  }
+}

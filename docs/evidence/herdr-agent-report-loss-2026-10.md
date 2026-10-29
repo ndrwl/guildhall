@@ -137,6 +137,7 @@ Each option says which evidence would make it the one to build.
    After `presentation.Report` returns, append an `events.jsonl` event with the pane id, Herdr's exit status and stdout, and, once, the agent read back with `pane get`.
    Build this whichever hypothesis holds: without it, no future loss can be diagnosed from Guildhall's files (Q1, Q3).
    A read-back or event failure must only warn.
+   Built in d30 as the [`presentation-report` event](../artisan.md#events).
 2. **Strip `HERDR_PANE_ID`, `HERDR_SOCKET_PATH`, `HERDR_SESSION` and `HERDR_ENV` from the worker's environment.**
    Strip them where the launcher builds the worker's environment (`launch.go:345`), ideally with the same list `herdr.Client` already strips (`herdr.go:50`, which also holds `HERDR_TAB_ID` and `HERDR_WORKSPACE_ID`), so nothing inside an Artisan can address its own presentation pane.
    Build this first if the state read finds a `herdr` call in `~/.claude/settings.json`, an installed plugin's hooks, or d23 build-4's `launcher.log`.

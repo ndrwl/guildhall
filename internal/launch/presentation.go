@@ -24,9 +24,18 @@ import (
 // after uncertain API responses. Recovery reconciles attempt ownership, not panes.
 // The pane invokes the same owned launcher through --pane-launch, which detaches
 // its lifetime and streams its durable log; losing the pane cannot stop the worker.
+// Each launch that reaches Report records what Herdr answered, and what one
+// ReadBack showed once the launch settled, as a "presentation-report" event,
+// for diagnosis only: neither changes the launch's result.
 type Presentation struct {
 	Host   adapter.TabHost
-	Report func(context.Context, string, herdr.AgentReport) error
+	Report func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error)
+	// ReadBack reads the reported pane back once the launcher owns the
+	// attempt; nil records the read-back as skipped.
+	ReadBack func(context.Context, string) (herdr.PaneReadBack, error)
+	// Warnings receives warnings about the read-back and the event; nil
+	// discards them.
+	Warnings io.Writer
 	// CloseAfter is the effective artisan_workspace_close_after setting, passed to
 	// the bridge as WorkspaceCloseAfterFlag so its finish line states it; zero is
 	// never closing automatically.
@@ -112,11 +121,16 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	if err := os.WriteFile(filepath.Join(at.Dir(), PaneClaim), b, 0o600); err != nil {
 		return interp.Handle{}, err
 	}
-	if err := presentation.Report(ctx, tab.PaneID, herdr.AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: ResumeArgv(at)}); err != nil {
+	outcome, err := presentation.Report(ctx, tab.PaneID, herdr.AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: ResumeArgv(at)})
+	report := artisan.PresentationReport{Pane: tab.PaneID, Exit: outcome.Exit, Stdout: outcome.Stdout, Err: err}
+	if err != nil {
+		presentation.log(at, report)
 		return interp.Handle{}, err
 	}
 	argv := append(append([]string(nil), cmd.Args...), "--pane-launch", WorkspaceCloseAfterFlag, presentation.CloseAfter.String())
 	if err := l.Type(ctx, tab, shell, argv); err != nil {
+		report.ReadBackErr = errLaunchUnsettled
+		presentation.log(at, report)
 		// Type may have succeeded despite losing its response. Reconcile files and
 		// ownership for diagnosis, but never send a second command or stop a worker.
 		classification, statusErr := Status(ctx, at)
@@ -124,9 +138,13 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	}
 	c := &child{at: at, pane: true, exited: make(chan struct{})}
 	if err := p.owned(ctx, c); err != nil {
+		report.ReadBackErr = errLaunchUnsettled
+		presentation.log(at, report)
 		classification, statusErr := Status(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: pane ownership uncertain (%+v): %w", classification, errors.Join(err, statusErr))
 	}
+	presentation.readBack(ctx, &report)
+	presentation.log(at, report)
 	h := interp.Handle{Identity: at.Identity(), Ref: fmt.Sprintf("%s pid %d", at.Key, c.identity.PID)}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -135,6 +153,46 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	}
 	p.started[h] = c
 	return h, nil
+}
+
+var (
+	// errLaunchUnsettled is the read-back skipped because typing the bridge
+	// command or waiting for its launcher to own the attempt failed.
+	errLaunchUnsettled = errors.New("read-back skipped: the launch did not settle")
+	// errNoReadBack is the read-back skipped because none is configured.
+	errNoReadBack = errors.New("read-back skipped: no read-back configured")
+)
+
+// readBack reads r's pane back once into r; a failure is recorded in r and
+// warned about, never returned.
+func (pr *Presentation) readBack(ctx context.Context, r *artisan.PresentationReport) {
+	if pr.ReadBack == nil {
+		r.ReadBackErr = errNoReadBack
+		return
+	}
+	got, err := pr.ReadBack(ctx, r.Pane)
+	if err != nil {
+		r.ReadBackErr = err
+		pr.warn("read back Herdr pane %s: %v", r.Pane, err)
+		return
+	}
+	r.ReadBackAgentStatus, r.ReadBackPane = got.AgentStatus, got.Pane
+	if r.ReadBackPane == nil {
+		r.ReadBackPane = json.RawMessage("null")
+	}
+}
+
+// log appends r to at's events as one line; a failure only warns.
+func (pr *Presentation) log(at Attempt, r artisan.PresentationReport) {
+	if err := artisan.LogPresentationReport(at.Dir(), r); err != nil {
+		pr.warn("record Herdr report for %s: %v", at.Key, err)
+	}
+}
+
+func (pr *Presentation) warn(format string, args ...any) {
+	if pr.Warnings != nil {
+		_, _ = fmt.Fprintf(pr.Warnings, "guildhall: warning: "+format+"\n", args...)
+	}
 }
 
 // Present starts argv as a detached owned launcher, appending output to logPath,

@@ -231,7 +231,7 @@ The [event table](#events) describes the rung observations recorded in `events.j
 
 ### Events
 
-The launcher appends one JSON object per line to `events.jsonl`; every line carries `event`, its name, and `at`, an RFC 3339 UTC time, plus the fields below.
+The launcher appends one JSON object per line to `events.jsonl`, except `presentation-report`, appended by the process that starts a pane launch; every line carries `event`, its name, and `at`, an RFC 3339 UTC time, plus the fields below.
 An event is observation only; a reader must tolerate unknown events.
 The file carries no schema field.
 Contract tests already read it, but no command reads it yet; it gains a schema when a command reads it.
@@ -257,6 +257,7 @@ Contract tests already read it, but no command reads it yet; it gains a schema w
 | `ended` | Outcome publication has been attempted, even if it failed; check the Run error and `outcome.json` separately for success | `outcome` |
 | `advance` | A run of the launcher's advance of the task (`--advance`) has exited or failed to start, after the outcome was recorded; a failed advance logs two | `command`, `exit` when it ran, `error` when it failed |
 | `settled` | Resume settlement publishes a new outcome after the launcher is gone and the unit is proven empty; returning an existing outcome does not emit it | `outcome` |
+| `presentation-report` | A pane launch has registered the attempt's pane with Herdr (`herdr pane report-agent`), once per launch that reaches the report: at once when the report fails, which still fails the launch before anything is typed; when typing or ownership fails, with the read-back skipped; otherwise after the launcher owns the attempt, with one `herdr pane get` read-back. Diagnosis only: a failed read-back or event write only warns on the starting process's stderr, and the pane is never liveness evidence | `pane`, `exit` (-1 when Herdr did not run or was stopped), `stdout` (at most 4 KiB), `stdout_truncated` when cut, `error` when the report failed, `readback_agent_status` and `readback_pane` (the raw pane object, or a string of its first 4 KiB when cut) when read back, `readback_error` when the read-back failed or was skipped |
 
 `rung-emptied` is written once for the rung that ends the stop: rung 1 can be found empty before the ladder's first check, during its wait or during cooperative supervision, and each of those paths returns after writing it.
 `TestEventsDocumented` pins the launcher's typed event vocabulary to this table in both directions.

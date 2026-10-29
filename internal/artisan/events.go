@@ -1,5 +1,10 @@
 package artisan
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 type eventName uint8
 
 const (
@@ -9,6 +14,7 @@ const (
 	eventEnded
 	eventHeartbeatFailed
 	eventLadder
+	eventPresentationReport
 	eventResultAccepted
 	eventRung
 	eventRungEmptied
@@ -31,6 +37,7 @@ var eventNames = []eventName{
 	eventEnded,
 	eventHeartbeatFailed,
 	eventLadder,
+	eventPresentationReport,
 	eventResultAccepted,
 	eventRung,
 	eventRungEmptied,
@@ -60,6 +67,8 @@ func (n eventName) String() string {
 		return "heartbeat-failed"
 	case eventLadder:
 		return "ladder"
+	case eventPresentationReport:
+		return "presentation-report"
 	case eventResultAccepted:
 		return "result-accepted"
 	case eventRung:
@@ -105,5 +114,66 @@ func LogAdvance(dir, command string, exit int, err error) error {
 	}
 	l := &Launcher{c: LauncherConfig{Dir: dir}}
 	l.event(eventAdvance, fields)
+	return l.logErr
+}
+
+// PresentationReportLimit is the most bytes of Herdr's stdout, and of the
+// read-back pane, a "presentation-report" event keeps.
+const PresentationReportLimit = 4 << 10
+
+// PresentationReport is what registering an attempt's pane with Herdr
+// returned, for diagnosis only.
+type PresentationReport struct {
+	// Pane is the pane id reported.
+	Pane string
+	// Exit is Herdr's exit code, or -1 when it did not run or was stopped.
+	Exit int
+	// Stdout is Herdr's stdout.
+	Stdout []byte
+	// Err is the report's error, when it failed.
+	Err error
+	// ReadBackAgentStatus and ReadBackPane are the pane's agent_status and
+	// raw pane object read back once after the report; ReadBackPane is nil
+	// when nothing was read back.
+	ReadBackAgentStatus string
+	ReadBackPane        json.RawMessage
+	// ReadBackErr says why the read-back failed or was skipped.
+	ReadBackErr error
+}
+
+// LogPresentationReport appends a "presentation-report" event to EventsFile
+// in the attempt directory dir, truncating Herdr's stdout and the read-back
+// pane to PresentationReportLimit. It is appended by the process that starts
+// a pane launch, as one write of one whole line, without the attempt lock.
+// It returns the error of the write.
+func LogPresentationReport(dir string, r PresentationReport) error {
+	fields := map[string]any{"pane": r.Pane, "exit": r.Exit}
+	stdout := r.Stdout
+	if len(stdout) > PresentationReportLimit {
+		stdout = stdout[:PresentationReportLimit]
+		fields["stdout_truncated"] = true
+	}
+	fields["stdout"] = string(stdout)
+	if r.Err != nil {
+		fields["error"] = r.Err.Error()
+	}
+	if r.ReadBackPane != nil {
+		fields["readback_agent_status"] = r.ReadBackAgentStatus
+		pane := r.ReadBackPane
+		var compact bytes.Buffer
+		if json.Compact(&compact, pane) == nil {
+			pane = compact.Bytes()
+		}
+		if len(pane) <= PresentationReportLimit && json.Valid(pane) {
+			fields["readback_pane"] = json.RawMessage(pane)
+		} else {
+			fields["readback_pane"] = string(pane[:min(len(pane), PresentationReportLimit)])
+		}
+	}
+	if r.ReadBackErr != nil {
+		fields["readback_error"] = r.ReadBackErr.Error()
+	}
+	l := &Launcher{c: LauncherConfig{Dir: dir}}
+	l.event(eventPresentationReport, fields)
 	return l.logErr
 }

@@ -28,7 +28,9 @@ func TestPaneProcessPassesLauncherContract(t *testing.T) {
 	interptest.RunLauncherContract(t, func(t *testing.T) interptest.Harness {
 		p := newProcess(t)
 		panes := adaptertest.NewShellPanes(t, "lab", "director")
-		p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) error { return nil }}
+		p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
+			return herdr.ReportOutcome{}, nil
+		}}
 		return interptest.Harness{Launcher: p, Adapter: interp.FakeAdapter, Prepare: func(t *testing.T, o interptest.Outcome, render func(string) interp.Spec) interp.Spec {
 			return prepared(t, p, render(instructions[o]))
 		}}
@@ -40,13 +42,13 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 	spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=10m"))
 	panes := adaptertest.NewShellPanes(t, "lab", "director")
 	var pane string
-	p.Presentation = &launch.Presentation{Host: panes, Report: func(_ context.Context, id string, r herdr.AgentReport) error {
+	p.Presentation = &launch.Presentation{Host: panes, Report: func(_ context.Context, id string, r herdr.AgentReport) (herdr.ReportOutcome, error) {
 		pane = id
 		at := launch.Attempt{Store: p.Store, StateDir: p.StateDir, Key: artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}}
 		if r.Source != "guildhall" || r.Agent != "artisan" || !reflect.DeepEqual(r.Resume, launch.ResumeArgv(at)) {
 			t.Errorf("report = %+v", r)
 		}
-		return nil
+		return herdr.ReportOutcome{}, nil
 	}, CloseAfter: 5 * time.Minute}
 	h, err := p.Launch(context.Background(), spec)
 	if err != nil {
@@ -99,7 +101,9 @@ func TestAmbiguousPaneLaunchNeverTypesTwice(t *testing.T) {
 	spec := prepared(t, p, fixtureSpec(t, ""))
 	panes := adaptertest.NewShellPanes(t, "lab", "director")
 	refused := errors.New("report refused")
-	p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) error { return refused }}
+	p.Presentation = &launch.Presentation{Host: panes, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
+		return herdr.ReportOutcome{}, refused
+	}}
 	if _, err := p.Launch(context.Background(), spec); !errors.Is(err, refused) {
 		t.Fatalf("Launch = %v", err)
 	}
@@ -129,7 +133,9 @@ func TestPaneLostResponsePreservesWorkerAndNeverRetypes(t *testing.T) {
 	p := newProcess(t)
 	spec := prepared(t, p, fixtureSpec(t, "guildhall-fake: delay=200ms"))
 	panes := adaptertest.NewShellPanes(t, "lab", "director")
-	p.Presentation = &launch.Presentation{Host: uncertainTabs{panes}, Report: func(context.Context, string, herdr.AgentReport) error { return nil }}
+	p.Presentation = &launch.Presentation{Host: uncertainTabs{panes}, Report: func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error) {
+		return herdr.ReportOutcome{}, nil
+	}}
 	if _, err := p.Launch(context.Background(), spec); err == nil {
 		t.Fatal("lost API response not returned")
 	}
@@ -163,9 +169,9 @@ func TestRelativeStorePaneLaunchAndResume(t *testing.T) {
 			p.Store = filepath.Base(storePath)
 			panes := adaptertest.NewShellPanes(t, "lab", "director")
 			var resume []string
-			p.Presentation = &launch.Presentation{Host: panes, Report: func(_ context.Context, _ string, r herdr.AgentReport) error {
+			p.Presentation = &launch.Presentation{Host: panes, Report: func(_ context.Context, _ string, r herdr.AgentReport) (herdr.ReportOutcome, error) {
 				resume = r.Resume
-				return nil
+				return herdr.ReportOutcome{}, nil
 			}}
 			var h interp.Handle
 			var err error
@@ -260,13 +266,13 @@ func TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop(t *testing.T) {
 				if _, ok := ctx.Deadline(); !ok {
 					t.Error("presentation resolution has no deadline")
 				}
-				return &launch.Presentation{Host: host, Report: func(ctx context.Context, _ string, _ herdr.AgentReport) error {
+				return &launch.Presentation{Host: host, Report: func(ctx context.Context, _ string, _ herdr.AgentReport) (herdr.ReportOutcome, error) {
 					reports++
 					if phase == "report" {
 						<-ctx.Done()
-						return ctx.Err()
+						return herdr.ReportOutcome{Exit: -1}, ctx.Err()
 					}
-					return nil
+					return herdr.ReportOutcome{}, nil
 				}}, nil
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
