@@ -803,10 +803,14 @@ func (r *run) launch(s workflow.Step, n int, rt artisanRuntime, inputs []render.
 	if err != nil {
 		return fmt.Errorf("working directory: %w", err)
 	}
+	main, err := r.fastForward(s, n)
+	if err != nil {
+		return err
+	}
 	if err := r.recordBase(s, n); err != nil {
 		return err
 	}
-	p, err := r.preparation(s, n, inputs)
+	p, err := r.preparation(s, n, inputs, main)
 	if err != nil {
 		return err
 	}

@@ -66,6 +66,12 @@ func tier2(t *testing.T, e *env, f *forgetest.Fake, ws *queueWorkspaces, o func(
 	ws.setTip(commitN(2))
 	e.script.Expect(rebaserExp("deliver", 1, commitN(2), false), narrowExp(t, "deliver", 1, resolved, o(resolved)))
 	e.answer(t, "deliver-1", "merge")
+	forwards := ws.fastForwards()
+	defer func() {
+		if got := ws.fastForwards(); got != forwards {
+			t.Errorf("the rebaser and the narrowed review fast-forwarded %d times, want none", got-forwards)
+		}
+	}()
 	want(t, e.advance(t, answeredMerge), interp.Next{Wait: interp.WaitAttempt, Step: "deliver-rebase", Attempt: 1})
 	if ws.adopted[0] != [2]string{head, commitN(1)} {
 		t.Fatalf("adopted = %v, want the worktree moved to the marked replay first", ws.adopted)

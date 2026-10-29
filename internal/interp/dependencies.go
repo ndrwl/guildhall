@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
-	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -16,8 +15,8 @@ import (
 // dependencyGate decides whether the task may run s, its first step not run by the Director, or must wait for its
 // dependencies to merge (docs/interpreter.md#the-dependency-gate). It passes a task with no depends_on, reading
 // nothing more; a task that already has an attempt of a step not run by the Director; a task the Director overrode;
-// and a task whose every dependency is done. A task that passes by the override or its dependencies, before its
-// first such attempt is recorded, has its untouched branch fast-forwarded to the current main first.
+// and a task whose every dependency is done. The gate only holds or releases: a released task starts on the main
+// its dependencies merged into because its first attempt's launch fast-forwards its untouched branch.
 //
 // A held task records nothing: the Director is sent one dependency-held message per state of its unmerged
 // dependencies, and the advance waits for them (WaitDependencies).
@@ -28,7 +27,7 @@ func (r *run) dependencyGate(s workflow.Step) (held bool, next Next, err error) 
 	_, err = r.e.Records.DependencyOverride(r.task.Repository, r.task.ID)
 	switch {
 	case err == nil:
-		return false, Next{}, r.fastForward()
+		return false, Next{}, nil
 	case !errors.Is(err, store.ErrNotFound):
 		return false, Next{}, fmt.Errorf("dependency override: %w", err)
 	}
@@ -37,7 +36,7 @@ func (r *run) dependencyGate(s workflow.Step) (held bool, next Next, err error) 
 		return false, Next{}, err
 	}
 	if len(lines) == 0 {
-		return false, Next{}, r.fastForward()
+		return false, Next{}, nil
 	}
 	return true, Next{Wait: WaitDependencies, Step: s.ID}, r.dependencyHeld(s, lines)
 }
@@ -127,27 +126,4 @@ func (r *run) dependencyHeld(s workflow.Step, lines []string) error {
 	text := fmt.Sprintf("Task %s/%s is held before step %s until its dependencies merge:\n%s\nStart it anyway with: %s",
 		r.task.Repository, r.task.ID, s.ID, states, r.overrideCommand())
 	return r.notify(store.MessageDependencyHeld+"."+digest.Of([]byte(states)).Hex()[:12], store.MessageDependencyHeld, text)
-}
-
-// fastForward moves the task's untouched branch to the current main as the gate opens; a branch it cannot move is
-// kept, research proceeds on it and the Director is told why once.
-func (r *run) fastForward() error {
-	if r.e.Workspaces == nil {
-		return nil
-	}
-	repo, err := r.repository()
-	if err != nil {
-		return err
-	}
-	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: TaskBranch(r.task.ID), Dir: r.workPath()}
-	kept, err := r.e.Workspaces.FastForward(r.ctx, w)
-	if err != nil {
-		return fmt.Errorf("fast-forward the task branch: %w", err)
-	}
-	if kept == "" {
-		return nil
-	}
-	text := fmt.Sprintf("The dependencies of %s/%s no longer hold it, but its branch %s was not moved to the current main, because %s.\nIt proceeds on the existing branch.",
-		r.task.Repository, r.task.ID, w.Branch, kept)
-	return r.notify(store.MessageDependencyBranchKept, store.MessageDependencyBranchKept, text)
 }

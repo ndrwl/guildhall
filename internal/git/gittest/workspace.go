@@ -591,10 +591,54 @@ func (f *Workspaces) IsAncestor(ctx context.Context, repository, commit, head st
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	commit, head = f.resolve(repository, commit), f.resolve(repository, head)
 	if !f.commits[repository][commit] || !f.commits[repository][head] {
 		return false, nil
 	}
 	return f.merged(commit, head), nil
+}
+
+// Behind implements git.Program.Behind over the parents the double's commits record: the commits of ref, a
+// branch's DefaultRef or refs/heads/<branch>, that rev does not contain, newest first, with the file each
+// AdvanceDefault commit adds, or its id, as its subject.
+func (f *Workspaces) Behind(ctx context.Context, repository, rev, ref string) (int, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	head := f.resolve(repository, ref)
+	if !strings.HasPrefix(ref, "refs/") || head == ref {
+		return 0, nil, fmt.Errorf("ref %q of %s does not exist", ref, repository)
+	}
+	if !f.commits[repository][rev] {
+		return 0, nil, fmt.Errorf("%s has no commit %q", repository, rev)
+	}
+	var subjects []string
+	for c := head; c != "" && !f.merged(c, rev); c = f.parents[c] {
+		subject := f.adds[c]
+		if subject == "" {
+			subject = c
+		}
+		subjects = append(subjects, subject)
+	}
+	return len(subjects), subjects, nil
+}
+
+// resolve is the commit a branch's DefaultRef or refs/heads/<branch> of repository names, as Ensure and
+// FastForward last recorded it; any other name is returned as it is.
+func (f *Workspaces) resolve(repository, name string) string {
+	if branch, ok := strings.CutPrefix(name, git.DefaultRef("")); ok {
+		if c, ok := f.recorded[[2]string{repository, branch}]; ok {
+			return c
+		}
+	}
+	if branch, ok := strings.CutPrefix(name, "refs/heads/"); ok {
+		if c, ok := f.branches[[2]string{repository, branch}]; ok {
+			return c
+		}
+	}
+	return name
 }
 
 // Base implements git.Program.Base: the nearest commit of the branch's history that is also in the history of

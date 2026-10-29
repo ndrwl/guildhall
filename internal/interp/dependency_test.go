@@ -401,9 +401,10 @@ func TestDependencyGateReplayIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestDependencyGateFastForwards: the gate opening fast-forwards the task branch once, before research's first
-// attempt, and never after; a branch that cannot be moved sends one dependency-branch-kept message and research
-// proceeds on it.
+// TestDependencyGateFastForwards: a held task whose dependency merges starts research on the new main, because
+// research's launch fast-forwards the untouched branch, not the gate; the grill and the held advances move
+// nothing. A branch that cannot be moved sends one branch-kept message for the attempt and research proceeds on
+// it, and a research retry fast-forwards again.
 func TestDependencyGateFastForwards(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -419,7 +420,11 @@ func TestDependencyGateFastForwards(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			def := loadWorkflow(t, "director-grill")
-			e := newDependentEnv(t, backends[0], def, nil, researchExpectation([]byte("# Research\n")))
+			research1 := researchExpectation(nil)
+			research1.Respond = interptest.Fail("no notes")
+			research2 := researchExpectation([]byte("# Research\n"))
+			research2.Attempt = 2
+			e := newDependentEnv(t, backends[0], def, nil, research1, research2)
 			ws := gittest.NewWorkspaces()
 			ws.SetDefault("origin", strings.Repeat("a", 40))
 			e.eng.Workspaces = ws
@@ -439,7 +444,7 @@ func TestDependencyGateFastForwards(t *testing.T) {
 			if got := ws.FastForwards(); len(got) != 1 || got[0].Dir != work || got[0].Branch != "guildhall/t7" {
 				t.Fatalf("fast-forwards = %+v, want one of %s", got, work)
 			}
-			kept := e.messages(t)["app.t7.dependency-branch-kept"]
+			kept := e.messages(t)["app.t7.branch-kept.research-1"]
 			if tc.block == nil {
 				if got := ws.Head(work); got != main {
 					t.Errorf("research runs at %s, want the new main %s", got, main)
@@ -448,11 +453,11 @@ func TestDependencyGateFastForwards(t *testing.T) {
 					t.Errorf("a moved branch sent %q", kept)
 				}
 			} else {
-				if !strings.Contains(kept, "merged.txt") {
-					t.Errorf("dependency-branch-kept = %q, want the reason", kept)
+				if !strings.Contains(kept, "merged.txt") || !strings.Contains(kept, "Step research attempt 1 of app/t7") {
+					t.Errorf("branch-kept = %q, want the attempt and the reason", kept)
 				}
-				m, err := e.mailbox.Read("app.t7.dependency-branch-kept")
-				if err != nil || m.Type != store.MessageDependencyBranchKept {
+				m, err := e.mailbox.Read("app.t7.branch-kept.research-1")
+				if err != nil || m.Type != store.MessageBranchKept {
 					t.Errorf("message type %q, %v", m.Type, err)
 				}
 			}
@@ -461,15 +466,35 @@ func TestDependencyGateFastForwards(t *testing.T) {
 			}
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
 			if got := ws.FastForwards(); len(got) != 1 {
-				t.Errorf("an advance after research's attempt fast-forwarded again: %+v", got)
+				t.Errorf("an advance that launched nothing fast-forwarded: %+v", got)
+			}
+
+			// A research retry fast-forwards again, onto a main that moved since.
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "research", Attempt: 1}), interp.Next{Wait: interp.WaitDirector, Step: "research", Attempt: 1})
+			later := ws.AdvanceDefault("origin", "later.txt")
+			want(t, e.advance(t, retried("research", 1, "")), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 2})
+			if got := ws.FastForwards(); len(got) != 2 {
+				t.Errorf("fast-forwards after the retry = %+v, want a second one", got)
+			}
+			_, keptAgain := e.messages(t)["app.t7.branch-kept.research-2"]
+			if tc.block == nil {
+				if got := ws.Head(work); got != later {
+					t.Errorf("research retry runs at %s, want the new main %s", got, later)
+				}
+				if keptAgain {
+					t.Error("a moved branch sent branch-kept for the retry")
+				}
+			} else if !keptAgain {
+				t.Error("the kept retry sent no branch-kept message of its own")
 			}
 		})
 	}
 }
 
-// TestDependencyMessageTypesRegistered: both messages the gate sends are engine types in the registry.
+// TestDependencyMessageTypesRegistered: the gate's held message and the launch's branch-kept message are engine
+// types in the registry.
 func TestDependencyMessageTypesRegistered(t *testing.T) {
-	for _, typ := range []string{store.MessageDependencyHeld, store.MessageDependencyBranchKept} {
+	for _, typ := range []string{store.MessageDependencyHeld, store.MessageBranchKept} {
 		if sender := store.MessageTypes[typ]; sender != "engine" {
 			t.Errorf("store.MessageTypes[%q] = %q, want engine", typ, sender)
 		}
