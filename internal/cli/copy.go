@@ -168,7 +168,7 @@ func writeCopyMarker(stderr io.Writer, dir string) {
 		}
 	}
 	if err != nil && !errors.Is(err, fs.ErrExist) && stderr != nil {
-		fmt.Fprintf(stderr, "guildhall: warning: cannot write the copy marker in %s: %v\n", dir, err)
+		_, _ = fmt.Fprintf(stderr, "guildhall: warning: cannot write the copy marker in %s: %v\n", dir, err)
 	}
 }
 
@@ -183,7 +183,7 @@ func createExclusive(path string, data []byte) error {
 		err = cerr
 	}
 	if err != nil {
-		os.Remove(path)
+		_ = os.Remove(path)
 	}
 	return err
 }
