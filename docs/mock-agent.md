@@ -5,6 +5,7 @@ The interpreter launches Artisan attempts through one seam, `interp.Launcher`, d
 The mock checks the prompts, skills, artefact revisions and standards it is given and writes the scripted response.
 It makes no model calls and is not evidence of semantic intelligence: it checks the launched attempt and its files and returns the scripted answer.
 The [interpreter](interpreter.md) launches through it; result intake from a real runtime is separate work.
+Its out-of-process twin is the fake Artisan's [scenario file](adapters.md#scenarios), which checks the rendered prompt's text section by section and scripts results with the same response kinds, for tests that run real launchers.
 
 ## The launch seam
 

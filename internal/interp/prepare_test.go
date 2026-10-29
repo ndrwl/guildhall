@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv(childEnv) == "1" {
 		os.Exit(child(os.Args[len(os.Args)-3:]))
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.RunWithClaudeGuard(m))
 }
 
 // child waits for the release file, then copies the input it was given to out.

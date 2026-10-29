@@ -120,6 +120,30 @@ Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled`
 Once its work ends, before any result and whatever the fault, the worker writes a [usage file](#usage-file) with fixed numbers, `fake.ReportedUsage`: measured tokens and an estimated cost, so tests of what Guildhall records are deterministic.
 Work ended by an interrupt or the cancel marker writes none.
 
+### Scenarios
+
+`GUILDHALL_FAKE_SCENARIO`, for tests and demos only, names an absolute path to a `guildhall.fake-scenario/1` file that scripts each launch by step and attempt: checks on the prompt's text and the result to write.
+It reaches the worker through the plain process launcher's environment; unset or empty, the fake behaves as the table above says.
+The fake splits its `--attempt` id at the last hyphen, so `sign-off-2` is step `sign-off`, attempt 2.
+
+```json
+{"schema": "guildhall.fake-scenario/1",
+ "launches": [
+   {"step": "plan", "attempt": 1,
+    "checks": [{"section": "Inputs", "contains": "context: inputs/"},
+               {"section": "Why this is a retry", "absent": true}],
+    "exact": "plan-1.golden.md",
+    "respond": {"status": "succeeded", "summary": "spec written",
+                "files": [{"path": "spec.md", "text": "# Spec\n"}]}},
+   {"step": "review", "attempt": 1, "respond": {"review": {"schema": "guildhall.review-outcome/1", "...": "..."}}}]}
+```
+
+A check names a `## ` heading of the prompt, `header` for the lines before the first heading or `prompt` for the whole text, and exactly one of `contains`, `not_contains` or `absent: true`; `exact` compares the whole prompt with a file beside the scenario.
+A matched launch whose checks all pass writes its `respond`: a status, summary and files, listed as outputs in order, or a review outcome written to `review-outcome.json`; a build with no files reports its worktree's head.
+A failed check, or a launch with no entry, writes a failed result naming every failing check instead; a scenario that cannot be loaded, or an entry beside the `output` directive, writes a failed result naming why and exits 1.
+Every launch records itself in `<scenario>.records/`, which `fake.CheckScenarioRecords` reads back; the lifecycle directives still apply.
+The [contract](contracts/adapter-fake.md) holds the full rules.
+
 ## Claude adapter
 
 For interactive Director sessions, see [Director start](director.md#start) for the stable workspace and one-time native folder-trust approval.

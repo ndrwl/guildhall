@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == claude.Subcommand {
 		os.Exit(claude.Main(os.Args[2:], os.Stdout, os.Stderr))
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.RunWithClaudeGuard(m))
 }
 
 func subject(t *testing.T) adaptertest.Subject {

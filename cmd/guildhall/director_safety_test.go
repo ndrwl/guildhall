@@ -27,6 +27,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch/launchtest"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // The Director safety checks (docs/director.md#safety-checks) drive the built binary through `director start` with a stand-in runtime playing the Director from its role prompt's script: the fake Director and
@@ -49,7 +50,7 @@ var (
 func TestMain(m *testing.M) {
 	runHerdrStubIf()
 	claudetest.RunIfStub()
-	code := m.Run()
+	code := testenv.RunWithClaudeGuard(m)
 	if toolsDir != "" {
 		_ = os.RemoveAll(toolsDir)
 	}

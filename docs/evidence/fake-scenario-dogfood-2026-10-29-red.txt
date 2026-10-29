@@ -1,0 +1,6 @@
+--- FAIL: TestScenarioDogfoodToDeliver (0.64s)
+    scenario_test.go:190: step done build-2: exit 0, "{\"wait\":\"director\",\"step\":\"build\",\"attempt\":2}\n", stderr ; want {"wait":"attempt","step":"review","attempt":1}
+        result: failed "fake scenario: step build attempt 2: section \"Why this is a retry\" does not contain \"Director's reason:\\n\\n```text\\nMake TestSort pass: compare titles.\\n```\"" (<nil>)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.643s
+FAIL

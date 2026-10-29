@@ -1,0 +1,5 @@
+--- FAIL: TestClaudeGuard (0.00s)
+    claude_guard_test.go:40: LookPath(claude) = "/tmp/TestClaudeGuard2685527040/001/claude", <nil>; want the guard in ""
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/testenv	0.005s
+FAIL

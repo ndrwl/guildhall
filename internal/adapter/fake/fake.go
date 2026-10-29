@@ -370,6 +370,14 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 	say := func(format string, args ...any) { _, _ = fmt.Fprintf(out, "fake artisan: "+format+"\n", args...) }
 	say("task %s attempt %s", a.TaskID, a.AttemptID)
 	say("read prompt %s (%d bytes)", a.PromptFile, len(prompt))
+	play, err := playScenario(a, d, prompt)
+	if err != nil {
+		say("%v", err)
+		return errors.Join(err, writeScenarioFailure(a, err))
+	}
+	if play != nil {
+		say("scenario: %s", play.summary)
+	}
 	ctx, stop := handleInterrupt(ctx, d)
 	defer stop()
 	if err := startTree(a, d); err != nil {
@@ -392,7 +400,7 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 			}
 			if d.result == resultAfterCancel {
 				say("cancel marker present; publishing a late result")
-				result, err := newResult(a, d, prompt)
+				result, err := newResult(a, d, prompt, play)
 				if err != nil {
 					return err
 				}
@@ -411,8 +419,11 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 		say("lifetime %s over without a result", d.lifetime)
 		return nil
 	}
-	result, err := newResult(a, d, prompt)
-	if err != nil {
+	result, err := newResult(a, d, prompt, play)
+	if errors.As(err, new(errScenario)) {
+		say("%v", err)
+		return errors.Join(err, writeScenarioFailure(a, err))
+	} else if err != nil {
 		return err
 	}
 	switch d.fault {
@@ -438,13 +449,21 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 	return nil
 }
 
-// newResult is the result the prompt asks for.
-func newResult(a Args, d directives, prompt []byte) (adapter.Result, error) {
+// newResult is the result the prompt asks for, or the scenario's when play is not nil.
+func newResult(a Args, d directives, prompt []byte, play *scenarioOutcome) (adapter.Result, error) {
 	result := adapter.Result{
 		Identity: a.Identity,
 		Status:   d.outcome,
 		Summary:  fmt.Sprintf("fake artisan read %d bytes of prompt, sha256 %x", len(prompt), sha256.Sum256(prompt)),
 		Outputs:  []adapter.Output{},
+	}
+	if play != nil {
+		outputs, err := play.write(a.ResultFile)
+		if err != nil {
+			return adapter.Result{}, errScenario{err}
+		}
+		result.Status, result.Summary, result.Outputs = play.status, play.summary, outputs
+		return result, nil
 	}
 	if d.output != "" {
 		if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(d.output)), 0o755); err != nil {
