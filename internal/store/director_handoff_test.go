@@ -1,117 +1,45 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
-const noteDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-func TestHandoffNoteIsRecordedAndReadBack(t *testing.T) {
+// TestRetiredHandoffNotesStillDecode: a store holding a handoff note from before notes replaced them opens, and
+// doctor decodes the note and reports nothing (D94).
+func TestRetiredHandoffNotesStillDecode(t *testing.T) {
 	s, path := newStore(t)
-	if _, err := s.LatestHandoffNote(); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("latest note of an empty store = %v, want ErrNotFound", err)
-	}
 	mustStartSession(t, s, sampleSession(1))
-	var wrote []string
-	write := func(p string) error { wrote = append(wrote, p); return nil }
-	n, r, err := s.RecordHandoffNote(1, noteDigest, write)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := HandoffPath(r.Sequence); n.Session != 1 || n.Sequence != r.Sequence || n.Path != want || n.SHA256 != noteDigest || n.RecordedAt.IsZero() {
-		t.Fatalf("note = %+v, want session 1 at %s", n, want)
-	}
-	if want := "director/handoff-" + itoa(r.Sequence) + ".md"; n.Path != want || len(wrote) != 1 || wrote[0] != want {
-		t.Fatalf("path %q, wrote %q; want %q written once", n.Path, wrote, want)
-	}
-	if r.MutationID != "handoff:1:"+noteDigest+":0" || r.Operation != "record-handoff-note" || r.Record != "director/handoff/"+itoa(r.Sequence) {
-		t.Fatalf("receipt = %+v", r)
-	}
-	again, ar, err := s.RecordHandoffNote(1, noteDigest, write)
-	if err != nil || again != n || ar != r || len(wrote) != 1 {
-		t.Fatalf("replay = %+v, %+v, %v, wrote %d; want the original without writing", again, ar, err, len(wrote))
-	}
-	mustStartSession(t, s, sampleSession(2))
-	other := strings.Repeat("e", 64)
-	second, _, err := s.RecordHandoffNote(2, other, write)
-	if err != nil || second.Sequence <= n.Sequence {
-		t.Fatalf("second note = %+v, %v", second, err)
-	}
 	_ = s.Close()
-	s = openTest(t, path)
-	if got, err := s.LatestHandoffNote(); err != nil || got != second {
-		t.Fatalf("latest after reopen = %+v, %v; want %+v", got, err, second)
-	}
-	if v, err := s.DirectorView(); err != nil || v.Handoff == nil || *v.Handoff != second || v.Reload != nil {
-		t.Fatalf("DirectorView handoff %+v, reload %+v, %v; want the second note and no reload", v.Handoff, v.Reload, err)
-	}
-}
-
-// TestHandoffNoteRecordedAgainAfterAnotherIsTheNewest: notes A, B, then A again in one session record A anew,
-// with a new sequence and path, as the newest note.
-func TestHandoffNoteRecordedAgainAfterAnotherIsTheNewest(t *testing.T) {
-	s, _ := newStore(t)
-	mustStartSession(t, s, sampleSession(1))
-	var wrote []string
-	write := func(p string) error { wrote = append(wrote, p); return nil }
-	a, _, err := s.RecordHandoffNote(1, noteDigest, write)
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _, err := s.RecordHandoffNote(1, strings.Repeat("e", 64), write)
+	note, err := json.Marshal(HandoffNote{Session: 1, Sequence: 645, Path: "director/handoff-645.md", SHA256: strings.Repeat("0", 64), RecordedAt: testTime})
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, r, err := s.RecordHandoffNote(1, noteDigest, write)
-	if err != nil || again.Sequence <= b.Sequence || again.Path == a.Path || again.SHA256 != noteDigest || len(wrote) != 3 {
-		t.Fatalf("A again = %+v, %v, wrote %q; want A recorded anew after B", again, err, wrote)
-	}
-	if r.MutationID != "handoff:1:"+noteDigest+":"+itoa(b.Sequence) {
-		t.Fatalf("mutation id = %q", r.MutationID)
-	}
-	if got, err := s.LatestHandoffNote(); err != nil || got != again {
-		t.Fatalf("latest = %+v, %v; want A recorded again", got, err)
-	}
-}
-
-func TestRecordHandoffNoteRefusals(t *testing.T) {
-	s, _ := newStore(t)
-	never := func(string) error { t.Fatal("write called for a refused note"); return nil }
-	if _, _, err := s.RecordHandoffNote(1, noteDigest, never); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("note without a session = %v, want ErrNotFound", err)
-	}
-	mustStartSession(t, s, sampleSession(1))
-	mustStartSession(t, s, sampleSession(2))
-	receipts := countReceipts(t, s)
-	for name, c := range map[string]struct {
-		n      int
-		digest string
-	}{
-		"superseded session": {1, noteDigest},
-		"zero session":       {0, noteDigest},
-		"short digest":       {2, "abc"},
-		"uppercase digest":   {2, strings.ToUpper(noteDigest)},
-	} {
-		if _, _, err := s.RecordHandoffNote(c.n, c.digest, never); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+	if err := db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.Bucket([]byte("director")).CreateBucketIfNotExists([]byte("handoffs"))
+		if err != nil {
+			return err
 		}
+		return b.Put(seqKey(645), note)
+	}); err != nil {
+		t.Fatal(err)
 	}
-	failed := errors.New("disk full")
-	if _, _, err := s.RecordHandoffNote(2, noteDigest, func(string) error { return failed }); !errors.Is(err, failed) {
-		t.Errorf("failed write: err = %v, want it returned", err)
+	_ = db.Close()
+	s = openTest(t, path)
+	if rep, err := s.Doctor(); err != nil || len(rep.Problems) != 0 {
+		t.Fatalf("doctor = %+v, %v; want a clean store", rep, err)
 	}
-	mustMove(t, s, 2, DirectorStopped)
-	receipts++
-	if _, _, err := s.RecordHandoffNote(2, noteDigest, never); !errors.Is(err, ErrInvalid) {
-		t.Errorf("stopped session: err = %v, want ErrInvalid", err)
-	}
-	if got := countReceipts(t, s); got != receipts {
-		t.Errorf("receipts = %d, want %d: a refused note recorded something", got, receipts)
-	}
-	if _, err := s.LatestHandoffNote(); !errors.Is(err, ErrNotFound) {
-		t.Errorf("latest note after refusals = %v, want ErrNotFound", err)
+	if live, err := s.LiveNotes(); err != nil || len(live) != 0 {
+		t.Fatalf("live notes = %+v, %v; want none", live, err)
 	}
 }
 
@@ -160,8 +88,8 @@ func TestDirectorReloadRequestsCollapseUntilApplied(t *testing.T) {
 	if got, err := s.LatestDirectorReload(); err != nil || got != next {
 		t.Fatalf("latest after a new request = %+v, %v; want it", got, err)
 	}
-	if v, err := s.DirectorView(); err != nil || v.Reload == nil || *v.Reload != next || v.Handoff != nil {
-		t.Fatalf("DirectorView reload %+v, handoff %+v, %v; want the new request and no note", v.Reload, v.Handoff, err)
+	if v, err := s.DirectorView(); err != nil || v.Reload == nil || *v.Reload != next {
+		t.Fatalf("DirectorView reload %+v, %v; want the new request", v.Reload, err)
 	}
 }
 

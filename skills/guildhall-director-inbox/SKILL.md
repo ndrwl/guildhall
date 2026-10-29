@@ -56,6 +56,28 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 
 A wake line that ends `; handoff due (<reason>)` asks you to hand off: finish the message you are on, then run `guildhall-handoff`.
 
+## Notes
+
+Your notes are the only thing a new session gets from you besides the store, so keep them as you go.
+In the same turn that something arises which no record holds, write a note before you reply:
+
+- `promised`: what you told the Guildmaster you would do or tell them, in their words where it matters.
+- `guildmaster`: a preference or context they gave in conversation.
+- `plan`: your intent, such as an order of work, that no task, decision or message records.
+
+Never repeat what the store holds; name tasks, decisions and messages by id.
+Note only what a new session cannot restart or re-read: an open grill is restarted, so it needs no note.
+Each note is one line of at most 1024 bytes, and every command prints only a one-line receipt:
+
+```sh
+guildhall director note add --kind promised --task app/t-1 "Tell the Guildmaster when t-1 merges."
+guildhall director note edit n7 "Tell the Guildmaster when t-1 and t-2 merge."
+guildhall director note remove n7 --reason "Told them."
+guildhall director note list
+```
+
+Edit a note when it changes and remove it once it is done or no longer true.
+
 ## Answering an Artisan
 
 The reply is a message to the attempt that asked, as an envelope on standard input:

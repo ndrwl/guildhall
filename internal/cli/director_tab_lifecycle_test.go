@@ -44,7 +44,6 @@ func TestDirectorTabReloadPreservesOnePane(t *testing.T) {
 			first := lastSession(t, out)
 			t.Cleanup(func() { _, _ = typing.WriteString("/exit\n"); host.runs.Wait() })
 			waitSessions(t, dir, 1)
-			copyRun(t, dir, "director", "handoff", "--note-file", noteFile(t, "Continue in the same pane.\n"))
 			args := []string{"director", "reload"}
 			if now {
 				args = append(args, "--now")

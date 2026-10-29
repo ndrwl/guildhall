@@ -16,7 +16,7 @@ Guildhall records each as an attempt, prepares its brief and hands it to you wit
    It is your brief: your role, the stage's guide, the skills the step lists and the stage's inputs, such as the task's title and earlier stages' documents.
 3. Run the stage as the brief and its skills say.
    A grill uses `guildhall-grill` to interview the Guildmaster live, in rounds of numbered questions, and `guildhall-domain-model` to settle the words you agree on.
-4. Draft each output in a file under your session directory, such as `notes/app-t-12-grill-1.md`, never in a temporary directory, so a handoff can point at a draft that is not finished.
+4. Draft each output in a file under your session directory, such as `notes/app-t-12-grill-1.md`, never in a temporary directory, so the draft survives while you work.
 5. When the stage's own skills say it is done, finish it with the command the message named, one `--output` per port and a one-line summary:
 
 ```sh
@@ -40,6 +40,6 @@ The task then waits for you, as after a failed Artisan attempt, and `guildhall s
 
 ## Rules
 
-- A grill is never finished until the Guildmaster confirms you share an understanding; a handoff in the middle of one carries its open questions in the note instead.
+- A grill is never finished until the Guildmaster confirms you share an understanding; a handoff in the middle of one leaves it unfinished, and the next session restarts it.
 - Read the repository only for quick facts; anything more is an Artisan's research stage.
 - Write no `result.json` by hand: `guildhall step finish` is the only way a stage you run ends.

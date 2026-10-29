@@ -52,7 +52,6 @@ func TestDirectorClaudeReloadReusesTrustedWorkspace(t *testing.T) {
 	updated := strings.Replace(string(data), "[director]\nadapter = \"fake\"", "[director]\nadapter = \"claude\"", 1)
 	updated = strings.Replace(updated, "[local]\n", "[local]\nclaude_skills_director = '{\"preset\":\"director-v1\",\"account_sync\":true}'\n", 1)
 	writeFile(t, cfg, updated)
-	copyRun(t, dir, "director", "handoff", "--note-file", noteFile(t, "Continue from the saved note.\n"))
 	copyRun(t, dir, "director", "reload", "--now")
 	copyRun(t, dir, "director", "turn-ended")
 	waitSessions(t, dir, 2)

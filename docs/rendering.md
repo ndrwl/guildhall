@@ -95,7 +95,7 @@ It writes, and lists with digests in `manifest.json`, schema `guildhall.session-
 |---|---|
 | `session` | The session number. |
 | `role` | `role.md`, the role prompt with line endings normalised to LF, the digest of that text and the baseline `root` it came from, so a CRLF checkout renders the same digest. |
-| `startup` | `startup.md` and the digest of its bytes: the session is starting up and recovering, the newest handoff note's path or `None.`, and the in-flight snapshot one item per line or `None.`, then, only when there are any, a `Parked` section saying its attempts are held on purpose and not work, one per line. |
+| `startup` | `startup.md` and the digest of its bytes: the session is starting up and recovering, then, only when there are any, a `Notes` section of the Director's live notes as preformatted lines, opening with a compact warning when their text totals more than `NotesWarnBytes` (8 KB), and the in-flight snapshot one item per line or `None.`, then, only when there are any, a `Parked` section saying its attempts are held on purpose and not work, one per line. |
 | `files[]` | The runtime's own files, such as Claude Code's `.claude/settings.json`, by slash path, with the digest of their bytes. |
 | `skills[]` | Every skill of the roots, in name order: `name`, the first `root` holding it, `path` under the runtime's skills directory, the tree `digest` and every file with its digest, copied as [skills](#skills) are for an attempt. |
 

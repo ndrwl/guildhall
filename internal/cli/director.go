@@ -27,7 +27,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// director runs `guildhall director status|start|ready|pause|resume|stop|handoff|reload|turn-started|turn-ended|
+// director runs `guildhall director status|start|ready|pause|resume|stop|note|reload|turn-started|turn-ended|
 // wait-wake|context-report`
 // (docs/director.md).
 func (a *App) director(args []string) int {
@@ -45,8 +45,8 @@ func (a *App) director(args []string) int {
 			return a.directorResume(args[1:])
 		case "stop":
 			return a.directorStop(args[1:])
-		case "handoff":
-			return a.directorHandoff(args[1:])
+		case "note":
+			return a.directorNote(args[1:])
 		case "reload":
 			return a.directorReload(args[1:])
 		case "turn-started":
@@ -59,7 +59,7 @@ func (a *App) director(args []string) int {
 			return a.directorContextReport(args[1:])
 		}
 	}
-	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, handoff, reload, turn-started, turn-ended, wait-wake and context-report")
+	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, note, reload, turn-started, turn-ended, wait-wake and context-report")
 }
 
 // fakeDirector runs the fake Director session: `guildhall fake-director --role <file> <first message>`.

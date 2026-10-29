@@ -211,13 +211,15 @@ func TestDirectorStartClaudeWithoutModel(t *testing.T) {
 }
 
 // TestDirectorStartStartupNamesWhatIsInFlight starts a second session over a store with an unread question:
-// its startup instructions list the recovering session and the message, and say there is no handoff note, and list
-// a task waiting for its checks as the supervisor's, with no command for the Director to run.
+// its startup instructions list the recovering session and the message, and list a task waiting for its checks as the
+// supervisor's, with no command for the Director to run. The store holds a retired handoff note and no notes, so
+// startup shows neither the old note nor a notes section (D94).
 func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
 	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
 		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
 	}
+	putRetiredHandoffNote(t, filepath.Join(dir, "director.store"))
 	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-2")
 	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
 		return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-2", Type: "question", Text: "Which parser?"})
@@ -231,9 +233,14 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 		t.Fatal(err)
 	}
 	startup := string(b)
-	for _, want := range []string{"You are starting up.", "## Handoff note\n\nNone.", "recovering", "guildhall director ready", "guildhall messages list director"} {
+	for _, want := range []string{"You are starting up.", "recovering", "guildhall director ready", "guildhall messages list director"} {
 		if !strings.Contains(startup, want) {
 			t.Errorf("startup.md lacks %q:\n%s", want, startup)
+		}
+	}
+	for _, not := range []string{"## Notes", "andoff"} {
+		if strings.Contains(startup, not) {
+			t.Errorf("startup.md over a retired handoff note and no notes has %q:\n%s", not, startup)
 		}
 	}
 	if !strings.Contains(startup, "checks: step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh, never more often than every 30 seconds, and wakes you when they finish; the session supervisor advances it") ||

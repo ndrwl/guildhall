@@ -106,6 +106,6 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
 
 - Change nothing in the task or the repository: no edits, pushes, retries, decisions or rulings.
 - Never score a model-judged criterion yourself, D1 included, and never turn a trend into a target for the next task.
-- Read the ledger of self-reviews at hallmark time and in a handoff note: the criteria lowest over the window are what a workflow-change proposal must target.
+- Read the ledger of self-reviews at hallmark time and before you note a workflow-change plan: the criteria lowest over the window are what a workflow-change proposal must target.
 
 The review is complete when the document records every gate in step 6, each with `pass` or with `pass: null` and what is missing, the facts and tools, the script-judged scores and trends, a pending entry with a judge brief for each model-judged score, and the Guildmaster has the summary.

@@ -27,7 +27,9 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Attempt park | repository, task, step, attempt number | The Director's hold, with a non-blank reason, of an open task's step's latest failed or stopped attempt, never the judge step's; `parked`, and the `cycle`, the number of unparks so far. Unpark keeps the record, not parked, with the cycle one higher. Neither changes the attempt. See [`step park`](running.md#step-park-and-step-unpark). |
 | Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its [containment recovery description](#containment-record), its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
 | Director session | session number | One run of the Director's runtime under its supervisor: the supervisor's process identity, the Guildhall release, the `sha256:` digest of the configuration it started under, the Herdr pane Guildhall created for it if any, a state, whether a stop asked it to end at once, whether a stop is still sweeping its attempts, the containment unit its runtime runs in once recorded, and an end reason when one was recorded; see [Director sessions](#director-sessions). Not per repository. |
-| Handoff note | sequence | One handoff note the Director recorded for its next session: the session that recorded it, the path of the note's document, `director/handoff-<sequence>.md` relative to the document directory, its sha256 and the UTC time; see [handoff notes](#handoff-notes). Not per repository. |
+| Handoff note | sequence | Retired, kept and decoded by doctor but never written or shown: one handoff note a Director recorded for its next session before notes replaced them: the session that recorded it, the path of the note's document, `director/handoff-<sequence>.md` relative to the document directory, its sha256 and the UTC time; see [handoff notes](#handoff-notes). Not per repository. |
+| Director note | note id | One small record the Director keeps of something no other record holds, given to every new session at startup: the id `n<k>`, its kind (`promised`, `guildmaster` or `plan`), one line of text of at most 1024 bytes, the task it names if any, the session that last changed it and when, its latest version and, once removed, `removed` with an optional reason; see [Director notes](#director-notes). Not per repository. |
+| Note version | sequence | One add, edit or remove of a Director note, with its kind, text, task, session, UTC time, the version it followed and a remove's reason: the notes' history. Not per repository. |
 | Reload request | sequence | One `director reload` request: `requested`, with whether it is `--now`, or `applied`, with the old and new session numbers and the UTC times; see [reload requests](#reload-requests). Not per repository. |
 | Wake | sequence | One wake decision for one message to the Director: the message id, the sender type, `woke` or `queued` with a one-line reason of at most 256 bytes, and the UTC time; at most one per message, written by [the Director's wake](messaging.md#waking-the-director). Not per repository. |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
@@ -146,10 +148,18 @@ It is refused with `ErrInvalid` for a session that is not the newest or is `stop
 
 ### Handoff notes
 
-[`director handoff`](director.md#handoff) records a note with `RecordHandoffNote`, naming the newest session and the note's sha256, under the mutation id `handoff:<n>:<sha256>:<after>`, where `after` is the sequence of the newest note before it or 0, so the same note recorded twice in a row in one session is one record, and a note recorded again after another is recorded anew as the newest.
-The note itself is a document file, not a store blob (R1.13): the store chooses its path, `director/handoff-<sequence>.md`, from the receipt sequence and has the caller write the file before the record commits, so a recorded note's file was written first and a failed write records nothing.
-A session that is not the newest, or is `stopped`, is refused with `ErrInvalid`.
-`LatestHandoffNote` returns the newest note, and `DirectorView.Handoff` the same in the view's transaction.
+Handoff notes are retired: [Director notes](#director-notes) replace them ([D94](decisions/0094-director-notes.md)).
+Stores that ran an earlier release keep their `handoffs` records, each naming the session that recorded it, its document `director/handoff-<sequence>.md` and its sha256, and `store doctor` still decodes them; nothing writes or shows them any more.
+
+### Director notes
+
+[`director note`](director.md#notes) keeps the Director's notes in the `director` bucket's nested `notes`, keyed by note id, and every version of every note in `note-versions`, keyed by receipt sequence; receipts keep only request digests, so the versions are the history.
+`AddNote` gives a note the id `n<k>`, `k` from the `notes` bucket's own sequence, so ids count notes rather than store receipts, under the mutation id `note-add:<session>:<sha256(kind|task|text)>`.
+`EditNote` replaces a note's text under `note-edit:<id>:<sha256(text)>:<prior>`, where `<prior>` is the version it follows, so the same text set again after another edit is a new version; a note changed since `<prior>` is refused with `ErrExists`.
+`RemoveNote` sets `removed` and an optional reason under `note-remove:<id>`; the note stays, as an unparked attempt's park record does.
+Replaying any of them returns the earlier receipt; editing or removing a removed note is refused.
+A kind other than `promised`, `guildmaster` and `plan`, a blank, multi-line or invalid UTF-8 text over `MaxNoteBytes` (1024), a remove reason over `MaxNoteReasonBytes` (256) or with a line break, a task not written `<repository>/<id>` and a session that is not the newest or is `stopped` are refused with `ErrInvalid`, and an unknown session, task or note with `ErrNotFound`, all in the transaction, as a handoff note's session is.
+`LiveNotes` returns the notes not removed, by kind in that order and then by id, and `NoteVersions` one note's versions, oldest first.
 
 ### Reload requests
 
