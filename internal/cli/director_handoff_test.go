@@ -10,7 +10,6 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
-	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -40,28 +39,6 @@ func putRetiredHandoffNote(t *testing.T, path string) {
 		}
 		return b.Put([]byte("00000000000000000645"), note)
 	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// startNextSession records session n+1 for this process over the newest session n.
-func startNextSession(t *testing.T, path string) {
-	t.Helper()
-	self, err := artisan.Self()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(path, store.Options{RequireStore: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	d, err := s.LatestDirectorSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.StartDirectorSession(store.DirectorSession{Number: d.Number + 1, State: store.DirectorRecovering,
-		Identity: store.ProcessIdentity(self), Release: "test", ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
 		t.Fatal(err)
 	}
 }
