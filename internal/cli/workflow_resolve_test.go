@@ -39,28 +39,44 @@ remote = "git@github.com:example/app.git"
 owner_machine = "workstation"
 `
 
-// profiledDefault is examples/workflows/profiled.json, the shape a dogfood workflow has, named and described as the
-// shipped default.
+// profiledDefault is the shipped default with explicit role profiles written into its file, the shape the removed
+// examples/workflows/profiled.json and a copy's dogfood workflow have, named and described as the shipped default.
 func profiledDefault(t *testing.T) *workflow.Definition {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "examples", "workflows", "profiled.json"))
+	def, err := workflow.Parse([]byte(`{
+  "schema": "guildhall.workflow/1",
+  "name": "default",
+  "description": "Grill and research, plan, Guildmaster acceptance, build, independent automated review with bounded fix rounds, publish, validation, delivery under the repository's merge policy.",
+  "steps": [
+    {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director", "skills": ["guildhall-grill", "guildhall-domain-model"]}},
+    {"id": "research", "type": "research", "version": 1, "settings": {"profile": "researcher"}},
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"},
+     "inputs": {"context": ["grill.notes", "research.notes"]}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]},
+     "on": {"changes_requested": {"goto": "plan", "max": 3}}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder"},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}},
+    {"id": "validate", "type": "validate", "version": 1,
+     "inputs": {"head": ["publish.head"]},
+     "on": {"failed": {"goto": "build", "max": 3}}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["publish.head"], "review": ["review.outcome"], "validation": ["validate.result"]}}
+  ]
+}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	def, err := workflow.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	shipped, err := workflow.Default()
-	if err != nil {
-		t.Fatal(err)
-	}
-	def.Name, def.Description = shipped.Name, shipped.Description
 	return def
 }
 
 // TestTaskNewDefaultsRoleProfiles: on the shipped default with the four role profiles declared, task new binds the
-// default with each Artisan step naming its role's profile, the same definition as the profiled example. The review's
+// default with each Artisan step naming its role's profile, the same definition as a profiled custom file. The review's
 // defaulted profile weakens the shipped default, so it is refused until the Guildmaster approves that revision.
 func TestTaskNewDefaultsRoleProfiles(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML)
@@ -96,7 +112,7 @@ func TestTaskNewGuildmasterReviewGetsNoDefault(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML+"\n[repository.workflow_overrides.review]\nactor = \"guildmaster\"\n")
 	path := emptyStore(t)
 	newTask(t, path, cfg, "app", "Task", "t-1")
-	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfg), "workflows"), mustLoad(t, cfg), mustRepository(t, cfg, "app"))
+	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfg), "workflows"), mustLoad(t, cfg), mustRepository(t, cfg, "app"), config.TaskKindFeature)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,13 +154,13 @@ func TestBoundWorkflowResolvesByName(t *testing.T) {
 	dir := filepath.Join(filepath.Dir(cfg), "workflows")
 	c := mustLoad(t, cfg)
 	r := mustRepository(t, cfg, "app")
-	bound, err := effectiveWorkflow(dir, c, r)
+	bound, err := effectiveWorkflow(dir, c, r, config.TaskKindFeature)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rev := bound.Revision()
 	r.Workflow = "human-review"
-	if moved, err := effectiveWorkflow(dir, c, r); err != nil || moved.Name != "human-review" {
+	if moved, err := effectiveWorkflow(dir, c, r, config.TaskKindFeature); err != nil || moved.Name != "human-review" {
 		t.Fatalf("repository now runs %v, %v", moved, err)
 	}
 	got, err := boundWorkflow(dir, c, r, rev)

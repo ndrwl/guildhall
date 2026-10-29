@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -171,6 +172,9 @@ workflow`, `one owner machine`},
 		{"credential in remote", `https://github.com/example/site.git`, `https://user:hunter2@github.com/example/site.git`, `must not contain credentials`},
 		{"credential-like key", `notes_dir = "notes"`, `github_token = "x"`, `looks like a credential`},
 		{"invalid workflow name", `workflow = "careful"`, `workflow = "../careful"`, `invalid workflow name`},
+		{"feature kind", "no_ci = true\n", "no_ci = true\n[repository.kinds]\nfeature = \"careful\"\n", `kinds.feature is not accepted; the repository's workflow setting is the feature kind's workflow`},
+		{"unknown kind", "no_ci = true\n", "no_ci = true\n[repository.kinds]\ndocs = \"careful\"\n", `unknown task kind "docs" in kinds; the only one is bug`},
+		{"invalid kind workflow name", "no_ci = true\n", "no_ci = true\n[repository.kinds]\nbug = \"../my-bug\"\n", `kinds.bug: invalid workflow name "../my-bug"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -183,6 +187,49 @@ workflow`, `one owner machine`},
 				t.Fatalf("error %v does not mention %q", err, c.want)
 			}
 		})
+	}
+}
+
+// TestTaskKindWorkflow: a feature runs the repository's workflow setting and a bug its [repository.kinds] bug
+// workflow, or the shipped bug workflow; an unknown kind has none. A config without a kinds table encodes no Kinds
+// field, so its digest is unchanged.
+func TestTaskKindWorkflow(t *testing.T) {
+	base := director(t)
+	cfg, err := Parse([]byte(strings.Replace(base, "no_ci = true\n", "no_ci = true\n[repository.kinds]\nbug = \"my-bug\"\n", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, site := cfg.Repositories[0], cfg.Repositories[1]
+	for _, c := range []struct {
+		r        Repository
+		taskKind string
+		want     string
+		ok       bool
+	}{
+		{tool, TaskKindFeature, DefaultWorkflow, true},
+		{tool, TaskKindBug, "bug", true},
+		{site, TaskKindFeature, "careful", true},
+		{site, TaskKindBug, "my-bug", true},
+		{site, "docs", "", false},
+	} {
+		if got, ok := c.r.TaskKindWorkflow(c.taskKind); got != c.want || ok != c.ok {
+			t.Errorf("%s %s: %q, %v; want %q, %v", c.r.ID, c.taskKind, got, ok, c.want, c.ok)
+		}
+	}
+	with, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := Parse([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	without, err := json.Marshal(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(with), `"Kinds":{"bug":"my-bug"}`) || strings.Contains(string(without), "Kinds") {
+		t.Fatalf("encoded with kinds %s\nwithout %s", with, without)
 	}
 }
 

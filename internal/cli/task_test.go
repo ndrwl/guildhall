@@ -483,16 +483,16 @@ func TestTaskNewDependencies(t *testing.T) {
 }
 
 // TestTaskNewFixes: --fixes names the earlier task whose defect the new one fixes, which must exist, and is kept on
-// the task.
+// the task; --kind feature keeps it on the feature workflow.
 func TestTaskNewFixes(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	newTask(t, path, cfg, "app", "Schema", "t-1")
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--fixes", "app/t-9", "t-2")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "feature", "--fixes", "app/t-9", "t-2")
 	if code != 1 || out != "" || !strings.Contains(stderr, "app/t-9") || !strings.Contains(stderr, store.ErrNotFound.Error()) {
 		t.Fatalf("an unknown fixed task: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
-	if code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--fixes", "app/t-1", "t-2"); code != 0 {
+	if code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "feature", "--fixes", "app/t-1", "t-2"); code != 0 {
 		t.Fatalf("task new --fixes: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
 	if got := readTask(t, path, "app", "t-2").Fixes; got == nil || *got != (store.TaskRef{Repository: "app", ID: "t-1"}) {

@@ -24,6 +24,21 @@ Choose a short task id of lowercase letters, digits and hyphens that is new in t
 Add `--depends-on <repo>/<task>` when the work must wait for another task, and `--fixes <repo>/<task>` when it fixes a defect an earlier task introduced, so its pull request says so.
 Set its priority from the Guildmaster's words with `--priority <level>`: `p0 urgent`, `p1 highest`, `p2 high`, `p3 normal` (the default, so leave it off when they say nothing), `p4 low` or `p5 someday`.
 When they later say a task matters more or less, run `guildhall task priority --repo <id> <task> <level>`; priority orders the merge queue.
+
+Every task is created as a kind, which chooses its workflow:
+
+- `feature`: New or changed behaviour, and the default: it runs the repository's workflow setting, the shipped default when it names none, with grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver.
+- `bug`: A fix for a defect in behaviour that should already work: it runs the repository's [repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps with research reproducing the defect and finding its cause, build writing a regression test that fails before the fix and passes after it, and review checking that test.
+
+Pick the kind from the Guildmaster's words: something that is broken, wrong or a regression is a `bug`, and anything new or changed is a `feature`.
+Pass `--kind bug` for a bug; `--fixes` alone already makes a task a bug, and `--kind feature --fixes <repo>/<task>` keeps a fix of an earlier task on the feature workflow.
+When it is unclear, ask.
+Tell the Guildmaster which kind you chose, with the task id:
+
+```sh
+guildhall task new --repo app --title "CSV export drops the last row" --kind bug t-13
+```
+
 Pick the repository from what they said; when the copy has several and it is unclear, ask.
 `guildhall task start` prints what the task waits for, such as `{"wait":"director-stage","step":"grill","attempt":1}`, which means the first stage is yours: run it with `guildhall-director-stage`.
 While the session is `recovering`, both commands are refused until `guildhall director ready`.

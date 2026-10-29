@@ -139,6 +139,42 @@ func TestPromptGoldenPerKind(t *testing.T) {
 	}
 }
 
+// TestBugPromptsCarryTheirInstructions: the shipped bug workflow's research, build and review prompts contain each
+// step's instructions.
+func TestBugPromptsCarryTheirInstructions(t *testing.T) {
+	def, err := workflow.Bug()
+	if err != nil {
+		t.Fatal(err)
+	}
+	guides := map[string]Baseline{
+		"research": baseline("research"),
+		"build":    baseline("build"),
+		"review":   {Role: source("roles/reviewer.md"), Guide: source("stages/automated-review.md"), Standards: []Source{source("standards/review.md")}},
+	}
+	for _, s := range def.Steps {
+		b, ok := guides[s.ID]
+		if !ok {
+			continue
+		}
+		t.Run(s.ID, func(t *testing.T) {
+			if s.Instructions() == "" {
+				t.Fatal("no instructions")
+			}
+			r, err := Prompt(attempt(t, s), nil, b, roots())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(r.PromptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(got), s.Instructions()) {
+				t.Fatalf("prompt does not contain the instructions %q:\n%s", s.Instructions(), got)
+			}
+		})
+	}
+}
+
 // writeVariant copies a baseline source with every line ending replaced, as a CRLF checkout on Windows would hold it.
 func writeVariant(t *testing.T, dir string, src Source, eol string) Source {
 	t.Helper()

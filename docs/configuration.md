@@ -128,7 +128,8 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 | `path` | Absolute path of the repository on the owner machine. |
 | `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. `publish` pushes task branches there, and the [GitHub forge](contracts/forge.md) supports only `github.com` remotes. |
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
-| `workflow` | Name of the Director's workflow definition; defaults to `default`. |
+| `workflow` | Name of the Director's workflow definition a [feature task](tasks.md#task-kinds) runs; defaults to `default`. |
+| `[repository.kinds]` | The workflow each other [task kind](tasks.md#task-kinds) runs in this repository, such as `bug = "my-bug"`, resolved like `workflow`; a kind it does not name runs the shipped workflow of that name. `bug` is the only key: `feature` is refused, because `workflow` names it, and so is any other kind. Omitted, a config's digest is unchanged. |
 | `no_ci` | `true` declares that the repository runs no CI, so [validate](interpreter.md#validate) passes a published head its forge reports no checks for, recording that it had no CI; default `false`, where no checks reported waits as pending. |
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 | `[repository.merge.requires]` | What a task's pull request needs before Guildhall merges it; see [merge requirements](#merge-requirements). |
@@ -272,7 +273,8 @@ The preference survives generated workspace refreshes and handoffs.
 A workflow defines the steps of one task as an ordered list of built-in step kinds.
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
-The shipped default is [`internal/workflow/default.json`](../internal/workflow/default.json).
+The shipped default, a feature task's workflow, is [`internal/workflow/default.json`](../internal/workflow/default.json); the shipped bug workflow is [`internal/workflow/bug.json`](../internal/workflow/bug.json), the default's steps with research, build and review instructed to reproduce the defect, test it first and check that test ([task kinds](tasks.md#task-kinds)).
+Both name no profiles; Artisan steps take their [role profiles](#profiles).
 [`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step; assign its Artisan profiles as described under [profiles](#profiles) before using it.
 
 This structural example also leaves profile selection to the copy; see [profiles](#profiles) for the admission requirements.
@@ -316,8 +318,9 @@ A rule can only send the task back to the same or an earlier step, and `max` mus
 
 The authoritative [built-in registry](../internal/workflow/registry.go), exposed through `workflow.Kinds`, declares each kind's version, typed ports, cardinality, settings and loop outcomes.
 
-`research` accepts only `profile`, a [profile](#profiles) name; it does not accept `skills`.
+`research` accepts `profile`, a [profile](#profiles) name, and `instructions`, a string rendered into the Artisan's prompt; it does not accept `skills`.
 `plan`, `refute`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
+`build`, `document-review`, `review` and `guildmaster-approval` also accept `instructions` ([decision](decisions/research-build-instructions.md)).
 The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 
@@ -410,22 +413,24 @@ Approvals are recorded per Director, against a definition's exact digest:
 ```sh
 guildhall workflow approve --store director.store --file workflows/human-review.json --words-file -
 guildhall workflow approve --store director.store --config director.toml --repo lib --words-file -
+guildhall workflow approve --store director.store --config director.toml --repo lib --kind bug --words-file -
 guildhall workflow approvals --store director.store --json
 ```
 
 `approve` parses and validates the file, computes its digest and records the Guildmaster's words from the file or standard input, exactly as given; it prints the [store receipt](store.md#mutations-and-receipts).
-With `--config` and `--repo` instead of `--file`, it approves that repository's effective workflow, its definition with the repository's `workflow_overrides` applied, resolved exactly as [`task new`](tasks.md#the-bound-workflow) resolves it; the approval carries the workflow's name and the effective digest.
+With `--config` and `--repo` instead of `--file`, it approves that repository's effective workflow for the [task kind](tasks.md#task-kinds) `--kind` names, `feature` when it is not given: its definition with the repository's `workflow_overrides` and profile defaults applied, resolved exactly as [`task new`](tasks.md#the-bound-workflow) resolves it; the approval carries the workflow's name and the effective digest.
+`--kind` is a usage error without `--config` and `--repo`.
 A refused definition, empty words or a missing store write nothing.
 Repeating an approval prints the original receipt; different words for an approved digest are refused.
 An edited definition has a new digest and needs its own approval.
-The definitions shipped with this release, such as the default workflow, count as approved by the release: `approvals` lists them with source `release` before the recorded approvals (source `guildmaster`).
+The definitions shipped with this release, the `default` and `bug` workflows, count as approved by the release: `approvals` lists them with source `release` before the recorded approvals (source `guildmaster`).
 Explicitly approving shipped content records the Guildmaster's words like any other approval; that revision then appears with both sources.
 Commands exit 0 on success, 1 when the definition, words or store refuse or fail, and 2 on a usage error; they never create a store.
 Parsing and validation accept or refuse a definition only; they never activate it.
 
 #### Enforcement at task creation
 
-`task new` admits the repository's effective workflow only when one of these holds, and otherwise refuses the task and writes nothing:
+`task new` admits the repository's effective workflow for the task's kind only when one of these holds, and otherwise refuses the task and writes nothing:
 
 1. its digest is a definition shipped with this release;
 2. its digest has a Guildmaster approval in the Director's store;

@@ -20,8 +20,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-const taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
+var taskUsage = `usage:
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> --repo <id> <task> --json
@@ -32,7 +32,54 @@ const taskUsage = `usage:
   guildhall task review --full --store <path> --repo <id> <task>
   guildhall task start --store <path> --config <director.toml> --state <dir> --repo <id> [--decision <id>] [--ignore-deps --reason <text>] <task>
 --copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
-config.toml and state`
+config.toml and state
+--kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
+` + taskKindHelp
+
+// taskKindDescriptions describe each task kind for task new's help and the Director's tasks skill, which copies them.
+// They live here rather than in a workflow's description so that rewording them never changes a digest.
+var taskKindDescriptions = map[string]string{
+	config.TaskKindFeature: "New or changed behaviour, and the default: it runs the repository's workflow setting, the " +
+		"shipped default when it names none, with grill, research, plan, the Guildmaster's acceptance, build, review, " +
+		"publish, validate and deliver.",
+	config.TaskKindBug: "A fix for a defect in behaviour that should already work: it runs the repository's " +
+		"[repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps " +
+		"with research reproducing the defect and finding its cause, build writing a regression test that fails " +
+		"before the fix and passes after it, and review checking that test.",
+}
+
+var taskKindHelp = func() string {
+	var b strings.Builder
+	for _, k := range config.TaskKinds {
+		fmt.Fprintf(&b, "  %-8s %s\n", k, taskKindDescriptions[k])
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}()
+
+// taskKind is the --kind flag: the kind a new task is created as, "" when not given.
+type taskKind string
+
+func (k *taskKind) String() string { return string(*k) }
+
+func (k *taskKind) Set(v string) error {
+	if !slices.Contains(config.TaskKinds, v) {
+		return fmt.Errorf("--kind %q is not a task kind; use %s", v, strings.Join(config.TaskKinds, " or "))
+	}
+	*k = taskKind(v)
+	return nil
+}
+
+// resolve returns the kind a new task is created as: the --kind given, otherwise bug for a task that fixes another
+// and feature for any other.
+func (k taskKind) resolve(fixes *store.TaskRef) string {
+	switch {
+	case k != "":
+		return string(k)
+	case fixes != nil:
+		return config.TaskKindBug
+	}
+	return config.TaskKindFeature
+}
 
 // dependsOn collects repeated --depends-on flags in the order given.
 type dependsOn []store.TaskRef
@@ -71,8 +118,8 @@ type taskDetail struct {
 }
 
 // task runs a task subcommand against an existing store and prints its result as one JSON document (docs/tasks.md).
-// task new binds the repository's effective workflow revision and the configuration digest, and records the
-// mutation "task:<repo>:<task>" (or "task:sha256:<hex digest>" of that string if over 128 bytes),
+// task new binds the repository's effective workflow revision for the task's kind and the configuration digest,
+// and records the mutation "task:<repo>:<task>" (or "task:sha256:<hex digest>" of that string if over 128 bytes),
 // so a retry prints the original receipt; show, list, timeline and files only read.
 // task finding rule records the Director's ruling on one finding of a review outcome document with the mutation
 // "ruling:<repo>:<task>:<document>:<finding>" (hashed the same way), and prints its receipt.
@@ -109,13 +156,15 @@ func (a *App) task(args []string) int {
 	flags.Var(&deps, "depends-on", "task this one depends on")
 	var fixed fixes
 	flags.Var(&fixed, "fixes", "earlier task whose defect this one fixes")
+	var kind taskKind
+	flags.Var(&kind, "kind", "task kind: feature or bug")
 	var cp copyFlags
 	cp.register(flags)
 	var want int
 	var allowed map[string]bool
 	switch sub {
 	case "new":
-		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "depends-on": true, "fixes": true, "priority": true}
+		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "kind": true, "depends-on": true, "fixes": true, "priority": true}
 	case "priority":
 		want, allowed = 2, map[string]bool{"store": true, "repo": true}
 	case "hold-merge":
@@ -148,7 +197,12 @@ func (a *App) task(args []string) int {
 		if f := flags.Lookup(name); f != nil && !inline && name != "json" && name != "full" && len(remaining) > 1 {
 			n = 2
 		}
-		if err := flags.Parse(remaining[:n]); err != nil {
+		if err := flags.Parse(remaining[:n]); errors.Is(err, flag.ErrHelp) {
+			if _, err := fmt.Fprintln(a.Stdout, taskUsage); err != nil {
+				return 1
+			}
+			return 0
+		} else if err != nil {
 			return a.taskUsage(err.Error())
 		}
 		remaining = remaining[n:]
@@ -206,7 +260,7 @@ func (a *App) task(args []string) int {
 		// Resolve configuration and validate the effective workflow before opening the store.
 		// Task fields and dependencies are validated by CreateTask in the store.
 		var err error
-		if task, accepted, err = acceptTask(*cfgPath, *repo); err != nil {
+		if task, accepted, err = acceptTask(*cfgPath, *repo, kind.resolve(fixed.ref)); err != nil {
 			return fail(err)
 		}
 		task.ID, task.Title, task.DependsOn, task.Fixes = positional[0], *title, deps, fixed.ref
@@ -301,14 +355,15 @@ type acceptedWorkflow struct {
 	effective, file *workflow.Definition
 }
 
-// acceptTask loads the Director config at cfgPath and returns a task for repository repo bound to the
-// repository's effective workflow revision and the configuration digest, with the workflow admitWorkflow checks.
-func acceptTask(cfgPath, repo string) (store.Task, acceptedWorkflow, error) {
+// acceptTask loads the Director config at cfgPath and returns a task of kind taskKind for repository repo bound to
+// the repository's effective workflow revision for that kind and the configuration digest, with the workflow
+// admitWorkflow checks.
+func acceptTask(cfgPath, repo, taskKind string) (store.Task, acceptedWorkflow, error) {
 	cfg, r, err := loadRepository(cfgPath, repo)
 	if err != nil {
 		return store.Task{}, acceptedWorkflow{}, err
 	}
-	w, err := repositoryWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), cfg, r)
+	w, err := repositoryWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), cfg, r, taskKind)
 	if err != nil {
 		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
@@ -369,16 +424,21 @@ func admitWorkflow(s *store.Store, w acceptedWorkflow) error {
 	return err
 }
 
-// effectiveWorkflow returns the workflow a task created now in repository r would bind, with its overrides and
-// profile defaults applied and validated.
-func effectiveWorkflow(dir string, cfg *config.Config, r config.Repository) (*workflow.Definition, error) {
-	w, err := repositoryWorkflow(dir, cfg, r)
+// effectiveWorkflow returns the workflow a task of kind taskKind created now in repository r would bind, with its
+// overrides and profile defaults applied and validated.
+func effectiveWorkflow(dir string, cfg *config.Config, r config.Repository, taskKind string) (*workflow.Definition, error) {
+	w, err := repositoryWorkflow(dir, cfg, r, taskKind)
 	return w.effective, err
 }
 
-// repositoryWorkflow returns the workflow a task created now in repository r binds, as resolveWorkflow resolves it.
-func repositoryWorkflow(dir string, cfg *config.Config, r config.Repository) (acceptedWorkflow, error) {
-	return resolveWorkflow(dir, r.Workflow, cfg, r)
+// repositoryWorkflow returns the workflow a task of kind taskKind created now in repository r binds: the repository's
+// workflow setting for a feature, its kinds table's or the shipped workflow for a bug, resolved by resolveWorkflow.
+func repositoryWorkflow(dir string, cfg *config.Config, r config.Repository, taskKind string) (acceptedWorkflow, error) {
+	name, ok := r.TaskKindWorkflow(taskKind)
+	if !ok {
+		return acceptedWorkflow{}, fmt.Errorf("unknown task kind %q; use %s", taskKind, strings.Join(config.TaskKinds, " or "))
+	}
+	return resolveWorkflow(dir, name, cfg, r)
 }
 
 // boundWorkflow returns the definition of rev, the revision a task in repository r bound: rev's workflow resolved by

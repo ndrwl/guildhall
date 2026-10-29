@@ -59,27 +59,38 @@ func TestShippedDirectorSelectsRealArtisan(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, repo := range c.Repositories {
-		data, err := os.ReadFile(filepath.Join(root, "workflows", repo.Workflow+".json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		def, err := workflow.Parse(data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		def, err = workflow.ApplyOverrides(def, repo.WorkflowOverrides)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := workflow.Validate(def); err != nil {
-			t.Fatal(err)
-		}
-		if err := c.CheckArtisanAdapters(def); err != nil {
-			t.Fatal(err)
-		}
-		for _, step := range def.Steps {
-			if step.Actor() == workflow.ArtisanActor && c.Profiles[step.Profile()].Adapter != "claude" {
-				t.Fatalf("%s/%s does not select Claude", repo.ID, step.ID)
+		for _, taskKind := range TaskKinds {
+			name, _ := repo.TaskKindWorkflow(taskKind)
+			var def *workflow.Definition
+			switch name {
+			case DefaultWorkflow:
+				def, err = workflow.Default()
+			case TaskKindBug:
+				def, err = workflow.Bug()
+			default:
+				var data []byte
+				if data, err = os.ReadFile(filepath.Join(root, "workflows", name+".json")); err == nil {
+					def, err = workflow.Parse(data)
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			def, err = workflow.ApplyOverrides(def, repo.WorkflowOverrides)
+			if err != nil {
+				t.Fatal(err)
+			}
+			def = workflow.ApplyProfileDefaults(def, func(n string) bool { _, ok := c.Profiles[n]; return ok })
+			if err := workflow.Validate(def); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.CheckArtisanAdapters(def); err != nil {
+				t.Fatal(err)
+			}
+			for _, step := range def.Steps {
+				if step.Actor() == workflow.ArtisanActor && c.Profiles[step.Profile()].Adapter != "claude" {
+					t.Fatalf("%s %s/%s does not select Claude", taskKind, repo.ID, step.ID)
+				}
 			}
 		}
 	}

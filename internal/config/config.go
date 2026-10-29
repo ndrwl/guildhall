@@ -135,6 +135,32 @@ func (m MergeRequires) Effective() MergeRequires {
 // DefaultWorkflow is the workflow a repository runs when it names none.
 const DefaultWorkflow = "default"
 
+// Task kinds: a task is created as one, which chooses its workflow (docs/tasks.md#task-kinds).
+// A feature task runs the repository's Workflow; a bug task runs Kinds[TaskKindBug], or the shipped workflow "bug".
+// A task kind is not a step kind (workflow.Kind).
+const (
+	TaskKindFeature = "feature"
+	TaskKindBug     = "bug"
+)
+
+// TaskKinds lists every task kind, the default first.
+var TaskKinds = []string{TaskKindFeature, TaskKindBug}
+
+// TaskKindWorkflow returns the workflow name repository r runs for a task of kind taskKind, and whether the kind is
+// known.
+func (r Repository) TaskKindWorkflow(taskKind string) (string, bool) {
+	switch taskKind {
+	case TaskKindFeature:
+		return r.Workflow, true
+	case TaskKindBug:
+		if name := r.Kinds[TaskKindBug]; name != "" {
+			return name, true
+		}
+		return TaskKindBug, true
+	}
+	return "", false
+}
+
 // StallIntervalKey is the setting that sets the interpreter's worker-stalled interval (docs/configuration.md#settings).
 const StallIntervalKey = "stall_interval"
 
@@ -292,8 +318,12 @@ type Repository struct {
 	OwnerMachine string `toml:"owner_machine"`
 	// Merge holds what deliver requires before it merges; a missing section requires everything.
 	Merge MergeOptions `toml:"merge"`
-	// Workflow names the Director's workflow definition this repository runs.
+	// Workflow names the Director's workflow definition this repository runs for a feature task.
 	Workflow string `toml:"workflow"`
+	// Kinds names the workflow this repository runs for each other task kind, keyed by kind (KindBug only); a kind
+	// it does not name runs the shipped workflow of that name. It is omitted from JSON when unset, so the config
+	// digest of a config without it is unchanged.
+	Kinds map[string]string `toml:"kinds" json:",omitempty"`
 	// WorkflowOverrides chooses step actors for this repository only, keyed by step id (workflow.ApplyOverrides).
 	WorkflowOverrides map[string]workflow.Override `toml:"workflow_overrides"`
 	// NoCI declares that the repository runs no checks, so validate passes a head its forge reports none for.
@@ -581,6 +611,16 @@ func (c *Config) validate() []string {
 		}
 		if !workflow.ValidID(r.Workflow) {
 			add("%s: invalid workflow name %q", name, r.Workflow)
+		}
+		for _, k := range slices.Sorted(maps.Keys(r.Kinds)) {
+			switch {
+			case k == TaskKindFeature:
+				add("%s: kinds.feature is not accepted; the repository's workflow setting is the feature kind's workflow", name)
+			case k != TaskKindBug:
+				add("%s: unknown task kind %q in kinds; the only one is %s", name, k, TaskKindBug)
+			case !workflow.ValidID(r.Kinds[k]):
+				add("%s: kinds.%s: invalid workflow name %q", name, k, r.Kinds[k])
+			}
 		}
 		m := r.Merge
 		switch k := m.ReapproveAfterRebase; {
