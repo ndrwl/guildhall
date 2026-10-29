@@ -220,7 +220,11 @@ func (c *safetyCopy) guildhall(stdin string, args ...string) string {
 	cmd := c.command(strings.NewReader(stdin), args...)
 	// Run as the Guildmaster's shell would, whatever session or attempt runs these tests (d33).
 	cmd.Env = append(cmd.Env, "GUILDHALL_SESSION=", "GUILDHALL_ATTEMPT=")
+	// PWD is the copy as given, as a Guildmaster's shell sets it, so discovery finds the copy spelled as --copy
+	// spells it. Without it the child reports the resolved directory, and macOS's /var -> /private/var lengthens
+	// the launchers' endpoint socket paths past the platform limit.
 	cmd.Dir = c.dir
+	cmd.Env = append(cmd.Env, "PWD="+c.dir)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
