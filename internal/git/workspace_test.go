@@ -28,7 +28,7 @@ func TestWorkspaceContract(t *testing.T) {
 				Retire:         f.Retire,
 				FastForward:    f.FastForward,
 				AdvanceDefault: func(t *testing.T, w git.Workspace, name string) string { return f.AdvanceDefault(w.Remote, name) },
-				Tip:            f.Tip, IsAncestor: f.IsAncestor, Base: f.Base,
+				Tip:            f.Tip, IsAncestor: f.IsAncestor, Base: f.Base, Behind: f.Behind,
 				Arrange: func(t *testing.T) (git.Workspace, string) {
 					base := strings.Repeat("b", 40)
 					f.SetDefault("remote", base)
@@ -84,7 +84,7 @@ func programHarness(t *testing.T, repositories func(*testing.T) (string, string,
 		AdvanceDefault: func(t *testing.T, w git.Workspace, name string) string {
 			return advanceDefault(t, global, w.Remote, name)
 		},
-		Tip: git.Program{}.Tip, IsAncestor: git.Program{}.IsAncestor, Base: git.Program{}.Base,
+		Tip: git.Program{}.Tip, IsAncestor: git.Program{}.IsAncestor, Base: git.Program{}.Base, Behind: git.Program{}.Behind,
 		Arrange: func(t *testing.T) (git.Workspace, string) { return arrangeWorkspace(t, repositories) },
 		Head:    func(t *testing.T, dir string) string { return repo{t, dir, global}.run("rev-parse", "HEAD") },
 		Commit: func(t *testing.T, dir, name string) string {

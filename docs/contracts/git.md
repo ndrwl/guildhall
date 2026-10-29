@@ -54,7 +54,8 @@ The interpreter's [head check](../interpreter.md#the-head-check) reads the task 
 
 ### FastForward
 
-`Program.FastForward(ctx, w) (kept string, err error)` moves an untouched task branch to the commit the remote's default branch is at now, so a task the [dependency gate](../interpreter.md#the-dependency-gate) held starts from the main its dependencies merged into ([the working directory](../interpreter.md#the-working-directory)).
+`Program.FastForward(ctx, w) (kept string, err error)` moves an untouched task branch to the commit the remote's default branch is at now, so every Artisan attempt the interpreter launches, a retry or a task the [dependency gate](../interpreter.md#the-dependency-gate) held included, starts from the current main ([the working directory](../interpreter.md#the-working-directory)).
+The interpreter does not read `kept`'s wording: it tells a branch with commits of its own from an untouched branch that was not moved with `IsAncestor` of the tip and `DefaultRef(w.Branch)`, and reads how far the branch is behind with [`Behind`](#version-reads).
 It is beside `Ensure` and `Retire`, whose contracts it does not change.
 
 - **No worktree.** A `w.Dir` that is not a worktree of `w.Repository`, including a missing one, is left alone and nothing is returned: a later `Ensure` creates the branch at the current main anyway.
@@ -137,6 +138,8 @@ Submodule histories with both diff-wide and per-submodule ignore settings enable
 The suite's fast-forward cases: an untouched branch moved to a default branch that moved, keeping an untracked output, and moved again to nothing; a missing worktree left missing; a diverged branch and a branch an untracked file blocks each kept with a reason; an invalid workspace refused.
 `TestFastForwardProgram` covers `DefaultRef` and `Base` moving with the fast-forward, a tracked change carried along, an ended context and a worktree on another branch kept.
 The suite's tip and ancestry cases: `Tip` and `Base` of a branch before `Ensure` are errors; after it the tip is the default branch's commit, and after a commit the tip is that commit while the base stays; `IsAncestor` is true for the base of a commit and a commit of itself, false for a commit of its parent and for an unknown commit on either side, and an ended context is an error for it and `Tip`.
+The suite's behind case: a new branch is 0 behind `DefaultRef(branch)`; a branch with a commit of its own, after the default branch moved twice and a `FastForward` kept it, is 2 behind, its base is an ancestor of `DefaultRef` and its tip is not; `Behind` a ref that does not exist is an error.
+The double resolves `DefaultRef(branch)` and `refs/heads/<branch>` for `IsAncestor` and `Behind`, as git does.
 The suite's retirement cases: a merged workspace retired, twice; a workspace never created already retired; an untracked file that is not an output, an output with other bytes and a commit after the merged head each keeping the workspace with a reason; an invalid head or directory and a plain directory refused.
 `TestRetireProgram` covers the worktree and its branch removed with an ignored file present and another branch kept, a worktree behind the merged head retired, a changed tracked file and an unmerged branch tip each kept, an interrupted retirement deleting the left branch, and a head the repository lacks failing with nothing removed.
 They were written red first against a stub `Retire` returning nothing ([red run](../evidence/worktree-custody-2026-10-22-red.txt)): every `program` case failed except a workspace never created and a worktree behind the merged head, which the stub satisfied by removing nothing where nothing existed; the latter was then given its removal assertions, which the implementation passes.
