@@ -63,6 +63,7 @@ func TestEffectiveGrant(t *testing.T) {
 	readOnly := []string{"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-list:*)", "Bash(git merge-base:*)", "Bash(git ls-files:*)"}
 	builder := append(slices.Clone(readOnly), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)", "Bash(git switch:*)")
 	rebaser := append(slices.Clone(readOnly), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)")
+	reviewer := append(slices.Clone(readOnly), "Bash(guildhall review check:*)")
 	claudeProfiles := "[profile.builder]\nadapter = \"claude\"\n[profile.planner]\nadapter = \"claude\"\n[profile.reviewer]\nadapter = \"claude\"\n" +
 		"[profile.researcher]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n"
 	for name, c := range map[string]struct {
@@ -71,7 +72,7 @@ func TestEffectiveGrant(t *testing.T) {
 	}{
 		"builder default":    {claudeProfiles, "builder", "", grants(claude.SourceDefault, builder...)},
 		"planner default":    {claudeProfiles, "planner", "", grants(claude.SourceDefault, readOnly...)},
-		"reviewer default":   {claudeProfiles, "reviewer", "", grants(claude.SourceDefault, readOnly...)},
+		"reviewer default":   {claudeProfiles, "reviewer", "", grants(claude.SourceDefault, reviewer...)},
 		"researcher default": {claudeProfiles, "researcher", "", grants(claude.SourceDefault, append(slices.Clone(readOnly), "WebSearch", "WebFetch")...)},
 		"rebaser default":    {claudeProfiles, "rebaser", "", grants(claude.SourceDefault, rebaser...)},
 		"shipped rebaser and repository": {"[profile.worker]\nadapter = \"claude\"\n", "rebaser", "app",

@@ -611,6 +611,9 @@ func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
+	if !strings.Contains(text, "guildhall review check review-outcome.json") {
+		t.Error("SKILL.md does not require the guildhall review check self-check")
+	}
 
 	_, example, ok := strings.Cut(text, "```json\n")
 	example, _, closed := strings.Cut(example, "```")

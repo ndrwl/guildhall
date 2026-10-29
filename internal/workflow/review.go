@@ -233,8 +233,7 @@ func (v reviewOutcomeV1) normalize() (ReviewOutcome, error) {
 // finding cites a rule; finding and suggestion ids are valid ids used once across both lists; each disposition
 // names one finding once with a known state, an unresolved or disputed finding is listed again in findings, a
 // disputed one gives a reason, and a resolved one is listed in neither list. A /1 outcome is checked with its
-// /2 meaning, without the summary. Whether the dispositions cover every finding of the previous round is the
-// interpreter's check.
+// /2 meaning, without the summary. Whether the dispositions cover every finding of the previous round is Covers.
 func (o ReviewOutcome) Validate() error {
 	var problems []string
 	v1 := o.Schema == ReviewOutcomeSchemaV1
@@ -337,6 +336,17 @@ func (o ReviewOutcome) Validate() error {
 	}
 	if len(problems) > 0 {
 		return errors.New("invalid review outcome: " + strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+// Covers refuses an outcome that leaves a finding of the same step's previous outcome without a disposition.
+// A previous suggestion needs none.
+func (o ReviewOutcome) Covers(prev ReviewOutcome) error {
+	for _, f := range prev.Findings {
+		if !slices.ContainsFunc(o.Dispositions, func(d Disposition) bool { return d.Finding == f.ID }) {
+			return fmt.Errorf("previous finding %q has no disposition", f.ID)
+		}
 	}
 	return nil
 }
