@@ -298,7 +298,8 @@ func (a *App) artisanStart(args []string) int {
 		timeout = 30 * time.Minute
 	}
 
-	spec := adapter.Spec{Identity: id}
+	// A tab takes no --repo or --profile, so its repository reference is empty and it gets no grant.
+	spec := adapter.Spec{Identity: id, Repository: owned.repo}
 	for _, p := range []struct {
 		dst *string
 		src string
@@ -346,7 +347,7 @@ func (a *App) artisanStart(args []string) int {
 // The runtime runs the attempt on settings, and one it cannot honour (adapter.ErrUnsupportedSetting) is exit 1
 // before the attempt is owned.
 func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir, copyDir, profile string, settings adapter.Settings, timeout, stall time.Duration, advance []string) int {
-	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile, Copy: copyDir, Profile: profile, Settings: settings}
+	spec := adapter.Spec{Identity: at.Identity(), ResultFile: at.Files().ResultFile, Copy: copyDir, Profile: profile, Repository: at.Key.Repository, Settings: settings}
 	for _, p := range []struct {
 		dst *string
 		src string

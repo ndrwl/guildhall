@@ -149,7 +149,7 @@ func testSpec(t *testing.T) adapter.Spec {
 }
 
 func args(spec adapter.Spec) claude.Args {
-	return claude.Args{Identity: spec.Identity, PromptFile: spec.PromptFile, ResultFile: spec.ResultFile, Copy: spec.Copy, Profile: spec.Profile}
+	return claude.Args{Identity: spec.Identity, PromptFile: spec.PromptFile, ResultFile: spec.ResultFile, Copy: spec.Copy, Profile: spec.Profile, Repository: spec.Repository}
 }
 
 func TestCommand(t *testing.T) {
@@ -179,21 +179,22 @@ func TestCommand(t *testing.T) {
 func TestCommandPassesAllowedTools(t *testing.T) {
 	spec := testSpec(t)
 	spec.Copy, spec.Profile = grantProfile(t, []string{"Bash(go test:*)", "Bash(git commit:*)"})
+	spec.Repository = "app"
 	program := filepath.Join(t.TempDir(), "claude")
 	cmd, err := claude.Adapter{Executable: "/bin/guildhall", Claude: program}.Command(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"/bin/guildhall", claude.Subcommand, "--task", "task-1", "--attempt", "attempt-1", "--prompt", spec.PromptFile, "--result", spec.ResultFile,
-		"--copy", spec.Copy, "--profile", spec.Profile, "--claude", program}
+		"--copy", spec.Copy, "--profile", spec.Profile, "--repo", "app", "--claude", program}
 	if !slices.Equal(cmd.Argv, want) {
 		t.Errorf("Command argv = %q, want %q", cmd.Argv, want)
 	}
 	parsed, err := claude.ParseArgs(cmd.Argv[2:])
-	if err != nil || parsed.Copy != spec.Copy || parsed.Profile != spec.Profile {
-		t.Errorf("ParseArgs(Command) = %+v, %v; want profile reference", parsed, err)
+	if err != nil || parsed.Copy != spec.Copy || parsed.Profile != spec.Profile || parsed.Repository != "app" {
+		t.Errorf("ParseArgs(Command) = %+v, %v; want copy, profile and repository references", parsed, err)
 	}
-	spec.Copy, spec.Profile = "", ""
+	spec.Copy, spec.Profile, spec.Repository = "", "", ""
 	cmd, err = claude.Adapter{Executable: "/bin/guildhall"}.Command(spec)
 	if err != nil || slices.Contains(cmd.Argv, "--allow-tool") {
 		t.Errorf("Command without allowed tools = %q, %v; want no --allow-tool", cmd.Argv, err)
@@ -451,22 +452,29 @@ func TestArtisanSettings(t *testing.T) {
 	}
 }
 
-// TestSuggestedGoAllowedToolsAreValidConfig: the documented set for a Go repository is one a profile accepts.
+// TestSuggestedGoAllowedToolsAreValidConfig: the documented repository grant for a Go repository is go test and go
+// vet, one a repository grant and a profile accept; the git it once held comes from the builder's shipped default.
 func TestSuggestedGoAllowedToolsAreValidConfig(t *testing.T) {
+	if want := []string{"Bash(go test:*)", "Bash(go vet:*)"}; !slices.Equal(claude.SuggestedGoAllowedTools, want) {
+		t.Errorf("suggested set = %q, want %q", claude.SuggestedGoAllowedTools, want)
+	}
 	for _, rule := range claude.SuggestedGoAllowedTools {
 		if err := config.CheckAllowedTool(rule); err != nil {
 			t.Errorf("suggested rule %q refused: %v", rule, err)
 		}
 	}
-	for _, want := range []string{"Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)"} {
-		if !slices.Contains(claude.SuggestedGoAllowedTools, want) {
-			t.Errorf("suggested set %q lacks %q", claude.SuggestedGoAllowedTools, want)
+	for name, rules := range claude.ShippedDefaultGrants {
+		for _, rule := range rules {
+			if err := config.CheckAllowedTool(rule); err != nil {
+				t.Errorf("%s default rule %q refused: %v", name, rule, err)
+			}
 		}
 	}
 }
 
-// TestRunGrantsAllowedTools: the session Claude runs is granted exactly the attempt's allowed tools, through a
-// settings file outside the directories Claude may write; empty grants still receive the skill policy.
+// TestRunGrantsAllowedTools: the session Claude runs is granted exactly the attempt's effective grant, through a
+// settings file outside the directories Claude may write; empty grants still receive the skill policy. A builder
+// whose copy sets no list gets its shipped default plus its repository's grant, and nothing of another repository's.
 func TestRunGrantsAllowedTools(t *testing.T) {
 	claudetest.Install(t)
 	for name, rules := range map[string][]string{
@@ -477,6 +485,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			spec := testSpec(t)
 			spec.Copy, spec.Profile = grantProfile(t, rules)
+			spec.Repository = "app"
 			var stderr bytes.Buffer
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
@@ -488,6 +497,29 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			_, err = os.Stat(claude.ArtisanSettingsPath(spec.ResultFile))
 			if err != nil {
 				t.Errorf("settings file missing: %v", err)
+			}
+		})
+	}
+	for repo, extra := range map[string][]string{"app": claude.SuggestedGoAllowedTools, "site": {"Bash(npm test:*)"}, "": nil} {
+		t.Run("default and repository "+repo, func(t *testing.T) {
+			spec := testSpec(t)
+			spec.Copy = t.TempDir()
+			text := "schema_version = 1\nmode = \"director\"\nname = \"test\"\n[profile.builder]\nadapter = \"claude\"\n" +
+				"[[repository]]\nid = \"app\"\npath = \"/src/app\"\nremote = \"git@example.com:app.git\"\nowner_machine = \"test\"\n" +
+				"[repository.profiles.builder]\nallowed_tools = [\"Bash(go test:*)\", \"Bash(go vet:*)\", \"Bash(git commit:*)\"]\n" +
+				"[[repository]]\nid = \"site\"\npath = \"/src/site\"\nremote = \"git@example.com:site.git\"\nowner_machine = \"test\"\n" +
+				"[repository.profiles.builder]\nallowed_tools = [\"Bash(npm test:*)\"]\n"
+			if err := os.WriteFile(filepath.Join(spec.Copy, "config.toml"), []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			spec.Profile, spec.Repository = "builder", repo
+			var stderr bytes.Buffer
+			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
+				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
+			}
+			want := append(slices.Clone(claude.ShippedDefaultGrants["builder"]), extra...)
+			if got, err := claudetest.Granted(spec.ResultFile); err != nil || !slices.Equal(got, want) {
+				t.Errorf("granted %q, %v; want exactly %q", got, err, want)
 			}
 		})
 	}
@@ -579,11 +611,12 @@ const LiveEnv = "GUILDHALL_CLAUDE_LIVE"
 
 // LiveGrantEnv chooses what TestLiveClaudeBuildPermissions grants: unset, nothing, so only the machine's own
 // settings can allow its commands; "configured", the profile grant a Go builder would be configured with,
-// SuggestedGoAllowedTools and the check's own command, so the run shows those rules suffice.
+// the builder's shipped default, SuggestedGoAllowedTools and the check's own command, so the run shows those rules
+// suffice.
 const LiveGrantEnv = "GUILDHALL_CLAUDE_LIVE_GRANT"
 
 // liveGrant is the configured mode's grant.
-var liveGrant = append(slices.Clone(claude.SuggestedGoAllowedTools), "Bash(sh check.sh)")
+var liveGrant = append(append(slices.Clone(claude.ShippedDefaultGrants["builder"]), claude.SuggestedGoAllowedTools...), "Bash(sh check.sh)")
 
 // TestLiveClaude runs one real attempt through the wrapper with the `claude`
 // on PATH, signed in as the developer: run it by hand with

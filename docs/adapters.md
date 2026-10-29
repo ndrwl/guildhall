@@ -184,7 +184,7 @@ The wrapper keeps the result protocol, not the model:
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
 - it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
-This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, and of a profile it uses only the model and effort, passed by value, and the `allowed_tools` and skill policy, loaded through the copy/profile reference.
+This is less than R1.23 asks for: the session is Claude Code's print mode, not its interactive session in a Herdr pane, and of a profile it uses only the model and effort, passed by value, and the effective grant and skill policy, loaded through the copy/profile/repository reference.
 It runs as an [owned attempt](artisan.md#commands), including in [workflow Artisan workspaces](artisan.md#workflow-artisan-workspaces).
 The older manual `artisan start --herdr-session` mode still refuses Claude; it is a separate fake-only result-file demonstration.
 Transcripts and interactive model-session resume are later work.
@@ -194,22 +194,39 @@ The same adapter runs the [Director's session](director.md#start) interactively;
 ### Artisan permissions
 
 The default workflow's build stage asks its Artisan to run the repository's checks and commit its work ([`build.md`](../baseline/stages/build.md)), and both are shell commands, which the wrapper's `acceptEdits` does not allow.
-Each Director grants them itself, per profile, with the profile's [`allowed_tools`](configuration.md#profiles) in its own copy's `config.toml` ([decision](decisions/0089-artisan-allow-rules.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` reference and settings file above.
+Each Director grants them itself, per profile, through its own copy's `config.toml` ([D89](decisions/0089-artisan-allow-rules.md), [D93](decisions/0093-shipped-default-grants.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` / `--repo` reference and settings file above.
 Raw rule flags are not accepted; an undeclared profile is refused.
-Without both reference fields, the wrapper grants nothing.
-The list is empty by default.
-The rules come only from the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
+Without both copy and profile, the wrapper grants nothing.
+The session's **effective grant** is, in order and with a repeated rule kept once:
 
-The suggested set for a Go repository's builder profile, `claude.SuggestedGoAllowedTools`, runs its checks, stages and commits, and reads its status and diff:
+1. the profile's [`allowed_tools`](configuration.md#profiles) when it sets them, even to `[]`; otherwise the **shipped default grant** for its name, which only a `claude` profile gets;
+2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any.
+
+The shipped default grants are:
+
+| Profile | Shipped default |
+|---|---|
+| `builder` | read-only git, plus `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git fetch:*)`, `Bash(git rebase:*)` and `Bash(git switch:*)` |
+| `planner` | read-only git |
+| `reviewer` | read-only git |
+| `researcher` | read-only git, plus `WebSearch` and `WebFetch` |
+
+Read-only git is `Bash(git <command>:*)` for `status`, `diff`, `log`, `show`, `rev-list` and `merge-base`.
+No default grants `git checkout`, which can discard work, `git push`, which the publish stage does, or any toolchain command; a profile of any other name, or of another adapter, gets no default.
+The rules come only from the Guildhall release and the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file, repository file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
+
+A repository's checks are a repository grant. The suggested one for a Go repository's builder, `claude.SuggestedGoAllowedTools`, runs `go test` and `go vet`; its git comes from the builder's default:
 
 ```toml
-[profile.builder]
-adapter = "claude"
-allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)"]
+[[repository]]
+id = "app"
+# ...
+
+[repository.profiles.builder]
+allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)"]
 ```
 
-A repository whose checks are other commands, such as a `make check` target or a linter, adds those commands' rules; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused.
-A reviewer profile, which reads and reports, usually needs none.
+A repository whose checks are other commands, such as a `make check` target or a linter, grants those commands' rules instead; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused.
 The allow rules widen tool authority and never narrow it: the user's `~/.claude/settings.json` and the repository's `.claude/settings.json`, which the task's worktree carries, still apply.
 Ordinary print mode also discovers hooks, skills, commands, plugins, agents and MCP servers; skill frontmatter can grant turn-scoped tools.
 Thus `acceptEdits` grants edits only, but an empty profile allow list is not the complete inherited permission environment, and applicable deny rules still win.
@@ -219,7 +236,7 @@ On a machine where neither the profile nor those settings allow them, a build at
 
 So the grant and the dependency are never silent:
 
-- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and what that config grants each profile that runs the claude adapter, or that it grants nothing and the checks depend on Claude's own settings; of the grants it refuses only `allowed_tools` on a profile of another adapter, which cannot grant them, because Guildhall cannot see every settings file Claude Code reads (it also refuses a profile's [runtime settings](#runtime-settings) its runtime cannot honour);
+- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and each claude profile's effective grant by source: the copy's list or the shipped default, or that a profile of another name gets no shipped default, then each repository's additions labelled with its id; of the grants it refuses only `allowed_tools` or a repository grant on a profile of another adapter, which cannot grant them, because Guildhall cannot see every settings file Claude Code reads (it also refuses a profile's [runtime settings](#runtime-settings) its runtime cannot honour);
 - the wrapper names each denied tool use in the attempt's launcher log, as above.
 
 A live run, `TestLiveClaudeBuildPermissions`, asks a real session in a git repository to run a check command Claude Code does not allow as read-only, `sh check.sh`, and then commit; it fails unless the check ran and the commit was made, and on any denied tool use.

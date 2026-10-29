@@ -239,9 +239,23 @@ type Profile struct {
 	// Role is a slash-separated path relative to the config file's directory; empty keeps the release role.
 	Role string `toml:"role"`
 	// AllowedTools are the tool permission rules this Director grants the profile's Artisan beyond its runtime's
-	// baseline, in the runtime's own syntax, such as "Bash(go test:*)" for Claude Code; empty grants nothing
+	// baseline, in the runtime's own syntax, such as "Bash(go test:*)" for Claude Code
 	// (docs/adapters.md#artisan-permissions). They come only from this copy's own config file, never a managed one.
-	AllowedTools []string `toml:"allowed_tools" json:",omitempty"`
+	// Nil means the key is not set, so a claude profile with a well-known name gets its shipped default grant; a set
+	// list, even an empty one, replaces that default. A pointer keeps the difference through JSON while leaving the
+	// config digest of a config that sets no empty list unchanged.
+	AllowedTools *[]string `toml:"allowed_tools" json:",omitempty"`
+}
+
+// AllowedToolsSet reports whether the profile sets allowed_tools, even to an empty list.
+func (p Profile) AllowedToolsSet() bool { return p.AllowedTools != nil }
+
+// AllowedToolsList returns the profile's allowed_tools as set, or nil when it sets none.
+func (p Profile) AllowedToolsList() []string {
+	if p.AllowedTools == nil {
+		return nil
+	}
+	return *p.AllowedTools
 }
 
 // CheckAllowedTool reports why rule cannot be a profile's allowed_tools entry, or nil if it can: a tool name,
@@ -283,6 +297,16 @@ type Repository struct {
 	WorkflowOverrides map[string]workflow.Override `toml:"workflow_overrides"`
 	// NoCI declares that the repository runs no checks, so validate passes a head its forge reports none for.
 	NoCI bool `toml:"no_ci" json:",omitempty"`
+	// Profiles are this repository's grants, keyed by a declared claude profile's name: each adds its rules to that
+	// profile's effective grant for this repository's tasks only (docs/adapters.md#artisan-permissions).
+	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
+	Profiles map[string]RepositoryProfile `toml:"profiles" json:",omitempty"`
+}
+
+// RepositoryProfile is a repository grant: the rules one repository adds to one profile.
+type RepositoryProfile struct {
+	// AllowedTools are added after the profile's copy list or shipped default, in the same syntax.
+	AllowedTools []string `toml:"allowed_tools"`
 }
 
 var (
@@ -337,6 +361,12 @@ func Parse(data []byte) (*Config, error) {
 			keys[i] = k.String()
 		}
 		return nil, fmt.Errorf("config: unknown keys: %s", strings.Join(keys, ", "))
+	}
+	for name, p := range cfg.Profiles {
+		if p.AllowedTools == nil && md.IsDefined("profile", name, "allowed_tools") {
+			p.AllowedTools = &[]string{}
+			cfg.Profiles[name] = p
+		}
 	}
 	cfg.applyDefaults()
 	if problems := cfg.validate(); len(problems) > 0 {
@@ -490,15 +520,7 @@ func (c *Config) validate() []string {
 		if p.Role != "" && !configRelative(p.Role) {
 			add("profile %q: role must be a relative slash-separated path inside the config directory", name)
 		}
-		seen := map[string]bool{}
-		for _, rule := range p.AllowedTools {
-			if err := CheckAllowedTool(rule); err != nil {
-				add("profile %q: allowed_tools: %v", name, err)
-			} else if seen[rule] {
-				add("profile %q: allowed_tools lists %q twice", name, rule)
-			}
-			seen[rule] = true
-		}
+		problems = append(problems, checkAllowedTools(fmt.Sprintf("profile %q", name), p.AllowedToolsList())...)
 	}
 
 	if d := c.Director; d != nil {
@@ -572,9 +594,34 @@ func (c *Config) validate() []string {
 		if p := m.MinorConflictLines; p != nil && *p < 1 {
 			add("%s: merge.minor_conflict_lines must be at least 1", name)
 		}
+		for _, profile := range slices.Sorted(maps.Keys(r.Profiles)) {
+			where := fmt.Sprintf("%s: profile %q", name, profile)
+			if p, ok := c.Profiles[profile]; !ok {
+				add("%s: the copy declares no such profile", where)
+			} else if p.Adapter != "claude" {
+				add("%s: runs the %s adapter, which grants no allowed_tools; only the claude adapter does", where, p.Adapter)
+			}
+			problems = append(problems, checkAllowedTools(where, r.Profiles[profile].AllowedTools)...)
+		}
 	}
 	if len(machines) > 1 {
 		add("a director has one owner machine, but repositories name %s", strings.Join(machines, ", "))
+	}
+	return problems
+}
+
+// checkAllowedTools reports each rule of the allowed_tools list for where that CheckAllowedTool refuses or that the
+// list repeats.
+func checkAllowedTools(where string, rules []string) []string {
+	var problems []string
+	seen := map[string]bool{}
+	for _, rule := range rules {
+		if err := CheckAllowedTool(rule); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: allowed_tools: %v", where, err))
+		} else if seen[rule] {
+			problems = append(problems, fmt.Sprintf("%s: allowed_tools lists %q twice", where, rule))
+		}
+		seen[rule] = true
 	}
 	return problems
 }

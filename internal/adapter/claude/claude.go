@@ -63,10 +63,6 @@ const OutputFormat = "stream-json"
 // with tool grants and skill policy, even with empty grants, outside the model directory.
 const ArtisanSettingsFile = "claude-settings.json"
 
-// SuggestedGoAllowedTools is the documented allowed_tools set for a Go repository's builder profile
-// (docs/adapters.md#artisan-permissions): its checks, staging and committing, and read-only status and diff.
-var SuggestedGoAllowedTools = []string{"Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)"}
-
 // Efforts are the effort levels Claude Code's --effort takes, as Claude Code 2.1.309 lists them.
 var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
 
@@ -132,6 +128,9 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if spec.Profile != "" {
 		argv = append(argv, "--profile", spec.Profile)
 	}
+	if spec.Repository != "" {
+		argv = append(argv, "--repo", spec.Repository)
+	}
 	argv = append(argv, settingsArgs(spec.Settings)...)
 	if a.Claude != "" {
 		argv = append(argv, "--claude", a.Claude)
@@ -160,6 +159,8 @@ type Args struct {
 	Claude  string
 	Copy    string
 	Profile string
+	// Repository is the task's repository id, whose repository grant the effective grant adds.
+	Repository string
 	// Settings are passed to Claude Code as --model and --effort, each only when set.
 	adapter.Settings
 	allowedTools []string
@@ -179,6 +180,7 @@ func ParseArgs(argv []string) (Args, error) {
 	fs.StringVar(&a.Claude, "claude", "", "Claude Code program")
 	fs.StringVar(&a.Copy, "copy", "", "Director copy")
 	fs.StringVar(&a.Profile, "profile", "", "profile declared by the copy")
+	fs.StringVar(&a.Repository, "repo", "", "repository id listed by the copy")
 	fs.StringVar(&a.Model, "model", "", "Claude Code model")
 	fs.StringVar(&a.Effort, "effort", "", "Claude Code effort level")
 	if err := fs.Parse(argv); err != nil {
@@ -414,7 +416,7 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 		return err
 	}
 	var err error
-	a.allowedTools, err = adapter.ProfileTools(a.Copy, a.Profile)
+	a.allowedTools, err = ProfileTools(a.Copy, a.Profile, a.Repository)
 	if err != nil {
 		return fmt.Errorf("claude adapter: profile: %w", err)
 	}

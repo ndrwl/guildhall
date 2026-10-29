@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -95,7 +96,7 @@ func TestInvalidProfilesRefused(t *testing.T) {
 }
 
 // TestProfileAllowedTools: a profile's allowed_tools are the Director's own grant, read in order from its config;
-// a profile without them grants nothing.
+// a profile without them sets none.
 func TestProfileAllowedTools(t *testing.T) {
 	cfg, err := Parse([]byte(director(t) + `
 [profile.builder]
@@ -109,11 +110,104 @@ adapter = "claude"
 		t.Fatalf("allowed_tools refused: %v", err)
 	}
 	want := []string{"Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status)", "Bash(git diff:*)", "Read", "mcp__docs__search"}
-	if got := cfg.Profiles["builder"].AllowedTools; !slices.Equal(got, want) {
+	if got := cfg.Profiles["builder"].AllowedToolsList(); !slices.Equal(got, want) {
 		t.Errorf("builder allowed_tools = %q, want %q", got, want)
 	}
-	if got := cfg.Profiles["reviewer"].AllowedTools; len(got) != 0 {
-		t.Errorf("reviewer allowed_tools = %q, want none", got)
+	if p := cfg.Profiles["reviewer"]; p.AllowedToolsSet() || len(p.AllowedToolsList()) != 0 {
+		t.Errorf("reviewer allowed_tools = %q, set %v, want none and unset", p.AllowedToolsList(), p.AllowedToolsSet())
+	}
+}
+
+// TestProfileAllowedToolsEmptyIsSet: allowed_tools = [] is set, granting nothing in place of a shipped default, and
+// differs from an omitted key; the difference survives a JSON round trip, while a config that sets no empty list
+// marshals as it did before the key could be told apart.
+func TestProfileAllowedToolsEmptyIsSet(t *testing.T) {
+	cfg, err := Parse([]byte(director(t) + `
+[profile.builder]
+adapter = "claude"
+allowed_tools = []
+
+[profile.reviewer]
+adapter = "claude"
+
+[profile.planner]
+adapter = "claude"
+allowed_tools = ["Read"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(when string, cfg *Config) {
+		t.Helper()
+		if p := cfg.Profiles["builder"]; !p.AllowedToolsSet() || len(p.AllowedToolsList()) != 0 {
+			t.Errorf("%s: builder set %v %q, want set and empty", when, p.AllowedToolsSet(), p.AllowedToolsList())
+		}
+		if p := cfg.Profiles["reviewer"]; p.AllowedToolsSet() {
+			t.Errorf("%s: reviewer set %q, want unset", when, p.AllowedToolsList())
+		}
+		if p := cfg.Profiles["planner"]; !p.AllowedToolsSet() || !slices.Equal(p.AllowedToolsList(), []string{"Read"}) {
+			t.Errorf("%s: planner %q, want [Read]", when, p.AllowedToolsList())
+		}
+	}
+	check("parsed", cfg)
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Config
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatal(err)
+	}
+	check("round trip", &back)
+	for name, want := range map[string]string{"builder": `"AllowedTools":[]`, "planner": `"AllowedTools":["Read"]`} {
+		got, _ := json.Marshal(cfg.Profiles[name])
+		if !strings.Contains(string(got), want) {
+			t.Errorf("%s marshals as %s, want %s", name, got, want)
+		}
+	}
+	if got, _ := json.Marshal(cfg.Profiles["reviewer"]); strings.Contains(string(got), "AllowedTools") {
+		t.Errorf("unset reviewer marshals as %s, want no AllowedTools", got)
+	}
+}
+
+// TestRepositoryProfileGrant: [repository.profiles.<name>] under a [[repository]] entry adds rules to that declared
+// claude profile for that repository only.
+func TestRepositoryProfileGrant(t *testing.T) {
+	cfg, err := Parse([]byte(director(t) + `
+[repository.profiles.builder]
+allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)"]
+
+[profile.builder]
+adapter = "claude"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Repositories[1].Profiles["builder"].AllowedTools; !slices.Equal(got, []string{"Bash(go test:*)", "Bash(go vet:*)"}) {
+		t.Errorf("site builder grant = %q", got)
+	}
+	if got := cfg.Repositories[0].Profiles; got != nil {
+		t.Errorf("tool grants = %v, want none", got)
+	}
+}
+
+// TestInvalidRepositoryProfileGrantRefused: a repository grant is refused for a bad or repeated rule, a profile the
+// copy does not declare, a profile of another adapter or an unknown key.
+func TestInvalidRepositoryProfileGrantRefused(t *testing.T) {
+	cases := map[string]string{
+		"[repository.profiles.builder]\nallowed_tools = [\"Bash(*)\"]\n":                `repository "site": profile "builder": allowed_tools: "Bash(*)" allows every shell command`,
+		"[repository.profiles.builder]\nallowed_tools = [\"go test\"]\n":                `repository "site": profile "builder": allowed_tools: `,
+		"[repository.profiles.builder]\nallowed_tools = [\"Read\", \"Read\"]\n":         `repository "site": profile "builder": allowed_tools lists "Read" twice`,
+		"[repository.profiles.biulder]\nallowed_tools = [\"Read\"]\n":                   `repository "site": profile "biulder": the copy declares no such profile`,
+		"[repository.profiles.faker]\nallowed_tools = [\"Read\"]\n":                     `repository "site": profile "faker": runs the fake adapter, which grants no allowed_tools`,
+		"[repository.profiles.builder]\nallowed_tools = [\"Read\"]\nmodel = \"opus\"\n": `unknown keys: repository.profiles.builder.model`,
+		"[repository.profiles.builder]\nallowed_tool = [\"Read\"]\n":                    `unknown keys: repository.profiles.builder.allowed_tool`,
+	}
+	for extra, want := range cases {
+		_, err := Parse([]byte(director(t) + extra + "\n[profile.builder]\nadapter = \"claude\"\n\n[profile.faker]\nadapter = \"fake\"\n"))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", extra, err, want)
+		}
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -441,11 +442,12 @@ func TestStepRetryRefusesASucceededAttempt(t *testing.T) {
 
 // TestTaskStartLaunchesClaude: a profile naming the claude adapter makes task start launch the attempt
 // through launch.Process as an owned claude attempt, over the stub Claude Code, whose draft the
-// wrapper publishes as the attempt's result.
+// wrapper publishes as the attempt's result. Its planner profile sets no allowed_tools, so the session gets the
+// planner's shipped default grant.
 func TestTaskStartLaunchesClaude(t *testing.T) {
 	claudetest.Install(t)
-	d := newRunDirectorWith(t, "claude.toml")
-	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	d, copyDir := newRunCopyOn(t, "claude-straight", "claude.toml")
+	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
@@ -454,8 +456,8 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 	if err != nil || r.Summary != claudetest.Summary {
 		t.Errorf("plan-1 result %+v, %v; want the stub Claude's", r, err)
 	}
-	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || len(got) != 0 {
-		t.Errorf("plan-1 was granted %q, %v; a profile without allowed_tools grants none", got, err)
+	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, claude.ShippedDefaultGrants["planner"]) {
+		t.Errorf("plan-1 was granted %q, %v; want the planner's shipped default %q", got, err, claude.ShippedDefaultGrants["planner"])
 	}
 	// The launcher records the usage the stub's JSON output reported on the attempt.
 	u := claudetest.Usage

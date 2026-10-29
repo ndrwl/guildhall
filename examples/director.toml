@@ -18,11 +18,12 @@ claude_skills_profile_reviewer = '{"preset":"reviewer-v1"}'
 claude_skills_profile_rebaser = '{"preset":"builder-v1"}'
 
 # Artisan profiles that workflow steps name with "profile"; no credentials.
+# These well-known claude profiles set no allowed_tools, so each gets its shipped default grant: read-only git,
+# plus web search and fetch for the researcher and committing and rebasing git for the builder. Setting
+# allowed_tools on a profile replaces its default; allowed_tools = [] grants nothing.
 [profile.researcher]
 adapter = "claude"
 model = "opus"
-# Web research is an explicit profile grant, not an account/browser skill opt-in.
-allowed_tools = ["WebSearch", "WebFetch"]
 
 [profile.planner]
 adapter = "claude"
@@ -32,8 +33,6 @@ model = "opus"
 adapter = "claude"
 model = "opus"
 effort = "high"
-# Tool permissions this Director grants the builder beyond file edits; empty grants nothing.
-allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)"]
 
 [profile.reviewer]
 adapter = "claude"
@@ -63,6 +62,10 @@ workflow = "profiled"
 # reapprove_after_rebase = "major_conflicts"
 # minor_conflict_files = 3
 # minor_conflict_lines = 50
+
+# A repository grant: this Go repository's builder may also run its checks, on top of its shipped default.
+[repository.profiles.builder]
+allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)"]
 
 [[repository]]
 id = "docs-site"
