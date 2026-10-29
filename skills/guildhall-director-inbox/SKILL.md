@@ -43,8 +43,13 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `published` | A pull request opened or moved: tell the Guildmaster its URL when they are following that task. |
 | `merged` | The task's change merged and the task is done: tell the Guildmaster, then run `guildhall-self-review` when `director status` shows `quality.self_review` on. |
 | `merge-held` | The Guildmaster held the merge: ask what they want changed and give that as work. |
-| `pr-blocked` | The published PR conflicts or is behind under strict protection: use the head, base tip, files and behind count to choose how to handle it; `guildhall-director-tasks` lists send-back, hold and abandonment options without prescribing one. |
-| `merge-refused` | The forge refused the merge, with its reason: decide how to handle it; `guildhall-director-tasks` describes sending finished work back, holding it and rechecking, without automatic rebasing. |
+| `pr-blocked` | The published PR conflicts or is behind and Guildhall could not rebase it itself: use the head, base tip, files and behind count to choose how to handle it; `guildhall-director-tasks` lists send-back, hold and abandonment options without prescribing one. |
+| `merge-queued` | An authorized merge waits in its repository's merge queue: tell the Guildmaster its place when they are following that task. |
+| `rebased` | Guildhall rebased the front's head onto the base tip and pushed it to the same PR, where its checks run next: no action. |
+| `rebase-escalated` | A rebase had major conflicts, a behaviour change, red checks or review findings, and the build was sent back with them as feedback: no action unless the Guildmaster asks. |
+| `rebase-stuck` | The front rebased three times in one stay and still is not clear: decide whether to hold its merge, send it back or wait. |
+| `approval-carried` | An earlier merge approval carried over to a rebased head under `reapprove_after_rebase`: tell the Guildmaster when they are following that task. |
+| `merge-refused` | The forge refused the merge, with its reason: decide how to handle it; `guildhall-director-tasks` describes sending finished work back, holding it and rechecking. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |
 
 `director resume` wakes you with `guildhall: resumed, <n> waiting (...)` after a pause: run the loop as for any wake line, following the recovery command each held `paused` item names.

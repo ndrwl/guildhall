@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -46,6 +47,11 @@ type validationDoc struct {
 	Failing []string `json:"failing,omitempty"`
 	// NoCI marks a passed result for a head the forge reports no checks for, in a repository configured no_ci.
 	NoCI bool `json:"no_ci,omitempty"`
+	// Rebase names the rebases validate made from the published head to Head, when it rebased a conflicting pull
+	// request (docs/interpreter.md#validate); Escalation, in a failed result, is why a rebase could not stand, and
+	// is the build's feedback.
+	Rebase     []string       `json:"rebase,omitempty"`
+	Escalation *escalationDoc `json:"rebase_escalation,omitempty"`
 }
 
 // parseValidation decodes a recorded validation result and refuses one of another schema or verdict.
@@ -95,6 +101,13 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
+	// The head validated is the published head, or the head validate rebased a conflicting pull request to.
+	published := h
+	links, err := r.chain(published, s.ID)
+	if err != nil {
+		return false, Next{}, err
+	}
+	h = chainHead(published, links)
 	k := 1
 	wait := Next{Wait: WaitChecks, Step: s.ID}
 	var last *validationDoc
@@ -120,17 +133,67 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		p, _ := parseDecision(source)
 		k = p.round + 1
 	}
-	if due, blocked, err := r.checksDue(s, h); err != nil || !due {
-		if blocked {
-			wait = Next{Wait: WaitDirector, Step: s.ID}
+	if last != nil && last.Escalation != nil {
+		// The rebase of this head failed and its loop is spent or served: the Director decides.
+		return false, Next{Wait: WaitDirector, Step: s.ID}, nil
+	}
+	for {
+		var stop bool
+		var next Next
+		if h, pr, stop, next, err = r.validateRebase(s, k, repo, published, pr); err != nil || stop {
+			return false, next, err
 		}
-		return false, wait, err
-	}
-	_, blocked, err := r.mergeBlocked(pr, h)
-	if err != nil {
-		return false, Next{}, err
-	}
-	if blocked {
+		if due, blocked, err := r.checksDue(s, h); err != nil || !due {
+			if blocked {
+				wait = Next{Wait: WaitDirector, Step: s.ID}
+			}
+			return false, wait, err
+		}
+		// A behind pull request reads its checks as usual: the merge queue rebases it at the front. A conflicting one
+		// runs no checks, so it can never become ready: validate rebases it onto the base tip, its one rebase of a
+		// pull request not at the front of the queue, and waits for the Director only when it cannot.
+		m, err := r.observe(repo, pr, h)
+		if err != nil {
+			return false, Next{}, err
+		}
+		if m.State != "conflicting" {
+			break
+		}
+		links, err := r.chain(published, s.ID)
+		if err != nil {
+			return false, Next{}, err
+		}
+		if len(links) < maxRebaseRounds {
+			doc, err := r.replay(repo, h, m.Base)
+			if err == nil {
+				n := 1
+				all, err := r.rebases(s.ID)
+				if err != nil {
+					return false, Next{}, err
+				}
+				for _, l := range all {
+					if l.k == k && l.n >= n {
+						n = l.n + 1
+					}
+				}
+				if err := r.putJSONDoc(rebaseName(s.ID, k, n), decisionID(s.ID, k, false), fmt.Sprintf("rebase-%d.json", n), doc); err != nil {
+					return false, Next{}, err
+				}
+				continue
+			}
+			if !errors.Is(err, ErrUnsupported) && !errors.Is(err, errRebaseRunning) {
+				return false, Next{}, err
+			}
+		}
+		// This copy cannot rebase, or validate rebased this pull request three times: the Director decides.
+		if len(links) >= maxRebaseRounds {
+			err = r.stuck(s, h, m, errRebaseStuck)
+		} else {
+			_, _, err = r.mergeBlocked(pr, h)
+		}
+		if err != nil {
+			return false, Next{}, err
+		}
 		if err := r.checksRead(s, h, true); err != nil {
 			return false, Next{}, err
 		}
@@ -144,6 +207,13 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		return false, Next{}, err
 	}
 	v := validationDoc{Schema: validationSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: h, Verdict: validationPassed, Checks: checks}
+	if h != published {
+		links, err := r.chain(published, s.ID)
+		if err != nil {
+			return false, Next{}, err
+		}
+		v.Rebase = linkNames(links)
+	}
 	if v.Checks == nil {
 		v.Checks = []forge.Check{}
 	}
@@ -179,6 +249,94 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	}
 	done, next, _, err := r.validationFailed(s, id, v)
 	return done, next, err
+}
+
+// validateRebase brings the rebases validate step s made of the published head up to date and returns the head they
+// end at, with its pull request: an unresolved minor_conflicts rebase is resolved by the rebaser and a narrowed
+// review, and a rebased head is pushed to the same pull request. A major_conflicts rebase, a behaviour change, a
+// resolution the narrowed review did not approve cleanly or a failed rebaser fails the round, recorded as a failed
+// result that the failed loop gives the build as feedback; stop then reports that validate waits, with next.
+func (r *run) validateRebase(s workflow.Step, k int, repo config.Repository, published string, pr *pullRequestDoc) (string, *pullRequestDoc, bool, Next, error) {
+	for {
+		links, err := r.chain(published, s.ID)
+		if err != nil {
+			return "", nil, false, Next{}, err
+		}
+		cur := chainHead(published, links)
+		all, err := r.rebases(s.ID)
+		if err != nil {
+			return "", nil, false, Next{}, err
+		}
+		if i := slices.IndexFunc(all, func(l rebaseLink) bool { return l.doc.From == cur && l.doc.Kind == config.RebaseMajorConflicts }); i >= 0 {
+			d := all[i].doc
+			files := []string{}
+			for _, c := range d.Conflicts {
+				files = append(files, c.Path)
+			}
+			next, err := r.rebaseFailed(s, k, cur, pr, links, escalationDoc{From: cur, Onto: d.Onto, Kind: d.Kind, Files: files, Reason: d.Reason, Carry: true})
+			return cur, pr, true, next, err
+		}
+		// At validate there is no approval to carry over, so a narrowed review's findings fail the round.
+		if i := slices.IndexFunc(links, func(l rebaseLink) bool { return l.findings > 0 }); i >= 0 {
+			l := links[i]
+			next, err := r.rebaseFailed(s, k, l.doc.From, pr, links, escalationDoc{From: l.doc.From, Onto: l.doc.Onto, Kind: config.RebaseMajorConflicts,
+				Reason: fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s)", l.findings)})
+			return cur, pr, true, next, err
+		}
+		if n := len(links); n > 0 && links[n-1].head == "" {
+			next, fail, err := r.resolveRebase(s, repo, links[n-1])
+			switch {
+			case err != nil:
+				return "", nil, false, Next{}, err
+			case fail != nil:
+				next, err := r.rebaseFailed(s, k, fail.From, pr, links, *fail)
+				return cur, pr, true, next, err
+			case next != (Next{}):
+				return cur, pr, true, next, nil
+			}
+			continue
+		}
+		if cur != published {
+			if pr, err = r.publishLink(s, repo, links[len(links)-1], pr); err != nil {
+				return "", nil, false, Next{}, err
+			}
+		}
+		return cur, pr, false, Next{}, nil
+	}
+}
+
+// rebaseFailed records round k of validate step s as a failed result for head cur, whose rebase e could not stand,
+// tells the Director, and follows the failed loop, which gives the build the result, naming the base, the
+// conflicting files and the reason, as feedback.
+func (r *run) rebaseFailed(s workflow.Step, k int, cur string, pr *pullRequestDoc, links []rebaseLink, e escalationDoc) (Next, error) {
+	e.Schema = escalationSchema
+	if e.Files == nil {
+		e.Files = []string{}
+	}
+	id := decisionID(s.ID, k, false)
+	v := validationDoc{Schema: validationSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: cur, Verdict: validationFailed,
+		Checks: []forge.Check{}, Failing: []string{"rebase"}, Rebase: linkNames(links), Escalation: &e}
+	if r.document(id+"-result") == nil {
+		if err := r.putJSONDoc(id+"-result", id, "result.json", v); err != nil {
+			return Next{}, err
+		}
+	}
+	text := fmt.Sprintf("Validate could not rebase conflicting pull request %s at head %s onto %s (%s: %s); conflicting files: %s. The failed loop gives the build this as feedback.",
+		pr.URL, cur, e.Onto, e.Kind, e.Reason, strings.Join(e.Files, ", "))
+	if err := r.notify("rebase-escalated."+id, store.MessageRebaseEscalated, text); err != nil {
+		return Next{}, err
+	}
+	_, next, _, err := r.validationFailed(s, id, v)
+	return next, err
+}
+
+// linkNames names the rebases of links, in order.
+func linkNames(links []rebaseLink) []string {
+	var out []string
+	for _, l := range links {
+		out = append(out, l.name)
+	}
+	return out
 }
 
 // newFailure reports whether checks hold a failed run, by check name and run id, that is not among the failed runs

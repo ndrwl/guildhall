@@ -20,7 +20,7 @@ type Snapshot struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// TaskHistory is a task, its attempts, documents, decisions, rulings, full-review requests and dependency override,
+// TaskHistory is a task, its attempts, documents, decisions, rulings, full-review requests, dependency override and priority,
 // together with
 // the receipt of every mutation that touched it; ownership records are read separately.
 // Its contents are read in one transaction and describe exactly the store state AsOf names.
@@ -35,6 +35,10 @@ type TaskHistory struct {
 	FullReviews []FullReview
 	// DependencyOverride is the task's dependency override, nil when it has none.
 	DependencyOverride *DependencyOverride
+	// Priority is the task's recorded priority, nil when none was set (DefaultPriority).
+	Priority *TaskPriority
+	// MergeHold is the task's hold-merge record, nil when its merge was never held.
+	MergeHold *MergeHold
 	// Receipts are the receipts whose repository and task are this task's, in sequence order:
 	// its records' mutations and the messages sent to or acknowledged for it.
 	Receipts []Receipt
@@ -69,6 +73,20 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 		switch err := getJSON(repoBucket(tx, repository, bucketDependencyOverrides), []byte(taskID), &o); {
 		case err == nil:
 			h.DependencyOverride = &o
+		case !errors.Is(err, ErrNotFound):
+			return err
+		}
+		var p TaskPriority
+		switch err := getJSON(repoBucket(tx, repository, bucketTaskPriorities), []byte(taskID), &p); {
+		case err == nil:
+			h.Priority = &p
+		case !errors.Is(err, ErrNotFound):
+			return err
+		}
+		var mh MergeHold
+		switch err := getJSON(repoBucket(tx, repository, bucketMergeHolds), []byte(taskID), &mh); {
+		case err == nil:
+			h.MergeHold = &mh
 		case !errors.Is(err, ErrNotFound):
 			return err
 		}

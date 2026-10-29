@@ -3,7 +3,7 @@
 ## Contract
 
 The boundary to the git program: each question the Director asks of a repository is answered by running git with an argument list, never through a shell.
-It answers `Program.FinalHead`, the committed output of a task's work ([final head](#final-head)), and `Program.Ensure`, which makes a task's working directory a worktree of its repository ([workspaces](#workspaces)), `Program.Base`, a task's base ([workspaces](#workspaces)), and `Program.Classify(ctx, repo, last, next)`, run as `git -C <repo> --literal-pathspecs`: whether a task's new commit range `next` is a rebase of the range `last` that was reviewed, for rebase-aware re-review (director slice S6b part 3).
+It answers `Program.FinalHead`, the committed output of a task's work ([final head](#final-head)), and `Program.Ensure`, which makes a task's working directory a worktree of its repository ([workspaces](#workspaces)), `Program.Base`, a task's base ([workspaces](#workspaces)), `Program.Rebase`, which replays a task's change onto a base tip for the merge queue ([rebase](#rebase)), and `Program.Classify(ctx, repo, last, next)`, run as `git -C <repo> --literal-pathspecs`: whether a task's new commit range `next` is a rebase of the range `last` that was reviewed, for rebase-aware re-review (director slice S6b part 3).
 
 `ScopeRebase` is returned only when all of these hold:
 
@@ -59,12 +59,37 @@ It is beside `Ensure` and `Retire`, whose contracts it does not change.
 
 - **No worktree.** A `w.Dir` that is not a worktree of `w.Repository`, including a missing one, is left alone and nothing is returned: a later `Ensure` creates the branch at the current main anyway.
 - **The default branch.** It fetches `w.Remote`'s HEAD as `Ensure` does and records it as `DefaultRef(w.Branch)`, so `Base` and rebase-aware review stay current.
-- **Move.** When the worktree is on `w.Branch` and its HEAD is an ancestor of that commit, it runs `git merge --ff-only` in the worktree. That only fast-forwards and never rebases; untracked files, such as a Director stage's outputs, are kept, and tracked changes that do not conflict are carried along.
+- **Move.** When the worktree is on `w.Branch` and its HEAD is an ancestor of that commit, it runs `git merge --ff-only` in the worktree. `FastForward` only fast-forwards and never rebases, which is [`Rebase`](#rebase)'s, for the merge queue; untracked files, such as a Director stage's outputs, are kept, and tracked changes that do not conflict are carried along.
 - **Keep.** When the remote cannot be fetched, the worktree is on another branch, the branch has commits that are not on the default branch, or git refuses the fast-forward, for example because an untracked file would be overwritten, nothing changes and `kept` says why; that is not an error.
 - **Replay.** It is idempotent: a branch already at or ahead of the default branch is left as it is and nothing is returned.
 - **Errors.** An invalid workspace is `ErrInvalidWorkspace`; another git failure is an error naming git's reason, and an ended context is its error.
 
 The double `gittest.Workspaces` implements it over its own directories: `AdvanceDefault(remote, name)` adds a commit adding the file `name` to the remote's default branch, `FastForward` refuses a move over a file one of those commits adds that already exists in the directory, as git refuses to overwrite an untracked file, and `FastForwards` lists the calls.
+
+### Rebase
+
+The interpreter's [tiered rebase](../interpreter.md#tiered-rebase) replays a task's whole change as one commit onto a base tip, through five operations beside the workspace ones ([decision](../decisions/merge-queue-rebase.md)).
+None runs `git rebase`, and only `Adopt` touches a worktree.
+
+- `Program.Rebase(ctx, git.Replay{Repository, Base, Head})` runs `git -c merge.conflictStyle=merge merge-tree --write-tree -z --no-messages <base> <head>`, so there is one conflict round, against exactly the base tip given, which is the one [mergeability](forge.md) measured; the conflict style is forced, so a user's `diff3` or `zdiff3` config never adds the merge base's lines to a region and the count is the same on every machine.
+  It returns `git.Rebased`: the base, the head, their merge base, the result tree, the conflicts and the patch-ids.
+  - With no conflicts, `Commit` is `commit-tree <tree> -p <base>`, and `PatchID` is `git patch-id --stable` of `base..commit`.
+  - With conflicts, `Marked` is that commit of the tree with conflict markers written in, and `Commit` and `PatchID` are empty.
+  - `HeadPatchID` is `git patch-id --stable` of `merge-base..head`, the change that was reviewed; equal ids mean the replay changes exactly what the head changed, context lines included and line numbers not.
+  - Each conflict is a path, sorted, with `Lines`, the lines between `<<<<<<<` and `>>>>>>>` on both sides without the marker lines (`=======` is a marker too, and a diff3 region's common-ancestor section, from `|||||||` to `=======`, is never counted), and `Markers`, false for a binary, delete/modify or rename conflict, whose `Lines` is 0.
+    Only a path the merged tree does not hold as a blob, or a blob without markers, is such a conflict; any other `ls-tree` or `cat-file` failure, a timeout included, is an error rather than a major conflict.
+  - The commit takes the head's message, author and author date, and as its committer date the later of the head's and the base's, so replaying the same commits again writes the same commit.
+- `Program.Squash(ctx, repository, base, head)` writes one commit of `head`'s tree on parent `base`, dated as `Rebase` dates its commit: a resolution committed on a marked head becomes one commit on the base, `resolved`.
+- `Program.Diff(ctx, repository, a, b)` is `git diff --no-color --no-ext-diff --no-renames --full-index a b`; the narrowed review reads `Diff(marked, resolved)`, exactly the resolved hunks.
+- `Program.PatchID(ctx, repository, a, b)` is `git patch-id --stable` of the change from `a` to `b`, empty for no change.
+- `Program.Adopt(ctx, w, from, to)` moves the worktree `w.Dir`, on `w.Branch` at `from`, to `to` with `git reset --keep`, which keeps local and untracked files and refuses rather than overwrite one, so no stage output is lost (as [`Retire`](#retire) requires).
+  A worktree already at `to` is left as it is; one at neither commit, or on another branch, is refused unchanged.
+
+`Rebase`, `Squash`, `Diff` and `PatchID` write only objects and move no branch, so repeating them is safe.
+Both commits must be full object ids the repository holds; an invalid id, a git failure, a `merge-tree` exit other than 0 or 1 and an ended context are errors.
+Each git run is bounded by `Program.Timeout` with `GIT_TERMINAL_PROMPT=0`, as below; `merge-tree`'s conflict exit 1 is read through a runner that also returns the exit code.
+The engine, not git, refuses a rebase, a squash and every worktree move while any attempt of the task runs, from a fresh read of its attempts.
+The double `gittest.Workspaces` implements all five: `SetRebase(base, head, rebased)` scripts a replay, a replay without a script is clean with equal patch-ids, `SetDiff` scripts a diff and `Replays` lists the calls.
 
 ### Retire
 

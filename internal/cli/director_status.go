@@ -36,12 +36,14 @@ type directorStatus struct {
 	Session statusSession `json:"session"`
 	Mode    statusMode    `json:"mode"`
 	// Quality is the config's quality settings (docs/configuration.md#quality-settings), when the copy has a config.
-	Quality   *config.Quality  `json:"quality,omitempty"`
-	Tasks     []statusTask     `json:"tasks"`
-	Decisions []statusDecision `json:"decisions"`
-	Messages  statusMessages   `json:"messages"`
-	Recent    []recentReceipt  `json:"recent"`
-	NeedsMe   []needsMeItem    `json:"needs_me"`
+	Quality *config.Quality `json:"quality,omitempty"`
+	Tasks   []statusTask    `json:"tasks"`
+	// MergeQueues is each repository's merge queue that has a task in it (docs/interpreter.md#the-merge-queue).
+	MergeQueues []mergeQueue     `json:"merge_queues"`
+	Decisions   []statusDecision `json:"decisions"`
+	Messages    statusMessages   `json:"messages"`
+	Recent      []recentReceipt  `json:"recent"`
+	NeedsMe     []needsMeItem    `json:"needs_me"`
 	// Parked are the attempts the Director parked, held on purpose and left out of needs_me (docs/director.md#status).
 	Parked []statusParked `json:"parked"`
 	// Version is the binary printing the feed, from its build info and local git reads only
@@ -206,6 +208,10 @@ const checksKind = "checks"
 // (docs/director.md#dependencies).
 const dependenciesKind = "dependencies"
 
+// mergeQueueKind is the needs_me kind of a task waiting in its repository's merge queue, which the session
+// supervisor advances (docs/interpreter.md#the-merge-queue).
+const mergeQueueKind = "merge-queue"
+
 // directorStatusCmd runs `guildhall director status` (docs/director.md#status).
 func (a *App) directorStatusCmd(args []string) int {
 	fl := flag.NewFlagSet("director status", flag.ContinueOnError)
@@ -275,20 +281,35 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	if err != nil {
 		return directorStatus{}, err
 	}
-	v, err := withStoreClock(path, true, now, func(s *store.Store) (store.DirectorView, error) { return s.DirectorView() })
+	var queues []mergeQueue
+	v, err := withStoreClock(path, true, now, func(s *store.Store) (store.DirectorView, error) {
+		v, err := s.DirectorView()
+		if err != nil {
+			return v, err
+		}
+		var repos []string
+		for _, t := range v.Tasks {
+			if !slices.Contains(repos, t.Repository) {
+				repos = append(repos, t.Repository)
+			}
+		}
+		queues, err = mergeQueues(s, repos)
+		return v, err
+	})
 	if err != nil {
 		return directorStatus{}, err
 	}
 	out := directorStatus{
-		AsOf:      statusLabel{Partial: true, Excluded: []string{"worker files", "transcripts", "forge state"}, Sequence: v.AsOf.Sequence, CommittedAt: v.AsOf.CommittedAt},
-		Session:   statusSession{State: "no session"},
-		Mode:      statusMode{Name: "standalone"},
-		Tasks:     []statusTask{},
-		Decisions: []statusDecision{},
-		Messages:  statusMessages{ByType: map[string]int{}, Headers: []messageHeader{}},
-		Recent:    []recentReceipt{},
-		NeedsMe:   []needsMeItem{},
-		Parked:    []statusParked{},
+		AsOf:        statusLabel{Partial: true, Excluded: []string{"worker files", "transcripts", "forge state"}, Sequence: v.AsOf.Sequence, CommittedAt: v.AsOf.CommittedAt},
+		Session:     statusSession{State: "no session"},
+		Mode:        statusMode{Name: "standalone"},
+		Tasks:       []statusTask{},
+		MergeQueues: queues,
+		Decisions:   []statusDecision{},
+		Messages:    statusMessages{ByType: map[string]int{}, Headers: []messageHeader{}},
+		Recent:      []recentReceipt{},
+		NeedsMe:     []needsMeItem{},
+		Parked:      []statusParked{},
 	}
 
 	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly), SpendToday: v.Usage.Spend}
@@ -356,7 +377,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			sent[r.Record] = true
 		}
 	}
-	var advance, retry, resume, wait, held, checks, deps []needsMeItem
+	var advance, retry, resume, wait, held, checks, deps, queued []needsMeItem
 	for _, t := range v.Tasks {
 		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}, Spend: store.NoSpend}
 		if total, ok := spend[t.Repository+"/"+t.ID]; ok {
@@ -511,6 +532,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 				deps = append(deps, needsMeItem{Kind: dependenciesKind, Repository: t.Repository, TaskID: t.ID, Step: waits.Step,
 					Reason:  fmt.Sprintf("step %s is held until the task's dependencies merge; the session supervisor advances it again every checks_refresh, or start it anyway with --ignore-deps --reason", waits.Step),
 					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
+			case interp.WaitMergeQueue:
+				queued = append(queued, needsMeItem{Kind: mergeQueueKind, Repository: t.Repository, TaskID: t.ID, Step: waits.Step,
+					Reason:  fmt.Sprintf("step %s is authorized and waits in the merge queue, or its merge is held; the session supervisor advances it again every checks_refresh, and guildhall task hold-merge toggles its hold", waits.Step),
+					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
 			}
 		}
 		out.Tasks = append(out.Tasks, st)
@@ -555,7 +580,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "messages", Count: others, Reason: fmt.Sprintf("%d unread Director message%s", others, plural),
 			Command: "guildhall messages list director"})
 	}
-	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps); out.NeedsMe == nil {
+	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued); out.NeedsMe == nil {
 		out.NeedsMe = []needsMeItem{}
 	}
 	return out, nil

@@ -83,6 +83,10 @@ const (
 	// WaitDependencies: the dependency gate holds the step, the task's first not run by the Director, until every
 	// task it depends on is done or the Director overrides (docs/interpreter.md#the-dependency-gate).
 	WaitDependencies Wait = "dependencies"
+	// WaitMergeQueue: deliver authorized the task's merge and it waits in its repository's merge queue for the
+	// front, or its merge is held (docs/interpreter.md#the-merge-queue); advancing it again, as the supervisor's
+	// merge-queue watcher does, claims the front when the task is first.
+	WaitMergeQueue Wait = "merge-queue"
 )
 
 // Next is where a task stands after an advance.
@@ -354,13 +358,22 @@ func (r *run) intake(ev Event) error {
 	case AttemptResult:
 		i := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == ev.Step })
 		a := r.attempt(ev.Step, ev.Attempt)
-		if i < 0 || a == nil {
+		var s workflow.Step
+		switch synthetic, ok := r.syntheticStep(ev.Step); {
+		case a == nil:
+			return fmt.Errorf("interp: %w: no attempt %d of step %q", ErrEvent, ev.Attempt, ev.Step)
+		case i >= 0:
+			s = r.def.Steps[i]
+		case ok:
+			// A rebaser or narrowed review attempt, run under a deliver or validate step (docs/interpreter.md#tiered-rebase).
+			s = synthetic
+		default:
 			return fmt.Errorf("interp: %w: no attempt %d of step %q", ErrEvent, ev.Attempt, ev.Step)
 		}
 		if a.Outcome != "" {
 			return nil
 		}
-		return r.takeResult(r.def.Steps[i], a)
+		return r.takeResult(s, a)
 	case AttemptRetried:
 		return r.retried(ev)
 	case StepSentBack:
@@ -527,22 +540,30 @@ func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 		inputs, err := r.inputs(s)
 		return artisanRuntime{}, inputs, err
 	}
-	p := s.Profile()
-	profile, err := r.e.Config.Profile(p)
+	rt, err := r.runtime(s.Profile())
 	if err != nil {
 		return artisanRuntime{}, nil, err
 	}
+	inputs, err := r.inputs(s)
+	return rt, inputs, err
+}
+
+// runtime resolves the config profile p to the adapter and settings an Artisan attempt runs with, checked.
+func (r *run) runtime(p string) (artisanRuntime, error) {
+	profile, err := r.e.Config.Profile(p)
+	if err != nil {
+		return artisanRuntime{}, err
+	}
 	rt := artisanRuntime{adapter: profile.Adapter, profile: p, settings: adapter.Settings{Model: profile.Model, Effort: r.e.Config.EffectiveEffort(profile.Effort)}}
 	if err := CheckAdapter(rt.adapter); err != nil {
-		return artisanRuntime{}, nil, err
+		return artisanRuntime{}, err
 	}
 	if r.e.CheckSettings != nil {
 		if err := r.e.CheckSettings(rt.adapter, rt.settings); err != nil {
-			return artisanRuntime{}, nil, fmt.Errorf("profile %s: %w", rt.profile, err)
+			return artisanRuntime{}, fmt.Errorf("profile %s: %w", rt.profile, err)
 		}
 	}
-	inputs, err := r.inputs(s)
-	return rt, inputs, err
+	return rt, nil
 }
 
 // retryContext is what attempt n of step is told about the Director's retry of attempt n-1, or nil when the walk
@@ -646,11 +667,17 @@ func (r *run) start(s workflow.Step) (Next, error) {
 			return Next{}, err
 		}
 	}
+	return r.startBound(s, n, rt)
+}
+
+// startBound records attempt n of s, whose binding is recorded, under the attempt caps and launches it with the bound
+// inputs.
+func (r *run) startBound(s workflow.Step, n int, rt artisanRuntime) (Next, error) {
 	b, err := r.binding(s.ID, n)
 	if err != nil {
 		return Next{}, err
 	}
-	inputs = r.boundInputs(b)
+	inputs := r.boundInputs(b)
 	rc, err := r.e.Records.StartCappedAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID, r.e.Caps)
 	if errors.Is(err, store.ErrDirectorHeld) {
 		return Next{Wait: WaitPaused, Step: s.ID}, nil
@@ -827,6 +854,9 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		return fmt.Errorf("%w: %s has %d output ports", ErrUnsupported, s.Type, len(kind.Outputs))
 	}
 	port := kind.Outputs[0]
+	if s.Type == rebaseKindType {
+		return r.recordRebaseOutputs(s, n, port.Name, outputs)
+	}
 	if len(outputs) == 0 {
 		if port.Type == workflow.CodeHead {
 			return r.recordWorkHead(s, n, port.Name)

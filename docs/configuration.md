@@ -132,6 +132,7 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 | `no_ci` | `true` declares that the repository runs no CI, so [validate](interpreter.md#validate) passes a published head its forge reports no checks for, recording that it had no CI; default `false`, where no checks reported waits as pending. |
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 | `[repository.merge.requires]` | What a task's pull request needs before Guildhall merges it; see [merge requirements](#merge-requirements). |
+| `[repository.merge]` | How Guildhall classifies a rebase and when a rebased head needs a new merge decision; see [rebase settings](#rebase-settings). |
 
 Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.
 Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case.
@@ -162,13 +163,39 @@ A string such as `"true"`, an unknown key and the removed merge policy key are r
 
 - A required `artisan_approval` or `ci_green` that does not hold stops deliver with a review or validation gate error, whatever `guildmaster_approval` says; no answer merges over it.
   Setting it to `false` skips that gate, and the merge question still shows its state.
-- A behind or conflicting pull request waits for the Director with a `pr-blocked` report before anything is asked.
+- A behind or conflicting pull request no longer waits before anything is asked: the decision opens, or the authorization is recorded, and the authorized merge joins the repository's [merge queue](interpreter.md#the-merge-queue), whose front Guildhall [rebases](#rebase-settings).
 - With `guildmaster_approval = true`, deliver opens the merge decision, whose question lists each requirement as `holds`, `fails: <reason>` or `not required`; a `merge` answer overrides a failing `nothing_open`, and nothing else.
 - With `guildmaster_approval = false` and every other required requirement holding, Guildhall records `deliver-<k>-authorized`, with the requirements in effect and the evidence it read, and merges by itself; otherwise it asks the Guildmaster, beginning the question "Guildhall did not merge by itself".
   A recorded `deliver-<k>-authorized` is reused for its head on every later advance, before `guildmaster_approval` is read: a merge the forge refused after it was authorized is retried without a decision even if `guildmaster_approval` is turned back on. To have the Guildmaster decide instead, publish a new head.
 
 Turning a requirement off changes only what deliver demands, not which steps a workflow must have.
 No workflow can change a repository's merge requirements.
+
+#### Rebase settings
+
+Guildhall rebases the pull request at the front of a repository's merge queue, and a conflicting one at validate, itself ([tiered rebase](interpreter.md#tiered-rebase), [decision](decisions/merge-queue-rebase.md)).
+Three keys under `[repository.merge]`, beside `requires`, say how:
+
+```toml
+[repository.merge]
+reapprove_after_rebase = "major_conflicts"  # no_conflicts | minor_conflicts | major_conflicts | never
+minor_conflict_files   = 3
+minor_conflict_lines   = 50
+```
+
+| Key | Meaning |
+|---|---|
+| `reapprove_after_rebase` | The rebase kind from which a rebased head needs a new merge decision: a rebase at or above it asks the Guildmaster again, and one below it carries the earlier approval over, while every gate holds, nothing new is open and the accepted spec is unchanged. The order is `no_conflicts` < `minor_conflicts` < `major_conflicts` < `never`, so `no_conflicts` always asks again and `never` never does. Default `major_conflicts`. |
+| `minor_conflict_files` | The most conflicting files a `minor_conflicts` rebase may have; one more is `major_conflicts`. Default 3, at least 1. |
+| `minor_conflict_lines` | The most conflicting lines, counted between the conflict markers on both sides without the marker lines, that a `minor_conflicts` rebase may have. Default 50, at least 1. |
+
+- A missing key takes its default, and a missing section is all three defaults.
+- An unknown value, a count below 1, an unknown key and `reapprove_after_rebase = "never"` without `artisan_approval` required are refused when the config is parsed.
+- `reapprove_after_rebase` matters only where `guildmaster_approval` is required; without it, Guildhall merges a rebased head by itself whenever the requirements hold.
+- Red checks and review findings on a rebased head always reach the Guildmaster, whatever the threshold.
+
+A `minor_conflicts` rebase is resolved by an Artisan run under the copy's profile named [`rebaser`](#profiles).
+A copy that declares no `rebaser` profile escalates every minor rebase to `major_conflicts`, a build send-back, and tells the Director why.
 
 ### Profiles
 
@@ -196,6 +223,11 @@ Set each Artisan step's `profile` in a custom workflow and select that workflow 
 Existing copies without step profiles must select a custom workflow before creating or advancing tasks.
 Changing the reviewer's profile requires approval of the effective workflow revision with `guildhall workflow approve --repo <id> --words-file <file>`; this includes the example's `profiled` workflow.
 To deliberately run a no-model demo, name an explicit profile whose `adapter = "fake"`.
+
+One profile is chosen by name rather than by a workflow step: `rebaser` runs the rebaser Artisan of a `minor_conflicts` [rebase](#rebase-settings), the synthetic step `<step>-rebase`, which resolves a few conflicts and reports whether resolving them changed behaviour.
+It is declared like any profile, with nothing built in; the example config gives it a small model, low effort and git and go tools only.
+Without it, minor conflicts escalate to `major_conflicts`.
+The narrowed review that follows, `<step>-rebase-review`, uses the profile of the workflow's review step.
 For when profile settings are checked, see [runtime settings](adapters.md#runtime-settings).
 
 ### The director table
@@ -294,6 +326,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 | `document-review` | `artisan` or `guildmaster` | a review outcome for a document, such as the plan's spec |
 | `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` and refutation documents as `findings` |
 | `review` | `artisan` or `guildmaster` | a review outcome for a code head against the accepted spec |
+| `rebase` | `artisan` | a code head resolving a rebase's minor conflicts, and `rebase.json`; run by the engine as `<step>-rebase` under deliver or validate ([tiered rebase](interpreter.md#tiered-rebase)), never as a workflow step |
 | `publish` | `engine` | the same head, pushed to the repository's remote branch with its pull request opened or updated |
 | `validate`, `deliver` | `engine` | a validation result, the landed change |
 | `handoff-wait` | `guildmaster` | a handoff document |

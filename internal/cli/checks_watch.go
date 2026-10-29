@@ -90,6 +90,12 @@ func dependenciesWaiting(path, state string) func() ([]taskRef, error) {
 	return waitingFor(path, state, interp.WaitDependencies)
 }
 
+// mergeQueueWaiting lists, as checksWaiting does, the open tasks whose next.json says they wait in their
+// repository's merge queue (docs/interpreter.md#the-merge-queue).
+func mergeQueueWaiting(path, state string) func() ([]taskRef, error) {
+	return waitingFor(path, state, interp.WaitMergeQueue)
+}
+
 // waitingFor lists the open tasks whose next.json under state says wait, while the newest session of the store at
 // path is running or recovering.
 func waitingFor(path, state string, wait interp.Wait) func() ([]taskRef, error) {
@@ -140,6 +146,14 @@ func (a *App) watchChecks(p startPlan, n int, dir, copyDir, storePath, state str
 // dependencies.log in dir (docs/director.md#dependencies).
 func (a *App) watchDependencies(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
 	return a.watchWaiting(p, dir, copyDir, storePath, state, dependenciesWaiting(storePath, state), dependenciesLog)
+}
+
+// watchMergeQueue is session n's merge-queue watcher: a third checks watcher, on the same interval, advancing each
+// task waiting in its repository's merge queue, so the next task claims the front once the one ahead merges, with no
+// model turn; it logs to merge-queue.log in dir. Like the others it runs only while the session is running or
+// recovering, so a paused Director pauses the queue.
+func (a *App) watchMergeQueue(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
+	return a.watchWaiting(p, dir, copyDir, storePath, state, mergeQueueWaiting(storePath, state), mergeQueueLog)
 }
 
 // watchWaiting is a watcher of the tasks waiting lists, logging to the file log in dir.
@@ -201,3 +215,6 @@ const checksLog = "checks.log"
 
 // dependenciesLog is the file in a session's directory its dependency watcher logs to (docs/director.md#dependencies).
 const dependenciesLog = "dependencies.log"
+
+// mergeQueueLog is the file in a session's directory its merge-queue watcher logs to.
+const mergeQueueLog = "merge-queue.log"

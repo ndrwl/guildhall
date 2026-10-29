@@ -30,6 +30,9 @@ const (
 	ScopeFull Scope = "full"
 	// ScopeRebase reviews only the resolution of a rebase of an already reviewed range.
 	ScopeRebase Scope = "rebase"
+	// ScopeResolution is the narrowed review of a resolution Guildhall's rebaser made (docs/interpreter.md#tiered-rebase):
+	// only the hunks between the conflict-marked replay and its resolution.
+	ScopeResolution Scope = "resolution"
 )
 
 // Classification is how a new range relates to the last reviewed one.

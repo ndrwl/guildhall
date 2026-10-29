@@ -9,6 +9,9 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
+// RebaseReportFile is the file a rebase attempt writes besides its head: whether its resolution changes behaviour.
+const RebaseReportFile = "rebase.json"
+
 // outputInstructions is part of the generated agent-facing protocol. It lives
 // outside baseline prose so even an old copy's overridden guide gets the current
 // port formats and the same result template in every runtime.
@@ -22,6 +25,10 @@ func outputInstructions(id Identity, revisions *workflow.Revisions) string {
 		if port.Type == workflow.CodeHead {
 			fmt.Fprintf(&b, "Commit on the task branch `guildhall/%s` in your working directory; Guildhall refuses a HEAD that is not that branch's tip or does not descend from the attempt's base. ", id.Task)
 			b.WriteString("Commit all tracked work. Guildhall takes the final Git HEAD automatically; no file is needed. Leave no uncommitted tracked changes (untracked notes alone are allowed). Do not list source files as outputs. The recorded format is a full 40- or 64-character lowercase hexadecimal commit id, for example:\n\n```text\n" + strings.Repeat("0", 40) + "\n```\n")
+			if id.Kind == "rebase" {
+				outputs = append(outputs, adapter.Output{Path: RebaseReportFile})
+				fmt.Fprintf(&b, "\n### Also `%s`\n\nWrite `%s`, untracked, beside your commit and list it in result outputs: one strict JSON object saying whether your resolution changes what either side does, and why, for example:\n\n```json\n{\"behaviour_change\": false, \"reason\": \"Kept both sides' changes to the conflicting hunks.\"}\n```\n", RebaseReportFile, RebaseReportFile)
+			}
 			continue
 		}
 		filename := port.Name + ".md"

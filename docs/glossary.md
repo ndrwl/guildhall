@@ -54,6 +54,25 @@ A finished outcome without a readable result is refused, not guessed.
 - A **dependency override** is the Director's recorded decision, with a reason, to start a held task anyway, `task start --ignore-deps --reason <text>`; it lasts for the rest of the task's life ([`task start`](running.md#task-start)).
 - None of these is the `dependency-notice`, a designed message type between Directors ([Director messaging](messaging.md#message-types)).
 
+## Merge queue
+
+- A repository's **merge queue** holds its tasks whose merge is authorized, the merge decision answered `merge` or `<deliver>-<k>-authorized` recorded, in order of priority, then ready time, then task id ([the merge queue](interpreter.md#the-merge-queue)).
+  It is Guildhall's own, kept in the store; it is not GitHub's merge queue.
+- The **front** is the one task of a queue that may be rebased and merged, claimed in one store mutation; it keeps the front until it merges, is held, is sent back or is cancelled. A **stay** is one time at the front.
+- A task's **ready time** is the commit time of the receipt that first authorized its merge; it survives a major send-back and a hold, and goes only with a merge or a cancellation.
+- A **merge hold** is `task hold-merge`'s recorded hold: the task stays authorized and keeps its ready time, but the queue skips it ([holding a merge](tasks.md#holding-a-merge)).
+  The `hold` answer on a merge decision is another thing: it refuses the merge it was asked for, and the task waits for the Director.
+- **Priority** is a task's level, `p0 urgent` to `p5 someday`, `p3` by default ([priority](tasks.md#priority)).
+
+## Rebase
+
+- A **rebase** here is Guildhall replaying a task's whole change as one commit onto the base tip mergeability measured, with `git merge-tree`, never `git rebase` ([tiered rebase](interpreter.md#tiered-rebase)).
+  A send-back that rebases the task branch, or the [rebase-aware review](interpreter.md#rebase-aware-review) of such a build head, is the Artisan's rebase, not this one.
+- The **rebase kinds** are `no_conflicts` (no conflicts and equal patch-ids), `minor_conflicts` (few conflicts with markers, within `minor_conflict_files` and `minor_conflict_lines`, or unequal patch-ids) and `major_conflicts` (anything else, which sends the build back); as `reapprove_after_rebase`, `never` follows them as a threshold no rebase reaches ([rebase settings](configuration.md#rebase-settings)).
+- The **rebaser** is the Artisan that resolves a `minor_conflicts` rebase, run as the synthetic step `<step>-rebase` under the copy's `rebaser` profile.
+- The **narrowed review** is the review of a rebaser's resolution, `<step>-rebase-review`, scope `resolution`: it reads only `diff marked..resolved`, the resolved hunks.
+- A **carried-over approval** is `<deliver>-<k>-authorized` with schema `guildhall.merge-authorization/2`: an earlier merge approval standing for a rebased head below `reapprove_after_rebase`.
+
 ## Session
 
 - A Director session is one run of the Director's runtime under its supervisor, `director start`, recorded in the store and numbered from 1 ([Director sessions](store.md#director-sessions), [D67](decisions/0067-director-session-record.md)).

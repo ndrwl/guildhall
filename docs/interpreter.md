@@ -11,14 +11,14 @@ The engine consumes eight narrow interfaces, declared in `internal/interp` besid
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents, decisions, rulings and dependency override; start and finish attempts, record documents, open decisions and contest rulings | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
+| `Records`: read a task, its attempts, documents, decisions, rulings and dependency override; start and finish attempts, record documents, open decisions and contest rulings; optionally, as `MergeQueue`, read and change its repository's [merge queue](#the-merge-queue) | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 | `Forge`: [publish and deliver](#publish-and-deliver), [validate](#validate) | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunForgeContract` |
 | `MergeabilityReader`: [mergeability observations](#mergeability-observations), optional on the forge | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunMergeabilityContract` |
-| `Workspaces`: [the working directory](#the-working-directory), `Ensure`, `FastForward` and `Retire` | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
+| `Workspaces`: [the working directory](#the-working-directory), `Ensure`, `FastForward` and `Retire`; [the head check](#the-head-check), `Tip`, `IsAncestor` and `Base`; [tiered rebase](#tiered-rebase), `Rebase`, `Squash`, `Adopt` and `Diff` | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
@@ -85,6 +85,7 @@ Just before the first step whose actor is not the Director, whatever its kind, i
 - **Deliver.** The [review gate](#review-gate) and the [validation gate](#validate) are checked first, each unless the repository's [merge requirements](configuration.md#merge-requirements) turn it off.
   When `guildmaster_approval` is required, or another requirement fails, the engine then opens the merge decision `deliver-<round>`, kind `merge`, with options `merge` and `hold`, bound to the head, and waits; a head that moved since the last merge decision opens the next round.
   The answer is acted on as in [publish and deliver](#publish-and-deliver), which also describes the merge Guildhall makes by itself.
+  An authorized merge joins its repository's [merge queue](#the-merge-queue), and only the front is brought up to date and merged.
 
 A `rejected` outcome, or any Guildmaster answer other than `approved` and `changes_requested`, fails with `ErrUnsupported`.
 
@@ -99,7 +100,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
 Every attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails); one refused at a cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, naming `step retry` for a refused retry and `task start` otherwise, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.
-Publishing, validating and merging send `published`, `pr-blocked`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, described below.
+Publishing, validating and merging send `published`, `pr-blocked`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, and the merge queue and its rebases `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`, described below.
 
 ## The dependency gate
 
@@ -123,6 +124,8 @@ The state is coarse, read from the dependency's records, so a dependency moving 
 - `cancelled; it can never merge; start anyway with guildhall task start --ignore-deps --reason <reason> --repo <r> <t>`;
 - `waiting for the Guildmaster: decision <id> open`;
 - `waiting for the Director: <step> attempt <n> <failed|stopped>`, for a step whose latest attempt failed or stopped;
+- `queued for merge`, for a dependency whose authorized merge waits in its repository's [merge queue](#the-merge-queue);
+- `merge held`, for one whose merge is held with [`task hold-merge`](tasks.md#holding-a-merge);
 - `in progress` otherwise.
 
 Its id is `<repo>.<task>.dependency-held.<hex>`, where `<hex>` is the first 12 hex digits of the sha256 of the state lines: the same states send the same message again, which is a replay and sends nothing, and a change sends a new one.
@@ -174,18 +177,22 @@ A new head, such as a build round after review findings, publishes the next roun
 **Deliver** reads the repository's [merge requirements](configuration.md#merge-requirements) from the current configuration and evaluates them in order on every advance ([decision](decisions/merge-requires.md)):
 
 1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; when one is not required its gate is skipped, but its state is still reported.
-2. The pull request's [mergeability](#mergeability-observations): a behind or conflicting pull request waits for the Director before any decision opens.
+2. The delivered head: the published head, or the head validate [rebased](#tiered-rebase) it to, followed through validate's rebase documents; the review and CI gates of a rebased head are read as below.
 3. `nothing_open`: the latest outcomes of the review steps before deliver list no findings, advisory ones included, and the task has no unanswered decision but the deliver step's own.
 4. `guildmaster_approval`: when required, the engine opens the merge decision as described above.
    When not required and every other required requirement holds, it records `deliver-<k>-authorized` (`tasks/<repo>/<task>/deliver-<k>/authorized.json`), schema `guildhall.merge-authorization/1`, holding the head, the pull request, the four effective requirements, the mergeability state and each requirement's condition with the names of its evidence (the review outcome documents, the validation result and any unanswered decisions), then merges with no decision under the merge id `deliver-<k>`.
    When not required but `nothing_open` fails, it falls back: it opens the merge decision as if `guildmaster_approval` were required, and the question begins "Guildhall did not merge by itself: " and the failed requirements.
+5. The [merge queue](#the-merge-queue): the authorized merge joins its repository's queue, and only the front reads mergeability and is merged or [rebased](#tiered-rebase).
+
+The decision opens, or the authorization is recorded, whatever the pull request's mergeability: a behind or conflicting pull request no longer waits for the Director before it.
 
 When that input is a publish step's output, the merge decision's question names the pull request URL.
 Its question lists each requirement as `holds`, `fails: <reason>` or `not required`; a `merge` answer overrides a failing `nothing_open`, and nothing else.
+It ends by saying that an authorized merge joins the repository's merge queue and that Guildhall may rebase the head onto the base before it merges.
 A merge authorized for a head is reused on replay, so a crash after the authorization merges the same head with no decision, whatever the requirements say by then.
 Below, the merge id `<merge>` is the decision's id, or `deliver-<k>` for a merge Guildhall made by itself.
 A `hold` answer merges nothing: the task waits for the Director (`director`, naming the decision) and the Director is told as `<repo>.<task>.merge-held.<decision>`.
-A `merge` answer, or a merge Guildhall authorized, calls `Forge.Merge` for the recorded remote and pull request number at the head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
+A `merge` answer, or a merge Guildhall authorized, once the task holds the front of the merge queue and its pull request is clear, calls `Forge.Merge` for the recorded remote and pull request number at the head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
 A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
 When the forge merges, the engine records `<merge>-merge` (`tasks/<repo>/<task>/<merge>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<merge>`, type `merged`, saying "(decision <merge>)" or "(merged by Guildhall, <merge>-authorized)", [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
 Before marking it `done`, when `quality_audit_sample` (default 5, 0 off, 1 every task), independently of self-review, [samples](configuration.md#quality-settings) the task for the Guildmaster's audit ([G4](quality.md#honesty-and-evidence-g)), it opens decision `audit`, kind `audit`, bound to the head that merged and naming the pull request, with options `yes` and `no` for its first question, and sends it to the Director like every decision; the wait is still `done`, and answering it records the answer only.
@@ -194,21 +201,24 @@ A later advance of a done task is refused with `ErrTaskClosed`.
 When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is merged.
 The engine records the refusal as `<merge>-refused`, then `<merge>-refused-2` and on (`tasks/<repo>/<task>/<merge>/refused-<digest>.json`, where `<digest>` is the first 12 hex digits of the document's sha256), holding schema `guildhall.merge-refusal/1`, the remote, pull request number and URL, the head and the forge's reason; a refusal whose content one of the merge's refusals already holds is not recorded again, so a repeated or replayed refusal for the same reason is recorded once.
 The task then waits for the Director and the Director is sent `<repo>.<task>.merge-refused.<merge>.<digest>`, type `merge-refused`, with the forge's reason, where `<digest>` is the first 12 hex digits of the reason's sha256, so a repeated refusal for the same reason sends nothing new.
-There is no automatic rebase or retry: each later advance, such as `task start` once the Director has dealt with the reason, asks the forge to merge again.
+A refusal is not retried automatically: each later advance, such as `task start` once the Director has dealt with the reason, asks the forge to merge again.
+A pull request that is behind or conflicting is not a refusal: the front reads its mergeability before merging and [rebases](#tiered-rebase) it first.
 Any other forge error, such as a forge it could not reach, fails the advance, records nothing and sends no `merge-refused` message.
 
 Replay follows the general rule: a crash before `publish-<k>-head` publishes the same head again, and the forge returns the same pull request; a crash after the forge merged but before `<merge>-merge` asks again, and the forge returns the merge it already made.
 
 ### Mergeability observations
 
-Before validate reads checks, and before deliver opens or follows a merge decision, a forge implementing `MergeabilityReader` reads the PR's `mergeable` and `mergeStateStatus` with `gh pr view <number> --repo <repository> --json url,state,headRefOid,baseRefName,mergeable,mergeStateStatus`.
-A conflicting (`CONFLICTING` or `DIRTY`) PR, or a `BEHIND` PR blocked by strict branch protection, waits with `{"wait":"director","step":"<validate-or-deliver>"}` rather than waiting silently for checks GitHub may never run.
+Before validate reads checks, and before the front of the [merge queue](#the-merge-queue) merges, a forge implementing `MergeabilityReader` reads the PR's `mergeable` and `mergeStateStatus` with `gh pr view <number> --repo <repository> --json url,state,headRefOid,baseRefName,mergeable,mergeStateStatus`.
+A conflicting (`CONFLICTING` or `DIRTY`) PR, or a `BEHIND` PR blocked by strict branch protection, is obstructed.
+At validate a conflicting PR is [rebased](#tiered-rebase), since GitHub runs no checks on it, and a behind one reads its checks as usual; at deliver the front is rebased.
+Only a PR Guildhall cannot rebase there waits with `{"wait":"director","step":"<validate-or-deliver>"}`: a front that rebased three times in one stay, or a copy that cannot rebase, such as one whose forge gives no base tip.
 `UNKNOWN` and an otherwise `BLOCKED` PR are not assumed to be conflicts or strict-behind states.
 Observations must match the published head; a moved PR or a failed observation is an error, not permission to merge.
 For a conflicting or behind PR, the forge reads the base tip, the base branch's commit on the remote when measured, with `git ls-remote <remote> refs/heads/<baseRefName>` rather than trusting GitHub's possibly stale recorded base; a missing or ambiguous tip is an error.
 It fetches that exact tip without updating a branch and computes the behind count with `rev-list` and conflicting paths with `merge-tree`; it never checks out, merges or rebases the task's worktree.
 
-The observation is recorded as document `pr-blocked-<full-head>-<state>` before sending the Director a message with the same suffix and type `pr-blocked`.
+When the PR waits for the Director, the observation is recorded as document `pr-blocked-<full-head>-<state>` before sending the Director a message with the same suffix and type `pr-blocked`, or, for a front that rebased three times, `rebase-stuck`.
 It includes the PR URL, full head commit and base tip, state, paths, behind count and the available commands and options.
 Validate and deliver share that identity: a replay, a moved base tip or reaching deliver does not notify again for the same head and state.
 The first observation remains immutable; a different head or state gets a new report.
@@ -217,15 +227,122 @@ An advance replays recorded observation messages before walking the workflow, so
 Replay recognizes only the full-head identity with state `conflicting` or `behind`, not ordinary workflow documents whose names also begin with `pr-blocked-`.
 Validate's refresh cache retains the Director wait between reads, and the checks watcher no longer polls a task waiting on the Director.
 A Director-initiated advance rechecks when due; deliver rechecks on each advance.
-Guildhall never rebases automatically and prescribes no recovery.
-The Director can [send a succeeded step back](step-send-back.md) with its instructions, hold the task, leave the work unadvanced, or act externally and recheck.
+For a PR that waits for the Director, Guildhall prescribes no recovery.
+The Director can [send a succeeded step back](step-send-back.md) with its instructions, release a stuck front with [`task hold-merge`](tasks.md#holding-a-merge), hold the task, leave the work unadvanced, or act externally and recheck.
 Existing attempt stop and Director-stage abandonment paths are unchanged; no task-cancellation command is added.
+
+## The merge queue
+
+Each repository has one merge queue of authorized merges, kept in the store as entries plus a front record, buckets `merge-queue` and `merge-holds` created on first use ([decision](decisions/merge-queue-rebase.md)).
+A merge is authorized once its merge decision is answered `merge`, or once deliver recorded `<deliver>-<k>-authorized`, its own or a [carried-over](#approval-carry-over) one.
+Deliver then joins the queue, `JoinMergeQueue`, under that decision or authorization id.
+
+- **Ready time.** A task's ready time is the commit time of the receipt that first authorized its merge: the answer of the merge decision, or the recording of the `-authorized` document; it is never wall-clock time.
+  A [major send-back](#tiered-rebase) takes the task out of the queue but keeps its entry and ready time, so the rebuilt head, once authorized again, rejoins at its first place.
+  `task hold-merge` keeps it too; only a merge or a cancellation removes the entry.
+- **Order.** The queue is ordered by [priority](tasks.md#priority), `p0` first, then ready time, then task id (`store.OrderMergeQueue`).
+- **Front.** The first task in queue order that is not held claims the front with `ClaimMergeFront`, in one store mutation, so two tasks advancing at once never both hold it; any other claim is refused with `store.ErrMergeQueued` and records nothing.
+  A claim counts the task's stays at the front.
+  The front stands while its task is queued: until it merges, is sent back or is cancelled, or, once it is held, until its next advance releases it; no other task can claim the front before then, so a held front still pushing or merging never shares it.
+  A later priority change reorders only the tasks behind it; nothing is preempted.
+- **Behind the front.** A task that is not the front records nothing more and returns `{"wait":"merge-queue","step":"<deliver>"}` (`WaitMergeQueue`), with one `merge-queued` message per place and front, naming its place and the task at the front.
+- **Held.** A task whose merge is held with [`task hold-merge`](tasks.md#holding-a-merge) waits the same way, with a `merge-queued` message saying it is held; a held front releases the front, `ReleaseMergeFront`, at its next advance.
+- **At the front.** Deliver reads the PR's [mergeability](#mergeability-observations).
+  A clear PR merges as in [publish and deliver](#publish-and-deliver); a behind or conflicting one is [rebased](#tiered-rebase), then rechecked, and merges once clear.
+  A merge, `LeaveMergeQueue`, removes the entry and releases the front.
+
+Nothing advances a queued task from inside another task's advance.
+The session supervisor's [merge-queue watcher](director.md#merge-queue) advances tasks waiting on `merge-queue`, only while the Director session is `recovering` or `running`, so a paused Director pauses the queue; with no supervisor, `task start` advances one.
+`director status` lists every queue as `merge_queues`, and `task list --json` each queued task's entry as `merge_queue` ([status](director.md#status)).
+Records that do not implement `MergeQueue` make every task its own queue's front, in stay 1.
+
+A dependent task's [dependency gate](#the-dependency-gate) reads a queued dependency as `queued for merge` and a held one as `merge held`.
+
+## Tiered rebase
+
+A behind or conflicting PR at the front of the queue, or a conflicting one at [validate](#validate), is brought up to date by Guildhall, in one of three tiers chosen by measured conflicts with no Director turn ([decision](decisions/merge-queue-rebase.md)).
+It is the only time Guildhall rebases a PR: one that is only behind at validate, or that is further back in the queue, is not rebased.
+
+**Replay.** A rebase replays the task's whole change as one commit onto the base tip that mergeability measured, `Mergeability.Base`, with [`Workspaces.Rebase`](contracts/git.md#rebase): `git merge-tree --write-tree`, never `git rebase`, so there is one conflict round and the measurement matches the operation.
+It is refused while any attempt of the task runs, and so are the squash of a resolution and every move of the task's worktree, `Workspaces.Adopt`: each reads the task's attempts afresh, so an attempt started during the advance still refuses it.
+Each rebase is recorded once it is classified as the immutable document `<step>-<k>-rebase-<n>` (`tasks/<repo>/<task>/<step>-<k>/rebase-<n>.json`), schema `guildhall.rebase/1`: the authorization and front stay it was made under (at deliver), from, onto, merge base, kind, reason, the marked head, each conflicting path with its lines and whether it has markers, the total lines, both patch-ids and the rebased head once known.
+`<step>` is the deliver step at the front, or the validate step for a conflicting PR there; `<k>` is the step's round and `<n>` counts its rebases.
+A later rebase of a rebased head is the next link of a chain that runs from the reviewed head to the head merged.
+
+**Classification.**
+
+| Kind | When |
+|---|---|
+| `no_conflicts` | No conflicts, and `git patch-id --stable` of `merge-base..reviewed head` equals that of `base..rebased head`: the single-patch form of `range-diff` showing `=`, context lines included and line numbers not. |
+| `minor_conflicts` | At most `minor_conflict_files` files (default 3) and `minor_conflict_lines` conflicting lines (default 50), every one with conflict markers; or no conflicts but unequal patch-ids, reviewed as a whole diff. |
+| `major_conflicts` | Anything else, including a conflict without markers (binary, delete/modify, rename). |
+
+Conflicting lines are the lines between `<<<<<<<` and `>>>>>>>` on both sides, without the marker lines; the thresholds are the repository's [`[repository.merge]`](configuration.md#rebase-settings) settings.
+`git.Program.Classify` and the [rebase-aware review](#rebase-aware-review) of a new build head are not used and do not change.
+
+**`no_conflicts`.** Guildhall moves the task branch to the rebased head, `Workspaces.Adopt` (`git reset --keep`, which never touches untracked stage outputs), and force-pushes it to the same PR with `Forge.Publish`, recording `<step>-<k>-rebase-<n>-pr` and sending `rebased`.
+It then waits on `{"wait":"checks"}` for the rebased head's checks, read and paced as validate reads them, and records the finished read as `<step>-<k>-checks-<head>`.
+It checks mergeability again and, at deliver, [authorizes](#approval-carry-over) and merges the rebased head.
+
+**`minor_conflicts`.** Guildhall commits the conflict-marked tree as an unpushed head, `marked`.
+
+- It starts an attempt of the synthetic step `<step>-rebase`, run by the copy's profile named `rebaser`, whose input is the conflicting files with markers, the commits on both sides that touch them, and the whole accepted spec.
+  Its outputs are a code head with the conflicts resolved and `rebase.json`, `{"behaviour_change": bool, "reason": string}`.
+- Guildhall squashes the result onto the base, `Workspaces.Squash`, giving `resolved`.
+- It starts an attempt of the synthetic step `<step>-rebase-review`, run by the profile of the workflow's review step, with scope `resolution` and input `resolution`, `diff marked..resolved`: exactly the resolved hunks and nothing else.
+- Then it pushes, reads checks, rechecks and authorizes as for `no_conflicts`.
+
+Both synthetic steps are Artisan attempts owned by the step that rebases, not workflow steps, so the workflow and its digest stay as they are; they still count against the [attempt caps](director.md#guard-rails).
+A copy without a `rebaser` profile escalates a minor rebase to `major_conflicts` and says so; so do a failed rebaser attempt and `behaviour_change: true`.
+A clean replay with unequal patch-ids has no conflicts to resolve, so it skips the rebaser and its narrowed review reads the whole diff.
+
+**`major_conflicts`.** Guildhall records `<step>-<k>-escalated-<n>`, schema `guildhall.rebase-escalation/1`, holding the authorization, from, onto, kind, files, reason, whether the authorization may carry over to the rebuilt head (`carry`) and the spec it was given under (`spec_digest`), and sends the build step that produced the head back, as [`step send-back`](step-send-back.md) does, with feedback naming the base, the conflicting files and the reason; the Director is sent `rebase-escalated`.
+At deliver the task leaves the queue, keeping its ready time, and releases the front; normal propagation then reruns review, publish and validate, and the task rejoins the queue at its first ready time once the new head is authorized.
+At validate the escalation follows the step's `failed` [loop rule](#rounds-and-loops) back to build, with the same feedback.
+Red checks on the rebased head, a narrowed review that requests changes, a failed rebaser and a behaviour change escalate the same way; the next head then needs a new merge decision.
+
+**Again and stuck.** When the base moves again while the front waits for checks, someone having merged outside Guildhall, the front rebases the latest head of its chain again, as rebase `n+1`.
+After three rebases in one stay at the front, the task keeps the front, records `pr-blocked-<head>-<state>` and waits for the Director with `rebase-stuck`; [`task hold-merge`](tasks.md#holding-a-merge) holds it and its next advance releases the front, and a later claim starts a new stay with three more.
+
+**At validate.** A conflicting PR at validate runs the same tiers, with the base tip from mergeability, publishes the rebased head to the same PR and reads checks on it; the validate result is bound to the rebased head and names the rebase chain, and deliver delivers that head.
+There is no approval yet, so no threshold applies and the later merge decision is for the rebased head.
+The `pr-blocked` Director wait at validate remains only for a copy that cannot rebase.
+
+### Review and CI of a rebased head
+
+A rebased head h′ is not reviewed again in full ([R1.36](requirements.md)):
+
+- `artisan_approval` holds for h′ only when an approving review outcome is bound to the reviewed head h, the accepted spec and the current standards, a chain of rebase documents runs from h to h′, and every link is either `no_conflicts` with equal patch-ids or approved with no findings by its narrowed review, whose outcome is bound to that link's rebased head.
+  Otherwise deliver fails with `ErrReviewGate`, as for any head the review did not cover.
+- `ci_green` for h′ comes from `<step>-<k>-checks-<h′>`, the read of h′'s own checks; validate's result stays bound to the head it validated.
+
+### Approval carry-over
+
+At deliver, a rebased head needs a merge authorization of its own.
+A decision already bound to it stands, as any merge decision does.
+Otherwise the chain's kind, the hardest of its links, is compared with the repository's `reapprove_after_rebase`, in the order `no_conflicts` < `minor_conflicts` < `major_conflicts` < `never`.
+
+- At or above it, where `guildmaster_approval` is required, deliver opens a new merge decision for h′, whose question begins by saying why the authorization does not carry over.
+- Below it, deliver records `<step>-<k>-authorized`, schema `guildhall.merge-authorization/2`, which adds to the [authorization document](#publish-and-deliver) `carried_from` (the original decision or authorization id), `rebase` (the rebase documents of the chain), `kind` and `spec_digest`, sends `approval-carried` and merges.
+  It does so only when every gate holds for h′, `nothing_open` holds with no new findings, and the accepted spec digest equals the one at the original authorization; otherwise it asks the merge decision.
+  An authorization already recorded for h′ stands: a replay after a crash, or a retry after the forge refused the merge, merges under it again and never records another.
+- A narrowed review that approves with findings fails `nothing_open`, so it opens a new merge decision for h′; a `merge` answer overrides it as usual.
+- An unknown rebase kind, or an unknown threshold, always needs a new decision.
+- Under `never`, which config parse refuses unless `artisan_approval` is required, a head rebuilt after a major send-back of an authorized head carries over that authorization too, under the same checks: every condition after `guildmaster_approval` holds, `nothing_open` with no findings included even where it is not required, and the accepted spec is the one the authorization was given under.
+  The escalation records that spec as `spec_digest`: the `-authorized` document's, or, for a merge decision, the one the approved head's review outcomes were bound to; otherwise the merge decision for the rebuilt head says why it does not carry over.
+
+The threshold matters only where `guildmaster_approval` is required; without it, deliver authorizes h′ by itself whenever the requirements hold.
+`task timeline` shows a carried-over merge as merged by the carried-over approval of the original decision after a rebase of its kind.
 
 ## Validate
 
 Validate reads its `head` input, which must be a publish step's output: a head no publish step pushed is refused with `ErrUnsupported`, and so is validating with no `Engine.Forge` ([decision](decisions/0066-validate-stage.md)).
 When the step's latest result is for that head and `passed`, the step is complete and nothing is called.
-Otherwise each advance calls `Forge.Checks` for the repository's `path`, the remote the head was published to and the head, the commit's checks rather than whatever its pull request is at now:
+Otherwise each advance first reads the PR's [mergeability](#mergeability-observations).
+A behind PR reads its checks as usual; the merge queue rebases it later, at the front.
+A conflicting PR runs no `pull_request` checks on GitHub, so it could never pass: validate runs the [tiered rebase](#tiered-rebase) on it instead, recording `<step>-<k>-rebase-<n>`, publishes the rebased head to the same PR and reads that head's checks, and its result is bound to the rebased head and names the rebase chain.
+A `major_conflicts` rebase, a behaviour change, red checks on the rebased head or narrowed-review changes take the step's `failed` loop back to build, as a failed result does below, with feedback naming the base, the conflicting files and the reason.
+Then each advance calls `Forge.Checks` for the repository's `path`, the remote the head was published to and the head (the rebased head after a rebase), the commit's checks rather than whatever its pull request is at now:
 
 - **Pending.** Some check is pending, none has failed, or no check is reported yet: nothing is recorded and the task waits with `{"wait":"checks","step":"<step>"}`.
   The Director is told once per head as `<repo>.<task>.checks-pending.<step>.<first 12 hex digits of the head>`, type `checks-pending`.
@@ -249,7 +366,7 @@ A forge that gives no run ids cannot show a re-run that failed the same way, whi
 The time of the last read is kept in `<state>/<repo>/<task>/<step>.checks.json`; a new head is read at once, and zero reads at every advance.
 Nothing in the engine reads the checks in the background: an advance does, such as `task start`, or the Director session supervisor's [checks watcher](director.md#checks).
 
-The **validation gate**: when `deliver`'s `validation` input is wired, its document must be a `passed` result for the head being delivered, or `deliver` is refused with `ErrValidationGate`.
+The **validation gate**: when `deliver`'s `validation` input is wired, its document must be a `passed` result for the head being delivered, or `deliver` is refused with `ErrValidationGate`; a head the front rebased is covered instead by the read of its own checks ([review and CI of a rebased head](#review-and-ci-of-a-rebased-head)).
 Because validate only completes on a passed result for its current head, the gate holds whenever the walk reaches `deliver`; it is kept deliberately as defence in depth, as the review gate is, and guards a workflow and records that disagree.
 
 ## Rounds and loops
@@ -338,6 +455,7 @@ The task's custody lock serialises advances; external writers must not change th
 
 Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.
 So several review stages, such as the Guildhall repository's three reviews on distinct profiles, must all approve the same head.
+A head Guildhall rebased from the approved head is covered by its recorded rebase instead ([review and CI of a rebased head](#review-and-ci-of-a-rebased-head)).
 A Guildmaster review answered under an older standards revision does not satisfy the gate; asking it again is later work.
 
 ## Rebase-aware review
@@ -353,6 +471,7 @@ A full classification or a nil `Engine.Rebases` keeps full scope; a classifier e
 When replaying preparation before a binding was recorded, a recorded resolution diff whose digest no longer matches the classification keeps full scope.
 Once the binding is recorded, replay reuses it without reclassifying.
 The outcome still binds to the attempt's head, spec digest and standards revision, so the review gate is unchanged.
+This is not the narrowed review of a [tiered rebase](#tiered-rebase), which Guildhall starts itself on a head it rebased, with scope `resolution`, and which reads only the resolved hunks.
 
 ## Documents and inputs
 
@@ -371,7 +490,8 @@ Every Artisan attempt of a task runs in one working directory, which a Director 
 Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`internal/git`](contracts/git.md#workspaces), with that path, the repository's `path` and `remote`, and branch `guildhall/<task>`, the branch publish pushes to:
 
 - the first attempt creates the worktree on a new local branch `guildhall/<task>` at the commit the remote's default branch is at then, or on an existing local branch of that name as it is;
-- every later attempt, including a retry, a loop round and a relaunch, reuses it unchanged: Guildhall never resets, cleans or checks out over it, so an Artisan uses git freely inside it and its commits, branches and uncommitted files carry to the next attempt;
+- every later attempt, including a retry, a loop round and a relaunch, reuses it unchanged: Guildhall never resets, cleans or checks out over it, so an Artisan uses git freely inside it and its commits, branches and uncommitted files carry to the next attempt.
+  The one exception is a [tiered rebase](#tiered-rebase), which moves the branch to the rebased head with `Workspaces.Adopt`, `git reset --keep`, only while no attempt runs, keeping untracked and local files and refusing rather than overwrite one;
 - listed output files sit beside the code; an Artisan that commits should leave them out.
   An omitted code-head output is recorded outside the worktree ([code-head output intake](#code-head-output-intake)).
 
@@ -379,7 +499,7 @@ Ensure is replay safe: the worktree is built beside the working directory and mo
 When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.
 A task held by the [dependency gate](#the-dependency-gate) already has its worktree, made for its grill at the main of that time.
 When the gate opens, by the dependencies merging or the Director's override, and before the task's first attempt of a step not run by the Director, the engine calls `Workspaces.FastForward` with the same workspace: an untouched branch moves to the commit the remote's default branch is at now, with `git merge --ff-only`, keeping the grill's untracked outputs, and `DefaultRef` is refreshed so the task's base stays current.
-This only fast-forwards and never rebases: a branch that has commits not on main, is not checked out in the worktree, or that git refuses to move, for example because an untracked file would be overwritten, is kept as it is, the Director is sent `<repo>.<task>.dependency-branch-kept`, type `dependency-branch-kept`, naming why, and research proceeds on the existing branch.
+This only fast-forwards, and a branch with commits is rebased only later by the [tiered rebase](#tiered-rebase): a branch that has commits not on main, is not checked out in the worktree, or that git refuses to move, for example because an untracked file would be overwritten, is kept as it is, the Director is sent `<repo>.<task>.dependency-branch-kept`, type `dependency-branch-kept`, naming why, and research proceeds on the existing branch.
 A working directory that is not yet a worktree is left alone: `Ensure` creates the branch at the current main anyway.
 When a merge closes the task, the engine calls `Workspaces.Retire` with the merged head and the task's recorded documents, before marking the task `done`, so a replay retires it again.
 It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.

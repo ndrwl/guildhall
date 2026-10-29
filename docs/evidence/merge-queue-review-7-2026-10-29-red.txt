@@ -1,0 +1,80 @@
+# d23 review-7 fixes: red and green runs, 2026-10-29
+
+Each new or tightened test was run against the code with its fix taken out, then with the fix in.
+Output is trimmed to the failures.
+
+## red: a carried approval replayed or retried minted a new authorization (must-carry-replay)
+
+reauthorize without its check for an authorization already recorded for the rebased head.
+go test ./internal/interp/ -run 'TestQueueTier1CrashReplay|TestQueueCarriedMergeRefusedRetries'
+
+--- FAIL: TestQueueTier1CrashReplay (0.55s)
+    --- FAIL: TestQueueTier1CrashReplay/double/deliver-2-merge (0.04s)
+        mergequeue_test.go:402: authorizations = ["deliver-3-authorized" "deliver-2-authorized"], want only deliver-2-authorized
+    --- FAIL: TestQueueTier1CrashReplay/store/deliver-2-merge (0.07s)
+        mergequeue_test.go:402: authorizations = ["deliver-2-authorized" "deliver-3-authorized"], want only deliver-2-authorized
+--- FAIL: TestQueueCarriedMergeRefusedRetries (0.11s)
+    --- FAIL: TestQueueCarriedMergeRefusedRetries/double (0.04s)
+        mergequeue_test.go:460: authorizations = ["deliver-4-authorized" "deliver-2-authorized" "deliver-3-authorized"], want only deliver-2-authorized
+    --- FAIL: TestQueueCarriedMergeRefusedRetries/store (0.07s)
+        mergequeue_test.go:460: authorizations = ["deliver-2-authorized" "deliver-3-authorized" "deliver-4-authorized"], want only deliver-2-authorized
+
+## red: never carried over a major send-back on required conditions alone (must-never-carry-checks)
+
+authorizeHead's carry with the new checks (every condition, the recorded spec digest) taken out.
+go test ./internal/interp/ -run TestQueueNeverCarryChecksEveryCondition
+
+--- FAIL: TestQueueNeverCarryChecksEveryCondition (0.19s)
+    --- FAIL: TestQueueNeverCarryChecksEveryCondition/a_finding_with_nothing_open_not_required (0.09s)
+        mergequeue_engine_test.go:129: next = {Wait:done Step:deliver Attempt:0 Decision:}, want {Wait:decision Step:deliver Attempt:0 Decision:deliver-2}
+    --- FAIL: TestQueueNeverCarryChecksEveryCondition/another_spec (0.10s)
+        mergequeue_engine_test.go:152: next = {Wait:done Step:deliver Attempt:0 Decision:}, want {Wait:decision Step:deliver Attempt:0 Decision:deliver-2}
+
+## red: the conflict style followed the user's git config (must-conflict-style)
+
+Program.Rebase without -c merge.conflictStyle=merge.
+go test ./internal/git/ -run TestRebaseIgnoresConflictStyle
+
+--- FAIL: TestRebaseIgnoresConflictStyle (0.15s)
+    --- FAIL: TestRebaseIgnoresConflictStyle/diff3 (0.08s)
+        rebase_test.go:137: marked a.txt has a common-ancestor section:
+    --- FAIL: TestRebaseIgnoresConflictStyle/zdiff3 (0.07s)
+        rebase_test.go:137: marked a.txt has a common-ancestor section:
+
+## red: a hold dropped the front at once (must-hold-front)
+
+store.FrontStands treating a held front as not standing, as before.
+go test ./internal/interp/ ./internal/store/ -run 'TestQueueHoldFront|TestMergeQueueHoldAndCancel'
+
+--- FAIL: TestQueueHoldFront (0.07s)
+    mergequeue_test.go:310: claim by t9 before the held front's next advance = <nil>, want it refused
+--- FAIL: TestMergeQueueHoldAndCancel (0.02s)
+    mergequeue_test.go:170: held front before its next advance = {Entries:[{MergeQueueEntry:{Repository:app TaskID:a ... Front:false}] Front:<nil> ...}
+
+## red: squash and worktree moves read the attempts the advance began with (must-squash-refusal)
+
+refuseRunning reading r.attempts instead of the store.
+go test ./internal/interp/ -run TestQueueSquashAndAdoptRefusedWhileAnAttemptRuns
+
+--- FAIL: TestQueueSquashAndAdoptRefusedWhileAnAttemptRuns (0.30s)
+    --- FAIL: TestQueueSquashAndAdoptRefusedWhileAnAttemptRuns/move_before_the_push (0.07s)
+        mergequeue_engine_test.go:544: advance = <nil>, want it refused while the judge runs
+    --- FAIL: TestQueueSquashAndAdoptRefusedWhileAnAttemptRuns/move_before_the_rebaser (0.07s)
+        mergequeue_engine_test.go:565: advance = ... unexpected launch of step "deliver-rebase" attempt 1, want it refused while the judge runs
+    --- FAIL: TestQueueSquashAndAdoptRefusedWhileAnAttemptRuns/squash (0.08s)
+        mergequeue_engine_test.go:575: advance = ... unexpected launch of step "deliver-rebase-review" attempt 1, want it refused while the judge runs
+    --- FAIL: TestQueueSquashAndAdoptRefusedWhileAnAttemptRuns/move_to_the_squashed_head (0.08s)
+        mergequeue_engine_test.go:590: advance = ... unexpected launch of step "deliver-rebase-review" attempt 1, want it refused while the judge runs
+
+## not run red (must-tests)
+
+These tests cover behaviour the code already had, so they were written green and not run red:
+TestQueueMajorConflictsUnderEachThreshold, TestQueueTier2 under every threshold, TestQueueTier2CrashReplay,
+TestValidateRebaseCrashReplay, TestValidateRebaseWithoutRebaser, TestQueuePriorityReordersWaiting,
+TestQueueRejoinsAtFirstReadyTime, TestQueueCancelledFront and TestQueueTwoTasksRaceForTheFront.
+The peers in the four queue tests are tasks created in the same store and queued through its merge-queue records, as
+another task's deliver would; only t7 advances through the engine.
+
+## green
+
+go test ./... and go vet ./... pass with every fix in.

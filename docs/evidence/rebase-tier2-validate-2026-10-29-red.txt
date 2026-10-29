@@ -1,0 +1,47 @@
+# Tier 2 rebase and the validate exception (d23): red and green runs, 2026-10-29
+
+The third d23 commit's tests, run while it was built.
+
+## red: the new rebase kind without its stage guide and output instructions
+
+The rebase step kind was registered before baseline/stages/rebase.md and the rebase.json instructions existed.
+go test ./baseline/ ./internal/interp/ -run 'TestReleaseHoldsTheRolesAndAGuidePerArtisanKind|TestBuiltinOutputInstructions'
+
+--- FAIL: TestReleaseHoldsTheRolesAndAGuidePerArtisanKind (0.00s)
+    baseline_test.go:51: release baseline = [... "stages/plan.md" "stages/refute.md" ...], want [... "stages/plan.md" "stages/rebase.md" "stages/refute.md" ...]
+--- FAIL: TestBuiltinOutputInstructions (0.05s)
+    --- FAIL: TestBuiltinOutputInstructions/rebase (0.00s)
+        output_instructions_test.go:134: unexpected result outputs: [{rebase.json }]
+FAIL
+
+## red: the first tier 2 and validate runs
+
+The engine tests' baseline had no rebase guide, and the validate tests' forge double held one mergeability for every
+head, so validate's read of the rebased head failed; the double now keeps one per head.
+go test ./internal/interp/ -run 'TestQueueTier2|TestValidateRebase|TestValidateTier2'
+
+--- FAIL: TestQueueTier2 (0.25s)
+        tier2_test.go:88: ... render: stage guide stages/rebase.md: open .../internal/interp/testdata/baseline/stages/rebase.md: no such file or directory
+--- FAIL: TestValidateRebasesAConflictingPullRequest (0.12s)
+        tier2_test.go:204: ... step validate: the forge refused the merge: pull request moved from 1111111111111111111111111111111111111111 to 0123456789abcdef0123456789abcdef01234567
+FAIL
+
+## red: crash replay counted the forge's repeated calls
+
+An advance interrupted after a push or merge and before its record repeats the call on replay, with the same head, as
+publish and merge already do; the test now checks the records and the pushed head instead of exact call counts.
+
+--- FAIL: TestQueueTier1CrashReplay/double/deliver-1-rebase-1-pr (0.04s)
+        mergequeue_test.go:391: publishes = 3, merges = 1, want the rebased head pushed and merged once
+--- FAIL: TestQueueTier1CrashReplay/double/deliver-2-merge (0.04s)
+        mergequeue_test.go:391: publishes = 2, merges = 2, want the rebased head pushed and merged once
+
+## green
+
+go test ./internal/interp/ ./internal/git/ ./baseline/ -run 'TestQueueTier2|TestValidateRebase|TestValidateTier2|TestQueueTier1CrashReplay|TestQueueRebaseRefused|TestBuiltinOutputInstructions|TestSquashAndAdoptProgram|TestRelease|TestDigests' -count=1
+
+ok  	github.com/ndrwl/guildhall/internal/interp	1.793s
+ok  	github.com/ndrwl/guildhall/internal/git	0.215s
+ok  	github.com/ndrwl/guildhall/baseline	0.004s
+
+go vet ./... and go test ./... pass.

@@ -101,6 +101,18 @@ func (r *run) dependencyState(d store.TaskRef) (string, error) {
 			return fmt.Sprintf("waiting for the Director: %s attempt %d %s", a.Step, a.Number, a.Outcome), nil
 		}
 	}
+	if mq, ok := r.e.Records.(MergeQueue); ok {
+		q, err := mq.MergeQueue(d.Repository)
+		if err != nil {
+			return "", err
+		}
+		if i := slices.IndexFunc(q.Entries, func(e store.QueuedEntry) bool { return e.TaskID == d.ID }); i >= 0 {
+			if q.Entries[i].Held {
+				return "merge held (task hold-merge)", nil
+			}
+			return fmt.Sprintf("queued for merge, place %d of %d", i+1, len(q.Entries)), nil
+		}
+	}
 	return "in progress", nil
 }
 

@@ -96,6 +96,9 @@ func indent(v any) []byte {
 	return append(data, '\n')
 }
 
+// AnyDigest, as an Expectation's input digest, matches any revision of the input.
+const AnyDigest = "*"
+
 // Expectation is one launch the script allows, matched against the launched Spec's manifest.
 type Expectation struct {
 	// Step is the workflow step id the prompt was rendered for.
@@ -104,7 +107,8 @@ type Expectation struct {
 	Attempt int
 	// Profile is the profile named in the manifest identity, empty for none.
 	Profile string
-	// Inputs maps each input port to the digest ("sha256:<hex>") of the artefact revision it must carry.
+	// Inputs maps each input port to the digest ("sha256:<hex>") of the artefact revision it must carry, or AnyDigest
+	// for an input that must be there in any revision.
 	Inputs map[string]string
 	// Standards are the standard names the prompt must carry, in order.
 	Standards []string
@@ -257,6 +261,7 @@ func match(e Expectation, m render.Manifest) []string {
 		switch sum, ok := got[port]; {
 		case !ok:
 			problems = append(problems, fmt.Sprintf("manifest lacks required input %q", port))
+		case e.Inputs[port] == AnyDigest:
 		case sum != e.Inputs[port]:
 			problems = append(problems, fmt.Sprintf("wrong artefact revision on input %q: %s, want %s", port, sum, e.Inputs[port]))
 		}

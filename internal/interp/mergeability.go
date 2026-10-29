@@ -51,32 +51,37 @@ func (r *run) mergeBlocked(pr *pullRequestDoc, head string) (string, bool, error
 		return "", false, fmt.Errorf("%w: invalid mergeability evidence", ErrEvent)
 	}
 	m.URL = pr.URL
-	id := "pr-blocked-" + head + "-" + m.State
-	if d := r.document(id); d == nil {
-		p := path.Join("tasks", r.task.Repository, r.task.ID, id+".json")
-		data, err := os.ReadFile(filepath.Join(r.e.DocumentDir, filepath.FromSlash(p)))
-		if errors.Is(err, os.ErrNotExist) {
-			data, err = json.Marshal(m)
-		}
-		if err != nil {
-			return "", false, err
-		}
-		if err := json.Unmarshal(data, &m); err != nil {
-			return "", false, err
-		}
-		if err := r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: id, Path: p, SHA256: digest.Of(data).Hex()}, data); err != nil {
-			return "", false, err
-		}
-	} else {
-		data, err := r.read(*d)
-		if err != nil {
-			return "", false, err
-		}
-		if err := json.Unmarshal(data, &m); err != nil {
-			return "", false, err
-		}
+	id, m, err := r.recordBlocked(head, m)
+	if err != nil {
+		return "", false, err
 	}
 	return m.State, true, r.notifyMergeBlocked(id, m)
+}
+
+// recordBlocked records observation m of head as the immutable document pr-blocked-<head>-<state>, once, and
+// returns its name and the observation as first recorded: a file written before a crash stopped its record is
+// recorded as it is, so a later, different observation never replaces it.
+func (r *run) recordBlocked(head string, m forge.Mergeability) (string, forge.Mergeability, error) {
+	id := "pr-blocked-" + head + "-" + m.State
+	if d := r.document(id); d != nil {
+		data, err := r.read(*d)
+		if err != nil {
+			return "", forge.Mergeability{}, err
+		}
+		return id, m, json.Unmarshal(data, &m)
+	}
+	p := path.Join("tasks", r.task.Repository, r.task.ID, id+".json")
+	data, err := os.ReadFile(filepath.Join(r.e.DocumentDir, filepath.FromSlash(p)))
+	if errors.Is(err, os.ErrNotExist) {
+		data, err = json.Marshal(m)
+	}
+	if err != nil {
+		return "", forge.Mergeability{}, err
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return "", forge.Mergeability{}, err
+	}
+	return id, m, r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: id, Path: p, SHA256: digest.Of(data).Hex()}, data)
 }
 
 // replayMergeBlocked completes a notification lost after the observation was
@@ -107,6 +112,6 @@ func (r *run) replayMergeBlocked() error {
 }
 
 func (r *run) notifyMergeBlocked(id string, m forge.Mergeability) error {
-	text := fmt.Sprintf("Pull request: %s\nHead: %s\nBase: %s\nState: %s\nCommits behind: %d\nConflicting files: %s\nThe task waits for the Director; Guildhall does not rebase automatically. Options include guildhall step send-back --repo %s --task %s --step <earlier-step> --attempt <succeeded-attempt> --feedback <instructions> (with the copy/store/config/state flags), leaving the task on hold, or abandoning this work by leaving it unadvanced (there is no task-cancellation command). Existing merge decisions also accept hold; running attempts can be stopped with guildhall artisan stop. Advancing with guildhall task start %s --repo %s rechecks the forge; choose any recovery appropriate to this task.", m.URL, m.Head, m.Base, m.State, m.Behind, strings.Join(m.Files, ", "), r.task.Repository, r.task.ID, r.task.ID, r.task.Repository)
+	text := fmt.Sprintf("Pull request: %s\nHead: %s\nBase: %s\nState: %s\nCommits behind: %d\nConflicting files: %s\nThe task waits for the Director: Guildhall could not rebase this pull request itself here (docs/interpreter.md#tiered-rebase). Options include guildhall step send-back --repo %s --task %s --step <earlier-step> --attempt <succeeded-attempt> --feedback <instructions> (with the copy/store/config/state flags), leaving the task on hold, or abandoning this work by leaving it unadvanced (there is no task-cancellation command). Existing merge decisions also accept hold; running attempts can be stopped with guildhall artisan stop. Advancing with guildhall task start %s --repo %s rechecks the forge; choose any recovery appropriate to this task.", m.URL, m.Head, m.Base, m.State, m.Behind, strings.Join(m.Files, ", "), r.task.Repository, r.task.ID, r.task.ID, r.task.Repository)
 	return r.notify(id, store.MessagePRBlocked, text)
 }

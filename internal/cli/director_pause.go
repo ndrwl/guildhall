@@ -162,7 +162,7 @@ func waitingKinds(items []needsMeItem) map[string]int {
 	n := map[string]int{}
 	for _, it := range items {
 		switch {
-		case it.Kind == checksKind, it.Kind == dependenciesKind, it.Kind == decisionKind:
+		case it.Kind == checksKind, it.Kind == dependenciesKind, it.Kind == mergeQueueKind, it.Kind == decisionKind:
 		case it.Count > 0:
 			n[it.Kind] += it.Count
 		default:

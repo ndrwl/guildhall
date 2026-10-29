@@ -15,6 +15,7 @@ claude_skills_profile_researcher = '{"preset":"artisan-v1"}'
 claude_skills_profile_planner = '{"preset":"artisan-v1"}'
 claude_skills_profile_builder = '{"preset":"builder-v1"}'
 claude_skills_profile_reviewer = '{"preset":"reviewer-v1"}'
+claude_skills_profile_rebaser = '{"preset":"builder-v1"}'
 
 # Artisan profiles that workflow steps name with "profile"; no credentials.
 [profile.researcher]
@@ -40,6 +41,14 @@ model = "opus"
 effort = "high"
 role = "roles/reviewer.md"
 
+# Resolves the few conflicts of a minor_conflicts rebase at the front of the merge queue; no workflow step names
+# it. Without this profile, minor conflicts send the build back instead.
+[profile.rebaser]
+adapter = "claude"
+model = "haiku"
+effort = "low"
+allowed_tools = ["Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)"]
+
 [[repository]]
 id = "cli"
 path = '/srv/src/cli'
@@ -47,6 +56,13 @@ remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"
 workflow = "profiled"
 # No [repository.merge.requires] section: every requirement is on, so the Guildmaster answers every merge.
+
+# How the merge queue rebases this repository's pull requests; these are the defaults. A rebase at or above
+# reapprove_after_rebase (no_conflicts | minor_conflicts | major_conflicts | never) asks the Guildmaster again.
+# [repository.merge]
+# reapprove_after_rebase = "major_conflicts"
+# minor_conflict_files = 3
+# minor_conflict_lines = 50
 
 [[repository]]
 id = "docs-site"

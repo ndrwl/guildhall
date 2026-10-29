@@ -44,6 +44,7 @@ A moved PR is `ErrRefused`; malformed requests are `ErrInvalid`, and unsupported
 For a blocked observation it reads the base tip with `git ls-remote <remote> refs/heads/<baseRefName>`; a missing, ambiguous or invalid tip is an error, not a guessed state.
 It fetches that exact tip without updating branches or `FETCH_HEAD`, counts base-only commits and reads `merge-tree --write-tree --name-only -z`, including stdout on conflict exit 1.
 It never modifies a worktree or rebases; concurrent observations only write git objects.
+The base tip it returns is the one the interpreter's [tiered rebase](../interpreter.md#tiered-rebase) replays onto, through [`internal/git`](git.md#rebase), so the measurement and the rebase see the same base; `Publish` then force-pushes the rebased head to the same pull request.
 
 ## Tests
 

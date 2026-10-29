@@ -288,8 +288,10 @@ func (m *mergeabilityAfter) Mergeability(ctx context.Context, req forge.Merge) (
 	return s, nil
 }
 
-// TestMergeWithoutGuildmasterBlocked: a behind or conflicting pull request waits for the Director with pr-blocked,
-// at validate and at deliver, and nothing merges or is asked.
+// TestMergeWithoutGuildmasterBlocked: a conflicting pull request at validate waits for the Director with
+// pr-blocked, before anything is asked; a behind one reads its checks there. At deliver, a behind or conflicting pull
+// request is still authorized and queued, and a copy that cannot rebase, with no workspaces, then waits for the
+// Director with pr-blocked at the front; nothing merges.
 func TestMergeWithoutGuildmasterBlocked(t *testing.T) {
 	for _, state := range []string{"behind", "conflicting"} {
 		blocked := forge.Mergeability{Base: baseHead, State: state, Behind: 1, Files: []string{"go.mod"}}
@@ -298,12 +300,16 @@ func TestMergeWithoutGuildmasterBlocked(t *testing.T) {
 			e.requires(unattended)
 			f.SetChecks(repoRemote, head, ciPassed...)
 			f.SetMergeability(blocked)
-			want(t, e.toValidate(t), interp.Next{Wait: interp.WaitDirector, Step: "validate"})
+			step, authorizations := "validate", 0
+			if state == "behind" {
+				step, authorizations = "deliver", 1
+			}
+			want(t, e.toValidate(t), interp.Next{Wait: interp.WaitDirector, Step: step})
 			if _, ok := e.documents(t)["pr-blocked-"+head+"-"+state]; !ok {
 				t.Errorf("pr-blocked not recorded")
 			}
-			if _, merges := f.Calls(); merges != 0 || slices.Contains(e.decisionIDs(t), "deliver-1") {
-				t.Errorf("merges = %d, decisions = %q, want neither", merges, e.decisionIDs(t))
+			if _, merges := f.Calls(); merges != 0 || slices.Contains(e.decisionIDs(t), "deliver-1") || len(e.authorizations(t)) != authorizations {
+				t.Errorf("merges = %d, decisions = %q, authorizations = %q", merges, e.decisionIDs(t), e.authorizations(t))
 			}
 		})
 		t.Run(state+"/deliver", func(t *testing.T) {
@@ -315,8 +321,8 @@ func TestMergeWithoutGuildmasterBlocked(t *testing.T) {
 			if _, ok := e.documents(t)["pr-blocked-"+head+"-"+state]; !ok {
 				t.Errorf("pr-blocked not recorded")
 			}
-			if _, merges := f.Calls(); merges != 0 || slices.Contains(e.decisionIDs(t), "deliver-1") || len(e.authorizations(t)) != 0 {
-				t.Errorf("merges = %d, decisions = %q, authorizations %q, want none", merges, e.decisionIDs(t), e.authorizations(t))
+			if _, merges := f.Calls(); merges != 0 || slices.Contains(e.decisionIDs(t), "deliver-1") || len(e.authorizations(t)) != 1 {
+				t.Errorf("merges = %d, decisions = %q, authorizations %q, want one authorization", merges, e.decisionIDs(t), e.authorizations(t))
 			}
 		})
 	}

@@ -1,7 +1,8 @@
 # Sending a succeeded step back
 
-`guildhall step send-back` lets the Director start a new attempt of an earlier succeeded Artisan step, without changing the old attempts or having Guildhall rebase automatically.
-It is an option for conflicts, changed requirements within the accepted scope, or other work the Director chooses to request, not a mandated conflict-recovery procedure.
+`guildhall step send-back` lets the Director start a new attempt of an earlier succeeded Artisan step, without changing the old attempts.
+It is an option for conflicts Guildhall could not [rebase itself](interpreter.md#tiered-rebase), changed requirements within the accepted scope, or other work the Director chooses to request, not a mandated conflict-recovery procedure.
+A `major_conflicts` rebase makes the same send-back automatically, with feedback naming the base, the conflicting files and the reason.
 
 ```sh
 guildhall step send-back --copy <dir> --repo <id> --task <id> --step <id> --attempt <n> --feedback <instructions>

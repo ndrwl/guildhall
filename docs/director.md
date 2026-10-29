@@ -185,7 +185,7 @@ The hold is read in the same store transaction that records a new attempt, so an
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works using each item's recovery command.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
-A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies` and `decision` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
+A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies`, `merge-queue` and `decision` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
 
 ```text
 guildhall: resumed, 2 waiting (messages 1, paused 1)
@@ -194,7 +194,7 @@ guildhall: resumed, 2 waiting (messages 1, paused 1)
 Otherwise it delivers nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session, waiter and pane reasons, and the work waits for the Director's next turn.
 If reading the session for the wake fails, resume reports the error on standard error and omits `wake`, without failing or undoing the resume.
 The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/0086-director-checks-watch.md)).
-A `checks` or `dependencies` item is the supervisor's and a `decision` item the Guildmaster's, so none counts or wakes.
+A `checks`, `dependencies` or `merge-queue` item is the supervisor's and a `decision` item the Guildmaster's, so none counts or wakes.
 
 A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0, with no `wake` and nothing typed.
 Both are exit 1 for no session, a session that is `recovering` (run `director ready`), `stopping` or `stopped`, and a session whose supervisor is gone, naming `director stop`.
@@ -210,9 +210,12 @@ While the session is `paused` or `stopping` the watcher advances nothing.
 One round runs at a time; a failed advance, such as an unreachable forge, is appended with its standard-error output to `checks.log` in the session's directory and tried again a refresh later, and the supervisor lets a running round end before it records the session stopped.
 With no supervisor running, the task waits until someone runs the `task start` its `checks` item in [`needs_me`](#status) names.
 
-A validate or deliver observation of a conflicting PR or a strict-protection-blocked behind PR instead records its mergeability and sends one `pr-blocked` message per head and state.
-The report gives the URL, head commit, base tip (the base branch's tip when measured), conflicting paths, behind count and options, and the task waits for the Director, so the checks watcher does not keep polling it.
-The Director chooses the response; Guildhall never rebases automatically.
+A pull request that is behind or conflicting does not wait for the Director: validate rebases a conflicting one and reads a behind one's checks as usual, and the [merge queue](#merge-queue) rebases its front ([tiered rebase](interpreter.md#tiered-rebase)).
+Only a front that rebased three times in one stay (`rebase-stuck`), or a copy that cannot rebase, such as one whose forge gives no base tip, records its mergeability and sends a `pr-blocked` or `rebase-stuck` message once per head and state.
+The report gives the URL, head commit, base tip (the base branch's tip when measured), conflicting paths, behind count and options, and the task waits for the Director, so the checks watcher does not keep polling it; the Director chooses the response.
+For such a task, [`step send-back`](step-send-back.md) can start a new attempt of a succeeded Artisan step with Director feedback, followed by normal rebase-aware review and republishing to the same PR, and [`task hold-merge`](tasks.md#holding-a-merge) releases a stuck front.
+Holding the task, leaving the work unadvanced, using the existing attempt stop or Director-stage abandonment paths, and rechecking after an external change are alternatives, not a prescribed recovery sequence.
+See the shipped `guildhall-director-tasks` skill for the commands and their limits.
 
 ## Artisan Herdr workspace cleanup
 
@@ -221,9 +224,6 @@ It runs one sweep when each session starts, a reload's included, so a Herdr work
 A sweep runs in the supervisor process, one at a time and off the decision path, so a slow Herdr never delays a stop or reload; the supervisor lets a running sweep end before it records the session stopped.
 Each attempt it leaves open is reported once with an unread `herdr-workspace-left-open` message that does not wake the Director; an unreachable Herdr writes one standard-error line and the next sweep tries again.
 `director start --tab`, the wrapper, does not sweep; the supervisor in its tab does.
-[`step send-back`](step-send-back.md) can start a new attempt of a succeeded Artisan step with Director feedback, followed by normal rebase-aware review and republishing to the same PR.
-Holding the task, leaving the work unadvanced, using the existing attempt stop or Director-stage abandonment paths, and rechecking after an external change are alternatives, not a prescribed recovery sequence.
-See the shipped `guildhall-director-tasks` skill for the commands and their limits.
 
 ## Dependencies
 
@@ -233,6 +233,18 @@ When a dependency merges, its dependents' next round passes the gate and starts 
 Nothing is advanced from inside the dependency's own advance, which would take a second task lock inside the first.
 A failed advance is appended to `dependencies.log` in the session's directory and tried again the next round.
 With no supervisor running, the task waits until someone runs the `task start` its `dependencies` item in [`needs_me`](#status) names, or starts it anyway with [`task start --ignore-deps --reason <text>`](running.md#task-start).
+
+## Merge queue
+
+A task whose merge is authorized and waits in its repository's [merge queue](interpreter.md#the-merge-queue), `next.json` `{"wait":"merge-queue","step":"deliver"}`, is moved on by the session supervisor as well.
+A third watcher of the same kind as the [checks watcher](#checks), on the same interval and minimum, lists the open tasks whose `next.json` waits on the merge queue and advances each in turn as `task start` does, while the session is `recovering` or `running`.
+The advance claims the front for the first task in queue order, and the front then rebases, pushes, waits for CI and merges with no model turn; the others send nothing new, since `merge-queued` is sent once per place.
+A paused or stopping Director pauses the queue: the watcher advances nothing, and nothing else advances a queued task but `task start`.
+The order is not the watcher's: the front is chosen in one store mutation from priority, ready time and task id, so the order in which the watcher advances tasks does not matter.
+A failed advance is appended to `merge-queue.log` in the session's directory and tried again the next round.
+[`needs_me`](#status) lists such a task as a `merge-queue` item, after the `dependencies` ones; like them it is the supervisor's, so it neither counts nor wakes the Director on resume.
+The Director hears of a queued task through `merge-queued`, `rebased`, `rebase-escalated`, `approval-carried`, `merged` and, for a front that rebased three times, `rebase-stuck`.
+[`task priority`](tasks.md#priority) reorders the tasks behind the front, and [`task hold-merge`](tasks.md#holding-a-merge) takes a task out of turn without cancelling it.
 
 ## Stop
 
@@ -441,6 +453,9 @@ The document has these sections:
     A [Director stage](interpreter.md#director-stages)'s attempt, which the engine handed to the Director and which has no ownership record, is `handed`, reason `handed to the Director`, so a stage that is the Director's to run is not read as a lost attempt.
     A latest attempt with a counting park, as listed under `parked`, has `"parked": true`, which is why its failed or stopped step is not in `needs_me`.
   - `spend`: the [spend total](#spend-totals) of the task's attempts.
+- `merge_queues`: each repository's [merge queue](interpreter.md#the-merge-queue), `[{repository, entries}]` in repository order, with the entries front first and then in queue order.
+  Each entry has its `task`, `priority`, `ready_at` (the commit time of the receipt that first authorized its merge), `pr` (the pull request URL), `held` (a [`task hold-merge`](tasks.md#holding-a-merge)), `front`, and `waiting_on`: `rebase` while the front's head is being rebased or resolved, `ci` while the front waits for the checks of its rebased head, `decision` while a new merge decision for it is open, and `queue` for a task behind the front.
+  `task list --json` gives each queued task the same entry as `merge_queue`.
 - `decisions`: every open decision in repository, task and id order, with its `kind`, `subject`, `options`, `question` and `opened_at`, the commit time of its opening.
 - `messages`: the Director's `unread` count, the count `by_type`, and the `headers` of at most the 20 oldest unread messages (`id`, `type`, `repository`, `task_id`, `step` and `attempt` when given, `sequence`).
 - `recent`: the last 20 receipts of any task across repositories, in commit order, each with its operation, mutation id, sequence, commit time and record name, so records such as delivery's `publish-<k>-pr` documents and its `merged`, `merge-refused` and `workspace-kept` messages appear without a change to the feed.

@@ -1,0 +1,54 @@
+# Merge queue, tier 1 rebase and approval carry-over (d23): red and green runs, 2026-10-29
+
+The queue, tier 1 and carry-over tests, run while the second d23 commit was built.
+
+## red: the old validate and deliver expectations, against the queue
+
+The pr-blocked tests still expected a behind pull request to wait for the Director at validate, and deliver to
+stop before its merge decision; d23 reads a behind PR's checks and authorizes whatever the mergeability.
+go test ./internal/interp/
+
+--- FAIL: TestMergeabilityRecoversFileBeforeDocumentRecord (0.40s)
+        persistence_recovery_test.go:48: record failure = <nil>
+--- FAIL: TestMergeabilityWaitsForDirectorOncePerHeadAndState (0.13s)
+    --- FAIL: TestMergeabilityWaitsForDirectorOncePerHeadAndState/double (0.05s)
+        pr_blocked_test.go:26: next = {Wait:checks Step:validate Attempt:0 Decision:}, want {Wait:director Step:validate Attempt:0 Decision:}
+    --- FAIL: TestMergeabilityWaitsForDirectorOncePerHeadAndState/store (0.08s)
+        pr_blocked_test.go:26: next = {Wait:checks Step:validate Attempt:0 Decision:}, want {Wait:director Step:validate Attempt:0 Decision:}
+FAIL
+
+Both tests now state the new rules: a conflicting PR in a copy that cannot rebase waits at validate, a behind one
+reads its checks, and deliver's front records pr-blocked once it cannot rebase.
+
+## red: a held front blocked the queue
+
+The new store test found that a claim looked only at the queue's first entry, so a held task at the head of the
+queue kept every other task from the front.
+go test ./internal/store/ -run TestMergeQueue
+
+--- FAIL: TestMergeQueueHoldAndCancel (0.02s)
+    mergequeue_test.go:181: store: claim-merge-front front-b: another task is ahead in the merge queue: app/b is at place 2
+FAIL
+
+ClaimMergeFront now lets the first task that is not held claim a free front.
+
+## red: the CLI feeds before merge_queues and merge_holds
+
+go test ./internal/cli/
+
+--- FAIL: TestDirectorStatusOfAnEmptyCopy (0.01s)
+    director_status_test.go:315: empty copy: got {..."tasks":[],"merge_queues":[],"decisions":[]...} want {..."tasks":[],"decisions":[]...}
+--- FAIL: TestTaskTimelineGolden (0.02s)
+    inspect_test.go:111: task-timeline.json mismatch: got {..."priority_changes":[],"merge_holds":[],"events":...} want {..."priority_changes":[],"events":...}
+--- FAIL: TestDirectorStatusGolden (0.07s)
+    director_status_test.go:242: director-status.json mismatch:
+FAIL
+
+## green
+
+go test ./internal/store/ ./internal/interp/ ./internal/cli/ ./internal/config/ -run 'TestMergeQueue|TestQueue|TestMergeability|TestDependencyGateQueuedForMerge|TestRebaseSettings|TestMergeQueueViews|Golden|TestMergeWithoutGuildmasterBlocked' -count=1
+
+ok  	github.com/ndrwl/guildhall/internal/store	0.288s
+ok  	github.com/ndrwl/guildhall/internal/interp	5.511s
+ok  	github.com/ndrwl/guildhall/internal/cli	0.559s
+ok  	github.com/ndrwl/guildhall/internal/config	0.030s

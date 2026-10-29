@@ -201,6 +201,39 @@ func TestDependencyGateStates(t *testing.T) {
 	}
 }
 
+// TestDependencyGateQueuedForMerge: a dependency waiting in its merge queue is "queued for merge", and one whose merge
+// is held is "merge held".
+func TestDependencyGateQueuedForMerge(t *testing.T) {
+	def := loadWorkflow(t, "director-grill")
+	e := newDependentEnv(t, backends[1], def, []store.Task{libTask(def)})
+	s := e.h.Records.(*store.Store)
+	if _, err := s.PutDocument("dep-auth", store.DocumentRef{Repository: "app", TaskID: "t3", Name: "deliver-1-authorized", Path: "tasks/app/t3/deliver-1/authorized.json", SHA256: strings.Repeat("0", 64)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.JoinMergeQueue("dep-join", "app", "t3", "deliver-1", "document/deliver-1-authorized", ""); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.grilled(t), heldAt)
+	has := func(part string) bool {
+		for _, text := range e.held(t) {
+			if strings.Contains(text, part) {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("app/t3: queued for merge, place 1 of 1") {
+		t.Fatalf("no queued dependency: %v", e.held(t))
+	}
+	if _, err := s.SetMergeHold("dep-hold", "app", "t3", true); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), heldAt)
+	if !has("app/t3: merge held") {
+		t.Fatalf("no held dependency: %v", e.held(t))
+	}
+}
+
 // TestDependencyGateCrossRepository: a dependency in another repository of the same store holds the task until it
 // is done.
 func TestDependencyGateCrossRepository(t *testing.T) {

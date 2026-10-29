@@ -394,6 +394,8 @@ type Workspaces struct {
 	calls    []git.Workspace
 	forwards []git.Workspace
 	n        int
+	// replay holds the scripted replays and diffs of Rebase and Diff.
+	replay rebases
 }
 
 // tree is one working directory the double created: its repository, branch and the commit it is at.

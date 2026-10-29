@@ -10,6 +10,7 @@ The Guildmaster chose each product question below from the recommended options o
 - **Merge method.** Squash, fixed for now: no configuration key chooses another method until a repository needs one.
 - **A refused merge.** The merge is bound to the decision's head with `--match-head-commit` and never uses `--admin` or `--auto`; when the forge refuses it, for example because required checks fail or the branch is behind its base, the refusal is recorded as a task document, `<decision>-refused` and then `-refused-2` and on, once per reason, the Director is told the forge's reason and the task waits for the Director, who decides the recovery.
   There is no automatic rebase or retry; a later advance asks the forge again.
+  The automatic rebase is superseded by [the merge queue and tiered rebase](merge-queue-rebase.md): the front of a repository's merge queue is rebased by Guildhall; a refusal is still not retried automatically.
 - **The `auto` policy** stays refused with `ErrUnsupported`: R1.36's "within accepted scope" is not yet defined and automatic merging needs validation results.
   Superseded by [merge requirements](merge-requires.md): the merge policy key is gone, and each repository chooses its merge requirements.
 - **Validation (`validate`)** is out of this change and stays refused, so a workflow with `validate`, including the shipped default, still stops there; a follow-up defines it.

@@ -717,6 +717,30 @@ func (p storeRecords) SetTaskState(m, repo, id string, state store.TaskState) (s
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.SetTaskState(m, repo, id, state) })
 }
 
+var _ interp.MergeQueue = storeRecords{}
+
+func (p storeRecords) MergeQueue(repo string) (store.MergeQueue, error) {
+	return withRecords(p, true, nil, func(s *store.Store) (store.MergeQueue, error) { return s.MergeQueue(repo) })
+}
+
+func (p storeRecords) JoinMergeQueue(m, repo, id, authorization, record, pr string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) {
+		return s.JoinMergeQueue(m, repo, id, authorization, record, pr)
+	})
+}
+
+func (p storeRecords) LeaveMergeQueue(m, repo, id string, keepReady bool) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.LeaveMergeQueue(m, repo, id, keepReady) })
+}
+
+func (p storeRecords) ClaimMergeFront(m, repo, id string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.ClaimMergeFront(m, repo, id) })
+}
+
+func (p storeRecords) ReleaseMergeFront(m, repo, id string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.ReleaseMergeFront(m, repo, id) })
+}
+
 func (p storeRecords) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) {
 		return (&messaging.StoreMailbox{Store: s}).Send(to, e)

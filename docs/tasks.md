@@ -9,9 +9,12 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or `GUILDHALL_COPY`, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] <task>` creates task `<task>` in repository `<id>` and prints the store's receipt as one JSON document.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` in repository `<id>` and prints the store's receipt as one JSON document.
+- `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
+- `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
 - `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
 - `guildhall task list --store <path> [--repo <id>] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
+  A task in its repository's [merge queue](interpreter.md#the-merge-queue) also has a `merge_queue` object, the entry `director status` lists ([status](director.md#status)); it is absent for a task that is not queued.
 - `guildhall task timeline --store <path> --repo <id> <task> --json` and `guildhall task files --store <path> --repo <id> <task> --json` are the [inspection reads](#inspection).
 - `guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move <move> --reason <text> <task>` records a [Director ruling](#director-rulings) and prints its receipt.
 - `guildhall task review --full --store <path> --repo <id> <task>` records a [full-review request](#full-review) and prints its receipt.
@@ -58,7 +61,8 @@ Dependencies are fixed at creation.
 
 A dependent task waits for its dependencies: its grill runs at once, but research, or whatever its first step not run by the Director is, does not start until every dependency is `done`, that is, merged.
 That is the [dependency gate](interpreter.md#the-dependency-gate): while it holds the task, advancing it records nothing and prints `{"wait":"dependencies","step":"<step>"}`, and the Director gets one `dependency-held` message for each change in the dependencies' coarse state (in progress, waiting for the Guildmaster or the Director, cancelled), never one per advance.
-The session supervisor's [dependency watcher](director.md#dependencies) advances the task once its dependencies merge, with no model turn, and research then runs on a branch fast-forwarded to the main they merged into; there is no automatic rebase of a branch that already has commits.
+The session supervisor's [dependency watcher](director.md#dependencies) advances the task once its dependencies merge, with no model turn, and research then runs on a branch fast-forwarded to the main they merged into; a branch that already has commits is not rebased then, only later by the [merge queue](interpreter.md#the-merge-queue) at the front, or at validate when its pull request conflicts ([tiered rebase](interpreter.md#tiered-rebase)).
+While a dependency waits in the merge queue, its state in `dependency-held` reads `queued for merge`, or `merge held` after [`task hold-merge`](#holding-a-merge).
 A task already past research, with an attempt of a step not run by the Director, is never held, so a loop, retry or send-back back to research runs while a dependency is still open.
 
 The Director can start a held task anyway with [`task start --ignore-deps --reason <text>`](running.md#task-start), the **dependency override**.
@@ -66,6 +70,38 @@ It is recorded as its own record, never by changing the task (R1.62), lasts for 
 A cancelled dependency never merges, so the override is the only way to start a task that depends on one.
 
 `--fixes <repo>/<task>` names the earlier task whose defect this one fixes, which must already exist; publish then adds "Fixes a defect introduced by task `<repo>/<task>`." to the pull request body ([quality rubric](quality.md#running-it)).
+
+## Priority
+
+Every task has a priority, one of six levels:
+
+| Level | Word |
+| --- | --- |
+| `p0` | `urgent` |
+| `p1` | `highest` |
+| `p2` | `high` |
+| `p3` | `normal`, the default |
+| `p4` | `low` |
+| `p5` | `someday` |
+
+A level may be given as `p1`, `1` or `highest`, in any letter case; anything else is a usage error.
+`task new --priority <level>` sets it when the task is created, and `task priority <task> <level>` changes it on an open task at any time.
+The priority is its own record, `task-priority`, never a change to the task (R1.62); it holds the latest level and every level set, and `task timeline` shows the levels with when each was set.
+`task list` and `task show` print `priority` on each task, and setting the level already in force prints the receipt that set it and records nothing.
+
+Priority orders the repository's [merge queue](interpreter.md#the-merge-queue): a lower number comes first, and tasks of the same priority keep the order in which they first became ready to merge.
+A change reorders the tasks waiting behind the front at once; it never takes the front from the task holding it.
+
+## Holding a merge
+
+`task hold-merge <task>` toggles a recorded hold on the task's merge, receipt record `merge-hold`: run once it holds, run again it unholds.
+A held task stays authorized and keeps its ready time, but the [merge queue](interpreter.md#the-merge-queue) skips it; a held front gives up the front at its next advance, and the next task in order may claim it.
+Unholding lets the task claim the front again when it is first, in a new stay with three more rebase rounds.
+Every change shows in `task timeline`, and `director status` and `task list --json` show `held`.
+
+This is not the `hold` answer on a merge decision.
+That answer refuses the merge it was asked for, and the task waits for the Director; `hold-merge` acts on a merge already authorized, and the task waits in the queue.
+A held task also keeps its dependents waiting, whose `dependency-held` message reads `merge held`.
 
 ## Retries
 
@@ -101,6 +137,9 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
+- `priority` and `priority_changes`: the task's [priority](#priority) now and every level set, each with `set_at`.
+- `merge_holds`: every [hold-merge](#holding-a-merge) value set, `held` true or false, each with `set_at`.
+- `merged`: once the task merged, the `merged` message the engine sent, its `message` id, `text` and `merged_at`; the text says what allowed the merge, for example "merged by carried-over approval of deliver-1 after no_conflicts rebase, deliver-2-authorized".
 - `events`: every receipt of the task in commit order, each naming its operation, mutation id, sequence, commit time and the record it wrote (`record`, for example `attempt/build/2`, `decision/accept-plan` or `message/q-1`).
   These are the moves made on the task, including messages sent and acknowledged for it.
 

@@ -30,12 +30,19 @@ func TestMergeabilityRecoversFileBeforeDocumentRecord(t *testing.T) {
 	for _, b := range backends {
 		for _, state := range []string{"conflicting", "behind"} {
 			for _, step := range []string{"validate", "deliver"} {
+				if step == "validate" && state == "behind" {
+					// A behind pull request at validate reads its checks and records no observation.
+					continue
+				}
 				t.Run(b.name+"/"+state+"/"+step, func(t *testing.T) {
 					e, f := newValidateEnv(t, b)
-					ev := interp.Event{Kind: interp.TaskCreated}
+					var ev interp.Event
 					if step == "deliver" {
+						// At the front, this copy without workspaces cannot rebase and records the observation.
 						f.SetChecks(repoRemote, head, ciPassed...)
 						want(t, e.toValidate(t), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+						e.answer(t, "deliver-1", "merge")
+						ev = interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}
 					} else {
 						e.accepted(t)
 						e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})

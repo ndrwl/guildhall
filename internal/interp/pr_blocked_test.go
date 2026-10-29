@@ -15,14 +15,10 @@ func TestMergeabilityWaitsForDirectorOncePerHeadAndState(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
 			e, f := newValidateEnv(t, b)
-			for i, state := range []string{"conflicting", "behind"} {
+			// This copy has no workspaces, so a conflicting pull request at validate cannot be rebased and waits.
+			for _, state := range []string{"conflicting"} {
 				f.SetMergeability(forge.Mergeability{Head: head, Base: baseHead, State: state, Behind: 2, Files: []string{"docs/contracts/cli.md"}})
-				var n interp.Next
-				if i == 0 {
-					n = e.toValidate(t)
-				} else {
-					n = e.advance(t, interp.Event{Kind: interp.TaskCreated})
-				}
+				n := e.toValidate(t)
 				want(t, n, interp.Next{Wait: interp.WaitDirector, Step: "validate"})
 				count := len(e.inbox(t))
 				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), n)
@@ -45,12 +41,18 @@ func TestMergeabilityWaitsForDirectorOncePerHeadAndState(t *testing.T) {
 					t.Fatalf("no %s report: %v", state, messages)
 				}
 			}
+			// A behind pull request reads its checks at validate: the merge queue rebases it at the front.
+			f.SetMergeability(forge.Mergeability{Head: head, Base: baseHead, State: "behind", Behind: 2, Files: []string{"docs/contracts/cli.md"}})
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
 			f.SetMergeability(forge.Mergeability{})
 			f.SetChecks(repoRemote, head, ciPassed...)
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			// The decision opens whatever the mergeability; at the front, a copy without workspaces cannot rebase and
+			// waits, without repeating validate's report of the same head and state.
 			f.SetMergeability(forge.Mergeability{Head: head, Base: baseHead, State: "conflicting", Behind: 2, Files: []string{"docs/contracts/cli.md"}})
+			e.answer(t, "deliver-1", "merge")
 			count := len(e.inbox(t))
-			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirector, Step: "deliver"})
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), interp.Next{Wait: interp.WaitDirector, Step: "deliver"})
 			if len(e.inbox(t)) != count {
 				t.Fatal("deliver duplicated validate's report")
 			}

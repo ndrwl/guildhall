@@ -600,6 +600,7 @@ func goldenStore(t *testing.T) string {
 		func() (store.Receipt, error) {
 			return s.AnswerDecision("g-5", "app", "t-2", "accept-plan", "Yes, but keep the old route.")
 		},
+		func() (store.Receipt, error) { return s.SetTaskPriority("g-6", "app", "t-2", store.PriorityHighest) },
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {

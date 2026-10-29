@@ -130,6 +130,21 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 					}
 					outputIndex++
 				}
+				if kind.Type == "rebase" {
+					// A rebaser writes rebase.json besides its head, and its example reads.
+					section := sectionAfter(t, prompt, "### Also `"+render.RebaseReportFile+"`\n")
+					var report struct {
+						BehaviourChange *bool  `json:"behaviour_change"`
+						Reason          string `json:"reason"`
+					}
+					if err := json.Unmarshal([]byte(fencedExample(t, section, "json")), &report); err != nil || report.BehaviourChange == nil || report.Reason == "" {
+						t.Fatalf("rebase.json example = %+v, %v", report, err)
+					}
+					if outputIndex >= len(result.Outputs) || result.Outputs[outputIndex].Path != render.RebaseReportFile {
+						t.Fatalf("result outputs %v do not name %s", result.Outputs, render.RebaseReportFile)
+					}
+					outputIndex++
+				}
 				if len(result.Outputs) != outputIndex {
 					t.Errorf("unexpected result outputs: %v", result.Outputs)
 				}

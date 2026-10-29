@@ -526,8 +526,16 @@ const (
 	MessageStall                = "stall"
 	MessageWorkerStalled        = "worker-stalled"
 	MessageWorkspaceKept        = "workspace-kept"
-	MessageQuestion             = "question"
-	MessageNote                 = "note"
+	// The merge queue's messages (docs/interpreter.md#the-merge-queue): a task's place in the queue, a rebase of
+	// its head onto the base tip, a rebase that became a build send-back, a front that rebased three times in one
+	// stay, and a merge approval carried over to a rebased head.
+	MessageMergeQueued     = "merge-queued"
+	MessageRebased         = "rebased"
+	MessageRebaseEscalated = "rebase-escalated"
+	MessageRebaseStuck     = "rebase-stuck"
+	MessageApprovalCarried = "approval-carried"
+	MessageQuestion        = "question"
+	MessageNote            = "note"
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
@@ -542,7 +550,9 @@ var MessageTypes = map[string]string{
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
-	MessageQuestion: "local", MessageNote: "local",
+	MessageMergeQueued: "engine", MessageRebased: "engine", MessageRebaseEscalated: "engine", MessageRebaseStuck: "engine",
+	MessageApprovalCarried: "engine",
+	MessageQuestion:        "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor",
 }
