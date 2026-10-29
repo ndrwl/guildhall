@@ -7,6 +7,12 @@ Attempt: 2
 Review base: unavailable
 Profile: reviewer-astra
 
+Task title:
+
+```text
+Sort the task list by priority
+```
+
 ## Role
 
 You are a fresh reviewer: you did not write the change you review.

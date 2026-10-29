@@ -39,9 +39,11 @@ An unknown `--kind` is a usage error.
 | Task kind | Workflow | What it is for |
 |---|---|---|
 | `feature` | The repository's `workflow` setting, `default` when it names none | New or changed behaviour: grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver. |
-| `bug` | The repository's [`[repository.kinds]`](configuration.md#repositories) `bug` workflow, the shipped `bug` when it names none | A fix for a defect in behaviour that should already work: the default's steps, with research reproducing the defect and finding its cause, build writing a regression test that fails before the fix and passes after it, and review checking that test. |
+| `bug` | The repository's [`[repository.kinds]`](configuration.md#repositories) `bug` workflow, the shipped `bug` when it names none | A fix for a defect in behaviour that should already work, with no Guildmaster stage: the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, merging under the repository's merge requirements. Research reproduces the defect from the task title and finds its cause, or fails with what it found; plan proceeds on recommended answers, or fails with a question that needs the Guildmaster; build writes a regression test that fails before the fix and passes after it, and review checks that test. |
 
 The descriptions are in the binary, `task new --help`, not in the workflows, so rewording them changes no digest.
+Every Artisan prompt shows the task's title, quoted as text after its header; a bug task has no grill, so its title, with the symptom and the exact error, is the only statement of the defect its research is given.
+A failed research or plan attempt of a bug task carries its findings or its question in its summary, which the Director reads with `task show` and brings to the Guildmaster before any `step retry`.
 The task records no kind: its bound workflow's name says what it was created as.
 A repository with no `kinds` table, and a `task new` with neither `--kind` nor `--fixes`, bind exactly the workflow they did before kinds.
 

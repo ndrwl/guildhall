@@ -1,5 +1,7 @@
 package workflow
 
+import "slices"
+
 // ArtifactType names what flows between steps, so wiring can be type-checked.
 type ArtifactType string
 
@@ -17,7 +19,19 @@ type Port struct {
 	Type     ArtifactType
 	Optional bool // inputs only: may be left unwired
 	Many     bool // inputs only: may be wired to several outputs
+	// Also lists, for inputs only, the other output types the port accepts besides Type.
+	Also []ArtifactType
 }
+
+// Accepts reports whether an input port may be wired to an output of type t.
+func (p Port) Accepts(t ArtifactType) bool {
+	return t == p.Type || slices.Contains(p.Also, t)
+}
+
+// specPort is the spec input of build, review and rebase: an accepted spec where the workflow has an acceptance step,
+// or a plan's spec where it has none (docs/decisions/0095-bug-workflow-without-acceptance.md).
+// The engine gates the spec by its source's output type, not by this port's type.
+var specPort = Port{Name: "spec", Type: AcceptedSpec, Also: []ArtifactType{Document}}
 
 // SettingType is the JSON type a step setting must have.
 type SettingType string
@@ -103,7 +117,7 @@ var kinds = []Kind{
 		Type: "plan", Version: 1,
 		Inputs:   []Port{{Name: "context", Type: Document, Optional: true, Many: true}},
 		Outputs:  []Port{{Name: "spec", Type: Document}},
-		Settings: artisan,
+		Settings: map[string]Setting{"profile": artisan["profile"], "skills": artisan["skills"], "instructions": instructions["instructions"]},
 		Actors:   artisanOnly,
 	},
 	{
@@ -138,7 +152,7 @@ var kinds = []Kind{
 	},
 	{
 		Type: "build", Version: 1,
-		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}},
+		Inputs:   []Port{specPort},
 		Outputs:  []Port{{Name: "head", Type: CodeHead}},
 		Settings: map[string]Setting{"profile": artisan["profile"], "skills": artisan["skills"], "instructions": instructions["instructions"]},
 		Actors:   artisanOnly,
@@ -150,15 +164,15 @@ var kinds = []Kind{
 		// sides that touch them, and besides its head it writes rebase.json, which says whether the resolution changes
 		// behaviour.
 		Type: "rebase", Version: 1,
-		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}, {Name: "conflicts", Type: Document}},
+		Inputs:   []Port{specPort, {Name: "conflicts", Type: Document}},
 		Outputs:  []Port{{Name: "head", Type: CodeHead}},
 		Settings: artisan,
 		Actors:   artisanOnly,
 	},
 	{
-		// Review reviews a code head against the accepted spec; its outcome is bound to the head (Subject.CodeHead).
+		// Review reviews a code head against the spec the build was given; its outcome is bound to the head (Subject.CodeHead).
 		Type: "review", Version: 1,
-		Inputs:   []Port{{Name: "spec", Type: AcceptedSpec}, {Name: "head", Type: CodeHead}},
+		Inputs:   []Port{specPort, {Name: "head", Type: CodeHead}},
 		Outputs:  reviewOutputs,
 		Settings: reviewSettings,
 		Loops:    reviewLoops,
@@ -227,7 +241,8 @@ func knownType(typ string) bool {
 
 func (k Kind) input(name string) (Port, bool) { return findPort(k.Inputs, name) }
 
-func (k Kind) output(name string) (Port, bool) { return findPort(k.Outputs, name) }
+// Output returns the kind's output port with this name.
+func (k Kind) Output(name string) (Port, bool) { return findPort(k.Outputs, name) }
 
 func findPort(ports []Port, name string) (Port, bool) {
 	for _, p := range ports {

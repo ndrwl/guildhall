@@ -273,7 +273,7 @@ The preference survives generated workspace refreshes and handoffs.
 A workflow defines the steps of one task as an ordered list of built-in step kinds.
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
-The shipped default, a feature task's workflow, is [`internal/workflow/default.json`](../internal/workflow/default.json); the shipped bug workflow is [`internal/workflow/bug.json`](../internal/workflow/bug.json), the default's steps with research, build and review instructed to reproduce the defect, test it first and check that test ([task kinds](tasks.md#task-kinds)).
+The shipped default, a feature task's workflow, is [`internal/workflow/default.json`](../internal/workflow/default.json); the shipped bug workflow is [`internal/workflow/bug.json`](../internal/workflow/bug.json), the default's steps without grill and the Guildmaster's acceptance, so a bug task has no Guildmaster stage and merges under the repository's [merge requirements](#merge-requirements); build and review take plan's spec, and research, plan, build and review are instructed to reproduce the defect from the task title, proceed on recommended answers or fail back with a question that needs the Guildmaster, test it first and check that test ([task kinds](tasks.md#task-kinds), [decision](decisions/0095-bug-workflow-without-acceptance.md)).
 Both name no profiles; Artisan steps take their [role profiles](#profiles).
 [`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step; assign its Artisan profiles as described under [profiles](#profiles) before using it.
 
@@ -320,7 +320,8 @@ The authoritative [built-in registry](../internal/workflow/registry.go), exposed
 
 `research` accepts `profile`, a [profile](#profiles) name, and `instructions`, a string rendered into the Artisan's prompt; it does not accept `skills`.
 `plan`, `refute`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
-`build`, `document-review`, `review` and `guildmaster-approval` also accept `instructions` ([decision](decisions/research-build-instructions.md)).
+`plan`, `build`, `document-review`, `review` and `guildmaster-approval` also accept `instructions` ([decision](decisions/research-build-instructions.md)).
+The `spec` input of `build` and `review` takes an accepted spec or, in a workflow with no acceptance step such as the shipped `bug`, plan's spec; the engine checks a spec against its approval only when it comes from an acceptance ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
 The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 
@@ -340,7 +341,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 | `refute` | `artisan` | a findings document attacking the proposed spec, not a review verdict |
 | `document-review` | `artisan` or `guildmaster` | a review outcome for a document, such as the plan's spec |
 | `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` and refutation documents as `findings` |
-| `review` | `artisan` or `guildmaster` | a review outcome for a code head against the accepted spec |
+| `review` | `artisan` or `guildmaster` | a review outcome for a code head against the spec the build was given: the accepted spec, or plan's spec in a workflow with no acceptance step |
 | `rebase` | `artisan` | a code head resolving a rebase's minor conflicts, and `rebase.json`; run by the engine as `<step>-rebase` under deliver or validate ([tiered rebase](interpreter.md#tiered-rebase)), never as a workflow step |
 | `publish` | `engine` | the same head, pushed to the repository's remote branch with its pull request opened or updated |
 | `validate`, `deliver` | `engine` | a validation result, the landed change |
@@ -395,7 +396,7 @@ Every writer writes /2; readers still accept `guildhall.review-outcome/1` ([deci
 | `suggestions[]` | The non-blocking comments: `id` and `summary` (required), optional `file` and `line`, no `rule`. A suggestion never blocks, never counts for `nothing_open` and needs no disposition in a later round. Ids are used once across `findings` and `suggestions`. |
 | `dispositions[]` | What became of each finding of the step's previous outcome: `finding` (its id), `state` and `reason`. The state is `resolved` (listed in neither list), `unresolved` (listed again in `findings` under the same id) or `disputed` (listed again; the builder argued against it and the reviewer still holds it). `reason` is required for `disputed` and optional otherwise. |
 | `revisions.subject` | What was reviewed: exactly one of `code_head`, the full commit id, or `document_digest`, the document's `sha256:<hex>` digest. |
-| `revisions.spec_digest` | `sha256:<hex>` digest of the accepted specification; required for a code head, optional for a document. |
+| `revisions.spec_digest` | `sha256:<hex>` digest of the specification the build was given, the accepted one where the workflow has an acceptance step; required for a code head, optional for a document. |
 | `revisions.standards_revision` | Central standards revision reviewed against; `""` means no standards revision is configured; nonempty whitespace-only values are invalid. |
 
 An outcome blocks the task only when its verdict is `changes_requested` and at least one finding cites a rule.

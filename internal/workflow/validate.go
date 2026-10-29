@@ -215,12 +215,12 @@ func (v *validator) checkRef(at int, s Step, port Port, ref string) {
 	if !ok {
 		return // already reported on the source step
 	}
-	output, ok := kind.output(out)
+	output, ok := kind.Output(out)
 	if !ok {
 		v.addf("step %q: input %q: step %q has no output %q", s.ID, port.Name, from, out)
 		return
 	}
-	if output.Type != port.Type {
+	if !port.Accepts(output.Type) {
 		v.addf("step %q: input %q wants %s but %s is %s", s.ID, port.Name, port.Type, ref, output.Type)
 	}
 }

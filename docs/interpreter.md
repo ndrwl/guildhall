@@ -542,7 +542,9 @@ The view is private: it is not a storage interface and has no double; it runs ov
 
 ## Spec gate
 
-Every input of type accepted spec, such as `build`'s and `review`'s `spec`, must come from an approval decision answered `approved` whose subject digest equals the accepted spec's digest; otherwise the step is refused with `ErrSpecGate` before anything is recorded.
+Every input wired to an accepted-spec output, such as `build`'s and `review`'s `spec` from a `guildmaster-approval` step's `spec`, must come from an approval decision answered `approved` (or a loop exit answered `accept`) whose subject digest equals the accepted spec's digest; otherwise the step is refused with `ErrSpecGate` before anything is recorded.
+The gate follows the source's output type, not the input port's: in a workflow with no acceptance step, such as the shipped `bug`, `build` and `review` take `plan.spec`, a document, which passes through ungated ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
+Review outcomes, the rebaser and deliver's merge authorization bind to the digest of the spec the build was given either way.
 Recording the accepted spec checks the same: the approved document must be the one the decision was opened for.
 
 ## Replay and recovery

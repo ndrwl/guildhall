@@ -1250,12 +1250,29 @@ func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 	if err != nil {
 		return render.Input{}, fmt.Errorf("input %s: %w", port.Name, err)
 	}
-	if port.Type == workflow.AcceptedSpec {
+	// The gate follows the source: a spec from an acceptance step is gated, a plan's spec passes through
+	// (docs/decisions/0095-bug-workflow-without-acceptance.md). An unknown source falls back to the port's type.
+	typ := r.outputType(from, out)
+	if typ == "" {
+		typ = port.Type
+	}
+	if typ == workflow.AcceptedSpec {
 		if err := r.specGate(source, doc); err != nil {
 			return render.Input{}, err
 		}
 	}
 	return render.Input{Port: port.Name, Name: doc.Path, SHA256: doc.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path))}, nil
+}
+
+// outputType is the type of output out of workflow step from, or "" when the workflow has no such step or output.
+func (r *run) outputType(from, out string) workflow.ArtifactType {
+	i := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == from })
+	if i < 0 {
+		return ""
+	}
+	kind, _ := workflow.LookupKind(r.def.Steps[i].Type, r.def.Steps[i].Version)
+	port, _ := kind.Output(out)
+	return port.Type
 }
 
 // specGate checks that an accepted spec is the document its approval decision approved.
