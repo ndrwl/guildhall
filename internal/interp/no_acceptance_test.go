@@ -89,14 +89,13 @@ func TestNoAcceptanceRunsToDeliver(t *testing.T) {
 	}
 }
 
-// TestShippedBugWorkflowDelivers: the shipped bug workflow, with its role profiles defaulted, runs from task creation
-// to the merge and the closed task with no Guildmaster wait, its research first.
+// TestShippedBugWorkflowDelivers: the shipped bug workflow, exactly as shipped, runs from task creation to the merge
+// and the closed task with no Guildmaster wait, its research first, each Artisan step under its role profile.
 func TestShippedBugWorkflowDelivers(t *testing.T) {
-	bug, err := workflow.Bug()
+	def, err := workflow.Bug()
 	if err != nil {
 		t.Fatal(err)
 	}
-	def := workflow.ApplyProfileDefaults(bug, func(string) bool { return true })
 	if err := workflow.Validate(def); err != nil {
 		t.Fatal(err)
 	}

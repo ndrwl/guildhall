@@ -604,7 +604,7 @@ func (r *run) prepare(s workflow.Step) (artisanRuntime, []render.Input, error) {
 		inputs, err := r.inputs(s)
 		return artisanRuntime{}, inputs, err
 	}
-	rt, err := r.runtime(s.Profile())
+	rt, err := r.runtime(workflow.EffectiveProfile(s))
 	if err != nil {
 		return artisanRuntime{}, nil, err
 	}

@@ -400,10 +400,38 @@ func Parse(data []byte) (*Config, error) {
 		}
 	}
 	cfg.applyDefaults()
+	if cfg.Mode == ModeDirector {
+		cfg.addShippedProfiles()
+	}
 	if problems := cfg.validate(); len(problems) > 0 {
 		return nil, errors.New("invalid config: " + strings.Join(problems, "; "))
 	}
 	return &cfg, nil
+}
+
+// ShippedProfiles are the role profiles this release gives every Director copy, one per role
+// (workflow.RoleProfile), so a role step always resolves a profile. Each runs the claude adapter with no model,
+// effort, role or allowed_tools, so it gets the adapter's default model and its shipped default grant
+// (docs/adapters.md#artisan-permissions). A copy's own [profile.<name>] replaces the shipped one as a whole.
+var ShippedProfiles = map[string]Profile{
+	"builder":    {Adapter: "claude"},
+	"planner":    {Adapter: "claude"},
+	"rebaser":    {Adapter: "claude"},
+	"researcher": {Adapter: "claude"},
+	"reviewer":   {Adapter: "claude"},
+}
+
+// addShippedProfiles adds each shipped profile the copy does not declare to c.Profiles.
+func (c *Config) addShippedProfiles() {
+	for name, p := range ShippedProfiles {
+		if _, ok := c.Profiles[name]; ok {
+			continue
+		}
+		if c.Profiles == nil {
+			c.Profiles = map[string]Profile{}
+		}
+		c.Profiles[name] = p
+	}
 }
 
 func (c *Config) applyDefaults() {

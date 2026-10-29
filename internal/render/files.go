@@ -32,7 +32,7 @@ func stageKind(stage Stage, human bool) (workflow.Kind, error) {
 func identity(stage Stage, kind workflow.Kind) Identity {
 	return Identity{
 		Repository: stage.Repository, Task: stage.Task, Step: stage.Step.ID,
-		Kind: kind.Type, KindVersion: kind.Version, Attempt: stage.Attempt, Profile: stage.Step.Profile(),
+		Kind: kind.Type, KindVersion: kind.Version, Attempt: stage.Attempt, Profile: workflow.EffectiveProfile(stage.Step),
 	}
 }
 

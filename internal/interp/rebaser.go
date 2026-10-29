@@ -24,7 +24,9 @@ import (
 // pushed. Both attempts run under synthetic steps of the deliver or validate step that rebases, <step>-rebase and
 // <step>-rebase-review; they are not workflow steps, but they count against the attempt caps.
 
-// rebaserProfile is the copy profile a rebaser attempt runs under; a copy without it cannot resolve conflicts.
+// rebaserProfile is the profile a rebaser attempt runs under, the rebase role profile (workflow.RoleProfile). Every
+// parsed Director config has it, shipped or declared; a config without it, such as one built in memory, cannot
+// resolve conflicts, so minor conflicts escalate.
 const rebaserProfile = "rebaser"
 
 // rebaseKindType is the step kind of a rebaser attempt.
@@ -68,7 +70,8 @@ func rebaserStep(owner string) workflow.Step {
 }
 
 // narrowStep is the synthetic narrowed review step of step owner: a code review with the settings, so the profile,
-// of the workflow's first review step.
+// of the workflow's first review step; with no profile set it runs under that step's effective profile, the
+// reviewer role profile (workflow.EffectiveProfile).
 func (r *run) narrowStep(owner string) (workflow.Step, error) {
 	i := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.Type == "review" })
 	if i < 0 {
@@ -218,7 +221,7 @@ func (r *run) resolveRebase(owner workflow.Step, repo config.Repository, l rebas
 		return Next{}, nil, err
 	}
 	b := binding{Revisions: &want, Range: &git.Range{Base: l.doc.Onto, Head: res.Resolved}, Scope: git.ScopeResolution}
-	a, next, err := r.synthetic(ns, ns.Profile(), resolution.Name, inputs, b, nil)
+	a, next, err := r.synthetic(ns, workflow.EffectiveProfile(ns), resolution.Name, inputs, b, nil)
 	if err != nil || a == nil {
 		return next, nil, err
 	}

@@ -39,8 +39,8 @@ remote = "git@github.com:example/app.git"
 owner_machine = "workstation"
 `
 
-// profiledDefault is the shipped default with explicit role profiles written into its file, the shape the removed
-// examples/workflows/profiled.json and a copy's dogfood workflow have, named and described as the shipped default.
+// profiledDefault is the shipped default with explicit role profiles written into its file, named and described as
+// the shipped default: the legacy definition a task bound while role profiles were written into the digest.
 func profiledDefault(t *testing.T) *workflow.Definition {
 	t.Helper()
 	def, err := workflow.Parse([]byte(`{
@@ -75,38 +75,90 @@ func profiledDefault(t *testing.T) *workflow.Definition {
 	return def
 }
 
-// TestTaskNewDefaultsRoleProfiles: on the shipped default with the four role profiles declared, task new binds the
-// default with each Artisan step naming its role's profile, the same definition as a profiled custom file. The review's
-// defaulted profile weakens the shipped default, so it is refused until the Guildmaster approves that revision.
-func TestTaskNewDefaultsRoleProfiles(t *testing.T) {
-	cfg := writeDirector(t, rolesTOML)
-	path := emptyStore(t)
-	want := profiledDefault(t)
-	stderr := refuseTask(t, path, cfg, "app")
-	for _, s := range []string{"not authorized", want.Digest(), "step review", "guildhall workflow approve"} {
-		if !strings.Contains(stderr, s) {
-			t.Errorf("unapproved: stderr %q does not name %q", stderr, s)
-		}
+// noProfilesTOML is rolesTOML with no [profile.*] section, so every role step runs under a shipped profile.
+var noProfilesTOML = strings.NewReplacer(
+	"[profile.researcher]\nadapter = \"fake\"\n\n", "",
+	"[profile.planner]\nadapter = \"fake\"\n\n", "",
+	"[profile.builder]\nadapter = \"fake\"\n\n", "",
+	"[profile.reviewer]\nadapter = \"fake\"\n\n", "",
+).Replace(rolesTOML)
+
+// TestTaskNewBindsTheShippedWorkflows: on the shipped default and, with --kind bug, the shipped bug workflow, task new
+// binds the shipped revision byte for byte and needs no approval, whether the copy declares the role profiles or
+// relies on the shipped ones; each Artisan step resolves its role profile at use.
+func TestTaskNewBindsTheShippedWorkflows(t *testing.T) {
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
 	}
-	approveRepo(t, path, cfg, "app")
-	newTask(t, path, cfg, "app", "Task", "t-1")
-	if got := readTask(t, path, "app", "t-1").Workflow; got != want.Revision() {
-		t.Fatalf("workflow = %+v, want the profiled default %+v", got, want.Revision())
+	bug, err := workflow.Bug()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(noProfilesTOML, "[profile.") {
+		t.Fatal("noProfilesTOML still declares a profile")
+	}
+	for name, toml := range map[string]string{"shipped profiles": noProfilesTOML, "declared profiles": rolesTOML} {
+		t.Run(name, func(t *testing.T) {
+			cfg := writeDirector(t, toml)
+			path := emptyStore(t)
+			for id, c := range map[string]struct {
+				kind string
+				want *workflow.Definition
+			}{"t-feature": {config.TaskKindFeature, def}, "t-bug": {config.TaskKindBug, bug}} {
+				code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Task", "--kind", c.kind, id)
+				if code != 0 {
+					t.Fatalf("task new --kind %s: exit %d, stderr %s", c.kind, code, stderr)
+				}
+				if got := readTask(t, path, "app", id).Workflow; got != c.want.Revision() {
+					t.Errorf("%s workflow = %+v, want the shipped %+v", c.kind, got, c.want.Revision())
+				}
+			}
+			if got := storeApprovals(t, path); len(got) != 0 {
+				t.Fatalf("approvals = %+v, want none", got)
+			}
+			c := mustLoad(t, cfg)
+			for _, s := range def.Steps {
+				if s.Actor() != workflow.ArtisanActor {
+					continue
+				}
+				if _, err := c.Profile(workflow.EffectiveProfile(s)); err != nil {
+					t.Errorf("step %s: %v", s.ID, err)
+				}
+			}
+			if want := map[string]string{"shipped profiles": "claude", "declared profiles": "fake"}[name]; c.Profiles["reviewer"].Adapter != want {
+				t.Errorf("reviewer adapter = %q, want %q", c.Profiles["reviewer"].Adapter, want)
+			}
+		})
 	}
 }
 
-// TestTaskNewRoleProfileMissing: with the reviewer's profile not declared, the review has no profile and task new is
-// refused with the remedy naming the profile to declare.
-func TestTaskNewRoleProfileMissing(t *testing.T) {
-	cfg := writeDirector(t, strings.Replace(rolesTOML, "[profile.reviewer]\nadapter = \"fake\"\n", "", 1))
-	path := emptyStore(t)
-	stderr := refuseTask(t, path, cfg, "app")
-	if !strings.Contains(stderr, `step "review"`) || !strings.Contains(stderr, "declare [profile.reviewer] with adapter, or set a profile on that step") {
-		t.Fatalf("stderr %q does not give the role profile remedy", stderr)
+// TestExplicitProfileChangesTheDigest: a profile written into a step is part of the definition, so it changes the
+// digest, and on the review it still weakens the shipped default, which only the Guildmaster's approval admits.
+func TestExplicitProfileChangesTheDigest(t *testing.T) {
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped, err := shippedDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiled := profiledDefault(t)
+	if profiled.Digest() == def.Digest() {
+		t.Fatal("explicit profiles left the digest unchanged")
+	}
+	weak := workflow.Weakenings(def, profiled)
+	if len(weak) != 1 || weak[0].Step != "review" || !strings.Contains(weak[0].Reason, "profile changed") {
+		t.Fatalf("weakenings = %v, want only the review's profile", weak)
+	}
+	auth := workflow.Authority{Shipped: shipped, Approved: func(string) bool { return false }}
+	if _, err := auth.Admit(profiled); err == nil || !strings.Contains(err.Error(), "step review") {
+		t.Fatalf("Admit = %v, want the review's profile refused", err)
 	}
 }
 
-// TestTaskNewGuildmasterReviewGetsNoDefault: a review overridden to the Guildmaster gets no defaulted profile, so the
+// TestTaskNewGuildmasterReviewGetsNoDefault: a review overridden to the Guildmaster resolves no profile, and the
 // effective workflow strengthens the shipped default and needs no approval.
 func TestTaskNewGuildmasterReviewGetsNoDefault(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML+"\n[repository.workflow_overrides.review]\nactor = \"guildmaster\"\n")
@@ -117,8 +169,8 @@ func TestTaskNewGuildmasterReviewGetsNoDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range def.Steps {
-		if s.ID == "review" && s.Profile() != "" {
-			t.Fatalf("Guildmaster review has profile %q", s.Profile())
+		if s.ID == "review" && workflow.EffectiveProfile(s) != "" {
+			t.Fatalf("Guildmaster review has profile %q", workflow.EffectiveProfile(s))
 		}
 	}
 	if got := readTask(t, path, "app", "t-1").Workflow; got != def.Revision() {
@@ -184,6 +236,65 @@ func TestBoundWorkflowResolvesByName(t *testing.T) {
 	}
 	if _, err = boundWorkflow(dir, c, r, rev); err == nil || !strings.Contains(err.Error(), `bound workflow "test-default"`) {
 		t.Fatalf("missing file: %v", err)
+	}
+}
+
+// TestBoundWorkflowAcceptsTheLegacyDefaultedDigest: a task bound while role profiles were written into the
+// definition bound the profiled default's digest; it still resolves, to that profiled definition, while the bare
+// default resolves as itself and any other digest strands.
+func TestBoundWorkflowAcceptsTheLegacyDefaultedDigest(t *testing.T) {
+	cfg := writeDirector(t, rolesTOML)
+	dir := filepath.Join(filepath.Dir(cfg), "workflows")
+	c := mustLoad(t, cfg)
+	r := mustRepository(t, cfg, "app")
+	legacy := profiledDefault(t)
+	got, err := boundWorkflow(dir, c, r, legacy.Revision())
+	if err != nil || got.Digest() != legacy.Digest() {
+		t.Fatalf("boundWorkflow(legacy) = %v, %v; want the profiled default", got, err)
+	}
+	for _, s := range got.Steps {
+		if s.ID == "review" && s.Profile() != "reviewer" {
+			t.Errorf("legacy review profile = %q, want reviewer", s.Profile())
+		}
+	}
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := boundWorkflow(dir, c, r, def.Revision()); err != nil || got.Digest() != def.Digest() {
+		t.Fatalf("boundWorkflow(shipped) = %v, %v", got, err)
+	}
+	other := workflow.Revision{Name: "default", Digest: "sha256:" + strings.Repeat("e", 64)}
+	if _, err := boundWorkflow(dir, c, r, other); !errors.Is(err, interp.ErrRevision) {
+		t.Fatalf("boundWorkflow(other) = %v, want ErrRevision", err)
+	}
+}
+
+// TestLegacyDefaultedTaskStillAdvances: a task whose plan step's role profile was written into the digest it bound
+// keeps advancing once the workflow file names no profile there: its plan runs and its result is taken.
+func TestLegacyDefaultedTaskStillAdvances(t *testing.T) {
+	cfg := copyRunConfig(t, "config.toml")
+	file := filepath.Join(filepath.Dir(cfg), "workflows", "fake-straight.json")
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const plan = `{"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "demo"}}`
+	if !strings.Contains(string(b), plan) {
+		t.Fatalf("%s has no plan step %s", file, plan)
+	}
+	// The task binds the legacy shape: plan's role profile written in.
+	writeFile(t, file, strings.Replace(string(b), plan, `{"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"}}`, 1))
+	d := newRunDirectorAt(t, cfg)
+	// The file now names no profile on plan, as the definition did before the defaults were applied.
+	writeFile(t, file, strings.Replace(string(b), plan, `{"id": "plan", "type": "plan", "version": 1}`, 1))
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitResult(t, "plan", 1)
+	done := append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
+	if code, out, stderr := d.run(t, done...); code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
+		t.Fatalf("step done: exit %d, %q, stderr %s", code, out, stderr)
 	}
 }
 

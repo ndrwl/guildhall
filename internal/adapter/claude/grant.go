@@ -9,14 +9,16 @@ import (
 )
 
 // artisanReadOnlyGit are the read-only git rules every well-known profile's shipped default grants.
-var artisanReadOnlyGit = []string{"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-list:*)", "Bash(git merge-base:*)"}
+var artisanReadOnlyGit = []string{"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-list:*)", "Bash(git merge-base:*)", "Bash(git ls-files:*)"}
 
 // ShippedDefaultGrants are the allowed_tools this release gives a claude profile with a well-known name that sets
 // none (docs/decisions/0093-shipped-default-grants.md): read-only git for each, the git a build needs to commit and
-// rebase for builder, and web search and fetch for researcher. They grant neither git checkout nor git push, nor
-// any toolchain command; a repository grant adds those a repository needs, such as SuggestedGoAllowedTools.
+// rebase for builder, the same without git switch for rebaser, and web search and fetch for researcher. They grant
+// neither git checkout nor git push, nor any toolchain command; a repository grant adds those a repository needs,
+// such as SuggestedGoAllowedTools. Every config.ShippedProfiles name has an entry.
 var ShippedDefaultGrants = map[string][]string{
 	"builder":    append(slices.Clone(artisanReadOnlyGit), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)", "Bash(git switch:*)"),
+	"rebaser":    append(slices.Clone(artisanReadOnlyGit), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)"),
 	"planner":    slices.Clone(artisanReadOnlyGit),
 	"reviewer":   slices.Clone(artisanReadOnlyGit),
 	"researcher": append(slices.Clone(artisanReadOnlyGit), "WebSearch", "WebFetch"),

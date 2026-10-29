@@ -13,7 +13,8 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
 - `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
-- `guildhall task list --store <path> [--repo <id>] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
+- `guildhall task list --store <path> [--repo <id>] [--workflow <name>] [--open] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
+  `--workflow` keeps only the tasks bound to that workflow name, and `--open` only open tasks; before deleting `workflows/<name>.json` the Director checks that `task list --workflow <name> --open --json` prints `[]`, since an open task bound to it would strand, and nothing else refuses the deletion.
   A task in its repository's [merge queue](interpreter.md#the-merge-queue) also has a `merge_queue` object, the entry `director status` lists ([status](director.md#status)); it is absent for a task that is not queued.
 - `guildhall task timeline --store <path> --repo <id> <task> --json` and `guildhall task files --store <path> --repo <id> <task> --json` are the [inspection reads](#inspection).
 - `guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move <move> --reason <text> <task>` records a [Director ruling](#director-rulings) and prints its receipt.
@@ -57,13 +58,13 @@ A name resolves to:
   Any `workflows/default.json` or `workflows/bug.json` beside the configuration is ignored.
 - the file `workflows/<name>.json` in the configuration file's directory for any other name, and the file's `name` must equal it.
 
-The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, [role profile defaults](configuration.md#profiles) are applied with `workflow.ApplyProfileDefaults`, and the result is checked with `workflow.Validate` (R1.59).
-The effective workflow is then checked with `config.CheckArtisanAdapters`: every named profile must be declared in the loaded Director configuration, and every Artisan step must name a profile.
-A research, plan, build or Artisan review step with no `profile` names its role profile, `researcher`, `planner`, `builder` or `reviewer`, when the configuration declares it.
-A profile-less Artisan is refused with the workflow and step named and a remedy to declare its role profile or set a profile on that step; no default adapter, real or fake, supplies a missing profile.
-The shipped `default` and `bug` workflows name no profiles, so a copy that declares the four role profiles runs them with no custom workflow; each with a defaulted reviewer's profile [needs the Guildmaster's approval](configuration.md#enforcement-at-task-creation) once, with `workflow approve --config --repo` and `--kind bug` for the bug workflow.
-For deterministic tests or demos, name a profile whose `adapter` is `fake`; other actors need no Artisan profile.
-A missing or unreadable file, a parse error, a refused override, a validation problem, an undeclared profile or a profile-less Artisan refuses the task with the problems named, and the store is not opened, so nothing is written.
+The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, and the result is checked with `workflow.Validate` (R1.59); no role profile is written into it.
+The effective workflow is then checked with `config.CheckArtisanAdapters`: every named profile must be declared in the loaded Director configuration or [shipped](configuration.md#profiles), and every Artisan step must resolve a profile.
+A research, plan, build or Artisan review step with no `profile` runs under its [role profile](configuration.md#profiles), `researcher`, `planner`, `builder` or `reviewer`, the copy's own or the shipped one, resolved at use and outside the digest.
+An Artisan step whose type has no role, such as `refute` or `document-review`, and that names no profile is refused with the workflow and step named and a remedy to set a profile on that step; no default adapter, real or fake, supplies a missing profile.
+The shipped `default` and `bug` workflows name no profiles, so any copy runs them with no custom workflow and no `[profile.*]` section, binding the shipped revision byte for byte, which needs no approval.
+For deterministic tests or demos, name a profile whose `adapter` is `fake`, or declare the role profiles with it; other actors need no Artisan profile.
+A missing or unreadable file, a parse error, a refused override, a validation problem, an undeclared profile or an Artisan step that resolves no profile refuses the task with the problems named, and the store is not opened, so nothing is written.
 
 The effective workflow must then be [authorized](configuration.md#enforcement-at-task-creation): shipped with the release, approved by the Guildmaster for its exact digest, or a change from a shipped or approved definition that meets the review floor and weakens nothing.
 An unauthorized workflow refuses the task with its digest and what it weakens named, and writes nothing.

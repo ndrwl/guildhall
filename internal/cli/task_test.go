@@ -380,8 +380,13 @@ func TestTaskDefaultIgnoresShadowFile(t *testing.T) {
 	cfg := writeDirector(t, strings.Replace(directorTOML, `workflow = "test-default"`, `workflow = "default"`, 1))
 	writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "default.json"), "invalid JSON")
 	path := emptyStore(t)
-	if stderr := refuseTask(t, path, cfg, "app"); !strings.Contains(stderr, `step "research"`) || !strings.Contains(stderr, "custom workflow") {
-		t.Fatalf("stderr = %q", stderr)
+	newTask(t, path, cfg, "app", "Task", "t-1")
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readTask(t, path, "app", "t-1").Workflow; got != def.Revision() {
+		t.Fatalf("workflow = %+v, want the shipped default %+v", got, def.Revision())
 	}
 }
 

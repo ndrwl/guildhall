@@ -48,6 +48,12 @@ func directorCopy(t *testing.T, table string, steps ...string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A role profile the table declares replaces the fixture's fake one.
+	for _, role := range []string{"researcher", "planner", "builder", "reviewer", "rebaser"} {
+		if section := "[profile." + role + "]"; strings.Contains(table, section) {
+			b = bytes.Replace(b, []byte(section+"\nadapter = \"fake\"\n"), nil, 1)
+		}
+	}
 	if err := os.WriteFile(cfg, append(b, []byte("\n"+table)...), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +353,8 @@ func TestDirectorStartRefusesAllowedToolsARuntimeCannotGrant(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			writeFile(t, cfg, string(b)+"\n"+c.grant)
+			// The grant's builder replaces the fixture's.
+			writeFile(t, cfg, strings.Replace(string(b), "[profile.builder]\nadapter = \"fake\"\n", "", 1)+"\n"+c.grant)
 			code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
 			if code != 1 || !strings.Contains(out, c.check) || !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "builder") || !strings.Contains(stderr, "fake") {
 				t.Errorf("exit %d\n%s\n%s; want %q naming profile builder and its adapter", code, out, stderr, c.check)
