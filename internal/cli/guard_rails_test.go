@@ -238,6 +238,23 @@ func TestStartQueueRoundDropsAStartNoLongerDue(t *testing.T) {
 	if len(logged) != 1 || !strings.Contains(logged[0], "app/t-3: attempt 1 of step plan left the start queue: the advance waits dependencies") {
 		t.Errorf("logged %q", logged)
 	}
+
+	// An advance that now queues another step of the task does not keep the old entry at the front.
+	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+		return s.StartCappedAttempt("t-3-plan", "app", "t-3", "plan", caps)
+	}); !errors.Is(err, store.ErrStartQueued) {
+		t.Fatalf("t-3's start again = %v, want it queued", err)
+	}
+	logged = nil
+	startQueueRound(d.store, func(taskRef) (interp.Next, bool, error) {
+		return interp.Next{Wait: interp.WaitQueued, Step: "build", Attempt: 1, Position: 2}, true, nil
+	}, func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) })
+	if q, err := withStore(d.store, true, func(s *store.Store) ([]store.QueuedStart, error) { return s.StartQueue() }); err != nil || len(q) != 0 {
+		t.Fatalf("StartQueue = %+v, %v; want the plan entry dropped", q, err)
+	}
+	if len(logged) != 1 || !strings.Contains(logged[0], "the advance waits queued for step build") {
+		t.Errorf("logged %q", logged)
+	}
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
 		return s.FinishAttempt("t-1-other", "app", "t-1", "other", 1, store.AttemptSucceeded)
 	}); err != nil {

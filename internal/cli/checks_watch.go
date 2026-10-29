@@ -251,8 +251,8 @@ func (a *App) watchStartQueue(p startPlan, n int, dir, copyDir, storePath, state
 // startQueueRound is one round of the start-queue watcher over the store at path, while its newest session is running
 // or recovering: it advances the queued tasks in queue order as `task start` does, with advance, and stops at the
 // first whose start stays queued, since none behind it is admitted before it. An advance that neither starts the
-// queued attempt nor queues it again, such as one the dependency gate holds, one that fails or one whose step is no
-// longer due, takes the entry out of the queue, so it does not hold the front; the task's next.json reports that
+// queued attempt nor queues it again, such as one the dependency gate holds, one that fails or one that now waits on
+// another step, queued or not, takes the entry out of the queue, so it does not hold the front; the task's next.json reports that
 // advance as it does any other's, and logf records the drop.
 func startQueueRound(path string, advance func(taskRef) (interp.Next, bool, error), logf func(format string, args ...any)) {
 	read := func() ([]store.QueuedStart, error) {
@@ -279,7 +279,7 @@ func startQueueRound(path string, advance func(taskRef) (interp.Next, bool, erro
 			// The session holds new attempts: nothing drains until it lets them go.
 			return
 		}
-		if err == nil && n.Wait == interp.WaitQueued {
+		if err == nil && n.Wait == interp.WaitQueued && n.Step == e.Step && n.Attempt == e.Attempt {
 			return
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, store.ErrLocked) {
