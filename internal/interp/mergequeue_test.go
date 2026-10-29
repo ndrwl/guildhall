@@ -18,6 +18,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // queueWorkspaces is the workspace double for the merge queue's tests: rebases, squashes and diffs are
@@ -84,7 +85,13 @@ func baseN(n int) string { return fmt.Sprintf("%02x", n) + strings.Repeat("e", 3
 // with the queue's workspace double installed and heads 1 to 3 and commitN(1..9) known to the forge.
 func queueEnv(t *testing.T, b backend) (*env, *forgetest.Fake, *queueWorkspaces) {
 	t.Helper()
-	e, f := newValidateEnv(t, b)
+	return queueEnvDefinition(t, b, loadWorkflow(t, "validate"))
+}
+
+// queueEnvDefinition is queueEnv over def, a variant of validate.json.
+func queueEnvDefinition(t *testing.T, b backend, def *workflow.Definition) (*env, *forgetest.Fake, *queueWorkspaces) {
+	t.Helper()
+	e, f := newValidateEnvDefinition(t, b, def)
 	ws := &queueWorkspaces{Workspaces: gittest.NewWorkspaces(), tip: head}
 	for n := 1; n < 10; n++ {
 		f.AddCommit(repoPath, commitN(n))

@@ -10,6 +10,22 @@ standards_revision = "standards-1"
 [profile.demo]
 adapter = "fake"
 
+# The role profiles replace the shipped claude ones, so nothing here runs or probes Claude.
+[profile.researcher]
+adapter = "fake"
+
+[profile.planner]
+adapter = "fake"
+
+[profile.builder]
+adapter = "fake"
+
+[profile.reviewer]
+adapter = "fake"
+
+[profile.rebaser]
+adapter = "fake"
+
 [[repository]]
 id = "app"
 path = "/srv/app"

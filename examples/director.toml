@@ -18,37 +18,29 @@ claude_skills_profile_reviewer = '{"preset":"reviewer-v1"}'
 claude_skills_profile_rebaser = '{"preset":"builder-v1"}'
 
 # Artisan profiles that workflow steps name with "profile"; no credentials.
-# A research, plan, build or Artisan review step that names none runs as researcher, planner, builder or reviewer,
-# so these four run the shipped default and bug workflows with no custom workflow.
-# These well-known claude profiles set no allowed_tools, so each gets its shipped default grant: read-only git,
-# plus web search and fetch for the researcher and committing and rebasing git for the builder. Setting
-# allowed_tools on a profile replaces its default; allowed_tools = [] grants nothing.
-[profile.researcher]
-adapter = "claude"
-model = "opus"
-
-[profile.planner]
-adapter = "claude"
-model = "opus"
-
-[profile.builder]
-adapter = "claude"
-model = "opus"
-effort = "high"
-
-[profile.reviewer]
-adapter = "claude"
-model = "opus"
-effort = "high"
-role = "roles/reviewer.md"
-
-# Resolves the few conflicts of a minor_conflicts rebase at the front of the merge queue; no workflow step names
-# it. Without this profile, minor conflicts send the build back instead.
-[profile.rebaser]
-adapter = "claude"
-model = "haiku"
-effort = "low"
-allowed_tools = ["Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)"]
+# A research, plan, build or Artisan review step that names none runs under its role profile, researcher, planner,
+# builder or reviewer, and the merge queue's rebaser under rebaser. Guildhall ships these five on the claude
+# adapter with the adapter's default model, so the shipped default and bug workflows run with no [profile.*] here.
+# Each shipped profile sets no allowed_tools, so it gets its shipped default grant: read-only git, plus web search
+# and fetch for the researcher, committing and rebasing git for the builder and rebaser, and git switch for the
+# builder. A section here replaces the shipped profile of that name as a whole; one that sets no allowed_tools
+# still gets the shipped grant, so choosing a model or effort keeps the permissions. Setting allowed_tools
+# replaces the grant; allowed_tools = [] grants nothing.
+# [profile.builder]
+# adapter = "claude"
+# model = "opus"
+# effort = "high"
+#
+# [profile.reviewer]
+# adapter = "claude"
+# model = "opus"
+# effort = "high"
+# role = "roles/reviewer.md"
+#
+# [profile.rebaser]
+# adapter = "claude"
+# model = "haiku"
+# effort = "low"
 
 [[repository]]
 id = "cli"
@@ -65,9 +57,16 @@ owner_machine = "workstation"
 # minor_conflict_files = 3
 # minor_conflict_lines = 50
 
-# A repository grant: this Go repository's builder may also run its checks, on top of its shipped default.
+# Repository grants: this Go repository's builder may also run its checks, and its reviewer and rebaser its
+# tests, on top of their shipped defaults.
 [repository.profiles.builder]
 allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)"]
+
+[repository.profiles.reviewer]
+allowed_tools = ["Bash(go test:*)"]
+
+[repository.profiles.rebaser]
+allowed_tools = ["Bash(go test:*)"]
 
 [[repository]]
 id = "docs-site"

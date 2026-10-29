@@ -6,11 +6,12 @@
     "step": "research",
     "kind": "research",
     "kind_version": 1,
-    "attempt": 2
+    "attempt": 2,
+    "profile": "researcher"
   },
   "prompt": {
     "path": "prompt.md",
-    "digest": "sha256:eaf9cddde4dbb57764b17c35c0759d51b345ba3ed2e191eb31bb312cc2ad4f83"
+    "digest": "sha256:6c9bd7d7818506a3f45bd805283de0cde4b2bb29c67ebbd46e3f318e236bfd04"
   },
   "role": {
     "path": "roles/artisan.md",

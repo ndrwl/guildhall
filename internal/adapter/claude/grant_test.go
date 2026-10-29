@@ -29,6 +29,9 @@ allowed_tools = ["Bash(go test:*)", "Bash(git commit:*)"]
 [repository.profiles.worker]
 allowed_tools = ["Bash(make:*)"]
 
+[repository.profiles.rebaser]
+allowed_tools = ["Bash(go test:*)"]
+
 [[repository]]
 id = "site"
 path = "/src/site"
@@ -57,18 +60,24 @@ func grants(source claude.GrantSource, rules ...string) []claude.Grant {
 // well-known name has; the task's repository grant is appended without repeating a rule, and no other
 // repository's grant leaks.
 func TestEffectiveGrant(t *testing.T) {
-	readOnly := []string{"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-list:*)", "Bash(git merge-base:*)"}
+	readOnly := []string{"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-list:*)", "Bash(git merge-base:*)", "Bash(git ls-files:*)"}
 	builder := append(slices.Clone(readOnly), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)", "Bash(git switch:*)")
+	rebaser := append(slices.Clone(readOnly), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)")
 	claudeProfiles := "[profile.builder]\nadapter = \"claude\"\n[profile.planner]\nadapter = \"claude\"\n[profile.reviewer]\nadapter = \"claude\"\n" +
 		"[profile.researcher]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n"
 	for name, c := range map[string]struct {
 		extra, profile, repository string
 		want                       []claude.Grant
 	}{
-		"builder default":       {claudeProfiles, "builder", "", grants(claude.SourceDefault, builder...)},
-		"planner default":       {claudeProfiles, "planner", "", grants(claude.SourceDefault, readOnly...)},
-		"reviewer default":      {claudeProfiles, "reviewer", "", grants(claude.SourceDefault, readOnly...)},
-		"researcher default":    {claudeProfiles, "researcher", "", grants(claude.SourceDefault, append(slices.Clone(readOnly), "WebSearch", "WebFetch")...)},
+		"builder default":    {claudeProfiles, "builder", "", grants(claude.SourceDefault, builder...)},
+		"planner default":    {claudeProfiles, "planner", "", grants(claude.SourceDefault, readOnly...)},
+		"reviewer default":   {claudeProfiles, "reviewer", "", grants(claude.SourceDefault, readOnly...)},
+		"researcher default": {claudeProfiles, "researcher", "", grants(claude.SourceDefault, append(slices.Clone(readOnly), "WebSearch", "WebFetch")...)},
+		"rebaser default":    {claudeProfiles, "rebaser", "", grants(claude.SourceDefault, rebaser...)},
+		"shipped rebaser and repository": {"[profile.worker]\nadapter = \"claude\"\n", "rebaser", "app",
+			append(grants(claude.SourceDefault, rebaser...), grants(claude.SourceRepository, "Bash(go test:*)")...)},
+		"shipped builder, no copy section": {"[profile.worker]\nadapter = \"claude\"\n", "builder", "",
+			grants(claude.SourceDefault, builder...)},
 		"other name":            {claudeProfiles, "worker", "", nil},
 		"other name repository": {claudeProfiles, "worker", "app", grants(claude.SourceRepository, "Bash(make:*)")},
 		"repository appended": {claudeProfiles, "builder", "app",
@@ -94,7 +103,17 @@ func TestEffectiveGrant(t *testing.T) {
 	}
 }
 
-// TestFakeBuilderGetsNoDefault: a profile of the fake adapter named builder gets no shipped default.
+// TestShippedProfilesHaveShippedGrants: every profile the release ships runs claude and has a shipped default
+// grant, so a copy that declares no profiles still gives each role its permissions.
+func TestShippedProfilesHaveShippedGrants(t *testing.T) {
+	for name, p := range config.ShippedProfiles {
+		if p.Adapter != "claude" || p.AllowedToolsSet() || len(claude.ShippedDefaultGrants[name]) == 0 {
+			t.Errorf("shipped profile %s = %+v has no shipped grant", name, p)
+		}
+	}
+}
+
+// TestFakeBuilderGetsNoDefault:a profile of the fake adapter named builder gets no shipped default.
 func TestFakeBuilderGetsNoDefault(t *testing.T) {
 	cfg, err := config.Parse([]byte("schema_version = 1\nmode = \"director\"\nname = \"test\"\n[profile.builder]\nadapter = \"fake\"\n" +
 		"[[repository]]\nid = \"app\"\npath = \"/src/app\"\nremote = \"git@example.com:app.git\"\nowner_machine = \"test\"\n"))
@@ -106,9 +125,10 @@ func TestFakeBuilderGetsNoDefault(t *testing.T) {
 	}
 }
 
-// TestShippedClaudeRoleDefaults: the shipped example, parsed by its real consumer, gives its profiles their skill
-// presets and effective grants: only the researcher may search and fetch the web, and the builder in the Go
-// repository gets go test and go vet on top of its shipped default.
+// TestShippedClaudeRoleDefaults: the shipped example, which declares no [profile.*], parsed by its real consumer,
+// gives the shipped role profiles their skill presets and effective grants: only the researcher may search and fetch
+// the web, and in the Go repository the builder gets go test and go vet, and the reviewer and rebaser go test, on
+// top of their shipped defaults.
 func TestShippedClaudeRoleDefaults(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", "director.toml"))
 	if err != nil {
@@ -127,7 +147,13 @@ func TestShippedClaudeRoleDefaults(t *testing.T) {
 	if goRepo == "" {
 		t.Fatal("the example has no repository granting its builder")
 	}
-	for name, preset := range map[string]string{"researcher": "artisan-v1", "planner": "artisan-v1", "builder": "builder-v1", "reviewer": "reviewer-v1"} {
+	for name, p := range cfg.Profiles {
+		if p != config.ShippedProfiles[name] {
+			t.Errorf("profile %s = %+v, want only the shipped profiles", name, p)
+		}
+	}
+	goTools := map[string][]string{"builder": claude.SuggestedGoAllowedTools, "reviewer": {"Bash(go test:*)"}, "rebaser": {"Bash(go test:*)"}}
+	for name, preset := range map[string]string{"researcher": "artisan-v1", "planner": "artisan-v1", "builder": "builder-v1", "reviewer": "reviewer-v1", "rebaser": "builder-v1"} {
 		p, err := cfg.ClaudeSkills(name)
 		if err != nil || p.Preset != preset {
 			t.Fatalf("%s: %+v %v", name, p, err)
@@ -147,7 +173,7 @@ func TestShippedClaudeRoleDefaults(t *testing.T) {
 				}
 			}
 			for _, tool := range claude.SuggestedGoAllowedTools {
-				if slices.Contains(rules, tool) != (name == "builder" && repo.ID == goRepo) {
+				if slices.Contains(rules, tool) != (repo.ID == goRepo && slices.Contains(goTools[name], tool)) {
 					t.Errorf("%s in %s: wrong %s authority", name, repo.ID, tool)
 				}
 			}

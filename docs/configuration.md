@@ -134,7 +134,7 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 | `[repository.merge.requires]` | What a task's pull request needs before Guildhall merges it; see [merge requirements](#merge-requirements). |
 | `[repository.merge]` | How Guildhall classifies a rebase and when a rebased head needs a new merge decision; see [rebase settings](#rebase-settings). |
-| `[repository.profiles.<name>]` | A repository grant: its `allowed_tools` are added to that profile's effective grant for this repository's tasks only, such as `["Bash(go test:*)", "Bash(go vet:*)"]` for a Go repository's builder ([Artisan permissions](adapters.md#artisan-permissions)). The profile must be one the config declares, running the `claude` adapter; each rule is checked as a profile's are, and listed once. |
+| `[repository.profiles.<name>]` | A repository grant: its `allowed_tools` are added to that profile's effective grant for this repository's tasks only, such as `["Bash(go test:*)", "Bash(go vet:*)"]` for a Go repository's builder ([Artisan permissions](adapters.md#artisan-permissions)). The profile must be one the config declares or one of the [shipped profiles](#profiles), running the `claude` adapter; each rule is checked as a profile's are, and listed once. |
 
 Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.
 Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case.
@@ -196,8 +196,8 @@ minor_conflict_lines   = 50
 - `reapprove_after_rebase` matters only where `guildmaster_approval` is required; without it, Guildhall merges a rebased head by itself whenever the requirements hold.
 - Red checks and review findings on a rebased head always reach the Guildmaster, whatever the threshold.
 
-A `minor_conflicts` rebase is resolved by an Artisan run under the copy's profile named [`rebaser`](#profiles).
-A copy that declares no `rebaser` profile escalates every minor rebase to `major_conflicts`, a build send-back, and tells the Director why.
+A `minor_conflicts` rebase is resolved by an Artisan run under the profile named [`rebaser`](#profiles), the shipped one unless the copy declares its own, so every Director copy resolves minor conflicts.
+A config without a `rebaser` profile, which only a config built in memory can be, escalates every minor rebase to `major_conflicts`, a build send-back, and tells the Director why.
 
 ### Profiles
 
@@ -210,15 +210,15 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | `adapter` | Required: the runtime adapter, such as `claude`. |
 | `model`, `effort` | The attempt's [runtime settings](adapters.md#runtime-settings), which defines defaults, supported values and refusals. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
-| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `planner`, `reviewer` or `researcher` gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant). |
+| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `planner`, `rebaser`, `reviewer` or `researcher`, shipped or declared, gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant). |
 
 A profile names no credential.
 For how the copy/profile reference reaches the runtime, see [Artisan permissions](adapters.md#artisan-permissions).
 
 Each `allowed_tools` entry is a tool name, optionally with a specifier in parentheses, with no control characters and listed once; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused, so a grant names its commands.
 The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or `GUILDHALL_COPY` selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
-`config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare, listing every such step.
-`config.CheckArtisanAdapters` additionally refuses an Artisan stage without a profile, before task creation or advance mutates task records.
+`config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare and Guildhall does not ship, listing every such step.
+`config.CheckArtisanAdapters` additionally refuses an Artisan stage that resolves no profile, before task creation or advance mutates task records.
 Director, Guildmaster and engine stages do not require an Artisan adapter.
 
 Profiles keep role names, and each step type with a role has a **role profile**:
@@ -229,18 +229,22 @@ Profiles keep role names, and each step type with a role has a **role profile**:
 | `plan` | `planner` |
 | `build` | `builder` |
 | `review` | `reviewer` |
+| `rebase` (the merge queue's synthetic rebaser step) | `rebaser` |
 
-When a repository's effective workflow is resolved, after its `workflow_overrides` and before validation, a step of one of these types that an Artisan runs and that names no `profile` gets its role profile, if the config declares `[profile.<role>]` (`workflow.ApplyProfileDefaults`).
-An explicit step profile always wins, a review overridden to the Guildmaster gets none, and other step types, such as `refute` and `document-review`, get none.
-So a copy that declares `[profile.researcher]`, `[profile.planner]`, `[profile.builder]` and `[profile.reviewer]` runs the shipped default workflow with no custom workflow; a step whose role profile is not declared is refused naming the profile to declare.
-The default is part of the effective workflow's digest, so declaring or removing a role profile changes which revision a new task binds, and strands a task whose steps were defaulted from it.
-Changing the reviewer's profile, including by defaulting it, requires approval of the effective workflow revision with `guildhall workflow approve --repo <id> --words-file <file>`.
-To deliberately run a no-model demo, name an explicit profile whose `adapter = "fake"`.
+A step that an Artisan runs and that names no `profile` runs under its type's role profile (`workflow.EffectiveProfile`).
+An explicit step profile always wins, a review overridden to the Guildmaster gets none, and other step types, such as `refute` and `document-review`, get none, so they must name a profile and are refused without one.
+The role profile is resolved when the step is checked, launched and rendered, never written into the workflow definition, so it is outside the workflow's digest: a task on the shipped default or bug workflow binds the shipped revision byte for byte and needs no approval, and declaring, changing or removing a role profile neither changes which revision a new task binds nor strands an open one ([decision](decisions/role-profiles-outside-the-digest.md)).
+That includes the reviewer: changing the `reviewer` profile changes who reviews without the Guildmaster's approval, while a profile written into a review step is still a weakening ([workflow-edit authority](#workflow-edit-authority)).
+
+Guildhall ships the five role profiles, `researcher`, `planner`, `builder`, `reviewer` and `rebaser`, each `adapter = "claude"` with no `model`, `effort`, `role` or `allowed_tools`, so each runs the adapter's default model with its shipped default grant.
+When a Director config is parsed, each shipped profile it does not declare is added to its profiles, so every check that a profile is declared, such as a repository grant, `claude_skills_profile_<name>`, `quality_judge_profiles` and the `director start` preflight, accepts the shipped names; a Steward config gets none.
+A copy's own `[profile.<name>]` with a shipped name replaces the shipped profile as a whole, not key by key; one that sets no `allowed_tools` still gets the shipped grant, so choosing only a `model` or `effort` keeps the permissions.
+So a copy with no `[profile.*]` section runs the shipped default and bug workflows, every role step on claude.
+To deliberately run a no-model demo, name an explicit profile whose `adapter = "fake"`, or declare the role profiles with it.
 
 One profile is chosen by name rather than by a workflow step: `rebaser` runs the rebaser Artisan of a `minor_conflicts` [rebase](#rebase-settings), the synthetic step `<step>-rebase`, which resolves a few conflicts and reports whether resolving them changed behaviour.
-It is declared like any profile, with nothing built in; the example config gives it a small model, low effort and git and go tools only.
-Without it, minor conflicts escalate to `major_conflicts`.
-The narrowed review that follows, `<step>-rebase-review`, uses the profile of the workflow's review step.
+The shipped one runs with the rebaser's shipped grant; the example config shows a copy section giving it a small model and low effort, and repository grants adding a repository's test command.
+The narrowed review that follows, `<step>-rebase-review`, runs under the effective profile of the workflow's review step, the `reviewer` role profile when that step names none.
 For when profile settings are checked, see [runtime settings](adapters.md#runtime-settings).
 
 ### The director table
@@ -274,8 +278,8 @@ A workflow defines the steps of one task as an ordered list of built-in step kin
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
 The shipped default, a feature task's workflow, is [`internal/workflow/default.json`](../internal/workflow/default.json); the shipped bug workflow is [`internal/workflow/bug.json`](../internal/workflow/bug.json), the default's steps without grill and the Guildmaster's acceptance, so a bug task has no Guildmaster stage and merges under the repository's [merge requirements](#merge-requirements); build and review take plan's spec, and research, plan, build and review are instructed to reproduce the defect from the task title, proceed on recommended answers or fail back with a question that needs the Guildmaster, test it first and check that test ([task kinds](tasks.md#task-kinds), [decision](decisions/0095-bug-workflow-without-acceptance.md)).
-Both name no profiles; Artisan steps take their [role profiles](#profiles).
-[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step; assign its Artisan profiles as described under [profiles](#profiles) before using it.
+Both name no profiles; Artisan steps run under their [role profiles](#profiles), resolved at use and outside the digest.
+[`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step; its Artisan steps run under their role profiles too.
 
 This structural example also leaves profile selection to the copy; see [profiles](#profiles) for the admission requirements.
 
@@ -419,7 +423,7 @@ guildhall workflow approvals --store director.store --json
 ```
 
 `approve` parses and validates the file, computes its digest and records the Guildmaster's words from the file or standard input, exactly as given; it prints the [store receipt](store.md#mutations-and-receipts).
-With `--config` and `--repo` instead of `--file`, it approves that repository's effective workflow for the [task kind](tasks.md#task-kinds) `--kind` names, `feature` when it is not given: its definition with the repository's `workflow_overrides` and profile defaults applied, resolved exactly as [`task new`](tasks.md#the-bound-workflow) resolves it; the approval carries the workflow's name and the effective digest.
+With `--config` and `--repo` instead of `--file`, it approves that repository's effective workflow for the [task kind](tasks.md#task-kinds) `--kind` names, `feature` when it is not given: its definition with the repository's `workflow_overrides` applied and no role profile written in, resolved exactly as [`task new`](tasks.md#the-bound-workflow) resolves it; the approval carries the workflow's name and the effective digest.
 `--kind` is a usage error without `--config` and `--repo`.
 A refused definition, empty words or a missing store write nothing.
 Repeating an approval prints the original receipt; different words for an approved digest are refused.
@@ -454,6 +458,7 @@ For a guarded step of the baseline, these are weakening:
 Changing the relative order of any steps the baseline and the revision share is weakening too.
 Adding steps, adding input references or loop rules, raising `max`, and changing steps that are not guarded, the name or the description are not.
 The classifier compares definitions only: the contents of files that a profile or skill name points to are not part of the workflow digest, so it cannot see them.
+Nor are the role profile a step without a `profile` runs under and the settings of a profile, shipped or declared: only a `profile` written into a step is ([decision](decisions/role-profiles-outside-the-digest.md)).
 
 The review floor, `workflow.FloorProblems`, is one non-author review and one validation before delivery: every `deliver` step must take a `review` step's outcome as one of its `review` inputs and a `validate` step's result as its `validation` input.
 A `review` step is non-author by construction, because its actor is a fresh Artisan session or the Guildmaster, never the session that built the change.

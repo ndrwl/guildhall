@@ -4,6 +4,7 @@ Repository: cli
 Task: t7
 Step: research (research version 1)
 Attempt: 2
+Profile: researcher
 
 Task title:
 

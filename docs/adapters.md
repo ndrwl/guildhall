@@ -195,27 +195,28 @@ The same adapter runs the [Director's session](director.md#start) interactively;
 
 The default workflow's build stage asks its Artisan to run the repository's checks and commit its work ([`build.md`](../baseline/stages/build.md)), and both are shell commands, which the wrapper's `acceptEdits` does not allow.
 Each Director grants them itself, per profile, through its own copy's `config.toml` ([D89](decisions/0089-artisan-allow-rules.md), [D93](decisions/0093-shipped-default-grants.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` / `--repo` reference and settings file above.
-Raw rule flags are not accepted; an undeclared profile is refused.
+Raw rule flags are not accepted; a profile the copy neither declares nor gets [shipped](configuration.md#profiles) is refused.
 Without both copy and profile, the wrapper grants nothing.
 The session's **effective grant** is, in order and with a repeated rule kept once:
 
 1. the profile's [`allowed_tools`](configuration.md#profiles) when it sets them, even to `[]`; otherwise the **shipped default grant** for its name, which only a `claude` profile gets;
 2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any.
 
-The shipped default grants are:
+The shipped default grants are the grants of the five [role profiles](configuration.md#profiles) Guildhall ships, and of a copy's `claude` profile of the same name that sets no `allowed_tools`:
 
 | Profile | Shipped default |
 |---|---|
 | `builder` | read-only git, plus `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git fetch:*)`, `Bash(git rebase:*)` and `Bash(git switch:*)` |
+| `rebaser` | read-only git, plus `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git fetch:*)` and `Bash(git rebase:*)` |
 | `planner` | read-only git |
 | `reviewer` | read-only git |
 | `researcher` | read-only git, plus `WebSearch` and `WebFetch` |
 
-Read-only git is `Bash(git <command>:*)` for `status`, `diff`, `log`, `show`, `rev-list` and `merge-base`.
+Read-only git is `Bash(git <command>:*)` for `status`, `diff`, `log`, `show`, `rev-list`, `merge-base` and `ls-files`.
 No default grants `git checkout`, which can discard work, `git push`, which the publish stage does, or any toolchain command; a profile of any other name, or of another adapter, gets no default.
 The rules come only from the Guildhall release and the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file, repository file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
 
-A repository's checks are a repository grant. The suggested one for a Go repository's builder, `claude.SuggestedGoAllowedTools`, runs `go test` and `go vet`; its git comes from the builder's default:
+A repository's checks are a repository grant, which needs no `[profile.*]` section for a shipped profile. The suggested one for a Go repository's builder, `claude.SuggestedGoAllowedTools`, runs `go test` and `go vet`; its git comes from the builder's default, and the reviewer and rebaser may run the tests too:
 
 ```toml
 [[repository]]
@@ -224,6 +225,12 @@ id = "app"
 
 [repository.profiles.builder]
 allowed_tools = ["Bash(go test:*)", "Bash(go vet:*)"]
+
+[repository.profiles.reviewer]
+allowed_tools = ["Bash(go test:*)"]
+
+[repository.profiles.rebaser]
+allowed_tools = ["Bash(go test:*)"]
 ```
 
 A repository whose checks are other commands, such as a `make check` target or a linter, grants those commands' rules instead; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused.
@@ -236,7 +243,7 @@ On a machine where neither the profile nor those settings allow them, a build at
 
 So the grant and the dependency are never silent:
 
-- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and each claude profile's effective grant by source: the copy's list or the shipped default, or that a profile of another name gets no shipped default, then each repository's additions labelled with its id; of the grants it refuses only `allowed_tools` or a repository grant on a profile of another adapter, which cannot grant them, because Guildhall cannot see every settings file Claude Code reads (it also refuses a profile's [runtime settings](#runtime-settings) its runtime cannot honour);
+- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and each claude profile's effective grant by source, the shipped role profiles included: the copy's list or the shipped default, or that a profile of another name gets no shipped default, then each repository's additions labelled with its id; of the grants it refuses only `allowed_tools` or a repository grant on a profile of another adapter, which cannot grant them, because Guildhall cannot see every settings file Claude Code reads (it also refuses a profile's [runtime settings](#runtime-settings) its runtime cannot honour);
 - the wrapper names each denied tool use in the attempt's launcher log, as above.
 
 A live run, `TestLiveClaudeBuildPermissions`, asks a real session in a git repository to run a check command Claude Code does not allow as read-only, `sh check.sh`, and then commit; it fails unless the check ran and the commit was made, and on any denied tool use.

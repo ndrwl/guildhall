@@ -121,6 +121,6 @@ The complete question text has CRLF and lone CR normalised to LF.
 
 ## Profiles
 
-A step's `profile` setting names a `[profile.<name>]` table in the Director config, which chooses the adapter, model, effort and role prompt of the Artisan that runs it ([configuration](configuration.md#profiles)).
-`config.CheckProfiles` refuses a workflow that names a profile the config does not declare.
-The renderer records the profile name in the identity; resolving the role prompt from the profile is the caller's choice of `baseline.Role`.
+A step's `profile` setting names a `[profile.<name>]` table in the Director config, or a shipped profile, which chooses the adapter, model, effort and role prompt of the Artisan that runs it ([configuration](configuration.md#profiles)); an Artisan step that names none runs under its role profile.
+`config.CheckProfiles` refuses a workflow that names a profile the config neither declares nor gets shipped.
+The renderer records the step's effective profile name (`workflow.EffectiveProfile`) in the identity and the prompt's `Profile:` line, so a step with no `profile` shows its role profile, such as `Profile: researcher`; resolving the role prompt from the profile is the caller's choice of `baseline.Role`.

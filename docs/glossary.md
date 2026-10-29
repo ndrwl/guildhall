@@ -15,6 +15,14 @@ This page says which is meant where.
 - A **step kind** is a built-in, versioned step type a workflow names, such as `research` or `review`: `workflow.Kind` in the [registry](configuration.md#built-in-step-kinds).
   A task kind's workflow is made of step kinds.
 
+## Profile
+
+- A **role profile** is the Artisan profile a step runs under because of its step kind when it names no `profile`: `researcher`, `planner`, `builder`, `reviewer`, and `rebaser` for the merge queue's rebaser ([profiles](configuration.md#profiles)).
+  It is resolved at use, `workflow.EffectiveProfile`, and is outside the workflow's digest; Guildhall ships all five, and a copy's `[profile.<name>]` replaces one.
+  Avoid "step profile" for it and "dogfood profile".
+- A **repository grant**, `[repository.profiles.<name>]`, is what one repository adds to a profile's effective grant, such as a Go repository's `go test` for its builder ([Artisan permissions](adapters.md#artisan-permissions)).
+  It is also called a **repository override**; the docs say repository grant.
+
 ## Outcome
 
 How an attempt ended is spelled three ways, and `launch.attemptOutcome` is the one translation between them:

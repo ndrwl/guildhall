@@ -20,7 +20,10 @@ func TestBinaryRefusesImplicitFake(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.newTask()
-	missing := bytes.ReplaceAll(original, []byte(`"settings": {"profile": "demo"}`), []byte(`"settings": {}`))
+	// A role step always resolves its role profile, shipped if the copy declares none; a refute step has no role, so
+	// without a profile of its own it has no Artisan configured.
+	missing := bytes.Replace(original, []byte(`{"id": "accept"`), []byte(`{"id": "refute", "type": "refute", "version": 1, "inputs": {"spec": ["plan.spec"]}},
+    {"id": "accept"`), 1)
 	if err := os.WriteFile(file, missing, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +52,7 @@ func TestBinaryRefusesImplicitFake(t *testing.T) {
 		}
 		out, stderr, err := d.try("", args...)
 		t.Logf("guildhall %s: %v\nstdout: %s\nstderr: %s", strings.Join(args, " "), err, out, stderr)
-		if err == nil || out != "" || !strings.Contains(stderr, `step "plan"`) || !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "custom workflow") {
+		if err == nil || out != "" || !strings.Contains(stderr, `step "refute"`) || !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "custom workflow") {
 			t.Fatalf("%v: err %v out %q stderr %q", args, err, out, stderr)
 		}
 		after, err := os.ReadFile(d.store)

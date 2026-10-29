@@ -39,26 +39,24 @@ func kindRevision(t *testing.T, cfg, taskKind string) workflow.Revision {
 }
 
 // TestTaskNewKinds: with no kind a task binds the repository's workflow; --kind bug, or --fixes alone, binds the
-// shipped bug workflow once its effective revision is approved; --kind feature --fixes binds the feature workflow and
+// shipped bug workflow exactly as shipped, with no approval; --kind feature --fixes binds the feature workflow and
 // keeps the fixed task; and retrying with another kind is a mutation conflict.
 func TestTaskNewKinds(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML)
 	path := emptyStore(t)
 	feature, bug := kindRevision(t, cfg, config.TaskKindFeature), kindRevision(t, cfg, config.TaskKindBug)
-	if feature.Name != "default" || bug.Name != "bug" {
+	shippedBug, err := workflow.Bug()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if feature.Name != "default" || bug != shippedBug.Revision() {
 		t.Fatalf("feature %+v, bug %+v", feature, bug)
 	}
-	approveRepo(t, path, cfg, "app")
 	newTask(t, path, cfg, "app", "Task", "t-1")
 	if got := readTask(t, path, "app", "t-1").Workflow; got != feature {
 		t.Fatalf("no kind: workflow %+v, want %+v", got, feature)
 	}
 
-	// The shipped bug with a defaulted reviewer's profile weakens the shipped bug, so it needs approving too.
-	if code, stderr := kindTask(t, path, cfg, "t-2", "--kind", "bug"); code != 1 || !strings.Contains(stderr, "not authorized") || !strings.Contains(stderr, bug.Digest) {
-		t.Fatalf("unapproved bug: exit %d, stderr %s", code, stderr)
-	}
-	approveKind(t, path, cfg, config.TaskKindBug)
 	for id, extra := range map[string][]string{"t-2": {"--kind", "bug"}, "t-3": {"--fixes", "app/t-1"}} {
 		if code, stderr := kindTask(t, path, cfg, id, extra...); code != 0 {
 			t.Fatalf("%s: exit %d, stderr %s", id, code, stderr)
@@ -79,7 +77,8 @@ func TestTaskNewKinds(t *testing.T) {
 }
 
 // TestTaskNewKindOverride: [repository.kinds] bug names the repository's own bug workflow, which a bug task binds
-// once the Guildmaster approves it; a feature task still binds the workflow setting.
+// once the Guildmaster approves it, here because it writes a profile into the review; a feature task still binds the
+// workflow setting.
 func TestTaskNewKindOverride(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML+"\n[repository.kinds]\nbug = \"my-bug\"\n")
 	def, err := workflow.Bug()
@@ -87,6 +86,11 @@ func TestTaskNewKindOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	def.Name, def.Description = "my-bug", "Our bug workflow."
+	for i := range def.Steps {
+		if def.Steps[i].ID == "review" {
+			def.Steps[i].Settings["profile"] = json.RawMessage(`"reviewer"`)
+		}
+	}
 	data, err := json.Marshal(def)
 	if err != nil {
 		t.Fatal(err)

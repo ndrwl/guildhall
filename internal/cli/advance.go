@@ -591,7 +591,7 @@ func baselinePrompter(cfg *config.Config, cfgDir, release, skills string) interp
 			if d := cfg.Director; d != nil && d.Role != "" {
 				b.Role = render.Source{Name: d.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(d.Role)), Root: "copy"}
 			}
-		} else if name := stage.Step.Profile(); name != "" {
+		} else if name := workflow.EffectiveProfile(stage.Step); name != "" {
 			if p, err := cfg.Profile(name); err == nil && p.Role != "" {
 				b.Role = render.Source{Name: p.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(p.Role)), Root: "copy"}
 			}

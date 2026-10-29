@@ -22,7 +22,7 @@ Start a role through Guildhall rather than running the agent directly, so it get
 ## 2. Give it work
 
 The `task new` and `task start` lines need the copy's Director config, `demo/config.toml`, to declare a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](configuration.md) name other repositories, so change one to `app` before using it.
-When using the example Director config, its four role profiles run the shipped workflows; complete the [profile setup and workflow approval](configuration.md#profiles) before `task new`.
+The shipped workflows run under the shipped [role profiles](configuration.md#profiles) on Claude Code with no `[profile.*]` section and no workflow approval; declare a role profile only to choose another model, effort or adapter for it.
 `task start` uses the role prompt and stage guides shipped in the binary unless a `baseline/` directory beside the config, `demo/baseline/`, overrides them file by file; see [what an advance runs over](running.md#what-an-advance-runs-over).
 
 ```sh

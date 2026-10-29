@@ -182,6 +182,45 @@ func TestQueueTier2Escalates(t *testing.T) {
 	})
 }
 
+// TestShippedRebaserAndRoleReviewerResolveMinorConflicts: a Director config parsed with no [profile.rebaser] has the
+// shipped rebaser, so a minor conflict runs a rebaser Artisan rather than escalating, and with the workflow's review
+// naming no profile the narrowed review runs under the reviewer role profile.
+func TestShippedRebaserAndRoleReviewerResolveMinorConflicts(t *testing.T) {
+	parsed, err := config.Parse([]byte("schema_version = 1\nmode = \"director\"\nname = \"alpha\"\n\n[[repository]]\nid = \"app\"\npath = \"/srv/app\"\nremote = \"git@github.com:example/app.git\"\nowner_machine = \"workstation\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped, err := parsed.Profile("rebaser")
+	if err != nil || shipped.Adapter != interp.ClaudeAdapter {
+		t.Fatalf("parsed rebaser = %+v, %v; want the shipped claude profile", shipped, err)
+	}
+	// The mock script stands in for every launch, so the shipped profile runs on the mock adapter here.
+	shipped.Adapter = interp.MockAdapter
+
+	def := loadWorkflow(t, "validate")
+	for i := range def.Steps {
+		if def.Steps[i].ID == "review" {
+			delete(def.Steps[i].Settings, "profile")
+		}
+	}
+	e, f, ws := queueEnvDefinition(t, backends[0], def)
+	e.eng.Config.Profiles["rebaser"] = shipped
+	base := baseN(1)
+	minor(ws, base, head, commitN(1))
+	resolved := squashed(base, commitN(2))
+	f.AddCommit(repoPath, resolved)
+	f.SetMergeability(forge.Mergeability{Head: head, Base: base, State: "conflicting", Behind: 1, Files: []string{"a.go"}})
+	ws.setTip(commitN(2))
+	e.script.Expect(rebaserExp("deliver", 1, commitN(2), false), narrowExp(t, "deliver", 1, resolved, bound(t, workflow.VerdictApproved, resolved, nil)))
+	e.answer(t, "deliver-1", "merge")
+	want(t, e.advance(t, answeredMerge), interp.Next{Wait: interp.WaitAttempt, Step: "deliver-rebase", Attempt: 1})
+	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "deliver-rebase", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "deliver-rebase-review", Attempt: 1})
+	launched := e.script.Launched()
+	if n := len(launched); n < 2 || launched[n-2].Profile != "rebaser" || launched[n-1].Profile != "reviewer" {
+		t.Fatalf("launched %+v, want the rebaser then the narrowed review under reviewer", launched)
+	}
+}
+
 // perHead is the fake forge with each head's mergeability its own: a head without one is clear.
 type perHead struct {
 	*forgetest.Fake

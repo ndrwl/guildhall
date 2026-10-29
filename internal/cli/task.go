@@ -25,7 +25,7 @@ var taskUsage = `usage:
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> --repo <id> <task> --json
-  guildhall task list --store <path> [--repo <id>] --json
+  guildhall task list --store <path> [--repo <id>] [--workflow <name>] [--open] --json
   guildhall task timeline --store <path> --repo <id> <task> --json
   guildhall task files --store <path> --repo <id> <task> --json
   guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move out-of-scope|duplicate|defer --reason <text> <task>
@@ -153,6 +153,8 @@ func (a *App) task(args []string) int {
 	move := flags.String("move", "", "ruling move")
 	reason := flags.String("reason", "", "ruling reason")
 	full := flags.Bool("full", false, "request a full review")
+	wfName := flags.String("workflow", "", "list only tasks bound to this workflow name")
+	open := flags.Bool("open", false, "list only open tasks")
 	priority := flags.String("priority", "", "task priority, p0 to p5")
 	var deps dependsOn
 	flags.Var(&deps, "depends-on", "task this one depends on")
@@ -174,7 +176,7 @@ func (a *App) task(args []string) int {
 	case "show", "timeline", "files":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "json": true}
 	case "list":
-		want, allowed = 0, map[string]bool{"store": true, "repo": true, "json": true}
+		want, allowed = 0, map[string]bool{"store": true, "repo": true, "workflow": true, "open": true, "json": true}
 	case "finding rule":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "outcome": true, "finding": true, "move": true, "reason": true}
 	case "review":
@@ -196,7 +198,7 @@ func (a *App) task(args []string) int {
 		}
 		n := 1
 		name, _, inline := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(arg, "-"), "-"), "=")
-		if f := flags.Lookup(name); f != nil && !inline && name != "json" && name != "full" && len(remaining) > 1 {
+		if f := flags.Lookup(name); f != nil && !inline && name != "json" && name != "full" && name != "open" && len(remaining) > 1 {
 			n = 2
 		}
 		if err := flags.Parse(remaining[:n]); errors.Is(err, flag.ErrHelp) {
@@ -297,6 +299,9 @@ func (a *App) task(args []string) int {
 	case "list":
 		var tasks []store.Task
 		if tasks, err = listTasks(s, *repo); err == nil {
+			tasks = slices.DeleteFunc(tasks, func(t store.Task) bool {
+				return (*wfName != "" && t.Workflow.Name != *wfName) || (*open && t.State != store.TaskOpen)
+			})
 			out, err = taskViews(s, tasks)
 		}
 	case "finding rule":
@@ -374,7 +379,7 @@ func acceptTask(cfgPath, repo, taskKind string) (store.Task, acceptedWorkflow, e
 	}
 	var named []string
 	for _, step := range w.effective.Steps {
-		if name := step.Profile(); name != "" && !slices.Contains(named, name) {
+		if name := workflow.EffectiveProfile(step); name != "" && !slices.Contains(named, name) {
 			named = append(named, name)
 		}
 	}
@@ -444,24 +449,35 @@ func repositoryWorkflow(dir string, cfg *config.Config, r config.Repository, tas
 }
 
 // boundWorkflow returns the definition of rev, the revision a task in repository r bound: rev's workflow resolved by
-// name, with the repository's current overrides and profile defaults, refused unless its digest is rev's.
+// name, with the repository's current overrides, refused unless its digest is rev's.
 // A task therefore keeps its workflow when the repository's workflow setting changes, and strands only when the
-// file, the overrides or the profiles it was defaulted from change after it was created.
+// file or the overrides change after it was created.
+// A task bound while role profiles were written into the definition bound the legacy digest of that definition with
+// every role step's profile defaulted (workflow.ApplyProfileDefaults); that digest is accepted too, and the task runs
+// the defaulted definition (docs/decisions/role-profiles-outside-the-digest.md). A task could bind it only with
+// every role step defaulted, since a role step left without a profile was refused, so the legacy digest is computed
+// with every role profile declared.
 func boundWorkflow(dir string, cfg *config.Config, r config.Repository, rev workflow.Revision) (*workflow.Definition, error) {
 	w, err := resolveWorkflow(dir, rev.Name, cfg, r)
 	if err != nil {
 		return nil, fmt.Errorf("bound %w", err)
 	}
-	if got := w.effective.Digest(); got != rev.Digest {
-		return nil, fmt.Errorf("%w: bound workflow %q is %s but now resolves to %s; its file, the repository's workflow_overrides or the profiles its steps were defaulted from changed after the task was created",
-			interp.ErrRevision, rev.Name, rev.Digest, got)
+	got := w.effective.Digest()
+	if got == rev.Digest {
+		return w.effective, nil
 	}
-	return w.effective, nil
+	legacy := workflow.ApplyProfileDefaults(w.effective, func(string) bool { return true })
+	if legacy.Digest() == rev.Digest && workflow.Validate(legacy) == nil {
+		return legacy, nil
+	}
+	return nil, fmt.Errorf("%w: bound workflow %q is %s but now resolves to %s; its file or the repository's workflow_overrides changed after the task was created",
+		interp.ErrRevision, rev.Name, rev.Digest, got)
 }
 
-// resolveWorkflow returns workflow name with repository r's overrides and cfg's profile defaults applied and
-// validated, and the definition before them when that validates too: the shipped definition of that name, or
-// otherwise <dir>/<name>.json, whose name must match.
+// resolveWorkflow returns workflow name with repository r's overrides applied and validated, and the definition
+// before them when that validates too: the shipped definition of that name, or otherwise <dir>/<name>.json, whose
+// name must match. Role profiles are not applied: a step's profile is resolved at use (workflow.EffectiveProfile),
+// outside the digest the task binds.
 func resolveWorkflow(dir, name string, cfg *config.Config, r config.Repository) (acceptedWorkflow, error) {
 	file := filepath.Join(dir, name+".json")
 	var def *workflow.Definition
@@ -484,7 +500,6 @@ func resolveWorkflow(dir, name string, cfg *config.Config, r config.Repository) 
 	if err != nil {
 		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}
-	effective = workflow.ApplyProfileDefaults(effective, func(p string) bool { _, ok := cfg.Profiles[p]; return ok })
 	if err := workflow.Validate(effective); err != nil {
 		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}

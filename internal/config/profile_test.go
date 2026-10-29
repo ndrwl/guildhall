@@ -50,7 +50,7 @@ func TestUnknownProfileRefused(t *testing.T) {
 		t.Fatalf("Profile(unknown) err = %v", err)
 	}
 	def, err := workflow.Parse([]byte(`{"schema": "guildhall.workflow/1", "name": "three", "steps": [
-	  {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder"}},
+	  {"id": "build", "type": "build", "version": 1, "settings": {"profile": "careful"}},
 	  {"id": "review-a", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-opus"}},
 	  {"id": "review-b", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer-astra"}},
 	  {"id": "review-c", "type": "document-review", "version": 1, "settings": {"actor": "guildmaster", "profile": "reviewer-strict"}},
@@ -62,7 +62,7 @@ func TestUnknownProfileRefused(t *testing.T) {
 	if !errors.Is(err, ErrUnknownProfile) {
 		t.Fatalf("CheckProfiles err = %v", err)
 	}
-	for _, want := range []string{`step "build" names unknown profile "builder"`, `step "review-c" names unknown profile "reviewer-strict"`} {
+	for _, want := range []string{`step "build" names unknown profile "careful"`, `step "review-c" names unknown profile "reviewer-strict"`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("CheckProfiles err %q lacks %q", err, want)
 		}
@@ -232,6 +232,60 @@ func TestInvalidAllowedToolsRefused(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", extra, err, want)
 		}
+	}
+}
+
+// TestShippedProfiles: a parsed Director config has every shipped role profile it does not declare, each on the
+// claude adapter with nothing else set; a copy section replaces the shipped profile as a whole; and every check of a
+// declared profile accepts the shipped names. A Steward config gets none.
+func TestShippedProfiles(t *testing.T) {
+	cfg, err := Parse([]byte(director(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"researcher", "planner", "builder", "reviewer", "rebaser"} {
+		p, err := cfg.Profile(name)
+		if err != nil || !reflect.DeepEqual(p, Profile{Adapter: "claude"}) {
+			t.Errorf("Profile(%s) = %+v, %v; want the shipped claude profile", name, p, err)
+		}
+	}
+	if len(cfg.Profiles) != len(ShippedProfiles) {
+		t.Errorf("profiles = %v, want only the shipped ones", cfg.Profiles)
+	}
+
+	cfg, err = Parse([]byte(director(t) + "\n[profile.reviewer]\nadapter = \"fake\"\nmodel = \"m\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Profiles["reviewer"]; !reflect.DeepEqual(p, Profile{Adapter: "fake", Model: "m"}) {
+		t.Errorf("reviewer = %+v, want the copy's section alone", p)
+	}
+	if ShippedProfiles["reviewer"] != (Profile{Adapter: "claude"}) {
+		t.Errorf("a copy section changed the shipped reviewer: %+v", ShippedProfiles["reviewer"])
+	}
+
+	grants := strings.Replace(director(t), "[local]\n", "[local]\nclaude_skills_profile_reviewer = '{\"preset\":\"reviewer-v1\"}'\nquality_judge_profiles = \"reviewer, builder\"\n", 1)
+	grants = strings.Replace(grants, "[[repository]]\nid = \"site\"", "[repository.profiles.builder]\nallowed_tools = [\"Bash(go test:*)\"]\n\n[repository.profiles.reviewer]\nallowed_tools = [\"Bash(go test:*)\"]\n\n[repository.profiles.rebaser]\nallowed_tools = [\"Bash(go test:*)\"]\n\n[[repository]]\nid = \"site\"", 1)
+	cfg, err = Parse([]byte(grants))
+	if err != nil {
+		t.Fatalf("shipped names refused in repository grants, skill policy or judge profiles: %v", err)
+	}
+	if got := cfg.Repositories[0].Profiles["rebaser"].AllowedTools; !slices.Equal(got, []string{"Bash(go test:*)"}) {
+		t.Errorf("rebaser repository grant = %q", got)
+	}
+	if q, err := cfg.Quality(); err != nil || !slices.Equal(q.JudgeProfiles, []string{"reviewer", "builder"}) {
+		t.Errorf("Quality() = %+v, %v", q, err)
+	}
+	if _, err := cfg.ClaudeSkills("reviewer"); err != nil {
+		t.Errorf("ClaudeSkills(reviewer): %v", err)
+	}
+
+	steward, err := Parse([]byte("schema_version = 1\nmode = \"steward\"\n\n[private_config]\nlocation = \"git@github.com:example/guildhall-config.git\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steward.Profiles) != 0 {
+		t.Errorf("steward profiles = %v, want none", steward.Profiles)
 	}
 }
 
