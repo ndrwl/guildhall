@@ -47,6 +47,24 @@ func TestAdapterDeclaresNoCapabilitiesAndBuildsArgv(t *testing.T) {
 	}
 }
 
+// A fake profile named builder that sets no allowed_tools gets no shipped default grant, so it still launches.
+func TestCommandLaunchesFakeBuilderWithNoList(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("schema_version = 1\nmode = \"director\"\nname = \"test\"\n[profile.builder]\nadapter = \"fake\"\n[[repository]]\nid = \"app\"\npath = \"/src/app\"\nremote = \"git@example.com:app.git\"\nowner_machine = \"test\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec := adapter.Spec{Identity: testID, WorkDir: dir, PromptFile: filepath.Join(dir, "p.md"), ResultFile: filepath.Join(dir, "r.json"),
+		Copy: dir, Profile: "builder", Repository: "app"}
+	cmd, err := (Adapter{Executable: "/opt/guildhall"}).Command(spec)
+	if err != nil {
+		t.Fatalf("Command for a fake builder with no list = %v, want it to launch", err)
+	}
+	want := []string{"/opt/guildhall", "fake-artisan", "--task", "task-1", "--attempt", "attempt-1", "--prompt", spec.PromptFile, "--result", spec.ResultFile}
+	if !slices.Equal(cmd.Argv, want) {
+		t.Errorf("argv = %q, want %q", cmd.Argv, want)
+	}
+}
+
 // setup writes a prompt and returns the run arguments for it.
 func setup(t *testing.T, prompt string) Args {
 	t.Helper()

@@ -295,11 +295,13 @@ func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 }
 
 // TestDirectorStartCheckNamesArtisanPermissions: the preflight's artisans line names the Director and the config
-// file whose profiles grant the Artisans' tools, what each claude profile grants, and for one granting none the
-// permissions its print mode lacks for a build's checks and commits, without refusing.
+// file whose profiles grant the Artisans' tools, each claude profile's effective grant by source (the copy's list,
+// the shipped default, or a note that a profile of another name gets none, then each repository's additions), and
+// the permissions print mode lacks for a build's checks and commits, without refusing.
 func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 	claudetest.Install(t)
-	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"claude\"\nallowed_tools = [\"Bash(go test:*)\", \"Bash(git commit:*)\"]\n\n[profile.reviewer]\nadapter = \"claude\"\n", "/exit")
+	dir := directorCopy(t, "[repository.profiles.reviewer]\nallowed_tools = [\"Bash(go vet:*)\", \"Bash(git log:*)\"]\n\n[director]\nadapter = \"fake\"\n\n"+
+		"[profile.builder]\nadapter = \"claude\"\nallowed_tools = [\"Bash(go test:*)\", \"Bash(git commit:*)\"]\n\n[profile.reviewer]\nadapter = \"claude\"\n\n[profile.worker]\nadapter = \"claude\"\n", "/exit")
 	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out, stderr)
@@ -310,8 +312,10 @@ func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 			line = l
 		}
 	}
-	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants Bash(go test:*), Bash(git commit:*)",
-		"profile reviewer grants nothing", "edits only", "Bash", "docs/adapters.md#artisan-permissions", "copy/profile reference, never raw rule flags"} {
+	reviewer := "profile reviewer grants the shipped default " + strings.Join(claude.ShippedDefaultGrants["reviewer"], ", ") + ", plus for repository app Bash(go vet:*);"
+	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants from the copy Bash(go test:*), Bash(git commit:*);",
+		reviewer, "profile worker gets no shipped default and grants nothing", "edits only", "Bash", "docs/adapters.md#artisan-permissions",
+		"copy/profile/repository reference, never raw rule flags"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("artisans line %q lacks %q:\n%s", line, want, out)
 		}
@@ -322,12 +326,26 @@ func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 }
 
 // TestDirectorStartRefusesAllowedToolsARuntimeCannotGrant: a profile whose adapter grants no tools refuses the
-// preflight's artisans check, naming it, rather than silently granting nothing.
+// preflight's artisans check, naming it, rather than silently granting nothing; a repository grant on such a profile
+// is refused too, already as the config loads.
 func TestDirectorStartRefusesAllowedToolsARuntimeCannotGrant(t *testing.T) {
-	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n\n[profile.builder]\nadapter = \"fake\"\nallowed_tools = [\"Bash(go test:*)\"]\n", "/exit")
-	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
-	if code != 1 || !strings.Contains(out, "artisans: refused") || !strings.Contains(stderr, "profile builder") || !strings.Contains(stderr, "fake") {
-		t.Errorf("exit %d\n%s\n%s; want the artisans check refused naming profile builder and its adapter", code, out, stderr)
+	for name, c := range map[string]struct{ grant, check string }{
+		"profile":    {"[profile.builder]\nadapter = \"fake\"\nallowed_tools = [\"Bash(go test:*)\"]\n", "artisans: refused"},
+		"repository": {"[profile.builder]\nadapter = \"fake\"\n\n[repository.profiles.builder]\nallowed_tools = [\"Bash(go test:*)\"]\n", "config: refused"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
+			cfg := filepath.Join(dir, "config.toml")
+			b, err := os.ReadFile(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, cfg, string(b)+"\n"+c.grant)
+			code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
+			if code != 1 || !strings.Contains(out, c.check) || !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "builder") || !strings.Contains(stderr, "fake") {
+				t.Errorf("exit %d\n%s\n%s; want %q naming profile builder and its adapter", code, out, stderr, c.check)
+			}
+		})
 	}
 }
 

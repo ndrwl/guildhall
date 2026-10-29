@@ -40,7 +40,13 @@ func (a *App) preflightSkillPolicies(p *startPlan) error {
 		if err != nil {
 			return err
 		}
-		policies = append(policies, selected{"profile " + name, policy, claude.ArtisanPolicySettings(p.cfg.Profiles[name].AllowedTools, policy)})
+		// The settings validated carry the profile's effective grant without a repository's additions, which
+		// change only the allow list, never the skill controls validated here.
+		grant, err := claude.EffectiveGrant(p.cfg, name, "")
+		if err != nil {
+			return err
+		}
+		policies = append(policies, selected{"profile " + name, policy, claude.ArtisanPolicySettings(claude.GrantRules(grant), policy)})
 	}
 	if len(policies) == 0 {
 		return nil

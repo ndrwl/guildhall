@@ -1,35 +1,10 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 )
-
-// The shipped example is a machine-consumed config artifact, parsed by its real consumer.
-func TestShippedClaudeRoleDefaults(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "examples", "director.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, preset := range map[string]string{"researcher": "artisan-v1", "planner": "artisan-v1", "builder": "builder-v1", "reviewer": "reviewer-v1"} {
-		p, err := cfg.ClaudeSkills(name)
-		if err != nil || p.Preset != preset {
-			t.Fatalf("%s: %+v %v", name, p, err)
-		}
-		for _, tool := range []string{"WebSearch", "WebFetch"} {
-			if slices.Contains(cfg.Profiles[name].AllowedTools, tool) != (name == "researcher") {
-				t.Errorf("%s: wrong %s authority", name, tool)
-			}
-		}
-	}
-}
 
 func TestClaudeProfileReplacesGenericPolicyAndLocks(t *testing.T) {
 	cfg := &Config{Profiles: map[string]Profile{"worker": {Adapter: "claude"}}, Managed: map[string]ManagedSetting{

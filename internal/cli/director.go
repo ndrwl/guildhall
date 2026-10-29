@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -215,41 +216,72 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 	return p, nil
 }
 
-// artisanPermissions says what this Director's config at cfgPath grants each profile that runs the claude adapter:
-// its explicit allowed_tools, or nothing; acceptEdits grants edits only but inherited settings, hooks and
-// skill-scoped grants may allow more, so a build's checks and commits depend on Bash permission (docs/adapters.md#artisan-permissions). A profile of another adapter with
-// allowed_tools is refused, since only the claude adapter grants them, and so is a profile whose model or effort
-// its runtime cannot honour (checkProfileSettings).
+// artisanPermissions says what this Director's config at cfgPath grants each profile that runs the claude adapter,
+// its effective grant (claude.EffectiveGrant) grouped by source: the copy's allowed_tools, or else the shipped
+// default, or a note that the profile gets none; then each repository's additions, labelled with the repository id.
+// acceptEdits grants edits only but inherited settings, hooks and skill-scoped grants may allow more, so a build's
+// checks and commits depend on Bash permission (docs/adapters.md#artisan-permissions). A profile of another adapter
+// with allowed_tools or a repository grant is refused, since only the claude adapter grants them, and so is a
+// profile whose model or effort its runtime cannot honour (checkProfileSettings).
 func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 	if err := checkProfileSettings(cfg, slices.Sorted(maps.Keys(cfg.Profiles))); err != nil {
 		return "", err
 	}
-	var grants, bare []string
+	var grants []string
 	for _, name := range slices.Sorted(maps.Keys(cfg.Profiles)) {
 		p := cfg.Profiles[name]
-		switch {
-		case p.Adapter != adapter.ClaudeName && len(p.AllowedTools) > 0:
-			return "", fmt.Errorf("profile %s runs the %s adapter, which grants no allowed_tools; only the %s adapter does (docs/adapters.md#artisan-permissions)", name, p.Adapter, adapter.ClaudeName)
-		case p.Adapter != adapter.ClaudeName:
-		case len(p.AllowedTools) > 0:
-			grants = append(grants, fmt.Sprintf("profile %s grants %s", name, strings.Join(p.AllowedTools, ", ")))
-		default:
-			bare = append(bare, name)
+		if p.Adapter != adapter.ClaudeName {
+			if len(p.AllowedToolsList()) > 0 {
+				return "", fmt.Errorf("profile %s runs the %s adapter, which grants no allowed_tools; only the %s adapter does (docs/adapters.md#artisan-permissions)", name, p.Adapter, adapter.ClaudeName)
+			}
+			for _, r := range cfg.Repositories {
+				if _, ok := r.Profiles[name]; ok {
+					return "", fmt.Errorf("repository %s grants profile %s, which runs the %s adapter, which grants no allowed_tools; only the %s adapter does (docs/adapters.md#artisan-permissions)", r.ID, name, p.Adapter, adapter.ClaudeName)
+				}
+			}
+			continue
 		}
+		base, err := claude.EffectiveGrant(cfg, name, "")
+		if err != nil {
+			return "", err
+		}
+		var additions []string
+		for _, r := range cfg.Repositories {
+			grant, err := claude.EffectiveGrant(cfg, name, r.ID)
+			if err != nil {
+				return "", err
+			}
+			var added []string
+			for _, g := range grant {
+				if g.Source == claude.SourceRepository {
+					added = append(added, g.Rule)
+				}
+			}
+			if len(added) > 0 {
+				additions = append(additions, fmt.Sprintf(", plus for repository %s %s", r.ID, strings.Join(added, ", ")))
+			}
+		}
+		var s string
+		switch rules := strings.Join(claude.GrantRules(base), ", "); {
+		case p.AllowedToolsSet() && rules == "":
+			s = fmt.Sprintf("profile %s grants nothing from the copy", name)
+		case p.AllowedToolsSet():
+			s = fmt.Sprintf("profile %s grants from the copy %s", name, rules)
+		case rules == "" && len(additions) == 0:
+			s = fmt.Sprintf("profile %s gets no shipped default and grants nothing", name)
+		case rules == "":
+			s = fmt.Sprintf("profile %s gets no shipped default", name)
+		default:
+			s = fmt.Sprintf("profile %s grants the shipped default %s", name, rules)
+		}
+		grants = append(grants, s+strings.Join(additions, ""))
 	}
 	whose := fmt.Sprintf("Director %s's config %s: ", cfg.Name, cfgPath)
-	if len(grants) == 0 && len(bare) == 0 {
+	if len(grants) == 0 {
 		return whose + "no profile runs the claude adapter", nil
 	}
-	if len(bare) > 0 {
-		who := "profile %s grants"
-		if len(bare) > 1 {
-			who = "profiles %s grant"
-		}
-		grants = append(grants, fmt.Sprintf(who+" nothing explicitly; acceptEdits grants edits only, while inherited settings, hooks and skill-scoped grants may allow more; a build's checks and commits need Bash permission (docs/adapters.md#artisan-permissions)",
-			strings.Join(bare, ", ")))
-	}
-	return whose + strings.Join(grants, "; ") + "; wrappers load grants by copy/profile reference, never raw rule flags", nil
+	return whose + strings.Join(grants, "; ") + "; acceptEdits grants edits only, while inherited settings, hooks and skill-scoped grants may allow more; a build's checks and commits need Bash permission (docs/adapters.md#artisan-permissions)" +
+		"; wrappers load grants by copy/profile/repository reference, never raw rule flags", nil
 }
 
 // checkProfileSettings refuses the first of the named profiles whose runtime cannot honour its model and effort

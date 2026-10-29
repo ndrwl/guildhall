@@ -14,8 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/ndrwl/guildhall/internal/config"
 )
 
 // The names of the runtime adapters Guildhall can launch: the one spelling that package
@@ -40,6 +38,9 @@ type Spec struct {
 	Env     []string
 	Copy    string
 	Profile string
+	// Repository is the task's repository id: with Copy and Profile, the reference a runtime that grants tools
+	// resolves its effective grant from, never a rule list.
+	Repository string
 	// Settings are the profile's model and effort, which the runtime runs the attempt on.
 	Settings
 }
@@ -74,21 +75,6 @@ func (s Spec) Validate() error {
 		}
 	}
 	return nil
-}
-
-func ProfileTools(copyDir, profile string) ([]string, error) {
-	if copyDir == "" || profile == "" {
-		return nil, nil
-	}
-	cfg, err := config.Load(filepath.Join(copyDir, "config.toml"))
-	if err != nil {
-		return nil, err
-	}
-	p, err := cfg.Profile(profile)
-	if err != nil {
-		return nil, err
-	}
-	return p.AllowedTools, nil
 }
 
 // Capabilities are the optional runtime features an adapter has proven

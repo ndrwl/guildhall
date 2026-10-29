@@ -81,11 +81,12 @@ func (s Spec) Validate() error {
 
 // AdapterSpec returns the adapter.Spec for s that the adapter conformance suite runs runtimes on and
 // launch.Process starts the attempt from: the same identity, working directory, prompt file, result
-// file, copy/profile reference and settings, and no extra environment. The adapter name and manifest stay with the launcher, which passes
-// the name to the runtime's owner and has already checked the prompt against its manifest.
+// file, copy/profile reference, the manifest's repository and settings, and no extra environment. The adapter name and manifest stay with
+// the launcher, which passes the name to the runtime's owner and has already checked the prompt against its manifest.
 // A spec Validate accepts maps to one adapter.Spec.Validate accepts.
 func (s Spec) AdapterSpec() adapter.Spec {
-	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile, Copy: s.Copy, Profile: s.Profile, Settings: s.Settings}
+	return adapter.Spec{Identity: s.Identity, WorkDir: s.WorkDir, PromptFile: s.PromptFile, ResultFile: s.ResultFile, Copy: s.Copy, Profile: s.Profile,
+		Repository: s.Manifest.Identity.Repository, Settings: s.Settings}
 }
 
 // Handle names one launched attempt. It carries no authority: only the launcher that returned it accepts it.

@@ -95,7 +95,7 @@ Resolved settings are rendered before launch, not edited in generated workspaces
 Both Director and Artisan pass an owned settings file with `--settings`, even when Artisan grants are empty, and record policy provenance/digest in `claude-skill-policy.json`.
 `director start --check` reports configured policy and the tested Claude Code baseline (minimum 2.1.310), not a paid live inventory probe; unsupported versions refuse launch because print mode can silently ignore unsupported settings.
 A kept-bundle policy also refuses an inherited `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS` kill switch.
-The shipped researcher profile's `allowed_tools` grants `WebSearch` and `WebFetch`; planner, builder and reviewer have no shipped web grants.
+The researcher profile's [shipped default grant](adapters.md#artisan-permissions) includes `WebSearch` and `WebFetch`; the planner, builder and reviewer defaults have no web grants.
 Customize those tool grants in the copy's profile, independently from managed/local skill selection.
 
 ### Quality settings
@@ -133,6 +133,7 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 | `[repository.merge.requires]` | What a task's pull request needs before Guildhall merges it; see [merge requirements](#merge-requirements). |
 | `[repository.merge]` | How Guildhall classifies a rebase and when a rebased head needs a new merge decision; see [rebase settings](#rebase-settings). |
+| `[repository.profiles.<name>]` | A repository grant: its `allowed_tools` are added to that profile's effective grant for this repository's tasks only, such as `["Bash(go test:*)", "Bash(go vet:*)"]` for a Go repository's builder ([Artisan permissions](adapters.md#artisan-permissions)). The profile must be one the config declares, running the `claude` adapter; each rule is checked as a profile's are, and listed once. |
 
 Repository paths accept a POSIX path starting with `/` or a rooted Windows drive-letter path on any parsing host; backslash-prefixed UNC paths are refused.
 Two repositories may not use the same path after dot segments are cleaned; drive paths also normalize separators and drive-letter case.
@@ -208,7 +209,7 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | `adapter` | Required: the runtime adapter, such as `claude`. |
 | `model`, `effort` | The attempt's [runtime settings](adapters.md#runtime-settings), which defines defaults, supported values and refusals. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
-| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`; empty, the default, grants nothing. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the suggested set for a Go repository). |
+| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `planner`, `reviewer` or `researcher` gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant). |
 
 A profile names no credential.
 For how the copy/profile reference reaches the runtime, see [Artisan permissions](adapters.md#artisan-permissions).
