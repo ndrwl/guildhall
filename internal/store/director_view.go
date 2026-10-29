@@ -26,6 +26,9 @@ type DirectorView struct {
 	OpenDecisions []Decision
 	// Parks are every attempt's park record, parked or unparked, in repository, task, step and attempt order.
 	Parks []AttemptPark
+	// Grants are the task grants whose derived state is active, with their approval times, in repository, task and
+	// grant order (docs/decisions/task-grants.md).
+	Grants []TaskGrantStatus
 	// Unread are the Director's unacknowledged messages, in send order.
 	Unread []Message
 	// Receipts are the receipts that name a task, in sequence order.
@@ -43,7 +46,8 @@ type DirectorView struct {
 // DirectorView reads the Director's view of the whole store without writing.
 // Like TaskHistory it scans every receipt, so its cost grows with the store's mutation count.
 func (s *Store) DirectorView() (DirectorView, error) {
-	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Unread: []Message{}, Receipts: []Receipt{}}
+	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Grants: []TaskGrantStatus{},
+		Unread: []Message{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var repos []string
 		_ = tx.Bucket(bucketRepos).ForEachBucket(func(k []byte) error { repos = append(repos, string(k)); return nil })
@@ -83,6 +87,28 @@ func (s *Store) DirectorView() (DirectorView, error) {
 					return fmt.Errorf("inbox message %q: %w", id, err)
 				}
 				v.Unread = append(v.Unread, m)
+			}
+		}
+		for _, t := range v.Tasks {
+			grants, err := taskGrantStatuses(tx, t)
+			if err != nil {
+				return err
+			}
+			for _, g := range grants {
+				if g.State == GrantActive {
+					v.Grants = append(v.Grants, g)
+				}
+			}
+		}
+		if len(v.Grants) > 0 {
+			approved, err := grantApprovals(tx)
+			if err != nil {
+				return err
+			}
+			for i, g := range v.Grants {
+				if at, ok := approved[g.Repository+"/"+g.TaskID+"/"+g.Decision]; ok {
+					v.Grants[i].ApprovedAt = &at
+				}
 			}
 		}
 		u, err := attemptUsage(tx, s.now())

@@ -46,6 +46,9 @@ type binding struct {
 	Scope git.Scope  `json:"scope,omitempty"`
 	// Retry is why the Director retried the previous attempt, when this attempt follows a retry.
 	Retry *retryContext `json:"retry,omitempty"`
+	// Grant is the task grant the attempt was given, when one was active as it was bound; the Claude wrapper reads
+	// it from here, checking the binding against its recorded digest (docs/decisions/task-grants.md).
+	Grant *store.BoundGrant `json:"grant,omitempty"`
 }
 
 // retryContext is a Director retry of attempt Attempt, which ended Outcome, as the next attempt's prompt quotes it:

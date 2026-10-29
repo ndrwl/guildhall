@@ -19,6 +19,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task timeline --store <path> --repo <id> <task> --json` and `guildhall task files --store <path> --repo <id> <task> --json` are the [inspection reads](#inspection).
 - `guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move <move> --reason <text> <task>` records a [Director ruling](#director-rulings) and prints its receipt.
 - `guildhall task review --full --store <path> --repo <id> <task>` records a [full-review request](#full-review) and prints its receipt.
+- `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
 
 For every command but `list`, the positional task id may appear before or after flags.
 `show`, `list`, `timeline` and `files` open the store read-only and change nothing.
@@ -205,3 +206,30 @@ A new request for an unknown task or one that is not open is refused with exit 1
 The command does not launch a review, invalidate a completed review or change an already recorded attempt binding.
 The request applies to the next Artisan code review attempt whose binding has not yet been recorded, not to a human review decision or a document review.
 See the [interpreter's rebase-aware review contract](interpreter.md#rebase-aware-review) for consumption, replay and scope recording.
+
+## Task grants
+
+A task grant gives one task's claude Artisans extra [allowed tools](adapters.md#artisan-permissions) for a while, instead of widening a profile in `config.toml` for every task ([decision](decisions/task-grants.md)).
+The Director opens one only when the Guildmaster asks for it; the Guildmaster's answer to its decision approves it.
+
+```
+guildhall task grant create --store <path> --config <director.toml> --repo <id> --task <id> --step <id|all> --tool <rule> [--tool <rule>]... --reason <text> [--until attempt|done]
+guildhall task grant revoke --store <path> --repo <id> --task <id> --grant <id> --reason <text>
+guildhall task grant list   --store <path> [--repo <id>] [--task <id>]
+```
+
+`--copy <dir>`, or `GUILDHALL_COPY`, stands in for `--store` and `--config`.
+
+- `create` records grant `g<n>`, numbered from 1 per task, for one step of the task's bound workflow whose profile runs the `claude` adapter, or `all` of them, and in the same transaction opens decision `grant-g<n>` of kind `grant` with the options `approve` and `reject`, whose question quotes the step, rules, reason and expiry. It prints the receipt, record `task-grant/g<n>`, mutation `task-grant:<repo>:<task>:g<n>`. `--until` is `attempt`, the default, which lasts for the first attempt of the step bound after approval until it has an outcome, or `done`, which lasts until the task is merged or closed; `--step all` needs `--until done`.
+- `revoke` records the revoke once, mutation `task-grant-revoke:<repo>:<task>:<id>`, on a pending or an active grant. A pending grant's decision stays open, but approving it no longer activates anything.
+- `list` prints every grant, one task's, one repository's or the store's, with its derived `state` and, once approved, `approved_at`; it opens the store read-only.
+
+Each command prints one JSON document; exit codes are those of [`decide`](decisions-cli.md): 0, 1 for a refusal and 2 for a usage error.
+Every rule is checked as a profile's `allowed_tools` are, a repeated rule is refused, and a task grant never allows a `Bash` rule for `guildhall`, `gh` or `glab`, or for `git` without a subcommand or with `push`, including a wildcard command that could complete to one, such as `Bash(g*)`, and one named after a wrapper, such as `Bash(env gh:*)`.
+At most one grant per task and step is pending or active, `all` overlapping every step, and a second is refused naming the first; repeating the same `create` while its grant is pending or active prints the original receipt.
+The workflow the repository's config gives now must be the task's bound revision, or `create` cannot check the step and refuses.
+
+A grant's state is derived, never written: `pending` until its decision is answered, `rejected` when the answer is not `approve`, `revoked` once revoked, `expired` once its task is closed or its one bound attempt has an outcome, and otherwise `active`.
+The engine records an active grant in the binding of each attempt it applies to, `<step>-<n>.inputs.json`, as `grant`, and the Claude wrapper gives its rules from there, so a revoke reaches the next wrapper run, never a running session; stop the attempt to cut it short.
+Rebaser and conflict-resolution attempts never take a task grant.
+`director status` lists the active grants in its [`grants`](director.md#status) section, and an open grant decision is in `needs_me` like every decision.

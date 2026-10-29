@@ -771,6 +771,7 @@
       "command": "guildhall step retry --repo app --task t-10 --step build --attempt 1"
     }
   ],
+  "grants": [],
   "version": {
     "version": "dev",
     "revision": "abd974855ac9d1e8f0c0a7b6e2f5d4c3b2a19087",

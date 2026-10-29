@@ -420,6 +420,9 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("claude adapter: profile: %w", err)
 	}
+	if a.allowedTools, err = withBoundTaskGrant(a, a.allowedTools, stderr); err != nil {
+		return fmt.Errorf("claude adapter: task grant: %w", err)
+	}
 	if marked, err := adapter.Cancelled(a.ResultFile, a.Identity); err != nil || marked {
 		return errors.Join(err, cancelledErr(marked))
 	}
@@ -482,6 +485,34 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 		return errors.Join(fmt.Errorf("claude adapter: Claude exited after writing its result: %w", runErr), usageErr)
 	}
 	return usageErr
+}
+
+// withBoundTaskGrant adds to rules, last, the task grant a's binding records (BoundTaskGrant), unless it is revoked,
+// naming on stderr what it added or dropped. An attempt with no profile, such as a hand-started tab, takes none.
+func withBoundTaskGrant(a Args, rules []string, stderr io.Writer) ([]string, error) {
+	if a.Profile == "" {
+		return rules, nil
+	}
+	// A copy without a store can hold no binding, so no grant: fewer rules, never more, but said rather than silent.
+	if a.Copy != "" {
+		if _, err := os.Stat(filepath.Join(a.Copy, copyStoreFile)); errors.Is(err, fs.ErrNotExist) {
+			_, _ = fmt.Fprintf(stderr, "guildhall: %s: copy %s has no %s; no task grant is read\n", Subcommand, a.Copy, copyStoreFile)
+		}
+	}
+	g, revoked, err := BoundTaskGrant(a.Copy, a.Repository, a.TaskID, a.AttemptID)
+	switch {
+	case err != nil || g == nil:
+		return rules, err
+	case revoked:
+		_, _ = fmt.Fprintf(stderr, "guildhall: %s: task grant %s is revoked; its rules are not granted\n", Subcommand, g.ID)
+		return rules, nil
+	}
+	_, _ = fmt.Fprintf(stderr, "guildhall: %s: task grant %s adds %s\n", Subcommand, g.ID, strings.Join(g.Rules, ", "))
+	var grants []Grant
+	for _, rule := range rules {
+		grants = append(grants, Grant{Rule: rule})
+	}
+	return GrantRules(WithTaskGrant(grants, g.Rules)), nil
 }
 
 // report writes the usage Claude's output reports as a's usage file, unknown when the output reports none, names

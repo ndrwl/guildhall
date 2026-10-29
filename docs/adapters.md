@@ -200,7 +200,14 @@ Without both copy and profile, the wrapper grants nothing.
 The session's **effective grant** is, in order and with a repeated rule kept once:
 
 1. the profile's [`allowed_tools`](configuration.md#profiles) when it sets them, even to `[]`; otherwise the **shipped default grant** for its name, which only a `claude` profile gets;
-2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any.
+2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any;
+3. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
+
+A task grant is temporary and for one task: the Guildmaster approves extra rules for one step of one task, or all its claude steps, for its next attempt or until the task is done, through `guildhall task grant create` and the decision it opens.
+The engine records it in the attempt's binding, `<step>-<n>.inputs.json`, when the binding is first written, and the wrapper reads it back at every run from the copy's `director.store`, opened read-only, checking the binding file against the SHA-256 the store holds.
+So a resume keeps it, a revoke drops it at the next wrapper run, never inside a running session, and a store or binding that cannot be read or verified fails the attempt before Claude starts.
+A task grant never allows `guildhall`, `gh`, `glab`, `git` without a subcommand or `git push`, nor a wildcard command such as `g*` that could complete to one, nor one of them after a wrapper such as `env` or `sudo`; this is a speed bump, not a boundary, since a granted shell or interpreter can run anything.
+Use it, not `config.toml`, for a tool one task needs for a while.
 
 The shipped default grants are the grants of the five [role profiles](configuration.md#profiles) Guildhall ships, and of a copy's `claude` profile of the same name that sets no `allowed_tools`:
 

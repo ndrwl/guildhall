@@ -32,6 +32,7 @@ type Records struct {
 	rulings   []store.Ruling
 	full      []store.FullReview
 	overrides map[[2]string]store.DependencyOverride
+	grants    []store.TaskGrant
 	// priorities are the tasks' priorities SetTaskPriority sets, and queue the start queue's entries by
 	// repository, task and step.
 	priorities map[[2]string]store.Priority
@@ -615,7 +616,7 @@ func (r *Records) PutDocument(mutationID string, d store.DocumentRef) (store.Rec
 
 // OpenDecision implements interp.Records.
 func (r *Records) OpenDecision(mutationID string, d store.Decision) (store.Receipt, error) {
-	if d.Kind != store.DecisionQuestion && d.Subject == nil {
+	if d.Kind != store.DecisionQuestion && d.Kind != store.DecisionGrant && d.Subject == nil {
 		return store.Receipt{}, fmt.Errorf("%w: a %s decision needs a subject", store.ErrInvalid, d.Kind)
 	}
 	return r.mutate(mutationID, "open-decision", d, func(rc *store.Receipt) error {
@@ -630,6 +631,81 @@ func (r *Records) OpenDecision(mutationID string, d store.Decision) (store.Recei
 		}
 		r.decisions = append(r.decisions, d)
 		slices.SortFunc(r.decisions, func(x, y store.Decision) int { return cmp.Compare(x.ID, y.ID) })
+		return nil
+	})
+}
+
+// CreateTaskGrant records a task grant and opens its decision, as store.CreateTaskGrant does, without its checks of
+// the rules, steps and overlapping grants.
+func (r *Records) CreateTaskGrant(mutationID string, g store.TaskGrant, _ []string) (store.Receipt, error) {
+	g.Decision = store.GrantDecision(g.ID)
+	return r.mutate(mutationID, "create-task-grant", g, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = g.Repository, g.TaskID, "task-grant/"+g.ID
+		if _, ok := r.tasks[[2]string{g.Repository, g.TaskID}]; !ok {
+			return fmt.Errorf("task %s/%s: %w", g.Repository, g.TaskID, store.ErrNotFound)
+		}
+		if slices.ContainsFunc(r.grants, func(o store.TaskGrant) bool {
+			return o.Repository == g.Repository && o.TaskID == g.TaskID && o.ID == g.ID
+		}) {
+			return fmt.Errorf("%w: grant %s", store.ErrExists, g.ID)
+		}
+		r.grants = append(r.grants, g)
+		r.decisions = append(r.decisions, store.Decision{Repository: g.Repository, TaskID: g.TaskID, ID: g.Decision, Kind: store.DecisionGrant,
+			Options: []string{store.GrantApprove, store.GrantReject}, Question: "Grant " + strings.Join(g.Rules, ", ") + "?"})
+		slices.SortFunc(r.decisions, func(x, y store.Decision) int { return cmp.Compare(x.ID, y.ID) })
+		return nil
+	})
+}
+
+// TaskGrants implements interp.Records.
+func (r *Records) TaskGrants(repository, taskID string) ([]store.TaskGrant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []store.TaskGrant
+	for _, g := range r.grants {
+		if g.Repository == repository && (taskID == "" || g.TaskID == taskID) {
+			g.Rules, g.Bound = slices.Clone(g.Rules), slices.Clone(g.Bound)
+			out = append(out, g)
+		}
+	}
+	return out, nil
+}
+
+// BindTaskGrant implements interp.Records, as store.BindTaskGrant does.
+func (r *Records) BindTaskGrant(mutationID, repository, taskID, id, step string, number int) (store.Receipt, error) {
+	use := store.GrantUse{Step: step, Attempt: number}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+		ID         string `json:"id"`
+		store.GrantUse
+	}{repository, taskID, id, use}
+	return r.mutate(mutationID, "bind-task-grant", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Attempt, rc.Record = repository, taskID, number, "task-grant/"+id
+		i := slices.IndexFunc(r.grants, func(g store.TaskGrant) bool {
+			return g.Repository == repository && g.TaskID == taskID && g.ID == id
+		})
+		if i < 0 {
+			return fmt.Errorf("grant %s: %w", id, store.ErrNotFound)
+		}
+		g := &r.grants[i]
+		var d *store.Decision
+		if j := slices.IndexFunc(r.decisions, func(d store.Decision) bool {
+			return d.Repository == repository && d.TaskID == taskID && d.ID == g.Decision
+		}); j >= 0 {
+			d = &r.decisions[j]
+		}
+		switch {
+		case slices.Contains(g.Bound, use):
+			return nil
+		case !g.Covers(step):
+			return fmt.Errorf("%w: grant %s is for step %s", store.ErrInvalid, id, g.Step)
+		case g.State(d, r.tasks[[2]string{repository, taskID}], r.attempts) != store.GrantActive:
+			return fmt.Errorf("%w: grant %s is not active", store.ErrInvalid, id)
+		case g.Until == store.GrantUntilAttempt && len(g.Bound) > 0:
+			return fmt.Errorf("%w: grant %s was bound to another attempt", store.ErrInvalid, id)
+		}
+		g.Bound = append(g.Bound, use)
 		return nil
 	})
 }

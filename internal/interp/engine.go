@@ -361,11 +361,15 @@ func (r *run) load() error {
 	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
+	grants, err := r.e.Records.TaskGrants(repo, id)
+	if err != nil {
+		return fmt.Errorf("interp: %w", err)
+	}
 	if r.queue, err = r.e.Records.StartQueue(); err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
 	r.history = newHistory(repo, id, r.def, r.read, attempts, documents, decisions)
-	r.rulings, r.fullReviews = rulings, full
+	r.rulings, r.fullReviews, r.grants = rulings, full, grants
 	return nil
 }
 
@@ -723,11 +727,40 @@ func (r *run) start(s workflow.Step) (Next, error) {
 			inputs = append(inputs, resolution...)
 		}
 		b.Retry = r.retryContext(s.ID, n)
+		if b.Grant, err = r.taskGrant(s, n, rt); err != nil {
+			return Next{}, err
+		}
 		if err := r.bind(s, n, inputs, b); err != nil {
 			return Next{}, err
 		}
 	}
 	return r.startBound(s, n, rt)
+}
+
+// taskGrant records, and returns for attempt n's binding, the task grant active for step s, if any
+// (docs/decisions/task-grants.md): only a step whose profile runs the claude adapter takes one, and a grant that
+// lasts one attempt only the first attempt it is bound to. It is asked only when the binding is first recorded, so a
+// binding that already existed when a grant was approved never takes it. Rebaser and conflict-resolution attempts
+// are bound elsewhere and never take one.
+func (r *run) taskGrant(s workflow.Step, n int, rt artisanRuntime) (*store.BoundGrant, error) {
+	// The mock agent stands in for the claude adapter under test; the fake grants nothing.
+	if rt.adapter != ClaudeAdapter && rt.adapter != MockAdapter {
+		return nil, nil
+	}
+	use := store.GrantUse{Step: s.ID, Attempt: n}
+	for _, g := range r.grants {
+		if !g.Covers(s.ID) || g.State(r.decision(g.Decision), r.task, r.attempts) != store.GrantActive {
+			continue
+		}
+		if g.Until == store.GrantUntilAttempt && len(g.Bound) > 0 && g.Bound[0] != use {
+			continue
+		}
+		if _, err := r.e.Records.BindTaskGrant(r.mutation("task-grant", g.ID, s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, g.ID, s.ID, n); err != nil {
+			return nil, fmt.Errorf("task grant %s: %w", g.ID, err)
+		}
+		return &store.BoundGrant{ID: g.ID, Rules: slices.Clone(g.Rules)}, nil
+	}
+	return nil, nil
 }
 
 // startBound records attempt n of s, whose binding is recorded, under the attempt caps and launches it with the bound
