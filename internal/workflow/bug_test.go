@@ -9,7 +9,7 @@ import (
 )
 
 // TestBugIsTheDefaultWithoutAcceptance: the shipped bug workflow validates and has the shipped default's steps, in the
-// same order, without grill and accept. Plan's context is research's notes only, build and review take plan's spec,
+// same order, without grill and accept. Plan's context is research's notes only, build and review take plan's spec, publish takes no spec,
 // research, plan, build and review carry instructions, and every other step equals the default's.
 func TestBugIsTheDefaultWithoutAcceptance(t *testing.T) {
 	def, err := Default()
@@ -34,9 +34,10 @@ func TestBugIsTheDefaultWithoutAcceptance(t *testing.T) {
 	}
 	instructed := map[string]string{"research": "Reproduce the defect", "plan": "no Guildmaster acceptance", "build": "regression test", "review": "regression test"}
 	inputs := map[string]map[string]Refs{
-		"plan":   {"context": {"research.notes"}},
-		"build":  {"spec": {"plan.spec"}},
-		"review": {"spec": {"plan.spec"}, "head": {"build.head"}},
+		"plan":    {"context": {"research.notes"}},
+		"build":   {"spec": {"plan.spec"}},
+		"review":  {"spec": {"plan.spec"}, "head": {"build.head"}},
+		"publish": {"head": {"build.head"}, "review": {"review.outcome"}},
 	}
 	for i, s := range bug.Steps {
 		want := defaults[i]

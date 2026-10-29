@@ -31,7 +31,9 @@ type GitHub struct {
 const DefaultTimeout = 5 * time.Minute
 
 // Publish pushes c.Head to refs/heads/<c.Branch> on c.Remote, replacing what that task branch held, and returns
-// the branch's open pull request, opening one against the remote's default branch when none is open.
+// the branch's open pull request, opening one against the remote's default branch when none is open. An open
+// pull request whose title or body differs from c's is edited to read c's, overwriting any edit made on GitHub;
+// one that already reads c's is not edited.
 //
 // It refuses, pushing nothing, a change that fails Validate, a remote GitHub does not host
 // (ErrUnsupportedRemote), a branch that is the remote's default branch (ErrInvalid) and a head that is not a
@@ -66,9 +68,14 @@ func (g GitHub) Publish(ctx context.Context, c Change) (PullRequest, error) {
 	if _, err := g.git(ctx, c.Repository, "push", "--quiet", "--porcelain", c.Remote, "+"+c.Head+":refs/heads/"+c.Branch); err != nil {
 		return PullRequest{}, err
 	}
-	pr, ok, err := g.open(ctx, c.Repository, repo, c.Branch)
+	pr, text, ok, err := g.open(ctx, c.Repository, repo, c.Branch)
 	if err != nil {
 		return PullRequest{}, err
+	}
+	if ok && (text.Title != c.Title || text.Body != c.Body) {
+		if _, err := g.gh(ctx, c.Repository, "pr", "edit", strconv.Itoa(pr.Number), "--repo", repo, "--title", c.Title, "--body", c.Body); err != nil {
+			return PullRequest{}, err
+		}
 	}
 	if !ok {
 		out, err := g.gh(ctx, c.Repository, "pr", "create", "--repo", repo, "--head", c.Branch, "--title", c.Title, "--body", c.Body)
@@ -319,18 +326,27 @@ func (p ghPullRequest) pullRequest() PullRequest {
 	return pr
 }
 
-// open returns the branch's open pull request, if it has one.
-func (g GitHub) open(ctx context.Context, dir, repo, branch string) (PullRequest, bool, error) {
-	var list []ghPullRequest
-	if err := g.ghJSON(ctx, dir, &list, "pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", ghFields); err != nil {
-		return PullRequest{}, false, err
+// ghText is a pull request's title and body as gh reports them.
+type ghText struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+// open returns the branch's open pull request with its title and body, if it has one.
+func (g GitHub) open(ctx context.Context, dir, repo, branch string) (PullRequest, ghText, bool, error) {
+	var list []struct {
+		ghPullRequest
+		ghText
+	}
+	if err := g.ghJSON(ctx, dir, &list, "pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", ghFields+",title,body"); err != nil {
+		return PullRequest{}, ghText{}, false, err
 	}
 	for _, p := range list {
 		if p.HeadRefName == branch {
-			return p.pullRequest(), true, nil
+			return p.pullRequest(), p.ghText, true, nil
 		}
 	}
-	return PullRequest{}, false, nil
+	return PullRequest{}, ghText{}, false, nil
 }
 
 func (g GitHub) view(ctx context.Context, dir, repo string, number int) (PullRequest, error) {

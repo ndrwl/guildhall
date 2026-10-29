@@ -101,15 +101,17 @@ func (e *env) task(t *testing.T) store.Task {
 	return got
 }
 
-// bodies is a forge that records the body of each change published.
+// bodies is a forge that records the title and body of each change published.
 type bodies struct {
 	*forgetest.Fake
-	mu   sync.Mutex
-	seen []string
+	mu     sync.Mutex
+	titles []string
+	seen   []string
 }
 
 func (b *bodies) Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error) {
 	b.mu.Lock()
+	b.titles = append(b.titles, c.Title)
 	b.seen = append(b.seen, c.Body)
 	b.mu.Unlock()
 	return b.Fake.Publish(ctx, c)
@@ -120,7 +122,7 @@ func (b *bodies) Publish(ctx context.Context, c forge.Change) (forge.PullRequest
 func TestPublishNamesTheFixedTask(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
-			const line = "Fixes a defect introduced by task `app/t3`.\n"
+			const line = "\nFixes a defect introduced by task `app/t3`.\n"
 			for _, fixes := range []bool{true, false} {
 				e, f := newPublishEnvTask(t, b, func(task *store.Task) {
 					if fixes {
@@ -130,11 +132,115 @@ func TestPublishNamesTheFixedTask(t *testing.T) {
 				rec := &bodies{Fake: f}
 				e.eng.Forge = rec
 				want(t, e.toSignOff(t), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
-				if len(rec.seen) != 1 || strings.Contains(rec.seen[0], line) != fixes || !strings.HasPrefix(rec.seen[0], "Guildhall task app/t7, published by step publish at ") {
+				if len(rec.seen) != 1 || strings.HasSuffix(rec.seen[0], line) != fixes || strings.Count(rec.seen[0], "Fixes a defect introduced by task") != map[bool]int{true: 1, false: 0}[fixes] {
 					t.Errorf("fixes %v: published bodies %q, want one with the fix line only when the task fixes one", fixes, rec.seen)
 				}
 			}
 		})
+	}
+}
+
+// newPublishTextEnv is validate.json, with publish given the accepted spec when spec is true, over a recording
+// forge holding heads 1 and 2; build 1 summarises "summary A", and with the spec build 2, after a send-back, "summary B".
+func newPublishTextEnv(t *testing.T, b backend, spec bool) (*env, *bodies) {
+	t.Helper()
+	def := loadWorkflow(t, "validate")
+	if spec {
+		for i := range def.Steps {
+			if def.Steps[i].ID == "publish" {
+				def.Steps[i].Inputs["spec"] = workflow.Refs{"accept.spec"}
+			}
+		}
+		if err := workflow.Validate(def); err != nil {
+			t.Fatal(err)
+		}
+	}
+	build := func(n int, h, feedback, summary string) interptest.Expectation {
+		x := buildExp(t, n, h, feedback)
+		x.Respond = interptest.Succeed(summary, interptest.File{Path: "head", Data: headFile(h)})
+		return x
+	}
+	e := newEnvDefinition(t, b, def,
+		planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
+		build(1, head, "", "summary A"),
+		reviewExp(t, "review", "reviewer", 1, head, nil, bound(t, workflow.VerdictApproved, head, nil)))
+	if spec {
+		e.script.Expect(build(2, head2, "sha256:"+sum([]byte(sendBackReason)), "summary B"),
+			reviewExp(t, "review", "reviewer", 2, head2, ptr(bound(t, workflow.VerdictApproved, head, nil)), bound(t, workflow.VerdictApproved, head2, nil)))
+	}
+	f := forgetest.NewFake()
+	f.SetBranch(repoRemote, "main", baseHead)
+	f.AddCommit(repoPath, head)
+	f.AddCommit(repoPath, head2)
+	rec := &bodies{Fake: f}
+	e.eng.Forge = rec
+	e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote}}
+	return e, rec
+}
+
+const sendBackReason = "Name the head in the pull request."
+
+// TestPublishTextFollowsTheHead: publish titles the pull request from the accepted spec's heading and describes
+// the head it carries; a send-back's new head republishes the same pull request with text naming the new head,
+// its build summary and its review, and none of the old head's.
+func TestPublishTextFollowsTheHead(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, rec := newPublishTextEnv(t, b, true)
+			want(t, e.toValidate(t), waitChecks)
+			if len(rec.seen) != 1 || rec.titles[0] != "Spec" {
+				t.Fatalf("published titles %q, want one from the spec's heading", rec.titles)
+			}
+			first := rec.seen[0]
+			for _, s := range []string{"## Summary\n\nThe command prints the task list as JSON.", "## What changed\n\nsummary A", "- Head: `" + head + "`",
+				"Reviewer: automated. Verdict: approved.", "- Accepted spec: `accept-1-spec`", "sha256:" + sum(specV1(t)), "<details><summary>Accepted spec</summary>"} {
+				if !strings.Contains(first, s) {
+					t.Errorf("first body lacks %q:\n%s", s, first)
+				}
+			}
+
+			want(t, e.advance(t, interp.Event{Kind: interp.StepSentBack, Step: "build", Attempt: 1, Reason: sendBackReason}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 2}), waitChecks)
+			if len(rec.seen) != 2 || rec.titles[1] != "Spec" {
+				t.Fatalf("published titles %q, want a second from the spec's heading", rec.titles)
+			}
+			second := rec.seen[1]
+			if !strings.Contains(second, "summary B") || !strings.Contains(second, "- Head: `"+head2+"`") || strings.Contains(second, head) || strings.Contains(second, "summary A") ||
+				!strings.Contains(second, "Reviewer: automated. Verdict: approved.") {
+				t.Errorf("second body does not describe head 2 alone:\n%s", second)
+			}
+			prs := rec.PullRequests(repoRemote)
+			if len(prs) != 1 {
+				t.Fatalf("pull requests = %+v, want one", prs)
+			}
+			if title, body := rec.Text(repoRemote, prs[0].Number); title != "Spec" || body != second {
+				t.Errorf("pull request reads %q, %q, want the second text", title, body)
+			}
+			// A replay publishes nothing new.
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+			if len(rec.seen) != 2 {
+				t.Errorf("a replay published again: %d publishes", len(rec.seen))
+			}
+		})
+	}
+}
+
+// TestPublishTextWithoutSpec: a publish step not given the accepted spec titles the pull request with the task's
+// title and says it was given no spec.
+func TestPublishTextWithoutSpec(t *testing.T) {
+	e, rec := newPublishTextEnv(t, backends[0], false)
+	want(t, e.toValidate(t), waitChecks)
+	if len(rec.seen) != 1 || rec.titles[0] != "Straight path" {
+		t.Fatalf("published titles %q, want the task's title", rec.titles)
+	}
+	for _, s := range []string{"No accepted spec was given to this step.", "## What changed\n\nsummary A", "- Accepted spec: none was given to this step"} {
+		if !strings.Contains(rec.seen[0], s) {
+			t.Errorf("body lacks %q:\n%s", s, rec.seen[0])
+		}
+	}
+	if strings.Contains(rec.seen[0], "<details>") {
+		t.Errorf("body inlines a spec it was not given:\n%s", rec.seen[0])
 	}
 }
 

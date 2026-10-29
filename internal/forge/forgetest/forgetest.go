@@ -35,6 +35,11 @@ type Harness struct {
 	Refuse func(t *testing.T, reason string)
 	// SetChecks makes checks the checks the forge reports for a pushed head; nil skips the cases that need checks.
 	SetChecks func(t *testing.T, head string, checks []forge.Check)
+	// Text returns the title and body pull request number reads; nil skips the cases that read them.
+	Text func(t *testing.T, number int) (title, body string)
+	// Edits returns how many times the forge was asked to edit an open pull request's title or body; nil skips
+	// counting them.
+	Edits func(t *testing.T) int
 }
 
 // RunForgeContract runs the forge contract against fresh harnesses from newHarness.
@@ -80,6 +85,59 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			if got := publish(t, h, head); got.Number != pr.Number || got.URL != pr.URL {
 				t.Errorf("Publish(%s) = %+v, want pull request %d updated", head, got, pr.Number)
 			}
+		}
+	})
+
+	t.Run("sets the title and body on a new and on the open pull request", func(t *testing.T) {
+		h := newHarness(t)
+		if h.Text == nil {
+			t.Skip("this forge cannot read a pull request's text")
+		}
+		text := func(t *testing.T, head, title, body string, edits int) forge.PullRequest {
+			t.Helper()
+			c := change(h, head)
+			c.Title, c.Body = title, body
+			pr, err := h.Forge.Publish(ctx, c)
+			if err != nil {
+				t.Fatalf("Publish(%s) = %v", head, err)
+			}
+			if gotTitle, gotBody := h.Text(t, pr.Number); gotTitle != title || gotBody != body {
+				t.Errorf("pull request %d reads %q, %q, want %q, %q", pr.Number, gotTitle, gotBody, title, body)
+			}
+			if h.Edits != nil {
+				if got := h.Edits(t); got != edits {
+					t.Errorf("edits = %d, want %d", got, edits)
+				}
+			}
+			return pr
+		}
+		pr := text(t, h.Heads[0], "Title A", "Body A", 0)
+		if got := text(t, h.Heads[1], "Title B", "Body B", 1); got.Number != pr.Number {
+			t.Errorf("Publish with new text = %+v, want pull request %d", got, pr.Number)
+		}
+		text(t, h.Heads[1], "Title B", "Body B", 1)
+		text(t, h.Heads[1], "Title B", "Body C", 2)
+	})
+
+	t.Run("refuses a title or body over the forge's limits", func(t *testing.T) {
+		h := newHarness(t)
+		for _, edit := range []func(*forge.Change){
+			func(c *forge.Change) { c.Title = strings.Repeat("é", forge.MaxTitle+1) },
+			func(c *forge.Change) { c.Body = strings.Repeat("x", forge.MaxBody+1) },
+		} {
+			c := change(h, h.Heads[0])
+			edit(&c)
+			if _, err := h.Forge.Publish(ctx, c); !errors.Is(err, forge.ErrInvalid) {
+				t.Errorf("Publish of a %d-byte title and %d-byte body = %v, want ErrInvalid", len(c.Title), len(c.Body), err)
+			}
+		}
+		c := change(h, h.Heads[0])
+		c.Title = strings.Repeat("é", forge.MaxTitle)
+		if err := c.Validate(); err != nil {
+			t.Errorf("Validate of a %d-character title = %v", forge.MaxTitle, err)
+		}
+		if got := h.Branch(t, "guildhall/t7"); got != "" {
+			t.Errorf("branch guildhall/t7 is at %q, want none", got)
 		}
 	})
 

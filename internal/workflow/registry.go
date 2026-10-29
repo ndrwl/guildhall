@@ -179,13 +179,16 @@ var kinds = []Kind{
 		Actors:   reviewers,
 	},
 	{
-		// Publish pushes the reviewed head to the repository's remote branch and opens or updates its pull request.
+		// Publish pushes the reviewed head to the repository's remote branch and opens or updates its pull request,
+		// whose title and body it writes on every publish from the accepted spec, the build's summary, the review
+		// outcomes bound to the head and the task's rulings; without a spec it falls back to the task's title.
 		// It never merges, and it takes no settings: the repository's configuration names the remote.
 		// Its output is the same head, so validate and deliver read the head that was pushed.
 		Type: "publish", Version: 1,
 		Inputs: []Port{
 			{Name: "head", Type: CodeHead},
 			{Name: "review", Type: ReviewResult, Optional: true, Many: true},
+			{Name: "spec", Type: AcceptedSpec, Optional: true},
 		},
 		Outputs: []Port{{Name: "head", Type: CodeHead}},
 		Actors:  engineOnly,

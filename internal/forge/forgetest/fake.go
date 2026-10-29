@@ -20,19 +20,24 @@ type Fake struct {
 	branches map[string]map[string]string
 	bases    map[string]string
 	prs      map[string][]forge.PullRequest
+	// texts holds each pull request's title and body, by remote and in the order of prs.
+	texts map[string][]text
 	// pushed holds the heads ever pushed to each remote, and checks what each remote reports for a head.
 	pushed       map[string]map[string]bool
 	checks       map[string]map[string][]forge.Check
 	refuse       string
 	mergeability forge.Mergeability
-	// publishes and merges count calls.
-	publishes, merges int
+	// publishes and merges count calls, and edits the publishes that changed an open pull request's text.
+	publishes, merges, edits int
 }
+
+// text is a pull request's title and body.
+type text struct{ title, body string }
 
 // NewFake returns a forge with no repositories.
 func NewFake() *Fake {
 	return &Fake{commits: map[string]map[string]bool{}, branches: map[string]map[string]string{}, bases: map[string]string{}, prs: map[string][]forge.PullRequest{},
-		pushed: map[string]map[string]bool{}, checks: map[string]map[string][]forge.Check{}}
+		texts: map[string][]text{}, pushed: map[string]map[string]bool{}, checks: map[string]map[string][]forge.Check{}}
 }
 
 // AddCommit makes head a commit of repository.
@@ -92,6 +97,24 @@ func (f *Fake) Calls() (publishes, merges int) {
 	return f.publishes, f.merges
 }
 
+// Text returns the title and body of pull request number of remote, or empty strings when it has none.
+func (f *Fake) Text(remote string, number int) (title, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if number < 1 || number > len(f.texts[remote]) {
+		return "", ""
+	}
+	t := f.texts[remote][number-1]
+	return t.title, t.body
+}
+
+// Edits returns how many publishes changed the title or body of an open pull request.
+func (f *Fake) Edits() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.edits
+}
+
 // Publish implements forge.GitHub.Publish's contract.
 func (f *Fake) Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error) {
 	f.mu.Lock()
@@ -107,16 +130,21 @@ func (f *Fake) Publish(ctx context.Context, c forge.Change) (forge.PullRequest, 
 		return forge.PullRequest{}, fmt.Errorf("%w: %s in %s", forge.ErrUnknownHead, c.Head, c.Repository)
 	}
 	f.setBranch(c.Remote, c.Branch, c.Head)
-	prs := f.prs[c.Remote]
+	prs, texts := f.prs[c.Remote], f.texts[c.Remote]
 	for i := range prs {
 		if prs[i].Branch == c.Branch && prs[i].State == forge.Open {
 			prs[i].Head = c.Head
+			if t := (text{c.Title, c.Body}); texts[i] != t {
+				texts[i] = t
+				f.edits++
+			}
 			return prs[i], nil
 		}
 	}
 	n := len(prs) + 1
 	pr := forge.PullRequest{Number: n, URL: fmt.Sprintf("https://forge.invalid/%d", n), Branch: c.Branch, Head: c.Head, State: forge.Open}
 	f.prs[c.Remote] = append(prs, pr)
+	f.texts[c.Remote] = append(texts, text{c.Title, c.Body})
 	return pr, nil
 }
 
@@ -183,6 +211,8 @@ func NewFakeHarness(t *testing.T) Harness {
 		Branch:    func(_ *testing.T, name string) string { return f.Branch(remote, name) },
 		Refuse:    func(_ *testing.T, reason string) { f.Refuse(reason) },
 		SetChecks: func(_ *testing.T, head string, checks []forge.Check) { f.SetChecks(remote, head, checks...) },
+		Text:      func(_ *testing.T, number int) (string, string) { return f.Text(remote, number) },
+		Edits:     func(_ *testing.T) int { return f.Edits() },
 	}
 	f.SetBranch(h.Remote, h.Base, h.BaseHead)
 	for _, c := range append([]string{h.BaseHead}, h.Heads[:]...) {

@@ -13,7 +13,7 @@
     {"id": "sign-off", "type": "review", "version": 1, "settings": {"actor": "guildmaster"},
      "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
     {"id": "publish", "type": "publish", "version": 1,
-     "inputs": {"head": ["build.head"], "review": ["review.outcome", "sign-off.outcome"]}},
+     "inputs": {"head": ["build.head"], "review": ["review.outcome", "sign-off.outcome"], "spec": ["accept.spec"]}},
     {"id": "deliver", "type": "deliver", "version": 1,
      "inputs": {"head": ["publish.head"], "review": ["review.outcome", "sign-off.outcome"]}}
   ]
