@@ -18,7 +18,7 @@ The engine consumes eight narrow interfaces, declared in `internal/interp` besid
 | `Rebases`: [rebase-aware review](#rebase-aware-review) | `git.Program` | `gittest.Script` | `gittest.RunClassifierContract` |
 | `Forge`: [publish and deliver](#publish-and-deliver), [validate](#validate) | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunForgeContract` |
 | `MergeabilityReader`: [mergeability observations](#mergeability-observations), optional on the forge | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunMergeabilityContract` |
-| `Workspaces`: [the working directory](#the-working-directory), `Ensure`, `FastForward` and `Retire`; [the head check](#the-head-check), `Tip`, `IsAncestor` and `Base`; [tiered rebase](#tiered-rebase), `Rebase`, `Squash`, `Adopt` and `Diff` | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
+| `Workspaces`: [the working directory](#the-working-directory), `Ensure`, `FastForward`, `Behind` and `Retire`; [the head check](#the-head-check), `Tip`, `IsAncestor` and `Base`; [tiered rebase](#tiered-rebase), `Rebase`, `Squash`, `Adopt` and `Diff` | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
 
 `Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
@@ -145,8 +145,8 @@ The state is coarse, read from the dependency's records, so a dependency moving 
 Its id is `<repo>.<task>.dependency-held.<hex>`, where `<hex>` is the first 12 hex digits of the sha256 of the state lines: the same states send the same message again, which is a replay and sends nothing, and a change sends a new one.
 This is not the between-Directors [`dependency-notice`](messaging.md#message-types).
 
-When the gate passes by rule 2 or 4 before the task's first attempt of a step not run by the Director, the engine first [fast-forwards](#the-working-directory) the task branch to the current main, so research runs on the main its dependencies merged into.
-A crash before that attempt is recorded repeats the fast-forward at the next advance, which is harmless; nothing is fast-forwarded once the attempt exists, and nothing without `Engine.Workspaces`.
+The gate only holds or releases; it moves no branch.
+A released task still starts research on the main its dependencies merged into, because every Artisan attempt's launch [fast-forwards](#the-working-directory) an untouched task branch first, research's first attempt included.
 
 Nothing advances a held task from inside its dependency's own advance, which would take a second task lock inside the first.
 The session supervisor's [dependency watcher](director.md#dependencies) advances held tasks with no model turn, and `director status` lists each as a `dependencies` item.
@@ -514,16 +514,30 @@ Every Artisan attempt of a task runs in one working directory, which a Director 
 Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`internal/git`](contracts/git.md#workspaces), with that path, the repository's `path` and `remote`, and branch `guildhall/<task>`, the branch publish pushes to:
 
 - the first attempt creates the worktree on a new local branch `guildhall/<task>` at the commit the remote's default branch is at then, or on an existing local branch of that name as it is;
-- every later attempt, including a retry, a loop round and a relaunch, reuses it unchanged: Guildhall never resets, cleans or checks out over it, so an Artisan uses git freely inside it and its commits, branches and uncommitted files carry to the next attempt.
-  The one exception is a [tiered rebase](#tiered-rebase), which moves the branch to the rebased head with `Workspaces.Adopt`, `git reset --keep`, only while no attempt runs, keeping untracked and local files and refusing rather than overwrite one;
+- every later attempt, including a retry, a loop round and a relaunch, reuses it: Guildhall never resets, cleans or checks out over it, so an Artisan uses git freely inside it and its commits, branches and uncommitted files carry to the next attempt.
+  It only fast-forwards an untouched branch, below, and a [tiered rebase](#tiered-rebase) moves the branch to the rebased head with `Workspaces.Adopt`, `git reset --keep`, only while no attempt runs, keeping untracked and local files and refusing rather than overwrite one;
 - listed output files sit beside the code; an Artisan that commits should leave them out.
   An omitted code-head output is recorded outside the worktree ([code-head output intake](#code-head-output-intake)).
 
 Ensure is replay safe: the worktree is built beside the working directory and moved into place only when complete, so a crash leaves no working directory or a complete one, and the attempt, recorded but not marked launched, is launched by the next advance.
 When the working directory cannot be made, such as when the remote is unreachable or the directory holds files but is not a worktree of the repository, the advance fails before launching anything and running it again retries; a plain working directory an earlier Guildhall made for a task that is still open is refused this way rather than replaced.
-A task held by the [dependency gate](#the-dependency-gate) already has its worktree, made for its grill at the main of that time.
-When the gate opens, by the dependencies merging or the Director's override, and before the task's first attempt of a step not run by the Director, the engine calls `Workspaces.FastForward` with the same workspace: an untouched branch moves to the commit the remote's default branch is at now, with `git merge --ff-only`, keeping the grill's untracked outputs, and `DefaultRef` is refreshed so the task's base stays current.
-This only fast-forwards, and a branch with commits is rebased only later by the [tiered rebase](#tiered-rebase): a branch that has commits not on main, is not checked out in the worktree, or that git refuses to move, for example because an untracked file would be overwritten, is kept as it is, the Director is sent `<repo>.<task>.dependency-branch-kept`, type `dependency-branch-kept`, naming why, and research proceeds on the existing branch.
+Every Artisan attempt of a workflow step, whether a first attempt, a retry, a loop round, a send-back or a relaunch, then calls `Workspaces.FastForward` with the same workspace, before the attempt's [base](#the-head-check) is recorded ([decision](decisions/branch-kept.md)).
+An untouched branch, one with no commits that are not on the default branch, moves to the commit the remote's default branch is at now, with `git merge --ff-only`, keeping untracked outputs such as the grill's, and `DefaultRef` is refreshed, so a build retry after main moved starts on the new main and records it as its base.
+A task held by the [dependency gate](#the-dependency-gate) already has its worktree, made for its grill at the main of that time, and starts research on the main its dependencies merged into this way.
+A relaunch repeats the fast-forward, which is harmless because it is idempotent.
+A Director stage and the tiered rebase's synthetic `<step>-rebase` and `<step>-rebase-review` attempts are never fast-forwarded, and nothing is without `Engine.Workspaces`.
+
+This only fast-forwards, and a branch with commits is rebased only later by the tiered rebase.
+`FastForward`'s kept reason is free text, so the engine sorts it by asking `Workspaces.IsAncestor` whether the branch tip is an ancestor of `DefaultRef`:
+
+- a branch with commits of its own is kept silently, as the normal case it is;
+- an untouched branch that was not moved, because the remote could not be fetched, the worktree is on another branch or git refused, for example because an untracked file would be overwritten, is a **branch kept**: the attempt proceeds on the existing branch and the Director is sent `<repo>.<task>.branch-kept.<step>-<n>`, type `branch-kept`, saying `Step <step> attempt <n> of <repo>/<task> runs on its branch <branch>, which was not moved to the current main, because <reason>.`
+  A replay with another reason sends nothing new, so each attempt sends at most one.
+
+A code-head attempt, such as a build, its fix rounds and send-backs, then reads `Workspaces.Behind`, the first-parent commits of `DefaultRef` its branch tip lacks.
+When the branch is behind or was kept, its prompt gets a "Behind main" section naming the count, why a kept branch was not moved, and that main's changes are taken, when needed, with `git fetch` then `git rebase origin/main`, never `git merge`.
+Research, plan and review attempts never get the note.
+The note is rendered only with the attempt's first [preparation](#attempt-preparation); a published prompt is never rendered again, so a relaunch keeps it as it was.
 A working directory that is not yet a worktree is left alone: `Ensure` creates the branch at the current main anyway.
 When a merge closes the task, the engine calls `Workspaces.Retire` with the merged head and the task's recorded documents, before marking the task `done`, so a replay retires it again.
 It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.

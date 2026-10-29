@@ -31,8 +31,9 @@ type prepared struct {
 }
 
 // preparation returns attempt n's published preparation, checked against its manifest and inputs, or
-// renders and publishes it when none was published. A published one is never rendered again or removed.
-func (r *run) preparation(s workflow.Step, n int, inputs []render.Input) (prepared, error) {
+// renders and publishes it when none was published, with main, when present, as its behind-main note. A published
+// one is never rendered again or removed, so a relaunch's main is not used.
+func (r *run) preparation(s workflow.Step, n int, inputs []render.Input, main *behindMain) (prepared, error) {
 	dir := r.attemptDir(s.ID, n)
 	published := filepath.Join(dir, promptDir)
 	switch _, err := os.Lstat(published); {
@@ -54,7 +55,11 @@ func (r *run) preparation(s workflow.Step, n int, inputs []render.Input) (prepar
 	if b.Range != nil {
 		reviewBase = b.Range.Base
 	}
-	rendered, err := r.e.Prompter.Prompt(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Title: r.task.Title, Step: s, Attempt: n, Dir: partial, Revisions: b.Revisions, ReviewBase: reviewBase, Retry: b.Retry.render()}, inputs)
+	var note *render.Main
+	if main != nil {
+		note = &render.Main{Behind: main.Behind, Kept: main.Kept}
+	}
+	rendered, err := r.e.Prompter.Prompt(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Title: r.task.Title, Step: s, Attempt: n, Dir: partial, Revisions: b.Revisions, ReviewBase: reviewBase, Retry: b.Retry.render(), Main: note}, inputs)
 	if err != nil {
 		return prepared{}, err
 	}

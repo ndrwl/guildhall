@@ -68,6 +68,9 @@ type Stage struct {
 	ReviewBase string
 	// Retry, when present, says why this attempt retries the previous one; it is rendered for every actor.
 	Retry *Retry
+	// Main, when present, says how far the task branch is behind the default branch and whether it was kept
+	// where it was; it is rendered only when the branch is behind or was kept.
+	Main *Main
 	// Dir is the attempt directory Prompt writes into; it must not exist or be empty.
 	// Question ignores it.
 	Dir string
@@ -83,6 +86,14 @@ type Retry struct {
 	Reason    string
 	Rejection string
 	Summary   string
+}
+
+// Main is where a code-head attempt's task branch stands against the default branch as the attempt launches.
+type Main struct {
+	// Behind is how many default-branch commits the task branch does not contain.
+	Behind int
+	// Kept, when not empty, is why the untouched task branch was not moved to the current main.
+	Kept string
 }
 
 // Input is one input document wired to the stage.
@@ -243,7 +254,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Title, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -256,7 +267,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -288,7 +299,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 		}
 		m.Skills = append(m.Skills, skill)
 	}
-	text := composePrompt(m, title, instructions, role, guide, standards, reviewBase, retry)
+	text := composePrompt(m, title, instructions, role, guide, standards, reviewBase, retry, main)
 	if actor == workflow.ArtisanActor {
 		text += outputInstructions(m.Identity, revisions)
 	}
@@ -300,7 +311,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	return nil
 }
 
-func composePrompt(m *Manifest, title, instructions, role, guide string, standards []string, reviewBase string, retry *Retry) string {
+func composePrompt(m *Manifest, title, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main) string {
 	var b strings.Builder
 	id := m.Identity
 	fmt.Fprintf(&b, "# Guildhall attempt\n\nRepository: %s\nTask: %s\nStep: %s (%s version %d)\nAttempt: %d\n",
@@ -321,6 +332,9 @@ func composePrompt(m *Manifest, title, instructions, role, guide string, standar
 	section := func(title, body string) { fmt.Fprintf(&b, "\n## %s\n\n%s\n", title, strings.TrimRight(body, "\n")) }
 	if retry != nil {
 		section("Why this is a retry", retrySection(retry))
+	}
+	if main != nil && (main.Behind > 0 || main.Kept != "") {
+		section("Behind main", mainSection(main))
 	}
 	section("Role", role)
 	section("Stage guide", guide)
@@ -379,6 +393,22 @@ func retrySection(retry *Retry) string {
 func fenced(text string) string {
 	fence := strings.Repeat("`", max(3, longestRun(text, '`')+1))
 	return fmt.Sprintf("%stext\n%s\n%s", fence, strings.TrimRight(normalise(text), "\n"), fence)
+}
+
+// mainSection says how far the task branch is behind the default branch, why it was not moved when it was kept,
+// and how to take main's changes. The kept reason is git's or the engine's text, so it is fenced as text.
+func mainSection(main *Main) string {
+	var b strings.Builder
+	commits := "commits"
+	if main.Behind == 1 {
+		commits = "commit"
+	}
+	fmt.Fprintf(&b, "The task branch is %d %s behind the default branch.\n\n", main.Behind, commits)
+	if strings.TrimSpace(main.Kept) != "" {
+		fmt.Fprintf(&b, "The branch was not moved to the current main, because:\n\n%s\n\n", fenced(main.Kept))
+	}
+	b.WriteString("When you need main's changes, run `git fetch` and then `git rebase origin/main`; never use `git merge`.\n")
+	return b.String()
 }
 
 // longestRun is the length of the longest run of c in s.

@@ -1,0 +1,23 @@
+# d27: TestUntouchedBranchStartsOnMain with launch's fast-forward call removed, the behaviour at 37cccaae for a task without depends_on (go test ./internal/interp -run TestUntouchedBranchStartsOnMain; Advance and document log lines omitted)
+--- FAIL: TestUntouchedBranchStartsOnMain (0.38s)
+    --- FAIL: TestUntouchedBranchStartsOnMain/retry/double (0.08s)
+        fastforward_test.go:135: build 2 runs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+        fastforward_test.go:138: build-2-base = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+    --- FAIL: TestUntouchedBranchStartsOnMain/retry/store (0.08s)
+        fastforward_test.go:135: build 2 runs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+        fastforward_test.go:138: build-2-base = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+    --- FAIL: TestUntouchedBranchStartsOnMain/send-back/double (0.04s)
+        fastforward_test.go:135: build 2 runs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+        fastforward_test.go:138: build-2-base = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+    --- FAIL: TestUntouchedBranchStartsOnMain/send-back/store (0.09s)
+        fastforward_test.go:135: build 2 runs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+        fastforward_test.go:138: build-2-base = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+    --- FAIL: TestUntouchedBranchStartsOnMain/first_attempt/double (0.03s)
+        fastforward_test.go:135: build 1 runs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+        fastforward_test.go:138: build-1-base = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+    --- FAIL: TestUntouchedBranchStartsOnMain/first_attempt/store (0.06s)
+        fastforward_test.go:135: build 1 runs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+        fastforward_test.go:138: build-1-base = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, want the new main 5e979a2a54f5bc828034e8ab6f1d5f860cb61551
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.469s
+FAIL

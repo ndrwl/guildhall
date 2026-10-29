@@ -511,21 +511,22 @@ const (
 	// MessageDependencyHeld: the dependency gate holds a task until its dependencies merge; it is not the
 	// between-Directors dependency-notice.
 	MessageDependencyHeld = "dependency-held"
-	// MessageDependencyBranchKept: the gate opened but the task branch could not be moved to the current main.
-	MessageDependencyBranchKept = "dependency-branch-kept"
-	MessageDirectorStage        = "director-stage"
-	MessageHerdrLeftOpen        = "herdr-workspace-left-open"
-	MessageJudgeFailed          = "judge-failed"
-	MessageJudgement            = "judgement"
-	MessageJudgementRefused     = "judgement-refused"
-	MessageLoopExitRejected     = "loop-exit-rejected"
-	MessageMergeHeld            = "merge-held"
-	MessageMergeRefused         = "merge-refused"
-	MessageMerged               = "merged"
-	MessagePublished            = "published"
-	MessageStall                = "stall"
-	MessageWorkerStalled        = "worker-stalled"
-	MessageWorkspaceKept        = "workspace-kept"
+	// MessageBranchKept: an Artisan attempt runs on its untouched task branch, which could not be moved to the
+	// current main.
+	MessageBranchKept       = "branch-kept"
+	MessageDirectorStage    = "director-stage"
+	MessageHerdrLeftOpen    = "herdr-workspace-left-open"
+	MessageJudgeFailed      = "judge-failed"
+	MessageJudgement        = "judgement"
+	MessageJudgementRefused = "judgement-refused"
+	MessageLoopExitRejected = "loop-exit-rejected"
+	MessageMergeHeld        = "merge-held"
+	MessageMergeRefused     = "merge-refused"
+	MessageMerged           = "merged"
+	MessagePublished        = "published"
+	MessageStall            = "stall"
+	MessageWorkerStalled    = "worker-stalled"
+	MessageWorkspaceKept    = "workspace-kept"
 	// The merge queue's messages (docs/interpreter.md#the-merge-queue): a task's place in the queue, a rebase of
 	// its head onto the base tip, a rebase that became a build send-back, a front that rebased three times in one
 	// stay, and a merge approval carried over to a rebased head.
@@ -546,7 +547,7 @@ var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
 	MessageBudgetRefused: "engine", MessageChangesRequested: "engine", MessageChecksFailed: "engine",
 	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
-	MessageDependencyHeld: "engine", MessageDependencyBranchKept: "engine",
+	MessageDependencyHeld: "engine", MessageBranchKept: "engine",
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",

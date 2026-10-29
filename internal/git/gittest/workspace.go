@@ -31,6 +31,8 @@ type WorkspaceHarness struct {
 	Tip        func(ctx context.Context, repository, branch string) (string, error)
 	IsAncestor func(ctx context.Context, repository, commit, head string) (bool, error)
 	Base       func(ctx context.Context, repository, branch string) (string, error)
+	// Behind is the implementation's git.Program.Behind.
+	Behind func(ctx context.Context, repository, rev, ref string) (int, []string, error)
 	// Arrange returns a workspace whose remote's default branch is at base, whose Dir and branch do not exist yet
 	// and whose Dir's parent does.
 	Arrange func(t *testing.T) (w git.Workspace, base string)
@@ -285,6 +287,43 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 		}
 		if _, err := h.Tip(ended, w.Repository, w.Branch); err == nil {
 			t.Error("Tip with an ended context succeeded")
+		}
+	})
+	t.Run("behind the recorded default branch", func(t *testing.T) {
+		h := newHarness(t)
+		w, base := h.Arrange(t)
+		ensure(t, h, w)
+		def := git.DefaultRef(w.Branch)
+		behind := func(rev string) int {
+			t.Helper()
+			n, subjects, err := h.Behind(ctx, w.Repository, rev, def)
+			if err != nil || len(subjects) != n {
+				t.Fatalf("Behind(%s, %s) = %d, %q, %v", rev, def, n, subjects, err)
+			}
+			return n
+		}
+		if got := behind(base); got != 0 {
+			t.Errorf("a new branch is %d behind, want 0", got)
+		}
+		commit := h.Commit(t, w.Dir, "c.txt")
+		h.AdvanceDefault(t, w, "one.txt")
+		h.AdvanceDefault(t, w, "two.txt")
+		if kept := forward(t, h, w); kept == "" {
+			t.Fatal("FastForward of a diverged branch kept nothing")
+		}
+		if got := behind(commit); got != 2 {
+			t.Errorf("a branch with its own commit is %d behind after main moved twice, want 2", got)
+		}
+		for _, c := range []struct {
+			commit string
+			want   bool
+		}{{base, true}, {commit, false}} {
+			if got, err := h.IsAncestor(ctx, w.Repository, c.commit, def); err != nil || got != c.want {
+				t.Errorf("IsAncestor(%s, %s) = %v, %v; want %v", c.commit, def, got, err, c.want)
+			}
+		}
+		if _, _, err := h.Behind(ctx, w.Repository, commit, git.DefaultRef("guildhall/none")); err == nil {
+			t.Error("Behind a ref that does not exist succeeded")
 		}
 	})
 	retired := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
@@ -544,6 +583,7 @@ func (f *Workspaces) FastForward(ctx context.Context, w git.Workspace) (string, 
 	main, ok := f.defaults[w.Remote]
 	if ok {
 		f.recorded[[2]string{w.Repository, w.Branch}] = main
+		f.add(w.Repository, main)
 	}
 	switch {
 	case !ok:
@@ -591,10 +631,54 @@ func (f *Workspaces) IsAncestor(ctx context.Context, repository, commit, head st
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	commit, head = f.resolve(repository, commit), f.resolve(repository, head)
 	if !f.commits[repository][commit] || !f.commits[repository][head] {
 		return false, nil
 	}
 	return f.merged(commit, head), nil
+}
+
+// Behind implements git.Program.Behind over the parents the double's commits record: the commits of ref, a
+// branch's DefaultRef or refs/heads/<branch>, that rev does not contain, newest first, with the file each
+// AdvanceDefault commit adds, or its id, as its subject.
+func (f *Workspaces) Behind(ctx context.Context, repository, rev, ref string) (int, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	head := f.resolve(repository, ref)
+	if !strings.HasPrefix(ref, "refs/") || head == ref {
+		return 0, nil, fmt.Errorf("ref %q of %s does not exist", ref, repository)
+	}
+	if !f.commits[repository][rev] {
+		return 0, nil, fmt.Errorf("%s has no commit %q", repository, rev)
+	}
+	var subjects []string
+	for c := head; c != "" && !f.merged(c, rev); c = f.parents[c] {
+		subject := f.adds[c]
+		if subject == "" {
+			subject = c
+		}
+		subjects = append(subjects, subject)
+	}
+	return len(subjects), subjects, nil
+}
+
+// resolve is the commit a branch's DefaultRef or refs/heads/<branch> of repository names, as Ensure and
+// FastForward last recorded it; any other name is returned as it is.
+func (f *Workspaces) resolve(repository, name string) string {
+	if branch, ok := strings.CutPrefix(name, git.DefaultRef("")); ok {
+		if c, ok := f.recorded[[2]string{repository, branch}]; ok {
+			return c
+		}
+	}
+	if branch, ok := strings.CutPrefix(name, "refs/heads/"); ok {
+		if c, ok := f.branches[[2]string{repository, branch}]; ok {
+			return c
+		}
+	}
+	return name
 }
 
 // Base implements git.Program.Base: the nearest commit of the branch's history that is also in the history of

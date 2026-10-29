@@ -30,6 +30,8 @@ type queueWorkspaces struct {
 	tip      string
 	adopted  [][2]string
 	squashes int
+	// forwards counts FastForward calls.
+	forwards int
 	// afterSquash, when set, runs after each squash.
 	afterSquash func()
 }
@@ -50,7 +52,16 @@ func (w *queueWorkspaces) Ensure(_ context.Context, ws git.Workspace) error {
 	return os.MkdirAll(ws.Dir, 0o755)
 }
 func (w *queueWorkspaces) FastForward(context.Context, git.Workspace) (string, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.forwards++
 	return "", nil
+}
+
+func (w *queueWorkspaces) fastForwards() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.forwards
 }
 func (w *queueWorkspaces) Retire(context.Context, git.Retirement) ([]string, error) { return nil, nil }
 func (w *queueWorkspaces) Tip(context.Context, string, string) (string, error) {
@@ -60,6 +71,9 @@ func (w *queueWorkspaces) Tip(context.Context, string, string) (string, error) {
 }
 func (w *queueWorkspaces) IsAncestor(context.Context, string, string, string) (bool, error) {
 	return true, nil
+}
+func (w *queueWorkspaces) Behind(context.Context, string, string, string) (int, []string, error) {
+	return 0, nil, nil
 }
 func (w *queueWorkspaces) Base(context.Context, string, string) (string, error) { return baseHead, nil }
 func (w *queueWorkspaces) Adopt(_ context.Context, _ git.Workspace, from, to string) error {
