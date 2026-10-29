@@ -1,0 +1,96 @@
+# Parking a failed or stopped attempt (d15): red and green runs, 2026-10-29
+
+The tests were written beside the implementation, not before it.
+The red run is against a stub of that implementation that keeps its API, so the tests compile and fail on behaviour:
+ParkAttempt parked anything without its checks and UnparkAttempt cleared a park without its checks,
+director status counted no park, the startup snapshot left out the parked section and its one-line check,
+and step park and step unpark were not dispatched.
+The stub was then removed, leaving the committed implementation.
+Lines of the golden's full JSON dump and of the usage text are left out below; nothing else is.
+
+go test ./internal/store ./internal/render ./internal/cli -count=1 -run 'TestParkAttemptRefusals|TestParkAndUnparkAttempt|TestUnparkAStalePark|TestDirectorViewOfAnEmptyStore|TestSessionStartupListsParkedAttempts|TestSessionStartupNamesNoHandoffAndNothingInFlight|TestSessionRefusals|TestStepParkAndUnpark|TestStepParkUsage|TestDirectorStatusLeavesParkedAttemptsOut|TestDirectorStartStartupListsParkedAttempts|TestDirectorResumeLeavesAParkedAttemptAsleep|TestDirectorStatusGolden|TestDirectorStatusOfAnEmptyCopy|TestUnlistedRepositoryRefusedByEveryCommand'
+
+## red, against the stub (exit 1)
+
+--- FAIL: TestParkAttemptRefusals (0.08s)
+    park_test.go:66: succeeded attempt: err = <nil>, want invalid store request
+    park_test.go:66: unknown task: err = <nil>, want record not found
+    park_test.go:66: unknown attempt: err = <nil>, want record not found
+    park_test.go:66: not the latest: err = <nil>, want invalid store request
+    park_test.go:66: running attempt: err = <nil>, want invalid store request
+    park_test.go:66: step with no tries: err = <nil>, want record not found
+    park_test.go:66: closed task: err = <nil>, want invalid store request
+    park_test.go:74: parks after refusals = [{Repository:app TaskID:t-1 Step:build Attempt:1 Reason:Hold. Parked:true Cycle:0} {Repository:app TaskID:t-1 Step:build Attempt:3 Reason:Hold. Parked:true Cycle:0} {Repository:app TaskID:t-1 Step:deliver Attempt:1 Reason:Hold. Parked:true Cycle:0} {Repository:app TaskID:t-1 Step:plan Attempt:1 Reason:Hold. Parked:true Cycle:0} {Repository:app TaskID:t-1 Step:review Attempt:1 Reason:Hold. Parked:true Cycle:0} {Repository:app TaskID:t-2 Step:build Attempt:1 Reason:Hold. Parked:true Cycle:0} {Repository:app TaskID:t-9 Step:build Attempt:1 Reason:Hold. Parked:true Cycle:0}]
+--- FAIL: TestParkAndUnparkAttempt (0.06s)
+    park_test.go:86: unpark of an attempt never parked = <nil>, want ErrInvalid
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/store	0.283s
+--- FAIL: TestSessionStartupListsParkedAttempts (0.01s)
+    session_test.go:118: startup.md does not end with the parked section "- messages: 2 unread Director messages: guildhall messages list director\n\n## Parked\n\nThese attempts are held on purpose and are not work: nothing here needs you until its hold ends.\n\n- parked: attempt 3 of review of app/t-4 failed; reason: Held until app/t-11 merges.; retry with `guildhall step retry --repo app --task t-4 --step review --attempt 3`\n- parked: attempt 1 of build of lib/t-2 stopped; reason: Waiting on the Guildmaster.; retry with `guildhall step retry --repo lib --task t-2 --step build --attempt 1`\n":
+--- FAIL: TestSessionRefusals (0.04s)
+    --- FAIL: TestSessionRefusals/multi-line_parked_item (0.01s)
+        session_test.go:227: rendered
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/render	0.069s
+--- FAIL: TestDirectorResumeLeavesAParkedAttemptAsleep (0.10s)
+    --- FAIL: TestDirectorResumeLeavesAParkedAttemptAsleep/parked=true (0.04s)
+        director_pause_test.go:740: step park: exit 2, stderr guildhall: step: the commands are done, finish, retry and send-back
+--- FAIL: TestDirectorStatusGolden (0.09s)
+    director_status_test.go:255: director-status.json mismatch:
+      (got: t-10's step has no "parked": true, needs_me has its retry and director items, and "parked" is [])
+--- FAIL: TestUnlistedRepositoryRefusedByEveryCommand (0.05s)
+    --- FAIL: TestUnlistedRepositoryRefusedByEveryCommand/step_park (0.00s)
+        guard_rails_test.go:58: exit 2, stdout , stderr guildhall: step: the commands are done, finish, retry and send-back
+    --- FAIL: TestUnlistedRepositoryRefusedByEveryCommand/step_unpark (0.00s)
+        guard_rails_test.go:58: exit 2, stdout , stderr guildhall: step: the commands are done, finish, retry and send-back
+--- FAIL: TestStepParkAndUnpark (0.05s)
+    park_test.go:38: unpark before any park: exit 2, "", stderr guildhall: step: the commands are done, finish, retry and send-back
+    park_test.go:41: park: exit 2, "", stderr guildhall: step: the commands are done, finish, retry and send-back
+--- FAIL: TestStepParkUsage (0.00s)
+    park_test.go:84: step undo: exit 2, stderr guildhall: step: the commands are done, finish, retry and send-back
+--- FAIL: TestDirectorStartStartupListsParkedAttempts (0.22s)
+    park_test.go:208: startup.md has no parked section:
+--- FAIL: TestDirectorStatusLeavesParkedAttemptsOut (0.04s)
+    park_test.go:239: needs_me = [advance t-4 1 retry t-1 1 retry t-2 1 retry t-3 2 retry t-4 1 retry t-5 1 retry t-6 1 retry t-8 1 director t-1 0 director t-2 0 director t-3 0 director t-5 0 director t-8 0 paused t-6 0]
+    park_test.go:250: parked = , want t-1 t-4 t-5 t-6
+    park_test.go:256: t-1 step {Step:build Attempt:1 Outcome:failed Live:<nil> Parked:false}: parked = false, want true
+    park_test.go:256: t-4 step {Step:build Attempt:1 Outcome:failed Live:<nil> Parked:false}: parked = false, want true
+    park_test.go:256: t-5 step {Step:build Attempt:1 Outcome:failed Live:<nil> Parked:false}: parked = false, want true
+    park_test.go:256: t-6 step {Step:build Attempt:1 Outcome:failed Live:<nil> Parked:false}: parked = false, want true
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cli	0.627s
+FAIL
+
+Passed in the red run, and so pins: TestUnparkAStalePark, TestDirectorViewOfAnEmptyStore,
+TestSessionStartupNamesNoHandoffAndNothingInFlight and TestDirectorStatusOfAnEmptyCopy.
+
+## green, after removing the stub (exit 0)
+
+--- PASS: TestDirectorViewOfAnEmptyStore (0.02s)
+--- PASS: TestParkAttemptRefusals (0.03s)
+--- PASS: TestParkAndUnparkAttempt (0.03s)
+--- PASS: TestUnparkAStalePark (0.03s)
+ok  	github.com/ndrwl/guildhall/internal/store	0.140s
+--- PASS: TestSessionStartupNamesNoHandoffAndNothingInFlight (0.01s)
+--- PASS: TestSessionStartupListsParkedAttempts (0.01s)
+--- PASS: TestSessionRefusals (0.02s)
+ok  	github.com/ndrwl/guildhall/internal/render	0.049s
+--- PASS: TestDirectorResumeLeavesAParkedAttemptAsleep (0.08s)
+--- PASS: TestDirectorStatusGolden (0.12s)
+--- PASS: TestDirectorStatusOfAnEmptyCopy (0.05s)
+--- PASS: TestUnlistedRepositoryRefusedByEveryCommand (0.05s)
+--- PASS: TestStepParkAndUnpark (0.04s)
+--- PASS: TestStepParkUsage (0.00s)
+--- PASS: TestDirectorStartStartupListsParkedAttempts (0.26s)
+--- PASS: TestDirectorStatusLeavesParkedAttemptsOut (0.05s)
+ok  	github.com/ndrwl/guildhall/internal/cli	0.709s
+
+## full suite, Linux (WSL2), with the docs and skills
+
+go vet ./... exited 0.
+go test ./... -count=1: every package ok but internal/reconcile, whose TestProbeOwner failed once in its TempDir cleanup
+("unlinkat ...: directory not empty"); that package is untouched by this change, and
+go test ./internal/reconcile -count=5 -run TestProbeOwner then passed.
+An earlier full run of go test ./..., before the docs and skills, passed every package.
+skills: go test ./skills -update regenerated the tree digests, and passes without -update.
+gofmt was applied with go fmt ./internal/...; golangci-lint was not run in this environment.

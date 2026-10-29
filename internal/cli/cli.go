@@ -61,6 +61,10 @@ Commands:
                  start the next attempt after a failed or stopped one
   step send-back --repo <id> --task <id> --step <id> --attempt <n> --feedback <instructions> [--copy <dir> | --store <path> --config <file> --state <dir>]
                  send a succeeded Artisan step back with Director feedback
+  step park --repo <id> --task <id> --step <id> --attempt <n> --reason <text> [--copy <dir> | --store <path> --config <file> --state <dir>]
+                 hold a failed or stopped attempt on purpose, out of needs_me
+  step unpark --repo <id> --task <id> --step <id> --attempt <n> [--copy <dir> | --store <path> --config <file> --state <dir>]
+                 lift a park, so the attempt is back in needs_me
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
   director status --json --store <path> --state <dir>

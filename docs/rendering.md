@@ -95,12 +95,12 @@ It writes, and lists with digests in `manifest.json`, schema `guildhall.session-
 |---|---|
 | `session` | The session number. |
 | `role` | `role.md`, the role prompt with line endings normalised to LF, the digest of that text and the baseline `root` it came from, so a CRLF checkout renders the same digest. |
-| `startup` | `startup.md` and the digest of its bytes: the session is starting up and recovering, the newest handoff note's path or `None.`, and the in-flight snapshot one item per line or `None.`. |
+| `startup` | `startup.md` and the digest of its bytes: the session is starting up and recovering, the newest handoff note's path or `None.`, and the in-flight snapshot one item per line or `None.`, then, only when there are any, a `Parked` section saying its attempts are held on purpose and not work, one per line. |
 | `files[]` | The runtime's own files, such as Claude Code's `.claude/settings.json`, by slash path, with the digest of their bytes. |
 | `skills[]` | Every skill of the roots, in name order: `name`, the first `root` holding it, `path` under the runtime's skills directory, the tree `digest` and every file with its digest, copied as [skills](#skills) are for an attempt. |
 
 A root directory that does not exist holds no skills, and a root's files, such as `CREDITS.md`, are not skills.
-A skills directory or runtime file path that is not relative and slash-separated, or that collides with another file the session writes, and an in-flight item of more than one line, are refused before anything is written; on any error nothing `Session` wrote is left behind.
+A skills directory or runtime file path that is not relative and slash-separated, or that collides with another file the session writes, and an in-flight or parked item of more than one line, are refused before anything is written; on any error nothing `Session` wrote is left behind.
 `render.StartupMessage` names `startup.md` relative to the rendered session directory.
 For runtimes launched elsewhere, the supervisor supplies an absolute startup-file path instead ([Director start](director.md#start)): for Claude Code the first message is `/version startup "<absolute startup.md path>"`, the `/version` command at `.claude/commands/version.md`, one of the runtime's files listed in `files[]`, which shows the binary's version and then has the model follow `startup.md`.
 

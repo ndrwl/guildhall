@@ -6,8 +6,8 @@
       "transcripts",
       "forge state"
     ],
-    "sequence": 37,
-    "committed_at": "2026-10-22T09:40:00Z"
+    "sequence": 41,
+    "committed_at": "2026-10-22T09:44:00Z"
   },
   "session": {
     "state": "running",
@@ -55,12 +55,12 @@
       "max_running_attempts": 3,
       "max_attempts_per_day": 40,
       "running_attempts": 3,
-      "attempts_today": 9,
+      "attempts_today": 10,
       "day": "2026-10-22",
       "spend_today": {
-        "attempts": 6,
-        "tokens_unknown": 5,
-        "cost_unknown": 5,
+        "attempts": 7,
+        "tokens_unknown": 6,
+        "cost_unknown": 6,
         "tokens": "measured",
         "input_tokens": 1000,
         "output_tokens": 200,
@@ -99,6 +99,41 @@
         "attempts": 0,
         "tokens_unknown": 0,
         "cost_unknown": 0,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
+    },
+    {
+      "repository": "app",
+      "id": "t-10",
+      "title": "Parked",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d"
+      },
+      "next": {
+        "wait": "director",
+        "step": "build",
+        "attempt": 1
+      },
+      "steps": [
+        {
+          "step": "build",
+          "attempt": 1,
+          "outcome": "failed",
+          "parked": true
+        }
+      ],
+      "spend": {
+        "attempts": 1,
+        "tokens_unknown": 1,
+        "cost_unknown": 1,
         "tokens": "unknown",
         "input_tokens": 0,
         "output_tokens": 0,
@@ -448,45 +483,6 @@
   },
   "recent": [
     {
-      "mutation_id": "i-16",
-      "operation": "start-attempt",
-      "repository": "app",
-      "task_id": "t-5",
-      "attempt": 1,
-      "record": "attempt/plan/1",
-      "sequence": 16,
-      "committed_at": "2026-10-22T09:15:00Z"
-    },
-    {
-      "mutation_id": "i-17",
-      "operation": "finish-attempt",
-      "repository": "app",
-      "task_id": "t-5",
-      "attempt": 1,
-      "record": "attempt/plan/1",
-      "sequence": 17,
-      "committed_at": "2026-10-22T09:16:00Z"
-    },
-    {
-      "mutation_id": "i-18",
-      "operation": "set-task-state",
-      "repository": "app",
-      "task_id": "t-5",
-      "record": "task",
-      "sequence": 18,
-      "committed_at": "2026-10-22T09:17:00Z"
-    },
-    {
-      "mutation_id": "i-19",
-      "operation": "start-owned-attempt",
-      "repository": "app",
-      "task_id": "t-6",
-      "attempt": 1,
-      "record": "attempt/build/1",
-      "sequence": 19,
-      "committed_at": "2026-10-22T09:18:00Z"
-    },
-    {
       "mutation_id": "message:app.t-2.worker-stalled.plan-1.abc",
       "operation": "send-message",
       "repository": "app",
@@ -637,6 +633,45 @@
       "record": "attempt/plan/1",
       "sequence": 37,
       "committed_at": "2026-10-22T09:40:00Z"
+    },
+    {
+      "mutation_id": "i-36",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-10",
+      "record": "task",
+      "sequence": 38,
+      "committed_at": "2026-10-22T09:41:00Z"
+    },
+    {
+      "mutation_id": "i-37",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-10",
+      "attempt": 1,
+      "record": "attempt/build/1",
+      "sequence": 39,
+      "committed_at": "2026-10-22T09:42:00Z"
+    },
+    {
+      "mutation_id": "i-38",
+      "operation": "finish-attempt",
+      "repository": "app",
+      "task_id": "t-10",
+      "attempt": 1,
+      "record": "attempt/build/1",
+      "sequence": 40,
+      "committed_at": "2026-10-22T09:43:00Z"
+    },
+    {
+      "mutation_id": "i-39",
+      "operation": "park-attempt",
+      "repository": "app",
+      "task_id": "t-10",
+      "attempt": 1,
+      "record": "attempt-park/build/1",
+      "sequence": 41,
+      "committed_at": "2026-10-22T09:44:00Z"
     }
   ],
   "needs_me": [
@@ -718,6 +753,18 @@
       "task_id": "t-3",
       "reason": "the last advance waits for the Director",
       "command": "guildhall task timeline --repo app --json t-3"
+    }
+  ],
+  "parked": [
+    {
+      "repository": "app",
+      "task_id": "t-10",
+      "step": "build",
+      "attempt": 1,
+      "outcome": "failed",
+      "reason": "Held until app/t-4 merges.",
+      "parked_at": "2026-10-22T09:44:00Z",
+      "command": "guildhall step retry --repo app --task t-10 --step build --attempt 1"
     }
   ],
   "version": {

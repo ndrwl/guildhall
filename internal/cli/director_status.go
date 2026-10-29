@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -41,6 +42,8 @@ type directorStatus struct {
 	Messages  statusMessages   `json:"messages"`
 	Recent    []recentReceipt  `json:"recent"`
 	NeedsMe   []needsMeItem    `json:"needs_me"`
+	// Parked are the attempts the Director parked, held on purpose and left out of needs_me (docs/director.md#status).
+	Parked []statusParked `json:"parked"`
 	// Version is the binary printing the feed, from its build info and local git reads only
 	// (docs/contracts/cli.md#version); the session supervisor's own snapshot leaves it out.
 	Version *versionInfo `json:"version,omitempty"`
@@ -127,6 +130,21 @@ type statusStep struct {
 	Attempt int                  `json:"attempt"`
 	Outcome store.AttemptOutcome `json:"outcome,omitempty"`
 	Live    *statusLive          `json:"live,omitempty"`
+	// Parked says the latest attempt is parked, which is why a failed or stopped step is not in needs_me.
+	Parked bool `json:"parked,omitempty"`
+}
+
+// statusParked is a counting park: a parked failed or stopped attempt that is its open task's step's latest, with the
+// command to run when the hold ends.
+type statusParked struct {
+	Repository string               `json:"repository"`
+	TaskID     string               `json:"task_id"`
+	Step       string               `json:"step"`
+	Attempt    int                  `json:"attempt"`
+	Outcome    store.AttemptOutcome `json:"outcome"`
+	Reason     string               `json:"reason"`
+	ParkedAt   *time.Time           `json:"parked_at,omitempty"`
+	Command    string               `json:"command"`
 }
 
 type statusLive struct {
@@ -270,6 +288,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		Messages:  statusMessages{ByType: map[string]int{}, Headers: []messageHeader{}},
 		Recent:    []recentReceipt{},
 		NeedsMe:   []needsMeItem{},
+		Parked:    []statusParked{},
 	}
 
 	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly), SpendToday: v.Usage.Spend}
@@ -293,8 +312,8 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.Recent = append(out.Recent, recentReceipt{MutationID: r.MutationID, Operation: r.Operation, Repository: r.Repository, TaskID: r.TaskID,
 			Attempt: r.Attempt, Record: r.Record, Sequence: r.Sequence, CommittedAt: r.CommittedAt})
 	}
-	// Steps are ordered by their first attempt's start; decisions are timed by their opening.
-	firstStart, openedAt := map[string]uint64{}, map[string]time.Time{}
+	// Steps are ordered by their first attempt's start; decisions are timed by their opening and parks by their newest park.
+	firstStart, openedAt, parkedAt := map[string]uint64{}, map[string]time.Time{}, map[string]time.Time{}
 	for _, r := range v.Receipts {
 		key := r.Repository + "/" + r.TaskID + "/"
 		if step, _, ok := strings.Cut(strings.TrimPrefix(r.Record, "attempt/"), "/"); ok && strings.HasPrefix(r.Record, "attempt/") {
@@ -304,6 +323,9 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		}
 		if id, ok := strings.CutPrefix(r.Record, "decision/"); ok && r.Operation == "open-decision" {
 			openedAt[key+id] = r.CommittedAt
+		}
+		if r.Operation == "park-attempt" {
+			parkedAt[key+r.Record] = r.CommittedAt
 		}
 	}
 	owners := map[artisan.AttemptKey]*store.Ownership{}
@@ -319,6 +341,13 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		}
 		task.AddAttempt(at)
 		spend[at.Repository+"/"+at.TaskID] = task
+	}
+
+	parks := map[string]store.AttemptPark{}
+	for _, p := range v.Parks {
+		if p.Parked {
+			parks[fmt.Sprintf("%s/%s/%s/%d", p.Repository, p.TaskID, p.Step, p.Attempt)] = p
+		}
 	}
 
 	sent := map[string]bool{}
@@ -349,12 +378,30 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		})
 		open := t.State == store.TaskOpen
 		var waits struct {
-			Wait    interp.Wait
-			Step    string
-			Attempt int
+			Wait     interp.Wait
+			Step     string
+			Attempt  int
+			Decision string
 		}
 		if st.Next != nil {
 			_ = json.Unmarshal(st.Next, &waits)
+		}
+		// A park counts only while its attempt is its open task's step's latest and failed or stopped; a retry clears
+		// it by starting the next attempt (docs/decisions/0092-park-attempt.md).
+		counting := map[string]store.AttemptPark{}
+		for _, step := range steps {
+			at := latest[prefix+step]
+			p, ok := parks[fmt.Sprintf("%s%s/%d", prefix, step, at.Number)]
+			if !ok || !open || (at.Outcome != store.AttemptFailed && at.Outcome != store.AttemptStopped) {
+				continue
+			}
+			counting[step] = p
+			var when *time.Time
+			if c, ok := parkedAt[prefix+store.AttemptParkRecord(step, at.Number)]; ok {
+				when = &c
+			}
+			out.Parked = append(out.Parked, statusParked{Repository: t.Repository, TaskID: t.ID, Step: step, Attempt: at.Number, Outcome: at.Outcome,
+				Reason: p.Reason, ParkedAt: when, Command: fmt.Sprintf("guildhall step retry --repo %s --task %s --step %s --attempt %d", t.Repository, t.ID, step, at.Number)})
 		}
 		var attempts []store.StageAttempt
 		for _, step := range steps {
@@ -370,7 +417,8 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		}
 		for _, at := range attempts {
 			judge := at.Step == workflow.JudgeStep
-			ss := statusStep{Step: at.Step, Attempt: at.Number, Outcome: at.Outcome}
+			_, parked := counting[at.Step]
+			ss := statusStep{Step: at.Step, Attempt: at.Number, Outcome: at.Outcome, Parked: parked}
 			item := needsMeItem{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number}
 			flags := fmt.Sprintf("--repo %s --task %s --step %s --attempt %d", t.Repository, t.ID, at.Step, at.Number)
 			key := artisan.AttemptKey{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number}
@@ -405,7 +453,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 					}
 				}
 			case store.AttemptFailed, store.AttemptStopped:
-				if open && !judge {
+				if open && !judge && !parked {
 					it := item
 					it.Kind, it.Retryable, it.Reason, it.Command = "retry", true, fmt.Sprintf("attempt %d of %s %s", at.Number, at.Step, at.Outcome), "guildhall step retry "+flags
 					if at.IntakeRejection != "" {
@@ -442,6 +490,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		if open {
 			switch waits.Wait {
 			case interp.WaitDirector:
+				// A parked attempt's failure is held on purpose; a wait for a decision or another attempt still needs the Director.
+				if p, ok := counting[waits.Step]; ok && waits.Attempt == p.Attempt && waits.Decision == "" {
+					break
+				}
 				wait = append(wait, needsMeItem{Kind: "director", Repository: t.Repository, TaskID: t.ID, Reason: "the last advance waits for the Director",
 					Command: fmt.Sprintf("guildhall task timeline --repo %s --json %s", t.Repository, t.ID)})
 			case interp.WaitPaused:
@@ -464,6 +516,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.Tasks = append(out.Tasks, st)
 	}
 
+	slices.SortFunc(out.Parked, func(a, b statusParked) int {
+		return cmp.Or(strings.Compare(a.Repository, b.Repository), strings.Compare(a.TaskID, b.TaskID), strings.Compare(a.Step, b.Step),
+			cmp.Compare(a.Attempt, b.Attempt))
+	})
 	var stalled, decisions []needsMeItem
 	for _, d := range v.OpenDecisions {
 		var opened *time.Time

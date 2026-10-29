@@ -12,8 +12,8 @@ func TestDirectorViewOfAnEmptyStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.AsOf != (Snapshot{}) || v.Tasks == nil || v.Attempts == nil || v.Owners == nil || v.OpenDecisions == nil || v.Unread == nil || v.Receipts == nil ||
-		len(v.Tasks)+len(v.Attempts)+len(v.Owners)+len(v.OpenDecisions)+len(v.Unread)+len(v.Receipts) != 0 {
+	if v.AsOf != (Snapshot{}) || v.Tasks == nil || v.Attempts == nil || v.Owners == nil || v.OpenDecisions == nil || v.Parks == nil || v.Unread == nil || v.Receipts == nil ||
+		len(v.Tasks)+len(v.Attempts)+len(v.Owners)+len(v.OpenDecisions)+len(v.Parks)+len(v.Unread)+len(v.Receipts) != 0 {
 		t.Fatalf("empty store view %+v", v)
 	}
 }
