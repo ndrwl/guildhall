@@ -1010,7 +1010,8 @@ func (r *run) humanOutcome(d store.Decision) error {
 	if err := json.Unmarshal(data, &revisions); err != nil {
 		return err
 	}
-	o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.Verdict(d.Choice), Revisions: revisions}
+	o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.Verdict(d.Choice), Revisions: revisions,
+		Summary: fmt.Sprintf("Approved by the Guildmaster in decision %s.", d.ID)}
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -1092,7 +1093,8 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 					}
 				}
 			}
-			o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.VerdictApproved, Revisions: revisions}
+			o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.HumanReviewer, Verdict: workflow.VerdictApproved, Revisions: revisions,
+				Summary: "Revisions check only."}
 			if err := o.Validate(); err != nil {
 				return Next{}, err
 			}

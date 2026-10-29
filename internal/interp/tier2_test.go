@@ -118,7 +118,7 @@ func TestQueueTier2(t *testing.T) {
 }
 
 // TestQueueTier2Escalates: a behaviour change, a narrowed review asking for changes and no rebaser profile each send
-// the build back; a narrowed approval with a finding asks the Guildmaster for the rebased head.
+// the build back; a narrowed approval with a suggestion asks the Guildmaster for the rebased head.
 func TestQueueTier2Escalates(t *testing.T) {
 	rebuild := func(e *env) {
 		exp := buildExp(t, 2, head3, "")
@@ -145,7 +145,7 @@ func TestQueueTier2Escalates(t *testing.T) {
 	t.Run("changes requested", func(t *testing.T) {
 		e, f, ws := queueEnv(t, backends[1])
 		tier2(t, e, f, ws, func(h string) workflow.ReviewOutcome {
-			return bound(t, workflow.VerdictChangesRequested, h, []workflow.Finding{{ID: "f1", Summary: "The resolution drops the base's guard."}})
+			return bound(t, workflow.VerdictChangesRequested, h, []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "The resolution drops the base's guard."}})
 		})
 		rebuild(e)
 		want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "deliver-rebase-review", Attempt: 1}), building)
@@ -153,10 +153,12 @@ func TestQueueTier2Escalates(t *testing.T) {
 			t.Fatalf("escalation = %v", esc)
 		}
 	})
-	t.Run("approved with a finding", func(t *testing.T) {
+	t.Run("approved with a suggestion", func(t *testing.T) {
 		e, f, ws := queueEnv(t, backends[1])
 		resolved := tier2(t, e, f, ws, func(h string) workflow.ReviewOutcome {
-			return bound(t, workflow.VerdictApproved, h, []workflow.Finding{{ID: "smell-1", Summary: "A comment could say why."}})
+			o := bound(t, workflow.VerdictApproved, h, nil)
+			o.Suggestions = []workflow.Suggestion{{ID: "smell-1", Summary: "A comment could say why."}}
+			return o
 		})
 		want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "deliver-rebase-review", Attempt: 1}), deliverWait)
 		f.SetChecks(repoRemote, resolved, ciPassed...)

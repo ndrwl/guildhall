@@ -76,7 +76,7 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 					format := "Format: a UTF-8 Markdown document."
 					if port.Type == workflow.ReviewResult {
 						language = "json"
-						format = "Format: one strict JSON `guildhall.review-outcome/1` object"
+						format = "Format: one strict JSON `guildhall.review-outcome/2` object"
 					}
 					if port.Type != workflow.CodeHead && !strings.Contains(section, format) {
 						t.Errorf("port %s does not advertise %s", port.Name, format)
@@ -88,7 +88,7 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 					if port.Type == workflow.ReviewResult {
 						// Every example must pass intake, the finding example included.
 						examples := fencedExamples(section, language)
-						findings := 0
+						findings, suggestions, states := 0, 0, map[workflow.DispositionState]bool{}
 						for _, content := range examples {
 							if err := checkPort(port.Type, []byte(content)); err != nil {
 								t.Fatalf("%s example rejected by engine: %v\n%s", port.Name, err, content)
@@ -98,6 +98,13 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 								t.Fatal(err)
 							}
 							findings += len(outcome.Findings)
+							suggestions += len(outcome.Suggestions)
+							for _, d := range outcome.Dispositions {
+								states[d.State] = true
+							}
+							if outcome.Schema != workflow.ReviewOutcomeSchema || outcome.Summary == "" {
+								t.Errorf("port %s example is not a /2 outcome with a summary: %+v", port.Name, outcome)
+							}
 							if err := outcome.BoundTo(*revisions); err != nil {
 								t.Fatalf("example changed the bound revisions: %v", err)
 							}
@@ -107,8 +114,9 @@ func TestBuiltinOutputInstructions(t *testing.T) {
 								t.Fatal("example accepted against different standards")
 							}
 						}
-						if len(examples) < 2 || findings == 0 {
-							t.Errorf("port %s has %d examples with %d findings; want an approval and a finding example", port.Name, len(examples), findings)
+						if len(examples) < 2 || findings == 0 || suggestions == 0 || len(states) != 3 {
+							t.Errorf("port %s has %d examples with %d findings, %d suggestions and states %v; want an approval and a finding example, suggestions and every disposition state",
+								port.Name, len(examples), findings, suggestions, states)
 						}
 					}
 					if port.Type == workflow.CodeHead {

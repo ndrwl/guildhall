@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,7 +10,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// outcomeRef is a review outcome reference projecting a rule-cited finding and a suggestion.
+// outcomeRef is a review outcome reference projecting, as a /1 outcome recorded before /2 did, a rule-cited
+// finding and a rule-less one, which may still be deferred.
 func outcomeRef(name string) DocumentRef {
 	return DocumentRef{Repository: "app", TaskID: "t-1", Name: name, Path: "tasks/app/t-1/" + name + ".json", SHA256: strings.Repeat("a", 64),
 		Review: &Review{Findings: []workflow.Finding{{ID: "f1", Rule: "R1", File: "a.go", Line: 3, Summary: "Unchecked error"}, {ID: "f2", Summary: "Rename"}}}}
@@ -63,6 +65,78 @@ func TestRuleFinding(t *testing.T) {
 	got, err := s.Rulings("app", "t-1")
 	if err != nil || !reflect.DeepEqual(got, []Ruling{r, deferred}) {
 		t.Fatalf("Rulings = %+v, %v", got, err)
+	}
+}
+
+// TestRuleSuggestion: a /2 projection keeps suggestions apart from findings; a ruling may name a suggestion, and
+// defer one, while deferring a rule-cited finding is still refused and an id in neither list is not found.
+func TestRuleSuggestion(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	d := DocumentRef{Repository: "app", TaskID: "t-1", Name: "review-1-outcome", Path: "tasks/app/t-1/review-1.json", SHA256: strings.Repeat("a", 64),
+		Review: &Review{Summary: "One blocker and one suggestion.", Findings: []workflow.Finding{{ID: "f1", Rule: "R1", Summary: "Unchecked error"}},
+			Suggestions: []workflow.Suggestion{{ID: "s1", File: "a.go", Line: 9, Summary: "Rename"}}}}
+	if _, err := s.PutDocument("m-2", d); err != nil {
+		t.Fatal(err)
+	}
+	r := Ruling{Repository: "app", TaskID: "t-1", Document: "review-1-outcome", Move: RulingDefer, Reason: "Follow-up task."}
+	for name, tc := range map[string]struct {
+		finding string
+		want    error
+	}{
+		"defer a rule finding": {"f1", ErrInvalid},
+		"unknown id":           {"s9", ErrNotFound},
+	} {
+		bad := r
+		bad.Finding = tc.finding
+		if _, err := s.RuleFinding("bad-"+strings.ReplaceAll(name, " ", "-"), bad); !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
+		}
+	}
+	r.Finding = "s1"
+	if _, err := s.RuleFinding("rule-1", r); err != nil {
+		t.Fatalf("defer a suggestion = %v", err)
+	}
+	if got, err := s.Rulings("app", "t-1"); err != nil || !reflect.DeepEqual(got, []Ruling{r}) {
+		t.Fatalf("Rulings = %+v, %v", got, err)
+	}
+}
+
+// TestReviewProjection: the projection round-trips its summary and suggestions, an old projection with the /1
+// state names still validates, and an unknown state, a bad suggestion id or a blank suggestion summary is refused.
+func TestReviewProjection(t *testing.T) {
+	if workflow.MaxSummaryBytes != MaxTextBytes {
+		t.Fatalf("workflow.MaxSummaryBytes %d is not the store's text limit %d", workflow.MaxSummaryBytes, MaxTextBytes)
+	}
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	ref := func(name string, r *Review) DocumentRef {
+		return DocumentRef{Repository: "app", TaskID: "t-1", Name: name, Path: "tasks/app/t-1/" + name + ".json", SHA256: strings.Repeat("a", 64), Review: r}
+	}
+	v2 := &Review{Summary: "Approved with one suggestion.", Findings: []workflow.Finding{{ID: "f2", Rule: "S2", Summary: "Still no red run."}},
+		Suggestions:  []workflow.Suggestion{{ID: "s1", File: "a.go", Line: 9, Summary: "Rename"}},
+		Dispositions: []workflow.Disposition{{Finding: "f1", State: workflow.Resolved}, {Finding: "f2", State: workflow.Disputed, Reason: "Builder disagrees."}}}
+	v1 := &Review{Findings: []workflow.Finding{{ID: "f3", Summary: "Rename"}},
+		Dispositions: []workflow.Disposition{{Finding: "f1", State: "still-open"}, {Finding: "f2", State: "withdrawn"}}}
+	for i, r := range []*Review{v2, v1} {
+		name := fmt.Sprintf("review-%d-outcome", i+1)
+		if _, err := s.PutDocument("put-"+name, ref(name, r)); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	docs, err := s.Documents("app", "t-1")
+	if err != nil || len(docs) != 2 || !reflect.DeepEqual(docs[0].Review, v2) || !reflect.DeepEqual(docs[1].Review, v1) {
+		t.Fatalf("Documents = %+v, %v", docs, err)
+	}
+	for name, r := range map[string]*Review{
+		"unknown state":            {Dispositions: []workflow.Disposition{{Finding: "f1", State: "fixed"}}},
+		"bad suggestion id":        {Suggestions: []workflow.Suggestion{{ID: "S 1", Summary: "Rename"}}},
+		"blank suggestion summary": {Suggestions: []workflow.Suggestion{{ID: "s1", Summary: " "}}},
+		"blank summary":            {Summary: " "},
+	} {
+		if _, err := s.PutDocument("bad-"+strings.ReplaceAll(name, " ", "-"), ref("review-9-outcome", r)); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
 	}
 }
 

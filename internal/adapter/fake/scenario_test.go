@@ -213,6 +213,7 @@ func TestScenarioExact(t *testing.T) {
 
 // review is an approve outcome the scenario's review response writes.
 var review = workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: workflow.VerdictApproved,
+	Summary:   "Approved.",
 	Revisions: workflow.Revisions{Subject: workflow.Subject{CodeHead: strings.Repeat("a", 40)}, SpecDigest: "sha256:" + strings.Repeat("b", 64), StandardsRevision: "standards-1"}}
 
 func TestScenarioResponds(t *testing.T) {

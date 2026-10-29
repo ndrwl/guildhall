@@ -109,7 +109,7 @@ func firstOfEachKind(kinds []string) map[string]int {
 // every write and the final wait.
 func replayLoop(t *testing.T, b backend, fail int, after bool) (string, int, []string, interp.Next) {
 	f1 := workflow.Finding{ID: "f1", Rule: "S2", Summary: "No red test shown."}
-	still := workflow.Disposition{Finding: "f1", State: workflow.StillOpen}
+	still := workflow.Disposition{Finding: "f1", State: workflow.Unresolved}
 	o1 := bound(t, workflow.VerdictChangesRequested, head, []workflow.Finding{f1})
 	o2 := bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f1}, still)
 	o3 := bound(t, workflow.VerdictChangesRequested, head3, []workflow.Finding{f1}, still)

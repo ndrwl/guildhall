@@ -49,17 +49,26 @@ A succeeded result must provide every required output below. A verdict in the re
 
 Write `outcome.json` and list it in result outputs.
 
-Format: one strict JSON `guildhall.review-outcome/1` object, not Markdown or a prose verdict. Use reviewer `automated`; verdict is `approved`, `changes_requested`, or `rejected` (the latter two require findings). Findings have `id` and `summary`, and may cite `rule`, `file`, and `line`. A finding `id` is lowercase letters, digits and hyphens, starting with a letter, at most 63 characters (e.g. `f1`, `must-1`); keep a finding's id in later rounds. For every previous finding, include a disposition with `finding` and `state` (`resolved`, `still-open`, or `withdrawn`); still-open findings must also remain in findings.
+Format: one strict JSON `guildhall.review-outcome/2` object, not Markdown or a prose verdict. Use reviewer `automated`; verdict is `approved`, `changes_requested`, or `rejected` (the latter two require findings). `summary` is required: your overall verdict in one paragraph, with no blank line. Findings are blocking: each has `id`, `summary` and the `rule` it breaks, and may give `file` and `line`. Anything that cites no rule is a suggestion, in `suggestions`, with `id` and `summary` and optional `file` and `line`; suggestions never block and need no disposition later. An `id` is lowercase letters, digits and hyphens, starting with a letter, at most 63 characters (e.g. `f1`, `must-1`), used once across findings and suggestions; keep a finding's id in later rounds. For every previous finding, include a disposition with `finding` and `state`: `resolved` (no longer listed), `unresolved` (still listed in findings), or `disputed` (the builder argued against it and you still hold it: still listed in findings, with a `reason`).
 
 The revision values below are illustrative: replace them with the exact reviewed input head/document digest, accepted spec digest (for code review), and standards revision. Never submit the illustrative zero hashes.
 
-Minimal approval example (choose your actual verdict and findings):
+Approval example (choose your actual verdict, summary, findings and suggestions):
 
 ```json
 {
-  "schema": "guildhall.review-outcome/1",
+  "schema": "guildhall.review-outcome/2",
   "reviewer": "automated",
   "verdict": "approved",
+  "summary": "The change does what the spec asks and its tests cover it; one optional improvement is suggested.",
+  "suggestions": [
+    {
+      "id": "s1",
+      "file": "path/to/file.go",
+      "line": 12,
+      "summary": "An optional improvement; it never blocks."
+    }
+  ],
   "revisions": {
     "subject": {
       "code_head": "0000000000000000000000000000000000000000"
@@ -70,17 +79,49 @@ Minimal approval example (choose your actual verdict and findings):
 }
 ```
 
-Example with a finding:
+Example requesting changes, with previous findings f0, f1 and f2:
 
 ```json
 {
-  "schema": "guildhall.review-outcome/1",
+  "schema": "guildhall.review-outcome/2",
   "reviewer": "automated",
   "verdict": "changes_requested",
+  "summary": "Two findings from the previous round still stand, one of them disputed by the builder; the third was fixed.",
   "findings": [
     {
       "id": "f1",
+      "rule": "R1.2",
+      "file": "path/to/file.go",
+      "line": 30,
       "summary": "What is wrong and what to change."
+    },
+    {
+      "id": "f2",
+      "rule": "S4",
+      "summary": "A finding the builder argued against and you still hold."
+    }
+  ],
+  "suggestions": [
+    {
+      "id": "s1",
+      "file": "path/to/file.go",
+      "line": 12,
+      "summary": "An optional improvement; it never blocks."
+    }
+  ],
+  "dispositions": [
+    {
+      "finding": "f0",
+      "state": "resolved"
+    },
+    {
+      "finding": "f1",
+      "state": "unresolved"
+    },
+    {
+      "finding": "f2",
+      "state": "disputed",
+      "reason": "Why the builder's argument does not settle it."
     }
   ],
   "revisions": {

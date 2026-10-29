@@ -52,8 +52,8 @@ type resolvedDoc struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
-// coverageDoc is <link>-covered: the narrowed review outcome that approved a resolution, with its finding count; a
-// finding, advisory or not, sends the merge to the Guildmaster.
+// coverageDoc is <link>-covered: the narrowed review outcome that approved a resolution, with its count of findings
+// and suggestions; any, a suggestion included, sends the merge to the Guildmaster.
 type coverageDoc struct {
 	Schema   string `json:"schema"`
 	Head     string `json:"head"`
@@ -244,7 +244,7 @@ func (r *run) resolveRebase(owner workflow.Step, repo config.Repository, l rebas
 		}
 		return Next{}, fail(false, "the narrowed review of the resolution is %s: %s", o.Verdict, strings.Join(why, "; ")), nil
 	}
-	c := coverageDoc{Schema: coverageSchema, Head: res.Resolved, Outcome: od.Name, Findings: len(o.Findings)}
+	c := coverageDoc{Schema: coverageSchema, Head: res.Resolved, Outcome: od.Name, Findings: len(o.Findings) + len(o.Suggestions)}
 	return Next{}, nil, r.putJSONDoc(l.name+"-covered", l.name, "covered.json", c)
 }
 

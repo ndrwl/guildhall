@@ -19,13 +19,15 @@ const (
 	RulingOutOfScope RulingMove = "out-of-scope"
 	// RulingDuplicate: the finding repeats another one.
 	RulingDuplicate RulingMove = "duplicate"
-	// RulingDefer: the finding moves to a follow-up task; only a finding that cites no rule may be deferred.
+	// RulingDefer: the item moves to a follow-up task; only a suggestion, or a /1 finding that cites no rule,
+	// may be deferred.
 	RulingDefer RulingMove = "defer"
 )
 
-// Ruling is the Director's ruling on one finding of one review outcome document.
+// Ruling is the Director's ruling on one finding, or suggestion, of one review outcome document.
 // It is recorded once, shown to the step's next review attempt, and contested at most once, by that attempt.
-// A ruling never resolves or withdraws a finding: only the reviewer or the Guildmaster does.
+// A ruling never resolves a finding: only the reviewer or the Guildmaster does. The one exception is the
+// nothing_open merge requirement, for which a disputed finding with an uncontested ruling no longer counts.
 type Ruling struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
@@ -39,8 +41,8 @@ type Ruling struct {
 }
 
 // RuleFinding records a Director ruling, receipt record ruling/<document>/<finding>, on an open task.
-// The document must be recorded with a Review projection listing the finding (ErrNotFound otherwise);
-// an unknown move, a blank reason, a set ContestedBy and deferring a finding that cites a rule are refused
+// The document must be recorded with a Review projection listing the finding, or a suggestion, under that id
+// (ErrNotFound otherwise); an unknown move, a blank reason, a set ContestedBy and deferring a finding that cites a rule are refused
 // with ErrInvalid, and a second ruling on the same finding of the same document with ErrExists.
 func (s *Store) RuleFinding(mutationID string, r Ruling) (Receipt, error) {
 	if err := validateIDs(r.Repository, r.TaskID, r.Document, r.Finding); err != nil {
@@ -64,15 +66,19 @@ func (s *Store) RuleFinding(mutationID string, r Ruling) (Receipt, error) {
 		if err := getJSON(repoBucket(tx, r.Repository, bucketDocuments), recordKey(r.TaskID, r.Document), &d); err != nil {
 			return fmt.Errorf("document %q: %w", r.Document, err)
 		}
-		i := -1
+		found, rule := false, ""
 		if d.Review != nil {
-			i = slices.IndexFunc(d.Review.Findings, func(f workflow.Finding) bool { return f.ID == r.Finding })
+			if i := slices.IndexFunc(d.Review.Findings, func(f workflow.Finding) bool { return f.ID == r.Finding }); i >= 0 {
+				found, rule = true, d.Review.Findings[i].Rule
+			} else {
+				found = slices.ContainsFunc(d.Review.Suggestions, func(s workflow.Suggestion) bool { return s.ID == r.Finding })
+			}
 		}
 		switch {
-		case i < 0:
+		case !found:
 			return fmt.Errorf("finding %q of document %q: %w", r.Finding, r.Document, ErrNotFound)
-		case r.Move == RulingDefer && d.Review.Findings[i].Rule != "":
-			return invalid("finding %q cites rule %s; only a finding that cites no rule may be deferred", r.Finding, d.Review.Findings[i].Rule)
+		case r.Move == RulingDefer && rule != "":
+			return invalid("finding %q cites rule %s; only a suggestion or a finding that cites no rule may be deferred", r.Finding, rule)
 		}
 		rulings, err := createRepoBucket(tx, r.Repository, bucketRulings)
 		if err != nil {

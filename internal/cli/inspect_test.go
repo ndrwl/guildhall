@@ -78,7 +78,9 @@ func inspectStore(t *testing.T) string {
 		func() (store.Receipt, error) { return s.CreateTask("i-16", task("app", "t-3", "Later task")) },
 		func() (store.Receipt, error) {
 			d := doc("t-2", "review-1-outcome", "d")
-			d.Review = &store.Review{Findings: []workflow.Finding{{ID: "f1", Rule: "S2", File: "login.go", Line: 12, Summary: "No red test shown."}},
+			d.Review = &store.Review{Summary: "Login works; its test shows no red run.",
+				Findings:     []workflow.Finding{{ID: "f1", Rule: "S2", File: "login.go", Line: 12, Summary: "No red test shown."}},
+				Suggestions:  []workflow.Suggestion{{ID: "s1", File: "login.go", Line: 30, Summary: "A shorter name would read better."}},
 				Dispositions: []workflow.Disposition{{Finding: "f0", State: workflow.Resolved}}}
 			return s.PutDocument("i-17", d)
 		},

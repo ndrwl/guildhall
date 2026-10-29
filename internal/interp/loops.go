@@ -22,7 +22,7 @@ const (
 	// PreviousPort carries a review step's own previous outcome, whose findings the new outcome dispositions.
 	PreviousPort = "previous"
 	// RulingsPort carries the Director's rulings on findings of the previous outcome, as a JSON array of
-	// store.Ruling; a finding the new outcome keeps still-open contests its ruling.
+	// store.Ruling; a finding the new outcome keeps open (unresolved or disputed) contests its ruling.
 	RulingsPort = "rulings"
 )
 
@@ -342,7 +342,8 @@ func (r *run) exit(s workflow.Step, k int, subject *store.Subject, dispute strin
 }
 
 // acceptOutcome records the Guildmaster's accept at a loop exit as the review step's outcome, <id>-outcome:
-// an approval bound to the originating review's recorded revisions, retaining its findings as still-open.
+// an approval bound to the originating review's recorded revisions, retaining its findings as unresolved and its
+// suggestions unchanged.
 func (r *run) acceptOutcome(s workflow.Step, d store.Decision, origin firing) error {
 	name := d.ID + "-outcome"
 	if r.document(name) != nil {
@@ -369,11 +370,12 @@ func (r *run) acceptOutcome(s workflow.Step, d store.Decision, origin firing) er
 		if previous == nil {
 			return fmt.Errorf("attempt %d of %s has no review outcome", origin.round, s.ID)
 		}
-		o.Revisions, o.Findings = previous.Revisions, previous.Findings
+		o.Revisions, o.Findings, o.Suggestions = previous.Revisions, previous.Findings, previous.Suggestions
 		for _, f := range o.Findings {
-			o.Dispositions = append(o.Dispositions, workflow.Disposition{Finding: f.ID, State: workflow.StillOpen})
+			o.Dispositions = append(o.Dispositions, workflow.Disposition{Finding: f.ID, State: workflow.Unresolved})
 		}
 	}
+	o.Summary = fmt.Sprintf("Accepted by the Guildmaster at loop exit in decision %s; %d finding(s) stay unresolved.", d.ID, len(o.Findings))
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -415,11 +417,11 @@ func (r *run) checkOutcome(s workflow.Step, n int, data []byte) (*workflow.Revie
 
 // reviewOf is the store's projection of an outcome.
 func reviewOf(o workflow.ReviewOutcome) *store.Review {
-	return &store.Review{Findings: o.Findings, Dispositions: o.Dispositions}
+	return &store.Review{Summary: o.Summary, Findings: o.Findings, Suggestions: o.Suggestions, Dispositions: o.Dispositions}
 }
 
 // contest records, once, that attempt n of a review step contested each ruling it was given whose finding
-// its outcome keeps still-open.
+// its outcome keeps open: unresolved or disputed.
 func (r *run) contest(s workflow.Step, n int) error {
 	if !isReview(s) {
 		return nil
@@ -446,7 +448,7 @@ func (r *run) contest(s workflow.Step, n int) error {
 		return err
 	}
 	for _, g := range given {
-		if !slices.Contains(o.Dispositions, workflow.Disposition{Finding: g.Finding, State: workflow.StillOpen}) ||
+		if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.Finding == g.Finding && d.State.Open() }) ||
 			slices.ContainsFunc(r.contestedBy(s.ID, n), func(c store.Ruling) bool { return c.Document == g.Document && c.Finding == g.Finding }) {
 			continue
 		}
@@ -525,11 +527,11 @@ func (r *run) stall(s workflow.Step, n int) error {
 		}
 		signals = append(signals, what+" unchanged")
 	}
-	if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.State != workflow.StillOpen }) {
-		signals = append(signals, "no finding resolved or withdrawn")
+	if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.State == workflow.Resolved }) {
+		signals = append(signals, "no finding resolved")
 	}
 	for _, d := range o.Dispositions {
-		if d.State == workflow.StillOpen && slices.Contains(prev.Dispositions, workflow.Disposition{Finding: d.Finding, State: workflow.StillOpen}) {
+		if d.State.Open() && slices.ContainsFunc(prev.Dispositions, func(p workflow.Disposition) bool { return p.Finding == d.Finding && p.State.Open() }) {
 			signals = append(signals, fmt.Sprintf("finding %s still open for two rounds", d.Finding))
 		}
 	}

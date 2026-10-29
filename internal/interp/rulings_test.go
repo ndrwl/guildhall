@@ -14,8 +14,8 @@ import (
 )
 
 // TestDirectorRulings: the Director rules review 1's rule-cited finding f1 out of scope; review 2 is given
-// the ruling on port rulings. A reviewer who withdraws f1 lets the step complete; one who keeps it open
-// contests the ruling, once, and the disputed blocker reaches the Guildmaster as a loop-exit decision
+// the ruling on port rulings. A reviewer who resolves f1 lets the step complete; one who keeps it open, unresolved
+// or disputed, contests the ruling, once, and the disputed blocker reaches the Guildmaster as a loop-exit decision
 // before max is exhausted.
 func TestDirectorRulings(t *testing.T) {
 	f1 := workflow.Finding{ID: "f1", Rule: "S2", File: "a.go", Line: 3, Summary: "No red test shown."}
@@ -30,9 +30,11 @@ func TestDirectorRulings(t *testing.T) {
 		o2   workflow.ReviewOutcome
 		next interp.Next
 	}{
-		{"withdrawn", bound(t, workflow.VerdictApproved, head2, nil, workflow.Disposition{Finding: "f1", State: workflow.Withdrawn}),
+		{"withdrawn", bound(t, workflow.VerdictApproved, head2, nil, workflow.Disposition{Finding: "f1", State: workflow.Resolved}),
 			interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"}},
-		{"contested", bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f1}, workflow.Disposition{Finding: "f1", State: workflow.StillOpen}),
+		{"contested", bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f1}, workflow.Disposition{Finding: "f1", State: workflow.Unresolved}),
+			interp.Next{Wait: interp.WaitDecision, Step: "review", Decision: "review-x2"}},
+		{"disputed", bound(t, workflow.VerdictChangesRequested, head2, []workflow.Finding{f1}, workflow.Disposition{Finding: "f1", State: workflow.Disputed, Reason: "The builder says §2 covers it; S2 still applies."}),
 			interp.Next{Wait: interp.WaitDecision, Step: "review", Decision: "review-x2"}},
 	} {
 		for _, b := range backends {
@@ -44,14 +46,14 @@ func TestDirectorRulings(t *testing.T) {
 				exps := []interptest.Expectation{planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
 					buildExp(t, 1, head, ""), reviewExp(t, "review", "reviewer", 1, head, nil, o1),
 					buildExp(t, 2, head2, outcomeDigest(o1)), review2}
-				if tc.name == "contested" {
+				if tc.name != "withdrawn" {
 					exps = append(exps, buildExp(t, 3, head3, outcomeDigest(tc.o2)))
 				}
 				e := newEnvDefinition(t, b, def, exps...)
 				e.accepted(t)
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
-				if got := e.documents(t)["review-1-outcome"].Review; !reflect.DeepEqual(got, &store.Review{Findings: []workflow.Finding{f1}}) {
+				if got := e.documents(t)["review-1-outcome"].Review; !reflect.DeepEqual(got, &store.Review{Summary: o1.Summary, Findings: []workflow.Finding{f1}}) {
 					t.Fatalf("review-1-outcome projects %+v", got)
 				}
 				if _, err := e.h.RuleFinding("ruling:1", ruling); err != nil {

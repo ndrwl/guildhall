@@ -621,8 +621,14 @@ func TestReviewSkillSpeaksTheOutcomeContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("example outcome: %v", err)
 	}
-	if !o.Blocking() || len(o.Dispositions) == 0 || !slices.ContainsFunc(o.Findings, func(f workflow.Finding) bool { return f.Rule == "" }) {
-		t.Errorf("example should show a blocking round with dispositions and a suggestion: %+v", o)
+	if o.Schema != workflow.ReviewOutcomeSchema || o.Summary == "" || !o.Blocking() || len(o.Suggestions) == 0 ||
+		!slices.ContainsFunc(o.Suggestions, func(s workflow.Suggestion) bool { return strings.HasPrefix(s.ID, "smell-") }) {
+		t.Errorf("example should be a /2 blocking round with a summary and a smell- suggestion: %+v", o)
+	}
+	for _, state := range []workflow.DispositionState{workflow.Resolved, workflow.Unresolved, workflow.Disputed} {
+		if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.State == state }) {
+			t.Errorf("example shows no %s disposition: %+v", state, o.Dispositions)
+		}
 	}
 }
 

@@ -27,10 +27,16 @@ func (e *env) requires(m config.MergeRequires) { e.eng.Config.Repositories[0].Me
 // newRequiresEnv is validate.json scripted through a review 1 that records o, under merge requirements m.
 func newRequiresEnv(t *testing.T, b backend, m config.MergeRequires, o workflow.ReviewOutcome) (*env, *forgetest.Fake) {
 	t.Helper()
+	return newRequiresEnvReview(t, b, m, reviewExp(t, "review", "reviewer", 1, head, nil, o))
+}
+
+// newRequiresEnvReview is newRequiresEnv with review 1 scripted as review.
+func newRequiresEnvReview(t *testing.T, b backend, m config.MergeRequires, review interptest.Expectation) (*env, *forgetest.Fake) {
+	t.Helper()
 	e := newEnvDefinition(t, b, loadWorkflow(t, "validate"),
 		planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
 		buildExp(t, 1, head, ""),
-		reviewExp(t, "review", "reviewer", 1, head, nil, o))
+		review)
 	f := forgetest.NewFake()
 	f.SetBranch(repoRemote, "main", baseHead)
 	for _, h := range []string{head, head2, head3} {
@@ -328,18 +334,36 @@ func TestMergeWithoutGuildmasterBlocked(t *testing.T) {
 	}
 }
 
-// TestMergeWithoutGuildmasterFallsBack: when nothing_open fails, with an advisory finding on the approving outcome or
-// an unanswered decision on the task, deliver opens deliver-1 saying why it did not merge by itself; merge merges
-// through the decision and hold holds.
+// approvedWith is an approval of head carrying finding f1 with disposition state (none when empty) and suggestion s1.
+func approvedWith(t *testing.T, state workflow.DispositionState) workflow.ReviewOutcome {
+	o := bound(t, workflow.VerdictApproved, head, []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "No red test shown."}})
+	if state != "" {
+		o.Dispositions = []workflow.Disposition{{Finding: "f1", State: state}}
+	}
+	if state == workflow.Disputed {
+		o.Dispositions[0].Reason = "The builder says it is tested elsewhere; S2 still asks for one here."
+	}
+	o.Suggestions = []workflow.Suggestion{{ID: "s1", Summary: "Consider a shorter name."}}
+	return o
+}
+
+// TestMergeWithoutGuildmasterFallsBack: when nothing_open fails, with an unresolved or newly raised finding, a disputed
+// finding the Director has not ruled on, or an unanswered decision on the task, deliver opens deliver-1 saying why it
+// did not merge by itself and listing the findings and suggestions; merge merges through the decision and hold holds.
 func TestMergeWithoutGuildmasterFallsBack(t *testing.T) {
-	advisory := bound(t, workflow.VerdictApproved, head, []workflow.Finding{{ID: "f1", Summary: "Consider a shorter name."}})
 	for _, c := range []struct {
 		name, why string
 		outcome   workflow.ReviewOutcome
 		question  bool
+		listed    []string
 	}{
-		{"advisory finding", "nothing_open (review-1-outcome lists 1 finding(s))", advisory, false},
-		{"open question", "nothing_open (decision ask-1 is unanswered)", bound(t, workflow.VerdictApproved, head, nil), true},
+		{"unresolved finding", "nothing_open (review-1-outcome has 1 unresolved and 0 disputed finding(s), 1 suggestion(s), not counted)", approvedWith(t, workflow.Unresolved), false,
+			[]string{"- review-1-outcome finding f1 (S2, unresolved): No red test shown.\n", "- review-1-outcome suggestion s1: Consider a shorter name.\n"}},
+		{"new finding", "nothing_open (review-1-outcome has 1 unresolved and 0 disputed finding(s), 1 suggestion(s), not counted)", approvedWith(t, ""), false,
+			[]string{"- review-1-outcome finding f1 (S2, unresolved)"}},
+		{"disputed finding", "nothing_open (review-1-outcome has 0 unresolved and 1 disputed finding(s), 1 suggestion(s), not counted)", approvedWith(t, workflow.Disputed), false,
+			[]string{"- review-1-outcome finding f1 (S2, disputed, no ruling): No red test shown.\n", "- review-1-outcome suggestion s1: Consider a shorter name.\n"}},
+		{"open question", "nothing_open (decision ask-1 is unanswered)", bound(t, workflow.VerdictApproved, head, nil), true, nil},
 	} {
 		for _, choice := range []string{"merge", "hold"} {
 			t.Run(c.name+"/"+choice, func(t *testing.T) {
@@ -356,6 +380,11 @@ func TestMergeWithoutGuildmasterFallsBack(t *testing.T) {
 				if !strings.HasPrefix(q, "Guildhall did not merge by itself: "+c.why+".\n") || !strings.Contains(q, "- guildmaster_approval: not required\n") ||
 					!strings.Contains(q, "- nothing_open: fails: ") {
 					t.Errorf("question = %q", q)
+				}
+				for _, line := range c.listed {
+					if !strings.Contains(q, line) {
+						t.Errorf("question %q does not list %q", q, line)
+					}
 				}
 				if len(e.authorizations(t)) != 0 {
 					t.Errorf("authorizations = %q before any merge", e.authorizations(t))
@@ -376,6 +405,62 @@ func TestMergeWithoutGuildmasterFallsBack(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// nothingOpenCondition returns the nothing_open condition recorded in authorization name.
+func (e *env) nothingOpenCondition(t *testing.T, name string) map[string]any {
+	t.Helper()
+	for _, c := range e.pullRequestDoc(t, name)["conditions"].([]any) {
+		if c := c.(map[string]any); c["requirement"] == "nothing_open" {
+			return c
+		}
+	}
+	t.Fatalf("%s records no nothing_open condition", name)
+	return nil
+}
+
+// TestMergeWithoutGuildmasterOverSuggestions: suggestions never hold the merge. An approval with suggestions only,
+// an old /1 approval whose only finding cites no rule, and an approval whose disputed finding the Director ruled on
+// while CI ran all merge without a decision, and the authorization's nothing_open notes the suggestions it did not count.
+func TestMergeWithoutGuildmasterOverSuggestions(t *testing.T) {
+	suggestionsOnly := bound(t, workflow.VerdictApproved, head, nil)
+	suggestionsOnly.Suggestions = []workflow.Suggestion{{ID: "s1", Summary: "Consider a shorter name."}, {ID: "s2", Summary: "A table would read better."}}
+	v1 := bound(t, workflow.VerdictApproved, head, nil)
+	v1.Schema, v1.Summary, v1.Suggestions = workflow.ReviewOutcomeSchemaV1, "", []workflow.Suggestion{{ID: "f1", Summary: "Consider a shorter name."}}
+	for _, c := range []struct {
+		name, reason string
+		review       func(t *testing.T) interptest.Expectation
+		rule         bool
+	}{
+		{"suggestions only", "2 suggestion(s), not counted", func(t *testing.T) interptest.Expectation {
+			return reviewExp(t, "review", "reviewer", 1, head, nil, suggestionsOnly)
+		}, false},
+		{"/1 rule-less finding", "1 suggestion(s), not counted", func(t *testing.T) interptest.Expectation {
+			return reviewV1Exp(t, "review", "reviewer", 1, head, nil, v1)
+		}, false},
+		{"ruled dispute", "1 suggestion(s), not counted", func(t *testing.T) interptest.Expectation {
+			return reviewExp(t, "review", "reviewer", 1, head, nil, approvedWith(t, workflow.Disputed))
+		}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e, f := newRequiresEnvReview(t, backends[0], unattended, c.review(t))
+			want(t, e.toValidate(t), waitChecks)
+			if c.rule {
+				if _, err := e.h.RuleFinding("rule-f1", store.Ruling{Repository: "app", TaskID: "t7", Document: "review-1-outcome", Finding: "f1",
+					Move: store.RulingOutOfScope, Reason: "Spec §3 leaves tests to the follow-up."}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.SetChecks(repoRemote, head, ciPassed...)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+			if _, merges := f.Calls(); merges != 1 || slices.Contains(e.decisionIDs(t), "deliver-1") {
+				t.Errorf("merges = %d, decisions %q; want one merge without a decision", merges, e.decisionIDs(t))
+			}
+			if got := e.nothingOpenCondition(t, "deliver-1-authorized"); got["holds"] != true || got["reason"] != c.reason {
+				t.Errorf("nothing_open = %v, want it to hold with reason %q", got, c.reason)
+			}
+		})
 	}
 }
 
@@ -410,13 +495,13 @@ func TestMergeWithoutGuildmasterRefused(t *testing.T) {
 // TestGuildmasterMergesOverNothingOpen: with every requirement on, a failing nothing_open is listed in the merge
 // question, and the Guildmaster's merge merges over it.
 func TestGuildmasterMergesOverNothingOpen(t *testing.T) {
-	advisory := bound(t, workflow.VerdictApproved, head, []workflow.Finding{{ID: "f1", Summary: "Consider a shorter name."}})
-	e, f := newRequiresEnv(t, backends[0], config.MergeRequires{}, advisory)
+	e, f := newRequiresEnv(t, backends[0], config.MergeRequires{}, approvedWith(t, workflow.Unresolved))
 	want(t, e.toValidate(t), waitChecks)
 	f.SetChecks(repoRemote, head, ciPassed...)
 	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
 	q := e.decision(t, "deliver-1").Question
-	if !strings.HasPrefix(q, "Merge needed for app/t7") || !strings.Contains(q, "- nothing_open: fails: review-1-outcome lists 1 finding(s)\n") ||
+	if !strings.HasPrefix(q, "Merge needed for app/t7") ||
+		!strings.Contains(q, "- nothing_open: fails: review-1-outcome has 1 unresolved and 0 disputed finding(s), 1 suggestion(s), not counted\n") ||
 		!strings.Contains(q, "- ci_green: holds\n") {
 		t.Errorf("question = %q", q)
 	}

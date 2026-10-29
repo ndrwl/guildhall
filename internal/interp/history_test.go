@@ -75,7 +75,7 @@ func (f files) doc(name string, data []byte) store.DocumentRef {
 }
 
 func outcomeData(t *testing.T, v workflow.Verdict) []byte {
-	o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: v,
+	o := workflow.ReviewOutcome{Schema: workflow.ReviewOutcomeSchema, Reviewer: workflow.AutomatedReviewer, Verdict: v, Summary: "Reviewed.",
 		Revisions: workflow.Revisions{Subject: workflow.Subject{CodeHead: strings.Repeat("0", 40)}, SpecDigest: "sha256:" + strings.Repeat("0", 64), StandardsRevision: "standards-1"}}
 	if v == workflow.VerdictChangesRequested {
 		o.Findings = []workflow.Finding{{ID: "f1", Rule: "S2", Summary: "No red test shown."}}

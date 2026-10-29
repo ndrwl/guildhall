@@ -218,7 +218,7 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	}
 	if id == "" {
 		var next Next
-		id, record, next, err = r.authorizeHead(s, repo, dl, conditions)
+		id, record, next, err = r.authorizeHead(s, repo, dl, conditions, outcomes)
 		if err != nil || id == "" {
 			return false, next, err
 		}
@@ -321,7 +321,7 @@ func (r *run) authorizedAs(s workflow.Step, x string) (id, record string, err er
 // requirement failing, the merge decision is asked; otherwise Guildhall records the authorization itself. Under
 // reapprove_after_rebase = never, a head rebuilt after a build send-back of an authorized head carries that
 // authorization over. It returns the authorization's id and receipt record, or "" and the wait.
-func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHead, conditions []condition) (string, string, Next, error) {
+func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHead, conditions []condition, outcomes []reviewOutcome) (string, string, Next, error) {
 	requires := repo.Merge.Requires
 	dec := r.decisionOn(s, x.head)
 	switch {
@@ -369,7 +369,7 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 		if !requires.Guildmaster() {
 			lead = fmt.Sprintf("Guildhall did not merge by itself: %s.\n", strings.Join(failed, "; "))
 		}
-		next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, lead))
+		next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, outcomes, lead))
 		return "", "", next, err
 	case !dec.Answered:
 		return "", "", Next{Wait: WaitDecision, Step: s.ID, Decision: dec.ID}, r.notifyDecision(*dec, s.ID)
@@ -612,7 +612,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 	}
 	why = append(why, carryRefusals(conditions)...)
 	lead := fmt.Sprintf("Head %s is a %s rebase of the head merge %s authorized; the authorization does not carry over: %s.\n", x.head, kind, from, strings.Join(why, "; "))
-	next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, lead))
+	next, err := r.openMerge(s, k, x.head, r.mergeQuestion(s, k, x.head, x.pr, conditions, outcomes, lead))
 	return false, next, err
 }
 
@@ -708,7 +708,8 @@ type condition struct {
 	Requirement string `json:"requirement"`
 	Required    bool   `json:"required"`
 	Holds       bool   `json:"holds"`
-	// Reason says why the requirement does not hold; empty when it holds.
+	// Reason says why the requirement does not hold; empty when it holds, but for nothing_open naming the
+	// suggestions it did not count.
 	Reason   string   `json:"reason,omitempty"`
 	Evidence []string `json:"evidence,omitempty"`
 }
@@ -718,6 +719,8 @@ func (c condition) line() string {
 	switch {
 	case !c.Required:
 		return "not required"
+	case c.Holds && c.Reason != "":
+		return "holds (" + c.Reason + ")"
 	case c.Holds:
 		return "holds"
 	}
@@ -791,16 +794,28 @@ func (r *run) reviewOutcomes(deliver workflow.Step) ([]reviewOutcome, error) {
 	return out, nil
 }
 
-// nothingOpen is the nothing_open condition: the review outcomes list no findings, advisory ones included, and the
-// task has no unanswered decision but deliver step s's own.
+// nothingOpen is the nothing_open condition: no review outcome has an open finding, and the task has no unanswered
+// decision but deliver step s's own. Every finding is open but a disputed one with a standing Director ruling on it;
+// suggestions never count, though the reason names how many there are, whether the condition holds or not.
 func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutcome) condition {
 	c := condition{Requirement: "nothing_open", Required: required}
 	var open []string
+	suggestions := 0
 	for _, o := range outcomes {
 		c.Evidence = append(c.Evidence, o.name)
-		if n := len(o.outcome.Findings); n > 0 {
-			open = append(open, fmt.Sprintf("%s lists %d finding(s)", o.name, n))
+		unresolved, disputed := 0, 0
+		for _, f := range o.outcome.Findings {
+			switch state, _ := r.findingState(o, f.ID); state {
+			case workflow.Disputed:
+				disputed++
+			case "":
+				unresolved++
+			}
 		}
+		if unresolved+disputed > 0 {
+			open = append(open, fmt.Sprintf("%s has %d unresolved and %d disputed finding(s)", o.name, unresolved, disputed))
+		}
+		suggestions += len(o.outcome.Suggestions)
 	}
 	for i, d := range r.decisions {
 		if p := r.decisionPlaces[i]; d.Answered || (p.ok && p.step == s.ID && !p.exit) {
@@ -809,8 +824,52 @@ func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutco
 		c.Evidence = append(c.Evidence, d.ID)
 		open = append(open, fmt.Sprintf("decision %s is unanswered", d.ID))
 	}
-	c.Holds, c.Reason = len(open) == 0, strings.Join(open, ", ")
+	c.Holds = len(open) == 0
+	if suggestions > 0 {
+		open = append(open, fmt.Sprintf("%d suggestion(s), not counted", suggestions))
+	}
+	c.Reason = strings.Join(open, ", ")
 	return c
+}
+
+// findingState is what keeps finding id of outcome o open for nothing_open: Disputed for a disputed finding with no
+// standing ruling, "" for any other finding, an unresolved or newly raised one; and the move of the standing
+// ruling that released a disputed finding, with state Resolved.
+func (r *run) findingState(o reviewOutcome, id string) (workflow.DispositionState, store.RulingMove) {
+	if !slices.ContainsFunc(o.outcome.Dispositions, func(d workflow.Disposition) bool { return d.Finding == id && d.State == workflow.Disputed }) {
+		return "", ""
+	}
+	for _, g := range r.rulingsOn(o.name) {
+		if g.Finding == id && g.ContestedBy == "" {
+			return workflow.Resolved, g.Move
+		}
+	}
+	return workflow.Disputed, ""
+}
+
+// openItems lists, for the merge question, each finding and suggestion of the latest review outcomes.
+func (r *run) openItems(outcomes []reviewOutcome) string {
+	var lines []string
+	for _, o := range outcomes {
+		for _, f := range o.outcome.Findings {
+			state, move := r.findingState(o, f.ID)
+			what := "unresolved"
+			switch state {
+			case workflow.Disputed:
+				what = "disputed, no ruling"
+			case workflow.Resolved:
+				what = fmt.Sprintf("disputed, ruled %s", move)
+			}
+			lines = append(lines, fmt.Sprintf("- %s finding %s (%s, %s): %s", o.name, f.ID, shortText(f.Rule, 256), what, shortText(f.Summary, 512)))
+		}
+		for _, sg := range o.outcome.Suggestions {
+			lines = append(lines, fmt.Sprintf("- %s suggestion %s: %s", o.name, sg.ID, shortText(sg.Summary, 512)))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\nFindings and suggestions of the latest review outcomes:\n" + strings.Join(lines, "\n") + "\n"
 }
 
 // deliverRound is the round deliver step s's next merge opens: after its latest decision and its latest authorization.

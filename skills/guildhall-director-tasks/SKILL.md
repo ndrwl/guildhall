@@ -137,6 +137,8 @@ guildhall task finding rule --repo app --outcome review-2-outcome --finding f3 -
 ```
 
 The move is `out-of-scope`, `duplicate` or `defer`; a finding that cites a rule cannot be deferred, and a ruling never changes the verdict.
+`defer` applies to suggestions: rule on a suggestion's id to move it to a follow-up task.
+An outcome may approve with a `disputed` finding, which holds the merge through `nothing_open`; your uncontested ruling on that finding, `out-of-scope` or `duplicate`, releases it.
 When a review should cover the whole change rather than only a rebase's resolution, request a full review with `guildhall task review --full --repo app t-12`.
 
 ## Workflows

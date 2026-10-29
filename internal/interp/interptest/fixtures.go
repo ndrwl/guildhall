@@ -33,7 +33,8 @@ func FixtureDigest(t testing.TB, name string) string {
 	return string(digest.Of(data))
 }
 
-// ReviewFixture returns the review outcome in reviews/<name>.json.
+// ReviewFixture returns the review outcome in reviews/<name>.json. approved.json stays a guildhall.review-outcome/1
+// document, so the scripts keep an old outcome that still reads.
 func ReviewFixture(t testing.TB, name string) workflow.ReviewOutcome {
 	t.Helper()
 	data, err := os.ReadFile(fixture("reviews/" + name + ".json"))
