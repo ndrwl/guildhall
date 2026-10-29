@@ -133,7 +133,8 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `task`: the task record.
 - `attempts`: every stage attempt with its outcome (absent while running), `started_at`, `finished_at` and `duration_seconds` between them, ordered by when they started.
 - `decisions`: every decision with its kind, subject, options, question and the Guildmaster's exact words (`answer`, `choice`, `note`), plus `opened_at`, `answered_at` and `wait_seconds` between them, ordered by when they opened.
-- `findings`: every review outcome document with its findings (`id`, `rule`, `file`, `line`, `summary`) and its `dispositions` of the previous round's findings, read from the store's projection, with `recorded_at`, ordered by when they were recorded.
+- `findings`: every review outcome document with its `summary` (absent for a /1 outcome), its findings (`id`, `rule`, `file`, `line`, `summary`), its `suggestions` (`id`, `file`, `line`, `summary`) and its `dispositions` of the previous round's findings (`finding`, `state`, `reason`), read from the store's projection, with `recorded_at`, ordered by when they were recorded.
+  A projection recorded from a /1 outcome before /2 keeps its rule-less findings in `findings` and the /1 state names `still-open` and `withdrawn`.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
@@ -156,18 +157,19 @@ Reading a task's diff, process status or transcript needs its worktree and adapt
 
 ## Director rulings
 
-The Director may rule on one finding of a review outcome document instead of waiting for the reviewer (report §5.4).
+The Director may rule on one finding, or one suggestion, of a review outcome document instead of waiting for the reviewer (report §5.4).
 `task finding rule` records the ruling with the mutation `ruling:<repo>:<task>:<document>:<finding>`, hashed as for `task new` when longer than 128 bytes, so a retry prints the original receipt.
-`--outcome` names the outcome document as the timeline's `findings` show it, such as `review-2-outcome`, and `--finding` one of its finding ids.
+`--outcome` names the outcome document as the timeline's `findings` show it, such as `review-2-outcome`, and `--finding` one of its finding or suggestion ids.
 `--move` is one of:
 
 - `out-of-scope`: the finding is outside the accepted spec; the reason cites the spec section;
 - `duplicate`: the finding repeats another one;
-- `defer`: the finding moves to a follow-up task; only a finding that cites no rule may be deferred.
+- `defer`: the item moves to a follow-up task; only a suggestion, or a /1 finding that cites no rule, may be deferred.
 
 A finding is ruled on once per document; a conflicting retry, an unknown document or finding, a whitespace-only reason, an unknown move, deferring a rule-cited finding or a task that is not open is refused with exit 1 and writes nothing.
 An omitted or empty required flag, including `--reason`, is a usage error (exit 2).
-A ruling never resolves or withdraws a finding and never changes a verdict.
+A ruling never resolves a finding and never changes a verdict.
+The one exception is the `nothing_open` merge requirement: a `disputed` finding with a standing ruling, of any move, no longer counts for it ([decision](decisions/review-outcome-2.md)).
 The [interpreter's Director-ruling contract](interpreter.md#director-rulings) defines when rulings enter an attempt's immutable inputs, how they are contested, and when disputes reach the Guildmaster.
 
 ## Full review

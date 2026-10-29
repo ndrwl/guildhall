@@ -589,7 +589,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		return false, Next{}, err
 	}
 	needs := requires.Guildmaster() && repo.Merge.NeedsReapproval(kind)
-	// A narrowed review's findings, advisory ones included, reach the Guildmaster whatever the threshold.
+	// A narrowed review's findings and suggestions reach the Guildmaster whatever the threshold.
 	findings := 0
 	for _, l := range x.links {
 		findings += l.findings
@@ -608,7 +608,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		why = append(why, "the accepted spec changed since "+from)
 	}
 	if findings > 0 {
-		why = append(why, fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s)", findings))
+		why = append(why, fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s) or suggestion(s)", findings))
 	}
 	why = append(why, carryRefusals(conditions)...)
 	lead := fmt.Sprintf("Head %s is a %s rebase of the head merge %s authorized; the authorization does not carry over: %s.\n", x.head, kind, from, strings.Join(why, "; "))

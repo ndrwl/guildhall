@@ -33,7 +33,7 @@ On an error nothing `Prompt` wrote is left behind; a crash mid-render can leave 
 ### Required outputs and result template
 
 Every rendered Artisan prompt includes the kind's required output ports, work-directory-relative file names, exact formats and minimal valid examples, even when a copy overrides its stage guide.
-Document ports use `<port>.md` UTF-8 Markdown; review outcomes use `outcome.json` and the strict `guildhall.review-outcome/1` format.
+Document ports use `<port>.md` UTF-8 Markdown; review outcomes use `outcome.json` and the strict `guildhall.review-outcome/2` format, with a summary, rule-cited findings, suggestions and `resolved`, `unresolved` or `disputed` dispositions.
 Review and document-review sections state the finding-id rule (lowercase letters, digits and hyphens, starting with a letter, at most 63 characters, kept across rounds) and show, after the approval example, an example with one finding whose id intake accepts; intake still refuses any other id.
 The interpreter supplies the attempt's recorded review revisions through `Stage.Revisions`, so its example has the exact subject, accepted spec digest (for code review) and standards revision that intake requires.
 Standalone rendering without revisions shows explicitly illustrative values to replace, never a claim that zero hashes identify the real subject.

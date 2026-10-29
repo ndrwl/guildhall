@@ -10,8 +10,10 @@ A repository lists what a task's pull request needs before Guildhall merges it, 
 guildmaster_approval = true   # the Guildmaster said "merge"
 artisan_approval     = true   # the independent review Artisan approved this exact head, accepted spec and standards
 ci_green             = true   # required CI passed on this head
-nothing_open         = true   # no findings on the approving reviews and no unanswered decision on the task
+nothing_open         = true   # no open findings on the approving reviews and no unanswered decision on the task
 ```
+
+[Review outcome /2](review-outcome-2.md) later narrowed "open": suggestions never count, and a disputed finding with a standing Director ruling does not either.
 
 A missing key is `true`, and a missing section requires everything, which is the old `approval` policy exactly: the same `deliver-<k>` decision, options and records.
 Unknown keys and values that are not booleans are refused when the config is parsed, and the old policy key is now an unknown key.

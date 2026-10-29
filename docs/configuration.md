@@ -149,7 +149,7 @@ The section sits under the repository's `[[repository]]` block, like `workflow_o
 guildmaster_approval = true   # the Guildmaster said "merge"
 artisan_approval     = true   # the review Artisan approved this exact head, accepted spec and standards
 ci_green             = true   # required CI passed on this head
-nothing_open         = true   # no findings on the approving reviews and no unanswered decision on the task
+nothing_open         = true   # no open findings on the approving reviews and no unanswered decision on the task
 ```
 
 | Requirement | Holds when |
@@ -157,7 +157,7 @@ nothing_open         = true   # no findings on the approving reviews and no unan
 | `guildmaster_approval` | The Guildmaster answered `merge` on the deliver decision `deliver-<k>` for this head. |
 | `artisan_approval` | Every review and document-review step before deliver has a latest outcome that approves and is bound to the delivered head, the accepted spec digest and the current standards revision. "Artisan" means the independent review Artisan: the review step runs as its own attempt, never the author's build attempt. |
 | `ci_green` | Deliver's `validation` input is a `passed` result for the delivered head. |
-| `nothing_open` | Those review outcomes list no findings, advisory ones included, and the task has no unanswered decision but the deliver step's own. |
+| `nothing_open` | Those review outcomes have no open finding, and the task has no unanswered decision but the deliver step's own. Every finding is open, unresolved or newly raised, except a `disputed` one the Director has ruled on with a ruling that stands. Suggestions never count; the condition's reason still says "N suggestion(s), not counted". |
 
 Each key is a TOML boolean; a missing key is `true`, and a missing section requires everything, so by default the Guildmaster approves every merge.
 A string such as `"true"`, an unknown key and the removed merge policy key are refused when the config is parsed.
@@ -369,19 +369,23 @@ Reformatting the file or changing an omitted optional field to its empty value d
 
 ### Review outcome
 
-Every `review` and `document-review` step produces the same outcome, schema `guildhall.review-outcome/1`, whoever its actor.
+Every `review` and `document-review` step produces the same outcome, schema `guildhall.review-outcome/2`, whoever its actor.
+Every writer writes /2; readers still accept `guildhall.review-outcome/1` ([decision](decisions/review-outcome-2.md)).
 
 | Field | Meaning |
 |---|---|
 | `reviewer` | `human` or `automated`. |
-| `verdict` | `approved`, `changes_requested` or `rejected`; the latter two need at least one finding. |
-| `findings[]` | `summary` and `id` (required), optional `rule`, `file` and `line`. An `id` is the reviewer's stable name for the finding across rounds, used once per outcome; `rule` cites the rule it breaks, and a finding without one is a suggestion that never blocks. |
-| `dispositions[]` | What became of each finding of the step's previous outcome: `finding` (its id) and `state`, one of `resolved`, `still-open` (listed again in `findings` under the same id) or `withdrawn` (not listed). |
+| `verdict` | `approved`, `changes_requested` or `rejected`; the latter two need at least one finding. An `approved` outcome may still carry findings, as a loop-exit accept does. |
+| `summary` | Required: the reviewer's one-paragraph overall verdict, not blank, with no blank line, at most 64 KiB. |
+| `findings[]` | The blockers: `id`, `rule` and `summary` (required), optional `file` and `line`. An `id` is the reviewer's stable name for the finding across rounds; `rule` cites the rule it breaks, and a finding without one is refused, with a message to move it to `suggestions`. |
+| `suggestions[]` | The non-blocking comments: `id` and `summary` (required), optional `file` and `line`, no `rule`. A suggestion never blocks, never counts for `nothing_open` and needs no disposition in a later round. Ids are used once across `findings` and `suggestions`. |
+| `dispositions[]` | What became of each finding of the step's previous outcome: `finding` (its id), `state` and `reason`. The state is `resolved` (listed in neither list), `unresolved` (listed again in `findings` under the same id) or `disputed` (listed again; the builder argued against it and the reviewer still holds it). `reason` is required for `disputed` and optional otherwise. |
 | `revisions.subject` | What was reviewed: exactly one of `code_head`, the full commit id, or `document_digest`, the document's `sha256:<hex>` digest. |
 | `revisions.spec_digest` | `sha256:<hex>` digest of the accepted specification; required for a code head, optional for a document. |
 | `revisions.standards_revision` | Central standards revision reviewed against; `""` means no standards revision is configured; nonempty whitespace-only values are invalid. |
 
 An outcome blocks the task only when its verdict is `changes_requested` and at least one finding cites a rule.
+A /1 outcome is read with the /2 meaning, in memory only: a finding without a rule is a suggestion, `still-open` is `unresolved` and `withdrawn` is `resolved`; its schema stays /1, it has no summary, and a /2-only key in it is refused.
 An outcome counts only for the exact subject, specification digest and standards revision it names, so a document review never counts for a code head or the reverse.
 
 ### Workflow-edit authority

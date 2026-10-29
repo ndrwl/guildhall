@@ -12,8 +12,10 @@ The release skills for a grill follow its actor: `guildhall-grill` with `guildha
 `ValidateStepSettings` checks an isolated step's kind, version and settings with the same actor, allowed-key, required-setting, type, name and duplicate rules as `Validate`, without requiring the surrounding workflow's input and loop wiring.
 
 `ReviewOutcome.Validate` and `ReviewOutcome.BoundTo` enforce the [review outcome revision contract](../configuration.md#review-outcome).
-Review outcome findings carry a required stable `id` and an optional cited `rule`, and outcomes carry `dispositions` of the previous round's findings; `ReviewOutcome.Blocking` is true only for `changes_requested` with a rule-cited finding.
-`DispositionState.Valid` is the one disposition-state rule, used by `ReviewOutcome.Validate` and the store's review projection; their `unknown state` refusal tests (`review_test.go`, `internal/store/rulings_test.go`) pin it.
+`ParseReviewOutcome` reads `guildhall.review-outcome/2` and `/1`; a /1 document is decoded with the /1 shape, so a /2-only key is refused, and returned with the /2 meaning (rule-less findings as suggestions, `still-open` as `unresolved`, `withdrawn` as `resolved`), its schema kept; `/3` is `ErrNewerSchema`.
+Review outcomes carry a one-paragraph `summary` (required in /2), blocking `findings` each with a stable `id` and a cited `rule`, `suggestions` with ids unique across both lists, and `dispositions` of the previous round's findings, a `disputed` one with a `reason`; `ReviewOutcome.Blocking` is true only for `changes_requested` with a rule-cited finding, for either version.
+`DispositionState.Valid` is the one disposition-state rule, used by `ReviewOutcome.Validate` and, through `Normalized` for the /1 names of old projections, the store's review projection; `DispositionState.Open` (unresolved or disputed) is the test for a finding that still stands.
+Their `unknown state` refusal tests (`review_test.go`, `internal/store/rulings_test.go`) pin it, and `TestParseReviewOutcomeV1` and `TestBlockingAcrossVersions` pin the /1 reading.
 
 `Weakenings`, `FloorProblems` and `Authority.Admit` are the workflow-edit authority policy at task creation ([configuration](../configuration.md#enforcement-at-task-creation)): a conservative classifier of a revision against a baseline, the review floor, and the admission decision over the shipped definitions, the caller's approved digests and candidate baselines; they read and record nothing.
 

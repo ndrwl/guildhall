@@ -220,7 +220,7 @@ The criteria read these records:
 
 **D3 Review usefulness** (score and trend; script for structure, model and Guildmaster for substance).
 
-- Each finding names a file, line, rule and concrete failure and is actionable, suggestions are labelled, dispositions of the previous round are correct, and no still-open finding survives two rounds without a Director ruling.
+- Each finding names a file, line, rule and concrete failure and is actionable, suggestions are listed apart from findings, dispositions of the previous round are correct, and no open (unresolved or disputed) finding survives two rounds without a Director ruling.
 - Look at: each `review-<n>-outcome`, the rulings and the builder's response.
 - Good: findings the builder fixed in one round, and few withdrawn.
 - Poor: nitpicks without rules, a finding whose `file:line` is not in the diff, or a withdrawn finding that was wrong on its face.
@@ -268,7 +268,7 @@ The criteria read these records:
 - Time from `task new` to merge is recorded, split into attempt time, Guildmaster wait and checks wait, with review rounds, fix rounds and retries.
 - Look at: the timeline's `duration_seconds`, `wait_seconds` and attempt count per step.
 - Good: rounds trend down while D3 holds.
-- Poor: a task at its maximum rounds with the same still-open finding.
+- Poor: a task at its maximum rounds with the same unresolved finding.
 - Source: DORA lead time (Strong); Google's review-speed guidance (Practitioner); Goodhart's law as the warning against targeting it (Moderate).
 - Guildhall today: the timeline already carries the numbers.
 

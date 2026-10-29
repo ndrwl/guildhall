@@ -280,7 +280,7 @@ func (r *run) validateRebase(s workflow.Step, k int, repo config.Repository, pub
 		if i := slices.IndexFunc(links, func(l rebaseLink) bool { return l.findings > 0 }); i >= 0 {
 			l := links[i]
 			next, err := r.rebaseFailed(s, k, l.doc.From, pr, links, escalationDoc{From: l.doc.From, Onto: l.doc.Onto, Kind: config.RebaseMajorConflicts,
-				Reason: fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s)", l.findings)})
+				Reason: fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s) or suggestion(s)", l.findings)})
 			return cur, pr, true, next, err
 		}
 		if n := len(links); n > 0 && links[n-1].head == "" {

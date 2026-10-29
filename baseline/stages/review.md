@@ -11,4 +11,4 @@ The verdict is `approved`, `changes_requested` or `rejected`, not `APPROVE`.
 
 When your step's id ends in `-rebase-review`, its scope is `resolution`: you are the narrowed review of a rebase Guildhall made, and the `resolution` input is the diff from the conflict-marked replay to its resolution.
 Review only those hunks: check that each resolves its conflict, keeps both sides' behaviour and changes nothing else.
-Approve with no findings only when the resolution is exactly that; any finding, advisory ones included, reaches the Guildmaster.
+Approve with no findings only when the resolution is exactly that; any finding or suggestion reaches the Guildmaster.
