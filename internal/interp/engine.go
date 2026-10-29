@@ -671,11 +671,7 @@ func (r *run) retryReason(ev Event) error {
 	if ev.Reason == "" {
 		return nil
 	}
-	err := r.notify(fmt.Sprintf("attempt-retried.%s-%d", ev.Step, ev.Attempt), store.MessageAttemptRetried, ev.Reason)
-	if errors.Is(err, store.ErrMutationConflict) {
-		return nil
-	}
-	return err
+	return r.notify(fmt.Sprintf("attempt-retried.%s-%d", ev.Step, ev.Attempt), store.MessageAttemptRetried, ev.Reason)
 }
 
 func (r *run) admissionHeld() (bool, error) {
@@ -791,7 +787,7 @@ func (r *run) budgetRefused(s workflow.Step, n int, refusal *store.CapRefusal, e
 		again = fmt.Sprintf("guildhall step retry for step %s attempt %d", s.ID, r.retry.Attempt)
 	}
 	text := fmt.Sprintf("Step %s was not started: guard rail %s, %v. Run %s again when capacity returns.", s.ID, rail, refusal, again)
-	if serr := r.notify(store.MessageBudgetRefused+"."+refusal.Day.Format(time.DateOnly), store.MessageBudgetRefused, text); serr != nil && !errors.Is(serr, store.ErrMutationConflict) {
+	if serr := r.notify(store.MessageBudgetRefused+"."+refusal.Day.Format(time.DateOnly), store.MessageBudgetRefused, text); serr != nil {
 		return errors.Join(err, serr)
 	}
 	return err
@@ -1319,12 +1315,17 @@ func (r *run) notifyDecision(d store.Decision, step string) error {
 
 // notify sends the Director one message about the task, with an id derived from the task and what
 // happened so resending it replays. It names no attempt, so it is accepted whatever the attempt's state.
+// A message already sent under that id with other text, say by an older binary, counts as already reported: the
+// earlier message stands, the new text is not delivered and the advance goes on. Any other error fails it.
 func (r *run) notify(what, typ, text string) error {
 	m, err := directorMessage(r.task.Repository, r.task.ID, what, typ, text)
 	if err != nil {
 		return err
 	}
 	_, err = r.e.Outbox.Send(store.Recipient{Role: store.RecipientDirector}, m)
+	if errors.Is(err, store.ErrMutationConflict) || errors.Is(err, store.ErrExists) {
+		return nil
+	}
 	return err
 }
 

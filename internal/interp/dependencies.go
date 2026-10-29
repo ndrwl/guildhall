@@ -126,11 +126,7 @@ func (r *run) dependencyHeld(s workflow.Step, lines []string) error {
 	states := strings.Join(lines, "\n")
 	text := fmt.Sprintf("Task %s/%s is held before step %s until its dependencies merge:\n%s\nStart it anyway with: %s",
 		r.task.Repository, r.task.ID, s.ID, states, r.overrideCommand())
-	err := r.notify(store.MessageDependencyHeld+"."+digest.Of([]byte(states)).Hex()[:12], store.MessageDependencyHeld, text)
-	if errors.Is(err, store.ErrMutationConflict) {
-		return nil
-	}
-	return err
+	return r.notify(store.MessageDependencyHeld+"."+digest.Of([]byte(states)).Hex()[:12], store.MessageDependencyHeld, text)
 }
 
 // fastForward moves the task's untouched branch to the current main as the gate opens; a branch it cannot move is
@@ -153,9 +149,5 @@ func (r *run) fastForward() error {
 	}
 	text := fmt.Sprintf("The dependencies of %s/%s no longer hold it, but its branch %s was not moved to the current main, because %s.\nIt proceeds on the existing branch.",
 		r.task.Repository, r.task.ID, w.Branch, kept)
-	err = r.notify(store.MessageDependencyBranchKept, store.MessageDependencyBranchKept, text)
-	if errors.Is(err, store.ErrMutationConflict) {
-		return nil
-	}
-	return err
+	return r.notify(store.MessageDependencyBranchKept, store.MessageDependencyBranchKept, text)
 }
