@@ -208,7 +208,7 @@ func (s *Store) StartOwnedAttempt(mutationID string, o Ownership) (Receipt, erro
 	}
 	o.State = OwnerStarting
 	return s.mutate(mutationID, "start-owned-attempt", o, func(tx *bolt.Tx, r *Receipt) error {
-		a, err := startAttempt(tx, r, o.Repository, o.TaskID, o.Step)
+		a, err := startAttempt(tx, r, o.Repository, o.TaskID, o.Step, false)
 		if err != nil {
 			return err
 		}

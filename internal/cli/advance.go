@@ -85,6 +85,8 @@ type next struct {
 	Step     string      `json:"step"`
 	Attempt  int         `json:"attempt,omitempty"`
 	Decision string      `json:"decision,omitempty"`
+	// Position is a queued start's 1-based place in the start queue at the time of the advance (wait queued).
+	Position int `json:"position,omitempty"`
 }
 
 // taskStart runs `guildhall task start`: one advance with task-created, or with --decision,
@@ -574,7 +576,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 const nextFile = "next.json"
 
 func nextOf(n interp.Next) next {
-	return next{Wait: n.Wait, Step: n.Step, Attempt: n.Attempt, Decision: n.Decision}
+	return next{Wait: n.Wait, Step: n.Step, Attempt: n.Attempt, Decision: n.Decision, Position: n.Position}
 }
 
 // baselinePrompter renders from baseline/ beside the config file, falling back file by file to the installed
@@ -686,6 +688,14 @@ func (p storeRecords) StartAttempt(m, repo, id, step string) (store.Receipt, err
 
 func (p storeRecords) StartCappedAttempt(m, repo, id, step string, caps store.AttemptCaps) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartCappedAttempt(m, repo, id, step, caps) })
+}
+
+func (p storeRecords) StartDirectorAttempt(m, repo, id, step string, hold bool) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartDirectorAttempt(m, repo, id, step, hold) })
+}
+
+func (p storeRecords) StartQueue() ([]store.QueuedStart, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.QueuedStart, error) { return s.StartQueue() })
 }
 
 func (p storeRecords) FinishAttempt(m, repo, id, step string, n int, o store.AttemptOutcome) (store.Receipt, error) {

@@ -482,7 +482,9 @@ func TestSafetyApproval(t *testing.T) {
 }
 
 // TestSafetyGuardRails: with max_running_attempts 1, the scripted Director's task new for an unlisted repository
-// is refused, its second task's start is refused while the first runs and admitted once that attempt is stopped.
+// is refused, its second task's start is queued while the first runs, shown in director status under start_queue,
+// and started by the session's start-queue watcher within one watcher interval of that attempt being stopped, with no
+// second task start and no budget-refused message.
 func TestSafetyGuardRails(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "max_running_attempts = \"1\"\n", "guildhall-fake: result=never\nguildhall-fake: lifetime=5m\n")
@@ -494,15 +496,18 @@ func TestSafetyGuardRails(t *testing.T) {
 			"guildhall task new --repo app --title Two t-2",
 			"guildhall task start --repo app t-1",
 			"guildhall task start --repo app t-2",
-			"guildhall artisan stop --repo app --task t-1 --step plan --attempt 1",
-			"guildhall task start --repo app t-2",
-			"/exit")
+			"guildhall director status --json",
+			"guildhall artisan stop --repo app --task t-1 --step plan --attempt 1")
 		s := c.start(rt)
+		stopped := func() bool {
+			a := c.attempts("t-1")
+			return len(a) == 1 && a[0].Outcome != ""
+		}
+		c.waitFor("t-1's plan attempt stopped by the script", stopped)
+		c.waitFor("t-2's queued plan started by the start-queue watcher", func() bool { return len(c.attempts("t-2")) == 1 })
 		code := s.end()
 		c.stopAttempt("t-1", "plan", 1)
-		if len(c.attempts("t-2")) > 0 {
-			c.stopAttempt("t-2", "plan", 1)
-		}
+		c.stopAttempt("t-2", "plan", 1)
 		if code != 0 {
 			t.Fatalf("director start exited %d", code)
 		}
@@ -510,17 +515,23 @@ func TestSafetyGuardRails(t *testing.T) {
 		if !strings.Contains(out, `guard rail repositories: the config does not list repository "other"`) {
 			t.Errorf("the unlisted repository was not refused by its guard rail:\n%s", out)
 		}
-		if n := strings.Count(out, "guard rail max_running_attempts"); n != 1 {
-			t.Errorf("the running cap refused %d launches, want 1:\n%s", n, out)
+		if !strings.Contains(out, `{"wait":"queued","step":"plan","attempt":1,"position":1}`) {
+			t.Errorf("t-2's start was not queued:\n%s", out)
+		}
+		if !strings.Contains(out, `"start_queue":[{"repository":"app","task":"t-2","step":"plan","attempt":1,"request":"start","priority":"p3","position":1,`) {
+			t.Errorf("director status did not list t-2's queued start under start_queue:\n%s", out)
+		}
+		if strings.Contains(out, "guard rail max_running_attempts") {
+			t.Errorf("the running cap refused a launch:\n%s", out)
 		}
 		if has(c, func(s *store.Store) error { _, err := s.Task("other", "t-9"); return err }) {
 			t.Error("the unlisted repository's task was recorded")
 		}
 		if got := c.attempts("t-2"); len(got) != 1 || got[0].Step != "plan" {
-			t.Errorf("t-2 attempts %+v, want plan admitted once t-1's attempt stopped", got)
+			t.Errorf("t-2 attempts %+v, want plan started once t-1's attempt stopped", got)
 		}
-		if !slices.ContainsFunc(c.inbox(), func(m store.Message) bool { return m.Type == "budget-refused" && m.TaskID == "t-2" }) {
-			t.Error("the Director was not told of the refused launch")
+		if slices.ContainsFunc(c.inbox(), func(m store.Message) bool { return m.Type == "budget-refused" }) {
+			t.Error("a queued start sent budget-refused")
 		}
 		c.finish(1)
 	})

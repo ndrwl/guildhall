@@ -22,6 +22,7 @@ Other refusals and operational errors exit 1 on standard error; success prints t
 The engine first records the instructions as immutable document `send-back-<step>-<attempt>` and then starts the next attempt with that document on its `feedback` port.
 The request runs under the same task lock, admission holds and attempt caps as every advance.
 A hold may leave the feedback pending with `wait: paused`; a subsequent `task start` consumes it once the hold lifts.
+Over the running cap the next attempt is [queued](director.md#the-start-queue) with the feedback recorded, printing `wait: queued` and its place, and the session supervisor starts it when a slot frees; repeating the same send-back while it is queued prints the same entry, and one with other feedback is refused, as below.
 A replay with the same step, succeeded attempt and feedback never creates an additional request, including after a crash or after the next attempt finishes.
 Changing feedback for that request identity is refused; further work after success uses the newer succeeded attempt as its identity.
 A failed new attempt retains its feedback for the normal retry.

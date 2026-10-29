@@ -61,6 +61,9 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 		OverrideDependencies: func(m, repo, id, reason string) (store.Receipt, error) {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.OverrideDependencies(m, repo, id, reason) })
 		},
+		SetTaskPriority: func(m, repo, id string, p store.Priority) (store.Receipt, error) {
+			return write(func(s *store.Store) (store.Receipt, error) { return s.SetTaskPriority(m, repo, id, p) })
+		},
 		PauseDirector: func() error {
 			_, err := write(func(s *store.Store) (store.Receipt, error) { return store.Receipt{}, interptest.PauseStoreDirector(s) })
 			return err
@@ -82,6 +85,12 @@ func (p clockedStoreRecords) StartAttempt(m, repo, id, step string) (store.Recei
 func (p clockedStoreRecords) StartCappedAttempt(m, repo, id, step string, caps store.AttemptCaps) (store.Receipt, error) {
 	return withRecords(p.storeRecords, false, p.clock.Now, func(s *store.Store) (store.Receipt, error) {
 		return s.StartCappedAttempt(m, repo, id, step, caps)
+	})
+}
+
+func (p clockedStoreRecords) StartDirectorAttempt(m, repo, id, step string, hold bool) (store.Receipt, error) {
+	return withRecords(p.storeRecords, false, p.clock.Now, func(s *store.Store) (store.Receipt, error) {
+		return s.StartDirectorAttempt(m, repo, id, step, hold)
 	})
 }
 

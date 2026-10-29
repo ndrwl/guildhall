@@ -99,8 +99,22 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | `audit`, after a sampled merge | `audit` | The head that merged |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
-Every attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails); one refused at a cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, naming `step retry` for a refused retry and `task start` otherwise, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.
+Every Artisan attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails), and a Director stage's through `Records.StartDirectorAttempt`, held but never capped or queued.
+One the running cap does not admit is [queued](#the-start-queue).
+One refused at the daily cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, naming `step retry` for a refused retry and `task start` otherwise, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.
 Publishing, validating and merging send `published`, `pr-blocked`, `checks-pending`, `checks-passed`, `checks-failed`, `merge-held`, `merge-refused`, `merged` and `workspace-kept` messages, and the merge queue and its rebases `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`, described below.
+
+## The start queue
+
+A new Artisan attempt the running cap does not admit, because `max_running_attempts` attempts run or another start is ahead in the store's start queue, waits `queued` ([decision](decisions/queue-over-cap-starts.md)).
+The engine passes `AttemptCaps.Queue`, the request the start is made under: `retry` with the retried attempt when the walk follows a retry of the step, and otherwise `start` for `task-created`, `decision` for `decision-answered`, `send-back` for `step-sent-back` and `engine` for an attempt result.
+`Records.StartCappedAttempt` then records the step's queue entry and no attempt and returns a `*store.StartQueued`, and the advance returns `Next{Wait: WaitQueued, Step, Attempt, Position}`: no error, nothing launched and no message.
+The binding is recorded before the capped start, as for any start, so the queued attempt keeps its inputs, a retry's first bound reason among them.
+
+A later advance that reaches the step starts it once it is the queue's front and a slot is free, or returns `queued` again.
+For a retry the walk's own rule would not get there, since a failed or stopped latest attempt waits for the Director: a latest attempt `n-1` that failed or stopped with a queue entry for attempt `n` counts as an owed retry, as a matching `attempt-retried` does, so a plain `task-created` advance, such as the supervisor's [start-queue watcher](director.md#the-start-queue)'s, starts it and sends its `attempt-retried` reason once it launches.
+A send-back's feedback stays pending and an answered decision is read from the records, so both resume on a plain advance already.
+A retry of another attempt while one is queued is refused with `ErrEvent`, naming the queued attempt and its place.
 
 ## The dependency gate
 

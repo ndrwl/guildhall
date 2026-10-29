@@ -88,6 +88,9 @@ type statusSession struct {
 	LastWake *store.Wake `json:"last_wake,omitempty"`
 	// GuardRails are the copy's guard rails and what the attempt caps count today (docs/director.md#guard-rails).
 	GuardRails statusGuardRails `json:"guard_rails"`
+	// StartQueue is every start the running cap queued, in queue order (docs/director.md#the-start-queue); the
+	// supervisor's start-queue watcher drains it, so it is not in needs_me.
+	StartQueue []statusQueuedStart `json:"start_queue"`
 	// HandoffNote and Reload are the newest handoff note and reload request, whichever session recorded them.
 	HandoffNote *store.HandoffNote    `json:"handoff_note,omitempty"`
 	Reload      *store.DirectorReload `json:"reload,omitempty"`
@@ -95,13 +98,26 @@ type statusSession struct {
 	Context *session.Context `json:"context,omitempty"`
 }
 
+// statusQueuedStart is one start-queue entry, with its task's priority now and its 1-based place.
+type statusQueuedStart struct {
+	Repository string                 `json:"repository"`
+	Task       string                 `json:"task"`
+	Step       string                 `json:"step"`
+	Attempt    int                    `json:"attempt"`
+	Request    store.StartRequestKind `json:"request"`
+	Priority   store.Priority         `json:"priority"`
+	Position   int                    `json:"position"`
+	QueuedAt   time.Time              `json:"queued_at"`
+}
+
 // statusGuardRails is the config's guard rails, when the copy has a config, beside the attempt caps' counts.
 // ConfigError says why a config that exists gives no rails.
 type statusGuardRails struct {
 	*config.GuardRails
-	ConfigError     string `json:"config_error,omitempty"`
-	RunningAttempts int    `json:"running_attempts"`
-	AttemptsToday   int    `json:"attempts_today"`
+	ConfigError string `json:"config_error,omitempty"`
+	// RunningAttempts counts what the running cap counts: running attempts, not Director stages.
+	RunningAttempts int `json:"running_attempts"`
+	AttemptsToday   int `json:"attempts_today"`
 	// Day is the UTC day AttemptsToday counts.
 	Day string `json:"day"`
 	// SpendToday sums what the attempts started on Day reported they spent (docs/director.md#spend).
@@ -282,9 +298,13 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		return directorStatus{}, err
 	}
 	var queues []mergeQueue
+	var starts []store.QueuedStart
 	v, err := withStoreClock(path, true, now, func(s *store.Store) (store.DirectorView, error) {
 		v, err := s.DirectorView()
 		if err != nil {
+			return v, err
+		}
+		if starts, err = s.StartQueue(); err != nil {
 			return v, err
 		}
 		var repos []string
@@ -328,6 +348,11 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",
 				Reason: fmt.Sprintf("Director session %d is recovering and starts no new work until it is ready", d.Number), Command: "guildhall director ready"})
 		}
+	}
+	out.Session.StartQueue = []statusQueuedStart{}
+	for i, e := range starts {
+		out.Session.StartQueue = append(out.Session.StartQueue, statusQueuedStart{Repository: e.Repository, Task: e.TaskID, Step: e.Step,
+			Attempt: e.Attempt, Request: e.Kind, Priority: e.Priority, Position: i + 1, QueuedAt: e.QueuedAt})
 	}
 	for _, r := range v.Receipts[max(0, len(v.Receipts)-statusLimit):] {
 		out.Recent = append(out.Recent, recentReceipt{MutationID: r.MutationID, Operation: r.Operation, Repository: r.Repository, TaskID: r.TaskID,
@@ -536,6 +561,14 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 				queued = append(queued, needsMeItem{Kind: mergeQueueKind, Repository: t.Repository, TaskID: t.ID, Step: waits.Step,
 					Reason:  fmt.Sprintf("step %s is authorized and waits in the merge queue, or its merge is held; the session supervisor advances it again every checks_refresh, and guildhall task hold-merge toggles its hold", waits.Step),
 					Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
+			case interp.WaitQueued:
+				// A queued start is the start-queue watcher's to drain; only one that left the queue, as when the
+				// watcher's advance of it failed, needs the Director.
+				if !slices.ContainsFunc(starts, func(e store.QueuedStart) bool { return e.Is(t.Repository, t.ID, waits.Step) }) {
+					advance = append(advance, needsMeItem{Kind: "advance", Repository: t.Repository, TaskID: t.ID, Step: waits.Step,
+						Reason:  fmt.Sprintf("the last advance queued attempt %d of %s, which is no longer in the start queue; see start-queue.log in the session directory", waits.Attempt, waits.Step),
+						Command: fmt.Sprintf("guildhall task start --repo %s %s", t.Repository, t.ID)})
+				}
 			}
 		}
 		out.Tasks = append(out.Tasks, st)

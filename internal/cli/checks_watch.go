@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +38,8 @@ type checksWatch struct {
 	advance func(taskRef) error
 	report  func(taskRef, error)
 	now     func() time.Time
+	// drain, when set, is the round instead, as the start-queue watcher's is (startQueueRound).
+	drain func()
 
 	mu      sync.Mutex
 	last    time.Time
@@ -54,7 +58,11 @@ func (w *checksWatch) tick(now time.Time) {
 	w.running.Add(1)
 	go func() {
 		defer w.running.Done()
-		w.round()
+		if w.drain != nil {
+			w.drain()
+		} else {
+			w.round()
+		}
 		w.mu.Lock()
 		w.busy, w.last = false, w.now()
 		w.mu.Unlock()
@@ -158,44 +166,52 @@ func (a *App) watchMergeQueue(p startPlan, n int, dir, copyDir, storePath, state
 
 // watchWaiting is a watcher of the tasks waiting lists, logging to the file log in dir.
 func (a *App) watchWaiting(p startPlan, dir, copyDir, storePath, state string, waiting func() ([]taskRef, error), log string) (*checksWatch, error) {
-	every, err := p.cfg.ChecksRefresh()
+	w, advance, err := a.watcher(p, dir, copyDir, storePath, state, log)
 	if err != nil {
 		return nil, err
+	}
+	w.waiting = waiting
+	w.advance = func(t taskRef) error {
+		_, _, err := advance(t)
+		return err
+	}
+	return w, nil
+}
+
+// watcher is a watcher on the session's interval, with its report logging to the file log in dir, and advance, which
+// advances a task as `task start` does, logging its standard-error output there; advance does nothing, reporting
+// false, while the newest session holds new attempts.
+func (a *App) watcher(p startPlan, dir, copyDir, storePath, state, log string) (*checksWatch, func(taskRef) (interp.Next, bool, error), error) {
+	every, err := p.cfg.ChecksRefresh()
+	if err != nil {
+		return nil, nil, err
 	}
 	floor := a.ChecksWatchFloor
 	if floor == 0 {
 		floor = checksWatchFloor
 	}
 	every = max(every, floor)
-	logPath := filepath.Join(dir, log)
-	logf := func(format string, args ...any) {
-		f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-		if err != nil {
-			return
-		}
-		_, _ = fmt.Fprintf(f, "%s "+format+"\n", append([]any{time.Now().UTC().Format(time.RFC3339)}, args...)...)
-		_ = f.Close()
-	}
+	logf := watchLog(filepath.Join(dir, log))
 	f := advanceFlags{store: storePath, config: p.cfgPath, state: state, copy: copyFlags{dir: copyDir}}
-	return &checksWatch{every: every, waiting: waiting, now: time.Now,
-		advance: func(t taskRef) error {
-			f := f
-			f.repo = t.repo
-			if err := f.listed(); err != nil {
-				return err
-			}
-			if hold, err := withRecords(storeRecords{path: storePath, wait: f.wait}, true, nil, held); err != nil || hold {
-				return err
-			}
-			b := *a
-			var out strings.Builder
-			b.Stdout, b.Stderr = io.Discard, &out
-			_, err := b.advance(f, interp.Event{Kind: interp.TaskCreated, Repository: t.repo, Task: t.task})
-			if s := strings.TrimSpace(out.String()); s != "" {
-				logf("%s/%s: %s", t.repo, t.task, oneLine(s))
-			}
-			return err
-		},
+	advance := func(t taskRef) (interp.Next, bool, error) {
+		f := f
+		f.repo = t.repo
+		if err := f.listed(); err != nil {
+			return interp.Next{}, false, err
+		}
+		if hold, err := withRecords(storeRecords{path: storePath, wait: f.wait}, true, nil, held); err != nil || hold {
+			return interp.Next{}, false, err
+		}
+		b := *a
+		var out strings.Builder
+		b.Stdout, b.Stderr = io.Discard, &out
+		n, err := b.advance(f, interp.Event{Kind: interp.TaskCreated, Repository: t.repo, Task: t.task})
+		if s := strings.TrimSpace(out.String()); s != "" {
+			logf("%s/%s: %s", t.repo, t.task, oneLine(s))
+		}
+		return n, true, err
+	}
+	w := &checksWatch{every: every, now: time.Now,
 		report: func(t taskRef, err error) {
 			if t == (taskRef{}) {
 				logf("waiting tasks: %v", err)
@@ -203,7 +219,96 @@ func (a *App) watchWaiting(p startPlan, dir, copyDir, storePath, state string, w
 			}
 			logf("%s/%s: advance: %v", t.repo, t.task, err)
 		},
-	}, nil
+	}
+	return w, advance, nil
+}
+
+// watchLog appends a time-stamped line to the log at path for each call, ignoring a log it cannot open.
+func watchLog(path string) func(format string, args ...any) {
+	return func(format string, args ...any) {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+		if err != nil {
+			return
+		}
+		_, _ = fmt.Fprintf(f, "%s "+format+"\n", append([]any{time.Now().UTC().Format(time.RFC3339)}, args...)...)
+		_ = f.Close()
+	}
+}
+
+// watchStartQueue is session n's start-queue watcher: a fourth checks watcher, on the same interval, that drains the
+// start queue (docs/director.md#the-start-queue), so a queued start begins once a slot frees, with no model turn; it
+// logs to start-queue.log in dir. Like the others it runs only while the session is running or recovering, so a
+// paused Director keeps the queue but drains none of it.
+func (a *App) watchStartQueue(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
+	w, advance, err := a.watcher(p, dir, copyDir, storePath, state, startQueueLog)
+	if err != nil {
+		return nil, err
+	}
+	w.drain = func() { startQueueRound(storePath, advance, watchLog(filepath.Join(dir, startQueueLog))) }
+	return w, nil
+}
+
+// startQueueRound is one round of the start-queue watcher over the store at path, while its newest session is running
+// or recovering: it advances the queued tasks in queue order as `task start` does, with advance, and stops at the
+// first whose start stays queued, since none behind it is admitted before it. An advance that neither starts the
+// queued attempt nor queues it again, such as one the dependency gate holds, one that fails or one that now waits on
+// another step, queued or not, takes the entry out of the queue, so it does not hold the front; the task's next.json reports that
+// advance as it does any other's, and logf records the drop.
+func startQueueRound(path string, advance func(taskRef) (interp.Next, bool, error), logf func(format string, args ...any)) {
+	read := func() ([]store.QueuedStart, error) {
+		return withStore(path, true, func(s *store.Store) ([]store.QueuedStart, error) {
+			switch d, err := s.LatestDirectorSession(); {
+			case errors.Is(err, store.ErrNotFound):
+			case err != nil:
+				return nil, err
+			case d.State != store.DirectorRunning && d.State != store.DirectorRecovering:
+				return nil, nil
+			}
+			return s.StartQueue()
+		})
+	}
+	queue, err := read()
+	if err != nil {
+		logf("start queue: %v", err)
+		return
+	}
+	for _, e := range queue {
+		t := taskRef{e.Repository, e.TaskID}
+		n, advanced, err := advance(t)
+		if !advanced && err == nil {
+			// The session holds new attempts: nothing drains until it lets them go.
+			return
+		}
+		if err == nil && n.Wait == interp.WaitQueued && n.Step == e.Step && n.Attempt == e.Attempt {
+			return
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, store.ErrLocked) {
+			// The task or the store was busy: the entry keeps its place and the next round tries again.
+			logf("%s/%s: advance: %v", t.repo, t.task, err)
+			return
+		}
+		after, rerr := read()
+		if rerr != nil {
+			logf("start queue: %v", rerr)
+			return
+		}
+		if !slices.ContainsFunc(after, func(q store.QueuedStart) bool { return q.StartQueueEntry == e.StartQueueEntry }) {
+			// Started, or no longer queued for another reason the store already took account of.
+			continue
+		}
+		why := fmt.Sprintf("the advance waits %s for step %s", n.Wait, n.Step)
+		if err != nil {
+			why = fmt.Sprintf("advance: %v", err)
+		}
+		_, lerr := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+			return s.LeaveStartQueue(store.LeaveStartQueueMutation(e.StartQueueEntry), e.StartQueueEntry)
+		})
+		if lerr != nil {
+			logf("%s/%s: leave the start queue: %v", t.repo, t.task, lerr)
+			continue
+		}
+		logf("%s/%s: attempt %d of step %s left the start queue: %s", t.repo, t.task, e.Attempt, e.Step, oneLine(why))
+	}
 }
 
 // checksWatchFloor is the shortest time between a checks watcher's rounds, whatever checks_refresh is, so a short
@@ -218,3 +323,6 @@ const dependenciesLog = "dependencies.log"
 
 // mergeQueueLog is the file in a session's directory its merge-queue watcher logs to.
 const mergeQueueLog = "merge-queue.log"
+
+// startQueueLog is the file in a session's directory its start-queue watcher logs to (docs/director.md#the-start-queue).
+const startQueueLog = "start-queue.log"

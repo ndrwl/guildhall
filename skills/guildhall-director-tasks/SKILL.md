@@ -23,7 +23,7 @@ guildhall task start --repo app t-12
 Choose a short task id of lowercase letters, digits and hyphens that is new in the repository, and a title in the Guildmaster's words.
 Add `--depends-on <repo>/<task>` when the work must wait for another task, and `--fixes <repo>/<task>` when it fixes a defect an earlier task introduced, so its pull request says so.
 Set its priority from the Guildmaster's words with `--priority <level>`: `p0 urgent`, `p1 highest`, `p2 high`, `p3 normal` (the default, so leave it off when they say nothing), `p4 low` or `p5 someday`.
-When they later say a task matters more or less, run `guildhall task priority --repo <id> <task> <level>`; priority orders the merge queue.
+When they later say a task matters more or less, run `guildhall task priority --repo <id> <task> <level>`; priority orders the merge queue and the start queue.
 
 Every task is created as a kind, which chooses its workflow:
 
@@ -41,6 +41,8 @@ guildhall task new --repo app --title "CSV export drops the last row" --kind bug
 
 Pick the repository from what they said; when the copy has several and it is unclear, ask.
 `guildhall task start` prints what the task waits for, such as `{"wait":"director-stage","step":"grill","attempt":1}`, which means the first stage is yours: run it with `guildhall-director-stage`.
+`{"wait":"queued","step":"plan","attempt":1,"position":2}` means `max_running_attempts` attempts are running, so the start waits in the start queue, highest priority first; the session supervisor starts it when a slot frees, so do not repeat `task start`, `step retry` or `step send-back` for it.
+`director status --json` lists what waits under `session.start_queue`, and your own stages never wait there.
 While the session is `recovering`, both commands are refused until `guildhall director ready`.
 
 ## What needs me

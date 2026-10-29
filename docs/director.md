@@ -181,6 +181,7 @@ The hold is read in the same store transaction that records a new attempt, so an
 - `task start --decision` still feeds the Guildmaster's answer, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
 - `step done` still takes the attempt's result and opens any decision it leads to, but starts no next attempt: it prints `{"wait":"paused","step":"<step>"}`, which its `next.json` records, and [`needs_me`](#status) lists the task as `paused`.
 - `decide answer`, `messages`, `artisan stop` and every read are unaffected.
+- The [start queue](#the-start-queue) is kept, but nothing drains while the session is held: a held start is never queued, and the supervisor's start-queue watcher starts nothing until the resume.
 
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works using each item's recovery command.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
@@ -376,12 +377,30 @@ In a standalone copy they are the copy's own config, which the Guildmaster edits
 - Attempt caps: [`max_running_attempts`](configuration.md#settings), default 4, and `max_attempts_per_day`, default 40, across all the Director's repositories.
   `max_attempts_per_day = "0"` is no daily cap: no attempt is refused for the day's count, which is still counted and shown; `max_running_attempts` is at least 1.
   An attempt runs from its start to its finish, and a day is a UTC day.
+  A [Director stage](interpreter.md#director-stages), which the Director runs in its own session, never counts against `max_running_attempts` and is never queued; it still counts toward the day's starts.
   The caps count attempts, not tokens or cost: each attempt's [spend](#spend) is recorded and shown beside them, but no budget refuses an attempt by its tokens or cost yet.
 
-An advance whose next attempt would pass a cap, from `task start`, `step done`, `step finish`, `step retry` or a launcher's own advance, records and launches nothing and exits 1 naming the rail, such as `guard rail max_running_attempts: ... 4 attempts are running, the cap is 4`.
-It also sends the Director a `budget-refused` message, once per task and UTC day.
-The count and the start are one store write, so two advances never both take the last place, and an attempt already recorded is always launched again after a crash.
-Nothing starts the refused attempt by itself: once an attempt finishes or the day turns, the Director runs `guildhall task start` for the task again, or `step retry` again for a refused retry.
+An advance whose next attempt the running cap does not admit, from `task start`, `step done`, `step finish`, `step retry`, `step send-back` or a launcher's own advance, is queued instead of refused ([decision](decisions/queue-over-cap-starts.md)): it launches nothing, records the step's place in the [start queue](#the-start-queue), sends no message and exits 0, printing `{"wait":"queued","step":"<step>","attempt":<n>,"position":<p>}`.
+The session supervisor starts it when a slot frees and it is the queue's front, with no command from the Director.
+An advance whose next attempt would pass `max_attempts_per_day` records and launches nothing and exits 1 naming the rail, `guard rail max_attempts_per_day: ...`, and sends the Director a `budget-refused` message, once per task and UTC day; once the day turns the Director runs `guildhall task start` for the task again, or `step retry` again for a refused retry.
+The count, the queue and the start are one store write, so two advances never both take the last place or pass the queue's front, and an attempt already recorded is always launched again after a crash.
+
+### The start queue
+
+The start queue holds every start the running cap did not admit, at most one per task and step, across all the Director's repositories.
+It is ordered by each task's current [priority](tasks.md#priority), then by the time the start was queued, then by task id, so `task priority` reorders it at once.
+A start is admitted only while fewer than `max_running_attempts` attempts run and it is the queue's first entry: a task whose own attempt just finished queues behind the starts already waiting rather than taking the freed slot.
+Nothing is preempted; a p0 only goes to the front.
+
+The session supervisor's start-queue watcher, beside the [checks watcher](#checks), drains it every `checks_refresh`, never more often than every 30 seconds: each round advances the queued tasks from the front, as `task start` does, and stops at the first that stays queued.
+A freed slot can therefore sit idle for up to about 30 seconds.
+A queued start whose advance neither starts nor queues it, such as one the [dependency gate](#dependencies) now holds or one whose advance fails, leaves the queue, logged to `start-queue.log` in the session directory, and the task's `next.json` reports that advance as any other; if the task still waits queued, `needs_me` lists it as an `advance` item.
+Like the other watchers it advances nothing while the session is paused, stopping or sweeping.
+
+Repeating the same `task start`, `step retry` or `step send-back` while it is queued keeps its entry and prints its place, which holds at the time of the command only.
+A `step retry` naming another attempt is refused with exit 1, naming the queued attempt, and a `step send-back` with other feedback is refused as already having prepared inputs ([send-back](step-send-back.md)).
+A queued retry keeps its first reason, which its prompt quotes and which is sent as `attempt-retried` once the attempt launches.
+Quality-judge starts are not queued: `quality judge` is still refused at the running cap.
 
 ## Spend
 
@@ -405,7 +424,7 @@ The fake Director and the Claude stub play the same script, so each check runs o
 Each check counts the stand-in's turns, one for its first message and one for each line typed to it, and the fake Artisans' recorded processes, before and after, and ends only when every one of those processes is gone.
 
 - Approval: the Director's `task new` on a workflow below the review floor is refused; it approves the workflow with words, and the same `task new` succeeds.
-- Guard rails: with `max_running_attempts = "1"`, a `task new` for an unlisted repository is refused, a second task's start is refused while the first runs, the Director is told once with `budget-refused`, and the start is admitted once the first attempt is stopped.
+- Guard rails: with `max_running_attempts = "1"`, a `task new` for an unlisted repository is refused, a second task's start is queued while the first runs, printing `{"wait":"queued",...}` and shown in `director status --json` under `start_queue`, no `budget-refused` message is sent, and the session's start-queue watcher starts it by itself once the first attempt is stopped, with no second `task start`.
 - Crash recovery: with a task's attempt running, the Director's runtime is killed, then the attempt's launcher, and the Guildmaster sends a note.
   `director status --json` lists the attempt in `needs_me` with `resume: true`.
   `director start` again renders a `startup.md` that names the attempt to resume and the unread message, `task new` is refused until the Director runs `director ready`, and the Director resumes and retries the attempt.
@@ -438,8 +457,10 @@ The document has these sections:
   Live attempt state is read after the store, so it can be newer than `sequence`.
 - `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, `sweeping` while a [stop](#stop) has not finished stopping its attempts, the `end_reason` of a session [stopped](#stop) as `superseded`, and `context`, the newest [context report](#automatic-handoff) with its `used_percent` and `reported_at`, absent when the runtime reported none.
   `last_wake` is the newest [wake](messaging.md#waking-the-director) of any message to the Director, with its `message_id`, `sender_type`, `decision`, `reason` when queued, `time` and `sequence`, so the feed says whether the last message woke anyone and why not; it is absent before any wake.
-  A store with no session reports only its `state`, `"no session"`, `last_wake` and `guard_rails`.
-  `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_requires` (each repository's effective `guildmaster_approval`, `artisan_approval`, `ci_green` and `nothing_open`), `max_running_attempts` and `max_attempts_per_day` (0 when there is no daily cap), when the copy has a config, and always `running_attempts`, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
+  A store with no session reports only its `state`, `"no session"`, `last_wake`, `guard_rails` and `start_queue`.
+  `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_requires` (each repository's effective `guildmaster_approval`, `artisan_approval`, `ci_green` and `nothing_open`), `max_running_attempts` and `max_attempts_per_day` (0 when there is no daily cap), when the copy has a config, and always `running_attempts`, what the running cap counts, the running attempts other than Director stages, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
+  `start_queue` is the [start queue](#the-start-queue) in queue order, `[{repository, task, step, attempt, request, priority, position, queued_at}]`, `request` being the `start`, `decision`, `retry`, `send-back` or `engine` request that queued it and `priority` the task's current one; it is empty when nothing waits.
+  A queued start is the supervisor's to start, so it is not a `needs_me` item and wakes nobody.
   A config that exists but cannot be read gives `config_error` in place of the rails.
   The identity's liveness is not probed yet.
 - `mode`: `{"name":"standalone"}` until managed mode lands.

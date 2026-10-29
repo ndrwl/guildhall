@@ -32,6 +32,10 @@ type Records struct {
 	rulings   []store.Ruling
 	full      []store.FullReview
 	overrides map[[2]string]store.DependencyOverride
+	// priorities are the tasks' priorities SetTaskPriority sets, and queue the start queue's entries by
+	// repository, task and step.
+	priorities map[[2]string]store.Priority
+	queue      map[[3]string]store.StartQueueEntry
 	// held is the Director's hold PauseDirector sets.
 	held bool
 }
@@ -313,10 +317,21 @@ func (r *Records) attemptTask(repository, taskID, step string) error {
 // StartAttempt implements interp.Records.
 func (r *Records) StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error) {
 	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
-	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error { return r.startAttempt(rc, repository, taskID, step) })
+	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error { return r.startAttempt(rc, repository, taskID, step, false) })
 }
 
-func (r *Records) startAttempt(rc *store.Receipt, repository, taskID, step string) error {
+// StartDirectorAttempt implements interp.Records: a Director stage's attempt, flagged and never capped or queued.
+func (r *Records) StartDirectorAttempt(mutationID, repository, taskID, step string, hold bool) (store.Receipt, error) {
+	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
+	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error {
+		if hold && r.held {
+			return fmt.Errorf("%w: the double is paused", store.ErrDirectorHeld)
+		}
+		return r.startAttempt(rc, repository, taskID, step, true)
+	})
+}
+
+func (r *Records) startAttempt(rc *store.Receipt, repository, taskID, step string, director bool) error {
 	rc.Repository, rc.TaskID = repository, taskID
 	if err := r.attemptTask(repository, taskID, step); err != nil {
 		return err
@@ -330,7 +345,7 @@ func (r *Records) startAttempt(rc *store.Receipt, repository, taskID, step strin
 			n = max(n, a.Number)
 		}
 	}
-	a := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: n + 1}
+	a := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: n + 1, Director: director}
 	rc.Attempt, rc.Record = a.Number, fmt.Sprintf("attempt/%s/%d", step, a.Number)
 	r.attempts = append(r.attempts, a)
 	slices.SortFunc(r.attempts, func(x, y store.StageAttempt) int {
@@ -372,6 +387,9 @@ func PauseStoreDirector(s *store.Store) error {
 // with store.CountUsage by Now.
 func (r *Records) StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error) {
 	req := store.StageAttempt{Repository: repository, TaskID: taskID, Step: step}
+	if caps.Queue != nil {
+		return r.startQueued(mutationID, req, caps)
+	}
 	return r.mutate(mutationID, "start-attempt", req, func(rc *store.Receipt) error {
 		if caps.Hold && r.held {
 			return fmt.Errorf("%w: the double is paused", store.ErrDirectorHeld)
@@ -380,14 +398,7 @@ func (r *Records) StartCappedAttempt(mutationID, repository, taskID, step string
 			if err := r.attemptTask(repository, taskID, step); err != nil {
 				return err
 			}
-			receipts := func(yield func(store.Receipt) bool) {
-				for _, prior := range r.receipts {
-					if !yield(prior.r) {
-						return
-					}
-				}
-			}
-			u := store.CountUsage(receipts, slices.Values(r.attempts), r.now())
+			u := r.usage()
 			switch {
 			case caps.MaxRunning > 0 && u.Running >= caps.MaxRunning:
 				return &store.CapRefusal{Cap: store.CapRunning, Count: u.Running, Limit: caps.MaxRunning, Day: u.Day}
@@ -395,7 +406,139 @@ func (r *Records) StartCappedAttempt(mutationID, repository, taskID, step string
 				return &store.CapRefusal{Cap: store.CapDaily, Count: u.Today, Limit: caps.MaxPerDay, Day: u.Day}
 			}
 		}
-		return r.startAttempt(rc, repository, taskID, step)
+		return r.startAttempt(rc, repository, taskID, step, false)
+	})
+}
+
+// usage counts what the caps count with store.CountUsage by Now; r.mu is held.
+func (r *Records) usage() store.AttemptUsage {
+	receipts := func(yield func(store.Receipt) bool) {
+		for _, prior := range r.receipts {
+			if !yield(prior.r) {
+				return
+			}
+		}
+	}
+	return store.CountUsage(receipts, slices.Values(r.attempts), r.now())
+}
+
+// startQueued is StartCappedAttempt with caps.Queue, as the store admits or queues it in one write.
+func (r *Records) startQueued(mutationID string, req store.StageAttempt, caps store.AttemptCaps) (store.Receipt, error) {
+	repository, taskID, step := req.Repository, req.TaskID, req.Step
+	body, err := json.Marshal(req)
+	if err != nil {
+		return store.Receipt{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if prior, ok := r.receipts[mutationID]; ok {
+		if prior.op != "start-attempt" || prior.req != string(body) {
+			return store.Receipt{}, fmt.Errorf("records: %w: %q was %s", store.ErrMutationConflict, mutationID, prior.op)
+		}
+		return prior.r, nil
+	}
+	fail := func(err error) (store.Receipt, error) {
+		return store.Receipt{}, fmt.Errorf("records: start-attempt %s: %w", mutationID, err)
+	}
+	if caps.Hold && r.held {
+		return fail(fmt.Errorf("%w: the double is paused", store.ErrDirectorHeld))
+	}
+	if err := r.attemptTask(repository, taskID, step); err != nil {
+		return fail(err)
+	}
+	u := r.usage()
+	if caps.MaxPerDay > 0 && u.Today >= caps.MaxPerDay {
+		return fail(&store.CapRefusal{Cap: store.CapDaily, Count: u.Today, Limit: caps.MaxPerDay, Day: u.Day})
+	}
+	if caps.MaxRunning > 0 {
+		q := r.startQueue()
+		if u.Running >= caps.MaxRunning || len(q) > 0 && !q[0].Is(repository, taskID, step) {
+			return store.Receipt{}, r.enqueue(repository, taskID, step, *caps.Queue)
+		}
+	}
+	rc := store.Receipt{MutationID: mutationID, Operation: "start-attempt", Sequence: r.seq + 1}
+	if err := r.startAttempt(&rc, repository, taskID, step, false); err != nil {
+		return fail(err)
+	}
+	delete(r.queue, [3]string{repository, taskID, step})
+	r.seq++
+	rc.CommittedAt = r.now()
+	r.receipts[mutationID] = receipt{"start-attempt", string(body), rc}
+	return rc, nil
+}
+
+// enqueue writes or keeps a step's queue entry, as the store does, and returns its *store.StartQueued; r.mu is held.
+func (r *Records) enqueue(repository, taskID, step string, req store.StartRequest) error {
+	n := r.lastAttempt(repository, taskID, step) + 1
+	key := [3]string{repository, taskID, step}
+	e, ok := r.queue[key]
+	if !ok || e.Attempt != n {
+		e = store.StartQueueEntry{Repository: repository, TaskID: taskID, Step: step, Attempt: n, StartRequest: req, QueuedAt: r.now()}
+	}
+	if r.queue == nil {
+		r.queue = map[[3]string]store.StartQueueEntry{}
+	}
+	r.queue[key] = e
+	id := store.QueueStartMutation(repository, taskID, step, n)
+	if _, ok := r.receipts[id]; !ok {
+		r.seq++
+		r.receipts[id] = receipt{"queue-start", id, store.Receipt{MutationID: id, Operation: "queue-start", Repository: repository, TaskID: taskID,
+			Attempt: n, Record: store.StartQueueRecord(step), Sequence: r.seq, CommittedAt: r.now()}}
+	}
+	q := r.startQueue()
+	return &store.StartQueued{Entry: e, Position: slices.IndexFunc(q, func(qs store.QueuedStart) bool { return qs.Is(repository, taskID, step) }) + 1}
+}
+
+func (r *Records) lastAttempt(repository, taskID, step string) int {
+	n := 0
+	for _, a := range r.attempts {
+		if a.Repository == repository && a.TaskID == taskID && a.Step == step {
+			n = max(n, a.Number)
+		}
+	}
+	return n
+}
+
+// startQueue is the queue as the store reads it: entries of open tasks whose attempt is not yet recorded, with live
+// priorities, in store.OrderStartQueue order; r.mu is held.
+func (r *Records) startQueue() []store.QueuedStart {
+	q := []store.QueuedStart{}
+	for key, e := range r.queue {
+		if r.tasks[[2]string{key[0], key[1]}].State != store.TaskOpen || r.lastAttempt(key[0], key[1], key[2]) >= e.Attempt {
+			continue
+		}
+		p, ok := r.priorities[[2]string{key[0], key[1]}]
+		if !ok {
+			p = store.DefaultPriority
+		}
+		q = append(q, store.QueuedStart{StartQueueEntry: e, Priority: p})
+	}
+	store.OrderStartQueue(q)
+	return q
+}
+
+// StartQueue implements interp.Records.
+func (r *Records) StartQueue() ([]store.QueuedStart, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.startQueue(), nil
+}
+
+// SetTaskPriority records an open task's priority, as store.SetTaskPriority does, without its history.
+func (r *Records) SetTaskPriority(mutationID, repository, taskID string, p store.Priority) (store.Receipt, error) {
+	req := store.TaskPriority{Repository: repository, TaskID: taskID, Priority: p}
+	return r.mutate(mutationID, "set-task-priority", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, store.TaskPriorityRecord
+		if t, ok := r.tasks[[2]string{repository, taskID}]; !ok {
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		} else if t.State != store.TaskOpen {
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		}
+		if r.priorities == nil {
+			r.priorities = map[[2]string]store.Priority{}
+		}
+		r.priorities[[2]string{repository, taskID}] = p
+		return nil
 	})
 }
 
@@ -534,6 +677,8 @@ type RecordsHarness struct {
 	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
 	// OverrideDependencies records the Director's dependency override, as store.OverrideDependencies does.
 	OverrideDependencies func(mutationID, repository, taskID, reason string) (store.Receipt, error)
+	// SetTaskPriority records a task's priority, as store.SetTaskPriority does, which orders the start queue.
+	SetTaskPriority func(mutationID, repository, taskID string, p store.Priority) (store.Receipt, error)
 	// PauseDirector pauses the Director, so a start with AttemptCaps.Hold is refused with store.ErrDirectorHeld.
 	PauseDirector func() error
 	// Clock stamps the receipts Records writes, so it decides the day the daily cap counts.
@@ -548,7 +693,8 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r, clock := NewRecords(), NewClock()
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, OverrideDependencies: r.OverrideDependencies, PauseDirector: r.PauseDirector, Clock: clock}
+		RequestFullReview: r.RequestFullReview, OverrideDependencies: r.OverrideDependencies, SetTaskPriority: r.SetTaskPriority,
+		PauseDirector: r.PauseDirector, Clock: clock}
 }
 
 // Clock is a settable clock for a RecordsHarness; until Set it reads wall time.
@@ -802,6 +948,164 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if _, ok := errors.AsType[*store.CapRefusal](err); ok || !errors.Is(err, store.ErrInvalid) {
 			t.Errorf("capped start of a closed task at a cap = %v, want %v and no cap refusal", err, store.ErrInvalid)
 		}
+	})
+
+	// newTask records another open task for the start-queue cases.
+	newTask := func(t *testing.T, h RecordsHarness, repository, id string) {
+		t.Helper()
+		other := task
+		other.Repository, other.ID = repository, id
+		if _, err := h.CreateTask("task:"+repository+":"+id, other); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queued := func(t *testing.T, what string, err error, position int) *store.StartQueued {
+		t.Helper()
+		q, ok := errors.AsType[*store.StartQueued](err)
+		if !ok || !errors.Is(err, store.ErrStartQueued) || q.Position != position {
+			t.Fatalf("%s = %v, want it queued at place %d", what, err, position)
+		}
+		return q
+	}
+	order := func(t *testing.T, h RecordsHarness) []string {
+		t.Helper()
+		q, err := h.Records.StartQueue()
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []string{}
+		for _, e := range q {
+			out = append(out, fmt.Sprintf("%s/%s/%s-%d", e.Repository, e.TaskID, e.Step, e.Attempt))
+		}
+		return out
+	}
+	start := &store.StartRequest{Kind: store.StartByTask}
+
+	t.Run("queues a start at the running cap and keeps its entry when it is repeated", func(t *testing.T) {
+		h := setup(t)
+		newTask(t, h, "site", "t9")
+		caps := store.AttemptCaps{MaxRunning: 1, Queue: start}
+		if _, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", caps); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", store.AttemptCaps{MaxRunning: 1, Queue: &store.StartRequest{Kind: store.StartBySendBack}})
+		first := queued(t, "start past the running cap", err, 1)
+		if e := first.Entry; e.Attempt != 1 || e.Kind != store.StartBySendBack || !e.QueuedAt.Equal(h.Clock.Now().UTC()) {
+			t.Errorf("queue entry = %+v, want attempt 1 of a send-back queued now", e)
+		}
+		if got, _ := h.Records.Attempts("site", "t9"); len(got) != 0 {
+			t.Fatalf("a queued start recorded an attempt: %+v", got)
+		}
+		h.Clock.Set(h.Clock.Now().Add(time.Minute))
+		_, err = h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", caps)
+		if again := queued(t, "the queued start repeated", err, 1); again.Entry != first.Entry {
+			t.Errorf("repeated queue entry = %+v, want the first, %+v", again.Entry, first.Entry)
+		}
+		if got := order(t, h); !slices.Equal(got, []string{"site/t9/plan-1"}) {
+			t.Errorf("StartQueue = %v", got)
+		}
+		_, err = h.Records.StartCappedAttempt("start-review", "app", "t7", "review", store.AttemptCaps{MaxRunning: 1, MaxPerDay: 1, Queue: start})
+		if refusal, ok := errors.AsType[*store.CapRefusal](err); !ok || refusal.Cap != store.CapDaily {
+			t.Errorf("a queued start past the daily cap = %v, want the daily cap's refusal", err)
+		}
+	})
+
+	t.Run("admits only the queue's front, removing its entry in the same write", func(t *testing.T) {
+		h := setup(t)
+		newTask(t, h, "site", "t9")
+		caps := store.AttemptCaps{MaxRunning: 1, Queue: start}
+		if _, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", caps); err != nil {
+			t.Fatal(err)
+		}
+		_ = queued(t, "site's start", func() error {
+			_, err := h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", caps)
+			return err
+		}(), 1)
+		if _, err := h.Records.FinishAttempt("finish-plan", "app", "t7", "plan", 1, store.AttemptSucceeded); err != nil {
+			t.Fatal(err)
+		}
+		// A slot is free, but site waits ahead of app's next step, queued later.
+		h.Clock.Set(h.Clock.Now().Add(time.Minute))
+		_, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", caps)
+		_ = queued(t, "a start behind the queue's front with a free slot", err, 2)
+		r, err := h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", caps)
+		if err != nil || r.Attempt != 1 {
+			t.Fatalf("the front's start = %+v, %v; want it admitted", r, err)
+		}
+		if got := order(t, h); !slices.Equal(got, []string{"app/t7/build-1"}) {
+			t.Errorf("StartQueue after the front's admission = %v, want only app's build", got)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-site", "site", "t9", "plan", store.AttemptCaps{MaxRunning: 1, Queue: start}); err != nil || r.Attempt != 1 {
+			t.Errorf("the admitted start replayed with the cap full and a queue = %+v, %v; want its receipt", r, err)
+		}
+		if _, err := h.Records.FinishAttempt("finish-site", "site", "t9", "plan", 1, store.AttemptSucceeded); err != nil {
+			t.Fatal(err)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-build", "app", "t7", "build", caps); err != nil || r.Attempt != 1 {
+			t.Fatalf("the new front's start = %+v, %v", r, err)
+		}
+		if got := order(t, h); len(got) != 0 {
+			t.Errorf("StartQueue = %v, want it empty", got)
+		}
+	})
+
+	t.Run("orders the queue by live priority, then queue time, and drops closed tasks", func(t *testing.T) {
+		h := setup(t)
+		for _, id := range []string{"t9", "t10", "t11"} {
+			newTask(t, h, "app", id)
+		}
+		caps := store.AttemptCaps{MaxRunning: 1, Queue: start}
+		if _, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", caps); err != nil {
+			t.Fatal(err)
+		}
+		for i, id := range []string{"t9", "t10", "t11"} {
+			h.Clock.Set(h.Clock.Now().Add(time.Minute))
+			_, err := h.Records.StartCappedAttempt("start-"+id, "app", id, "plan", caps)
+			_ = queued(t, id+"'s start", err, i+1)
+		}
+		if got := order(t, h); !slices.Equal(got, []string{"app/t9/plan-1", "app/t10/plan-1", "app/t11/plan-1"}) {
+			t.Errorf("StartQueue at one priority = %v, want queue time order", got)
+		}
+		if _, err := h.SetTaskPriority("priority-t11", "app", "t11", store.PriorityUrgent); err != nil {
+			t.Fatal(err)
+		}
+		if got := order(t, h); !slices.Equal(got, []string{"app/t11/plan-1", "app/t9/plan-1", "app/t10/plan-1"}) {
+			t.Errorf("StartQueue after t11 became p0 = %v, want t11 first", got)
+		}
+		if _, err := h.Records.SetTaskState("cancel-t11", "app", "t11", store.TaskCancelled); err != nil {
+			t.Fatal(err)
+		}
+		if got := order(t, h); !slices.Equal(got, []string{"app/t9/plan-1", "app/t10/plan-1"}) {
+			t.Errorf("StartQueue after t11 was cancelled = %v", got)
+		}
+		if _, err := h.Records.FinishAttempt("finish-plan", "app", "t7", "plan", 1, store.AttemptSucceeded); err != nil {
+			t.Fatal(err)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-t9", "app", "t9", "plan", caps); err != nil || r.Attempt != 1 {
+			t.Errorf("t9's start once the cancelled front is gone = %+v, %v", r, err)
+		}
+	})
+
+	t.Run("starts a Director stage uncounted and uncapped, but held", func(t *testing.T) {
+		h := setup(t)
+		r, err := h.Records.StartDirectorAttempt("start-grill", "app", "t7", "grill", true)
+		if err != nil || r.Attempt != 1 {
+			t.Fatalf("StartDirectorAttempt = %+v, %v", r, err)
+		}
+		if got, _ := h.Records.Attempts("app", "t7"); len(got) != 1 || !got[0].Director {
+			t.Errorf("Attempts = %+v, want one Director attempt", got)
+		}
+		if r, err := h.Records.StartCappedAttempt("start-plan", "app", "t7", "plan", store.AttemptCaps{MaxRunning: 1, Queue: start}); err != nil || r.Attempt != 1 {
+			t.Fatalf("a start with only a Director stage running = %+v, %v; want it admitted", r, err)
+		}
+		if r, err := h.Records.StartDirectorAttempt("start-research", "app", "t7", "research", true); err != nil || r.Attempt != 1 {
+			t.Errorf("a Director stage at the running cap = %+v, %v; want it started", r, err)
+		}
+		if err := h.PauseDirector(); err != nil {
+			t.Fatal(err)
+		}
+		_, err = h.Records.StartDirectorAttempt("start-shape", "app", "t7", "shape", true)
+		want(t, "a Director stage while paused", err, store.ErrDirectorHeld)
 	})
 
 	t.Run("replays a mutation id and refuses its reuse", func(t *testing.T) {
