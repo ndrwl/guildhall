@@ -106,3 +106,4 @@ Until then a new decision is cited by its file path rather than a number.
 - [D90. Recording the Director runtime's containment and leaving every held start's wait](decisions/0090-director-runtime-record.md)
 - [D91. A profile's model and effort reach its runtime by value, and a runtime refuses what it cannot honour](decisions/0091-profile-model-effort.md)
 - [D93. Well-known Claude profiles get a shipped default grant, and a repository can add to it](decisions/0093-shipped-default-grants.md)
+- [D94. Director notes replace the handoff note](decisions/0094-director-notes.md)

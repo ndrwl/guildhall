@@ -23,7 +23,16 @@ func sessionInput(t *testing.T) SessionInput {
 			"retry: attempt 1 of build failed (app/t-3): guildhall step retry --repo app --task t-3 --step build --attempt 1",
 			"messages: 2 unread Director messages: guildhall messages list director",
 		},
-		Handoff: "/copy/state/documents/director/handoff-7.md",
+		Notes: []string{
+			"### promised",
+			"- n2 app/t-3 (s2, 1d): tell the Guildmaster when t-3 merges",
+			"### guildmaster",
+			"- n4 (s2, 3h): prefers one-line replies",
+			"### plan",
+			"- n1 (s1, 2d): rebase t-5 and t-6 one at a time after t-3 merges",
+			"- n5 app/t-2 (s2, 5m): drop t-2 if t-3 covers it [task done, check it]",
+		},
+		NotesBytes: 160,
 	}
 }
 
@@ -72,9 +81,9 @@ func TestSessionGolden(t *testing.T) {
 	}
 }
 
-func TestSessionStartupNamesNoHandoffAndNothingInFlight(t *testing.T) {
+func TestSessionStartupWithNoNotesAndNothingInFlight(t *testing.T) {
 	in := sessionInput(t)
-	in.InFlight, in.Handoff = nil, ""
+	in.InFlight, in.Notes, in.NotesBytes = nil, nil, 0
 	r, err := Session(in, roots())
 	if err != nil {
 		t.Fatal(err)
@@ -83,13 +92,59 @@ func TestSessionStartupNamesNoHandoffAndNothingInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"You are starting up.", "## Handoff note\n\nNone.\n", "## In flight\n\nNone.\n", "guildhall director ready"} {
+	golden(t, "session-startup-no-notes.md", b)
+	for _, want := range []string{"You are starting up.", "## In flight\n\nNone.\n", "guildhall director ready"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("startup.md lacks %q:\n%s", want, b)
 		}
 	}
-	if strings.Contains(string(b), "Parked") {
-		t.Errorf("startup.md with no parked attempts has a parked section:\n%s", b)
+	for _, not := range []string{"## Notes", "andoff", "Parked"} {
+		if strings.Contains(string(b), not) {
+			t.Errorf("startup.md with no notes or parked attempts has %q:\n%s", not, b)
+		}
+	}
+}
+
+// TestSessionStartupWarnsOverEightKBOfNotes: the compact warning opens the notes section only when the notes' text
+// totals more than NotesWarnBytes.
+func TestSessionStartupWarnsOverEightKBOfNotes(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		bytes  int
+		golden string
+	}{
+		{"exactly 8 KB", NotesWarnBytes, ""},
+		{"over 8 KB", NotesWarnBytes + 1, "session-startup-notes-over.md"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			in := sessionInput(t)
+			in.InFlight, in.NotesBytes = nil, c.bytes
+			r, err := Session(in, roots())
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := os.ReadFile(r.StartupPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			warn := "## Notes\n\nNotes total 9 KB, over 8 KB: compact them (merge, shorten or remove).\n\n### promised\n"
+			if got := strings.Contains(string(b), warn); got != (c.golden != "") {
+				t.Errorf("warning shown %v, want %v:\n%s", got, c.golden != "", b)
+			}
+			if c.golden != "" {
+				golden(t, c.golden, b)
+			} else if !strings.Contains(string(b), "## Notes\n\n### promised\n") || strings.Contains(string(b), "compact") {
+				t.Errorf("startup.md at exactly 8 KB:\n%s", b)
+			}
+		})
+	}
+}
+
+func TestSessionRefusesAMultiLineNote(t *testing.T) {
+	in := sessionInput(t)
+	in.Notes = []string{"- n1 (s1, 0m): a\nb"}
+	if _, err := Session(in, roots()); err == nil || !strings.Contains(err.Error(), "must be one line") {
+		t.Fatalf("multi-line note: %v", err)
 	}
 }
 

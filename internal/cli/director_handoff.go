@@ -2,79 +2,26 @@ package cli
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
-	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// directorHandoff runs `guildhall director handoff --note-file <path|-> [--copy <dir> | --store <file> --state
-// <dir>]`: the note, read with the decision-answer encoding rules and at most store.MaxHandoffNoteBytes, is
-// written to <state>/documents/director/handoff-<seq>.md and recorded as the newest session's handoff note,
-// which is printed (docs/director.md#handoff).
-func (a *App) directorHandoff(args []string) int {
-	var noteFile string
-	path, state, code := a.sessionArgs("director handoff", args, true, func(fl *flag.FlagSet) {
-		fl.StringVar(&noteFile, "note-file", "", "the note, or - for standard input")
-	})
-	if code >= 0 {
-		return code
-	}
-	if noteFile == "" {
-		return a.usageError("director handoff: --note-file is required: a file, or - for standard input")
-	}
-	text, err := a.readText("note", noteFile, store.MaxHandoffNoteBytes)
-	switch {
-	case err != nil:
-		return a.fail(fmt.Errorf("director handoff: %w", err))
-	case strings.TrimSpace(text) == "":
-		return a.fail(errors.New("director handoff: the note is empty"))
-	case len(text) > store.MaxHandoffNoteBytes:
-		return a.fail(fmt.Errorf("director handoff: the note is %d bytes; the limit is %d", len(text), store.MaxHandoffNoteBytes))
-	}
-	sum := sha256.Sum256([]byte(text))
-	docs := filepath.Join(state, "documents")
-	note, err := withStore(path, false, func(s *store.Store) (store.HandoffNote, error) {
-		d, err := s.LatestDirectorSession()
-		if errors.Is(err, store.ErrNotFound) {
-			return store.HandoffNote{}, errors.New("no Director session; start one with guildhall director start")
-		} else if err != nil {
-			return store.HandoffNote{}, err
-		}
-		note, _, err := s.RecordHandoffNote(d.Number, hex.EncodeToString(sum[:]), func(p string) error {
-			file := filepath.Join(docs, filepath.FromSlash(p))
-			if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-				return err
-			}
-			return atomicfile.Write(file, []byte(text))
-		})
-		return note, err
-	})
-	if err != nil {
-		return a.fail(fmt.Errorf("director handoff: %w", err))
-	}
-	return a.printJSON(note)
-}
-
 // directorReload runs `guildhall director reload [--now] [--copy <dir> | --store <file> --state <dir>]`: it
 // records a director-reload request, or returns the one already requested, and prints it
-// (docs/director.md#reload). --now is refused unless the newest handoff note was recorded by the newest session,
-// which is not stopped, after every running Director stage attempt started.
+// (docs/director.md#reload). --now is refused when there is no session or the newest one is stopped.
 func (a *App) directorReload(args []string) int {
 	var now bool
-	path, state, code := a.sessionArgs("director reload", args, true, func(fl *flag.FlagSet) {
+	path, _, code := a.sessionArgs("director reload", args, true, func(fl *flag.FlagSet) {
 		fl.BoolVar(&now, "now", false, "end the session at the end of the current turn")
 	})
 	if code >= 0 {
@@ -82,8 +29,15 @@ func (a *App) directorReload(args []string) int {
 	}
 	r, err := withStore(path, false, func(s *store.Store) (store.DirectorReload, error) {
 		if now {
-			if err := admitReloadNow(s, state); err != nil {
+			// --now needs no note and does not wait for a running Director stage: the next session restarts an open
+			// grill (D94).
+			switch d, err := s.LatestDirectorSession(); {
+			case errors.Is(err, store.ErrNotFound):
+				return store.DirectorReload{}, errors.New("no Director session to reload; a plain guildhall director reload is applied by the next director start")
+			case err != nil:
 				return store.DirectorReload{}, err
+			case d.State == store.DirectorStopped:
+				return store.DirectorReload{}, fmt.Errorf("the Director session %d is stopped; a plain guildhall director reload is applied by the next director start", d.Number)
 			}
 		}
 		return s.RequestDirectorReload(now)
@@ -92,39 +46,6 @@ func (a *App) directorReload(args []string) int {
 		return a.fail(fmt.Errorf("director reload: %w", err))
 	}
 	return a.printJSON(r)
-}
-
-// admitReloadNow refuses reload --now unless the newest session is live and recorded the newest handoff note,
-// and that note was recorded after every running Director stage attempt started.
-func admitReloadNow(s *store.Store, state string) error {
-	d, err := s.LatestDirectorSession()
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return errors.New("no Director session to reload; a plain guildhall director reload is applied by the next director start")
-	case err != nil:
-		return err
-	case d.State == store.DirectorStopped:
-		return fmt.Errorf("the Director session %d is stopped; a plain guildhall director reload is applied by the next director start", d.Number)
-	}
-	note, err := s.LatestHandoffNote()
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return errors.New("no handoff note; record one with guildhall director handoff --note-file <file> first")
-	case err != nil:
-		return err
-	case note.Session != d.Number:
-		return fmt.Errorf("the newest handoff note was recorded by session %d, not the current session %d; record one with guildhall director handoff first", note.Session, d.Number)
-	}
-	starts, err := runningDirectorStages(s, state)
-	if err != nil {
-		return err
-	}
-	for k, started := range starts {
-		if started > note.Sequence {
-			return fmt.Errorf("the Director stage %s started after the newest handoff note; record a note that carries its open questions with guildhall director handoff first", k)
-		}
-	}
-	return nil
 }
 
 // runningDirectorStages returns each running attempt the engine handed to the Director as a Director stage, with

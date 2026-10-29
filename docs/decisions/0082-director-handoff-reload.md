@@ -11,6 +11,7 @@ The automatic triggers (`handoff_after_tasks`, `handoff_context_percent`, `hando
   The store chooses the path from the receipt sequence and has the caller write the file inside the recording mutation, before it commits, so a recorded note always has its file and a failed write records nothing.
   The note is read with the decision-answer rules (BOM dropped, CRLF to LF, UTF-16 refused) and is at most 64 KiB.
   Its mutation id carries the session, the digest and the newest note before it, so the same note handed off twice in a row is one record, and a note handed off again after another becomes the newest anew.
+  Superseded by [D94](0094-director-notes.md): Director notes replace the handoff note, and `director handoff` is gone.
 - **Reload requests collapse.**
   At most one request is `requested`; repeating it returns it unchanged and `--now` upgrades it in place, so a Director that types `reload` twice, or the Steward and the Guildmaster both asking, restart the session once.
   The session that applies it records `applied` with the old and new session numbers; the old session is recorded `stopped` with the end reason `reloaded`.
@@ -18,6 +19,7 @@ The automatic triggers (`handoff_after_tasks`, `handoff_context_percent`, `hando
 - **`--now` needs a fresh note.**
   It is refused unless the newest note was recorded by the current session and, while a Director stage attempt runs, after that attempt started, compared by receipt sequence.
   This is the "never mid-grill" rule: a reload during a grill carries the open questions in a note written for it.
+  Superseded by [D94](0094-director-notes.md): `--now` needs no note and does not wait for a running Director stage, since the next session restarts a grill.
 - **One end-of-turn rule for stop and reload.**
   The supervisor decides at each turn signal and at each poll with one pure function, `decideEnd`, tested as a table.
   A stop or a reload `--now` ends the runtime at the next turn end; a plain reload waits for a quiet point, a turn ended since the last turn start and the newest wake and no Director stage running.

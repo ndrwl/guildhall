@@ -79,8 +79,6 @@ Commands:
                  lift the hold and print what needs the Director
   director stop [--now] --copy <dir>
                  stop the Director session and its running attempts
-  director handoff --note-file <path|-> --copy <dir>
-                 record a handoff note for the Director's next session
   director note add --kind promised|guildmaster|plan [--task <repo>/<id>] <text> --copy <dir>
                  keep a one-line note, given to every new Director session at startup
   director note edit <id> <text> --copy <dir>

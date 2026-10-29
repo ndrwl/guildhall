@@ -102,7 +102,10 @@ func (a *App) directorNoteList(args []string) int {
 	if code >= 0 {
 		return code
 	}
-	lines, err := withStore(path, true, func(s *store.Store) ([]string, error) { return liveNoteLines(s, a.now()) })
+	lines, err := withStore(path, true, func(s *store.Store) ([]string, error) {
+		lines, _, err := liveNoteLines(s, a.now())
+		return lines, err
+	})
 	if err != nil {
 		return a.fail(fmt.Errorf("director note list: %w", err))
 	}
@@ -118,15 +121,17 @@ func (a *App) directorNoteList(args []string) int {
 
 // liveNoteLines returns the live notes as lines, under a "### <kind>" line for each kind that has any:
 // "- n7 (s16, 2d): text", with "<repo>/<id> " after the id for a note naming a task and " [task done, check it]"
-// at the end when that task is done or cancelled.
-func liveNoteLines(s *store.Store, now time.Time) ([]string, error) {
+// at the end when that task is done or cancelled. It also returns the notes' total text size.
+func liveNoteLines(s *store.Store, now time.Time) ([]string, int, error) {
 	notes, err := s.LiveNotes()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var lines []string
 	var kind store.NoteKind
+	size := 0
 	for _, n := range notes {
+		size += len(n.Text)
 		if n.Kind != kind {
 			kind = n.Kind
 			lines = append(lines, "### "+string(kind))
@@ -137,7 +142,7 @@ func liveNoteLines(s *store.Store, now time.Time) ([]string, error) {
 			repo, id, _ := strings.Cut(n.Task, "/")
 			t, err := s.Task(repo, id)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			if t.State == store.TaskDone || t.State == store.TaskCancelled {
 				flag = " [task done, check it]"
@@ -145,7 +150,7 @@ func liveNoteLines(s *store.Store, now time.Time) ([]string, error) {
 		}
 		lines = append(lines, fmt.Sprintf("- %s %s(s%d, %s): %s%s", n.ID, task, n.Session, noteAge(now.Sub(n.ChangedAt)), n.Text, flag))
 	}
-	return lines, nil
+	return lines, size, nil
 }
 
 // noteAge is a note's age in whole minutes under an hour, hours under a day, and days after.

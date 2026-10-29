@@ -36,9 +36,8 @@ type DirectorView struct {
 	LastWake *Wake
 	// Usage is what the attempt caps count (AttemptUsage), by the store's clock.
 	Usage AttemptUsage
-	// Handoff is the newest handoff note and Reload the newest reload request, each nil when there is none.
-	Handoff *HandoffNote
-	Reload  *DirectorReload
+	// Reload is the newest reload request, nil when there is none.
+	Reload *DirectorReload
 }
 
 // DirectorView reads the Director's view of the whole store without writing.
@@ -94,13 +93,6 @@ func (s *Store) DirectorView() (DirectorView, error) {
 		switch d, err := latestSession(tx); {
 		case err == nil:
 			v.Session = &d
-		case !errors.Is(err, ErrNotFound):
-			return err
-		}
-		var note HandoffNote
-		switch err := lastJSON(directorBucket(tx, bucketHandoffs), &note); {
-		case err == nil:
-			v.Handoff = &note
 		case !errors.Is(err, ErrNotFound):
 			return err
 		}

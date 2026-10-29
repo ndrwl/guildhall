@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,47 +8,40 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ndrwl/guildhall/baseline"
+	bolt "go.etcd.io/bbolt"
+
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// runStdin runs the CLI in this process with stdin as its standard input.
-func runStdin(t *testing.T, stdin string, args ...string) (int, string, string) {
+// putRetiredHandoffNote writes handoff-645, a handoff note from before notes replaced them, into the store at path,
+// as stores that ran an earlier release hold one.
+func putRetiredHandoffNote(t *testing.T, path string) {
 	t.Helper()
-	app, stdout, stderr := newTestApp(nil, nil)
-	app.Executable = os.Executable
-	app.InstallSkills = func(string) error { return nil }
-	app.InstallBaseline = baseline.Install
-	app.Stdin = strings.NewReader(stdin)
-	code := app.Run(args)
-	return code, stdout.String(), stderr.String()
-}
-
-func noteFile(t *testing.T, content string) string {
-	t.Helper()
-	file := filepath.Join(t.TempDir(), "note.md")
-	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return file
-}
-
-func latestNote(t *testing.T, path string) (store.HandoffNote, error) {
-	t.Helper()
-	s, err := store.Open(path, store.Options{ReadOnly: true, RequireStore: true})
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = s.Close() }()
-	return s.LatestHandoffNote()
-}
-
-func hexDigest(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
+	defer func() { _ = db.Close() }()
+	note, err := json.Marshal(store.HandoffNote{Session: 1, Sequence: 645, Path: "director/handoff-645.md", SHA256: strings.Repeat("0", 64), RecordedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Update(func(tx *bolt.Tx) error {
+		d, err := tx.CreateBucketIfNotExists([]byte("director"))
+		if err != nil {
+			return err
+		}
+		b, err := d.CreateBucketIfNotExists([]byte("handoffs"))
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("00000000000000000645"), note)
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // startNextSession records session n+1 for this process over the newest session n.
@@ -75,73 +66,16 @@ func startNextSession(t *testing.T, path string) {
 	}
 }
 
-// TestDirectorHandoffRecordsTheNote: a note from a file or standard input is normalised as a decision answer is,
-// written under the document directory and recorded with its digest for the newest session; every refusal
-// records nothing.
-func TestDirectorHandoffRecordsTheNote(t *testing.T) {
+// TestDirectorHandoffIsGone: `director handoff` is no longer a command (D94).
+func TestDirectorHandoffIsGone(t *testing.T) {
 	d := newRunDirector(t)
-	flags := []string{"--store", d.store, "--state", d.state}
-	handoff := func(stdin string, extra ...string) (int, string, string) {
-		return runStdin(t, stdin, append(append([]string{"director", "handoff"}, extra...), flags...)...)
-	}
-	file := noteFile(t, "\ufeffNext: sort the list.\r\nOpen: ask whether ids sort numerically.\r\n")
-	if code, _, stderr := handoff("", "--note-file", file); code != 1 || !strings.Contains(stderr, "no Director session") {
-		t.Fatalf("handoff with no session: exit %d, stderr %s", code, stderr)
-	}
-	recordSession(t, d.store, false, store.DirectorRunning)
-	code, out, stderr := handoff("", "--note-file", file)
-	var n store.HandoffNote
-	if err := json.Unmarshal([]byte(out), &n); code != 0 || err != nil {
-		t.Fatalf("handoff: exit %d, %q (%v), stderr %s", code, out, err, stderr)
-	}
-	want := "Next: sort the list.\nOpen: ask whether ids sort numerically.\n"
-	if n.Session != 1 || n.SHA256 != hexDigest(want) || n.Path != store.HandoffPath(n.Sequence) || n.RecordedAt.IsZero() {
-		t.Fatalf("note = %+v, want session 1 with the LF note's digest", n)
-	}
-	if b, err := os.ReadFile(filepath.Join(d.state, "documents", filepath.FromSlash(n.Path))); err != nil || string(b) != want {
-		t.Fatalf("note file = %q, %v; want %q", b, err, want)
-	}
-	if got, err := latestNote(t, d.store); err != nil || got != n {
-		t.Fatalf("latest note = %+v, %v; want %+v", got, err, n)
-	}
-
-	code, out, stderr = handoff("Second note.\n", "--note-file", "-")
-	var second store.HandoffNote
-	if err := json.Unmarshal([]byte(out), &second); code != 0 || err != nil || second.SHA256 != hexDigest("Second note.\n") || second.Sequence <= n.Sequence {
-		t.Fatalf("handoff from stdin: exit %d, %q (%v), stderr %s", code, out, err, stderr)
-	}
-	if code, _, stderr := handoff(strings.Repeat("a", store.MaxHandoffNoteBytes), "--note-file", "-"); code != 0 {
-		t.Fatalf("a note of exactly the limit: exit %d, stderr %s", code, stderr)
-	}
-	limit, err := latestNote(t, d.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for name, content := range map[string]string{
-		"utf-16":    "\xff\xfeN\x00o\x00",
-		"blank":     " \n\t\n",
-		"too large": strings.Repeat("a", store.MaxHandoffNoteBytes+1),
-	} {
-		if code, _, stderr := handoff("", "--note-file", noteFile(t, content)); code != 1 {
-			t.Errorf("%s note: exit %d, stderr %s; want 1", name, code, stderr)
-		}
-	}
-	if code, _, _ := handoff("", "--note-file", filepath.Join(t.TempDir(), "missing.md")); code != 1 {
-		t.Errorf("missing note file: exit %d, want 1", code)
-	}
-	if got, err := latestNote(t, d.store); err != nil || got != limit {
-		t.Errorf("latest note after refusals = %+v, %v; want %+v", got, err, limit)
-	}
-	for name, args := range map[string][]string{"no note file": nil, "argument": {"--note-file", "-", "extra"}} {
-		if code, _, _ := handoff("", args...); code != 2 {
-			t.Errorf("%s: exit %d, want usage error 2", name, code)
-		}
+	if code, _, stderr := runCLI(t, "director", "handoff", "--note-file", "-", "--store", d.store, "--state", d.state); code != 2 || !strings.Contains(stderr, "the commands are") {
+		t.Fatalf("director handoff: exit %d, stderr %s; want a usage error", code, stderr)
 	}
 }
 
 // TestDirectorReload: a plain reload is recorded with or without a live session, to be applied by the next one;
-// --now needs a note recorded by the newest session, which is not stopped, and upgrades the pending request.
+// --now needs only a newest session that is not stopped, with no note, and upgrades the pending request.
 func TestDirectorReload(t *testing.T) {
 	d := newRunDirector(t)
 	flags := []string{"--store", d.store, "--state", d.state}
@@ -164,22 +98,9 @@ func TestDirectorReload(t *testing.T) {
 		t.Fatalf("--now with no session: exit %d, stderr %s", code, stderr)
 	}
 	recordSession(t, d.store, false, store.DirectorRunning)
-	if code, _, stderr := reload("--now"); code != 1 || !strings.Contains(stderr, "director handoff") {
-		t.Fatalf("--now with no note: exit %d, stderr %s; want it to name director handoff", code, stderr)
-	}
-	if code, _, stderr := runCLI(t, append([]string{"director", "handoff", "--note-file", noteFile(t, "Note one.\n")}, flags...)...); code != 0 {
-		t.Fatalf("handoff: exit %d, stderr %s", code, stderr)
-	}
-	startNextSession(t, d.store)
-	if code, _, stderr := reload("--now"); code != 1 || !strings.Contains(stderr, "session 1") {
-		t.Fatalf("--now with an earlier session's note: exit %d, stderr %s", code, stderr)
-	}
-	if code, _, stderr := runCLI(t, append([]string{"director", "handoff", "--note-file", noteFile(t, "Note two.\n")}, flags...)...); code != 0 {
-		t.Fatalf("handoff: exit %d, stderr %s", code, stderr)
-	}
 	code, now, stderr := reload("--now")
 	if code != 0 || !now.Now || now.Sequence != plain.Sequence || now.State != store.ReloadRequested {
-		t.Fatalf("--now: exit %d, %+v, stderr %s; want the pending request upgraded", code, now, stderr)
+		t.Fatalf("--now with no notes: exit %d, %+v, stderr %s; want the pending request upgraded", code, now, stderr)
 	}
 	if code, again, _ := reload(); code != 0 || again != now {
 		t.Fatalf("plain reload after --now: exit %d, %+v; want %+v", code, again, now)
@@ -187,11 +108,23 @@ func TestDirectorReload(t *testing.T) {
 	if code, _, _ := runCLI(t, "director", "reload", "extra", "--store", d.store, "--state", d.state); code != 2 {
 		t.Errorf("reload with an argument: exit %d, want 2", code)
 	}
+	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+		cur, err := s.DirectorSession(1)
+		if err != nil {
+			return store.Receipt{}, err
+		}
+		return s.SetDirectorState(1, store.DirectorStopped, cur.StateSequence)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := reload("--now"); code != 1 || !strings.Contains(stderr, "session 1 is stopped") {
+		t.Fatalf("--now for a stopped session: exit %d, stderr %s", code, stderr)
+	}
 }
 
-// TestDirectorStatusNamesTheNoteAndTheReload: the status feed's session section carries the newest handoff note
-// and the newest reload request.
-func TestDirectorStatusNamesTheNoteAndTheReload(t *testing.T) {
+// TestDirectorStatusNamesTheReload: the status feed's session section carries the newest reload request, and no
+// handoff note or notes.
+func TestDirectorStatusNamesTheReload(t *testing.T) {
 	d := newRunDirector(t)
 	flags := []string{"--store", d.store, "--state", d.state}
 	recordSession(t, d.store, false, store.DirectorRunning)
@@ -207,49 +140,37 @@ func TestDirectorStatusNamesTheNoteAndTheReload(t *testing.T) {
 		return doc.Session
 	}
 	if s := status(); s["handoff_note"] != nil || s["reload"] != nil {
-		t.Fatalf("session before any note or reload = %s", s)
+		t.Fatalf("session before any reload = %s", s)
 	}
-	code, out, _ := runCLI(t, append([]string{"director", "handoff", "--note-file", noteFile(t, "A note.\n")}, flags...)...)
-	var n store.HandoffNote
-	if err := json.Unmarshal([]byte(out), &n); code != 0 || err != nil {
-		t.Fatalf("handoff: exit %d, %q", code, out)
+	if code, _, stderr := runCLI(t, "director", "note", "add", "--kind", "plan", "A note.", "--store", d.store); code != 0 {
+		t.Fatalf("note add: exit %d, stderr %s", code, stderr)
 	}
-	code, out, _ = runCLI(t, append([]string{"director", "reload"}, flags...)...)
+	code, out, _ := runCLI(t, append([]string{"director", "reload"}, flags...)...)
 	var r store.DirectorReload
 	if err := json.Unmarshal([]byte(out), &r); code != 0 || err != nil {
 		t.Fatalf("reload: exit %d, %q", code, out)
 	}
 	s := status()
-	var gotNote store.HandoffNote
 	var gotReload store.DirectorReload
-	if err := json.Unmarshal(s["handoff_note"], &gotNote); err != nil || gotNote != n {
-		t.Errorf("status handoff_note = %s, want %+v", s["handoff_note"], n)
-	}
 	if err := json.Unmarshal(s["reload"], &gotReload); err != nil || gotReload != r {
 		t.Errorf("status reload = %s, want %+v", s["reload"], r)
 	}
+	if s["handoff_note"] != nil || s["notes"] != nil {
+		t.Errorf("status session = %s; want no handoff note or notes", s)
+	}
 }
 
-// TestDirectorReloadNowWaitsForANoteAfterTheStage: while a Director stage attempt runs, --now is refused unless
-// the newest note was recorded after the attempt started, so a reload never lands mid-grill.
-func TestDirectorReloadNowWaitsForANoteAfterTheStage(t *testing.T) {
+// TestDirectorReloadNowDuringAStage: --now is admitted while a Director stage attempt runs; the next session
+// restarts the grill (D94).
+func TestDirectorReloadNowDuringAStage(t *testing.T) {
 	d := newRunDirectorWith(t, "grill.toml")
 	flags := []string{"--store", d.store, "--state", d.state}
 	recordSession(t, d.store, false, store.DirectorRunning)
-	if code, _, stderr := runCLI(t, append([]string{"director", "handoff", "--note-file", noteFile(t, "Before the grill.\n")}, flags...)...); code != 0 {
-		t.Fatalf("handoff: exit %d, stderr %s", code, stderr)
-	}
 	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if code, _, stderr := runCLI(t, append([]string{"director", "reload", "--now"}, flags...)...); code != 1 || !strings.Contains(stderr, "grill") {
-		t.Fatalf("--now mid-grill with an older note: exit %d, stderr %s; want it refused naming the grill", code, stderr)
-	}
-	if code, _, stderr := runCLI(t, append([]string{"director", "handoff", "--note-file", noteFile(t, "Mid-grill: questions 2 and 3 open.\n")}, flags...)...); code != 0 {
-		t.Fatalf("handoff: exit %d, stderr %s", code, stderr)
-	}
 	if code, out, stderr := runCLI(t, append([]string{"director", "reload", "--now"}, flags...)...); code != 0 {
-		t.Fatalf("--now with a note after the grill started: exit %d, %q, stderr %s", code, out, stderr)
+		t.Fatalf("--now mid-grill: exit %d, %q, stderr %s", code, out, stderr)
 	}
 }
 
@@ -320,17 +241,13 @@ func copyRun(t *testing.T, dir string, args ...string) {
 
 // TestReloadNowRestartsTheSessionAtTheTurnEnd: with an hour's grace, reload --now waits for the turn-ended
 // signal, then the supervisor ends the runtime once, records the session stopped as reloaded and starts session 2,
-// whose startup instructions name the note, and records the reload applied from session 1 to 2.
+// whose startup instructions list the note, and records the reload applied from session 1 to 2.
 func TestReloadNowRestartsTheSessionAtTheTurnEnd(t *testing.T) {
 	dir, _ := supervisedCopy(t)
 	done := supervise(t, dir, time.Hour)
-	copyRun(t, dir, "director", "handoff", "--note-file", noteFile(t, "Carry on with t-1.\n"))
+	copyRun(t, dir, "director", "note", "add", "--kind", "plan", "Carry on with t-1.")
 	copyRun(t, dir, "director", "reload", "--now")
 	holdsOne(t, dir, 1)
-	note, err := latestNote(t, filepath.Join(dir, "director.store"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	copyRun(t, dir, "director", "turn-ended")
 	got := waitSessions(t, dir, 2)
 	if got[0].State != store.DirectorStopped || got[0].EndReason != "reloaded" {
@@ -341,8 +258,8 @@ func TestReloadNowRestartsTheSessionAtTheTurnEnd(t *testing.T) {
 		t.Errorf("reload = %+v; want --now applied from session 1 to 2", r)
 	}
 	startup, err := os.ReadFile(filepath.Join(dir, "director", "session-2", render.StartupFile))
-	if err != nil || !strings.Contains(string(startup), filepath.Join(dir, "state", "documents", filepath.FromSlash(note.Path))) {
-		t.Errorf("session 2 startup.md = %s, %v; want it to name the note", startup, err)
+	if err != nil || !strings.Contains(string(startup), "## Notes\n\n### plan\n- n1 (s1, 0m): Carry on with t-1.\n\n## In flight") {
+		t.Errorf("session 2 startup.md = %s, %v; want it to list the note", startup, err)
 	}
 	holdsOne(t, dir, 2)
 	copyRun(t, dir, "director", "stop", "--now")
@@ -359,7 +276,6 @@ func TestReloadNowRestartsTheSessionAtTheTurnEnd(t *testing.T) {
 func TestReloadNowFallsBackToTheGrace(t *testing.T) {
 	dir, _ := supervisedCopy(t)
 	done := supervise(t, dir, time.Nanosecond)
-	copyRun(t, dir, "director", "handoff", "--note-file", noteFile(t, "Carry on.\n"))
 	copyRun(t, dir, "director", "reload", "--now")
 	waitSessions(t, dir, 2)
 	copyRun(t, dir, "director", "stop", "--now")

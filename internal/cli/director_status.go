@@ -91,9 +91,8 @@ type statusSession struct {
 	// StartQueue is every start the running cap queued, in queue order (docs/director.md#the-start-queue); the
 	// supervisor's start-queue watcher drains it, so it is not in needs_me.
 	StartQueue []statusQueuedStart `json:"start_queue"`
-	// HandoffNote and Reload are the newest handoff note and reload request, whichever session recorded them.
-	HandoffNote *store.HandoffNote    `json:"handoff_note,omitempty"`
-	Reload      *store.DirectorReload `json:"reload,omitempty"`
+	// Reload is the newest reload request, whichever session recorded it.
+	Reload *store.DirectorReload `json:"reload,omitempty"`
 	// Context is the newest context use the session's runtime reported, absent when it reported none.
 	Context *session.Context `json:"context,omitempty"`
 }
@@ -337,7 +336,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	if d := v.Session; d != nil {
 		out.Session = statusSession{GuardRails: usage, LastWake: v.LastWake, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release,
 			Pane: d.Pane, StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
-			HandoffNote: v.Handoff, Reload: v.Reload}
+			Reload: v.Reload}
 		// A missing or unreadable report is no report; context refresh belongs to the runtime's reporter.
 		if f := d.Handoff.ContextFile; f != "" {
 			if c, err := session.ReadContext(f); err == nil {

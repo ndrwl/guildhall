@@ -214,15 +214,17 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		parked = append(parked, fmt.Sprintf("parked: attempt %d of %s of %s/%s %s; reason: %s; retry with `%s`",
 			p.Attempt, p.Step, p.Repository, p.TaskID, p.Outcome, oneLine(p.Reason), p.Command))
 	}
-	handoff, err := withStore(storePath, true, func(s *store.Store) (string, error) {
-		note, err := s.LatestHandoffNote()
-		if errors.Is(err, store.ErrNotFound) {
-			return "", nil
-		}
-		return filepath.Join(state, "documents", filepath.FromSlash(note.Path)), err
+	// Every live note goes to the new session; the old handoff note is not shown (D94).
+	type startupNotes struct {
+		lines []string
+		bytes int
+	}
+	notes, err := withStore(storePath, true, func(s *store.Store) (startupNotes, error) {
+		lines, size, err := liveNoteLines(s, a.now())
+		return startupNotes{lines, size}, err
 	})
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: handoff note: %w", err)), false
+		return a.fail(fmt.Errorf("director start: notes: %w", err)), false
 	}
 	cfgDir := filepath.Dir(p.cfgPath)
 	role := baselineSource(filepath.Join(cfgDir, "baseline"), p.baseline, "roles/director.md")
@@ -235,7 +237,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	dir := sessionDir(copyDir, n)
 	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
-		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Parked: parked, Handoff: handoff}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
+		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Parked: parked, Notes: notes.lines, NotesBytes: notes.bytes}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}

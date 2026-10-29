@@ -7,8 +7,6 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
-
-	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // Nested buckets of the director bucket holding handoff notes and reload requests, each keyed by zero-padded
@@ -18,18 +16,15 @@ var (
 	bucketReloads  = []byte("reloads")
 )
 
-// Operations recorded on handoff and reload receipts.
+// Operations recorded on reload receipts.
 const (
-	opRecordHandoffNote     = "record-handoff-note"
 	opRequestDirectorReload = "request-director-reload"
 	opApplyDirectorReload   = "apply-director-reload"
 )
 
-// MaxHandoffNoteBytes bounds a handoff note's content.
-const MaxHandoffNoteBytes = 64 << 10
-
-// HandoffNote is one handoff note the Director recorded for its next session (docs/store.md#handoff-notes).
-// The note itself is a document file, not a store blob (R1.13); the record names it and its digest.
+// HandoffNote is one retired handoff note a Director recorded for its next session before notes replaced them
+// (docs/decisions/0094-director-notes.md). Nothing writes or shows them any more; stores keep them and
+// `store doctor` still decodes them (docs/store.md#handoff-notes).
 type HandoffNote struct {
 	// Session is the number of the session that recorded the note.
 	Session int `json:"session"`
@@ -72,100 +67,10 @@ type DirectorReload struct {
 	AppliedAt  time.Time `json:"applied_at,omitzero"`
 }
 
-// seqKey keys handoff notes and reloads by receipt sequence, as wakes are keyed.
+// seqKey keys handoff notes, note versions and reloads by receipt sequence, as wakes are keyed.
 func seqKey(seq uint64) []byte { return wakeKey(seq) }
 
-func handoffRecord(seq uint64) string { return "director/handoff/" + strconv.FormatUint(seq, 10) }
-func reloadRecord(seq uint64) string  { return "director/reload/" + strconv.FormatUint(seq, 10) }
-
-// HandoffPath is the document path of the handoff note recorded at receipt sequence seq.
-func HandoffPath(seq uint64) string { return fmt.Sprintf("director/handoff-%d.md", seq) }
-
-// RecordHandoffNote records a handoff note of session n whose content has the lowercase hex sha256, with the
-// mutation id "handoff:<n>:<sha256>:<after>", where after is the sequence of the newest other note before it, or 0,
-// so the same note recorded twice in a row is one record and a note recorded again after another becomes the newest
-// anew. The store sets the note's Sequence, Path and RecordedAt and, before
-// committing, calls write with Path, which writes the note's file there; an error from write records nothing,
-// so a recorded note's file was written first. Session n must be the newest session and not stopped, otherwise
-// ErrInvalid, or ErrNotFound when there is no session n. Replaying returns the original note and receipt
-// without calling write.
-func (s *Store) RecordHandoffNote(n int, sha256 string, write func(path string) error) (HandoffNote, Receipt, error) {
-	if n < 1 {
-		return HandoffNote{}, Receipt{}, invalid("director session number %d must be positive", n)
-	}
-	if _, err := digest.ParseHex(sha256); err != nil {
-		return HandoffNote{}, Receipt{}, invalid("handoff note sha256 %q must be 64 lowercase hex characters", sha256)
-	}
-	var after uint64
-	if err := s.view(func(tx *bolt.Tx) error {
-		b := directorBucket(tx, bucketHandoffs)
-		if b == nil {
-			return nil
-		}
-		c := b.Cursor()
-		k, data := c.Last()
-		if k == nil {
-			return nil
-		}
-		var newest HandoffNote
-		if err := decode(k, data, &newest); err != nil {
-			return err
-		}
-		after = newest.Sequence
-		if newest.Session != n || newest.SHA256 != sha256 {
-			return nil
-		}
-		after = 0
-		if k, data = c.Prev(); k == nil {
-			return nil
-		}
-		var before HandoffNote
-		if err := decode(k, data, &before); err != nil {
-			return err
-		}
-		after = before.Sequence
-		return nil
-	}); err != nil {
-		return HandoffNote{}, Receipt{}, fmt.Errorf("store: newest handoff note: %w", err)
-	}
-	req := struct {
-		Session int    `json:"session"`
-		SHA256  string `json:"sha256"`
-		After   uint64 `json:"after"`
-	}{n, sha256, after}
-	r, err := s.mutate(fmt.Sprintf("handoff:%d:%s:%d", n, sha256, after), opRecordHandoffNote, req, func(tx *bolt.Tx, r *Receipt) error {
-		r.Record = handoffRecord(r.Sequence)
-		if err := checkWriterSession(tx, n); err != nil {
-			return err
-		}
-		handoffs, err := createDirectorBucket(tx, bucketHandoffs)
-		if err != nil {
-			return err
-		}
-		note := HandoffNote{Session: n, Sequence: r.Sequence, Path: HandoffPath(r.Sequence), SHA256: sha256, RecordedAt: s.now().UTC()}
-		if err := write(note.Path); err != nil {
-			return err
-		}
-		return putJSON(handoffs, seqKey(note.Sequence), note)
-	})
-	if err != nil {
-		return HandoffNote{}, Receipt{}, err
-	}
-	var note HandoffNote
-	if err := s.view(func(tx *bolt.Tx) error { return getJSON(directorBucket(tx, bucketHandoffs), seqKey(r.Sequence), &note) }); err != nil {
-		return HandoffNote{}, Receipt{}, fmt.Errorf("store: handoff note %d: %w", r.Sequence, err)
-	}
-	return note, r, nil
-}
-
-// LatestHandoffNote returns the newest handoff note, or ErrNotFound when the store has none.
-func (s *Store) LatestHandoffNote() (HandoffNote, error) {
-	var note HandoffNote
-	if err := s.view(func(tx *bolt.Tx) error { return lastJSON(directorBucket(tx, bucketHandoffs), &note) }); err != nil {
-		return HandoffNote{}, fmt.Errorf("store: latest handoff note: %w", err)
-	}
-	return note, nil
-}
+func reloadRecord(seq uint64) string { return "director/reload/" + strconv.FormatUint(seq, 10) }
 
 // lastJSON decodes the last record of b, or returns ErrNotFound for a missing or empty bucket.
 func lastJSON(b *bolt.Bucket, v any) error {

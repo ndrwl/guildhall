@@ -46,9 +46,17 @@ type SessionInput struct {
 	// Parked lists the attempts the Director parked, one line per attempt, in order: held on purpose, for
 	// information and not work. The section is left out when there are none.
 	Parked []string
-	// Handoff is the path of the newest handoff note, or empty when there is none.
-	Handoff string
+	// Notes are the lines of the Director's live notes, in order: a "### <kind>" line before each kind's notes and
+	// one line per note. The section is left out when there are none.
+	Notes []string
+	// NotesBytes is the total size of the live notes' text; over NotesWarnBytes the section opens with a warning to
+	// compact them.
+	NotesBytes int
 }
+
+// NotesWarnBytes is the live notes' total text size above which startup.md asks the Director to compact them. It is
+// a warning only: no note is refused for the total.
+const NotesWarnBytes = 8 << 10
 
 // SessionRendered is the result of Session.
 type SessionRendered struct {
@@ -72,8 +80,8 @@ type SessionManifest struct {
 
 // Session renders a Director session into in.Dir: the role prompt at RoleFile with LF line endings; every
 // skill found in roots, by directory name, the first root holding a name winning, copied byte for byte under
-// in.SkillsDir; the runtime's files; StartupFile, which says the session is starting up, names the handoff
-// note or says there is none, lists the in-flight snapshot and then any parked attempts, as information; and ManifestFile.
+// in.SkillsDir; the runtime's files; StartupFile, which says the session is starting up, lists any notes, with a
+// warning to compact them over NotesWarnBytes, the in-flight snapshot and then any parked attempts, as information; and ManifestFile.
 // A root directory that does not exist holds no skills; a non-directory entry of a root, such as CREDITS.md, is not a skill and is skipped; a skill directory whose
 // name is not an id, or that holds a symbolic link or other non-regular file, is refused.
 // A non-empty in.Dir is refused with ErrNotEmpty, and a runtime file or skills directory path that is not
@@ -94,6 +102,11 @@ func Session(in SessionInput, roots []SkillRoot) (SessionRendered, error) {
 	for _, line := range in.Parked {
 		if strings.ContainsAny(line, "\r\n") {
 			return SessionRendered{}, fmt.Errorf("render: parked item %q must be one line", line)
+		}
+	}
+	for _, line := range in.Notes {
+		if strings.ContainsAny(line, "\r\n") {
+			return SessionRendered{}, fmt.Errorf("render: note %q must be one line", line)
 		}
 	}
 	m := SessionManifest{Schema: SessionManifestSchema, Session: in.Number, Files: []File{}, Skills: []Skill{}}
@@ -220,13 +233,17 @@ func composeStartup(in SessionInput) string {
 	fmt.Fprintf(&b, "# Guildhall Director session %d\n\n", in.Number)
 	b.WriteString("You are starting up.\n")
 	b.WriteString("This session is recovering: it starts no new work until you say it is ready.\n")
-	b.WriteString("Read the handoff note, if there is one, then work through each in-flight item with the command it names.\n")
+	b.WriteString("Read your notes, if there are any, then work through each in-flight item with the command it names.\n")
 	b.WriteString("When nothing in flight needs you, run `guildhall director ready`; only then start new work.\n")
-	handoff := "None."
-	if in.Handoff != "" {
-		handoff = in.Handoff
+	if len(in.Notes) > 0 {
+		b.WriteString("\n## Notes\n\n")
+		if in.NotesBytes > NotesWarnBytes {
+			fmt.Fprintf(&b, "Notes total %d KB, over %d KB: compact them (merge, shorten or remove).\n\n", (in.NotesBytes+1023)/1024, NotesWarnBytes>>10)
+		}
+		for _, line := range in.Notes {
+			fmt.Fprintf(&b, "%s\n", line)
+		}
 	}
-	fmt.Fprintf(&b, "\n## Handoff note\n\n%s\n", handoff)
 	var items strings.Builder
 	for _, line := range in.InFlight {
 		fmt.Fprintf(&items, "- %s\n", line)

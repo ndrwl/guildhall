@@ -2,7 +2,7 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop`, `director handoff`, `director reload`, `director turn-started`, `director turn-ended`, the [automatic handoff](#automatic-handoff) triggers with `director context-report`, and the standalone [guard rails](#guard-rails) are built.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop`, `director note`, `director reload`, `director turn-started`, `director turn-ended`, the [automatic handoff](#automatic-handoff) triggers with `director context-report`, and the standalone [guard rails](#guard-rails) are built.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Start
@@ -56,7 +56,7 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - every release skill, byte for byte, in the runtime's skills directory, `.claude/skills/` for Claude Code;
 - the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, but denies the internal launch commands `guildhall claude-artisan`, `guildhall fake-artisan`, `guildhall fake-director` and `guildhall artisan start`, with or without arguments (deny takes precedence over the broad `guildhall` allow); task orchestration and `artisan stop/status/resume` remain allowed.
   It denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and `Stop` and `StopFailure` hooks that run `guildhall director turn-ended` at the end of every turn;
-- `startup.md`: the startup instructions, saying the session is starting up and recovering, naming the newest [handoff note](#handoff) by its path, or saying there is none, and listing the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command, except a `checks` item, which says the session supervisor advances it ([checks](#checks)), and then, when there are any, the feed's `parked` attempts in a section of their own, as information rather than work, one line each: `parked: attempt <n> of <step> of <repo>/<task> <outcome>; reason: <reason>; retry with <command>`;
+- `startup.md`: the startup instructions, saying the session is starting up and recovering, then, when there are any, every live [note](#notes) under `## Notes`, grouped by kind as `director note list` prints them and opening with `Notes total <N> KB, over 8 KB: compact them (merge, shorten or remove).` when their text totals more than 8 KB, then the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command, except a `checks` item, which says the session supervisor advances it ([checks](#checks)), and then, when there are any, the feed's `parked` attempts in a section of their own, as information rather than work, one line each: `parked: attempt <n> of <step> of <repo>/<task> <outcome>; reason: <reason>; retry with <command>`;
 - `manifest.json`: the digest of every file above.
 
 It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory (for Claude, in the stable workspace described below), inside a containment unit of its own ([runtime containment](decisions/0084-director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
@@ -100,7 +100,7 @@ The release ships the Director's own skills beside the stage skills, each render
 - `guildhall-director-inbox`: on every wake line and turn start, read `director status` and each unread message, act and acknowledge.
 - `guildhall-director-tasks`: turn what the Guildmaster says into commands, from giving work and answering decisions to merging, retrying, stopping, rulings and pausing.
 - `guildhall-director-stage`: run a [Director stage](interpreter.md#director-stages) from its brief and finish it with `step finish`.
-- `guildhall-handoff`: record a handoff note and reload; the Guildmaster can type `/guildhall-handoff`.
+- `guildhall-handoff`: check the notes are current, then reload; the Guildmaster can type `/guildhall-handoff`.
 - `guildhall-self-review`: after a task merges, when the [quality settings](configuration.md#quality-settings) turn it on, record the task against the [quality rubric](quality.md) without changing it.
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
@@ -139,7 +139,7 @@ After a successful start, it retires earlier Director tabs only when a persisted
 A failed runtime leaves its output visible until the next successful start replaces its tab; a command that fails before recording a session leaves an unrecorded tab that Guildhall cannot safely reclaim.
 Busy, split, foreign or ambiguous older tabs are left untouched; failures while retiring them are reported on stderr without failing the new session.
 Closing tabs is presentation cleanup only and never changes a task or session record.
-A reload, including `director reload --now` after a handoff note, starts the next runtime under the same supervisor in the same tab and pane, without opening another tab.
+A reload, including `director reload --now` at a handoff, starts the next runtime under the same supervisor in the same tab and pane, without opening another tab.
 Guildhall never closes the session's own starting workspace or shells in an existing workspace whose identities it did not record, including shells left by older versions.
 Those unrecorded shells need manual cleanup.
 
@@ -272,21 +272,12 @@ A previously `stopped` session whose recorded runtime unit is not proven empty r
 Before either sweep, the stop request sets `sweeping` atomically while preserving the stopped state and end metadata; it holds admission on failure until a later `director stop` completes both sweeps.
 No session, or a session already `stopped` whose stop has finished its sweep and whose runtime unit is proven empty, is exit 1.
 
-The stop does not yet send the Director a `stop-requested` message asking it to write a [handoff note](#handoff) first; that lands later.
+The stop does not yet send the Director a `stop-requested` message asking it to bring its [notes](#notes) up to date first; that lands later, and notes kept as the Director goes cover it meanwhile.
 
 ## Handoff
 
-```sh
-guildhall director handoff --note-file <path|-> [--copy <dir> | --store <file> --state <dir>]
-```
-
-`director handoff` records a handoff note: what the next session needs to carry on, written by the Director before its session ends ([decision](decisions/0082-director-handoff-reload.md)).
-The note is read from the file, or from standard input for `-`, with the rules of a [decision answer](decisions-cli.md#answers): a leading UTF-8 byte order mark is dropped, CRLF line endings become LF and UTF-16 is refused.
-It must not be blank and is at most 64 KiB after that.
-The note is a document, not a store record (R1.13): it is written to `<state>/documents/director/handoff-<seq>.md`, and the store records a [handoff note](store.md#handoff-notes) naming the newest session, the path relative to the document directory and the note's sha256.
-It prints the record as one JSON line.
-No session, or a newest session that is `stopped`, is exit 1 and records nothing; recording the same note twice in a row in the same session prints the first record, and recording it again after another note records it anew as the newest.
-Each new session's `startup.md` names the newest note, and the [status feed](#status)'s session section carries it as `handoff_note`.
+A handoff is a fresh session picking up from this one: the Director checks its [notes](#notes) are current, then runs [`director reload --now`](#reload) ([decision](decisions/0094-director-notes.md)).
+The single handoff-note document and `director handoff --note-file` that recorded it ([D82](decisions/0082-director-handoff-reload.md)) are retired: stores keep the [handoff notes](store.md#handoff-notes) already recorded and `store doctor` still decodes them, but nothing writes or shows them.
 
 ## Notes
 
@@ -304,6 +295,10 @@ To keep tokens low, `add`, `edit` and `remove` print only a receipt such as `n7 
 `note list` prints the live notes grouped by kind, each kind under a `### <kind>` line, one line per note, such as `- n7 guildhall/d20 (s16, 2d): rebase after d18 merges`: the id, the task if any, the session that last changed it and its age, then the text, with `[task done, check it]` at the end when the task is `done` or `cancelled`; notes are never removed automatically.
 With no live notes it prints `No notes.`
 
+Every new session's `startup.md` lists the live notes in the same form before the in-flight snapshot, so the Director writes a note in the same turn something arises that no record holds, rather than at the end of a session.
+When their text totals more than 8 KB the list opens with a line asking the Director to compact them; it is a warning only, and no note is ever refused for the total.
+Notes are not in the [status feed](#status), which `note list` covers.
+
 ## Reload
 
 ```sh
@@ -313,8 +308,8 @@ guildhall director reload [--now] [--copy <dir> | --store <file> --state <dir>]
 `director reload` asks the session supervisor to end the runtime and start a new session, on the copy's current settings, as [release upgrades](releases.md#guildhall-director-reload) design.
 It records a `director-reload` request and prints it as one JSON line; requests made before one is applied collapse into it, and `--now` turns a pending plain request into a `--now` one.
 The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake reached the Director, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
-`--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the handoff: write the note, then reload.
-`--now` is refused with exit 1 unless the newest handoff note was recorded by the newest session, which is not `stopped`, and, while a Director stage attempt is running, unless the note was recorded after that attempt started, so a reload never drops an open grill.
+`--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the [handoff](#handoff): check the notes, then reload.
+`--now` is refused with exit 1 only when there is no session or the newest one is `stopped`; it needs no note, and a Director stage attempt running, such as a grill, does not hold it, since the next session restarts the grill ([D94](decisions/0094-director-notes.md)).
 The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers.
 
 ## The end of a turn
@@ -355,7 +350,7 @@ Three triggers tell the Director a handoff is due before its context runs out ([
 - `handoff_context_percent` (70 unless set): the context the runtime last reported as used reaches the percent;
 - `handoff_idle` (off unless set): the Director has had no turn signal and no wake for that long and, with turn hooks, its turn is over.
 
-A trigger never ends the session itself: it asks the Director to run the [`guildhall-handoff`](#skills) skill, which writes a [note](#handoff), carrying any open grill questions, and then runs `director reload --now`.
+A trigger never ends the session itself: it asks the Director to run the [`guildhall-handoff`](#skills) skill, which checks the Director's [notes](#notes) are current and then runs `director reload --now`.
 The first two ride on a [wake](messaging.md#waking-the-director): when a wake delivers its line and a trigger holds, the line ends `; handoff due (<reason>)`, such as `guildhall: 2 unread (question 2); handoff due (context 72%)`, with two reasons joined by `, ` when both hold, so no model turn is spent on the reminder alone.
 The idle trigger is the session supervisor's one timer: once the Director has been quiet for `handoff_idle` it wakes it with the same line, the unread counts with `; handoff due (idle <duration>)`, handed to a Claude Code session's waiter and typed only into the fake runtime's pane.
 Each crossing is announced once and recorded as a [handoff due](store.md#handoff-dues): the task trigger's crossings are every `handoff_after_tasks` finished tasks, so a Director that carries on is reminded again after as many more; the context trigger crosses once per session; the idle trigger once per quiet period, which a turn signal or a wake ends.
@@ -474,6 +469,7 @@ The document has these sections:
 - `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, `sweeping` while a [stop](#stop) has not finished stopping its attempts, the `end_reason` of a session [stopped](#stop) as `superseded`, and `context`, the newest [context report](#automatic-handoff) with its `used_percent` and `reported_at`, absent when the runtime reported none.
   `last_wake` is the newest [wake](messaging.md#waking-the-director) of any message to the Director, with its `message_id`, `sender_type`, `decision`, `reason` when queued, `time` and `sequence`, so the feed says whether the last message woke anyone and why not; it is absent before any wake.
   A store with no session reports only its `state`, `"no session"`, `last_wake`, `guard_rails` and `start_queue`.
+  Feed change ([D94](decisions/0094-director-notes.md)): the session no longer carries `handoff_note`, the newest retired handoff note, and does not carry the Director's [notes](#notes) either; `director note list` prints them.
   `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_requires` (each repository's effective `guildmaster_approval`, `artisan_approval`, `ci_green` and `nothing_open`), `max_running_attempts` and `max_attempts_per_day` (0 when there is no daily cap), when the copy has a config, and always `running_attempts`, what the running cap counts, the running attempts other than Director stages, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
   `start_queue` is the [start queue](#the-start-queue) in queue order, `[{repository, task, step, attempt, request, priority, position, queued_at}]`, `request` being the `start`, `decision`, `retry`, `send-back` or `engine` request that queued it and `priority` the task's current one; it is empty when nothing waits.
   A queued start is the supervisor's to start, so it is not a `needs_me` item and wakes nobody.
