@@ -222,8 +222,8 @@ The criteria read these records:
 
 - Each finding names a file, line, rule and concrete failure and is actionable, suggestions are listed apart from findings, dispositions of the previous round are correct, and no open (unresolved or disputed) finding survives two rounds without a Director ruling.
 - Look at: each `review-<n>-outcome`, the rulings and the builder's response.
-- Good: findings the builder fixed in one round, and few withdrawn.
-- Poor: nitpicks without rules, a finding whose `file:line` is not in the diff, or a withdrawn finding that was wrong on its face.
+- Good: findings the builder fixed in one round, and few resolved without a fix.
+- Poor: nitpicks without rules, a finding whose `file:line` is not in the diff, or a finding resolved without a fix that was wrong on its face.
 - Source: Bosu, Greiler and Bird 2015 on useful review comments (Strong); Google's review standard (Practitioner).
 - Guildhall today: the review skill and [D47](decisions/0047-review-skill.md).
 

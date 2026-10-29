@@ -185,6 +185,8 @@ A new head, such as a build round after review findings, publishes the next roun
 4. `guildmaster_approval`: when required, the engine opens the merge decision as described above.
    When not required and every other required requirement holds, it records `deliver-<k>-authorized` (`tasks/<repo>/<task>/deliver-<k>/authorized.json`), schema `guildhall.merge-authorization/1`, holding the head, the pull request, the four effective requirements, the mergeability state and each requirement's condition with the names of its evidence (the review outcome documents, the validation result and any unanswered decisions), then merges with no decision under the merge id `deliver-<k>`.
    When not required but `nothing_open` fails, it falls back: it opens the merge decision as if `guildmaster_approval` were required, and the question begins "Guildhall did not merge by itself: " and the failed requirements.
+   While that decision is unanswered, every advance evaluates the requirements again; once they all hold, such as after the Director rules on a disputed finding, it records the next `deliver-<k>-authorized`, whose `supersedes` names the unanswered decision, and the merge proceeds without it; the merged message says that decision is no longer needed.
+   An answer given before that still merges or holds as below.
 5. The [merge queue](#the-merge-queue): the authorized merge joins its repository's queue, and only the front reads mergeability and is merged or [rebased](#tiered-rebase).
 
 The decision opens, or the authorization is recorded, whatever the pull request's mergeability: a behind or conflicting pull request no longer waits for the Director before it.

@@ -157,7 +157,7 @@ nothing_open         = true   # no open findings on the approving reviews and no
 | `guildmaster_approval` | The Guildmaster answered `merge` on the deliver decision `deliver-<k>` for this head. |
 | `artisan_approval` | Every review and document-review step before deliver has a latest outcome that approves and is bound to the delivered head, the accepted spec digest and the current standards revision. "Artisan" means the independent review Artisan: the review step runs as its own attempt, never the author's build attempt. |
 | `ci_green` | Deliver's `validation` input is a `passed` result for the delivered head. |
-| `nothing_open` | Those review outcomes have no open finding, and the task has no unanswered decision but the deliver step's own. Every finding is open, unresolved or newly raised, except a `disputed` one the Director has ruled on with a ruling that stands. Suggestions never count; the condition's reason still says "N suggestion(s), not counted". |
+| `nothing_open` | Those review outcomes have no open finding, and the task has no unanswered decision but the deliver step's own. Every finding is open, unresolved or newly raised, except a `disputed` one the Director has ruled on with a ruling that stands. Suggestions never count; the condition's reason still says "N suggestion(s), not counted". Without `guildmaster_approval`, a merge decision opened because this failed is superseded when it comes to hold before the decision is answered, and Guildhall merges by itself. |
 
 Each key is a TOML boolean; a missing key is `true`, and a missing section requires everything, so by default the Guildmaster approves every merge.
 A string such as `"true"`, an unknown key and the removed merge policy key are refused when the config is parsed.

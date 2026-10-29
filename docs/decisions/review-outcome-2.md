@@ -40,6 +40,7 @@ Store projections recorded before /2 may hold the /1 state names; the store acce
 `disputed` is the reviewer saying "the builder argued against this; I find it plausible, but I don't agree", and the finding stays in `findings`.
 With `changes_requested` the loop goes on as before.
 With `approved` the dispute reaches deliver and holds `nothing_open` until the Director rules on it: any uncontested ruling closes it, `out-of-scope` or `duplicate`, since `defer` stays refused for rule-cited items.
+A ruling made after deliver has already fallen back to its merge decision still releases the dispute: without `guildmaster_approval`, the next advance finds every requirement holding, merges by itself and records that its authorization supersedes the unanswered decision.
 A ruling still never resolves a finding; releasing a disputed one for `nothing_open` is the one exception.
 A review attempt contests a ruling when it keeps the ruled finding open, `unresolved` or `disputed`.
 Rulings may name a suggestion, and `defer` applies to suggestions (and to rule-less findings of old /1 projections), so it stays reachable.

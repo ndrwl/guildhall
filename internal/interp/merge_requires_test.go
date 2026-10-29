@@ -464,6 +464,33 @@ func TestMergeWithoutGuildmasterOverSuggestions(t *testing.T) {
 	}
 }
 
+// TestMergeWithoutGuildmasterAfterRuling: an approval with a disputed finding falls back to deliver-1; once the
+// Director rules on the finding, the next advance merges without the Guildmaster, through deliver-2-authorized, which
+// records the suggestions and that it supersedes deliver-1, and tells the Director deliver-1 is no longer needed.
+func TestMergeWithoutGuildmasterAfterRuling(t *testing.T) {
+	e, f := newRequiresEnv(t, backends[0], unattended, approvedWith(t, workflow.Disputed))
+	want(t, e.toValidate(t), waitChecks)
+	f.SetChecks(repoRemote, head, ciPassed...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+	if _, err := e.h.RuleFinding("rule-f1", store.Ruling{Repository: "app", TaskID: "t7", Document: "review-1-outcome", Finding: "f1",
+		Move: store.RulingOutOfScope, Reason: "Spec §3 leaves tests to the follow-up."}); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+	if _, merges := f.Calls(); merges != 1 || e.decision(t, "deliver-1").Answered || !slices.Equal(e.authorizations(t), []string{"deliver-2-authorized"}) {
+		t.Fatalf("merges = %d, authorizations %q; want one merge by Guildhall with deliver-1 unanswered", merges, e.authorizations(t))
+	}
+	if got := e.nothingOpenCondition(t, "deliver-2-authorized"); got["holds"] != true || got["reason"] != "1 suggestion(s), not counted" {
+		t.Errorf("nothing_open = %v, want it to hold and note the suggestion", got)
+	}
+	if got := e.pullRequestDoc(t, "deliver-2-authorized")["supersedes"]; got != "deliver-1" {
+		t.Errorf("supersedes = %v, want deliver-1", got)
+	}
+	if msg := e.messages(t)["app.t7.merged.deliver-2"]; !strings.Contains(msg, "(merged by Guildhall, deliver-2-authorized)") || !strings.Contains(msg, "Merge decision deliver-1") {
+		t.Errorf("merged message = %q", msg)
+	}
+}
+
 // TestMergeWithoutGuildmasterRefused: a merge the forge refuses records deliver-1-refused and merge-refused and waits
 // for the Director; advancing again retries the same authorized merge.
 func TestMergeWithoutGuildmasterRefused(t *testing.T) {

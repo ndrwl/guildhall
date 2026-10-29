@@ -168,8 +168,10 @@ func (r *run) published(s workflow.Step, h string) (*pullRequestDoc, error) {
 // A required artisan_approval or ci_green that does not hold is a hard error. With guildmaster_approval required, or
 // when nothing_open fails, it opens the merge decision bound to the head, whose question lists every requirement,
 // whether or not the pull request is behind or conflicting; a hold answer waits for the Director. Otherwise it
-// records the merge's authorization, <step>-<k>-authorized. An authorized merge joins the queue, and only the front
-// is brought up to date and merged; a merge the forge refuses waits for the Director.
+// records the merge's authorization, <step>-<k>-authorized; so it does too when, without guildmaster_approval, every
+// requirement comes to hold while the merge decision it opened is unanswered, such as after the Director rules on a
+// disputed finding, and the authorization records the decision it supersedes. An authorized merge joins the queue,
+// and only the front is brought up to date and merged; a merge the forge refuses waits for the Director.
 func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	repo, err := r.repository()
 	if err != nil {
@@ -318,16 +320,18 @@ func (r *run) authorizedAs(s workflow.Step, x string) (id, record string, err er
 }
 
 // authorizeHead authorizes the merge of the delivered head, or waits: with guildmaster_approval required, or a
-// requirement failing, the merge decision is asked; otherwise Guildhall records the authorization itself. Under
+// requirement failing, the merge decision is asked; otherwise Guildhall records the authorization itself, also while
+// a merge decision it asked when a requirement failed is unanswered, which the authorization then supersedes. Under
 // reapprove_after_rebase = never, a head rebuilt after a build send-back of an authorized head carries that
 // authorization over. It returns the authorization's id and receipt record, or "" and the wait.
 func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHead, conditions []condition, outcomes []reviewOutcome) (string, string, Next, error) {
 	requires := repo.Merge.Requires
+	failed := failing(conditions)
+	unattended := !requires.Guildmaster() && len(failed) == 0
 	dec := r.decisionOn(s, x.head)
 	switch {
-	case dec == nil:
+	case dec == nil || !dec.Answered && unattended:
 		k := r.deliverRound(s)
-		failed := failing(conditions)
 		id := decisionID(s.ID, k, false)
 		lead := ""
 		if requires.Guildmaster() && repo.Merge.Reapprove() == config.RebaseNever {
@@ -352,7 +356,7 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 					x.head, e.Authorization, strings.Join(why, "; "))
 			}
 		}
-		if !requires.Guildmaster() && len(failed) == 0 {
+		if unattended {
 			if x.pr == nil {
 				return "", "", Next{}, fmt.Errorf("%w: merging head %s, which no publish step pushed", ErrUnsupported, x.head)
 			}
@@ -360,8 +364,12 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 			if err != nil {
 				return "", "", Next{}, err
 			}
-			if err := r.authorize(id, authorizationDoc{Schema: authorizationSchema, Head: x.head, PullRequest: x.pr, Requires: requires.Effective(),
-				Mergeability: m.State, Conditions: conditions, SpecDigest: r.specDigest(s)}); err != nil {
+			a := authorizationDoc{Schema: authorizationSchema, Head: x.head, PullRequest: x.pr, Requires: requires.Effective(),
+				Mergeability: m.State, Conditions: conditions, SpecDigest: r.specDigest(s)}
+			if dec != nil {
+				a.Supersedes = dec.ID
+			}
+			if err := r.authorize(id, a); err != nil {
 				return "", "", Next{}, err
 			}
 			return id, "document/" + id + "-authorized", Next{}, nil
@@ -745,6 +753,9 @@ type authorizationDoc struct {
 	CarriedFrom string            `json:"carried_from,omitempty"`
 	Rebase      []string          `json:"rebase,omitempty"`
 	Kind        config.RebaseKind `json:"kind,omitempty"`
+	// Supersedes is the merge decision deliver left unanswered when the requirements it was opened for came to hold
+	// before the Guildmaster answered it, such as a disputed finding the Director ruled on after the fallback.
+	Supersedes string `json:"supersedes,omitempty"`
 }
 
 // gateCondition is the condition of a gate requirement from the gate's error: a required gate that fails returns
@@ -964,7 +975,15 @@ func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string
 			return false, Next{}, err
 		}
 	}
-	if err := r.notify("merged."+id, store.MessageMerged, fmt.Sprintf("Merged head %s (%s); the task is done.", h, r.mergedBy(id))); err != nil {
+	msg := fmt.Sprintf("Merged head %s (%s); the task is done.", h, r.mergedBy(id))
+	var a authorizationDoc
+	if _, err := r.readJSONDoc(id+"-authorized", &a); err != nil {
+		return false, Next{}, err
+	}
+	if a.Supersedes != "" {
+		msg += fmt.Sprintf(" Merge decision %s, opened while the requirements did not all hold, is no longer needed.", a.Supersedes)
+	}
+	if err := r.notify("merged."+id, store.MessageMerged, msg); err != nil {
 		return false, Next{}, err
 	}
 	if err := r.retire(id, repo, h); err != nil {
