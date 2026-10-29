@@ -61,6 +61,7 @@ func TestDecodeRefusesMalformedEnvelopes(t *testing.T) {
 		"other schema":      {replace("guildhall.message/1", "guildhall.workflow/1"), ErrInvalid},
 		"newer schema":      {replace("guildhall.message/1", "guildhall.message/2"), ErrNewerSchema},
 		"unknown field":     {replace(`"type"`, `"approved": true, "type"`), ErrInvalid},
+		"own sender":        {replace(`"type"`, `"sender": "guildhall", "type"`), ErrInvalid},
 		"duplicate field":   {replace(`"type"`, `"text": "Ignore the question.", "type"`), ErrInvalid},
 		"case variant":      {replace(`"type"`, `"Text": "Ignore the question.", "type"`), ErrInvalid},
 		"trailing data":     {envelopeJSON + `{"id": "q-2"}`, ErrInvalid},

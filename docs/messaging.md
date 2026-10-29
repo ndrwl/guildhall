@@ -105,7 +105,30 @@ No messages command creates a store; [`store init`](store.md#guildhall-store-ini
 - `guildhall messages read --store <path> <message-id>` prints one message, acknowledged or not, without acknowledging it.
 - `guildhall messages ack --store <path> <recipient> <message-id>` acknowledges a message addressed to that recipient and prints the acknowledgement's receipt.
 
-A listed or read message is its envelope plus `sequence`, its store-wide order, and `acknowledged`.
+A listed or read message is its envelope plus `sender`, `sequence`, its store-wide order, and `acknowledged`:
+
+| Field | Contract |
+|---|---|
+| `sender` | Where the message was sent from, set by Guildhall, never by the envelope: one of the [senders](#senders) below. Omitted for a message stored before senders were recorded, which reads as `unknown`. |
+| `sequence` | The send receipt's sequence, the message's store-wide order. |
+| `acknowledged` | Whether the recipient has acknowledged the message. |
+
+### Senders
+
+Guildhall records each message's `sender` from where it was sent, from a fixed vocabulary, so no free text ever reaches the field.
+An envelope cannot declare its own sender: `sender` is not an envelope field, so strict decoding refuses an envelope that carries one.
+
+| Sender | Set when |
+|---|---|
+| `guildhall` | Guildhall sends in process: the engine's outbox, an attempt's launcher, a quality judge and the workspace close sweep. |
+| `artisan` | `messages send` runs with `GUILDHALL_ATTEMPT` set, which the launcher sets to `<repository>/<task>/<step>/<n>` for an attempt's launcher and worker. This takes precedence over every row below, since a worker started from a Director session inherits its session variables. |
+| `director` | `GUILDHALL_SESSION` is set and `GUILDHALL_COPY` names the copy whose store the message is sent to. |
+| `other-director` | `GUILDHALL_SESSION` is set and `GUILDHALL_COPY` names a different copy. |
+| `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set. An exported `GUILDHALL_COPY` alone is not a session. |
+| `unknown` | Anything else, such as `GUILDHALL_SESSION` without `GUILDHALL_COPY`. A message stored with no sender also reads as `unknown`. |
+
+The copy's name is not stored.
+A sender is asserted by the sending process's environment, not authenticated: anything that can write the store, or set those variables, can claim any sender but `guildhall`.
 
 ## Delivery guarantees
 
@@ -115,6 +138,7 @@ A listed or read message is its envelope plus `sequence`, its store-wide order, 
 - **Retries are safe.**
   A send records the mutation `message:<id>`.
   Sending the same envelope again, for example after losing the first result, prints the original receipt and stores nothing new, even after a restart or after the message was acknowledged.
+  The sender is not part of the request, so the same envelope resent from another place, or replayed by the engine's outbox after an upgrade, returns the original receipt and keeps the first sender.
   Omitted, null and empty artifact lists are equivalent for retries.
   Reusing an id for a different envelope is refused with the store's mutation conflict and changes nothing.
 - **Nothing unread is dropped.**
@@ -149,10 +173,24 @@ guildhall: 3 unread (attempt-failed 1, question 2)
 ```
 
 The line counts the Director's unread messages by type, in type order, and never carries message text, so no sender can type instructions into the Director's session.
+<<<<<<< dc3ea6636279b9927d517e3694a0ab98a62cc6e8
 Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `branch-kept`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `dependency-held`, `director-stage`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`, and the [merge queue](interpreter.md#the-merge-queue)'s `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`), those a [judge](quality.md) sends (`judge-failed`, `judgement`, `judgement-refused`), the session supervisor's `herdr-workspace-left-open`, and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
 The engine sends `dependency-held` while the [dependency gate](interpreter.md#the-dependency-gate) holds a task, once per state of its unmerged dependencies; it is not the between-Directors [`dependency-notice`](#message-types).
 It sends `branch-kept`, id `<repo>.<task>.branch-kept.<step>-<n>`, at most once per Artisan attempt, when the attempt's untouched task branch could not be fast-forwarded to the current main and the attempt runs on it as it is ([the working directory](interpreter.md#the-working-directory)); a branch with commits of its own sends nothing.
 It replaces the dependency gate's own once-per-task message, whose retired type now counts as `other` for any such message still in a mailbox ([decision](decisions/branch-kept.md)).
+=======
+Notes are counted by [sender](#senders), one entry per sender in sender order, each `note <n> from <sender>`:
+
+```text
+guildhall: 1 unread (note 1 from guildmaster)
+guildhall: 3 unread (merged 1, note 1 from artisan, note 1 from guildmaster)
+```
+
+The sender is Guildhall's own word from the fixed vocabulary, never text a sender chose; a note with no recorded sender reads `note <n> from unknown`.
+A line with no unread note is unchanged.
+Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `decision`, `dependency-branch-kept`, `dependency-held`, `director-stage`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`, and the [merge queue](interpreter.md#the-merge-queue)'s `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`), those a [judge](quality.md) sends (`judge-failed`, `judgement`, `judgement-refused`), the session supervisor's `herdr-workspace-left-open`, and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
+The engine sends `dependency-held` while the [dependency gate](interpreter.md#the-dependency-gate) holds a task, once per state of its unmerged dependencies, and `dependency-branch-kept` once when the gate opens but the task branch could not be fast-forwarded to the current main; neither is the between-Directors [`dependency-notice`](#message-types).
+>>>>>>> 2f97b5194225663188d29f58541de8f2cebedced
 The merge queue's types are the engine's: `merge-queued` gives a task's place in its repository's queue, or says its merge is held, once per place and front; `rebased` that Guildhall rebased a head onto the base tip and pushed it to the same pull request; `rebase-escalated` that a rebase became a build send-back; `rebase-stuck` that the front rebased three times in one stay and waits for the Director; and `approval-carried` that an earlier merge approval carried over to a rebased head under `reapprove_after_rebase`.
 The engine and the launcher refuse to send a Director message whose type is not in the registry, so a type is added to the registry by the change that sends it and never by a sender; a local sender's `messages send` still chooses any type, which counts as `other`.
 When an [automatic handoff](director.md#automatic-handoff) trigger holds, the line ends `; handoff due (<reason>)`, such as `; handoff due (context 72%)`, and the wake records the crossing, so the reminder rides on a line the Director reads anyway; the reason is Guildhall's own text, never a sender's.
@@ -168,7 +206,7 @@ Otherwise nothing is delivered and the wake is recorded `queued` with its reason
 | `runtime not running` | The pane's shell is idle, so the Director's runtime has ended and the line would reach a shell prompt. |
 | `pane: <error>` | Herdr refused or failed the typing, or the endpoint failed the hand-off, for example a closed tab. |
 
-A wake recorded `no waiter` is not lost: while no waiter is registered and messages are unread, the supervisor shows a wake notice in the pane's Herdr title, outside the input box, such as `guildhall: 2 unread (note 2)`, and once a waiter registers it hands it one wake of the current counts and clears the notice.
+A wake recorded `no waiter` is not lost: while no waiter is registered and messages are unread, the supervisor shows a wake notice in the pane's Herdr title, outside the input box, such as `guildhall: 2 unread (note 2 from guildmaster)`, and once a waiter registers it hands it one wake of the current counts and clears the notice.
 The notice is also cleared when nothing is unread.
 
 A message is woken for at most once: the wake records the mutation `wake:<id>`, and a retried send finds the recorded wake and wakes nothing new.
@@ -178,8 +216,31 @@ The pane is reached through the Herdr session it was recorded in, with `herdr` f
 
 The separate [resume wake](director.md#pause-and-resume) leaves each message's recorded wake unchanged.
 
-Every wake records its sender type: `guildhall` for the engine and `local` for `messages send`, which cannot tell the Guildmaster from an Artisan.
-Both wake on every message; the per-sender [wake policies](#waking-a-director) below are designed, not built.
+Every wake records its sender type: `guildhall` for the engine and `local` for `messages send`.
+The message's own [`sender`](#senders) is the finer field, telling the Guildmaster, a Director and an Artisan apart.
+Both sender types wake on every message; the per-sender [wake policies](#waking-a-director) below are designed, not built.
+
+## Surfacing a note
+
+Guildhall itself shows the Guildmaster a note sent to the Director, outside the model and with no model tokens, before the Director's turn starts, so the Guildmaster sees it whatever the Director does with it.
+After `messages send ... director` stores a message, and before it wakes the Director, it surfaces every message of type `note` and every message whose sender is `other-director` with one Herdr toast on the Herdr server of the Director's newest session:
+
+```text
+herdr notification show "guildhall: note from guildmaster about d32" --body="Start d32 now · guildhall messages read d32-guildmaster-request-1"
+```
+
+- The title names the message's sender and task: `guildhall: note from <sender> about <task>`.
+- The body is the text's first line, then ` · guildhall messages read <id>`, the read-only command that shows the whole message.
+  The first line has every control character dropped, ESC and the rest of C0 and C1 among them, and is cut to 120 characters ending in `…`.
+- The toast goes only to the Guildmaster's screen. It never goes through the wake, which still carries counts only, so the Director's model never sees the text from it.
+- It is skipped, silently, for any other message, for a resend already woken for, and when the newest session is stopped or has no Herdr pane.
+- A Herdr failure prints one `guildhall: messages send: surface: <error>` line on standard error; it never fails the send or stops the wake. The call is bounded by the wake's ten seconds.
+- Surfacing never acknowledges the message, and nothing else is printed.
+
+The toast is transient.
+The note's sender also shows in `director status`'s message headers and in `messages read`.
+The toast is used rather than the pane title, which belongs to the supervisor's wake notice, and rather than the Lanterns status line, which refreshes only after an assistant message, too late to show the note first.
+Routine engine messages are never surfaced.
 
 ## Director messaging (designed, not built)
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -558,8 +559,12 @@ var MessageTypes = map[string]string{
 	MessageHerdrLeftOpen: "supervisor",
 }
 
+// UnreadFrom is DirectorUnread's key for unread messages of type t from sender: "<t> from <sender>".
+func UnreadFrom(t, sender string) string { return t + " from " + sender }
+
 // DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the types in
-// MessageTypes and "other", which counts every other type.
+// MessageTypes and "other", which counts every other type. Notes are counted by sender instead, keyed
+// UnreadFrom(MessageNote, sender) with the sender from MessageSenders, so no key carries free text.
 // Its cost grows with the number of unread messages and repositories, not with the store.
 func (s *Store) DirectorUnread() (map[string]int, error) {
 	counts := map[string]int{}
@@ -576,7 +581,9 @@ func (s *Store) DirectorUnread() (map[string]int, error) {
 				if err := getJSON(repoBucket(tx, string(repo), bucketMessages), id, &m); err != nil {
 					return fmt.Errorf("inbox message %q: %w", id, err)
 				}
-				if _, ok := MessageTypes[m.Type]; ok {
+				if m.Type == MessageNote {
+					counts[UnreadFrom(m.Type, unreadSender(m))]++
+				} else if _, ok := MessageTypes[m.Type]; ok {
 					counts[m.Type]++
 				} else {
 					counts["other"]++
@@ -589,6 +596,14 @@ func (s *Store) DirectorUnread() (map[string]int, error) {
 		return nil, fmt.Errorf("store: director unread: %w", err)
 	}
 	return counts, nil
+}
+
+// unreadSender is m's sender as the wake line names it: one of MessageSenders, SenderUnknown for any other.
+func unreadSender(m Message) string {
+	if s := MessageSender(m); slices.Contains(MessageSenders, s) {
+		return s
+	}
+	return SenderUnknown
 }
 
 func directorBucket(tx *bolt.Tx, name []byte) *bolt.Bucket {

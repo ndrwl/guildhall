@@ -750,9 +750,14 @@ func (p storeRecords) ReleaseMergeFront(m, repo, id string) (store.Receipt, erro
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.ReleaseMergeFront(m, repo, id) })
 }
 
+// Send is the engine's, launcher's and judge's outbox: every message it sends is Guildhall's own.
 func (p storeRecords) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
+	return p.sendFrom(to, store.SenderGuildhall, e)
+}
+
+func (p storeRecords) sendFrom(to store.Recipient, sender string, e messaging.Envelope) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) {
-		return (&messaging.StoreMailbox{Store: s}).Send(to, e)
+		return (&messaging.StoreMailbox{Store: s}).Send(to, sender, e)
 	})
 }
 

@@ -76,7 +76,7 @@ func TestMessagesSendToTheDirectorWakesIt(t *testing.T) {
 	if r := decodeJSON[store.Receipt](t, out); r.MutationID != "message:n-1" {
 		t.Fatalf("receipt = %+v", r)
 	}
-	if want := []string{"w1:p2 guildhall: 1 unread (note 1)"}; !slices.Equal(panes.lines, want) {
+	if want := []string{"w1:p2 guildhall: 1 unread (note 1 from guildmaster)"}; !slices.Equal(panes.lines, want) {
 		t.Fatalf("typed = %q, want %q", panes.lines, want)
 	}
 	// A retried send prints the original receipt and wakes nothing new.

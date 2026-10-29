@@ -71,11 +71,12 @@ func (f *Fake) FinishAttempt(repository, task, step string, number int) {
 }
 
 // Send implements messaging.Mailbox.
-func (f *Fake) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
+func (f *Fake) Send(to store.Recipient, sender string, e messaging.Envelope) (store.Receipt, error) {
 	m, err := messaging.Message(to, e)
 	if err != nil {
 		return store.Receipt{}, err
 	}
+	m.Sender = sender
 	if err := store.ValidateMessage(m); err != nil {
 		return store.Receipt{}, err
 	}
@@ -83,8 +84,9 @@ func (f *Fake) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, er
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if r, ok := f.sent[m.ID]; ok {
+		// As in the store, the sender is not part of the request: a resend keeps the first.
 		prior := f.messages[m.ID]
-		prior.Sequence, prior.Acknowledged = 0, false
+		prior.Sequence, prior.Acknowledged, prior.Sender = 0, false, m.Sender
 		if !reflect.DeepEqual(prior, m) {
 			return store.Receipt{}, fmt.Errorf("messagingtest: %w: message %q", store.ErrMutationConflict, m.ID)
 		}

@@ -49,7 +49,7 @@ func (p storeOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Recei
 		return store.Receipt{}, err
 	}
 	defer func() { _ = s.Close() }()
-	return (&messaging.StoreMailbox{Store: s}).Send(to, e)
+	return (&messaging.StoreMailbox{Store: s}).Send(to, store.SenderGuildhall, e)
 }
 
 // stalls returns the worker-stalled messages in the Director's inbox.

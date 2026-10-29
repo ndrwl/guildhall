@@ -189,6 +189,7 @@ type statusMessages struct {
 type messageHeader struct {
 	ID         string `json:"id"`
 	Type       string `json:"type"`
+	Sender     string `json:"sender"`
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
 	Step       string `json:"step,omitempty"`
@@ -593,7 +594,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.Messages.Unread++
 		out.Messages.ByType[m.Type]++
 		if len(out.Messages.Headers) < statusLimit {
-			out.Messages.Headers = append(out.Messages.Headers, messageHeader{ID: m.ID, Type: m.Type, Repository: m.Repository, TaskID: m.TaskID,
+			out.Messages.Headers = append(out.Messages.Headers, messageHeader{ID: m.ID, Type: m.Type, Sender: store.MessageSender(m), Repository: m.Repository, TaskID: m.TaskID,
 				Step: m.Step, Attempt: m.Attempt, Sequence: m.Sequence})
 		}
 		if m.Type != store.MessageWorkerStalled {

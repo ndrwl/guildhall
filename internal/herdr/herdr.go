@@ -669,6 +669,24 @@ func (c *Client) PaneTitle(ctx context.Context, t OwnedTab, source, title string
 	return err
 }
 
+// Notify shows a transient toast on this client's Herdr server (`herdr notification show <title> --body <body>`),
+// outside every pane's input. title must be one non-empty line and body one line; an empty body is left out.
+func (c *Client) Notify(ctx context.Context, title, body string) error {
+	if title == "" || strings.ContainsAny(title, "\r\n") {
+		return errors.New("herdr notification title must be one non-empty line")
+	}
+	if strings.ContainsAny(body, "\r\n") {
+		return errors.New("herdr notification body must be one line")
+	}
+	args := []string{"notification", "show", title}
+	if body != "" {
+		// Joined to its flag, so a body starting with "-" is never read as an option.
+		args = append(args, "--body="+body)
+	}
+	_, err := c.call(ctx, args...)
+	return err
+}
+
 // InterruptOwnedTab sends Ctrl+C to the root pane of a tab this client created.
 func (c *Client) InterruptOwnedTab(ctx context.Context, t OwnedTab) error {
 	if err := c.checkOwned(t); err != nil {

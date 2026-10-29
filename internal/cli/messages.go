@@ -99,7 +99,7 @@ func (a *App) messages(args []string) int {
 	var out any
 	switch sub {
 	case "send":
-		out, err = box.Send(to, env)
+		out, err = box.Send(to, messageSender(a.Getenv, *path), env)
 	case "list":
 		var page messaging.Page
 		if page, err = box.List(to, *after, *limit); err == nil {
@@ -119,8 +119,11 @@ func (a *App) messages(args []string) int {
 	if err := json.NewEncoder(a.Stdout).Encode(out); err != nil {
 		return 1
 	}
-	// The message is stored whatever the wake does; a failed wake is reported, not an error.
+	// The message is stored whatever the surfacing and wake do; a failure of either is reported, not an error.
 	if sub == "send" && to.Role == store.RecipientDirector {
+		if err := a.surface(*path, env.ID); err != nil {
+			_, _ = fmt.Fprintf(a.Stderr, "guildhall: messages send: surface: %v\n", err)
+		}
 		if _, err := a.wake(*path, env.ID, messaging.SenderLocal); err != nil {
 			_, _ = fmt.Fprintf(a.Stderr, "guildhall: messages send: wake: %v\n", err)
 		}

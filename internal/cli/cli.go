@@ -150,6 +150,9 @@ type App struct {
 	// WakeNotice is the wake notice of a Director's recorded pane, shown while no waiter is registered; nil means
 	// the pane's Herdr title.
 	WakeNotice func(store.DirectorPane) wakeNotice
+	// Notify shows a toast on the Herdr server of a Director's recorded pane, as `messages send` surfaces a note;
+	// nil means Herdr, found on PATH as herdr.
+	Notify func(ctx context.Context, pane store.DirectorPane, title, body string) error
 	// SessionPoll is how often a Director session's supervisor reads its session while the runtime runs; zero
 	// means one second.
 	SessionPoll time.Duration
