@@ -68,7 +68,9 @@ func readRecord(t *testing.T, scenario, name string) ScenarioRecord {
 type recorder struct{ errs []string }
 
 func (*recorder) Helper() {}
-func (r *recorder) Errorf(format string, args ...any) { r.errs = append(r.errs, fmt.Sprintf(format, args...)) }
+func (r *recorder) Errorf(format string, args ...any) {
+	r.errs = append(r.errs, fmt.Sprintf(format, args...))
+}
 
 func TestLoadScenarioRefusesBadFiles(t *testing.T) {
 	ok := `{"step":"plan","attempt":1,"respond":{"status":"succeeded","summary":"done"}}`

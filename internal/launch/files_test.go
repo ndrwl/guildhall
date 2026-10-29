@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 	os.Exit(testenv.RunWithClaudeGuard(m))
 }
 
-var id =adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}
+var id = adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}
 
 // resultBody returns a valid version 1 result for id with status s.
 func resultBody(t *testing.T, rid adapter.Identity, s adapter.Status) string {

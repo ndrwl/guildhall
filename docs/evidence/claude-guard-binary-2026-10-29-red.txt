@@ -1,0 +1,19 @@
+# cmd/guildhall TestRealClaudeIsRefused, run with TestMain calling m.Run() instead of
+# testenv.RunWithClaudeGuard, and a recording claude (reporting version 2.1.310) first on PATH.
+# The recording claude logs each call; the second is the real Artisan model call the guard prevents.
+=== RUN   TestRealClaudeIsRefused
+    claude_guard_test.go:55: plan-1 failed; launcher log:
+        guildhall: claude-artisan: usage unknown: claude output is not a JSON result message: EOF
+        guildhall: claude-artisan: claude exited without writing a result
+        {"attempt":"app/t-1/plan/1","outcome":{"schema":"guildhall.attempt-outcome/1","state":"failed","detail":"worker exited without a result"},"attempt_outcome":"failed"}
+
+        want it failed by the claude guard ("guildhall test: real claude invoked:", exit 97)
+    claude_guard_test.go:27: calls to the recording claude:
+        recording claude: --version
+        recording claude: --print You are a Guildhall Artisan working on task t-1, attempt plan-1, in the current directory.
+        [... launch prompt elided ...]
+         --output-format stream-json --verbose --permission-mode acceptEdits --effort medium --settings /tmp/ge2336030360/app/t-1/plan-1/claude-settings.json --add-dir /tmp/ge2336030360/app/t-1/plan-1/model
+--- FAIL: TestRealClaudeIsRefused (0.85s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/cmd/guildhall	0.859s
+FAIL
