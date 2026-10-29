@@ -142,6 +142,25 @@ func (c *Client) call(ctx context.Context, args ...string) ([]byte, error) {
 // callTail is call with tail passed after `--`, following the session, so no
 // word of it is read as a Herdr option.
 func (c *Client) callTail(ctx context.Context, args, tail []string) ([]byte, error) {
+	r := c.runTail(ctx, args, tail)
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.stdout, nil
+}
+
+// runResult is one Herdr run as runTail saw it: stdout, stderr and the exit
+// code are kept on every path, and err is the error callTail returns.
+type runResult struct {
+	stdout, stderr []byte
+	// exit is -1 when Herdr did not run or the context ended.
+	exit int
+	err  error
+}
+
+// runTail runs one Herdr subcommand as callTail does, keeping what callTail
+// drops.
+func (c *Client) runTail(ctx context.Context, args, tail []string) runResult {
 	argv := make([]string, 0, len(c.command)+len(args)+len(tail)+3)
 	argv = append(argv, c.command...)
 	argv = append(argv, args...)
@@ -150,8 +169,11 @@ func (c *Client) callTail(ctx context.Context, args, tail []string) ([]byte, err
 		argv = append(append(argv, "--"), tail...)
 	}
 	stdout, stderr, exit, err := c.run(ctx, argv, c.env())
+	r := runResult{stdout: stdout, stderr: stderr, exit: exit}
 	if err != nil {
-		return nil, fmt.Errorf("herdr %s: %w", strings.Join(args[:min(2, len(args))], " "), err)
+		r.exit = -1
+		r.err = fmt.Errorf("herdr %s: %w", strings.Join(args[:min(2, len(args))], " "), err)
+		return r
 	}
 	if exit != 0 {
 		var body struct {
@@ -161,11 +183,12 @@ func (c *Client) callTail(ctx context.Context, args, tail []string) ([]byte, err
 			} `json:"error"`
 		}
 		if json.Unmarshal(bytes.TrimSpace(stderr), &body) == nil && body.Error != nil {
-			return nil, &APIError{Code: body.Error.Code, Message: body.Error.Message}
+			r.err = &APIError{Code: body.Error.Code, Message: body.Error.Message}
+			return r
 		}
-		return nil, fmt.Errorf("herdr %s: exit %d: %s", strings.Join(args[:min(2, len(args))], " "), exit, strings.TrimSpace(string(stderr)))
+		r.err = fmt.Errorf("herdr %s: exit %d: %s", strings.Join(args[:min(2, len(args))], " "), exit, strings.TrimSpace(string(stderr)))
 	}
-	return stdout, nil
+	return r
 }
 
 func (c *Client) env() []string {
@@ -680,22 +703,74 @@ type AgentReport struct {
 // ErrResumeArgv. The resume arguments follow `--`, after the explicit
 // session, so none of them is read as a Herdr option.
 func (c *Client) ReportAgent(ctx context.Context, paneID string, r AgentReport) error {
+	_, err := c.ReportAgentOutcome(ctx, paneID, r)
+	return err
+}
+
+// ReportOutcome is what Herdr answered to a report-agent call.
+type ReportOutcome struct {
+	// Exit is Herdr's exit code, or -1 when Herdr did not run, its context
+	// ended, or the report was refused before anything was sent.
+	Exit int
+	// Stdout is Herdr's standard output, kept on success and failure.
+	Stdout []byte
+}
+
+// ReportAgentOutcome is ReportAgent, also returning Herdr's exit code and
+// stdout for diagnosis. Its checks, arguments and error are ReportAgent's.
+func (c *Client) ReportAgentOutcome(ctx context.Context, paneID string, r AgentReport) (ReportOutcome, error) {
+	refused := ReportOutcome{Exit: -1}
 	if err := checkID("pane", paneID); err != nil {
-		return err
+		return refused, err
 	}
 	if !labelShape.MatchString(r.Source) || !labelShape.MatchString(r.Agent) {
-		return fmt.Errorf("herdr agent source %q and agent %q: need letters, digits, '.', '_' or '-'", r.Source, r.Agent)
+		return refused, fmt.Errorf("herdr agent source %q and agent %q: need letters, digits, '.', '_' or '-'", r.Source, r.Agent)
 	}
 	if !agentStates[r.State] {
-		return fmt.Errorf("herdr agent state %q must be idle, working, blocked or unknown", r.State)
+		return refused, fmt.Errorf("herdr agent state %q must be idle, working, blocked or unknown", r.State)
 	}
 	if len(r.Resume) > 0 {
 		if cmd := r.Resume[0]; cmd == "" || strings.HasPrefix(cmd, "-") || strings.ContainsAny(cmd, `/\:`) {
-			return fmt.Errorf("%w: %q", ErrResumeArgv, cmd)
+			return refused, fmt.Errorf("%w: %q", ErrResumeArgv, cmd)
 		}
 	}
-	_, err := c.callTail(ctx, []string{"pane", "report-agent", "--source", r.Source, "--agent", r.Agent, "--state", r.State, paneID}, r.Resume)
-	return err
+	res := c.runTail(ctx, []string{"pane", "report-agent", "--source", r.Source, "--agent", r.Agent, "--state", r.State, paneID}, r.Resume)
+	return ReportOutcome{Exit: res.exit, Stdout: res.stdout}, res.err
+}
+
+// PaneReadBack is a pane as `herdr pane get` returns it, for diagnosis only.
+type PaneReadBack struct {
+	// AgentStatus is the pane's agent_status.
+	AgentStatus string
+	// Pane is the raw result.pane object: which of its fields, if any, names
+	// a reported agent or resume command is not known, so none is assumed.
+	Pane json.RawMessage
+}
+
+// PaneGet reads pane paneID with `herdr pane get`. It grants no ownership and
+// is never evidence of liveness; a closed pane yields an error for which
+// IsNotFound is true.
+func (c *Client) PaneGet(ctx context.Context, paneID string) (PaneReadBack, error) {
+	if err := checkID("pane", paneID); err != nil {
+		return PaneReadBack{}, err
+	}
+	out, err := c.call(ctx, "pane", "get", paneID)
+	if err != nil {
+		return PaneReadBack{}, err
+	}
+	var r struct {
+		Pane json.RawMessage `json:"pane"`
+	}
+	if err := decode(out, &r); err != nil {
+		return PaneReadBack{}, err
+	}
+	var pane struct {
+		AgentStatus string `json:"agent_status"`
+	}
+	if len(r.Pane) == 0 || bytes.Equal(r.Pane, []byte("null")) || json.Unmarshal(r.Pane, &pane) != nil {
+		return PaneReadBack{}, errors.New("herdr pane get returned no pane object")
+	}
+	return PaneReadBack{AgentStatus: pane.AgentStatus, Pane: r.Pane}, nil
 }
 
 // labelShape is the accepted shape of an agent source or label.

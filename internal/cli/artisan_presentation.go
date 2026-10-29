@@ -31,5 +31,5 @@ func artisanPresentation(ctx context.Context, cfg *config.Config, storePath, sta
 		return nil, err
 	}
 	host := &artisanWorkspaces{TabHost: adapter.NewHerdrTabs(client), client: client, storePath: storePath, state: state, warnings: warnings}
-	return &launch.Presentation{Host: host, Report: client.ReportAgent, CloseAfter: closeAfter}, nil
+	return &launch.Presentation{Host: host, Report: client.ReportAgentOutcome, ReadBack: client.PaneGet, Warnings: warnings, CloseAfter: closeAfter}, nil
 }

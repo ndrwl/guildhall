@@ -547,6 +547,84 @@ func TestReportAgentReturnsHerdrsRefusal(t *testing.T) {
 	}
 }
 
+func TestReportAgentOutcomeKeepsHerdrsAnswer(t *testing.T) {
+	report := AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{"guildhall", "artisan", "resume"}}
+	ok := `{"id":"cli:request","result":{"type":"ok"}}`
+	c, f := newTestClient(t, map[string]response{"pane report-agent": {stdout: ok}})
+	out, err := c.ReportAgentOutcome(context.Background(), "w1:p2", report)
+	if err != nil || out.Exit != 0 || string(out.Stdout) != ok {
+		t.Fatalf("ReportAgentOutcome = %+v, %v", out, err)
+	}
+	want := append([]string{"herdr", "pane", "report-agent", "--source", "guildhall", "--agent", "artisan", "--state", "working", "w1:p2", "--session", "guildhall-lab", "--"}, report.Resume...)
+	if len(f.calls) != 1 || !slices.Equal(f.calls[0].args, want) {
+		t.Fatalf("argv = %q, want %q", f.calls, want)
+	}
+
+	refusal := `{"error":{"code":"invalid_resume_argv","message":"no"},"id":"cli:request"}`
+	c, _ = newTestClient(t, map[string]response{"pane report-agent": {exit: 3, stdout: "partial", stderr: refusal}})
+	out, err = c.ReportAgentOutcome(context.Background(), "w1:p2", report)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "invalid_resume_argv" || out.Exit != 3 || string(out.Stdout) != "partial" {
+		t.Errorf("API refusal = %+v, %v", out, err)
+	}
+	if plain := c.ReportAgent(context.Background(), "w1:p2", report); plain == nil || plain.Error() != err.Error() {
+		t.Errorf("ReportAgent = %v, want the same error %v", plain, err)
+	}
+
+	c, _ = newTestClient(t, map[string]response{"pane report-agent": {exit: 2, stderr: "boom"}})
+	out, err = c.ReportAgentOutcome(context.Background(), "w1:p2", report)
+	if err == nil || err.Error() != "herdr pane report-agent: exit 2: boom" || out.Exit != 2 {
+		t.Errorf("plain failure = %+v, %v", out, err)
+	}
+
+	c, _ = newTestClient(t, map[string]response{"pane report-agent": {startErr: true}})
+	out, err = c.ReportAgentOutcome(context.Background(), "w1:p2", report)
+	if !errors.Is(err, exec.ErrNotFound) || out.Exit != -1 {
+		t.Errorf("missing herdr = %+v, %v", out, err)
+	}
+
+	c, _ = newTestClient(t, map[string]response{"pane report-agent": {}})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if out, err = c.ReportAgentOutcome(ctx, "w1:p2", report); !errors.Is(err, context.Canceled) || out.Exit != -1 {
+		t.Errorf("ended context = %+v, %v", out, err)
+	}
+
+	c, f = newTestClient(t, nil)
+	if out, err = c.ReportAgentOutcome(context.Background(), "w1:p2", AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: []string{"/bin/guildhall"}}); !errors.Is(err, ErrResumeArgv) || out.Exit != -1 || len(f.calls) != 0 {
+		t.Errorf("refused report = %+v, %v after %d calls", out, err, len(f.calls))
+	}
+}
+
+// pane_get.json is hand-written, not recorded: d30 could not run Herdr
+// 0.9.5's `pane get` to capture one. It follows the recorded root_pane object
+// in workspace_create.json, so it holds no agent or resume field.
+func TestPaneGetKeepsTheRawPane(t *testing.T) {
+	c, f := newTestClient(t, map[string]response{"pane get": {stdout: fixture(t, "pane_get.json")}})
+	got, err := c.PaneGet(context.Background(), "w1:p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentStatus != "working" || !strings.Contains(string(got.Pane), `"pane_id": "w1:p2"`) || !strings.HasPrefix(string(got.Pane), "{") {
+		t.Errorf("PaneGet = %+v", got)
+	}
+	if want := []string{"herdr", "pane", "get", "w1:p2", "--session", "guildhall-lab"}; !slices.Equal(f.calls[0].args, want) {
+		t.Errorf("argv = %q, want %q", f.calls[0].args, want)
+	}
+	if _, err := c.PaneGet(context.Background(), "--x"); err == nil || len(f.calls) != 1 {
+		t.Errorf("malformed pane = %v after %d calls", err, len(f.calls))
+	}
+
+	gone, _ := newTestClient(t, map[string]response{"pane get": {stderr: `{"error":{"code":"pane_not_found","message":"pane w9:p9 not found"},"id":"cli:pane:get"}`, exit: 1}})
+	if _, err := gone.PaneGet(context.Background(), "w9:p9"); !IsNotFound(err) {
+		t.Errorf("PaneGet of a closed pane = %v, want not found", err)
+	}
+	empty, _ := newTestClient(t, map[string]response{"pane get": {stdout: `{"id":"x","result":{"type":"pane_info"}}`}})
+	if _, err := empty.PaneGet(context.Background(), "w1:p2"); err == nil {
+		t.Error("PaneGet accepted a response with no pane")
+	}
+}
+
 func TestRecordedTabChecksTheTabStillExists(t *testing.T) {
 	c, f := newTestClient(t, map[string]response{
 		"tab get":  {stdout: fixture(t, "tab_get.json")},
