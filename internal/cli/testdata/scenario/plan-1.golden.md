@@ -6,6 +6,12 @@ Step: plan (plan version 1)
 Attempt: 1
 Profile: planner
 
+Task title:
+
+```text
+Sort the task list
+```
+
 ## Role
 
 # Artisan

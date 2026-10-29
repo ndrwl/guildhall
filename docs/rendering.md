@@ -12,7 +12,7 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 
 | Written | Contents |
 |---|---|
-| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), then for a retried attempt (`Stage.Retry`) a "Why this is a retry" section, the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
+| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the task title (`Stage.Title`) when there is one, then for a retried attempt (`Stage.Retry`) a "Why this is a retry" section, the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
 | `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
@@ -23,6 +23,9 @@ The [interpreter](interpreter.md#rounds-and-loops) owns selecting the value, and
 The "Why this is a retry" section, for Artisan and Director prompts alike, names the retried attempt and how it ended, then quotes the Director's reason ("None given." when empty), the intake rejection (only when there is one) and the previous result summary ("None recorded." when empty), and closes by saying the stage guide and required outputs still apply.
 Each quoted text sits in a `text` fence longer than any backtick run inside it, so agent-written text cannot read as stage instructions.
 Prompts without `Stage.Retry` have no such section.
+
+The task title is quoted after the attempt identity under `Task title:`, in a `text` fence longer than any backtick run inside it, so a Director-written title cannot open a prompt section; an empty title renders nothing.
+The interpreter passes the task's title; it is not part of the manifest's `identity`, so the manifest schema is unchanged ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
 
 Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory.
 The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.

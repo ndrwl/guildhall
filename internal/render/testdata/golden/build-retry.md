@@ -6,6 +6,12 @@ Step: build (build version 1)
 Attempt: 2
 Profile: builder
 
+Task title:
+
+```text
+Sort the task list by priority
+```
+
 ## Why this is a retry
 
 This is a retry of attempt 1, which failed.

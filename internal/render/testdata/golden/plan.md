@@ -6,6 +6,12 @@ Step: plan (plan version 1)
 Attempt: 2
 Profile: planner
 
+Task title:
+
+```text
+Sort the task list by priority
+```
+
 ## Role
 
 You are an Artisan working on one stage of one Guildhall task.

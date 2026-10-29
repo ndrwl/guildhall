@@ -44,8 +44,10 @@ var taskKindDescriptions = map[string]string{
 		"publish, validate and deliver.",
 	config.TaskKindBug: "A fix for a defect in behaviour that should already work: it runs the repository's " +
 		"[repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps " +
-		"with research reproducing the defect and finding its cause, build writing a regression test that fails " +
-		"before the fix and passes after it, and review checking that test.",
+		"without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and " +
+		"deliver, and merges under the repository's merge requirements: research reproduces the defect from the title " +
+		"and finds its cause, plan's spec goes straight to build, build writes a regression test that fails before the " +
+		"fix and passes after it, and review checks that test.",
 }
 
 var taskKindHelp = func() string {

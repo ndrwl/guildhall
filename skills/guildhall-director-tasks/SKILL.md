@@ -28,11 +28,13 @@ When they later say a task matters more or less, run `guildhall task priority --
 Every task is created as a kind, which chooses its workflow:
 
 - `feature`: New or changed behaviour, and the default: it runs the repository's workflow setting, the shipped default when it names none, with grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver.
-- `bug`: A fix for a defect in behaviour that should already work: it runs the repository's [repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps with research reproducing the defect and finding its cause, build writing a regression test that fails before the fix and passes after it, and review checking that test.
+- `bug`: A fix for a defect in behaviour that should already work: it runs the repository's [repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, and merges under the repository's merge requirements: research reproduces the defect from the title and finds its cause, plan's spec goes straight to build, build writes a regression test that fails before the fix and passes after it, and review checks that test.
 
 Pick the kind from the Guildmaster's words: something that is broken, wrong or a regression is a `bug`, and anything new or changed is a `feature`.
 Pass `--kind bug` for a bug; `--fixes` alone already makes a task a bug, and `--kind feature --fixes <repo>/<task>` keeps a fix of an earlier task on the feature workflow.
 When it is unclear, ask.
+A bug task has no grill, so its title is the only statement of the bug its Artisans see: put the symptom and the exact error in it, in the Guildmaster's words.
+When the research or plan attempt of a bug task fails, it has either not reproduced the defect or found a question that needs the Guildmaster: read the attempt's summary with `guildhall task show`, and bring its findings or its question to the Guildmaster before any `guildhall step retry`.
 Tell the Guildmaster which kind you chose, with the task id:
 
 ```sh
@@ -41,6 +43,7 @@ guildhall task new --repo app --title "CSV export drops the last row" --kind bug
 
 Pick the repository from what they said; when the copy has several and it is unclear, ask.
 `guildhall task start` prints what the task waits for, such as `{"wait":"director-stage","step":"grill","attempt":1}`, which means the first stage is yours: run it with `guildhall-director-stage`.
+A bug task has no grill, so its first wait is a research attempt, such as `{"wait":"attempt","step":"research","attempt":1}`, and there is nothing for you to run.
 `{"wait":"queued","step":"plan","attempt":1,"position":2}` means `max_running_attempts` attempts are running, so the start waits in the start queue, highest priority first; the session supervisor starts it when a slot frees, so do not repeat `task start`, `step retry` or `step send-back` for it.
 `director status --json` lists what waits under `session.start_queue`, and your own stages never wait there.
 While the session is `recovering`, both commands are refused until `guildhall director ready`.

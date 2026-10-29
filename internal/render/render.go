@@ -52,6 +52,9 @@ var (
 type Stage struct {
 	Repository string
 	Task       string
+	// Title is the task's Director-written title. Prompt renders it fenced as text after the header; it is not part of
+	// the manifest's Identity. Empty renders no title.
+	Title string
 	// Step is the step from the task's bound workflow revision; its kind and settings decide the actor,
 	// and its "profile", "skills" and "instructions" settings are rendered.
 	Step workflow.Step
@@ -240,7 +243,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -253,7 +256,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -285,7 +288,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, ins
 		}
 		m.Skills = append(m.Skills, skill)
 	}
-	text := composePrompt(m, instructions, role, guide, standards, reviewBase, retry)
+	text := composePrompt(m, title, instructions, role, guide, standards, reviewBase, retry)
 	if actor == workflow.ArtisanActor {
 		text += outputInstructions(m.Identity, revisions)
 	}
@@ -297,7 +300,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, ins
 	return nil
 }
 
-func composePrompt(m *Manifest, instructions, role, guide string, standards []string, reviewBase string, retry *Retry) string {
+func composePrompt(m *Manifest, title, instructions, role, guide string, standards []string, reviewBase string, retry *Retry) string {
 	var b strings.Builder
 	id := m.Identity
 	fmt.Fprintf(&b, "# Guildhall attempt\n\nRepository: %s\nTask: %s\nStep: %s (%s version %d)\nAttempt: %d\n",
@@ -310,6 +313,10 @@ func composePrompt(m *Manifest, instructions, role, guide string, standards []st
 	}
 	if id.Profile != "" {
 		fmt.Fprintf(&b, "Profile: %s\n", id.Profile)
+	}
+	// The title is Director-written, so it is fenced as text and cannot open a section of its own.
+	if strings.TrimSpace(title) != "" {
+		fmt.Fprintf(&b, "\nTask title:\n\n%s\n", fenced(title))
 	}
 	section := func(title, body string) { fmt.Fprintf(&b, "\n## %s\n\n%s\n", title, strings.TrimRight(body, "\n")) }
 	if retry != nil {
@@ -357,8 +364,7 @@ func retrySection(retry *Retry) string {
 			fmt.Fprintf(&b, "%s %s\n\n", label, none)
 			return
 		}
-		fence := strings.Repeat("`", max(3, longestRun(text, '`')+1))
-		fmt.Fprintf(&b, "%s\n\n%stext\n%s\n%s\n\n", label, fence, strings.TrimRight(normalise(text), "\n"), fence)
+		fmt.Fprintf(&b, "%s\n\n%s\n\n", label, fenced(text))
 	}
 	quote("Director's reason:", retry.Reason, "None given.")
 	if strings.TrimSpace(retry.Rejection) != "" {
@@ -367,6 +373,12 @@ func retrySection(retry *Retry) string {
 	quote("Previous summary:", retry.Summary, "None recorded.")
 	b.WriteString("Address this in your attempt; the stage guide and required outputs still apply.\n")
 	return b.String()
+}
+
+// fenced fences text as a text code block, with a fence longer than any backtick run inside it.
+func fenced(text string) string {
+	fence := strings.Repeat("`", max(3, longestRun(text, '`')+1))
+	return fmt.Sprintf("%stext\n%s\n%s", fence, strings.TrimRight(normalise(text), "\n"), fence)
 }
 
 // longestRun is the length of the longest run of c in s.

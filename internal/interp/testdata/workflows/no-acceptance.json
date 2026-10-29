@@ -1,0 +1,22 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "no-acceptance",
+  "description": "The shipped bug workflow's shape with profiles: research, plan, build and review from plan's spec with no Guildmaster acceptance, publish, validation and delivery under the repository's merge requirements.",
+  "steps": [
+    {"id": "research", "type": "research", "version": 1, "settings": {"profile": "researcher"}},
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"},
+     "inputs": {"context": ["research.notes"]}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["plan.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}},
+    {"id": "validate", "type": "validate", "version": 1,
+     "inputs": {"head": ["publish.head"]},
+     "on": {"failed": {"goto": "build", "max": 3}}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["publish.head"], "review": ["review.outcome"], "validation": ["validate.result"]}}
+  ]
+}

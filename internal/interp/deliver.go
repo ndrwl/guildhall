@@ -650,7 +650,8 @@ func (r *run) carry(s workflow.Step, id string, x deliverHead, conditions []cond
 		from, x.head, kind, repo.Merge.Reapprove(), id+"-authorized"))
 }
 
-// specDigest is the accepted spec digest the latest code review outcome before deliver is bound to, or "".
+// specDigest is the digest of the spec the build was given, accepted or plan's, that the latest code review outcome
+// before deliver is bound to, or "".
 func (r *run) specDigest(s workflow.Step) string {
 	outcomes, err := r.reviewOutcomes(s)
 	if err != nil {

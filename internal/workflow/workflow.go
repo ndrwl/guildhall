@@ -110,8 +110,9 @@ var bugJSON []byte
 // Default returns Guildhall's shipped default workflow, the workflow of a feature task.
 func Default() (*Definition, error) { return shipped(defaultJSON) }
 
-// Bug returns Guildhall's shipped bug workflow: the default's steps, with research, build and review instructed to
-// reproduce the defect, test it first and check that test.
+// Bug returns Guildhall's shipped bug workflow: the default's steps without grill and accept, so it has no Guildmaster
+// stage and build and review take plan's spec; research, plan, build and review are instructed to reproduce the
+// defect, proceed or fail back without acceptance, test it first and check that test.
 func Bug() (*Definition, error) { return shipped(bugJSON) }
 
 func shipped(data []byte) (*Definition, error) {
