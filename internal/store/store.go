@@ -282,36 +282,9 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 
 	var out Receipt
 	err = s.db.Update(func(tx *bolt.Tx) error {
-		receipts := tx.Bucket(bucketReceipts)
-		if prior := receipts.Get([]byte(mutationID)); prior != nil {
-			if err := json.Unmarshal(prior, &out); err != nil {
-				return fmt.Errorf("receipt %q: %w", mutationID, err)
-			}
-			if out.Operation != op || out.RequestDigest != requestDigest {
-				return fmt.Errorf("%w: %q was %s", ErrMutationConflict, mutationID, out.Operation)
-			}
-			return nil
-		}
-		// The sequence is taken first so apply can record it; a failed apply rolls it back.
-		seq, err := receipts.NextSequence()
-		if err != nil {
-			return err
-		}
-		r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: requestDigest, Sequence: seq}
-		if err := apply(tx, &r); err != nil {
-			return err
-		}
-		r.CommittedAt = s.now().UTC()
-		if err := putJSON(receipts, []byte(mutationID), r); err != nil {
-			return err
-		}
-		if testHookBeforeCommit != nil {
-			if err := testHookBeforeCommit(); err != nil {
-				return err
-			}
-		}
-		out = r
-		return nil
+		var err error
+		out, err = s.commit(tx, mutationID, op, requestDigest, apply)
+		return err
 	})
 	if st, ok := errors.AsType[standing](err); ok {
 		return st.r, nil
@@ -320,6 +293,50 @@ func (s *Store) mutate(mutationID, op string, req any, apply func(tx *bolt.Tx, r
 		return Receipt{}, fmt.Errorf("store: %s %s: %w", op, mutationID, storeErr(err))
 	}
 	return out, nil
+}
+
+// priorReceipt returns the receipt committed for mutationID in tx, refusing one of another request with
+// ErrMutationConflict; ok is false when none was committed.
+func priorReceipt(tx *bolt.Tx, mutationID, op, requestDigest string) (r Receipt, ok bool, err error) {
+	prior := tx.Bucket(bucketReceipts).Get([]byte(mutationID))
+	if prior == nil {
+		return Receipt{}, false, nil
+	}
+	if err := json.Unmarshal(prior, &r); err != nil {
+		return Receipt{}, false, fmt.Errorf("receipt %q: %w", mutationID, err)
+	}
+	if r.Operation != op || r.RequestDigest != requestDigest {
+		return Receipt{}, false, fmt.Errorf("%w: %q was %s", ErrMutationConflict, mutationID, r.Operation)
+	}
+	return r, true, nil
+}
+
+// commit is mutate's work inside tx: it returns the receipt already committed for mutationID, or runs apply and
+// writes its receipt. A failed apply must fail tx, which rolls back what it wrote.
+func (s *Store) commit(tx *bolt.Tx, mutationID, op, requestDigest string, apply func(tx *bolt.Tx, r *Receipt) error) (Receipt, error) {
+	if prior, ok, err := priorReceipt(tx, mutationID, op, requestDigest); ok || err != nil {
+		return prior, err
+	}
+	receipts := tx.Bucket(bucketReceipts)
+	// The sequence is taken first so apply can record it; a failed apply rolls it back.
+	seq, err := receipts.NextSequence()
+	if err != nil {
+		return Receipt{}, err
+	}
+	r := Receipt{MutationID: mutationID, Operation: op, RequestDigest: requestDigest, Sequence: seq}
+	if err := apply(tx, &r); err != nil {
+		return Receipt{}, err
+	}
+	r.CommittedAt = s.now().UTC()
+	if err := putJSON(receipts, []byte(mutationID), r); err != nil {
+		return Receipt{}, err
+	}
+	if testHookBeforeCommit != nil {
+		if err := testHookBeforeCommit(); err != nil {
+			return Receipt{}, err
+		}
+	}
+	return r, nil
 }
 
 // standing is returned by a mutation's apply when an earlier mutation, r, already wrote what

@@ -83,6 +83,9 @@ type StageAttempt struct {
 	IntakeRejection string `json:"intake_rejection,omitempty"`
 	// Spend is what the attempt's runtime reported it spent (RecordAttemptSpend); nil until recorded.
 	Spend *Spend `json:"spend,omitempty"`
+	// Director marks an attempt of a Director stage (StartDirectorAttempt), which the running cap does not count.
+	// Attempts recorded before the flag have none and count until they finish.
+	Director bool `json:"director,omitempty"`
 }
 
 // DocumentRef points at a durable document file for a task (R1.13).
@@ -247,7 +250,7 @@ func (s *Store) StartAttempt(mutationID, repository, taskID, step string) (Recei
 }
 
 // startAttempt writes the next running attempt of step and fills the receipt's record fields.
-func startAttempt(tx *bolt.Tx, r *Receipt, repository, taskID, step string) (StageAttempt, error) {
+func startAttempt(tx *bolt.Tx, r *Receipt, repository, taskID, step string, director bool) (StageAttempt, error) {
 	r.Repository, r.TaskID = repository, taskID
 	if _, err := attemptTask(tx, repository, taskID, step); err != nil {
 		return StageAttempt{}, err
@@ -267,7 +270,7 @@ func startAttempt(tx *bolt.Tx, r *Receipt, repository, taskID, step string) (Sta
 	if last.Number > 0 && last.Outcome == "" {
 		return StageAttempt{}, invalid("attempt %d of step %q is still running", last.Number, step)
 	}
-	a := StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: last.Number + 1}
+	a := StageAttempt{Repository: repository, TaskID: taskID, Step: step, Number: last.Number + 1, Director: director}
 	r.Attempt, r.Record = a.Number, attemptRecord(step, a.Number)
 	return a, putJSON(attempts, attemptKey(taskID, step, a.Number), a)
 }

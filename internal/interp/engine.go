@@ -87,17 +87,24 @@ const (
 	// front, or its merge is held (docs/interpreter.md#the-merge-queue); advancing it again, as the supervisor's
 	// merge-queue watcher does, claims the front when the task is first.
 	WaitMergeQueue Wait = "merge-queue"
+	// WaitQueued: the running cap did not admit the step's next attempt, Attempt, so it waits in the start queue at
+	// Position (docs/interpreter.md#the-start-queue); advancing the task again, as the supervisor's start-queue
+	// watcher does, starts it once it is the queue's front and a slot is free.
+	WaitQueued Wait = "queued"
 )
 
 // Next is where a task stands after an advance.
 type Next struct {
 	Wait Wait
 	Step string
-	// Attempt is the attempt number for WaitAttempt, WaitDirectorStage and WaitDirector.
+	// Attempt is the attempt number for WaitAttempt, WaitDirectorStage and WaitDirector, and the queued attempt's for
+	// WaitQueued.
 	Attempt int
 	// Decision is the open decision's id for WaitDecision, and for WaitDirector the decision the
 	// Director must act on: a rejected loop exit or a changes_requested answer without a loop rule.
 	Decision string
+	// Position is the queued start's 1-based place in the start queue for WaitQueued, at the time of the advance.
+	Position int
 }
 
 var (
@@ -227,13 +234,18 @@ type Engine struct {
 	// read that spares a held advance its preparation; the hold that decides is Caps.Hold, read in the start's own
 	// record, so a pause or stop that commits after Hold answered still holds the attempt.
 	Hold func() (bool, error)
-	// Caps are the attempt caps every new attempt starts under (Records.StartCappedAttempt); zero fields are no cap.
-	// An advance whose next attempt is refused at a cap records and launches nothing, sends the Director one
-	// budget-refused message per task and UTC day, and returns an error wrapping store.ErrAttemptCap that names the
-	// guard rail's setting; advancing the task again once capacity returns starts it (docs/director.md#guard-rails).
-	// `task start`, `step done` and `step retry` set them from the config's guard rails. With Caps.Hold, a start the
-	// records refuse with store.ErrDirectorHeld records and launches nothing and the advance waits paused, as Hold
-	// holds it; those commands set it with Hold.
+	// Caps are the attempt caps every new Artisan attempt starts under (Records.StartCappedAttempt); zero fields are
+	// no cap, and Caps.Queue is ignored: the engine sets it to the request of each start. An advance whose next
+	// attempt the running cap does not admit, because the cap is full or another start is ahead in the start queue,
+	// launches nothing, records the step's queue entry and returns WaitQueued with the attempt and its place; no
+	// message is sent, and advancing the task again starts it once it is the queue's front and a slot is free
+	// (docs/director.md#the-start-queue). An advance whose next attempt the daily cap refuses records and launches
+	// nothing, sends the Director one budget-refused message per task and UTC day, and returns an error wrapping
+	// store.ErrAttemptCap that names the guard rail's setting; advancing the task again once capacity returns starts
+	// it (docs/director.md#guard-rails). A Director stage's attempt is never capped or queued
+	// (Records.StartDirectorAttempt). `task start`, `step done` and `step retry` set them from the config's guard
+	// rails. With Caps.Hold, a start the records refuse with store.ErrDirectorHeld records and launches nothing and
+	// the advance waits paused, as Hold holds it, and is never queued; those commands set it with Hold.
 	Caps store.AttemptCaps
 }
 
@@ -259,7 +271,7 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 	if err := e.Config.CheckArtisanAdapters(def); err != nil {
 		return Next{}, fmt.Errorf("interp: %w", err)
 	}
-	r := &run{e: e, ctx: ctx, task: t, def: def}
+	r := &run{e: e, ctx: ctx, task: t, def: def, event: ev}
 	if err := r.load(); err != nil {
 		return Next{}, err
 	}
@@ -320,6 +332,10 @@ type run struct {
 	def  *workflow.Definition
 	// retry is the attempt-retried event whose failed or stopped attempt the walk follows with the next.
 	retry *Event
+	// event is the event the advance applies, which names the request a start is queued under.
+	event Event
+	// queue is the start queue, in queue order, as the advance began.
+	queue []store.QueuedStart
 	*history
 }
 
@@ -345,9 +361,42 @@ func (r *run) load() error {
 	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
+	if r.queue, err = r.e.Records.StartQueue(); err != nil {
+		return fmt.Errorf("interp: %w", err)
+	}
 	r.history = newHistory(repo, id, r.def, r.read, attempts, documents, decisions)
 	r.rulings, r.fullReviews = rulings, full
 	return nil
+}
+
+// queuedStart returns the index in r.queue of the task's entry for attempt n of step, -1 when it has none.
+func (r *run) queuedStart(step string, n int) int {
+	return slices.IndexFunc(r.queue, func(q store.QueuedStart) bool {
+		return q.Is(r.task.Repository, r.task.ID, step) && q.Attempt == n
+	})
+}
+
+// queuedText names the queue entry at index i of r.queue.
+func (r *run) queuedText(i int) string {
+	q := r.queue[i]
+	return fmt.Sprintf("attempt %d of step %s is queued at place %d since %s, under a %s request", q.Attempt, q.Step, i+1, q.QueuedAt.Format(time.RFC3339), q.Kind)
+}
+
+// startRequest is the request attempt n of s is started under, which a queued start records: the retry the walk
+// follows, or else the event the advance applies.
+func (r *run) startRequest(s workflow.Step, n int) store.StartRequest {
+	if r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt+1 == n {
+		return store.StartRequest{Kind: store.StartByRetry, Retried: r.retry.Attempt}
+	}
+	switch r.event.Kind {
+	case TaskCreated:
+		return store.StartRequest{Kind: store.StartByTask}
+	case DecisionAnswered:
+		return store.StartRequest{Kind: store.StartByDecision}
+	case StepSentBack:
+		return store.StartRequest{Kind: store.StartBySendBack}
+	}
+	return store.StartRequest{Kind: store.StartByEngine}
 }
 
 // intake validates ev against the records and records the result it announces.
@@ -399,6 +448,9 @@ func (r *run) intake(ev Event) error {
 func (r *run) retried(ev Event) error {
 	a := r.attempt(ev.Step, ev.Attempt)
 	if !slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == ev.Step }) || a == nil {
+		if i := r.queuedStart(ev.Step, ev.Attempt); i >= 0 {
+			return fmt.Errorf("interp: %w: no attempt %d of step %q: %s", ErrEvent, ev.Attempt, ev.Step, r.queuedText(i))
+		}
 		return fmt.Errorf("interp: %w: no attempt %d of step %q", ErrEvent, ev.Attempt, ev.Step)
 	}
 	if a.Outcome != store.AttemptFailed && a.Outcome != store.AttemptStopped {
@@ -415,6 +467,9 @@ func (r *run) retried(ev Event) error {
 			return r.retryReason(ev)
 		}
 	default:
+		if i := r.queuedStart(ev.Step, latest+1); i >= 0 {
+			return fmt.Errorf("interp: %w: attempt %d of step %s is not its latest, %d; %s", ErrEvent, a.Number, a.Step, latest, r.queuedText(i))
+		}
 		return fmt.Errorf("interp: %w: attempt %d of step %s is not its latest, %d", ErrEvent, a.Number, a.Step, latest)
 	}
 	r.retry = &ev
@@ -494,8 +549,17 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 			return false, Next{}, err
 		}
 		return false, next, r.retryLaunched(s.ID, a.Number, r.launch(s, a.Number, rt, r.boundInputs(b)))
+	case a.Outcome != store.AttemptSucceeded && r.retry == nil && r.queuedStart(s.ID, a.Number+1) >= 0:
+		// The retry that queued the next attempt is still owed, so any advance, such as the start-queue watcher's,
+		// starts it as the retry would; its reason is the one bound to that attempt.
+		r.retry = &Event{Kind: AttemptRetried, Repository: r.task.Repository, Task: r.task.ID, Step: s.ID, Attempt: a.Number}
+		fallthrough
 	case a.Outcome != store.AttemptSucceeded && r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt == a.Number:
 		next, err := r.start(s)
+		if next.Wait == WaitQueued {
+			// The reason is sent once the attempt launches.
+			return false, next, err
+		}
 		return false, next, r.retryLaunched(s.ID, next.Attempt, err)
 	case a.Outcome != store.AttemptSucceeded:
 		text := fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome)
@@ -678,9 +742,25 @@ func (r *run) startBound(s workflow.Step, n int, rt artisanRuntime) (Next, error
 		return Next{}, err
 	}
 	inputs := r.boundInputs(b)
-	rc, err := r.e.Records.StartCappedAttempt(r.mutation("attempt", s.ID, strconv.Itoa(n)), r.task.Repository, r.task.ID, s.ID, r.e.Caps)
+	mutation := r.mutation("attempt", s.ID, strconv.Itoa(n))
+	var rc store.Receipt
+	if s.Actor() == workflow.DirectorActor {
+		// The Director runs its stages in its own session: they take no running slot and never queue.
+		rc, err = r.e.Records.StartDirectorAttempt(mutation, r.task.Repository, r.task.ID, s.ID, r.e.Caps.Hold)
+	} else {
+		caps := r.e.Caps
+		req := r.startRequest(s, n)
+		caps.Queue = &req
+		rc, err = r.e.Records.StartCappedAttempt(mutation, r.task.Repository, r.task.ID, s.ID, caps)
+	}
 	if errors.Is(err, store.ErrDirectorHeld) {
 		return Next{Wait: WaitPaused, Step: s.ID}, nil
+	}
+	if q, ok := errors.AsType[*store.StartQueued](err); ok {
+		if q.Entry.Attempt != n {
+			return Next{}, fmt.Errorf("queued attempt %d, expected %d: another writer advanced the task", q.Entry.Attempt, n)
+		}
+		return Next{Wait: WaitQueued, Step: s.ID, Attempt: n, Position: q.Position}, nil
 	}
 	if refusal, ok := errors.AsType[*store.CapRefusal](err); ok {
 		return Next{}, r.budgetRefused(s, n, refusal, err)
@@ -696,7 +776,8 @@ func (r *run) startBound(s workflow.Step, n int, rt artisanRuntime) (Next, error
 }
 
 // budgetRefused tells the Director that a cap refused attempt n of step s, once per task and UTC day: a later
-// refusal that day, at either cap, conflicts with the message already sent and sends nothing. The message names
+// refusal that day conflicts with the message already sent and sends nothing. Only the daily cap refuses an
+// engine start, since the running cap queues it. The message names
 // the command that starts the refused attempt: step retry for a refused retry, task start otherwise. It returns
 // the refusal named by its guard rail's setting.
 func (r *run) budgetRefused(s workflow.Step, n int, refusal *store.CapRefusal, err error) error {

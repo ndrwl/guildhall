@@ -688,6 +688,14 @@ func (p storeRecords) StartCappedAttempt(m, repo, id, step string, caps store.At
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartCappedAttempt(m, repo, id, step, caps) })
 }
 
+func (p storeRecords) StartDirectorAttempt(m, repo, id, step string, hold bool) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartDirectorAttempt(m, repo, id, step, hold) })
+}
+
+func (p storeRecords) StartQueue() ([]store.QueuedStart, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.QueuedStart, error) { return s.StartQueue() })
+}
+
 func (p storeRecords) FinishAttempt(m, repo, id, step string, n int, o store.AttemptOutcome) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.FinishAttempt(m, repo, id, step, n, o) })
 }

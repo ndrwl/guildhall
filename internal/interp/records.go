@@ -20,9 +20,14 @@ import (
 // changes nothing, and reusing it for a different request fails with store.ErrMutationConflict.
 // StartAttempt numbers attempts of a step from 1 and refuses, with store.ErrInvalid, while one is running;
 // StartCappedAttempt is StartAttempt refused with a *store.CapRefusal (store.ErrAttemptCap), recording nothing,
-// when the store is at one of its caps: caps.MaxRunning attempts started and not finished, or caps.MaxPerDay
-// attempts started in the current UTC day, in any task; zero is no cap. The count and the start are one write, and
-// a replayed mutation id returns its receipt whatever the caps are now.
+// when the store is at one of its caps: caps.MaxRunning attempts started and not finished, not counting Director
+// stages, or caps.MaxPerDay attempts started in the current UTC day, in any task; zero is no cap. With caps.Queue a
+// start the running cap does not admit, because the cap is full or another start is ahead in the start queue
+// (store.OrderStartQueue), is queued instead: it returns a *store.StartQueued, records the step's queue entry and no
+// attempt, and its admission later removes the entry. The count, the queue and the start are one write, and a
+// replayed mutation id returns its receipt whatever the caps and the queue are now. StartDirectorAttempt starts a
+// Director stage's attempt, held as caps.Hold holds a start but never capped or queued. StartQueue reads the start
+// queue in queue order, leaving out entries of closed tasks and of attempts already recorded.
 // FinishAttempt finishes a running attempt once and the first finish stands: finishing it again with the same
 // outcome under another mutation id returns the first finish's receipt, and another outcome is store.ErrInvalid.
 // RejectAttempt records a result-validation failure with a nonempty reason, changing an unfinished or
@@ -44,6 +49,8 @@ type Records interface {
 	Rulings(repository, taskID string) ([]store.Ruling, error)
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
 	StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error)
+	StartDirectorAttempt(mutationID, repository, taskID, step string, hold bool) (store.Receipt, error)
+	StartQueue() ([]store.QueuedStart, error)
 	FinishAttempt(mutationID, repository, taskID, step string, number int, outcome store.AttemptOutcome) (store.Receipt, error)
 	RejectAttempt(mutationID, repository, taskID, step string, number int, reason string) (store.Receipt, error)
 	PutDocument(mutationID string, d store.DocumentRef) (store.Receipt, error)

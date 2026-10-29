@@ -43,10 +43,10 @@ func budgetMessages(t *testing.T, e *env) map[string]string {
 	return out
 }
 
-// TestRunningCapRefusesALaunchUntilOneFinishes: an advance whose next attempt would pass the running cap records
-// and launches nothing, fails naming the rail and tells the Director once; once a running attempt finishes the
-// next advance launches it.
-func TestRunningCapRefusesALaunchUntilOneFinishes(t *testing.T) {
+// TestRunningCapQueuesALaunchUntilOneFinishes: an advance whose next attempt would pass the running cap records
+// and launches no attempt, waits queued and sends no message; repeating it keeps its place, and once a running
+// attempt finishes the next advance launches it and empties the queue.
+func TestRunningCapQueuesALaunchUntilOneFinishes(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
 			e := newEnv(t, b, planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})))
@@ -55,31 +55,51 @@ func TestRunningCapRefusesALaunchUntilOneFinishes(t *testing.T) {
 				occupy(t, e, step)
 			}
 			for range 2 {
-				err := advanceErr(t, e, interp.Event{Kind: interp.TaskCreated})
-				if !errors.Is(err, store.ErrAttemptCap) || !strings.Contains(err.Error(), "guard rail "+config.MaxRunningAttemptsKey) {
-					t.Fatalf("fifth launch = %v, want a refusal naming guard rail %s", err, config.MaxRunningAttemptsKey)
-				}
+				want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitQueued, Step: "plan", Attempt: 1, Position: 1})
 			}
 			if got := e.attempts(t); len(got) != 0 {
-				t.Fatalf("a refused launch recorded attempts %+v", got)
+				t.Fatalf("a queued launch recorded attempts %+v", got)
 			}
 			if got := e.script.Launched(); len(got) != 0 {
-				t.Fatalf("a refused launch launched %d attempts", len(got))
+				t.Fatalf("a queued launch launched %d attempts", len(got))
 			}
-			msgs := budgetMessages(t, e)
-			if len(msgs) != 1 {
-				t.Fatalf("budget-refused messages = %v, want one for two refusals", msgs)
+			if msgs := budgetMessages(t, e); len(msgs) != 0 {
+				t.Fatalf("budget-refused messages = %v, want none for a queued start", msgs)
 			}
-			for id, text := range msgs {
-				if !strings.HasPrefix(id, "app.t7."+store.MessageBudgetRefused+".") || !strings.Contains(text, config.MaxRunningAttemptsKey) || !strings.Contains(text, "plan") || !strings.Contains(text, "guildhall task start") {
-					t.Errorf("message %s = %q, want the task's, naming the rail, the step and task start", id, text)
-				}
+			q, err := e.h.Records.StartQueue()
+			if err != nil || len(q) != 1 || !q[0].Is("app", "t7", "plan") || q[0].Attempt != 1 || q[0].Kind != store.StartByTask {
+				t.Fatalf("StartQueue = %+v, %v; want plan's first attempt, queued by task start", q, err)
 			}
 
 			if _, err := e.h.Records.FinishAttempt("finish:build", "app", "t8", "build", 1, store.AttemptFailed); err != nil {
 				t.Fatal(err)
 			}
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
+			if q, err := e.h.Records.StartQueue(); err != nil || len(q) != 0 {
+				t.Fatalf("StartQueue after the start = %+v, %v; want it empty", q, err)
+			}
+		})
+	}
+}
+
+// TestDirectorStageStartsAtTheRunningCap: a Director stage takes no running slot, so it starts while the cap is full
+// and does not hold an Artisan start out of it.
+func TestDirectorStageStartsAtTheRunningCap(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e := newEnvDefinition(t, b, loadWorkflow(t, "director-grill"))
+			e.eng.Caps = store.AttemptCaps{MaxRunning: 1}
+			occupy(t, e, "plan")
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirectorStage, Step: "grill", Attempt: 1})
+			if got := e.attempts(t); len(got) != 1 || !got[0].Director {
+				t.Fatalf("attempts = %+v, want one Director attempt", got)
+			}
+			if _, err := e.h.Records.FinishAttempt("finish:plan", "app", "t8", "plan", 1, store.AttemptSucceeded); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.h.Records.StartCappedAttempt("occupy:build", "app", "t8", "build", e.eng.Caps); err != nil {
+				t.Fatalf("an Artisan start with only the grill running = %v, want it admitted", err)
+			}
 		})
 	}
 }
@@ -152,15 +172,63 @@ func TestNoDailyCapStartsPastTheDefault(t *testing.T) {
 	}
 }
 
-// TestRetryPastACapSendsNoReason: a retry refused at a cap sends no reason, its budget-refused message names
-// step retry, and a later retry launches.
-func TestRetryPastACapSendsNoReason(t *testing.T) {
+// TestQueuedRetryStartsOnAPlainAdvance: a retry queued at the running cap sends no reason; a retry of another
+// attempt is refused naming the queued one; once a slot frees a plain advance, as the start-queue watcher makes,
+// launches it with its first bound reason, which is sent once, at launch.
+func TestQueuedRetryStartsOnAPlainAdvance(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			plan2 := planExpectation(t, interptest.Fail("still no plan"))
+			plan2.Attempt = 2
+			plan3 := planExpectation(t, interptest.Fail("no plan again"))
+			plan3.Attempt = 3
+			e := newEnv(t, b, planExpectation(t, interptest.Fail("no plan")), plan2, plan3)
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
+			e.advance(t, retried("plan", 1, "try again"))
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 2})
+			e.eng.Caps = store.AttemptCaps{MaxRunning: 1}
+			occupy(t, e, "plan")
+			queued := interp.Next{Wait: interp.WaitQueued, Step: "plan", Attempt: 3, Position: 1}
+			want(t, e.advance(t, retried("plan", 2, "first reason")), queued)
+			want(t, e.advance(t, retried("plan", 2, "second reason")), queued)
+			if err := advanceErr(t, e, retried("plan", 3, "the queued attempt")); !errors.Is(err, interp.ErrEvent) || !strings.Contains(err.Error(), "attempt 3 of step plan is queued at place 1") {
+				t.Fatalf("a retry of another attempt while one is queued = %v, want it refused naming the queued attempt", err)
+			}
+			if got := e.messages(t)["app.t7.attempt-retried.plan-2"]; got != "" {
+				t.Errorf("a queued retry sent the reason %q", got)
+			}
+			if msgs := budgetMessages(t, e); len(msgs) != 0 {
+				t.Fatalf("budget-refused messages = %v, want none", msgs)
+			}
+			// Still queued: a plain advance keeps the retry's place rather than waiting for the Director.
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queued)
+			if _, err := e.h.Records.FinishAttempt("finish:plan", "app", "t8", "plan", 1, store.AttemptFailed); err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 3})
+			wantRetrySection(t, retryPrompt(t, e, "plan", 3), "first reason")
+			if got := e.messages(t)["app.t7.attempt-retried.plan-2"]; got != "first reason" {
+				t.Errorf("reason message = %q, want the first reason, sent at launch", got)
+			}
+			count := len(e.inbox(t))
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			if len(e.inbox(t)) != count {
+				t.Error("a replayed advance sent the reason again")
+			}
+		})
+	}
+}
+
+// TestRetryPastTheDailyCapSendsNoReason: a retry refused at the daily cap sends no reason, its budget-refused
+// message names step retry, and a later retry launches.
+func TestRetryPastTheDailyCapSendsNoReason(t *testing.T) {
 	plan2 := planExpectation(t, interptest.Fail("still no plan"))
 	plan2.Attempt = 2
 	e := newEnv(t, backends[0], planExpectation(t, interptest.Fail("no plan")), plan2)
 	e.advance(t, interp.Event{Kind: interp.TaskCreated})
 	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
-	e.eng.Caps = store.AttemptCaps{MaxRunning: 1}
+	e.eng.Caps = store.AttemptCaps{MaxPerDay: 2}
 	occupy(t, e, "plan")
 	if err := advanceErr(t, e, retried("plan", 1, "first reason")); !errors.Is(err, store.ErrAttemptCap) {
 		t.Fatalf("retry at the cap = %v", err)
@@ -177,8 +245,6 @@ func TestRetryPastACapSendsNoReason(t *testing.T) {
 			t.Errorf("message %s = %q, want it to name step retry for step plan attempt 1", id, text)
 		}
 	}
-	if _, err := e.h.Records.FinishAttempt("finish:plan", "app", "t8", "plan", 1, store.AttemptFailed); err != nil {
-		t.Fatal(err)
-	}
+	e.eng.Caps.MaxPerDay = 3
 	want(t, e.advance(t, retried("plan", 1, "second reason")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
 }

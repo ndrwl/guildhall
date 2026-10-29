@@ -104,13 +104,13 @@ func TestSendBackRejectsDownstreamPreparedAttempt(t *testing.T) {
 					e.eng.Caps = store.AttemptCaps{MaxRunning: 1}
 					occupy(t, e, "other")
 				}
-				err := advanceErr(t, e, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2})
+				result := interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 2}
 				if fileOnly {
-					if err == nil || !strings.Contains(err.Error(), "interrupted before document record") {
+					if err := advanceErr(t, e, result); err == nil || !strings.Contains(err.Error(), "interrupted before document record") {
 						t.Fatalf("prepare failure = %v", err)
 					}
-				} else if !errors.Is(err, store.ErrAttemptCap) {
-					t.Fatalf("cap refusal = %v", err)
+				} else {
+					want(t, e.advance(t, result), interp.Next{Wait: interp.WaitQueued, Step: "review", Attempt: 2, Position: 1})
 				}
 				e.eng.Records = e.h.Records
 				e.eng.Hold = func() (bool, error) { return true, nil }
@@ -150,13 +150,14 @@ func TestSendBackRejectsAlreadyPreparedNextAttempt(t *testing.T) {
 					e.eng.Caps = store.AttemptCaps{MaxRunning: 1}
 					occupy(t, e, "other")
 				}
-				err := advanceErr(t, e, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
+				result := interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1}
 				if fileOnly {
-					if err == nil || !strings.Contains(err.Error(), "interrupted before document record") {
+					if err := advanceErr(t, e, result); err == nil || !strings.Contains(err.Error(), "interrupted before document record") {
 						t.Fatalf("prepare failure = %v", err)
 					}
-				} else if !errors.Is(err, store.ErrAttemptCap) {
-					t.Fatalf("cap refusal = %v", err)
+				} else {
+					// The review's changes_requested loops back to build, whose next attempt the running cap queues.
+					want(t, e.advance(t, result), interp.Next{Wait: interp.WaitQueued, Step: "build", Attempt: 2, Position: 1})
 				}
 				e.eng.Records = e.h.Records
 				if err := advanceErr(t, e, interp.Event{Kind: interp.StepSentBack, Step: "build", Attempt: 1, Reason: "New Director instructions"}); !errors.Is(err, interp.ErrEvent) {

@@ -163,8 +163,8 @@ func TestRetryPromptSurvivesACrashBeforeLaunch(t *testing.T) {
 	wantRetrySection(t, retryPrompt(t, e, "plan", 2), "the runner was killed", "no plan")
 }
 
-// TestRetryRepeatedAfterACapKeepsTheFirstReason: a retry refused at a cap has already bound attempt 2, so repeating
-// it with another reason keeps the first in both the prompt and the reason message.
+// TestRetryRepeatedAfterACapKeepsTheFirstReason: a retry queued at the running cap has already bound attempt 2, so
+// repeating it with another reason keeps the first in both the prompt and the reason message.
 func TestRetryRepeatedAfterACapKeepsTheFirstReason(t *testing.T) {
 	plan2 := planExpectation(t, interptest.Fail("still no plan"))
 	plan2.Attempt = 2
@@ -173,9 +173,7 @@ func TestRetryRepeatedAfterACapKeepsTheFirstReason(t *testing.T) {
 	e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
 	e.eng.Caps = store.AttemptCaps{MaxRunning: 1}
 	occupy(t, e, "plan")
-	if err := advanceErr(t, e, retried("plan", 1, "first reason")); !errors.Is(err, store.ErrAttemptCap) {
-		t.Fatalf("retry at the cap = %v", err)
-	}
+	want(t, e.advance(t, retried("plan", 1, "first reason")), interp.Next{Wait: interp.WaitQueued, Step: "plan", Attempt: 2, Position: 1})
 	if _, err := e.h.Records.FinishAttempt("finish:plan", "app", "t8", "plan", 1, store.AttemptFailed); err != nil {
 		t.Fatal(err)
 	}

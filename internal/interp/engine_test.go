@@ -40,7 +40,7 @@ func storeRecords(t *testing.T) interptest.RecordsHarness {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return interptest.RecordsHarness{Records: s, CreateTask: s.CreateTask, AnswerDecision: s.AnswerDecision, RuleFinding: s.RuleFinding,
-		RequestFullReview: s.RequestFullReview, OverrideDependencies: s.OverrideDependencies, PauseDirector: func() error { return interptest.PauseStoreDirector(s) }, Clock: clock}
+		RequestFullReview: s.RequestFullReview, OverrideDependencies: s.OverrideDependencies, SetTaskPriority: s.SetTaskPriority, PauseDirector: func() error { return interptest.PauseStoreDirector(s) }, Clock: clock}
 }
 
 // backend is one set of records and mailbox the engine runs over.
@@ -524,6 +524,14 @@ type interruptedStart struct{ interp.Records }
 
 func (r interruptedStart) StartCappedAttempt(m, repo, task, step string, caps store.AttemptCaps) (store.Receipt, error) {
 	rc, err := r.Records.StartCappedAttempt(m, repo, task, step, caps)
+	if err != nil {
+		return rc, err
+	}
+	return rc, errors.New("interrupted after recording attempt")
+}
+
+func (r interruptedStart) StartDirectorAttempt(m, repo, task, step string, hold bool) (store.Receipt, error) {
+	rc, err := r.Records.StartDirectorAttempt(m, repo, task, step, hold)
 	if err != nil {
 		return rc, err
 	}
