@@ -36,7 +36,7 @@ Quote the spec line each finding rests on in its summary.
 Report every place the diff breaks an inlined standard, and cite the rule id, such as `S4` or `R1.27`.
 Skip anything tooling enforces, such as formatting, vet and lint that CI runs.
 Then match the diff against the smell baseline in `smells.md`.
-A smell is always a labelled judgement call ("possible Feature Envy") and a suggestion, never a blocker.
+A smell is always a labelled judgement call ("possible Feature Envy") and a suggestion, never a blocker: a smell never makes the verdict `changes_requested`.
 A written standard overrides the baseline: where one endorses the pattern, drop the smell, and where one forbids it, as S6 and S11 forbid speculative abstractions, report a finding citing that rule instead.
 
 ## Findings and suggestions
@@ -50,6 +50,7 @@ A finding must cite a rule; intake refuses one that does not.
 `suggestions` are everything with no rule behind it, and every `smell-` item.
 Each names its `id` and `summary`, and may give `file` and `line`.
 A suggestion never blocks, never holds the merge and needs no disposition in a later round.
+The verdict, not the lists, routes the task: `changes_requested` always sends the build back, so suggestions alone go in an `approved` outcome.
 
 An id is lowercase letters, digits and hyphens, names one problem, is used once across both lists, and keeps that name in every later round.
 
@@ -74,8 +75,8 @@ With a `rulings` input, keeping a ruled finding open, `unresolved` or `disputed`
 
 ## Verdict and result
 
-- `approved`: no finding stands that you hold as a blocker; suggestions may remain.
-- `changes_requested`: at least one finding stands.
+- `approved`: no finding stands that you hold as a blocker; suggestions, smells included, may remain.
+- `changes_requested`: at least one finding stands; it always sends the build back, so never use it for suggestions alone.
 - `rejected`: the change should not go on in this form, such as an empty range or work that contradicts the spec throughout; at least one finding says why.
 
 Bind the outcome to the head, the spec input's digest and the standards revision the prompt gives, with reviewer `automated`.

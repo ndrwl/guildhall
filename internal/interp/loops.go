@@ -542,11 +542,11 @@ func (r *run) stall(s workflow.Step, n int) error {
 		n, s.ID, strings.Join(signals, "; ")))
 }
 
-// gate checks, before deliver, that every review step before it has an outcome that does not block,
-// bound to its document or the delivered head, its applicable spec and the current standards revision.
-func (r *run) gate(deliver workflow.Step, h string) error {
+// gate checks, before publish or deliver, that every review step before it has an outcome that does not block,
+// bound to its document or the published or delivered head, its applicable spec and the current standards revision.
+func (r *run) gate(until workflow.Step, h string) error {
 	for _, s := range r.def.Steps {
-		if s.ID == deliver.ID {
+		if s.ID == until.ID {
 			return nil
 		}
 		if !isReview(s) {

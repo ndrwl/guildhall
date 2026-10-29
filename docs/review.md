@@ -9,8 +9,9 @@ The [quality rubric](quality.md) is the scored and trend layer above these rules
 ## Findings
 
 Each finding names the file and line, the rule it breaks (a requirement id such as `R1.27` or a rule id below such as `S4`), and a concrete failure: the input or state and the wrong result.
-A finding without a cited rule is a suggestion, not a blocker.
+A finding without a cited rule is a suggestion: list it in an approved outcome.
 The verdict is approved, changes requested or rejected, and applies to the exact head commit reviewed.
+Changes requested always sends the work back, whatever its findings cite ([decision](decisions/review-verdict-routes.md)).
 
 ## Rules
 

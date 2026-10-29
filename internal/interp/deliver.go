@@ -49,6 +49,19 @@ type refusalDoc struct {
 	Reason string `json:"reason"`
 }
 
+// publishRefusalSchema versions the review-gate failures publish records.
+const publishRefusalSchema = "guildhall.publish-refusal/1"
+
+// publishRefusalDoc is a review gate that failed before publish: <publish round>-refused, then -refused-2 and on.
+type publishRefusalDoc struct {
+	Schema string `json:"schema"`
+	Head   string `json:"head"`
+	// Required says whether artisan_approval was required: when it was, nothing was pushed; when not, publish went on.
+	Required bool `json:"required"`
+	// Reason is the review gate's reason.
+	Reason string `json:"reason"`
+}
+
 // mergeOptions are the answers the merge decision offers.
 var mergeOptions = []string{"merge", "hold"}
 
@@ -94,6 +107,10 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
+	id := decisionID(s.ID, k, false)
+	if err := r.publishGate(s, id, h, repo.Merge.Requires.Artisan()); err != nil {
+		return false, Next{}, err
+	}
 	if r.e.Forge == nil {
 		return false, Next{}, fmt.Errorf("%w: publishing without a forge", ErrUnsupported)
 	}
@@ -113,7 +130,6 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
-	id := decisionID(s.ID, k, false)
 	if err := r.putPullRequest(id+"-pr", path.Join("tasks", r.task.Repository, r.task.ID, id, "pull-request.json"), pullRequestDoc{Schema: pullRequestSchema, Remote: repo.Remote, PullRequest: pr}); err != nil {
 		return false, Next{}, err
 	}
@@ -123,6 +139,26 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 	data := []byte(h + "\n")
 	doc := store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: id + "-head", Path: path.Join("tasks", r.task.Repository, r.task.ID, id, "head"), SHA256: digest.Of(data).Hex()}
 	return true, Next{}, r.put(doc, data)
+}
+
+// publishGate runs the review gate over the review steps before publish step s, bound to head h, before round id
+// pushes anything. Routing never lets a review that is not approved reach publish, so a failing gate means a
+// routing regression: it is recorded as id's next refusal, <id>-refused[-n], and fails the advance with
+// ErrReviewGate when artisan_approval is required; otherwise, as at deliver, it is a reason recorded and
+// publish goes on.
+func (r *run) publishGate(s workflow.Step, id, h string, required bool) error {
+	err := r.gate(s, h)
+	if err == nil || !errors.Is(err, ErrReviewGate) {
+		return err
+	}
+	reason := strings.TrimPrefix(err.Error(), ErrReviewGate.Error()+": ")
+	if err := r.recordRefusal(id, publishRefusalDoc{Schema: publishRefusalSchema, Head: h, Required: required, Reason: reason}); err != nil {
+		return err
+	}
+	if required {
+		return err
+	}
+	return nil
 }
 
 func (r *run) putPullRequest(name, p string, d pullRequestDoc) error {
@@ -1034,9 +1070,9 @@ func (r *run) audit(s workflow.Step, h string, pr *pullRequestDoc) error {
 	return r.notifyDecision(*d, s.ID)
 }
 
-// recordRefusal records a refusal of merge id as its next refusal document, <id>-refused[-n], unless one of its refusals
-// already holds the same content, so a refusal repeated or replayed for the same reason is recorded once.
-func (r *run) recordRefusal(id string, doc refusalDoc) error {
+// recordRefusal records a refusal of merge or publish round id as its next refusal document, <id>-refused[-n], unless
+// one of its refusals already holds the same content, so a refusal repeated or replayed for the same reason is recorded once.
+func (r *run) recordRefusal(id string, doc any) error {
 	data, err := json.Marshal(doc)
 	if err != nil {
 		return err

@@ -177,7 +177,7 @@ Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts
 
 **Publish** reads its `head` input.
 When the step's latest round already published that head, the step is complete and nothing is called.
-Otherwise round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, the task's title and a body naming the task, step and head, followed for a task created with `--fixes` by "Fixes a defect introduced by task `<repository>/<task>`.", the line the [quality rubric](quality.md)'s rework and change failure count from.
+Otherwise the [review gate](#review-gate) is checked first, over the review steps before publish; then round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, the task's title and a body naming the task, step and head, followed for a task created with `--fixes` by "Fixes a defect introduced by task `<repository>/<task>`.", the line the [quality rubric](quality.md)'s rework and change failure count from.
 The forge pushes the head to that branch, replacing whatever the task branch held but never touching another branch, and opens a pull request against the remote's default branch or updates the open one.
 A head that is not a commit of the repository at `path` is refused with `forge.ErrUnknownHead` and records nothing; a commit an Artisan made in the task's [working directory](#the-working-directory) is one, because that directory is a worktree of the repository.
 The engine then records, in order:
@@ -412,8 +412,8 @@ Feedback a failed or stopped attempt was given is still pending, so the attempt 
 A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.
 So when a looped build lands a new head, every review after it runs again on that head.
 
-A result is **blocking** when it is a `changes_requested` outcome with at least one finding that cites a rule, or a Guildmaster's `changes_requested` answer.
-Comments without a rule are suggestions and never block (`docs/review.md`): in /2 they are listed in `suggestions`, and a /1 outcome requesting changes with only rule-less findings completes the step.
+A result is **blocking** when it is a `changes_requested` outcome, whatever its findings cite, or a Guildmaster's `changes_requested` answer ([decision](decisions/review-verdict-routes.md)).
+Comments without a rule are suggestions, listed in `suggestions` in /2: a reviewer with only those records `approved`, which completes the step (`docs/review.md`); a /1 outcome requesting changes with only rule-less findings still blocks.
 A `validate` step's `failed` result is blocking too, and is one round of its `on.failed` rule ([validate](#validate)).
 Each blocking result of a step is one round of its `on.changes_requested` rule (`on.failed` for validate); the step may loop `max` rounds, plus one for every loop exit answered `continue`.
 
@@ -477,6 +477,10 @@ The task's custody lock serialises advances; external writers must not change th
 ## Review gate
 
 Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.
+`publish` runs the same gate over the review steps before it, bound to the head it would publish, before it pushes anything.
+Routing never walks a review that is not approved on to publish, so this guard only fires on a routing regression; it is kept as defence in depth.
+A failing guard is recorded as the round's refusal, `publish-<k>-refused`, then `publish-<k>-refused-2` and on (`tasks/<repo>/<task>/publish-<k>/refused-<digest>.json`), holding schema `guildhall.publish-refusal/1`, the head, whether `artisan_approval` was required and the gate's reason; a refusal whose content is already recorded is not recorded again.
+When the repository's `artisan_approval` is required, nothing is pushed and the advance fails with `ErrReviewGate`, which reaches the Director as the advancing command's error or the watcher's [`advance-failed`](running.md#the-watcher) message; when it is not, the refusal records the reason, as at deliver, and publish goes on.
 So several review stages, such as the Guildhall repository's three reviews on distinct profiles, must all approve the same head.
 A head Guildhall rebased from the approved head is covered by its recorded rebase instead ([review and CI of a rebased head](#review-and-ci-of-a-rebased-head)).
 A Guildmaster review answered under an older standards revision does not satisfy the gate; asking it again is later work.
@@ -612,7 +616,8 @@ Changes to the role, guide, standards, skills or inputs after preparation reach 
 `internal/interp/engine_test.go` runs the straight workflow, `testdata/workflows/straight.json` (plan, Guildmaster acceptance, build, Artisan review, Guildmaster sign-off, deliver), twice: against the scripted mock with the in-memory records and `messagingtest.Fake`, and against the same mock with a real store file and its mailbox.
 It checks each event's effect on the records, the approval bound to the plan document's digest, the spec gate, a crash between recording and launching an attempt, the zero-model guard, a failed attempt, mismatched events and a changed revision.
 `prepare_test.go` checks [attempt preparation](#attempt-preparation): a lost acknowledgement or lost `launched.json` with a changed baseline and skill tree replays the same files and spec, a refused live duplicate leaves every byte and path intact, invalid preparation is refused with `ErrPreparation`, and a worker started from the test binary reads its original input after the replay.
-`loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`) against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
+`loops_test.go` runs the round trace of report §7.1 with three code reviews on distinct profiles (`testdata/workflows/three-reviews.json`), where the strict review approves with a suggestion listed, against both backends, and checks, mostly against both, a stale outcome refused, a missing disposition refused, stall signals on an unchanged head, `max` opening the loop exit with `continue`, `accept` and `reject`, a Guildmaster's changes looping to the plan, changes without a rule and the review gate.
+`review_verdict_test.go`, red first, checks on both backends that a `changes_requested` outcome whose only finding cites no rule sends the build back with the outcome as `feedback` and past `max` opens the loop exit with no publish or deliver record, and that the publish guard, against a sign-off outcome recorded as `changes_requested` behind an approved answer, pushes nothing, records `publish-1-refused` once and fails with `ErrReviewGate` under a required `artisan_approval`, and records the reason and publishes when it is not required.
 Human-review regression coverage includes plan → human document review → approval, code-review provenance, and replay after a failed outcome-record write.
 Output containment tests cover escaping file symlinks, parent-directory symlinks, and supplemental outputs.
 `rulings_test.go` checks [Director rulings](#director-rulings) on both backends: a ruling given to the next review, resolved or contested once by an unresolved or disputed finding, and a contested blocker opening the loop exit within `max`.
