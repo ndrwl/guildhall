@@ -85,6 +85,8 @@ type next struct {
 	Step     string      `json:"step"`
 	Attempt  int         `json:"attempt,omitempty"`
 	Decision string      `json:"decision,omitempty"`
+	// Position is a queued start's 1-based place in the start queue at the time of the advance (wait queued).
+	Position int `json:"position,omitempty"`
 }
 
 // taskStart runs `guildhall task start`: one advance with task-created, or with --decision,
@@ -574,7 +576,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 const nextFile = "next.json"
 
 func nextOf(n interp.Next) next {
-	return next{Wait: n.Wait, Step: n.Step, Attempt: n.Attempt, Decision: n.Decision}
+	return next{Wait: n.Wait, Step: n.Step, Attempt: n.Attempt, Decision: n.Decision, Position: n.Position}
 }
 
 // baselinePrompter renders from baseline/ beside the config file, falling back file by file to the installed

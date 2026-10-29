@@ -24,11 +24,12 @@ A token or cost budget is a follow-up.
 
 - The count and the start are one store mutation, `store.StartCappedAttempt`, under the store's single-writer lock, so two advances in different processes can never both take the last slot.
   A check before the start would have left that race open.
-- Running is every attempt started and not finished.
+- Running is every attempt started and not finished; since [queue over-cap starts](queue-over-cap-starts.md), a Director stage's attempt is not counted.
   The plan counted unreleased ownership records; an attempt is recorded before its launcher takes ownership, so counting ownership records would miss launches in flight.
   Every unreleased ownership record belongs to an unfinished attempt, so nothing the plan counted is missed.
 - The day is the UTC day of the store's clock, the clock that stamps the receipts it counts, so the count never mixes two clocks.
 - The caps are not part of the start's request, so replaying a start returns its receipt whatever the caps are now: an attempt recorded before a crash is launched again, never refused.
+- Superseded for the running cap by [queue over-cap starts](queue-over-cap-starts.md): a start the running cap does not admit is queued and started by the session supervisor when a slot frees, so the next two bullets now hold for the daily cap only.
 - A refusal records and launches nothing and fails the advance with exit 1, `guard rail max_running_attempts: ...` or `guard rail max_attempts_per_day: ...`.
   The engine sends the Director one `budget-refused` message per task and UTC day, `<repo>.<task>.budget-refused.<YYYY-MM-DD>`; a later refusal that day conflicts with it and sends nothing, so a Director retrying in a loop is told once.
 - Nothing relaunches a refused task by itself.

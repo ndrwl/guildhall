@@ -69,7 +69,8 @@
         "cost": "estimated",
         "cost_usd": 0.5
       }
-    }
+    },
+    "start_queue": []
   },
   "mode": {
     "name": "standalone"

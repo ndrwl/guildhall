@@ -117,3 +117,71 @@ func TestCapRefusalKeepsStartAttemptRules(t *testing.T) {
 		t.Fatalf("start while the step runs = %v", err)
 	}
 }
+
+// TestQueuedStartWritesOnlyItsEntry: a queued start records its entry under its own mutation id and leaves the start's
+// id free, admission removes the entry with the start's receipt, a Director stage is left out of Running, and
+// LeaveStartQueue removes only the entry it names.
+func TestQueuedStartWritesOnlyItsEntry(t *testing.T) {
+	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
+	s := capStore(t, &now)
+	for _, id := range []string{"t1", "t2", "t3"} {
+		mustCreate(t, s, "task-"+id, sampleTask("app", id))
+	}
+	caps := AttemptCaps{MaxRunning: 1, Queue: &StartRequest{Kind: StartByRetry, Retried: 1}}
+	if _, err := s.StartCappedAttempt("start-t1", "app", "t1", "build", caps); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartDirectorAttempt("grill-t3", "app", "t3", "grill", true); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := s.AttemptUsage(); err != nil || u.Running != 1 || u.Today != 2 {
+		t.Fatalf("AttemptUsage = %+v, %v; want the Director stage counted today but not running", u, err)
+	}
+	_, err := s.StartCappedAttempt("start-t2", "app", "t2", "build", caps)
+	q, ok := errors.AsType[*StartQueued](err)
+	if !ok || q.Position != 1 || q.Entry.Attempt != 1 || q.Entry.Kind != StartByRetry || q.Entry.Retried != 1 || !q.Entry.QueuedAt.Equal(now) {
+		t.Fatalf("start past the running cap = %v, want it queued at place 1 under the retry", err)
+	}
+	if _, err := s.Receipt("start-t2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a queued start left its own receipt: %v", err)
+	}
+	r, err := s.Receipt(QueueStartMutation("app", "t2", "build", 1))
+	if err != nil || r.Operation != "queue-start" || r.Record != StartQueueRecord("build") || r.Attempt != 1 {
+		t.Fatalf("queue receipt = %+v, %v", r, err)
+	}
+	if _, err := s.StartCappedAttempt("start-t2", "app", "t2", "build", AttemptCaps{MaxRunning: 1, Queue: &StartRequest{Kind: StartByRetry}}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a retry start naming no retried attempt = %v, want it refused", err)
+	}
+
+	// Leaving names the entry by its queue time: a stale one changes nothing.
+	stale := q.Entry
+	stale.QueuedAt = stale.QueuedAt.Add(-time.Minute)
+	if _, err := s.LeaveStartQueue(LeaveStartQueueMutation(stale), stale); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.StartQueue(); len(got) != 1 {
+		t.Fatalf("StartQueue after a stale leave = %+v, want the entry kept", got)
+	}
+	if _, err := s.FinishAttempt("finish-t1", "app", "t1", "build", 1, AttemptSucceeded); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := s.StartCappedAttempt("start-t2", "app", "t2", "build", caps); err != nil || r.Attempt != 1 {
+		t.Fatalf("the front's start = %+v, %v", r, err)
+	}
+	if got, _ := s.StartQueue(); len(got) != 0 {
+		t.Fatalf("StartQueue after admission = %+v, want it empty", got)
+	}
+
+	// Queued again and then left: the entry goes.
+	_, err = s.StartCappedAttempt("start-t1-review", "app", "t1", "review", caps)
+	q, ok = errors.AsType[*StartQueued](err)
+	if !ok {
+		t.Fatalf("start past the running cap = %v", err)
+	}
+	if _, err := s.LeaveStartQueue(LeaveStartQueueMutation(q.Entry), q.Entry); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.StartQueue(); len(got) != 0 {
+		t.Fatalf("StartQueue after leaving = %+v, want it empty", got)
+	}
+}
