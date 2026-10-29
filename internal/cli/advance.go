@@ -24,7 +24,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/interp"
-	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -539,11 +538,9 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	defer stop()
 	context.AfterFunc(ctx, stop)
 	e := &interp.Engine{
-		Copy:    copyDir,
-		Records: records,
-		Launcher: &launch.Process{Executable: exe, Store: f.store, StateDir: state, StallInterval: stall, LockWait: wait, OpenPresentation: func(ctx context.Context) (*launch.Presentation, error) {
-			return artisanPresentation(ctx, cfg, f.store, state, a.Stderr)
-		}},
+		Copy:     copyDir,
+		Records:  records,
+		Launcher: taskLockedProcess(cfg, exe, f.store, state, "", stall, wait, a.Stderr),
 		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
 		// The task's bound revision is resolved by its name, not the repository's current workflow setting.
