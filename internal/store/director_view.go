@@ -76,7 +76,7 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				}
 			}
 			for _, d := range decisions {
-				if !d.Answered {
+				if d.Open() {
 					v.OpenDecisions = append(v.OpenDecisions, d)
 				}
 			}

@@ -153,7 +153,7 @@ func (s *Store) FinishedTasks(n int) (int, error) {
 			if err := json.Unmarshal(raw, &r); err != nil {
 				return fmt.Errorf("receipt %q: %w", k, err)
 			}
-			if r.Operation == opSetTaskState && r.Sequence > started.Sequence {
+			if (r.Operation == opSetTaskState || r.Operation == opCancelTask) && r.Sequence > started.Sequence {
 				count++
 			}
 			return nil

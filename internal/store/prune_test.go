@@ -71,20 +71,16 @@ func TestPruneTaskRoundTrips(t *testing.T) {
 	}
 }
 
-// TestPruneTaskRefusals: only a done task is pruned, and a record must say what happened to the worktree.
+// TestPruneTaskRefusals: only a done or cancelled task is pruned, and a record must say what happened to the
+// worktree.
 func TestPruneTaskRefusals(t *testing.T) {
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
-	mustCreate(t, s, "m-2", sampleTask("app", "t-2"))
-	if _, err := s.SetTaskState("m-3", "app", "t-2", TaskCancelled); err != nil {
-		t.Fatal(err)
-	}
 	for name, tc := range map[string]struct {
 		p    TaskPrune
 		want error
 	}{
 		"open task":          {TaskPrune{Repository: "app", TaskID: "t-1", Worktree: WorktreeRemoved}, ErrInvalid},
-		"cancelled task":     {TaskPrune{Repository: "app", TaskID: "t-2", Worktree: WorktreeRemoved}, ErrInvalid},
 		"unknown task":       {TaskPrune{Repository: "app", TaskID: "t-9", Worktree: WorktreeRemoved}, ErrNotFound},
 		"unknown worktree":   {TaskPrune{Repository: "app", TaskID: "t-1", Worktree: "gone"}, ErrInvalid},
 		"kept without why":   {TaskPrune{Repository: "app", TaskID: "t-1", Worktree: WorktreeKept}, ErrInvalid},
@@ -98,6 +94,27 @@ func TestPruneTaskRefusals(t *testing.T) {
 	}
 	if rep, err := s.Doctor(); err != nil || rep.Repositories[0].Pruned != 0 {
 		t.Fatalf("doctor = %+v, %v", rep, err)
+	}
+}
+
+// TestPruneCancelledTaskRecord: a cancelled task is pruned like a done one, and its close time is its cancel-task
+// receipt's commit time.
+func TestPruneCancelledTaskRecord(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	rc, err := s.CancelTask("m-2", "app", "t-1", "duplicate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := s.CloseTimes()
+	if err != nil || !closed[TaskRef{Repository: "app", ID: "t-1"}].Equal(rc.CommittedAt) {
+		t.Fatalf("close times = %v, %v; want the cancel's %v", closed, err, rc.CommittedAt)
+	}
+	if _, err := s.PruneTask("prune:app:t-1", TaskPrune{Repository: "app", TaskID: "t-1", Worktree: WorktreeKept, Kept: "cancelled"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.TaskPrune("app", "t-1"); err != nil || got.Runs != 1 || got.Complete {
+		t.Fatalf("record = %+v, %v", got, err)
 	}
 }
 

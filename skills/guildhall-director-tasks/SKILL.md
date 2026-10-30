@@ -140,7 +140,9 @@ You may choose any appropriate recovery; the available options are not a fixed p
   No attempt in the task may still be running when you make a new request.
   The next review keeps its previous evidence and scopes to the resolution only when the rebase classifier proves it appropriate; other changes receive full review, and republish updates the same open PR.
 - Hold a failed or stopped attempt on purpose with `guildhall step park` and a reason, or put a Guildmaster-requested `hold` on an existing merge decision.
-- Abandon pursuing the work by leaving it unadvanced; there is no task-cancellation CLI.
+- Cancel the task, only when the Guildmaster asks for it, with their reason: `guildhall task cancel --repo app --reason "Duplicate of t-9." t-12`.
+  It is irreversible: it stops running attempts, closes the open PR with the reason as its comment (the branch is kept), voids open decisions, leaves the start and merge queues, tells you about each open dependent with a `dependency-cancelled` message, and records the task `cancelled`; work wanted again is a new task.
+  It refuses a done task and one whose work merged or is merging, and refuses when a running Artisan's stop cannot be proven; if it fails part-way, run the same command again.
   Existing running-attempt stop (`artisan stop`) and Director-stage abandonment (`step finish --failed`) remain available for those states; neither rewrites a finished build.
 - Recheck after an external change with `guildhall task start --repo app t-12`.
 

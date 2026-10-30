@@ -27,6 +27,7 @@ func validateGHArgs(args []string) error {
 		"pr edit":     {values: []string{"--repo", "--title", "--body"}, positional: 1},
 		"pr view":     {values: []string{"--repo", "--json"}, positional: 1},
 		"pr merge":    {values: []string{"--repo", "--match-head-commit"}, bools: []string{"--squash"}, positional: 1},
+		"pr close":    {values: []string{"--repo", "--comment"}, positional: 1},
 		"api graphql": {values: []string{"--hostname", "-f"}},
 		// gh api <endpoint> is a REST GET; the only endpoint read is a job's logs.
 		"api jobs-logs": {values: []string{"--hostname"}, bools: []string{"--allow-escape-sequences"}},
@@ -80,6 +81,7 @@ func ghCallShapes() [][]string {
 		{"api", "graphql", "--hostname", "github.com", "-f", "query=query { viewer { login } }", "-f", "owner=acme", "-f", "name=widgets", "-f", "oid=" + strings.Repeat("a", 40)},
 		{"pr", "edit", "1", "--repo", "github.com/acme/widgets", "--title", "Task t7", "--body", "Body text"},
 		{"api", "repos/acme/widgets/actions/jobs/123/logs", "--hostname", "github.com", "--allow-escape-sequences"},
+		{"pr", "close", "1", "--repo", "github.com/acme/widgets", "--comment", "Cancelled by Guildhall: duplicate"},
 	}
 }
 
@@ -117,6 +119,13 @@ func TestGHCommandShapes(t *testing.T) {
 		bad := append(slices.Clone(ghCallShapes()[5]), bypass)
 		if code := runGH(&ghState{}, "", bad); code != 2 {
 			t.Fatalf("merge %s = %d, want 2", bypass, code)
+		}
+	}
+	// A cancelled task's branch is kept: the stand-in refuses a close that would delete it.
+	for _, del := range []string{"--delete-branch", "-d"} {
+		bad := append(slices.Clone(ghCallShapes()[7]), del)
+		if code := runGH(&ghState{}, "", bad); code != 2 {
+			t.Fatalf("close %s = %d, want 2", del, code)
 		}
 	}
 }

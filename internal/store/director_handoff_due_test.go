@@ -88,8 +88,8 @@ func TestRecordHandoffDueRefusals(t *testing.T) {
 	}
 }
 
-// TestFinishedTasksCountsSinceTheSessionStarted: tasks moved to done or cancelled after the session was recorded
-// count, across repositories; tasks finished before it, and open tasks, do not.
+// TestFinishedTasksCountsSinceTheSessionStarted: tasks moved to done or cancelled after the session was recorded,
+// by SetTaskState or CancelTask, count across repositories; tasks finished before it, and open tasks, do not.
 func TestFinishedTasksCountsSinceTheSessionStarted(t *testing.T) {
 	s, _ := newStore(t)
 	if _, err := s.FinishedTasks(1); !errors.Is(err, ErrNotFound) {
@@ -117,6 +117,13 @@ func TestFinishedTasksCountsSinceTheSessionStarted(t *testing.T) {
 	}
 	if n, err := s.FinishedTasks(1); err != nil || n != 3 {
 		t.Fatalf("FinishedTasks = %d, %v; want 3", n, err)
+	}
+	// A task cancel's receipt counts as a set-task-state one does.
+	if _, err := s.CancelTask("cancel.app.t-3", "app", "t-3", "Duplicate."); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.FinishedTasks(1); err != nil || n != 4 {
+		t.Fatalf("FinishedTasks after a cancel = %d, %v; want 4", n, err)
 	}
 	mustStartSession(t, s, sampleSession(2))
 	if n, err := s.FinishedTasks(2); err != nil || n != 0 {

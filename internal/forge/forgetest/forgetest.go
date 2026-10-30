@@ -18,6 +18,7 @@ type Forge interface {
 	Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error)
 	Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, error)
 	Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error)
+	Close(ctx context.Context, c forge.Close) (forge.PullRequest, error)
 }
 
 // Harness is one forge under the contract suite, over a repository whose remote's default branch is Base, at
@@ -288,6 +289,52 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		for _, c := range []forge.Commit{commit(h, "HEAD"), {Repository: h.Repository, Head: h.Heads[0]}, {Remote: h.Remote, Head: h.Heads[0]}} {
 			if _, err := h.Forge.Checks(ctx, c); !errors.Is(err, forge.ErrInvalid) {
 				t.Errorf("Checks(%+v) = %v, want ErrInvalid", c, err)
+			}
+		}
+	})
+
+	closePR := func(h Harness, pr forge.PullRequest) (forge.PullRequest, error) {
+		return h.Forge.Close(ctx, forge.Close{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Comment: "Cancelled by Guildhall: contract"})
+	}
+
+	t.Run("closes an open pull request, replays the close and keeps its branch", func(t *testing.T) {
+		h := newHarness(t)
+		pr := publish(t, h, h.Heads[0])
+		got, err := closePR(h, pr)
+		if err != nil {
+			t.Fatalf("Close = %v", err)
+		}
+		t.Logf("Close = %+v", got)
+		if got.Number != pr.Number || got.URL != pr.URL || got.State != forge.Closed || got.MergeCommit != "" {
+			t.Fatalf("Close = %+v, want pull request %d closed", got, pr.Number)
+		}
+		if again, err := closePR(h, pr); err != nil || again.Number != pr.Number || again.State != forge.Closed {
+			t.Errorf("repeated Close = %+v, %v, want it closed", again, err)
+		}
+		if b := h.Branch(t, "guildhall/t7"); b != h.Heads[0] {
+			t.Errorf("after Close branch guildhall/t7 is at %q, want %s kept", b, h.Heads[0])
+		}
+		if _, err := merge(h, pr, h.Heads[0]); !errors.Is(err, forge.ErrRefused) {
+			t.Errorf("Merge of a closed pull request = %v, want ErrRefused", err)
+		}
+	})
+
+	t.Run("refuses to close a merged pull request and an invalid close", func(t *testing.T) {
+		h := newHarness(t)
+		pr := publish(t, h, h.Heads[0])
+		if _, err := merge(h, pr, h.Heads[0]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := closePR(h, pr); !errors.Is(err, forge.ErrRefused) {
+			t.Errorf("Close of a merged pull request = %v, want ErrRefused", err)
+		}
+		for _, c := range []forge.Close{
+			{Repository: h.Repository, Remote: h.Remote, Number: 0, Comment: "c"},
+			{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Comment: " "},
+			{Remote: h.Remote, Number: pr.Number, Comment: "c"},
+		} {
+			if _, err := h.Forge.Close(ctx, c); !errors.Is(err, forge.ErrInvalid) {
+				t.Errorf("Close(%+v) = %v, want ErrInvalid", c, err)
 			}
 		}
 	})

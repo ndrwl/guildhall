@@ -28,7 +28,7 @@ const (
 	WorktreeNotWorkspace = "not-a-worktree"
 )
 
-// TaskPrune records that `guildhall prune` reclaimed the disk space of a done task's working directory and attempt
+// TaskPrune records that `guildhall prune` reclaimed the disk space of a done or cancelled task's working directory and attempt
 // directories (docs/running.md#pruning). It is written only after removal finishes, so a task with no record, or
 // one whose record is not Complete, is pruned again by the next run; every recorded document stays.
 type TaskPrune struct {
@@ -48,9 +48,9 @@ type TaskPrune struct {
 	Runs int `json:"runs"`
 }
 
-// PruneTask records a prune of the done task p names, receipt record prune. p.Runs is the record's run count the
-// caller read, 0 when there was none; the stored record counts one more. It refuses with ErrInvalid a task that is
-// not done, an unknown worktree outcome and a negative count, with ErrNotFound an unknown task, and with ErrExists a
+// PruneTask records a prune of the done or cancelled task p names, receipt record prune. p.Runs is the record's run
+// count the caller read, 0 when there was none; the stored record counts one more. It refuses with ErrInvalid a task
+// that is neither done nor cancelled, an unknown worktree outcome and a negative count, with ErrNotFound an unknown task, and with ErrExists a
 // stored count other than p.Runs or a task already pruned completely.
 func (s *Store) PruneTask(mutationID string, p TaskPrune) (Receipt, error) {
 	if err := validateIDs(p.Repository, p.TaskID); err != nil {
@@ -78,8 +78,8 @@ func (s *Store) PruneTask(mutationID string, p TaskPrune) (Receipt, error) {
 		if err != nil {
 			return err
 		}
-		if t.State != TaskDone {
-			return invalid("task %s/%s is %s; only a done task is pruned", p.Repository, p.TaskID, t.State)
+		if t.State != TaskDone && t.State != TaskCancelled {
+			return invalid("task %s/%s is %s; only a done or cancelled task is pruned", p.Repository, p.TaskID, t.State)
 		}
 		b, err := createRepoBucket(tx, p.Repository, bucketPruned)
 		if err != nil {
@@ -101,9 +101,9 @@ func (s *Store) PruneTask(mutationID string, p TaskPrune) (Receipt, error) {
 	})
 }
 
-// CloseTimes returns, for each task moved to done or cancelled, the commit time of its task-state receipt. It reads
-// in one transaction without writing and scans every receipt in the store, so its cost grows with the store's
-// mutation count; read it once and reuse it.
+// CloseTimes returns, for each task moved to done or cancelled, the commit time of its task-state or cancel-task
+// receipt. It reads in one transaction without writing and scans every receipt in the store, so its cost grows with
+// the store's mutation count; read it once and reuse it.
 func (s *Store) CloseTimes() (map[TaskRef]time.Time, error) {
 	out := map[TaskRef]time.Time{}
 	err := s.view(func(tx *bolt.Tx) error {
@@ -112,7 +112,7 @@ func (s *Store) CloseTimes() (map[TaskRef]time.Time, error) {
 			if err := json.Unmarshal(v, &r); err != nil {
 				return fmt.Errorf("receipt %q: %w", k, err)
 			}
-			if r.Operation != opSetTaskState {
+			if r.Operation != opSetTaskState && r.Operation != opCancelTask {
 				return nil
 			}
 			ref := TaskRef{Repository: r.Repository, ID: r.TaskID}

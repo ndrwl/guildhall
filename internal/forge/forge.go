@@ -1,6 +1,6 @@
 // Package forge is Guildhall's boundary to the host of a repository's pull requests: pushing a task's head
-// to its branch, opening or updating its pull request, reading the checks of a pushed head and merging it under
-// the repository's merge requirements (docs/contracts/forge.md).
+// to its branch, opening or updating its pull request, reading the checks of a pushed head, merging it under
+// the repository's merge requirements and closing the pull request of a cancelled task (docs/contracts/forge.md).
 //
 // Guildhall prescribes only these edges. It pushes only a task branch, never the base; it merges only the
 // head its merge decision or recorded merge authorization (deliver-<k>-authorized) is bound to, with a squash
@@ -85,6 +85,29 @@ func (m Merge) Validate() error {
 	return nil
 }
 
+// Close asks for one pull request to be closed without merging, with a comment saying why.
+type Close struct {
+	// Repository and Remote are as in Change.
+	Repository, Remote string
+	// Number is the pull request's number on the forge.
+	Number int
+	// Comment is posted on the pull request as it is closed.
+	Comment string
+}
+
+// Validate reports a close missing a field, as ErrInvalid.
+func (c Close) Validate() error {
+	switch {
+	case c.Repository == "" || c.Remote == "":
+		return fmt.Errorf("%w: a close names its repository and remote", ErrInvalid)
+	case c.Number < 1:
+		return fmt.Errorf("%w: pull request number %d", ErrInvalid, c.Number)
+	case strings.TrimSpace(c.Comment) == "":
+		return fmt.Errorf("%w: a close has a comment", ErrInvalid)
+	}
+	return nil
+}
+
 // State is where a pull request stands.
 type State string
 
@@ -114,7 +137,7 @@ var (
 	ErrUnknownHead = errors.New("head is not a commit of the repository")
 	// ErrRefused reports a merge the forge refused, such as failing or pending required checks, a branch
 	// behind its base, branch protection, a pull request no longer at the approved head, or a closed one.
-	// The error text carries the forge's reason. Nothing was merged.
+	// The error text carries the forge's reason. Nothing was merged. Closing a merged pull request is ErrRefused too.
 	ErrRefused = errors.New("the forge refused the merge")
 	// ErrUnsupportedRemote reports a remote that is not on a forge this implementation supports.
 	ErrUnsupportedRemote = errors.New("remote is not on a supported forge")

@@ -176,15 +176,15 @@ While the Director is [paused or stopping](director.md#pause-and-resume), an adv
 
 ## Pruning
 
-`guildhall prune [--dry-run] [--repo <name>] [--task <id>] [--copy <dir>]` reclaims the disk space of `done` tasks closed longer ago than [`prune_after`](configuration.md#settings), 14 days by default.
+`guildhall prune [--dry-run] [--repo <name>] [--task <id>] [--copy <dir>]` reclaims the disk space of `done` and `cancelled` tasks closed longer ago than [`prune_after`](configuration.md#settings), 14 days by default.
 It takes `--copy <dir>`, or `GUILDHALL_COPY`, and reads the copy's `config.toml`, `director.store`, `state` and `quality` directories.
-A task's close time is the commit time of its `task-state` receipt.
+A task's close time is the commit time of its `task-state` receipt, or for a [cancelled](tasks.md#task-cancel) task its `cancel-task` receipt, which set its `cancelled_at`.
 
 A task is prunable only when all of these hold, and is otherwise listed as skipped with the reason:
 
-- it is `done` (`cancelled` is not produced today and is left out) and its close is at least `prune_after` ago (`too recent`);
+- it is `done` or `cancelled` and its close is at least `prune_after` ago (`too recent`);
 - no `open` task names it in `depends_on` (`open dependant`);
-- it has no unanswered `audit` decision (`audit ... open`);
+- it has no open `audit` decision, one neither answered nor void (`audit ... open`);
 - no `self-review-<n>.json` under `<copy>/quality/<repo>/<task>/` has a criterion still pending its judge, or cannot be read (`self-review ... pending`);
 - it has no unfinished attempt, judge attempts included, and no unreleased ownership record;
 - its repository is in the config, whose `path` the worktree belongs to;
@@ -195,7 +195,7 @@ A task is prunable only when all of these hold, and is otherwise listed as skipp
 
 For each prunable task, while holding the task's lock (`attempt.lock` in `<state>/<repository>/<task>`, waiting at most `lock_wait`), and after checking the selection again under it, a prune:
 
-- Retires the worktree again with `git.Program.Retire`, at the head the task's `<id>-merge` document names and with the task's recorded documents as its outputs, as the merge did: it removes the worktree, the `guildhall/<task>` branch and the `refs/guildhall/default/…` ref only when nothing would be lost. A worktree Retire keeps is left untouched and the task is listed as skipped with `worktree kept: <reason>`; a `work` directory that is not a worktree, from before worktrees, is listed with `not a worktree` and left untouched. A worktree is never removed any other way.
+- Retires the worktree again with `git.Program.Retire`, at the head the task's `<id>-merge` document names and with the task's recorded documents as its outputs, as the merge did: it removes the worktree, the `guildhall/<task>` branch and the `refs/guildhall/default/…` ref only when nothing would be lost. A worktree Retire keeps is left untouched and the task is listed as skipped with `worktree kept: <reason>`; a cancelled task has no merge record, so its worktree and branch are always kept, with the reason that it was cancelled unmerged, and the Director decides what happens to them; a `work` directory that is not a worktree, from before worktrees, is listed with `not a worktree` and left untouched. A worktree is never removed any other way.
 - Removes everything in each attempt directory (`<step>-<n>/`) but `result.json`, its `usage.json`, `outcome.json`, `prompt/manifest.json` and the attempt's `attempt.lock`, so [`spend report`](spend.md), the quality judge's builder lookup and `artisan status` read the same as before. An attempt with `pane-launch.json` and no `pane-closed.json`, its Herdr workspace not closed yet, keeps its pane files, so the [workspace close sweep](artisan.md#workflow-artisan-workspaces) can still close it, and the report says so.
 - Keeps the task's `attempt.lock`, the task directory, every store record and every recorded document under `<state>/documents`.
 

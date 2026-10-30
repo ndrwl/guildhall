@@ -31,6 +31,7 @@ var taskUsage = `usage:
   guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move out-of-scope|duplicate|defer --reason <text> <task>
   guildhall task review --full --store <path> --repo <id> <task>
   guildhall task start --store <path> --config <director.toml> --state <dir> --repo <id> [--decision <id>] [--ignore-deps --reason <text>] <task>
+  guildhall task cancel --store <path> --config <director.toml> --state <dir> --repo <id> --reason <text> <task>
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
 --copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
 config.toml and state

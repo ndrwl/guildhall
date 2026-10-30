@@ -72,7 +72,7 @@ func frontWait(s *store.Store, repo, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if slices.ContainsFunc(decisions, func(d store.Decision) bool { return !d.Answered }) {
+	if slices.ContainsFunc(decisions, func(d store.Decision) bool { return d.Open() }) {
 		return "decision", nil
 	}
 	return "ci", nil

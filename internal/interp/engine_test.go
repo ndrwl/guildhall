@@ -40,7 +40,8 @@ func storeRecords(t *testing.T) interptest.RecordsHarness {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return interptest.RecordsHarness{Records: s, CreateTask: s.CreateTask, AnswerDecision: s.AnswerDecision, RuleFinding: s.RuleFinding,
-		RequestFullReview: s.RequestFullReview, OverrideDependencies: s.OverrideDependencies, SetTaskPriority: s.SetTaskPriority, PauseDirector: func() error { return interptest.PauseStoreDirector(s) }, Clock: clock}
+		RequestFullReview: s.RequestFullReview, OverrideDependencies: s.OverrideDependencies, SetTaskPriority: s.SetTaskPriority, PauseDirector: func() error { return interptest.PauseStoreDirector(s) },
+		CancelTask: s.CancelTask, VoidDecision: s.VoidDecision, Clock: clock}
 }
 
 // backend is one set of records and mailbox the engine runs over.

@@ -19,6 +19,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task timeline --store <path> --repo <id> <task> --json` and `guildhall task files --store <path> --repo <id> <task> --json` are the [inspection reads](#inspection).
 - `guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move <move> --reason <text> <task>` records a [Director ruling](#director-rulings) and prints its receipt.
 - `guildhall task review --full --store <path> --repo <id> <task>` records a [full-review request](#full-review) and prints its receipt.
+- `guildhall task cancel --store <path> --config <director.toml> --state <dir> --repo <id> --reason <text> <task>` [cancels](#task-cancel) an open task for good and prints one line per effect.
 - `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
 
 For every command but `list`, the positional task id may appear before or after flags.
@@ -92,7 +93,7 @@ A task already past research, with an attempt of a step not run by the Director,
 
 The Director can start a held task anyway with [`task start --ignore-deps --reason <text>`](running.md#task-start), the **dependency override**.
 It is recorded as its own record, never by changing the task (R1.62), lasts for the rest of the task's life, starts the task from the current main and shows with its reason in `task timeline`.
-A cancelled dependency never merges, so the override is the only way to start a task that depends on one.
+A cancelled dependency never merges, so the override is the only way to start a task that depends on one; [`task cancel`](#task-cancel) tells the Director about each open dependent with a `dependency-cancelled` message.
 
 `--fixes <repo>/<task>` names the earlier task whose defect this one fixes, which must already exist; publish then adds "Fixes a defect introduced by task `<repo>/<task>`." to the pull request body ([quality rubric](quality.md#running-it)), whatever the task's kind; without `--kind` it also makes the task a [bug](#task-kinds).
 
@@ -128,6 +129,33 @@ Every change shows in `task timeline`, and `director status` and `task list --js
 This is not the `hold` answer on a merge decision.
 That answer refuses the merge it was asked for, and the task waits for the Director; `hold-merge` acts on a merge already authorized, and the task waits in the queue.
 A held task also keeps its dependents waiting, whose `dependency-held` message reads `merge held`.
+
+## Task cancel
+
+`task cancel --reason <text> <task>` ends an open task for good without delivering it ([decision](decisions/task-cancel.md)).
+The Director runs it only at the Guildmaster's request; it cannot be undone, and work that is wanted again is a new task.
+`--reason` is required, non-blank UTF-8 of at most 64 KiB, and the repository must be listed in the config, as for `task start`.
+It takes the `--store`, `--config` and `--state` of `task start`, or a copy, and holds the task's lock for its whole run, so it never interleaves with an advance or a merge.
+
+In order, it:
+
+1. refuses a `done` task, and prints that a `cancelled` task is already cancelled, with its reason, and exits 0;
+2. refuses a task whose deliver recorded its merge, a `<decision>-merge` document: its work merged or is merging;
+3. stops each running attempt: an Artisan attempt through its owner, as [`artisan stop`](artisan.md#commands) does, and a Director stage's attempt, which has no owner, by recording it `stopped`; when an Artisan's stop cannot be proven the cancel is refused and the task stays open, so a cancelled task never has a live Artisan;
+4. closes each pull request the task's `-pr` documents record with the comment `Cancelled by Guildhall: <reason>`, keeping its branch; a closed one is left as it is, and one merged on the forge refuses the cancel, after only the stops above, which the Director can retry;
+5. voids each open decision with the reason `Task cancelled: <reason>`: a void decision leaves `decide list`, `director status` and the dependency gate's states, `decide show` prints it with `"void":true`, and it can no longer be answered;
+6. takes the task out of the [start queue](interpreter.md#the-start-queue) and the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
+7. sends the Director one `dependency-cancelled` message for each open task, in any listed repository, that [depends](#dependencies) on it; the dependents are not cancelled, and one already held by the dependency gate gets its `dependency-held` message too at its next advance;
+8. records the task `cancelled`, with its `cancel_reason` and `cancelled_at`.
+
+Each step's write has a mutation id derived from the task, and the state change comes last, so a cancel that fails part-way leaves the task open and running the same command again finishes it: nothing is stopped, closed, voided or sent twice.
+The task's branch and working directory are kept, so its work can be recovered.
+
+A cancelled task leaves `task list --open`, and `task list` and `task show` print its state, reason and time.
+It contributes nothing to `director status` but its unread messages, until they are read.
+A cancel counts toward `handoff_after_tasks` as a merge does.
+Stopping an attempt makes its launcher advance the task; `task start` and `step done` of a cancelled task print `task <repo>/<task> is cancelled; nothing to advance` and succeed, so no `advance-failed` message follows; of a done task they still fail.
+`decide answer` refuses a cancelled task's decisions; a done task's, such as its audit, are answered as before.
 
 ## Retries
 

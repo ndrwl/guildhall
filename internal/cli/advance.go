@@ -132,7 +132,8 @@ func (a *App) taskStart(args []string) int {
 			return a.fail(fmt.Errorf("task start: %w", err))
 		}
 	}
-	return a.advanced(a.advance(f, ev))
+	n, err := a.advance(f, ev)
+	return a.advancedOrCancelled(f, ev.Task, n, err)
 }
 
 // overrideDependencies records the Director's dependency override of an open task that has dependencies, under a
@@ -417,7 +418,8 @@ func (a *App) stepDone(args []string) int {
 	}
 	// Contract violations are taken under the task lock by the interpreter, which
 	// records rejection; operational read errors above remain replayable.
-	return a.advanced(a.advance(f, interp.Event{Kind: interp.AttemptResult, Repository: f.repo, Task: *task, Step: *step, Attempt: n}))
+	where, err := a.advance(f, interp.Event{Kind: interp.AttemptResult, Repository: f.repo, Task: *task, Step: *step, Attempt: n})
+	return a.advancedOrCancelled(f, *task, where, err)
 }
 
 // advanced prints where an advance left the task.

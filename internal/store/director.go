@@ -515,6 +515,9 @@ const (
 	// MessageDependencyHeld: the dependency gate holds a task until its dependencies merge; it is not the
 	// between-Directors dependency-notice.
 	MessageDependencyHeld = "dependency-held"
+	// MessageDependencyCancelled: a task this task depends on was cancelled (guildhall task cancel), so it can
+	// never merge; the dependent stays open for the Director.
+	MessageDependencyCancelled = "dependency-cancelled"
 	// MessageBranchKept: an Artisan attempt runs on its untouched task branch, which could not be moved to the
 	// current main.
 	MessageBranchKept       = "branch-kept"
@@ -551,7 +554,8 @@ const (
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
 // sender: "engine" for an advance (internal/interp), "launcher" for an attempt's launcher, "quality" for a judge,
-// "supervisor" for a Director session's supervisor and "local" for the documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
+// "supervisor" for a Director session's supervisor, "cancel" for `guildhall task cancel` and "local" for the
+// documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
 // wake line carries no sender-chosen text. A type is added here by the change that sends it, never by a sender.
 var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
@@ -566,6 +570,7 @@ var MessageTypes = map[string]string{
 	MessageQuestion:        "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
+	MessageDependencyCancelled: "cancel",
 }
 
 // UnreadFrom is DirectorUnread's key for unread messages of type t from sender: "<t> from <sender>".

@@ -150,6 +150,44 @@ func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 	return PullRequest{}, fmt.Errorf("%w: pull request %s is %s at %s after the merge", ErrRefused, pr.URL, pr.State, pr.Head)
 }
 
+// Close closes pull request c.Number without merging it, posting c.Comment, and returns it closed. It never passes
+// --delete-branch, so the task branch stays on the remote. A pull request already closed is returned as it is, so
+// repeating a close is safe; a merged one is ErrRefused, and nothing is closed or commented. A close gh fails is
+// checked by viewing the pull request again, as Merge does: closed, it is returned; otherwise the failure is returned.
+func (g GitHub) Close(ctx context.Context, c Close) (PullRequest, error) {
+	if err := c.Validate(); err != nil {
+		return PullRequest{}, err
+	}
+	repo, err := GitHubRepository(c.Remote)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	pr, err := g.view(ctx, c.Repository, repo, c.Number)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	switch pr.State {
+	case Closed:
+		return pr, nil
+	case Merged:
+		return PullRequest{}, fmt.Errorf("%w: pull request %s is merged", ErrRefused, pr.URL)
+	}
+	_, closeErr := g.gh(ctx, c.Repository, "pr", "close", strconv.Itoa(c.Number), "--repo", repo, "--comment", c.Comment)
+	if closeErr != nil && ctx.Err() != nil {
+		return PullRequest{}, ctx.Err()
+	}
+	pr, err = g.view(ctx, c.Repository, repo, c.Number)
+	switch {
+	case err != nil:
+		return PullRequest{}, errors.Join(closeErr, err)
+	case pr.State == Closed:
+		return pr, nil
+	case closeErr != nil:
+		return PullRequest{}, closeErr
+	}
+	return PullRequest{}, fmt.Errorf("pull request %s is %s after the close", pr.URL, pr.State)
+}
+
 // checksQuery reads a commit's status check rollup: its check runs and commit statuses, at most one page.
 const checksQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!) {
   repository(owner: $owner, name: $name) {

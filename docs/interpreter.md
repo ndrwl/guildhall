@@ -259,8 +259,8 @@ Replay recognizes only the full-head identity with state `conflicting` or `behin
 Validate's refresh cache retains the Director wait between reads, and the checks watcher no longer polls a task waiting on the Director.
 A Director-initiated advance rechecks when due; deliver rechecks on each advance.
 For a PR that waits for the Director, Guildhall prescribes no recovery.
-The Director can [send a succeeded step back](step-send-back.md) with its instructions, release a stuck front with [`task hold-merge`](tasks.md#holding-a-merge), hold the task, leave the work unadvanced, or act externally and recheck.
-Existing attempt stop and Director-stage abandonment paths are unchanged; no task-cancellation command is added.
+The Director can [send a succeeded step back](step-send-back.md) with its instructions, release a stuck front with [`task hold-merge`](tasks.md#holding-a-merge), hold the task, leave the work unadvanced, act externally and recheck, or, at the Guildmaster's request, [cancel the task](tasks.md#task-cancel).
+Existing attempt stop and Director-stage abandonment paths are unchanged.
 
 ## The merge queue
 

@@ -68,6 +68,12 @@ A finished outcome without a readable result is refused, not guessed.
 - A Director copy is one directory holding `config.toml`, `director.store` and `state/`, selected with `--copy <dir>` or `GUILDHALL_COPY` ([copies](running.md#copies)).
 - `store init --copy <dir>` creates its store; a copy is not a release install, which [release upgrades](releases.md) design.
 
+## Cancel
+
+- To **cancel** a task is to end it for good without delivering it, `task cancel --reason <text>`, at the Guildmaster's request ([task cancel](tasks.md#task-cancel)); a task is not deleted, removed or closed.
+- A **cancelled** task is in the terminal state `cancelled`, with its reason and time; it is never advanced, judged or audited again, and is not un-cancelled.
+- Cancelling a task **closes** its open pull request, keeping the branch, and **voids** its open decisions: a **void** decision waits for no one and cannot be answered.
+
 ## Dependency
 
 - A task's dependencies are the tasks named by `task new --depends-on`, fixed at creation ([dependencies](tasks.md#dependencies)).

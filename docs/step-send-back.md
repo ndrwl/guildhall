@@ -34,5 +34,5 @@ Publishing pushes the new head to the same task branch and updates its existing 
 All normal spec, review, validation and merge-decision gates still apply; send-back approves nothing and never changes git history itself.
 
 For a blocked published PR, the Director also has the option of holding the task, leaving the work unadvanced, or rechecking after an external change with `task start`.
-Existing `artisan stop` and Director-stage `step finish --failed` apply only to their existing states; there is no task-cancellation CLI.
+Existing `artisan stop` and Director-stage `step finish --failed` apply only to their existing states; ending the task for good is [`task cancel`](tasks.md#task-cancel).
 These are independent choices, not a sequence Guildhall requires.

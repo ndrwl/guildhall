@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	bolt "go.etcd.io/bbolt"
@@ -60,6 +61,10 @@ type Task struct {
 	Fixes *TaskRef `json:"fixes,omitempty"`
 	// State is set by the store: CreateTask always records TaskOpen.
 	State TaskState `json:"state"`
+	// CancelReason and CancelledAt are the Director's reason for cancelling the task and when it was cancelled,
+	// set by CancelTask; a task closed any other way has neither.
+	CancelReason string    `json:"cancel_reason,omitempty"`
+	CancelledAt  time.Time `json:"cancelled_at,omitzero"`
 }
 
 // AttemptOutcome is how a stage attempt finished; empty means it is still running.
@@ -188,7 +193,14 @@ type Decision struct {
 	Choice string `json:"choice,omitempty"`
 	// Note is the trimmed text after the first line of an answer to a decision with options.
 	Note string `json:"note,omitempty"`
+	// Void marks an unanswered decision of a cancelled task (VoidDecision), with the cancel's reason: nobody waits
+	// for it, and it can no longer be answered.
+	Void       bool   `json:"void,omitempty"`
+	VoidReason string `json:"void_reason,omitempty"`
 }
+
+// Open reports whether the decision still waits for an answer: it is neither answered nor void.
+func (d Decision) Open() bool { return !d.Answered && !d.Void }
 
 // CreateTask records a new open task. A task id is unique within its repository.
 func (s *Store) CreateTask(mutationID string, t Task) (Receipt, error) {
@@ -242,6 +254,37 @@ func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskSt
 			return err
 		}
 		t.State = state
+		return putJSON(repoBucket(tx, repository, bucketTasks), []byte(taskID), t)
+	})
+}
+
+// opCancelTask is the operation recorded on a cancel's receipt, which FinishedTasks counts as it counts
+// opSetTaskState.
+const opCancelTask = "cancel-task"
+
+// CancelTask moves an open task to cancelled, recording the Director's nonempty reason and the commit time as
+// the task's CancelReason and CancelledAt (docs/tasks.md#task-cancel). It is a separate operation from
+// SetTaskState, whose request, and so the digest of every done close and its replay, it leaves unchanged. A task
+// already closed is ErrInvalid, and an unknown one ErrNotFound.
+func (s *Store) CancelTask(mutationID, repository, taskID, reason string) (Receipt, error) {
+	if err := validateIDs(repository, taskID); err != nil {
+		return Receipt{}, err
+	}
+	if err := validateText("cancel reason", reason, MaxTextBytes); err != nil {
+		return Receipt{}, err
+	}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+		Reason     string `json:"reason"`
+	}{repository, taskID, reason}
+	return s.mutate(mutationID, opCancelTask, req, func(tx *bolt.Tx, r *Receipt) error {
+		r.Repository, r.TaskID, r.Record = repository, taskID, "task"
+		t, err := openTask(tx, repository, taskID)
+		if err != nil {
+			return err
+		}
+		t.State, t.CancelReason, t.CancelledAt = TaskCancelled, reason, s.now().UTC()
 		return putJSON(repoBucket(tx, repository, bucketTasks), []byte(taskID), t)
 	})
 }
@@ -442,6 +485,9 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 		if d.Answered {
 			return invalid("decision %q of %s/%s is already answered", id, repository, taskID)
 		}
+		if d.Void {
+			return invalid("decision %q of %s/%s is void: %s", id, repository, taskID, d.VoidReason)
+		}
 		if len(d.Options) > 0 {
 			first, rest, _ := strings.Cut(answer, "\n")
 			first = strings.TrimSuffix(first, "\r")
@@ -451,6 +497,45 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 			d.Choice, d.Note = first, strings.TrimSpace(rest)
 		}
 		d.Answered, d.Answer = true, answer
+		return putJSON(decisions, key, d)
+	})
+}
+
+// VoidDecision marks an unanswered decision void with a nonempty reason, as cancelling its task does: it leaves
+// every list of open decisions and AnswerDecision refuses it. Voiding a void decision again with the same reason
+// under another mutation id changes nothing and returns the first void's receipt; another reason, or an answered
+// decision, is ErrInvalid, and an unknown decision ErrNotFound.
+func (s *Store) VoidDecision(mutationID, repository, taskID, id, reason string) (Receipt, error) {
+	if err := validateIDs(repository, taskID, id); err != nil {
+		return Receipt{}, err
+	}
+	if err := validateText("void reason", reason, MaxTextBytes); err != nil {
+		return Receipt{}, err
+	}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+		ID         string `json:"id"`
+		Reason     string `json:"reason"`
+	}{repository, taskID, id, reason}
+	return s.mutate(mutationID, "void-decision", req, func(tx *bolt.Tx, r *Receipt) error {
+		r.Repository, r.TaskID, r.Record = repository, taskID, "decision/"+id
+		decisions := repoBucket(tx, repository, bucketDecisions)
+		key := recordKey(taskID, id)
+		var d Decision
+		if err := getJSON(decisions, key, &d); err != nil {
+			return fmt.Errorf("decision %q of %s/%s: %w", id, repository, taskID, err)
+		}
+		switch {
+		case d.Void:
+			if first, ok := earlierReceipt(tx, "void-decision", r.RequestDigest); ok {
+				return standing{first}
+			}
+			return invalid("decision %q of %s/%s is already void: %s", id, repository, taskID, d.VoidReason)
+		case d.Answered:
+			return invalid("decision %q of %s/%s is answered", id, repository, taskID)
+		}
+		d.Void, d.VoidReason = true, reason
 		return putJSON(decisions, key, d)
 	})
 }
@@ -654,6 +739,9 @@ func validateTask(t Task) error {
 	if t.State != "" && t.State != TaskOpen {
 		return invalid("a new task is always %q, not %q", TaskOpen, t.State)
 	}
+	if t.CancelReason != "" || !t.CancelledAt.IsZero() {
+		return invalid("a new task is not cancelled")
+	}
 	for _, dep := range t.DependsOn {
 		if err := validateIDs(dep.Repository, dep.ID); err != nil {
 			return err
@@ -711,8 +799,8 @@ func validateDecision(d Decision) error {
 			return invalid("option %q is offered twice", o)
 		}
 	}
-	if d.Answered || d.Answer != "" || d.Choice != "" || d.Note != "" {
-		return invalid("a new decision has no answer")
+	if d.Answered || d.Answer != "" || d.Choice != "" || d.Note != "" || d.Void || d.VoidReason != "" {
+		return invalid("a new decision has no answer and is not void")
 	}
 	return nil
 }
