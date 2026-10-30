@@ -542,131 +542,26 @@ func (c *Config) validate() []string {
 		}
 	}
 
-	if m, ok := c.Managed[StallIntervalKey]; ok {
-		if _, err := parseStallInterval(m.Value); err != nil {
-			add("managed %v", err)
+	// Each registered setting's own check, in registry order; the Claude skill policies need the declared profiles,
+	// so checkClaudeSkills checks them.
+	for _, s := range settingRegistry {
+		if s.check == nil {
+			continue
 		}
-	}
-	if v, ok := c.Local[StallIntervalKey]; ok {
-		if _, err := parseStallInterval(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	for _, key := range []string{MaxRunningAttemptsKey, MaxAttemptsPerDayKey} {
-		if m, ok := c.Managed[key]; ok {
-			if _, err := parseCap(key, m.Value); err != nil {
+		if m, ok := c.Managed[s.key]; ok {
+			if err := s.check(m.Value); err != nil {
 				add("managed %v", err)
 			}
 		}
-		if v, ok := c.Local[key]; ok {
-			if _, err := parseCap(key, v); err != nil {
+		if v, ok := c.Local[s.key]; ok {
+			if err := s.check(v); err != nil {
 				add("local %v", err)
 			}
-		}
-	}
-	if m, ok := c.Managed[HerdrSessionKey]; ok {
-		if err := checkHerdrSession(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[HerdrSessionKey]; ok {
-		if err := checkHerdrSession(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[WakeQuietKey]; ok {
-		if _, err := parseWakeQuiet(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[WakeQuietKey]; ok {
-		if _, err := parseWakeQuiet(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[WakeMaxDelayKey]; ok {
-		if _, err := parseWakeMaxDelay(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[WakeMaxDelayKey]; ok {
-		if _, err := parseWakeMaxDelay(v); err != nil {
-			add("local %v", err)
 		}
 	}
 	if quiet, err := c.WakeQuiet(); err == nil {
 		if most, err := c.WakeMaxDelay(); err == nil && most < quiet {
 			add("%s %s must be at least %s %s", WakeMaxDelayKey, most, WakeQuietKey, quiet)
-		}
-	}
-	if m, ok := c.Managed[ChecksRefreshKey]; ok {
-		if _, err := parseChecksRefresh(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[ChecksRefreshKey]; ok {
-		if _, err := parseChecksRefresh(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[CILogLimitKey]; ok {
-		if _, err := parseCILogLimit(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[CILogLimitKey]; ok {
-		if _, err := parseCILogLimit(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[ArtisanWorkspaceCloseAfterKey]; ok {
-		if _, err := parseArtisanWorkspaceCloseAfter(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[ArtisanWorkspaceCloseAfterKey]; ok {
-		if _, err := parseArtisanWorkspaceCloseAfter(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[PruneAfterKey]; ok {
-		if _, err := parsePruneAfter(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[PruneAfterKey]; ok {
-		if _, err := parsePruneAfter(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[PruneDailyKey]; ok {
-		if _, err := parsePruneDaily(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[PruneDailyKey]; ok {
-		if _, err := parsePruneDaily(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[LockWaitKey]; ok {
-		if _, err := parseLockWait(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[LockWaitKey]; ok {
-		if _, err := parseLockWait(v); err != nil {
-			add("local %v", err)
-		}
-	}
-	if m, ok := c.Managed[DefaultEffortKey]; ok {
-		if err := checkDefaultEffort(m.Value); err != nil {
-			add("managed %v", err)
-		}
-	}
-	if v, ok := c.Local[DefaultEffortKey]; ok {
-		if err := checkDefaultEffort(v); err != nil {
-			add("local %v", err)
 		}
 	}
 	problems = append(problems, c.checkQuality()...)

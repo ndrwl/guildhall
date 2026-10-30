@@ -92,6 +92,13 @@ A finished outcome without a readable result is refused, not guessed.
   There is no cap on them; say rounds used, not "cap" or "limit".
 - The **designer** is the round's Artisan, the synthetic step `designer`, run under the copy's `designer` profile, shipped at effort `high`.
 
+## Setting scope
+
+- A **task-scoped setting** is a setting Guildhall reads while running a particular task, such as `default_effort` or `stall_interval`, so a task override may replace it for that task ([setting scopes](configuration.md#setting-scopes)).
+- A **machine-wide setting** is read for the whole copy, outside any one task, such as `lock_wait` or `max_running_attempts`; no task can override it.
+  Avoid "global setting", which reads as a managed one.
+- A setting's **effective value** for a task is its task override, if one applies, else its local value, else its managed value, a managed key that is not overridable always winning.
+
 ## Merge queue
 
 - A repository's **merge queue** holds its tasks whose merge is authorized, the merge decision answered `merge` or `<deliver>-<k>-authorized` recorded, in order of priority, then ready time, then task id ([the merge queue](interpreter.md#the-merge-queue)).

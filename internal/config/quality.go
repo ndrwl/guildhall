@@ -200,29 +200,22 @@ func hasNonzeroDigit(v string) bool {
 	return false
 }
 
-// checkQuality reports each quality setting in the managed and local sections that Quality could not use, then,
-// when those all parse, an effective combination it refuses.
+// checkQuality reports, when every quality setting in the managed and local sections parses, an effective combination
+// Quality refuses; validate reports a value that does not parse through the setting registry.
 func (c *Config) checkQuality() []string {
-	var problems []string
 	var scratch Quality
 	for _, s := range qualitySettings {
-		if m, ok := c.Managed[s.key]; ok {
-			if err := s.set(&scratch, m.Value); err != nil {
-				problems = append(problems, "managed "+err.Error())
-			}
+		if m, ok := c.Managed[s.key]; ok && s.set(&scratch, m.Value) != nil {
+			return nil
 		}
-		if v, ok := c.Local[s.key]; ok {
-			if err := s.set(&scratch, v); err != nil {
-				problems = append(problems, "local "+err.Error())
-			}
+		if v, ok := c.Local[s.key]; ok && s.set(&scratch, v) != nil {
+			return nil
 		}
 	}
-	if len(problems) == 0 {
-		if _, err := c.Quality(); err != nil {
-			problems = append(problems, err.Error())
-		}
+	if _, err := c.Quality(); err != nil {
+		return []string{err.Error()}
 	}
-	return problems
+	return nil
 }
 
 func parseSwitch(key, v string) (bool, error) {
