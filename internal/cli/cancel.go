@@ -64,27 +64,9 @@ func (a *App) taskCancel(args []string) int {
 
 // cancelTask is task cancel's work over f's copy, under the task lock, printing each effect as it is made.
 func (a *App) cancelTask(f advanceFlags, task, reason string) error {
-	cfg, err := config.Load(f.config)
+	cfg, repo, state, release, err := lockTask(f, task)
 	if err != nil {
 		return err
-	}
-	repo, err := cfg.ListedRepository(f.repo)
-	if err != nil {
-		return err
-	}
-	state, err := filepath.Abs(f.state)
-	if err != nil {
-		return err
-	}
-	taskDir := filepath.Join(state, f.repo, task)
-	if err := os.MkdirAll(taskDir, 0o755); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), f.wait)
-	release, err := artisan.LockAttempt(ctx, taskDir)
-	cancel()
-	if err != nil {
-		return fmt.Errorf("lock task %s/%s: %w", f.repo, task, err)
 	}
 	defer release()
 
@@ -131,14 +113,19 @@ func (a *App) cancelTask(f advanceFlags, task, reason string) error {
 	}
 
 	// The pull requests next, before any record of the task changes, so a pull request merged on the forge refuses
-	// the cancel with only the stopped attempts above, which the Director can retry.
-	var fg interp.Forge = forge.GitHub{}
-	if a.Forge != nil {
-		fg = a.Forge
-	}
+	// the cancel with only the stopped attempts above. Its work landed outside Guildhall, so the outside-merge rule
+	// records the task done instead (docs/tasks.md#merged-outside-guildhall).
+	fg := a.forge()
 	for _, pr := range prs {
 		closed, err := fg.Close(context.Background(), forge.Close{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Comment: "Cancelled by Guildhall: " + reason})
 		if errors.Is(err, forge.ErrRefused) {
+			got, rerr := a.reconcileEngine(f, cfg, repo, state).Reconcile(context.Background(), f.repo, task)
+			if rerr != nil {
+				return fmt.Errorf("pull request %s of task %s/%s: %w; its work landed, so the task is not cancelled: %w", pr.URL, f.repo, task, err, rerr)
+			}
+			if got.Done {
+				return fmt.Errorf("pull request %s of task %s/%s is merged; its work landed, so the task is recorded done, not cancelled", got.URL, f.repo, task)
+			}
 			return fmt.Errorf("pull request %s of task %s/%s: %w; its work landed, so the task is not cancelled", pr.URL, f.repo, task, err)
 		}
 		if err != nil {

@@ -23,6 +23,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task finding rule --store <path> --repo <id> --outcome <document> --finding <id> --move <move> --reason <text> <task>` records a [Director ruling](#director-rulings) and prints its receipt.
 - `guildhall task review --full --store <path> --repo <id> <task>` records a [full-review request](#full-review) and prints its receipt.
 - `guildhall task cancel --store <path> --config <director.toml> --state <dir> --repo <id> --reason <text> <task>` [cancels](#task-cancel) an open task for good and prints one line per effect.
+- `guildhall task reconcile --store <path> --config <director.toml> --state <dir> --repo <id> <task>` [records an open task done](#task-reconcile) whose pull request was merged outside Guildhall.
 - `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
 - `guildhall task context add --store <path> --repo <id> (--text <text> | --file <path>) <task>` adds an entry of [task context](#task-context) and prints its receipt; `guildhall task context list --store <path> --repo <id> <task> --json` prints the task's entries.
 
@@ -147,7 +148,7 @@ In order, it:
 1. refuses a `done` task, and prints that a `cancelled` task is already cancelled, with its reason, and exits 0;
 2. refuses a task whose deliver recorded its merge, a `<decision>-merge` document: its work merged or is merging;
 3. stops each running attempt: an Artisan attempt through its owner, as [`artisan stop`](artisan.md#commands) does, and a Director stage's attempt, which has no owner, by recording it `stopped`; when an Artisan's stop cannot be proven the cancel is refused and the task stays open, so a cancelled task never has a live Artisan;
-4. closes each pull request the task's `-pr` documents record with the comment `Cancelled by Guildhall: <reason>`, keeping its branch; a closed one is left as it is, and one merged on the forge refuses the cancel, after only the stops above, which the Director can retry;
+4. closes each pull request the task's `-pr` documents record with the comment `Cancelled by Guildhall: <reason>`, keeping its branch; a closed one is left as it is, and one merged on the forge refuses the cancel, after only the stops above: its work landed, so the [outside-merge rule](#merged-outside-guildhall) records the task `done`, and the cancel exits 1 with `pull request <url> of task <repo>/<task> is merged; its work landed, so the task is recorded done, not cancelled`;
 5. voids each open decision with the reason `Task cancelled: <reason>`: a void decision leaves `decide list`, `director status` and the dependency gate's states, `decide show` prints it with `"void":true`, and it can no longer be answered;
 6. takes the task out of the [start queue](interpreter.md#the-start-queue) and the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
 7. sends the Director one `dependency-cancelled` message for each open task, in any listed repository, that [depends](#dependencies) on it; the dependents are not cancelled, and one already held by the dependency gate gets its `dependency-held` message too at its next advance;
@@ -161,6 +162,38 @@ It contributes nothing to `director status` but its unread messages, until they 
 A cancel counts toward `handoff_after_tasks` as a merge does.
 Stopping an attempt makes its launcher advance the task; `task start` and `step done` of a cancelled task print `task <repo>/<task> is cancelled; nothing to advance` and succeed, so no `advance-failed` message follows; of a done task they still fail.
 `decide answer` refuses a cancelled task's decisions; a done task's, such as its audit, are answered as before.
+Cancel never records `cancelled` for a task whose work landed.
+
+## Merged outside Guildhall
+
+A task's pull request may be merged on the forge by hand, outside Guildhall.
+The task has then **landed outside Guildhall** when it has no `-merge` document, so deliver has not merged it, and the forge now reports one of the pull requests its `-pr` documents record as merged, at whatever head; every recorded pull request is read, not only the latest, so an earlier one merged by hand counts though a later one was closed.
+A pull request only closed never counts.
+A merge of deliver's own whose record a crash lost, the pull request merged at the head of deliver's latest merge, not rebased and not held, is left to deliver, which records it as before.
+
+When a task has landed outside Guildhall, Guildhall, in order:
+
+1. records the forge's merged pull request, with its head and `merge_commit`, as `outside-<number>-merge`, so `task cancel` sees the task as merged;
+2. voids each open decision with the reason `Task done: pull request <url> merged outside Guildhall`;
+3. sends the Director a `merged` message, id `<repo>.<task>.merged.outside.<number>`, naming the pull request, the forge's head, its merge commit and the head Guildhall last recorded for it, so `task timeline` and `director status` show the merge;
+4. retires the working directory at the forge's head; a head Guildhall never fetched keeps it, with a `workspace-kept` message, as for any merge;
+5. opens the [audit](quality.md) when quality sampling selects the task, as a merge does;
+6. takes the task out of the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
+7. records the task `done`.
+
+Every write's mutation id is keyed on the pull request's remote and number, so a run that fails part-way is finished by the next from the recorded `outside-<number>-merge`, sending nothing twice.
+The forge must read pull requests (GitHub does); a forge that cannot never applies the rule.
+
+Every advance applies the rule first, after taking its event's result and before any step runs, to a task with `-pr` documents and no `-merge` document, at the cost of one `gh pr view` per recorded pull request; that advance prints `{"wait":"done",...}`.
+So publish never opens a new pull request for a branch whose pull request merged, and validate and the merge-queue front never read a pull request that moved when it was merged.
+While one of the task's attempts runs the rule waits, and applies at the advance its result brings.
+A pull request read that fails fails the advance.
+
+### Task reconcile
+
+`task reconcile <task>` applies the rule now, for drift the Director finds: it takes the flags of `task cancel` but `--reason`, the repository must be listed in the config, and it holds the task's lock.
+It stops the task's running attempts as `task cancel` does, then reads the forge and prints `done: pull request <url> merged outside Guildhall` or `no change: no recorded pull request is merged`, exiting 0 either way.
+A `done` or `cancelled` task prints its state and changes nothing.
 
 ## Retries
 

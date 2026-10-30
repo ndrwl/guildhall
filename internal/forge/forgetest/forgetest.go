@@ -21,6 +21,11 @@ type Forge interface {
 	Close(ctx context.Context, c forge.Close) (forge.PullRequest, error)
 }
 
+// PullRequestReader is the optional read of one pull request under the contract: forge.GitHub's and Fake's.
+type PullRequestReader interface {
+	PullRequest(ctx context.Context, v forge.View) (forge.PullRequest, error)
+}
+
 // Harness is one forge under the contract suite, over a repository whose remote's default branch is Base, at
 // BaseHead.
 type Harness struct {
@@ -335,6 +340,52 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		} {
 			if _, err := h.Forge.Close(ctx, c); !errors.Is(err, forge.ErrInvalid) {
 				t.Errorf("Close(%+v) = %v, want ErrInvalid", c, err)
+			}
+		}
+	})
+
+	t.Run("reads a pull request open, merged and closed without changing it", func(t *testing.T) {
+		h := newHarness(t)
+		reader, ok := h.Forge.(PullRequestReader)
+		if !ok {
+			t.Skip("this forge does not read pull requests")
+		}
+		read := func(t *testing.T, number int) forge.PullRequest {
+			t.Helper()
+			got, err := reader.PullRequest(ctx, forge.View{Repository: h.Repository, Remote: h.Remote, Number: number})
+			if err != nil {
+				t.Fatalf("PullRequest(%d) = %v", number, err)
+			}
+			t.Logf("PullRequest(%d) = %+v", number, got)
+			return got
+		}
+		pr := publish(t, h, h.Heads[0])
+		if got := read(t, pr.Number); got.Number != pr.Number || got.URL != pr.URL || got.State != forge.Open || got.Head != h.Heads[0] || got.MergeCommit != "" {
+			t.Errorf("PullRequest of an open pull request = %+v, want %+v", got, pr)
+		}
+		if again := publish(t, h, h.Heads[0]); again.State != forge.Open {
+			t.Errorf("after a read the pull request is %+v, want open", again)
+		}
+		merged, err := merge(h, pr, h.Heads[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := read(t, pr.Number); got.State != forge.Merged || got.Head != h.Heads[0] || got.MergeCommit != merged.MergeCommit {
+			t.Errorf("PullRequest of a merged pull request = %+v, want %+v", got, merged)
+		}
+		other, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: h.Remote, Branch: "guildhall/t8", Head: h.Heads[2], Title: "Other task", Body: "Closed by the contract."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := closePR(h, other); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(t, other.Number); got.State != forge.Closed || got.MergeCommit != "" {
+			t.Errorf("PullRequest of a closed pull request = %+v, want it closed", got)
+		}
+		for _, v := range []forge.View{{Repository: h.Repository, Remote: h.Remote}, {Remote: h.Remote, Number: pr.Number}, {Repository: h.Repository, Number: pr.Number}} {
+			if _, err := reader.PullRequest(ctx, v); !errors.Is(err, forge.ErrInvalid) {
+				t.Errorf("PullRequest(%+v) = %v, want ErrInvalid", v, err)
 			}
 		}
 	})

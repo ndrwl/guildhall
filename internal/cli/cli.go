@@ -58,6 +58,8 @@ Commands:
                  advance a task, launching its next ready stage
   task cancel --store <path> --config <file> --state <dir> --reason <text> ...
                  end an open task for good, closing its pull request and voiding its decisions
+  task reconcile --store <path> --config <file> --state <dir> ...
+                 record a task done whose pull request was merged outside Guildhall
   step done --store <path> --config <file> --state <dir> ...
                  take one attempt's result file and advance its task
   step finish --store <path> --config <file> --state <dir> ...
@@ -290,6 +292,9 @@ func (a *App) Run(args []string) int {
 		}
 		if len(rest) > 0 && rest[0] == "cancel" {
 			return a.taskCancel(rest[1:])
+		}
+		if len(rest) > 0 && rest[0] == "reconcile" {
+			return a.taskReconcile(rest[1:])
 		}
 		return a.task(rest)
 	case "step":

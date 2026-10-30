@@ -27,6 +27,8 @@ type MergeQueue interface {
 	LeaveMergeQueue(mutationID, repository, taskID string, keepReady bool) (store.Receipt, error)
 	ClaimMergeFront(mutationID, repository, taskID string) (store.Receipt, error)
 	ReleaseMergeFront(mutationID, repository, taskID string) (store.Receipt, error)
+	// SetMergeHold holds or releases a task's merge; the engine only releases one, for a task merged outside Guildhall.
+	SetMergeHold(mutationID, repository, taskID string, held bool) (store.Receipt, error)
 }
 
 var _ MergeQueue = (*store.Store)(nil)

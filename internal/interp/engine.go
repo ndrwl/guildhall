@@ -73,7 +73,7 @@ const (
 	// WaitChecks: validate waits for the forge's checks of the published head to finish; advancing the task
 	// again reads them again.
 	WaitChecks Wait = "checks"
-	// WaitDone: deliver merged the task's pull request and the task is done.
+	// WaitDone: deliver merged the task's pull request, or it was merged outside Guildhall, and the task is done.
 	WaitDone Wait = "done"
 	// WaitDirectorStage: a Director stage's attempt is handed to the Director, whose `step finish` writes its result
 	// (docs/interpreter.md#director-stages).
@@ -139,6 +139,9 @@ var (
 // Advance takes one event, validates it against the records, records what it carries and then
 // moves the task forward through the steps in order until something must be waited for:
 //
+//   - before any step, while none of its attempts runs, a task one of whose recorded pull requests the forge reports
+//     merged outside Guildhall, with no -merge document, is recorded done (mergedOutside,
+//     docs/tasks.md#merged-outside-guildhall); Reconcile applies the same rule on demand;
 //   - before the first step not run by the Director, a task with dependencies passes the dependency gate: until
 //     every task it depends on is done, or the Director overrides, it records nothing, sends one dependency-held
 //     message per state of its dependencies and waits (WaitDependencies); as it first passes, its untouched branch
@@ -255,32 +258,20 @@ type Engine struct {
 
 // Advance applies ev to its task and returns what the task now waits for. See Engine.
 func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
-	t, err := e.Records.Task(ev.Repository, ev.Task)
+	r, err := e.begin(ctx, ev)
 	if err != nil {
-		return Next{}, fmt.Errorf("interp: %w", err)
-	}
-	if t.State != store.TaskOpen {
-		return Next{}, fmt.Errorf("interp: %w: %s/%s is %s", ErrTaskClosed, t.Repository, t.ID, t.State)
-	}
-	def, err := e.Workflow(t.Workflow)
-	if err != nil {
-		return Next{}, fmt.Errorf("interp: workflow %s: %w", t.Workflow.Name, err)
-	}
-	if def.Name != t.Workflow.Name || def.Digest() != t.Workflow.Digest {
-		return Next{}, fmt.Errorf("interp: %w: task bound %s %s, definition is %s %s", ErrRevision, t.Workflow.Name, t.Workflow.Digest, def.Name, def.Digest())
-	}
-	if err := workflow.Validate(def); err != nil {
-		return Next{}, fmt.Errorf("interp: %w", err)
-	}
-	if err := e.Config.CheckArtisanAdapters(def); err != nil {
-		return Next{}, fmt.Errorf("interp: %w", err)
-	}
-	r := &run{e: e, ctx: ctx, task: t, def: def, event: ev}
-	if err := r.load(); err != nil {
 		return Next{}, err
 	}
+	t, def := r.task, r.def
 	if err := r.intake(ev); err != nil {
 		return Next{}, err
+	}
+	// A pull request merged outside Guildhall closes the task before any step reads the forge: publish would open a
+	// new pull request for the landed branch, and validate's and the front's mergeability reads refuse a moved head.
+	if !r.running() {
+		if merged, next, err := r.mergedOutside(); err != nil || merged {
+			return next, err
+		}
 	}
 	if err := r.replayMergeBlocked(); err != nil {
 		return Next{}, err
@@ -326,6 +317,35 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 		}
 	}
 	return Next{}, fmt.Errorf("interp: %w: workflow %s ends without a step to wait for", ErrUnsupported, def.Name)
+}
+
+// begin reads ev's task, which must be open, and its bound workflow revision, and loads the run over its records.
+func (e *Engine) begin(ctx context.Context, ev Event) (*run, error) {
+	t, err := e.Records.Task(ev.Repository, ev.Task)
+	if err != nil {
+		return nil, fmt.Errorf("interp: %w", err)
+	}
+	if t.State != store.TaskOpen {
+		return nil, fmt.Errorf("interp: %w: %s/%s is %s", ErrTaskClosed, t.Repository, t.ID, t.State)
+	}
+	def, err := e.Workflow(t.Workflow)
+	if err != nil {
+		return nil, fmt.Errorf("interp: workflow %s: %w", t.Workflow.Name, err)
+	}
+	if def.Name != t.Workflow.Name || def.Digest() != t.Workflow.Digest {
+		return nil, fmt.Errorf("interp: %w: task bound %s %s, definition is %s %s", ErrRevision, t.Workflow.Name, t.Workflow.Digest, def.Name, def.Digest())
+	}
+	if err := workflow.Validate(def); err != nil {
+		return nil, fmt.Errorf("interp: %w", err)
+	}
+	if err := e.Config.CheckArtisanAdapters(def); err != nil {
+		return nil, fmt.Errorf("interp: %w", err)
+	}
+	r := &run{e: e, ctx: ctx, task: t, def: def, event: ev}
+	if err := r.load(); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // run is one advance of one task over the history view of its records, kept current as it writes.

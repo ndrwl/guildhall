@@ -85,6 +85,25 @@ func (m Merge) Validate() error {
 	return nil
 }
 
+// View asks for one pull request as the forge reports it now, changing nothing.
+type View struct {
+	// Repository and Remote are as in Change.
+	Repository, Remote string
+	// Number is the pull request's number on the forge.
+	Number int
+}
+
+// Validate reports a view missing a field, as ErrInvalid.
+func (v View) Validate() error {
+	switch {
+	case v.Repository == "" || v.Remote == "":
+		return fmt.Errorf("%w: a view names its repository and remote", ErrInvalid)
+	case v.Number < 1:
+		return fmt.Errorf("%w: pull request number %d", ErrInvalid, v.Number)
+	}
+	return nil
+}
+
 // Close asks for one pull request to be closed without merging, with a comment saying why.
 type Close struct {
 	// Repository and Remote are as in Change.

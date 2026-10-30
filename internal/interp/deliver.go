@@ -1103,9 +1103,12 @@ func (r *run) authorize(id string, a authorizationDoc) error {
 		Path: path.Join("tasks", r.task.Repository, r.task.ID, id, "authorized.json"), SHA256: digest.Of(data).Hex()}, data)
 }
 
-// mergedBy says what allowed merge id: the Guildmaster's merge decision, Guildhall's recorded authorization, or an
-// approval carried over to a rebased head.
+// mergedBy says what allowed merge id: the Guildmaster's merge decision, Guildhall's recorded authorization, an
+// approval carried over to a rebased head, or nothing of Guildhall's, for a merge made outside it.
 func (r *run) mergedBy(id string) string {
+	if strings.HasPrefix(id, outsidePrefix) {
+		return "merged outside Guildhall, " + id + "-merge"
+	}
 	if r.decision(id) != nil {
 		return "decision " + id
 	}

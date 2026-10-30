@@ -145,6 +145,9 @@ You may choose any appropriate recovery; the available options are not a fixed p
 - Cancel the task, only when the Guildmaster asks for it, with their reason: `guildhall task cancel --repo app --reason "Duplicate of t-9." t-12`.
   It is irreversible: it stops running attempts, closes the open PR with the reason as its comment (the branch is kept), voids open decisions, leaves the start and merge queues, tells you about each open dependent with a `dependency-cancelled` message, and records the task `cancelled`; work wanted again is a new task.
   It refuses a done task and one whose work merged or is merging, and refuses when a running Artisan's stop cannot be proven; if it fails part-way, run the same command again.
+  A PR merged on the forge refuses it too, and that task is recorded `done` instead, not cancelled.
+- Record a task done whose PR was merged outside Guildhall, by hand on the forge: `guildhall task reconcile --repo app t-12`.
+  Every advance does this by itself, sending a `merged` message that says the PR was merged outside Guildhall and names both heads; reconcile does it now, stopping any running attempt first, and prints `done: ...` or `no change: ...`.
   Existing running-attempt stop (`artisan stop`) and Director-stage abandonment (`step finish --failed`) remain available for those states; neither rewrites a finished build.
 - Recheck after an external change with `guildhall task start --repo app t-12`.
 
