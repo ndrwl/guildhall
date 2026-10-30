@@ -20,8 +20,8 @@ type Snapshot struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// TaskHistory is a task, its attempts, documents, decisions, rulings, full-review requests, context entries, dependency
-// override and priority,
+// TaskHistory is a task, its attempts, documents, decisions, rulings, full-review requests, context entries, link
+// records, dependency override and priority,
 // together with
 // the receipt of every mutation that touched it; ownership records are read separately.
 // Its contents are read in one transaction and describe exactly the store state AsOf names.
@@ -36,6 +36,8 @@ type TaskHistory struct {
 	FullReviews []FullReview
 	// Contexts are the task's context entries, by number.
 	Contexts []TaskContext
+	// Links are the task's link records, by number.
+	Links []TaskLink
 	// DependencyOverride is the task's dependency override, nil when it has none.
 	DependencyOverride *DependencyOverride
 	// Priority is the task's recorded priority, nil when none was set (DefaultPriority).
@@ -52,7 +54,7 @@ type TaskHistory struct {
 // TaskHistory reads one task's history without writing; it returns ErrNotFound for an unknown task.
 // It scans every receipt in the store, so its cost grows with the store's mutation count.
 func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
-	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Receipts: []Receipt{}}
+	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Links: []TaskLink{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var err error
 		if h.Task, err = getTask(tx, repository, taskID); err != nil {
@@ -75,6 +77,9 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketTaskContexts), prefix, &h.Contexts); err != nil {
+			return err
+		}
+		if err := scan(repoBucket(tx, repository, bucketTaskLinks), prefix, &h.Links); err != nil {
 			return err
 		}
 		var o DependencyOverride

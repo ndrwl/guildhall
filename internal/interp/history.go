@@ -110,6 +110,8 @@ type history struct {
 	grants []store.TaskGrant
 	// contexts are the task's context entries, by number, as recorded when the advance began.
 	contexts []store.TaskContext
+	// links are the task's link records, by number, as recorded when the advance began.
+	links []store.TaskLink
 	// docPlaces and decisionPlaces parallel documents and decisions; ok is false for a name of another form.
 	docPlaces      []parsed
 	decisionPlaces []parsed

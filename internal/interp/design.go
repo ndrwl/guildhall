@@ -298,7 +298,7 @@ func (r *run) designer(brief store.DocumentRef) (*store.StageAttempt, Next, erro
 }
 
 // designInputs are what a designer attempt is given: the brief, then as context the latest grill notes, research
-// notes and spec, in workflow order, when they exist, and the task's context.
+// notes and spec, in workflow order, when they exist, the task's context and its linked documents.
 func (r *run) designInputs(brief store.DocumentRef) ([]render.Input, error) {
 	inputs := []render.Input{docInput(BriefPort, brief, r.e.DocumentDir)}
 	for _, s := range r.def.Steps {
@@ -311,10 +311,17 @@ func (r *run) designInputs(brief store.DocumentRef) ([]render.Input, error) {
 		}
 	}
 	c, err := r.contextInput()
-	if err != nil || c == nil {
-		return inputs, err
+	if err != nil {
+		return nil, err
 	}
-	return append(inputs, *c), nil
+	if c != nil {
+		inputs = append(inputs, *c)
+	}
+	linked, err := r.linkInputs()
+	if err != nil {
+		return nil, err
+	}
+	return append(inputs, linked...), nil
 }
 
 // askDesign opens round n's decision once its designer attempt a succeeded: an approval bound to the design's digest,

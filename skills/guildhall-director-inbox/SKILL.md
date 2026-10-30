@@ -74,6 +74,11 @@ guildhall task context add --repo guildhall --text 'Guildmaster: "plain guildhal
 
 A later entry supersedes an earlier one only by saying so; nothing is edited or removed.
 Adding context re-runs nothing: to get it into a stage that already finished, `guildhall step send-back` or `guildhall step retry` it.
+When the Guildmaster wants a task's Artisans to see another task's document, such as the spec its title names, link it, quoting their words, rather than pasting it into context; `--document` is the exact record name `guildhall task show` lists, and a link re-runs nothing either:
+
+```sh
+guildhall task link add --repo guildhall --document guildhall/d14/plan-5-spec --text 'Guildmaster: "d63 must follow the d14 plan-5 spec."' d63
+```
 
 Never repeat what the store holds; name tasks, decisions and messages by id.
 Note only what a new session cannot restart or re-read: an open grill is restarted, so it needs no note.

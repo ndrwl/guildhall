@@ -700,6 +700,10 @@ func (p storeRecords) TaskContexts(repo, id string) ([]store.TaskContext, error)
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskContext, error) { return s.TaskContexts(repo, id) })
 }
 
+func (p storeRecords) TaskLinks(repo, id string) ([]store.TaskLink, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskLink, error) { return s.TaskLinks(repo, id) })
+}
+
 func (p storeRecords) FullReviews(repo, id string) ([]store.FullReview, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.FullReview, error) { return s.FullReviews(repo, id) })
 }

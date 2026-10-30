@@ -31,6 +31,7 @@ type RepositoryCounts struct {
 	Decisions    int
 	Rulings      int
 	TaskContexts int
+	TaskLinks    int
 	Owners       int
 	// UncontainedStarting counts the owners in starting with no containment
 	// recorded: once their launcher is gone nothing can prove them exited
@@ -111,8 +112,8 @@ func (s *Store) Doctor() (Report, error) {
 			for name, n := range map[string]*int{
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketRulings): &counts.Rulings,
-				string(bucketTaskContexts): &counts.TaskContexts,
-				string(bucketOwners):       &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
+				string(bucketTaskContexts): &counts.TaskContexts, string(bucketTaskLinks): &counts.TaskLinks,
+				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 				string(bucketPruned): &counts.Pruned,
 			} {
 				b := tx.Bucket(bucketRepos).Bucket(repo).Bucket([]byte(name))
@@ -155,6 +156,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(Ruling)
 	case string(bucketTaskContexts):
 		rec = new(TaskContext)
+	case string(bucketTaskLinks):
+		rec = new(TaskLink)
 	case string(bucketOwners):
 		rec = new(Ownership)
 	case string(bucketMessages):

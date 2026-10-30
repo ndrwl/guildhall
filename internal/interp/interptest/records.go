@@ -32,6 +32,7 @@ type Records struct {
 	rulings   []store.Ruling
 	full      []store.FullReview
 	contexts  []store.TaskContext
+	links     []store.TaskLink
 	overrides map[[2]string]store.DependencyOverride
 	grants    []store.TaskGrant
 	// priorities are the tasks' priorities SetTaskPriority sets, and queue the start queue's entries by
@@ -289,6 +290,68 @@ func (r *Records) TaskContexts(repository, taskID string) ([]store.TaskContext, 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return list(r, repository, taskID, r.contexts, func(c store.TaskContext) (string, string) { return c.Repository, c.TaskID })
+}
+
+// AddTaskLink records the task's next link record on an open task, as store.AddTaskLink does, without its checks of
+// the ids and the text.
+func (r *Records) AddTaskLink(mutationID, repository, taskID string, op store.TaskLinkOp, source store.DocumentRef, prior int, text string) (store.Receipt, error) {
+	src := store.TaskLinkSource(source)
+	req := struct {
+		Repository, TaskID, Source, Text string
+		Op                               store.TaskLinkOp
+		Prior                            int
+	}{repository, taskID, src, text, op, prior}
+	return r.mutate(mutationID, "add-task-link", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID = repository, taskID
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		case source.Repository == repository && source.TaskID == taskID:
+			return fmt.Errorf("%w: task %s/%s cannot link its own document", store.ErrInvalid, repository, taskID)
+		}
+		i := slices.IndexFunc(r.documents, func(d store.DocumentRef) bool { return store.TaskLinkSource(d) == src })
+		if i < 0 {
+			return fmt.Errorf("source document %s: %w", src, store.ErrNotFound)
+		}
+		doc := r.documents[i]
+		var mine []store.TaskLink
+		n := 0
+		for _, l := range r.links {
+			if l.Repository == repository && l.TaskID == taskID {
+				n = l.Number
+				if store.TaskLinkSource(l.Source) == src {
+					mine = append(mine, l)
+				}
+			}
+		}
+		linked := len(mine) > 0 && mine[len(mine)-1].Op == store.TaskLinkAdd
+		switch {
+		case len(mine) != prior:
+			return fmt.Errorf("%w: %d link records for %s, not %d", store.ErrExists, len(mine), src, prior)
+		case op == store.TaskLinkAdd && linked:
+			return fmt.Errorf("%w: already links %s", store.ErrExists, src)
+		case op == store.TaskLinkRemove && !linked:
+			return fmt.Errorf("%w: does not link %s", store.ErrInvalid, src)
+		case op != store.TaskLinkAdd && op != store.TaskLinkRemove:
+			return fmt.Errorf("%w: task link op %q", store.ErrInvalid, op)
+		}
+		l := store.TaskLink{Repository: repository, TaskID: taskID, Number: n + 1, Op: op, Text: text, Author: store.TaskLinkAuthor,
+			Source: store.DocumentRef{Repository: doc.Repository, TaskID: doc.TaskID, Name: doc.Name, Path: doc.Path, SHA256: doc.SHA256}}
+		rc.CommittedAt = r.now()
+		l.AddedAt, rc.Record = rc.CommittedAt, store.TaskLinkRecord(l.Number)
+		r.links = append(r.links, l)
+		return nil
+	})
+}
+
+// TaskLinks implements interp.Records.
+func (r *Records) TaskLinks(repository, taskID string) ([]store.TaskLink, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return list(r, repository, taskID, r.links, func(l store.TaskLink) (string, string) { return l.Repository, l.TaskID })
 }
 
 // FullReviews implements interp.Records.
@@ -846,6 +909,9 @@ type RecordsHarness struct {
 	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
 	// AddTaskContext records the Director's next context entry on a task, as store.AddTaskContext does.
 	AddTaskContext func(mutationID, repository, taskID, text string) (store.Receipt, error)
+	// AddTaskLink records the Director's next link record on a task, as store.AddTaskLink does; nil skips the link
+	// cases.
+	AddTaskLink func(mutationID, repository, taskID string, op store.TaskLinkOp, source store.DocumentRef, prior int, text string) (store.Receipt, error)
 	// OverrideDependencies records the Director's dependency override, as store.OverrideDependencies does.
 	OverrideDependencies func(mutationID, repository, taskID, reason string) (store.Receipt, error)
 	// SetTaskPriority records a task's priority, as store.SetTaskPriority does, which orders the start queue.
@@ -868,7 +934,7 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r, clock := NewRecords(), NewClock()
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, OverrideDependencies: r.OverrideDependencies,
+		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, OverrideDependencies: r.OverrideDependencies,
 		SetTaskPriority: r.SetTaskPriority, PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
 }
 
@@ -1437,6 +1503,57 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		}
 		_, err = h.AddTaskContext("context-3", "app", "t7", "Too late.")
 		want(t, "AddTaskContext of a done task", err, store.ErrInvalid)
+	})
+	t.Run("lists link records in order and refuses a link that is stale, repeated or to nothing", func(t *testing.T) {
+		h := setup(t)
+		if h.AddTaskLink == nil {
+			t.Skip("the harness records no task links")
+		}
+		src := task
+		src.ID = "t2"
+		if _, err := h.CreateTask("task:app:t2", src); err != nil {
+			t.Fatal(err)
+		}
+		spec := store.DocumentRef{Repository: "app", TaskID: "t2", Name: "plan-1-spec", Path: "tasks/app/t2/plan-1/spec.md", SHA256: strings.Repeat("d", 64)}
+		if _, err := h.Records.PutDocument("doc-spec", spec); err != nil {
+			t.Fatal(err)
+		}
+		named := store.DocumentRef{Repository: "app", TaskID: "t2", Name: "plan-1-spec"}
+		_, err := h.AddTaskLink("link-x", "app", "t7", store.TaskLinkAdd, store.DocumentRef{Repository: "app", TaskID: "t2", Name: "plan-9-spec"}, 0, "Read it.")
+		want(t, "AddTaskLink of an unknown document", err, store.ErrNotFound)
+		_, err = h.AddTaskLink("link-y", "app", "t7", store.TaskLinkRemove, named, 0, "Drop it.")
+		want(t, "AddTaskLink removing an unlinked document", err, store.ErrInvalid)
+		var receipts []store.Receipt
+		for i, op := range []store.TaskLinkOp{store.TaskLinkAdd, store.TaskLinkRemove} {
+			rc, err := h.AddTaskLink(fmt.Sprintf("link-%d", i+1), "app", "t7", op, named, i, "Guildmaster: "+string(op)+".")
+			if err != nil || rc.Record != store.TaskLinkRecord(i+1) {
+				t.Fatalf("AddTaskLink %d = %+v, %v", i+1, rc, err)
+			}
+			receipts = append(receipts, rc)
+		}
+		if replay, err := h.AddTaskLink("link-1", "app", "t7", store.TaskLinkAdd, named, 0, "Guildmaster: add."); err != nil || replay != receipts[0] {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		_, err = h.AddTaskLink("link-3", "app", "t7", store.TaskLinkAdd, named, 1, "Guildmaster: add.")
+		want(t, "AddTaskLink with a stale prior count", err, store.ErrExists)
+		got, err := h.Records.TaskLinks("app", "t7")
+		if err != nil || len(got) != 2 {
+			t.Fatalf("TaskLinks = %+v, %v", got, err)
+		}
+		for i, l := range got {
+			op := []store.TaskLinkOp{store.TaskLinkAdd, store.TaskLinkRemove}[i]
+			w := store.TaskLink{Repository: "app", TaskID: "t7", Number: i + 1, Op: op, Source: spec, Text: "Guildmaster: " + string(op) + ".",
+				Author: store.TaskLinkAuthor, AddedAt: receipts[i].CommittedAt}
+			if l != w {
+				t.Errorf("TaskLinks[%d] = %+v, want %+v", i, l, w)
+			}
+		}
+		if active := store.ActiveTaskLinks(got); len(active) != 0 {
+			t.Errorf("ActiveTaskLinks after the remove = %+v", active)
+		}
+		if got, err := h.Records.TaskLinks("app", "t8"); err != nil || len(got) != 0 {
+			t.Errorf("TaskLinks of an unknown task = %+v, %v", got, err)
+		}
 	})
 
 	t.Run("reads a dependency override", func(t *testing.T) {

@@ -75,6 +75,12 @@ type timedContext struct {
 	seq uint64
 }
 
+// timedLink is one task link record, its added_at the commit time of its receipt.
+type timedLink struct {
+	store.TaskLink
+	seq uint64
+}
+
 type timedFullReview struct {
 	store.FullReview
 	RequestedAt *time.Time `json:"requested_at,omitempty"`
@@ -104,6 +110,8 @@ type taskTimeline struct {
 	FullReviews []timedFullReview `json:"full_reviews"`
 	// Context is the Guildmaster context the Director added to the task, in the order it was added.
 	Context []timedContext `json:"context"`
+	// Links are the task's link records, adds and removes, in the order they were recorded.
+	Links []timedLink `json:"links"`
 	// DesignRounds is how many design rounds the task has used, counted from their briefs; absent when none. Each
 	// round's designer attempts and decision are among Attempts and Decisions.
 	DesignRounds int `json:"design_rounds,omitempty"`
@@ -185,7 +193,7 @@ func span(rs []store.Receipt, startOp, endOp string) (start, end *time.Time, sec
 func timeline(h store.TaskHistory) taskTimeline {
 	byRecord := recordReceipts(h.Receipts)
 	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Findings: []timedFindings{},
-		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Context: []timedContext{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
+		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Context: []timedContext{}, Links: []timedLink{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
 	for _, a := range h.Attempts {
 		t := timedAttempt{StageAttempt: a}
 		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)], "start-attempt", "finish-attempt")
@@ -223,6 +231,13 @@ func timeline(h store.TaskHistory) taskTimeline {
 		}
 		out.Context = append(out.Context, t)
 	}
+	for _, l := range h.Links {
+		t := timedLink{TaskLink: l}
+		if at, _, _, seq := span(byRecord[store.TaskLinkRecord(l.Number)], "add-task-link", ""); at != nil {
+			t.AddedAt, t.seq = *at, seq
+		}
+		out.Links = append(out.Links, t)
+	}
 	if o := h.DependencyOverride; o != nil {
 		out.DependencyOverride = &timedOverride{DependencyOverride: *o}
 		out.DependencyOverride.OverriddenAt, _, _, _ = span(byRecord[store.DependencyOverrideRecord], "override-dependencies", "")
@@ -255,6 +270,7 @@ func timeline(h store.TaskHistory) taskTimeline {
 	slices.SortStableFunc(out.Findings, func(a, b timedFindings) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Rulings, func(a, b timedRuling) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Context, func(a, b timedContext) int { return byStart(a.seq, b.seq) })
+	slices.SortStableFunc(out.Links, func(a, b timedLink) int { return byStart(a.seq, b.seq) })
 	return out
 }
 
