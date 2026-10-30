@@ -68,9 +68,45 @@ type directorStatus struct {
 	// Version is the binary printing the feed, from its build info and local git reads only
 	// (docs/contracts/cli.md#version); the session supervisor's own snapshot leaves it out.
 	Version *versionInfo `json:"version,omitempty"`
+	// SupervisorBinary compares the newest session's supervisor binary with the guildhall on PATH, for a feed
+	// with a session; the supervisor's own snapshot leaves it out.
+	SupervisorBinary *supervisorBinaryStatus `json:"supervisor_binary,omitempty"`
 
 	// released are the released holds that still matter, which the holds watcher wakes the Director for once each.
 	released []releasedHold
+}
+
+// supervisorBinaryStatus is the newest session's supervisor binary beside the guildhall binary on PATH: their
+// sha256 ("" when not recorded or not hashed), whether both are known and differ, and a line saying so.
+type supervisorBinaryStatus struct {
+	SHA256     string `json:"sha256"`
+	Path       string `json:"path"`
+	PathSHA256 string `json:"path_sha256"`
+	Differs    bool   `json:"differs"`
+	Summary    string `json:"summary"`
+}
+
+// supervisorBinaryStatus compares session d's supervisor binary with the guildhall on PATH.
+func (a *App) supervisorBinaryStatus(d statusSession) *supervisorBinaryStatus {
+	if d.Number == 0 {
+		return nil
+	}
+	out := &supervisorBinaryStatus{SHA256: d.BinarySHA256}
+	bin, err := a.lookPathBinary()
+	out.Path, out.PathSHA256 = bin.Path, bin.SHA256
+	switch {
+	case err != nil:
+		out.Summary = fmt.Sprintf("cannot compare session %d's supervisor binary with the guildhall on PATH: %s", d.Number, oneLine(err.Error()))
+	case d.BinarySHA256 == "":
+		out.Summary = fmt.Sprintf("session %d's supervisor recorded no binary sha256 to compare with the guildhall on PATH", d.Number)
+	case d.BinarySHA256 != bin.SHA256:
+		out.Differs = true
+		out.Summary = fmt.Sprintf("session %d's supervisor runs guildhall %s, not the guildhall on PATH %s %s; a director reload moves it onto that one",
+			d.Number, shortSHA(d.BinarySHA256), bin.Path, shortSHA(bin.SHA256))
+	default:
+		out.Summary = fmt.Sprintf("session %d's supervisor runs the guildhall on PATH (%s)", d.Number, shortSHA(bin.SHA256))
+	}
+	return out
 }
 
 // recentReceipt is a receipt without its request digest, which only replay checks need.
@@ -95,17 +131,19 @@ type statusLabel struct {
 
 // statusSession is the newest Director session, or only the state "no session" when there is none.
 type statusSession struct {
-	State     string                 `json:"state"`
-	Number    int                    `json:"number,omitempty"`
-	Identity  *store.ProcessIdentity `json:"identity,omitempty"`
-	Release   string                 `json:"release,omitempty"`
-	Pane      store.DirectorPane     `json:"pane,omitzero"`
-	StartedAt time.Time              `json:"started_at,omitzero"`
-	ReadyAt   time.Time              `json:"ready_at,omitzero"`
-	EndedAt   time.Time              `json:"ended_at,omitzero"`
-	StopNow   bool                   `json:"stop_now,omitempty"`
-	Sweeping  bool                   `json:"sweeping,omitempty"`
-	EndReason string                 `json:"end_reason,omitempty"`
+	State    string                 `json:"state"`
+	Number   int                    `json:"number,omitempty"`
+	Identity *store.ProcessIdentity `json:"identity,omitempty"`
+	Release  string                 `json:"release,omitempty"`
+	// BinarySHA256 is the sha256 of the binary the session's supervisor runs, as it recorded it.
+	BinarySHA256 string             `json:"binary_sha256,omitempty"`
+	Pane         store.DirectorPane `json:"pane,omitzero"`
+	StartedAt    time.Time          `json:"started_at,omitzero"`
+	ReadyAt      time.Time          `json:"ready_at,omitzero"`
+	EndedAt      time.Time          `json:"ended_at,omitzero"`
+	StopNow      bool               `json:"stop_now,omitempty"`
+	Sweeping     bool               `json:"sweeping,omitempty"`
+	EndReason    string             `json:"end_reason,omitempty"`
 	// LastWake is the newest wake of any message to the Director, so whether it woke anyone and why not.
 	LastWake *store.Wake `json:"last_wake,omitempty"`
 	// GuardRails are the copy's guard rails and what the attempt caps count today (docs/director.md#guard-rails).
@@ -399,6 +437,7 @@ func (a *App) directorStatusCmd(args []string) int {
 	if it, ok := v.installItem(); ok {
 		out.NeedsMe = append(out.NeedsMe, it)
 	}
+	out.SupervisorBinary = a.supervisorBinaryStatus(out.Session)
 	return a.printJSON(out)
 }
 
@@ -479,7 +518,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	out.Session.GuardRails, out.Session.LastWake = usage, v.LastWake
 	if d := v.Session; d != nil {
 		out.Session = statusSession{GuardRails: usage, LastWake: v.LastWake, State: string(d.State), Number: d.Number, Identity: &d.Identity, Release: d.Release,
-			Pane: d.Pane, StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
+			BinarySHA256: d.BinarySHA256, Pane: d.Pane, StartedAt: d.StartedAt, ReadyAt: d.ReadyAt, EndedAt: d.EndedAt, StopNow: d.StopNow, Sweeping: d.Sweeping, EndReason: d.EndReason,
 			Reload: v.Reload}
 		// A missing or unreadable report is no report; context refresh belongs to the runtime's reporter.
 		if f := d.Handoff.ContextFile; f != "" {

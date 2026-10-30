@@ -81,6 +81,9 @@ type DirectorSession struct {
 	Identity ProcessIdentity `json:"identity"`
 	// Release is the Guildhall release the supervisor runs.
 	Release string `json:"release"`
+	// BinarySHA256 is the lowercase hex sha256 of the binary image the supervisor runs, hashed once when it
+	// started; a session recorded before it was kept, or by a supervisor that could not hash its image, has none.
+	BinarySHA256 string `json:"binary_sha256,omitempty"`
 	// ConfigDigest is the "sha256:<hex>" digest of the configuration the session was started under.
 	ConfigDigest string       `json:"config_digest"`
 	Pane         DirectorPane `json:"pane,omitzero"`
@@ -657,6 +660,9 @@ func validateSession(d DirectorSession) error {
 	}
 	if err := validateText("director session release", d.Release, 256); err != nil {
 		return err
+	}
+	if _, err := digest.ParseHex(d.BinarySHA256); d.BinarySHA256 != "" && err != nil {
+		return invalid("director session binary sha256 %q must be 64 lowercase hex characters", d.BinarySHA256)
 	}
 	if _, err := digest.Parse(d.ConfigDigest); err != nil {
 		return invalid(`director session config digest %q must be "sha256:<64 lowercase hex>"`, d.ConfigDigest)

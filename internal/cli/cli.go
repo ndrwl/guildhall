@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/steward"
@@ -160,6 +161,9 @@ type App struct {
 	Output func(ctx context.Context, path string, args ...string) ([]byte, error)
 	// Executable returns the path of the running guildhall binary.
 	Executable func() (string, error)
+	// Exec replaces the process image with the program at argv0, run with argv and envv, as a session supervisor
+	// moves onto a new guildhall binary at a reload; it returns only on failure. nil means syscall.Exec.
+	Exec func(argv0 string, argv, envv []string) error
 	// Copier reaches enrolled machines for steward rollouts; nil means scp, found with LookPath.
 	Copier steward.Copier
 	// Forge publishes and merges task branches for task start and step done; nil means forge.GitHub over git
@@ -216,6 +220,9 @@ type App struct {
 	// workspaces in, for the named Herdr session, after checking the session's server; nil means Herdr, found on
 	// PATH as herdr.
 	ArtisanWorkspaces func(ctx context.Context, session string) (WorkspaceCloseHost, error)
+	// endedForReload, when set, is called once the runtime of session n has ended for a reload, before the
+	// supervisor records the session reloaded, so a test can record a stop in that window.
+	endedForReload func(n int)
 }
 
 // New returns an App wired to the real process environment.
@@ -229,6 +236,7 @@ func New() *App {
 			return exec.CommandContext(ctx, path, args...).CombinedOutput()
 		},
 		Executable: os.Executable,
+		Exec:       syscall.Exec,
 		Getenv:     os.Getenv,
 		Getwd:      os.Getwd,
 		BuildInfo:  debug.ReadBuildInfo,

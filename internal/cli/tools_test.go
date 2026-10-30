@@ -258,8 +258,18 @@ func (f *fakeTools) lookPath(file string) (string, error) {
 	if p, ok := f.paths[file]; ok {
 		return p, nil
 	}
-	return "", &exec.Error{Name: file, Err: exec.ErrNotFound}
+	return "", notFoundError(file)
 }
+
+// notFoundError is a lookup's exec.ErrNotFound with the same text on every platform, which exec.ErrNotFound's
+// own text is not: it names %PATH% on Windows, so a golden file holding it would differ there.
+type notFoundError string
+
+func (e notFoundError) Error() string {
+	return "exec: \"" + string(e) + "\": executable file not found in $PATH"
+}
+
+func (e notFoundError) Unwrap() error { return exec.ErrNotFound }
 
 // output answers like the real boundary: a hung command returns only once ctx ends.
 func (f *fakeTools) output(ctx context.Context, path string, args ...string) ([]byte, error) {

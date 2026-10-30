@@ -22,3 +22,6 @@ func terminate(u runtimeUnit, s os.Signal) bool {
 
 // endRuntime asks every process in the runtime's unit u to end with a termination, as a closing terminal would.
 func endRuntime(u runtimeUnit) { _ = u.Terminate() }
+
+// canReexec is set where a supervisor can replace its image with exec to move onto a new guildhall binary at a reload.
+const canReexec = true

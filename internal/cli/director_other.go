@@ -12,3 +12,6 @@ func terminate(runtimeUnit, os.Signal) bool { return false }
 
 // endRuntime ends every process in the runtime's unit u: Windows has no termination signal to ask them with.
 func endRuntime(u runtimeUnit) { _ = u.Kill() }
+
+// canReexec is unset: Windows has no exec, so a reload keeps the supervisor's binary.
+const canReexec = false

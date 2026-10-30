@@ -915,5 +915,12 @@
     "pr": null,
     "task": null,
     "behind_main": null
+  },
+  "supervisor_binary": {
+    "sha256": "",
+    "path": "",
+    "path_sha256": "",
+    "differs": false,
+    "summary": "cannot compare session 1's supervisor binary with the guildhall on PATH: exec: \"guildhall\": executable file not found in $PATH"
   }
 }

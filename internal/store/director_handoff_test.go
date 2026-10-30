@@ -71,11 +71,11 @@ func TestDirectorReloadRequestsCollapseUntilApplied(t *testing.T) {
 	if got, err := s.LatestDirectorReload(); err != nil || got != now {
 		t.Fatalf("latest after reopen = %+v, %v; want %+v", got, err, now)
 	}
-	applied, err := s.ApplyDirectorReload(now.Sequence, 3, 4)
+	applied, err := s.ApplyDirectorReload(now.Sequence, 3, 4, ReloadRefusal{})
 	if err != nil || applied.State != ReloadApplied || applied.OldSession != 3 || applied.NewSession != 4 || applied.AppliedAt.IsZero() || applied.Sequence != now.Sequence || !applied.Now {
 		t.Fatalf("applied = %+v, %v", applied, err)
 	}
-	if again, err := s.ApplyDirectorReload(now.Sequence, 3, 4); err != nil || again != applied {
+	if again, err := s.ApplyDirectorReload(now.Sequence, 3, 4, ReloadRefusal{}); err != nil || again != applied {
 		t.Fatalf("replayed apply = %+v, %v; want the applied reload", again, err)
 	}
 	if got, err := s.LatestDirectorReload(); err != nil || got != applied {
@@ -95,7 +95,7 @@ func TestDirectorReloadRequestsCollapseUntilApplied(t *testing.T) {
 
 func TestApplyDirectorReloadRefusals(t *testing.T) {
 	s, _ := newStore(t)
-	if _, err := s.ApplyDirectorReload(1, 0, 1); !errors.Is(err, ErrNotFound) {
+	if _, err := s.ApplyDirectorReload(1, 0, 1, ReloadRefusal{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("apply of no reload = %v, want ErrNotFound", err)
 	}
 	r, err := s.RequestDirectorReload(false)
@@ -104,17 +104,27 @@ func TestApplyDirectorReloadRefusals(t *testing.T) {
 	}
 	receipts := countReceipts(t, s)
 	for name, c := range map[string][2]int{"no new session": {0, 0}, "old not below new": {2, 2}} {
-		if _, err := s.ApplyDirectorReload(r.Sequence, c[0], c[1]); !errors.Is(err, ErrInvalid) {
+		if _, err := s.ApplyDirectorReload(r.Sequence, c[0], c[1], ReloadRefusal{}); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+	for name, refused := range map[string]ReloadRefusal{
+		"no reason":      {SHA256: binaryDigest},
+		"bad sha256":     {SHA256: "abc", Reason: "exit status 1"},
+		"blank reason":   {Reason: "  "},
+		"reason too big": {Reason: strings.Repeat("x", MaxRefusedReasonBytes+1)},
+	} {
+		if _, err := s.ApplyDirectorReload(r.Sequence, 0, 1, refused); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
 		}
 	}
 	if countReceipts(t, s) != receipts {
 		t.Fatal("a refused apply recorded something")
 	}
-	if _, err := s.ApplyDirectorReload(r.Sequence, 0, 1); err != nil {
+	if _, err := s.ApplyDirectorReload(r.Sequence, 0, 1, ReloadRefusal{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyDirectorReload(r.Sequence, 1, 2); !errors.Is(err, ErrMutationConflict) {
+	if _, err := s.ApplyDirectorReload(r.Sequence, 1, 2, ReloadRefusal{}); !errors.Is(err, ErrMutationConflict) {
 		t.Errorf("second apply with other sessions = %v, want ErrMutationConflict", err)
 	}
 }

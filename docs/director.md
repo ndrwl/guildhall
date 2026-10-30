@@ -71,7 +71,7 @@ The session directory always lies under the copy, so the session's own `guildhal
 For Claude Code that is `claude --append-system-prompt-file <session-directory>/role.md --add-dir <copy> --settings <copy>/director/claude/.claude/settings.json [--model <model>] [--effort <level>] -- "<first message>"`; see [runtime settings](adapters.md#runtime-settings) for effort resolution and preflight refusals.
 Claude runs in **`<copy>/director/claude`**, a stable workspace reused by starts, reloads and handoffs, with the first message naming the numbered session's `startup.md` by absolute path.
 That first message is `/version startup "<absolute startup.md path>"`: the session's `/version` command, `.claude/commands/version.md`, runs `guildhall version --startup`, the model replies with only its line and any warning, then reads `startup.md` and recovers as before, all in that one turn ([version](contracts/cli.md#version)).
-The line names the `guildhall` binary on `PATH`: its short revision, the pull request and task it ends at, its commit date and how far it is behind main; the warning says when it is behind main, was built modified, or is not the release this session's supervisor recorded, as after installing a new binary without restarting.
+The line names the `guildhall` binary on `PATH`: its short revision, the pull request and task it ends at, its commit date and how far it is behind main; the warning says when it is behind main, was built modified, or is not the binary this session's supervisor recorded, by sha256, as after installing a new binary without reloading, and when the supervisor refused to move onto a new binary at the reload that started the session ([the supervisor's binary](#the-supervisors-binary)).
 Typing `/version` in the session shows the fuller form, and `/version startup` the same line again.
 A Director's very first start shows Claude's native folder-trust dialog: review the generated settings, then choose **Yes, I trust this folder** once.
 Choosing **No, exit** ends the runtime; Guildhall reports its nonzero exit status.
@@ -89,6 +89,7 @@ On the same tick it runs the [checks watcher](#checks) and the [dependency watch
 When it ends the runtime for a [reload](#reload) it records the session `stopped` with the end reason `reloaded`, reads the copy's config again and starts session `<n+1>` the same way in the same terminal, which records the reload `applied` from session `<n>` to `<n+1>`.
 The config read again chooses the runtime too: unless `director start` named one, a changed `[director] adapter` takes effect, checked on `PATH` as the preflight checks it, and a runtime refused then ends the supervisor with exit 1, with session `<n>` recorded `stopped` as `reloaded` and the reload left requested.
 A `director stop` recorded while the runtime is ending for the reload wins: the session is recorded `stopped` as for a stop and the supervisor exits 0 with no new session.
+On Unix, once session `<n>` is recorded `stopped` as `reloaded` and no stop won, the supervisor moves onto a new `guildhall` binary if one is on `PATH`; see [the supervisor's binary](#the-supervisors-binary).
 A runtime that ends by itself is recorded `stopped` and gives the terminal back, even with a reload requested; that reload, like one requested while no supervisor runs, is recorded `applied` by the next `director start`.
 However the runtime ends, the supervisor kills whatever it left running in its unit and records the session `stopped` only once the unit is empty; a unit not proven empty within 10 seconds of the runtime's end makes the exit 1, naming the survivors and leaving the session stopping and sweeping for recovery with `guildhall director stop`.
 On Linux the runtime is also killed if the supervisor dies.
@@ -396,7 +397,27 @@ It records a `director-reload` request and prints it as one JSON line; requests 
 The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake reached the Director, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
 `--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the [handoff](#handoff): check the notes, then reload.
 `--now` is refused with exit 1 only when there is no session or the newest one is `stopped`; it needs no note, and a Director stage attempt running, such as a grill, does not hold it, since the next session restarts the grill ([D94](decisions/0094-director-notes.md)).
-The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers.
+The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers, the two sessions' releases and binary sha256 (`old_release`, `old_sha256`, `new_release`, `new_sha256`) and, when the supervisor refused a new binary, `refused_sha256` and `refused_reason`.
+
+### The supervisor's binary
+
+The supervisor hashes the binary image it runs once when it starts, `/proc/self/exe` on Linux, so a binary an install renamed into place since is not mistaken for it, and records the sha256 on each session as `binary_sha256`.
+At a reload on Unix it resolves `guildhall` on `PATH` and hashes it:
+
+- The same sha256: it reloads in the same process, as above.
+- Another sha256: it pre-flights that binary as a child, `<new> version --json` for its release, then `<new> director start --check --copy <dir> [runtime]`, which runs the full [preflight](#start) over the same copy, the store's schema among it.
+  When both pass, it says so in its pane, removes the session's temporary skills, stops handling signals and replaces its own image with the new binary by `exec`, with its own arguments and environment.
+  The new image keeps the process and its id (on Linux its whole recorded identity, as an `exec` changes neither the boot id nor the start time), the terminal and the Herdr pane, runs `director start` as usual, supersedes the stopped session `<n>` and records `<n+1>`, which applies the reload with the old and new release and sha256.
+  It re-renders the session from the new binary's skills and baseline role, so nothing of the old binary is left in the Director.
+- A refused binary, one that fails its pre-flight, cannot be found or hashed, or whose `exec` itself fails, is never moved onto: the supervisor stays on its own binary, reloads in the same process, prints one line naming the refused binary and the reason to its pane, and records the reload `applied` with `refused_sha256` and `refused_reason`.
+  [`director status`](#status) shows the refusal on the session's `reload`, and the new session's `guildhall version --startup` warns of it, so the Director tells the Guildmaster at its first turn.
+
+Running Artisans are never touched by a reload; they and their resume commands run whichever `guildhall` they run, from `PATH`, until release pins exist.
+A new binary that passes its pre-flight and then fails after the `exec`, or a signal that arrives between the `exec` and the new image's handling of it, ends the supervisor and gives the pane back to its shell with session `<n>` `stopped` and the reload still requested; the next `director start` applies it.
+On Windows there is no `exec`: a reload always stays on the supervisor's binary.
+
+`guildhall version --startup` compares its own binary's sha256 with the one the session's supervisor recorded and warns when they differ, even for two `dev` builds; for a supervisor that recorded none it compares releases.
+The status feed's `supervisor_binary` compares the newest session's `binary_sha256` with the `guildhall` on `PATH`: `sha256`, `path`, `path_sha256`, `differs` and a one-line `summary` saying whether a reload would move the supervisor onto another binary.
 
 ## The end of a turn
 
