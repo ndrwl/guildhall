@@ -301,6 +301,11 @@ const mergeQueueKind = "merge-queue"
 // followUpKind is the needs_me kind and held kind of a follow-up (docs/decisions/0096-hold-until-merged.md).
 const followUpKind = "follow-up"
 
+// installKind is the needs_me kind of a binary behind its repository's default branch, which waits on the
+// Guildmaster to install it; director status adds it from its own version block, so the supervisor's snapshot
+// leaves it out.
+const installKind = "install"
+
 // directorStatusCmd runs `guildhall director status` (docs/director.md#status).
 func (a *App) directorStatusCmd(args []string) int {
 	fl := flag.NewFlagSet("director status", flag.ContinueOnError)
@@ -336,6 +341,9 @@ func (a *App) directorStatusCmd(args []string) int {
 	out.Session.GuardRails.GuardRails, out.Quality, out.Session.GuardRails.ConfigError = statusConfig(*cfg, named)
 	v := a.versionInfo(context.Background(), *cfg, *state, false)
 	out.Version = &v
+	if it, ok := v.installItem(); ok {
+		out.NeedsMe = append(out.NeedsMe, it)
+	}
 	return a.printJSON(out)
 }
 

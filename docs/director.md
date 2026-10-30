@@ -194,7 +194,7 @@ The hold is read in the same store transaction that records a new attempt, so an
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works using each item's recovery command.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
-A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies`, `merge-queue` and `decision` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
+A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies`, `merge-queue`, `decision` and `install` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
 
 ```text
 guildhall: resumed, 2 waiting (messages 1, paused 1)
@@ -203,7 +203,7 @@ guildhall: resumed, 2 waiting (messages 1, paused 1)
 Otherwise it delivers nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session, waiter and pane reasons, and the work waits for the Director's next turn.
 If reading the session for the wake fails, resume reports the error on standard error and omits `wake`, without failing or undoing the resume.
 The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/0086-director-checks-watch.md)).
-A `checks`, `dependencies` or `merge-queue` item is the supervisor's and a `decision` item the Guildmaster's, so none counts or wakes.
+A `checks`, `dependencies` or `merge-queue` item is the supervisor's and a `decision` or `install` item the Guildmaster's, so none counts or wakes.
 
 A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0, with no `wake` and nothing typed.
 Both are exit 1 for no session, a session that is `recovering` (run `director ready`), `stopping` or `stopped`, and a session whose supervisor is gone, naming `director stop`.
@@ -558,6 +558,10 @@ The document has these sections:
   9. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>` when that step's latest attempt failed or stopped, or `guildhall task start --repo <r> <t>` otherwise, including recovery of a recorded-but-unlaunched attempt.
   10. `checks`: an open task whose `next.json` says `"wait":"checks"`, with its `step`, which the session supervisor's [checks watcher](#checks) advances; `guildhall task start --repo <r> <t>`.
   11. `dependencies`: an open task whose `next.json` says `"wait":"dependencies"`, with its held `step`, which the [dependency gate](interpreter.md#the-dependency-gate) holds until its dependencies merge and the supervisor's [dependency watcher](#dependencies) advances; `guildhall task start --repo <r> <t>`, or `--ignore-deps --reason <text>` added to start it anyway.
+  12. `install`: last, after every other item, one item when the binary printing the feed is behind Guildhall's own repository's default branch, its `version` block's `behind_main` with a `count` above 0, with that `repository` and `count` and the reason `the installed guildhall (<first 8 of the revision>) is <n> merge[s] behind main[ (#<pr>, …)]; ask the Guildmaster to install`; `guildhall version`.
+      It is read from the default branch as last fetched, with no fetch, and is not stored, so it changes on every read and is gone once an installed binary is no longer behind; a binary with no revision, or a copy that lists no own repository, has none.
+      The advance that leaves a task of Guildhall's own repository done with a merge fetches that branch first, bounded and ignoring failure, so the feed the `merged` message wakes the Director for counts it; a merge made by hand is counted once anything fetches the branch, as plain `guildhall version` does.
+      It waits on the Guildmaster, so it neither counts nor wakes the Director on [resume](#pause-and-resume), and the supervisor's snapshot, which has no `version` block, leaves it out.
 
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
   While it is `recovering` or `running` with no bound Herdr pane, a `no_pane` item follows, since no wake can reach it and messages wait until its next turn; `guildhall director start --tab`, once this session is stopped ([start](#start)).

@@ -155,6 +155,7 @@ No match, or more than one, gives no repository fields; there is no config key f
   No network or forge call is made.
 - *Behind main:* `git rev-list --count --first-parent` and `git log --first-parent --format=%s` of `<revision>..refs/guildhall/version/main`, the remote's default branch fetched into that private ref with `git fetch --no-tags --no-write-fetch-head <remote> +HEAD:refs/guildhall/version/main`.
   Only plain `version` and `--startup` fetch; `--json` and `director status` read the ref as last fetched.
+  An advance that leaves a task of this repository done with a `merge.json` document, a merge through Guildhall, also fetches it, with the same bound, recording the fetch the same way and ignoring any failure, before the `merged` message wakes the Director.
   A fetch that succeeds is recorded in `state/version-fetch.json` with its time; a fetch that fails leaves the ref as it was and the count says "as of" that recorded time, or "as of an earlier fetch" with no record; with no ref at all, behind main is omitted.
   The missing pull requests are the numbers ending the subjects behind, newest first; the text forms name at most ten, then "and N more".
 
@@ -166,12 +167,13 @@ Any repository failure, such as an unreadable path, an unknown revision or an un
 Warnings never change the exit code.
 **`--json`** prints one object with every field present: `version`, `revision`, `time`, `modified`, `go_version`, `platform`, `pr` (number or null), `task` (string or null) and `behind_main` (null, or `count`, `missing_prs` in full and `as_of`, the recorded fetch time or `""`).
 
-`director status --json` adds the same object as `version`, for the binary printing the feed, with no fetch; the supervisor's in-flight snapshot does not compute it.
+`director status --json` adds the same object as `version`, for the binary printing the feed, with no fetch, and, when its `behind_main` count is above 0, an `install` item at the end of `needs_me` ([status](../director.md#status)); the supervisor's in-flight snapshot does not compute either.
 
 ## Tests
 
 `version_test.go` was written red first against the one-line `version` ([red run](../evidence/version-from-build-info-2026-10-28-red.txt)).
 `TestVersionForms` pins the plain, `--startup` and `--json` output over the `App.BuildInfo` seam and a recording `VersionGit` double for a full build, no vcs information, a modified build, no copy, a copy with no matching repository, an unreadable repository path, subjects with and without ` (#N)`, a pull request with and without a `pull-request.json`, behind 0, 2 and 12 (ten named), a failed fetch falling back to the recorded ref "as of" its fetch, and no ref at all, and that only plain and `--startup` fetch.
+`TestDirectorStatusInstall` covers the `install` item for a binary behind, up to date, with no revision and with no own repository; `TestMergeRefreshesTheVersionRef` the fetch after a merge into the own repository, none for another repository or an advance that leaves the task open, and a failing fetch that leaves the merge as it was.
 `TestVersionSupervisorRelease` covers a session whose recorded release matches and one whose release differs; `TestVersionCopyFlag` `--copy` over `GUILDHALL_COPY`; `TestRemoteModule` the remote forms; `TestVersionUsage` the usage errors and an unwritable stdout.
 `TestVersionRepositoryGit` runs the real `git.Program` over a repository and a local bare remote reached through `url.<base>.insteadOf`, with no network, then removes the remote and reads the count "as of" the earlier fetch.
 `TestDirectorStatusVersionReadsLocally` checks the feed's block reads the repository without fetching; the status goldens gained only the block.

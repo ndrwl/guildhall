@@ -574,6 +574,11 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return n, err
 	}
+	// A merge into Guildhall's own repository moves its default branch, so it is fetched for the behind-main count
+	// before the Director is woken for the merged message.
+	if n.Wait == interp.WaitDone {
+		a.refreshVersionAfterMerge(ctx, f.config, state, ev.Repository, ev.Task)
+	}
 	// Where the task now stands, for director status, written while the task lock is still held.
 	b, err := json.Marshal(nextOf(n))
 	if err != nil {
