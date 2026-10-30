@@ -49,6 +49,11 @@ var (
 func TestMain(m *testing.M) {
 	runHerdrStubIf()
 	claudetest.RunIfStub()
+	// A plain director start binds the Herdr pane its HERDR_* names, so checks run inside a Herdr pane would bind
+	// it; every check runs as outside Herdr, as on CI, and those that need a pane pass it.
+	for _, k := range []string{"HERDR_SESSION", "HERDR_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HERDR_ENV"} {
+		_ = os.Unsetenv(k)
+	}
 	code := testenv.RunWithClaudeGuard(m)
 	if toolsDir != "" {
 		_ = os.RemoveAll(toolsDir)
