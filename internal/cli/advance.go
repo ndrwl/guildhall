@@ -679,6 +679,14 @@ func (p storeRecords) DependencyOverride(repo, id string) (store.DependencyOverr
 	return withRecords(p, true, nil, func(s *store.Store) (store.DependencyOverride, error) { return s.DependencyOverride(repo, id) })
 }
 
+func (p storeRecords) TaskGrants(repo, id string) ([]store.TaskGrant, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskGrant, error) { return s.TaskGrants(repo, id) })
+}
+
+func (p storeRecords) BindTaskGrant(m, repo, id, grant, step string, n int) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.BindTaskGrant(m, repo, id, grant, step, n) })
+}
+
 func (p storeRecords) StartAttempt(m, repo, id, step string) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
 }

@@ -13,14 +13,15 @@ var artisanReadOnlyGit = []string{"Bash(git status:*)", "Bash(git diff:*)", "Bas
 
 // ShippedDefaultGrants are the allowed_tools this release gives a claude profile with a well-known name that sets
 // none (docs/decisions/0093-shipped-default-grants.md): read-only git for each, the git a build needs to commit and
-// rebase for builder, the same without git switch for rebaser, and web search and fetch for researcher. They grant
-// neither git checkout nor git push, nor any toolchain command; a repository grant adds those a repository needs,
-// such as SuggestedGoAllowedTools. Every config.ShippedProfiles name has an entry.
+// rebase for builder, the same without git switch for rebaser, guildhall review check for reviewer, so it can check
+// its outcome as intake will before it finishes, and web search and fetch for researcher. They grant neither git
+// checkout nor git push, nor any toolchain command; a repository grant adds those a repository needs, such as
+// SuggestedGoAllowedTools. Every config.ShippedProfiles name has an entry.
 var ShippedDefaultGrants = map[string][]string{
 	"builder":    append(slices.Clone(artisanReadOnlyGit), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)", "Bash(git switch:*)"),
 	"rebaser":    append(slices.Clone(artisanReadOnlyGit), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)"),
 	"planner":    slices.Clone(artisanReadOnlyGit),
-	"reviewer":   slices.Clone(artisanReadOnlyGit),
+	"reviewer":   append(slices.Clone(artisanReadOnlyGit), "Bash(guildhall review check:*)"),
 	"researcher": append(slices.Clone(artisanReadOnlyGit), "WebSearch", "WebFetch"),
 }
 
@@ -39,6 +40,8 @@ const (
 	SourceCopy GrantSource = "copy"
 	// SourceRepository is the repository grant of the task's repository.
 	SourceRepository GrantSource = "repository"
+	// SourceTask is the task grant the attempt's binding records (docs/decisions/task-grants.md), added last.
+	SourceTask GrantSource = "task"
 )
 
 // Grant is one rule of an effective grant and its source.
@@ -57,23 +60,32 @@ func EffectiveGrant(cfg *config.Config, profile, repository string) ([]Grant, er
 		return nil, err
 	}
 	var grants []Grant
-	add := func(rules []string, source GrantSource) {
-		for _, rule := range rules {
-			if !slices.ContainsFunc(grants, func(g Grant) bool { return g.Rule == rule }) {
-				grants = append(grants, Grant{rule, source})
-			}
-		}
-	}
 	switch {
 	case p.AllowedToolsSet():
-		add(p.AllowedToolsList(), SourceCopy)
+		grants = addGrants(grants, p.AllowedToolsList(), SourceCopy)
 	case p.Adapter == adapter.ClaudeName:
-		add(ShippedDefaultGrants[profile], SourceDefault)
+		grants = addGrants(grants, ShippedDefaultGrants[profile], SourceDefault)
 	}
 	if r, ok := cfg.Repository(repository); ok && repository != "" {
-		add(r.Profiles[profile].AllowedTools, SourceRepository)
+		grants = addGrants(grants, r.Profiles[profile].AllowedTools, SourceRepository)
 	}
 	return grants, nil
+}
+
+// addGrants adds rules from source to grants, dropping a rule already granted so it keeps its first source.
+func addGrants(grants []Grant, rules []string, source GrantSource) []Grant {
+	for _, rule := range rules {
+		if !slices.ContainsFunc(grants, func(g Grant) bool { return g.Rule == rule }) {
+			grants = append(grants, Grant{rule, source})
+		}
+	}
+	return grants
+}
+
+// WithTaskGrant is grants with the rules of a task grant added last, as SourceTask, so a task grant only widens and
+// a rule granted already keeps its earlier source.
+func WithTaskGrant(grants []Grant, rules []string) []Grant {
+	return addGrants(slices.Clone(grants), rules, SourceTask)
 }
 
 // GrantRules are the rules of grants, in order.

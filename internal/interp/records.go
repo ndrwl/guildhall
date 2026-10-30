@@ -62,6 +62,11 @@ type Records interface {
 	// DependencyOverride returns the Director's dependency override of a task, or store.ErrNotFound when it has
 	// none; the Director records it (guildhall task start --ignore-deps), never the engine.
 	DependencyOverride(repository, taskID string) (store.DependencyOverride, error)
+	// TaskGrants lists a task's grants as recorded; the Director creates them (guildhall task grant create) and the
+	// Guildmaster's answer approves them, never the engine.
+	TaskGrants(repository, taskID string) ([]store.TaskGrant, error)
+	// BindTaskGrant records that an attempt's binding took an active task grant (docs/decisions/task-grants.md).
+	BindTaskGrant(mutationID, repository, taskID, id, step string, number int) (store.Receipt, error)
 }
 
 var _ Records = (*store.Store)(nil)

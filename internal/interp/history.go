@@ -106,6 +106,8 @@ type history struct {
 	rulings []store.Ruling
 	// fullReviews are the Director's full-review requests, by number.
 	fullReviews []store.FullReview
+	// grants are the task's grants, as recorded when the advance began.
+	grants []store.TaskGrant
 	// docPlaces and decisionPlaces parallel documents and decisions; ok is false for a name of another form.
 	docPlaces      []parsed
 	decisionPlaces []parsed

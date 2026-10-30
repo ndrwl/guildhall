@@ -135,6 +135,9 @@ const (
 	// DecisionAudit is the Guildmaster's three-question audit of a delivered task (docs/quality.md, G4), bound to
 	// the head that merged; answering it records the answer only, as for every kind.
 	DecisionAudit DecisionKind = "audit"
+	// DecisionGrant approves or rejects a task grant (CreateTaskGrant); like a question it has no subject, and
+	// answering it records the answer only.
+	DecisionGrant DecisionKind = "grant"
 )
 
 // SubjectKind names what a decision's answer binds to.
@@ -679,9 +682,9 @@ func validateDecision(d Decision) error {
 		if d.Subject == nil {
 			return invalid("a %s decision needs a subject", d.Kind)
 		}
-	case DecisionQuestion:
+	case DecisionQuestion, DecisionGrant:
 	default:
-		return invalid("decision kind %q must be one of approval, review, loop-exit, merge, question or audit", d.Kind)
+		return invalid("decision kind %q must be one of approval, review, loop-exit, merge, question, audit or grant", d.Kind)
 	}
 	if sub := d.Subject; sub != nil {
 		_, err := digest.Parse(sub.Digest)

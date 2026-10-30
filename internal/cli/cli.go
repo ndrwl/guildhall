@@ -103,7 +103,9 @@ Commands:
   quality judge|judged|agreement --copy <dir> ...
                  judge a delivered task's self-review in a separate session, take a finished judge
                  attempt as its launcher does, and print the judge's agreement with the audits
-  help           print this help
+  review check <outcome-file> [--previous <previous-outcome-file>]
+                 check a review outcome file as intake does before the reviewer finishes; prints ok
+  help          print this help
 `
 
 // toolProbeTimeout bounds each external version command run by doctor.
@@ -263,6 +265,8 @@ func (a *App) Run(args []string) int {
 		return a.director(rest)
 	case "quality":
 		return a.qualityCmd(rest)
+	case "review":
+		return a.review(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

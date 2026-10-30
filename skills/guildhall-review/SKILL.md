@@ -62,9 +62,10 @@ Name the worst finding on each axis, if there is one, and say whether only sugge
 ## Rounds
 
 When the inputs include `previous`, disposition every finding of that outcome before you write new ones, so the Director can see a stall.
-Suggestions of the previous outcome need no disposition.
+Disposition only previous *findings*; never disposition a suggestion.
 
-- `resolved`: this head fixes it, or you no longer hold it; do not list it again.
+- `resolved`: this head fixes it, or you no longer hold it; never list its id again, in either `findings` or `suggestions`.
+  Downgrading a finding to a suggestion under the same id also lists it again: if the point should live on as a suggestion, give it a new id.
 - `unresolved`: it stands; list it again under the same id.
 - `disputed`: the builder argued against it without fixing it, and you find the argument plausible but still hold the finding; list it again under the same id, and give the disposition a `reason` saying what the builder argued and why the rule still applies.
 
@@ -81,6 +82,18 @@ With a `rulings` input, keeping a ruled finding open, `unresolved` or `disputed`
 
 Bind the outcome to the head, the spec input's digest and the standards revision the prompt gives, with reviewer `automated`.
 Write it as `review-outcome.json`, schema `guildhall.review-outcome/2`, and list it as the first output of your result file.
+
+Before you write the result file, check the outcome as intake will:
+
+```text
+guildhall review check review-outcome.json
+```
+
+When there is a `previous` input, add `--previous <the previous input's path>`, so the check also finds a previous finding with no disposition.
+Fix every error it reports, and run it again until it prints `ok`.
+Only then write the result file.
+If the command cannot be run, because permission is denied or it is not found, say so in the result summary; never skip the self-check silently.
+
 The result's summary is one line: the findings on each axis and the worst one within each axis, never one winner across both.
 
 ```json
@@ -112,3 +125,22 @@ The result's summary is one line: the findings on each axis and the worst one wi
   }
 }
 ```
+
+The wrong way: a reviewer dispositions `suggest-4`, a suggestion of the previous outcome, as resolved and lists it again in `suggestions`.
+
+```text
+"suggestions": [
+  {"id": "suggest-4", "summary": "A shorter name would read better."}
+],
+"dispositions": [
+  {"finding": "suggest-4", "state": "resolved"}
+]
+```
+
+Intake refuses the outcome, and the whole review round is lost:
+
+```text
+resolved finding "suggest-4" is still listed in findings or suggestions
+```
+
+To fix it, drop the disposition, since a suggestion is never dispositioned, and either keep the suggestion or remove it.

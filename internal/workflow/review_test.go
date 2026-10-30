@@ -367,3 +367,21 @@ func TestReviewOutcomeBlocking(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewOutcomeCovers(t *testing.T) {
+	prev := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: VerdictChangesRequested, Summary: summary,
+		Findings:    []Finding{{ID: "f1", Rule: "S2", Summary: "missing error check"}, {ID: "f2", Rule: "S3", Summary: "no test"}},
+		Suggestions: []Suggestion{{ID: "s1", Summary: "a shorter name"}}, Revisions: revisions}
+	o := ReviewOutcome{Schema: ReviewOutcomeSchema, Reviewer: AutomatedReviewer, Verdict: VerdictApproved, Summary: summary,
+		Dispositions: []Disposition{{Finding: "f1", State: Resolved}, {Finding: "f2", State: Resolved}}, Revisions: revisions}
+	if err := o.Covers(prev); err != nil {
+		t.Fatalf("an outcome dispositioning every previous finding, and no suggestion, refused: %v", err)
+	}
+	if err := o.Covers(ReviewOutcome{}); err != nil {
+		t.Fatalf("an empty previous outcome refused: %v", err)
+	}
+	o.Dispositions = o.Dispositions[:1]
+	if err := o.Covers(prev); err == nil || err.Error() != `previous finding "f2" has no disposition` {
+		t.Fatalf("Covers = %v, want the undispositioned previous finding f2", err)
+	}
+}
