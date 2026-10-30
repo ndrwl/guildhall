@@ -61,9 +61,15 @@ func TestPruneTaskRoundTrips(t *testing.T) {
 	if got, err := s.TaskPrune("app", "t-1"); err != nil || got.Runs != 2 || !got.Complete || got.Kept != "" {
 		t.Fatalf("record = %+v, %v", got, err)
 	}
-	complete.Runs = 2
 	if _, err := s.PruneTask("prune:app:t-1:3", complete); !errors.Is(err, ErrExists) {
-		t.Fatalf("a prune after a complete one: %v, want ErrExists", err)
+		t.Fatalf("a prune after a complete one with a stale count: %v, want ErrExists", err)
+	}
+	complete.Runs, complete.BytesFreed = 2, 512
+	if _, err := s.PruneTask("prune:app:t-1:3", complete); err != nil {
+		t.Fatalf("a prune after a complete one: %v", err)
+	}
+	if got, err := s.TaskPrune("app", "t-1"); err != nil || got.Runs != 3 || !got.Complete || got.BytesFreed != 512 {
+		t.Fatalf("record after a catch-up = %+v, %v", got, err)
 	}
 	rep, err := s.Doctor()
 	if err != nil || len(rep.Problems) != 0 || len(rep.Repositories) != 1 || rep.Repositories[0].Pruned != 1 {

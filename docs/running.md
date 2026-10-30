@@ -198,19 +198,21 @@ A task is prunable only when all of these hold, and is otherwise listed as skipp
 - no `self-review-<n>.json` under `<copy>/quality/<repo>/<task>/` has a criterion still pending its judge, or cannot be read (`self-review ... pending`);
 - it has no unfinished attempt, judge attempts included, and no unreleased ownership record;
 - its repository is in the config, whose `path` the worktree belongs to;
-- the store does not record it as pruned completely; a task pruned only in part is selected again.
+- the store does not record it as pruned completely, unless its CI log cache, `<state>/<repo>/<task>/ci-logs/`, exists again, fetched since or left by a prune from before the cache was pruned; a task pruned only in part is selected again.
 
-`--task` names one task; the same rules apply to it, and an open or completely pruned task named by `--task` is listed with that as its reason.
+`--task` names one task; the same rules apply to it, and an open task, or a completely pruned one with no CI log cache, named by `--task` is listed with that as its reason.
 `--dry-run` and the real run share this selection, and a dry run removes nothing, takes no lock and writes nothing.
 
 For each prunable task, while holding the task's lock (`attempt.lock` in `<state>/<repository>/<task>`, waiting at most `lock_wait`), and after checking the selection again under it, a prune:
 
 - Retires the worktree again with `git.Program.Retire`, at the head the task's `<id>-merge` document names and with the task's recorded documents as its outputs, as the merge did: it removes the worktree, the `guildhall/<task>` branch and the `refs/guildhall/default/…` ref only when nothing would be lost. A worktree Retire keeps is left untouched and the task is listed as skipped with `worktree kept: <reason>`; a cancelled task has no merge record, so its worktree and branch are always kept, with the reason that it was cancelled unmerged, and the Director decides what happens to them; a `work` directory that is not a worktree, from before worktrees, is listed with `not a worktree` and left untouched. A worktree is never removed any other way.
 - Removes everything in each attempt directory (`<step>-<n>/`) but `result.json`, its `usage.json`, `outcome.json`, `prompt/manifest.json` and the attempt's `attempt.lock`, so [`spend report`](spend.md), the quality judge's builder lookup and `artisan status` read the same as before. An attempt with `pane-launch.json` and no `pane-closed.json`, its Herdr workspace not closed yet, keeps its pane files, so the [workspace close sweep](artisan.md#workflow-artisan-workspaces) can still close it, and the report says so.
+- Removes the task's [CI log cache](ci-logs.md), `ci-logs/`, a cancelled task's too, counting its bytes in the space freed; [`ci log`](ci-logs.md) fetches a log it removed again. A task that keeps its worktree is listed with the size of the attempt and CI log files freed.
 - Keeps the task's `attempt.lock`, the task directory, every store record and every recorded document under `<state>/documents`.
 
 A file that cannot be removed, such as one held open on Windows, makes the prune partial: the output says what remains, the task is not recorded as complete and the next run tries it again.
 Once removal has finished, the prune is recorded in the store as the task's [prune record](store.md#pruned-tasks); a crash before that leaves the task selectable and the rerun is idempotent, and a rerun that finds nothing new writes nothing.
+A catch-up prune of a completely pruned task's CI log cache is recorded as the next run, with the cache's bytes.
 `task files` then shows `pruned on <date>` ([inspection](tasks.md#inspection)).
 
 The output lists each task pruned (or with `--dry-run`, that would be) with the space freed, each task skipped with its reason, and a total; a dry run counts a work directory with a `.git` file as a worktree Retire removes, so only the real run can find a worktree it keeps.

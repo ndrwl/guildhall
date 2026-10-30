@@ -28,9 +28,10 @@ const (
 	WorktreeNotWorkspace = "not-a-worktree"
 )
 
-// TaskPrune records that `guildhall prune` reclaimed the disk space of a done or cancelled task's working directory and attempt
-// directories (docs/running.md#pruning). It is written only after removal finishes, so a task with no record, or
-// one whose record is not Complete, is pruned again by the next run; every recorded document stays.
+// TaskPrune records that `guildhall prune` reclaimed the disk space of a done or cancelled task's working directory, attempt
+// directories and CI log cache (docs/running.md#pruning). It is written only after removal finishes, so a task with no
+// record, one whose record is not Complete, or one whose CI log cache has come back, is pruned again by the next run;
+// every recorded document stays.
 type TaskPrune struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
@@ -41,8 +42,8 @@ type TaskPrune struct {
 	// Worktree is WorktreeRemoved, WorktreeKept or WorktreeNotWorkspace, and Kept the reason for the last two.
 	Worktree string `json:"worktree"`
 	Kept     string `json:"kept,omitempty"`
-	// Complete is set when nothing prunable was left: the worktree is removed and every attempt directory holds only
-	// the files a prune keeps.
+	// Complete is set when nothing prunable was left: the worktree and the CI log cache are removed and every attempt
+	// directory holds only the files a prune keeps.
 	Complete bool `json:"complete"`
 	// Runs counts the prunes recorded for the task, so each run's mutation id differs from the last one's.
 	Runs int `json:"runs"`
@@ -51,7 +52,8 @@ type TaskPrune struct {
 // PruneTask records a prune of the done or cancelled task p names, receipt record prune. p.Runs is the record's run
 // count the caller read, 0 when there was none; the stored record counts one more. It refuses with ErrInvalid a task
 // that is neither done nor cancelled, an unknown worktree outcome and a negative count, with ErrNotFound an unknown task, and with ErrExists a
-// stored count other than p.Runs or a task already pruned completely.
+// stored count other than p.Runs. A task already pruned completely is recorded again, so a catch-up prune of a CI
+// log cache left behind is counted.
 func (s *Store) PruneTask(mutationID string, p TaskPrune) (Receipt, error) {
 	if err := validateIDs(p.Repository, p.TaskID); err != nil {
 		return Receipt{}, err
@@ -89,11 +91,8 @@ func (s *Store) PruneTask(mutationID string, p TaskPrune) (Receipt, error) {
 		if err := getJSON(b, []byte(p.TaskID), &prior); err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
-		switch {
-		case prior.Runs != p.Runs:
+		if prior.Runs != p.Runs {
 			return fmt.Errorf("%w: prune of %s/%s is at run %d, not %d", ErrExists, p.Repository, p.TaskID, prior.Runs, p.Runs)
-		case prior.Complete:
-			return fmt.Errorf("%w: task %s/%s is already pruned completely", ErrExists, p.Repository, p.TaskID)
 		}
 		rec := p
 		rec.Runs, rec.PrunedAt = p.Runs+1, s.now().UTC()

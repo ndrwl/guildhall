@@ -17,6 +17,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/cilog"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
@@ -237,6 +238,17 @@ func (f *pruneFixture) run(dry bool) []pruneResult {
 	return got
 }
 
+// ciLogSize is the size of the job log ciLog caches.
+const ciLogSize = 700
+
+// ciLog caches a failed job log for app/id, as validate does, and returns the cache directory.
+func (f *pruneFixture) ciLog(id string) string {
+	f.t.Helper()
+	dir := cilog.Dir(f.state, "app", id)
+	writeTree(f.t, filepath.Join(dir, "123.log"), strings.Repeat("failed\n", ciLogSize/7))
+	return dir
+}
+
 func (f *pruneFixture) record(id string) (store.TaskPrune, error) {
 	return withStore(f.store, true, func(s *store.Store) (store.TaskPrune, error) { return s.TaskPrune("app", id) })
 }
@@ -402,6 +414,7 @@ func TestPruneCancelledTask(t *testing.T) {
 		_, err := s.CancelTask(f.id(), "app", "t-recent", "duplicate")
 		return err
 	})
+	logs := f.ciLog("t-cancelled")
 
 	got := f.run(false)
 	want := map[string]string{"app/t-cancelled": "", "app/t-recent": "too recent: closed 2026-10-16, prunable from 2026-10-30"}
@@ -419,6 +432,13 @@ func TestPruneCancelledTask(t *testing.T) {
 	}
 	if _, err := os.Lstat(w.Dir); err != nil {
 		t.Errorf("worktree: %v, want it kept", err)
+	}
+	if _, err := os.Lstat(logs); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("CI log cache: %v, want it removed", err)
+	}
+	var out strings.Builder
+	if err := writePruneReport(&out, got, false); err != nil || !strings.Contains(out.String(), "of attempt and CI log files freed") {
+		t.Errorf("report %q", out.String())
 	}
 	if exec.Command("git", "-C", f.repository, "show-ref", "--verify", "--quiet", "refs/heads/"+w.Branch).Run() != nil {
 		t.Errorf("branch %s was removed", w.Branch)
@@ -455,11 +475,19 @@ func TestPruneRemovesAMergedWorktreeAndAttemptFiles(t *testing.T) {
 	f.worktree("t-1")
 	f.close("app", "t-1")
 	writeTree(t, filepath.Join(f.state, "app", "t-1", artisan.LockFile), "")
+	logs := f.ciLog("t-1")
 	spendBefore := f.spend()
 
+	dry := f.run(true)
 	got := f.run(false)
-	if len(got) != 1 || got[0].Skip != "" || got[0].Worktree != store.WorktreeRemoved || !got[0].complete() || got[0].Bytes <= 0 {
+	if len(dry) != 1 || len(got) != 1 || dry[0].Bytes != got[0].Bytes {
+		t.Fatalf("dry run = %+v, real run = %+v; want the same bytes freed", dry, got)
+	}
+	if len(got) != 1 || got[0].Skip != "" || got[0].Worktree != store.WorktreeRemoved || !got[0].complete() || got[0].Bytes <= ciLogSize {
 		t.Fatalf("prune = %+v", got)
+	}
+	if _, err := os.Lstat(logs); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("CI log cache: %v, want it removed", err)
 	}
 	want := []string{artisan.LockFile}
 	for _, a := range []string{"build-1", "build-2", "plan-1"} {
@@ -702,6 +730,94 @@ func TestPruneAfterACrashAndAPartialRemoval(t *testing.T) {
 	}
 	if rec, err := f.record("t-2"); err != nil || !rec.Complete || rec.Runs != 2 {
 		t.Fatalf("t-2 record = %+v, %v", rec, err)
+	}
+}
+
+// TestPruneCatchesUpACILogCache: a task pruned completely whose CI log cache is back, or was left by a prune from
+// before the cache was pruned, is selected again, counted by a dry run that keeps it, and pruned of the cache alone,
+// recorded complete with the cache's bytes; a complete task with no cache is not selected, and the next run lists
+// nothing.
+func TestPruneCatchesUpACILogCache(t *testing.T) {
+	f := newPruneFixture(t)
+	for _, id := range []string{"t-1", "t-2"} {
+		f.task("app", id)
+		f.attempt("app", id, "build", store.AttemptSucceeded, nil)
+		f.close("app", id)
+	}
+	if got := f.run(false); len(got) != 2 || !got[0].complete() || !got[1].complete() {
+		t.Fatalf("first prune = %+v", got)
+	}
+	logs := f.ciLog("t-1")
+	receipts := f.receipts()
+
+	dry := f.run(true)
+	if len(dry) != 1 || dry[0].Task.ID != "t-1" || dry[0].Skip != "" || dry[0].Bytes != ciLogSize {
+		t.Fatalf("dry run = %+v, want t-1 with its cache's %d bytes", dry, ciLogSize)
+	}
+	if _, err := os.Lstat(logs); err != nil {
+		t.Fatalf("CI log cache after a dry run: %v", err)
+	}
+	got := f.run(false)
+	if len(got) != 1 || got[0].Task.ID != "t-1" || !got[0].complete() || got[0].Bytes != ciLogSize {
+		t.Fatalf("catch-up = %+v, want t-1 pruned of its cache", got)
+	}
+	if _, err := os.Lstat(logs); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("CI log cache: %v, want it removed", err)
+	}
+	if rec, err := f.record("t-1"); err != nil || rec.Runs != 2 || !rec.Complete || rec.BytesFreed != ciLogSize {
+		t.Fatalf("t-1 record = %+v, %v; want run 2, complete, %d bytes", rec, err, ciLogSize)
+	}
+	if f.receipts() != receipts+1 {
+		t.Errorf("receipts = %d, want one more than %d", f.receipts(), receipts)
+	}
+
+	receipts = f.receipts()
+	if again := f.run(false); len(again) != 0 {
+		t.Errorf("next prune = %+v, want nothing listed", again)
+	}
+	if f.receipts() != receipts {
+		t.Error("the next prune wrote to the store")
+	}
+	if got, err := f.pruner().run(context.Background(), "app", "t-2", true, nil); err != nil || len(got) != 1 || !strings.HasPrefix(got[0].Skip, "already pruned on ") {
+		t.Errorf("--task t-2 = %+v, %v; want already pruned", got, err)
+	}
+}
+
+// TestPruneACILogCacheThatCannotBeRemoved: a CI log cache that cannot be removed gives a partial prune, recorded
+// incomplete, which the next run finishes.
+func TestPruneACILogCacheThatCannotBeRemoved(t *testing.T) {
+	f := newPruneFixture(t)
+	f.task("app", "t-1")
+	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
+	f.close("app", "t-1")
+	logs := f.ciLog("t-1")
+
+	f.removeFails = func(path string) bool { return path == logs }
+	got := f.run(false)
+	if len(got) != 1 || got[0].Skip != "" || got[0].complete() || !slices.Equal(got[0].Failed, []string{"ci-logs"}) {
+		t.Fatalf("prune = %+v, want a partial prune", got)
+	}
+	var out strings.Builder
+	if err := writePruneReport(&out, got, false); err != nil || !strings.Contains(out.String(), "(partial: could not remove ci-logs)") {
+		t.Errorf("report %q", out.String())
+	}
+	if rec, err := f.record("t-1"); err != nil || rec.Complete || rec.Runs != 1 {
+		t.Fatalf("record = %+v, %v; want an incomplete record", rec, err)
+	}
+	if _, err := os.Lstat(logs); err != nil {
+		t.Fatalf("the unremovable cache: %v", err)
+	}
+
+	f.removeFails = nil
+	again := f.run(false)
+	if len(again) != 1 || !again[0].complete() || again[0].Bytes != ciLogSize {
+		t.Fatalf("rerun = %+v, want the cache removed", again)
+	}
+	if _, err := os.Lstat(logs); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("CI log cache: %v, want it removed", err)
+	}
+	if rec, err := f.record("t-1"); err != nil || !rec.Complete || rec.Runs != 2 {
+		t.Fatalf("record = %+v, %v", rec, err)
 	}
 }
 
