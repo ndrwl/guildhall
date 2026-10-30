@@ -25,7 +25,7 @@ func TestValidateRebaseLongTitle(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
 			e, f, ws := validateRebaseEnvTasks(t, b, longTitled)
-			tf := &titleForge{readingForge:e.eng.Forge.(*perHead)}
+			tf := &titleForge{readingForge: e.eng.Forge.(*perHead)}
 			e.eng.Forge = tf
 			clean(ws, baseN(1), head, head2)
 			want(t, e.advance(t, reviewed), waitChecks)

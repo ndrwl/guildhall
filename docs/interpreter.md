@@ -179,7 +179,7 @@ Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts
 When the step's latest round already published that head, the step is complete and nothing is called.
 Otherwise the [review gate](#review-gate) is checked first, over the review steps before publish; then round `k` (1, or one more than the latest) calls `Forge.Publish` with the repository's configured `path` and `remote`, branch `guildhall/<task>`, the head, and a title and body assembled from records Guildhall already holds, with no model call:
 
-- the title is the spec's first `# ` heading, else the task's title, else its id, on one line and at most 256 characters;
+- the title is the spec's first `# ` heading, else the task's title, else its id, on one line, neutralised as below and cut to at most 256 characters, the one title rule for every forge request, so a [rebase push](#tiered-rebase), whose title is the task's title, else its id, follows it too;
 - the body's sections are `## Summary` (the spec's `## Goal` section, else its first paragraph), `## What changed` (the `summary` of the result of the attempt that recorded the head, read as a retry's is), `## How it was tested` (the spec's first section whose heading mentions testing, quoted, then a line saying validation runs after publish), `## Review` (each review outcome given that is bound to this head, with its findings and dispositions, then the Director's rulings on the task), and `## Guildhall` (the task, step, head and the accepted spec's document name and digest, with the spec inlined in a `<details>` block), each with a stated fallback when its source is missing;
 - for a task created with `--fixes`, the body ends with "Fixes a defect introduced by task `<repository>/<task>`.", the line the [quality rubric](quality.md)'s rework and change failure count from.
 
@@ -275,13 +275,13 @@ Deliver then joins the queue, `JoinMergeQueue`, under that decision or authoriza
   The front stands while its task is queued: until it merges, is sent back or is cancelled, or, once it is held, until its next advance releases it; no other task can claim the front before then, so a held front still pushing or merging never shares it.
   A later priority change reorders only the tasks behind it; nothing is preempted.
 - **Behind the front.** A task that is not the front records nothing more and returns `{"wait":"merge-queue","step":"<deliver>"}` (`WaitMergeQueue`), with one `merge-queued` message per place and front, naming its place and the task at the front.
-- **Held.** A task whose merge is held with [`task hold-merge`](tasks.md#holding-a-merge) waits the same way, with a `merge-queued` message saying it is held; a held front releases the front, `ReleaseMergeFront`, at its next advance.
+- **Held.** A task whose merge is held with [`task hold-merge`](tasks.md#holding-a-merge) waits the same way, with a `merge-queued` message saying it is held; a held front releases the front, `ReleaseMergeFront`, at its next advance, before any rebase push, which the [merge-queue watcher](director.md#merge-queue) runs within one `checks_refresh` whatever the task last waited on.
 - **At the front.** Deliver reads the PR's [mergeability](#mergeability-observations).
   A clear PR merges as in [publish and deliver](#publish-and-deliver); a behind or conflicting one is [rebased](#tiered-rebase), then rechecked, and merges once clear.
   A merge, `LeaveMergeQueue`, removes the entry and releases the front.
 
 Nothing advances a queued task from inside another task's advance.
-The session supervisor's [merge-queue watcher](director.md#merge-queue) advances tasks waiting on `merge-queue`, only while the Director session is `recovering` or `running`, so a paused Director pauses the queue; with no supervisor, `task start` advances one.
+The session supervisor's [merge-queue watcher](director.md#merge-queue) advances tasks waiting on `merge-queue`, and each held front, only while the Director session is `recovering` or `running`, so a paused Director pauses the queue; with no supervisor, `task start` advances one.
 `director status` lists every queue as `merge_queues`, and `task list --json` each queued task's entry as `merge_queue` ([status](director.md#status)).
 Records that do not implement `MergeQueue` make every task its own queue's front, in stay 1.
 

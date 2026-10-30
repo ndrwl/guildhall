@@ -241,7 +241,8 @@ With no supervisor running, the task waits until someone runs the `task start` i
 ## Merge queue
 
 A task whose merge is authorized and waits in its repository's [merge queue](interpreter.md#the-merge-queue), `next.json` `{"wait":"merge-queue","step":"deliver"}`, is moved on by the session supervisor as well.
-A third watcher of the same kind as the [checks watcher](#checks), on the same interval and minimum, lists the open tasks whose `next.json` waits on the merge queue and advances each in turn as `task start` does, while the session is `recovering` or `running`.
+A third watcher of the same kind as the [checks watcher](#checks), on the same interval and minimum, lists the open tasks whose `next.json` waits on the merge queue, then each repository's front whose merge is [held](tasks.md#holding-a-merge), whatever its `next.json` waits on, each task once, and advances each in turn as `task start` does, while the session is `recovering` or `running`.
+A held front's advance releases the front, so the next task claims it in the same or the next round.
 The advance claims the front for the first task in queue order, and the front then rebases, pushes, waits for CI and merges with no model turn; the others send nothing new, since `merge-queued` is sent once per place.
 A paused or stopping Director pauses the queue: the watcher advances nothing, and nothing else advances a queued task but `task start`.
 The order is not the watcher's: the front is chosen in one store mutation from priority, ready time and task id, so the order in which the watcher advances tasks does not matter.
