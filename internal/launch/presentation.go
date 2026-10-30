@@ -27,23 +27,43 @@ import (
 // after uncertain API responses. Recovery reconciles attempt ownership, not panes.
 // The pane invokes the same owned launcher through --pane-launch, which detaches
 // its lifetime and streams its durable log; losing the pane cannot stop the worker.
-// Each launch that reaches Report records what Herdr answered, and what one
+// Each launch that reaches Report records what Herdr answered, and what
 // ReadBack showed once the launch settled, as a "presentation-report" event,
-// for diagnosis only: neither changes the launch's result.
+// for diagnosis only: neither changes the launch's result. When the pane does
+// not show the agent then, the report is repeated a bounded number of times,
+// and a report that never shows only warns.
 type Presentation struct {
 	Host   adapter.TabHost
 	Report func(context.Context, string, herdr.AgentReport) (herdr.ReportOutcome, error)
 	// ReadBack reads the reported pane back once the launcher owns the
-	// attempt; nil records the read-back as skipped.
+	// attempt, and again after each repeated report; nil records the
+	// read-back as skipped and repeats nothing.
 	ReadBack func(context.Context, string) (herdr.PaneReadBack, error)
-	// Warnings receives warnings about the read-back and the event; nil
-	// discards them.
+	// ReportTries is the most read-backs made once the launcher owns the
+	// attempt, reporting again between them until the pane shows the agent;
+	// zero is DefaultReportTries.
+	ReportTries int
+	// ReportRetryDelay is the wait after a repeated report before the next
+	// read-back; zero is DefaultReportRetryDelay.
+	ReportRetryDelay time.Duration
+	// Warnings receives warnings about the read-back, a report that never
+	// shows, and the event; nil discards them.
 	Warnings io.Writer
 	// CloseAfter is the effective artisan_workspace_close_after setting, passed to
 	// the bridge as WorkspaceCloseAfterFlag so its finish line states it; zero is
 	// never closing automatically.
 	CloseAfter time.Duration
 }
+
+const (
+	// DefaultReportTries is Presentation.ReportTries when it is zero.
+	DefaultReportTries = 5
+	// DefaultReportRetryDelay is Presentation.ReportRetryDelay when it is zero.
+	DefaultReportRetryDelay = 300 * time.Millisecond
+	// reportDeadline bounds the read-backs and repeated reports after the
+	// launcher owns the attempt, while the caller's locks are held.
+	reportDeadline = 3 * time.Second
+)
 
 // WorkspaceCloseAfterFlag is the internal bridge flag that carries
 // Presentation.CloseAfter; it goes with --pane-launch only.
@@ -160,8 +180,9 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	if err := os.WriteFile(filepath.Join(at.Dir(), PaneClaim), b, 0o600); err != nil {
 		return interp.Handle{}, err
 	}
-	outcome, err := presentation.Report(ctx, tab.PaneID, herdr.AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: ResumeArgv(at)})
-	report := artisan.PresentationReport{Pane: tab.PaneID, Exit: outcome.Exit, Stdout: outcome.Stdout, Err: err}
+	agent := herdr.AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: ResumeArgv(at)}
+	outcome, err := presentation.Report(ctx, tab.PaneID, agent)
+	report := artisan.PresentationReport{Pane: tab.PaneID, Exit: outcome.Exit, Stdout: outcome.Stdout, Err: err, Reports: 1}
 	if err != nil {
 		presentation.log(at, report)
 		return interp.Handle{}, err
@@ -182,7 +203,7 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		classification, statusErr := Status(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: pane ownership uncertain (%+v): %w", classification, errors.Join(err, statusErr))
 	}
-	presentation.readBack(ctx, &report)
+	presentation.settle(ctx, c.exited, agent, &report)
 	presentation.log(at, report)
 	h := interp.Handle{Identity: at.Identity(), Ref: fmt.Sprintf("%s pid %d", at.Key, c.identity.PID)}
 	p.mu.Lock()
@@ -202,22 +223,91 @@ var (
 	errNoReadBack = errors.New("read-back skipped: no read-back configured")
 )
 
-// readBack reads r's pane back once into r; a failure is recorded in r and
-// warned about, never returned.
-func (pr *Presentation) readBack(ctx context.Context, r *artisan.PresentationReport) {
+// settle reads r's pane back once the launcher owns the attempt and, while the
+// pane does not show agent, reports agent again and reads back again, up to
+// ReportTries read-backs within reportDeadline. Herdr accepts the first report,
+// made while the tab's idle shell is the pane's foreground, and can then drop
+// it unless the bridge takes the foreground quickly; a report made with the
+// bridge in the foreground holds until it leaves (d49). settle stops at once
+// when ctx is done or the launcher has exited, since Herdr clears an agent
+// whose process left. Every result is recorded in r and a failure only warns:
+// it never fails the launch, types anything or stops anything.
+func (pr *Presentation) settle(ctx context.Context, exited <-chan struct{}, agent herdr.AgentReport, r *artisan.PresentationReport) {
 	if pr.ReadBack == nil {
 		r.ReadBackErr = errNoReadBack
 		return
 	}
-	got, err := pr.ReadBack(ctx, r.Pane)
-	if err != nil {
-		r.ReadBackErr = err
-		pr.warn("read back Herdr pane %s: %v", r.Pane, err)
+	tries, delay := pr.ReportTries, pr.ReportRetryDelay
+	if tries <= 0 {
+		tries = DefaultReportTries
+	}
+	if delay <= 0 {
+		delay = DefaultReportRetryDelay
+	}
+	loopCtx, cancel := context.WithTimeout(ctx, reportDeadline)
+	defer cancel()
+	for !pr.readBack(loopCtx, agent.Agent, r) {
+		if r.ReadBacks >= tries {
+			break
+		}
+		if loopCtx.Err() != nil || launcherExited(exited) {
+			break
+		}
+		if _, err := pr.Report(loopCtx, r.Pane, agent); err != nil {
+			r.RetryErr = err
+		}
+		r.Reports++
+		select {
+		case <-time.After(delay):
+		case <-loopCtx.Done():
+		case <-exited:
+		}
+		if loopCtx.Err() != nil || launcherExited(exited) {
+			break
+		}
+	}
+	if shown(agent.Agent, r) || ctx.Err() != nil || launcherExited(exited) {
 		return
 	}
-	r.ReadBackAgentStatus, r.ReadBackPane = got.AgentStatus, got.Pane
+	status := r.ReadBackAgentStatus
+	if r.ReadBackErr != nil {
+		status = "unread: " + r.ReadBackErr.Error()
+	}
+	pr.warn("Herdr pane %s does not show agent %s after %d read-backs (agent_status %s); the attempt runs, but Herdr's tab will show no agent", r.Pane, agent.Agent, r.ReadBacks, status)
+}
+
+// readBack reads r's pane back once into r, reporting whether it shows agent;
+// a failure is recorded in r and warned about, never returned.
+func (pr *Presentation) readBack(ctx context.Context, agent string, r *artisan.PresentationReport) bool {
+	r.ReadBacks++
+	got, err := pr.ReadBack(ctx, r.Pane)
+	if err != nil {
+		r.ReadBackErr, r.ReadBackAgentStatus, r.ReadBackAgent, r.ReadBackPane = err, "", "", nil
+		pr.warn("read back Herdr pane %s: %v", r.Pane, err)
+		return false
+	}
+	r.ReadBackErr = nil
+	r.ReadBackAgentStatus, r.ReadBackAgent, r.ReadBackPane = got.AgentStatus, got.Agent, got.Pane
 	if r.ReadBackPane == nil {
 		r.ReadBackPane = json.RawMessage("null")
+	}
+	return shown(agent, r)
+}
+
+// shown reports whether r's last read-back succeeded and shows agent: its
+// agent is agent and its agent_status is known. unknown is a valid reported
+// state, and also what Herdr shows once it has dropped a report.
+func shown(agent string, r *artisan.PresentationReport) bool {
+	return r.ReadBackErr == nil && r.ReadBackPane != nil && r.ReadBackAgent == agent && r.ReadBackAgentStatus != "unknown"
+}
+
+// launcherExited reports whether exited is closed.
+func launcherExited(exited <-chan struct{}) bool {
+	select {
+	case <-exited:
+		return true
+	default:
+		return false
 	}
 }
 

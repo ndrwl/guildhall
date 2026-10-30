@@ -634,7 +634,7 @@ func TestPaneGetKeepsTheRawPane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AgentStatus != "working" || !strings.Contains(string(got.Pane), `"pane_id": "w1:p2"`) || !strings.HasPrefix(string(got.Pane), "{") {
+	if got.AgentStatus != "working" || got.Agent != "" || !strings.Contains(string(got.Pane), `"pane_id": "w1:p2"`) || !strings.HasPrefix(string(got.Pane), "{") {
 		t.Errorf("PaneGet = %+v", got)
 	}
 	if want := []string{"herdr", "pane", "get", "w1:p2", "--session", "guildhall-lab"}; !slices.Equal(f.calls[0].args, want) {
@@ -647,6 +647,11 @@ func TestPaneGetKeepsTheRawPane(t *testing.T) {
 	gone, _ := newTestClient(t, map[string]response{"pane get": {stderr: `{"error":{"code":"pane_not_found","message":"pane w9:p9 not found"},"id":"cli:pane:get"}`, exit: 1}})
 	if _, err := gone.PaneGet(context.Background(), "w9:p9"); !IsNotFound(err) {
 		t.Errorf("PaneGet of a closed pane = %v, want not found", err)
+	}
+	// A live Herdr 0.9.5 pane names its reported agent (d49 lab).
+	reported, _ := newTestClient(t, map[string]response{"pane get": {stdout: `{"id":"cli:pane:get","result":{"pane":{"agent":"artisan","agent_status":"working","pane_id":"w1:p2"},"type":"pane_info"}}`}})
+	if got, err := reported.PaneGet(context.Background(), "w1:p2"); err != nil || got.Agent != "artisan" || got.AgentStatus != "working" {
+		t.Errorf("PaneGet of a reported pane = %+v, %v", got, err)
 	}
 	empty, _ := newTestClient(t, map[string]response{"pane get": {stdout: `{"id":"x","result":{"type":"pane_info"}}`}})
 	if _, err := empty.PaneGet(context.Background(), "w1:p2"); err == nil {

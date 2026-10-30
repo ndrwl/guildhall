@@ -767,8 +767,12 @@ func (c *Client) ReportAgentOutcome(ctx context.Context, paneID string, r AgentR
 type PaneReadBack struct {
 	// AgentStatus is the pane's agent_status.
 	AgentStatus string
-	// Pane is the raw result.pane object: which of its fields, if any, names
-	// a reported agent or resume command is not known, so none is assumed.
+	// Agent is the pane's agent, naming the reported agent, or empty when the
+	// pane object has no agent field.
+	Agent string
+	// Pane is the raw result.pane object: beyond agent_status and agent,
+	// which of its fields, if any, names a resume command is not known, so
+	// none is assumed.
 	Pane json.RawMessage
 }
 
@@ -791,11 +795,12 @@ func (c *Client) PaneGet(ctx context.Context, paneID string) (PaneReadBack, erro
 	}
 	var pane struct {
 		AgentStatus string `json:"agent_status"`
+		Agent       string `json:"agent"`
 	}
 	if len(r.Pane) == 0 || bytes.Equal(r.Pane, []byte("null")) || json.Unmarshal(r.Pane, &pane) != nil {
 		return PaneReadBack{}, errors.New("herdr pane get returned no pane object")
 	}
-	return PaneReadBack{AgentStatus: pane.AgentStatus, Pane: r.Pane}, nil
+	return PaneReadBack{AgentStatus: pane.AgentStatus, Agent: pane.Agent, Pane: r.Pane}, nil
 }
 
 // labelShape is the accepted shape of an agent source or label.

@@ -155,6 +155,31 @@ Any fix must keep these constraints:
 
 The tests that pin today's behaviour are `TestReportAgentRegistersTheResumeCommand`, `TestReportAgentRefusesWhatHerdrWouldReject` and `TestReportAgentReturnsHerdrsRefusal` ([`internal/herdr/herdr_test.go:493-548`](../../internal/herdr/herdr_test.go)), and [`internal/launch/presentation_unix_test.go`](../../internal/launch/presentation_unix_test.go).
 
+## d49 finding: Herdr drops a report made at an idle shell
+
+d45 build-1 (`w3S:p2`) and d46 build-1 (`w3W:p2`) recorded `presentation-report` events whose read-back, taken just after the launcher owned the attempt, showed `agent_status: unknown` and no `agent`, while d48 research-1 (`w3Z:p2`) read back `agent: artisan, working`.
+The d49 research reproduced this on Herdr 0.9.5 in an isolated `fm-lab-d49` session, with `sleep` standing in for the bridge; every report exited 0 with no output:
+
+| Pane foreground at the report | What followed | Read back |
+|---|---|---|
+| idle shell | nothing | shows the agent at once, then `unknown` with no agent on Herdr's next tick (200 ms to 1 s): **lost** |
+| idle shell | a foreground process at once | the agent, still held while that process runs: **held** (the race won, as d48) |
+| idle shell | a foreground process 1.5 s later | `unknown`; the later process does not bring it back: **lost** (as d45, d46) |
+| a non-shell process | 2 s, then 5 s more | the agent both times: **held**, until that process leaves the foreground |
+
+Guildhall made its only report at the idle shell, before typing the bridge, so whether it held was a race between Herdr's tick and the typed bridge reaching the foreground.
+Herdr accepts the report and drops it on its own side; that matches its documented rule that an agent identity "follows the current pane occupant", and an idle shell is not an occupant.
+
+Verdict on the hypotheses above:
+
+- **#3, a race when the foreground changes from the shell to the bridge: confirmed, with a correction.** The change does not drop the report: a report at an idle shell is dropped *unless* the change comes quickly enough.
+- **#2, Herdr's detection overriding the report: confirmed in part.** Herdr clears a report with no non-shell occupant; a report bound to a running process was not overridden.
+- **#1, an inherited `HERDR_*` call inside the attempt: not needed** to explain d45 and d46, whose read-backs came moments after ownership.
+
+The fix (d49) keeps the first report and, once the launcher owns the attempt and the bridge is in the foreground, repeats the same report until a read-back shows `agent: artisan` with a known `agent_status`: up to 5 read-backs, 300 ms apart, within 3 s, warning on stderr when it never does ([`presentation-report`](../artisan.md#events) records `reports`, `readbacks`, `readback_agent` and `retry_error`).
+The window is Herdr-internal and undocumented; the repeat does not depend on it.
+The regression test is `TestLostReportIsRepeatedUntilThePaneShowsIt` ([`internal/launch/presentation_report_test.go`](../../internal/launch/presentation_report_test.go)); its failure before the fix is in [`herdr-agent-report-retry-2026-10-30-red.txt`](herdr-agent-report-retry-2026-10-30-red.txt).
+
 ## Sources
 
 Code and docs were re-checked at `ee8ee571`, the `main` commit this branch is rebased onto; the line numbers above are from that revision (unchanged from `78323ce2`, since `ee8ee571` only adds `docs/evidence/github-merge-queue-2026-10.md`).

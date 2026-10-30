@@ -148,12 +148,20 @@ type PresentationReport struct {
 	Stdout []byte
 	// Err is the report's error, when it failed.
 	Err error
-	// ReadBackAgentStatus and ReadBackPane are the pane's agent_status and
-	// raw pane object read back once after the report; ReadBackPane is nil
-	// when nothing was read back.
+	// Reports is how many report-agent calls were made: 1 when the first
+	// report held.
+	Reports int
+	// RetryErr is the last error of a repeated report, if any.
+	RetryErr error
+	// ReadBacks is how many pane get calls were made.
+	ReadBacks int
+	// ReadBackAgentStatus, ReadBackAgent and ReadBackPane are the pane's
+	// agent_status, agent and raw pane object from the last read-back after
+	// the report; ReadBackPane is nil when nothing was read back.
 	ReadBackAgentStatus string
+	ReadBackAgent       string
 	ReadBackPane        json.RawMessage
-	// ReadBackErr says why the read-back failed or was skipped.
+	// ReadBackErr says why the last read-back failed or was skipped.
 	ReadBackErr error
 }
 
@@ -163,7 +171,7 @@ type PresentationReport struct {
 // a pane launch, as one write of one whole line, without the attempt lock.
 // It returns the error of the write.
 func LogPresentationReport(dir string, r PresentationReport) error {
-	fields := map[string]any{"pane": r.Pane, "exit": r.Exit}
+	fields := map[string]any{"pane": r.Pane, "exit": r.Exit, "reports": r.Reports, "readbacks": r.ReadBacks}
 	stdout := r.Stdout
 	if len(stdout) > PresentationReportLimit {
 		stdout = stdout[:PresentationReportLimit]
@@ -173,8 +181,12 @@ func LogPresentationReport(dir string, r PresentationReport) error {
 	if r.Err != nil {
 		fields["error"] = r.Err.Error()
 	}
+	if r.RetryErr != nil {
+		fields["retry_error"] = r.RetryErr.Error()
+	}
 	if r.ReadBackPane != nil {
 		fields["readback_agent_status"] = r.ReadBackAgentStatus
+		fields["readback_agent"] = r.ReadBackAgent
 		pane := r.ReadBackPane
 		var compact bytes.Buffer
 		if json.Compact(&compact, pane) == nil {
