@@ -23,6 +23,7 @@ The automatic triggers (`handoff_after_tasks`, `handoff_context_percent`, `hando
 - **One end-of-turn rule for stop and reload.**
   The supervisor decides at each turn signal and at each poll with one pure function, `decideEnd`, tested as a table.
   A stop or a reload `--now` ends the runtime at the next turn end; a plain reload waits for a quiet point, a turn ended since the last turn start and the newest wake and no Director stage running.
+  Superseded by [`decisions/plain-reload-ignores-director-stages.md`](plain-reload-ignores-director-stages.md) for the "no Director stage running" clause: a running Director stage no longer holds a plain reload.
   Without a hook, or with no endpoint, the 60-second grace stands in for the turn end, as D10's stop already used it; with a hook the grace also ends a stop or `--now` once the Director is idle, so stopping an idle Director does not wait forever for a turn that never comes.
   A turn-ended signal that arrived before a request is not taken as that request's turn end.
 - **Turns that start are signalled too.**

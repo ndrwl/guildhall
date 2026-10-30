@@ -81,7 +81,7 @@ func waiterWatch(t *testing.T) (*sessionWatch, *time.Time, *fakeWaiter, *notices
 	startRuntimeSession(t, path, store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"}, "claude")
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	waiter, notice := &fakeWaiter{}, &notices{}
-	w := &sessionWatch{storePath: path, state: t.TempDir(), n: 1, grace: time.Minute, hook: true, idleAfter: 5 * time.Minute,
+	w := &sessionWatch{storePath: path, n: 1, grace: time.Minute, hook: true, idleAfter: 5 * time.Minute,
 		pane: &typedPanes{}, now: func() time.Time { return clock }, waiter: waiter, notice: notice}
 	return w, &clock, waiter, notice, path
 }

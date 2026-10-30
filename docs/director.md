@@ -396,7 +396,8 @@ guildhall director reload [--now] [--copy <dir> | --store <file> --state <dir>]
 
 `director reload` asks the session supervisor to end the runtime and start a new session, on the copy's current settings, as [release upgrades](releases.md#guildhall-director-reload) design.
 It records a `director-reload` request and prints it as one JSON line; requests made before one is applied collapse into it, and `--now` turns a pending plain request into a `--now` one.
-The supervisor applies a plain reload at a quiet point: no Director stage attempt is running and a turn has ended since the last turn started and since the newest wake reached the Director, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
+The supervisor applies a plain reload at a quiet point: a turn has ended since the last turn started and since the newest wake reached the Director, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
+A Director stage attempt running, such as a grill waiting on the Guildmaster's answers, does not hold a plain reload either, since the next session restarts it ([decision](decisions/plain-reload-ignores-director-stages.md), as [D94](decisions/0094-director-notes.md) ruled for `--now`).
 `--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the [handoff](#handoff): check the notes, then reload.
 `--now` is refused with exit 1 only when there is no session or the newest one is `stopped`; it needs no note, and a Director stage attempt running, such as a grill, does not hold it, since the next session restarts the grill ([D94](decisions/0094-director-notes.md)).
 The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers, the two sessions' releases and binary sha256 (`old_release`, `old_sha256`, `new_release`, `new_sha256`) and, when the supervisor refused a new binary, `refused_sha256` and `refused_reason`.
@@ -437,7 +438,7 @@ The supervisor decides at each signal and about once a second:
 
 - `stop --now` ends the runtime at once;
 - a stop or a reload `--now` ends it at the next turn end, or once 60 seconds have passed, when the runtime has no hook or the Director is idle;
-- a plain reload ends it at a quiet point, or once 60 seconds have passed with no Director stage running when the runtime has no hook;
+- a plain reload ends it at a quiet point, or once 60 seconds have passed when the runtime has no hook;
 - a stop wins over a reload.
 
 `director stop --now` is the escape when the runtime must end before then: it ends the runtime at once, mid-turn if need be.

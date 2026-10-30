@@ -154,7 +154,7 @@ func idleWatch(t *testing.T) (*sessionWatch, *time.Time, *typedPanes, string) {
 	startSession(t, path, store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"})
 	clock := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	pane := &typedPanes{}
-	w := &sessionWatch{storePath: path, state: t.TempDir(), n: 1, grace: time.Minute, hook: true, idleAfter: 5 * time.Minute,
+	w := &sessionWatch{storePath: path, n: 1, grace: time.Minute, hook: true, idleAfter: 5 * time.Minute,
 		handoffIdle: 30 * time.Minute, pane: pane, now: func() time.Time { return clock }}
 	return w, &clock, pane, path
 }
