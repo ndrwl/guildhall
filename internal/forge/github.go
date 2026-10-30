@@ -150,6 +150,20 @@ func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 	return PullRequest{}, fmt.Errorf("%w: pull request %s is %s at %s after the merge", ErrRefused, pr.URL, pr.State, pr.Head)
 }
 
+// PullRequest returns pull request v.Number as the forge reports it now: open, closed, or merged at whatever head
+// with its merge commit. It changes nothing, so a task's pull request merged outside Guildhall can be recognized
+// without Merge's strict head check.
+func (g GitHub) PullRequest(ctx context.Context, v View) (PullRequest, error) {
+	if err := v.Validate(); err != nil {
+		return PullRequest{}, err
+	}
+	repo, err := GitHubRepository(v.Remote)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	return g.view(ctx, v.Repository, repo, v.Number)
+}
+
 // Close closes pull request c.Number without merging it, posting c.Comment, and returns it closed. It never passes
 // --delete-branch, so the task branch stays on the remote. A pull request already closed is returned as it is, so
 // repeating a close is safe; a merged one is ErrRefused, and nothing is closed or commented. A close gh fails is

@@ -32,6 +32,9 @@ A check also carries `Job`, the GitHub Actions job id of a check run the `github
 It never deletes the branch.
 A pull request already closed is returned as it is, so repeating a close is safe and posts nothing; a merged one is `ErrRefused`, closing and commenting nothing.
 A close missing its repository, remote or comment, or naming no pull request, is `ErrInvalid`; a close the forge fails is checked by viewing the pull request again, as a merge is: closed, it is returned, otherwise the failure is returned as a plain error.
+`PullRequest(ctx, View)`, optional on the forge as `interp.PullRequestReader`, returns pull request `View.Number` as the forge reports it now, open, closed, or merged at whatever head with its merge commit, and changes nothing; the [outside-merge rule](../tasks.md#merged-outside-guildhall) reads a task's recorded pull requests through it, separately from `Merge`, which stays strict.
+A view missing its repository or remote, or naming no pull request, is `ErrInvalid`.
+`forge.GitHub` and `forgetest.Fake` implement it, and the contract suite reads a pull request open, merged and closed through it; the Fake's `MergeOutside` and `CloseOutside` merge or close a pull request as someone outside Guildhall would.
 No operation is safe for concurrent calls on one branch; the interpreter calls them under the task's lock.
 
 `GitHub.CheckLog(ctx, Commit, job, limit)` implements the optional `interp.CheckLogReader` ([failed job logs](../interpreter.md#validate), [decision](../decisions/failed-job-logs.md)): it reads the log of Actions job `job` and returns a `CheckLog`, its `Text`, at most `limit` bytes of the log's tail, and `Dropped`, the bytes cut from its head.

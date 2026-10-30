@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -391,16 +392,35 @@ func TestTaskCancelRefusesMergedWork(t *testing.T) {
 			t.Fatal(err)
 		}
 		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
-		if code != 1 || !strings.Contains(stderr, "landed") {
+		if code != 1 || !strings.Contains(stderr, "landed") || !strings.Contains(stderr, "recorded done, not cancelled") || !strings.Contains(stderr, pr.URL) {
 			t.Errorf("task cancel of a merged task: exit %d, %s", code, stderr)
 		}
-		if got := c.task(t, "t-1"); got.State != store.TaskOpen {
-			t.Errorf("task = %+v, want it open", got)
-		}
-		if d, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t-1") }); err != nil || !d[0].Open() {
-			t.Errorf("decisions = %+v, %v; want q-1 still open", d, err)
-		}
+		// The work landed outside Guildhall: the task is recorded done, never cancelled.
+		c.wantMergedOutside(t, pr)
 	})
+}
+
+// wantMergedOutside checks that t-1 was closed done by the outside-merge rule for pr: its merge recorded as
+// outside-<n>-merge, its open decision voided and a merged message sent.
+func (c *cancelDirector) wantMergedOutside(t *testing.T, pr forge.PullRequest) {
+	t.Helper()
+	if got := c.task(t, "t-1"); got.State != store.TaskDone || got.CancelReason != "" {
+		t.Errorf("task = %+v, want it done", got)
+	}
+	if d, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t-1") }); err != nil || len(d) != 1 ||
+		!d[0].Void || d[0].VoidReason != "Task done: pull request "+pr.URL+" merged outside Guildhall" {
+		t.Errorf("decisions = %+v, %v; want q-1 voided", d, err)
+	}
+	docs, err := withStore(c.store, true, func(s *store.Store) ([]store.DocumentRef, error) { return s.Documents("app", "t-1") })
+	if err != nil || !slices.ContainsFunc(docs, func(d store.DocumentRef) bool { return d.Name == fmt.Sprintf("outside-%d-merge", pr.Number) }) {
+		t.Errorf("documents = %+v, %v; want outside-%d-merge", docs, err, pr.Number)
+	}
+	m, err := withStore(c.store, true, func(s *store.Store) (store.Message, error) {
+		return s.Message(fmt.Sprintf("app.t-1.merged.outside.%d", pr.Number))
+	})
+	if err != nil || m.Type != store.MessageMerged || !strings.Contains(m.Text, "merged outside Guildhall") {
+		t.Errorf("merged message = %+v, %v", m, err)
+	}
 }
 
 // lossyForge closes a pull request and then, once, reports a failure, as a close whose answer was lost does.

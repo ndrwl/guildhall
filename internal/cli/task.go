@@ -33,6 +33,7 @@ var taskUsage = `usage:
   guildhall task review --full --store <path> --repo <id> <task>
   guildhall task start --store <path> --config <director.toml> --state <dir> --repo <id> [--decision <id>] [--ignore-deps --reason <text>] <task>
   guildhall task cancel --store <path> --config <director.toml> --state <dir> --repo <id> --reason <text> <task>
+  guildhall task reconcile --store <path> --config <director.toml> --state <dir> --repo <id> <task>
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
   guildhall task context add|list ... (guildhall task context for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:

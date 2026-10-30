@@ -32,8 +32,9 @@ type Fake struct {
 	logErrs map[string]error
 	// comments are the comments of the closes that closed a pull request.
 	comments []string
-	// publishes, merges, closes and logReads count calls, and edits the publishes that changed an open pull request's text.
-	publishes, merges, closes, logReads, edits int
+	// publishes, merges, closes, logReads and views count calls, and edits the publishes that changed an open pull
+	// request's text.
+	publishes, merges, closes, logReads, views, edits int
 }
 
 // text is a pull request's title and body.
@@ -265,6 +266,45 @@ func (f *Fake) Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, err
 	pr.State, pr.MergeCommit = forge.Merged, hex.EncodeToString(sum[:])
 	f.setBranch(m.Remote, f.bases[m.Remote], pr.MergeCommit)
 	return *pr, nil
+}
+
+// MergeOutside merges pull request number of remote as someone outside Guildhall would on the forge: at head, which
+// need not be a commit Guildhall pushed, landing on merge commit mergeCommit, whatever state it was in.
+func (f *Fake) MergeOutside(remote string, number int, head, mergeCommit string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	pr := &f.prs[remote][number-1]
+	pr.State, pr.Head, pr.MergeCommit = forge.Merged, head, mergeCommit
+	f.setBranch(remote, f.bases[remote], mergeCommit)
+}
+
+// CloseOutside closes pull request number of remote without merging it, as someone outside Guildhall would.
+func (f *Fake) CloseOutside(remote string, number int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.prs[remote][number-1].State = forge.Closed
+}
+
+// Views returns how many times PullRequest was called.
+func (f *Fake) Views() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.views
+}
+
+// PullRequest implements forge.GitHub.PullRequest's contract.
+func (f *Fake) PullRequest(ctx context.Context, v forge.View) (forge.PullRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.views++
+	if err := v.Validate(); err != nil {
+		return forge.PullRequest{}, err
+	}
+	prs := f.prs[v.Remote]
+	if v.Number > len(prs) {
+		return forge.PullRequest{}, fmt.Errorf("fake forge: no pull request %d on %s", v.Number, v.Remote)
+	}
+	return prs[v.Number-1], nil
 }
 
 // Closes returns how many times Close was called, and the comment of each close that closed a pull request, in

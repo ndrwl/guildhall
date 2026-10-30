@@ -760,7 +760,15 @@ func (p storeRecords) SetTaskState(m, repo, id string, state store.TaskState) (s
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.SetTaskState(m, repo, id, state) })
 }
 
+func (p storeRecords) VoidDecision(m, repo, id, decision, reason string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.VoidDecision(m, repo, id, decision, reason) })
+}
+
 var _ interp.MergeQueue = storeRecords{}
+
+func (p storeRecords) SetMergeHold(m, repo, id string, held bool) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.SetMergeHold(m, repo, id, held) })
+}
 
 func (p storeRecords) MergeQueue(repo string) (store.MergeQueue, error) {
 	return withRecords(p, true, nil, func(s *store.Store) (store.MergeQueue, error) { return s.MergeQueue(repo) })
