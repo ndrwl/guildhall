@@ -463,6 +463,82 @@ func TestTaskNewRetry(t *testing.T) {
 	}
 }
 
+// TestTaskNewTitleLimit: a title over 100 characters is refused with exit 1, naming its length, the limit and
+// --detail, and creates nothing; 100 multibyte characters are accepted.
+func TestTaskNewTitleLimit(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	path := emptyStore(t)
+	approveRepo(t, path, cfg, "app")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", strings.Repeat("é", 101), "t-1")
+	want := "guildhall: task new: title is 101 characters; the limit is 100; put the full statement in --detail or --detail-file\n"
+	if code != 1 || out != "" || stderr != want {
+		t.Fatalf("long title: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-1"); code != 1 {
+		t.Fatalf("refused task was written: show exit %d", code)
+	}
+	title := strings.Repeat("é", 100)
+	newTask(t, path, cfg, "app", title, "t-1")
+	if got := readTask(t, path, "app", "t-1").Title; got != title {
+		t.Fatalf("title = %q", got)
+	}
+}
+
+// TestTaskNewDetail: --detail and --detail-file, from a file or standard input, store the task's detail, which task
+// show prints; giving both is a usage error.
+func TestTaskNewDetail(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	path := emptyStore(t)
+	approveRepo(t, path, cfg, "app")
+	file := filepath.Join(t.TempDir(), "detail.txt")
+	writeFile(t, file, "\xef\xbb\xbfFrom a file:\r\n  error: Y\r\n")
+	cases := []struct {
+		id, stdin string
+		args      []string
+		want      string
+	}{
+		{"t-1", "", []string{"--detail", "Running X fails: error: Y"}, "Running X fails: error: Y"},
+		{"t-2", "", []string{"--detail-file", file}, "From a file:\n  error: Y\n"},
+		{"t-3", "From stdin:\r\nerror: Z\n", []string{"--detail-file", "-"}, "From stdin:\nerror: Z\n"},
+	}
+	for _, c := range cases {
+		app, stdout, stderr := newTestApp(nil, nil)
+		app.Stdin = strings.NewReader(c.stdin)
+		args := append([]string{"task", "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix X", "--kind", "bug"}, c.args...)
+		if code := app.Run(append(args, c.id)); code != 0 {
+			t.Fatalf("%s: exit %d, stdout %q, stderr %q", c.id, code, stdout, stderr)
+		}
+		code, out, errOut := runTask(t, "show", "--store", path, "--repo", "app", "--json", c.id)
+		if code != 0 {
+			t.Fatalf("show %s: exit %d, stderr %s", c.id, code, errOut)
+		}
+		var shown struct {
+			Task struct {
+				Detail string `json:"detail"`
+			} `json:"task"`
+		}
+		if err := json.Unmarshal([]byte(out), &shown); err != nil {
+			t.Fatal(err)
+		}
+		if shown.Task.Detail != c.want {
+			t.Errorf("%s: detail = %q, want %q", c.id, shown.Task.Detail, c.want)
+		}
+	}
+	if code, out, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-1"); code != 0 || !strings.Contains(out, `"detail"`) {
+		t.Fatalf("show without detail field: exit %d, %s", code, out)
+	}
+
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix X",
+		"--detail", "text", "--detail-file", file, "t-4")
+	if code != 2 || out != "" || !strings.Contains(stderr, "give --detail or --detail-file, not both") {
+		t.Fatalf("both flags: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	newTask(t, path, cfg, "app", "No detail", "t-5")
+	if code, out, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-5"); code != 0 || strings.Contains(out, `"detail"`) {
+		t.Fatalf("task without a detail: exit %d, %s", code, out)
+	}
+}
+
 func TestTaskNewDependencies(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)

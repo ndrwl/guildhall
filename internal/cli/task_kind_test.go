@@ -156,7 +156,7 @@ func TestTaskNewHelpDescribesKinds(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
 	}
-	for _, want := range []string{"[--kind feature|bug]", "--fixes without --kind means bug", "  feature  " + taskKindDescriptions[config.TaskKindFeature], "  bug      " + taskKindDescriptions[config.TaskKindBug]} {
+	for _, want := range []string{"[--kind feature|bug]", "[--detail <text> | --detail-file <file|->]", "at most 100 characters", "--fixes without --kind means bug", "  feature  " + taskKindDescriptions[config.TaskKindFeature], "  bug      " + taskKindDescriptions[config.TaskKindBug]} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help does not contain %q:\n%s", want, out)
 		}

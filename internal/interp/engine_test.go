@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -95,7 +96,12 @@ func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*s
 		}
 		edit(&task)
 	}
-	if _, err := h.CreateTask("task:app:t7", task); err != nil {
+	create := h.CreateTask
+	if s, ok := h.Records.(*store.Store); ok && utf8.RuneCountInString(task.Title) > store.MaxTitleRunes {
+		// A title over the limit can only belong to a task created before titles were limited.
+		create = s.CreateLegacyTaskForTests
+	}
+	if _, err := create("task:app:t7", task); err != nil {
 		t.Fatal(err)
 	}
 	e := &env{h: h, mailbox: mailbox, script: interptest.NewScript(t, exps...)}

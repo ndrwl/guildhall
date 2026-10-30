@@ -55,6 +55,9 @@ type Stage struct {
 	// Title is the task's Director-written title. Prompt renders it fenced as text after the header; it is not part of
 	// the manifest's Identity. Empty renders no title.
 	Title string
+	// Detail is the task's Director-written full statement. Prompt renders it fenced as text after the title; it is
+	// not part of the manifest's Identity. Empty renders no detail.
+	Detail string
 	// Step is the step from the task's bound workflow revision; its kind and settings decide the actor,
 	// and its "profile", "skills" and "instructions" settings are rendered.
 	Step workflow.Step
@@ -254,7 +257,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Title, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -267,7 +270,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -299,7 +302,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 		}
 		m.Skills = append(m.Skills, skill)
 	}
-	text := composePrompt(m, title, instructions, role, guide, standards, reviewBase, retry, main)
+	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main)
 	if actor == workflow.ArtisanActor {
 		text += outputInstructions(m.Identity, revisions)
 	}
@@ -311,7 +314,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	return nil
 }
 
-func composePrompt(m *Manifest, title, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main) string {
+func composePrompt(m *Manifest, title, detail, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main) string {
 	var b strings.Builder
 	id := m.Identity
 	fmt.Fprintf(&b, "# Guildhall attempt\n\nRepository: %s\nTask: %s\nStep: %s (%s version %d)\nAttempt: %d\n",
@@ -325,9 +328,12 @@ func composePrompt(m *Manifest, title, instructions, role, guide string, standar
 	if id.Profile != "" {
 		fmt.Fprintf(&b, "Profile: %s\n", id.Profile)
 	}
-	// The title is Director-written, so it is fenced as text and cannot open a section of its own.
+	// The title and detail are Director-written, so they are fenced as text and cannot open a section of their own.
 	if strings.TrimSpace(title) != "" {
 		fmt.Fprintf(&b, "\nTask title:\n\n%s\n", fenced(title))
+	}
+	if strings.TrimSpace(detail) != "" {
+		fmt.Fprintf(&b, "\nTask detail:\n\n%s\n", fenced(detail))
 	}
 	section := func(title, body string) { fmt.Fprintf(&b, "\n## %s\n\n%s\n", title, strings.TrimRight(body, "\n")) }
 	if retry != nil {

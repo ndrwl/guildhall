@@ -45,6 +45,96 @@ func TestCreateTaskValidates(t *testing.T) {
 	}
 }
 
+func TestTaskTitleIsShort(t *testing.T) {
+	s, _ := newStore(t)
+	task := sampleTask("app", "t-1")
+	task.Title = strings.Repeat("é", MaxTitleRunes)
+	mustCreate(t, s, "m-1", task)
+	if got, err := s.Task("app", "t-1"); err != nil || got.Title != task.Title {
+		t.Fatalf("100-character title = %+v, %v", got, err)
+	}
+
+	long := sampleTask("app", "t-2")
+	long.Title = strings.Repeat("é", MaxTitleRunes+1)
+	_, err := s.CreateTask("m-2", long)
+	if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "title is 101 characters; the limit is 100") {
+		t.Fatalf("101-character title: err = %v, want ErrInvalid naming 101 characters", err)
+	}
+	if _, err := s.Task("app", "t-2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("refused task was recorded: %v", err)
+	}
+
+	// A task created before titles were limited still reads.
+	if _, err := s.CreateLegacyTaskForTests("m-3", long); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Task("app", "t-2"); err != nil || got.Title != long.Title {
+		t.Fatalf("legacy long title = %+v, %v", got, err)
+	}
+}
+
+func TestTaskDetail(t *testing.T) {
+	s, _ := newStore(t)
+	task := sampleTask("app", "t-1")
+	task.Detail = "Running X fails:\n\n    error: Y"
+	mustCreate(t, s, "m-1", task)
+	if got, err := s.Task("app", "t-1"); err != nil || got.Detail != task.Detail {
+		t.Fatalf("detail = %+v, %v", got, err)
+	}
+
+	empty := sampleTask("app", "t-2")
+	mustCreate(t, s, "m-2", empty)
+
+	long := sampleTask("app", "t-3")
+	long.Detail = strings.Repeat("x", MaxTextBytes+1)
+	if _, err := s.CreateTask("m-3", long); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("long detail: err = %v, want ErrInvalid", err)
+	}
+	blank := sampleTask("app", "t-4")
+	blank.Detail = "  \n"
+	if _, err := s.CreateTask("m-4", blank); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("blank detail: err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestCreateTaskDigestWithoutDetail checks that a task with no detail has the request digest it had before the
+// field existed, so a create-task receipt recorded then still replays.
+func TestCreateTaskDigestWithoutDetail(t *testing.T) {
+	type taskBeforeDetail struct {
+		Repository   string            `json:"repository"`
+		ID           string            `json:"id"`
+		Title        string            `json:"title"`
+		Workflow     workflow.Revision `json:"workflow"`
+		ConfigDigest string            `json:"config_digest"`
+		DependsOn    []TaskRef         `json:"depends_on,omitempty"`
+		Fixes        *TaskRef          `json:"fixes,omitempty"`
+		State        TaskState         `json:"state"`
+	}
+	task := sampleTask("app", "t-1")
+	task.State = TaskOpen
+	old := taskBeforeDetail{task.Repository, task.ID, task.Title, task.Workflow, task.ConfigDigest, task.DependsOn, task.Fixes, task.State}
+	got, err := requestDigest("create-task", task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := requestDigest("create-task", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("digest without detail = %s, want %s as before the field existed", got, want)
+	}
+
+	s, _ := newStore(t)
+	first := mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	if first.RequestDigest != want {
+		t.Fatalf("receipt digest = %s, want %s", first.RequestDigest, want)
+	}
+	if again := mustCreate(t, s, "m-1", sampleTask("app", "t-1")); again != first {
+		t.Fatalf("replay = %+v, want %+v", again, first)
+	}
+}
+
 func TestTasksAreKeyedByRepository(t *testing.T) {
 	s, _ := newStore(t)
 	a := sampleTask("app", "t-1")

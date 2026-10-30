@@ -9,7 +9,10 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or `GUILDHALL_COPY`, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
+  The title is a short name; the task's full statement, such as a bug's symptom and exact error, goes in its detail, given as text with `--detail` or read with `--detail-file` from a file, or from standard input for `-`, with the same rules as [`decide answer --answer-file`](decisions-cli.md) (a leading byte order mark is dropped, UTF-16 is refused and CRLF becomes LF).
+  Both are optional, and giving both is a usage error.
+  A title over 100 characters is refused with exit 1 before the configuration is read, naming `--detail` and `--detail-file`.
 - `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
 - `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
@@ -27,7 +30,8 @@ For every command but `list`, the positional task id may appear before or after 
 `--json` is required on all four, so a later human-readable format is not a breaking change.
 
 Repository and task ids are lowercase letters, digits and hyphens, starting with a letter.
-A title is non-blank UTF-8 of at most 64 KiB.
+A title is non-blank UTF-8 of at most 100 characters (runes); a detail, when given, is UTF-8 of at most 64 KiB.
+`task show` and `task list` print a task's detail as `detail`, absent when it has none.
 
 Exit codes are those of the messages commands: 0 on success, 1 when the configuration, the workflow or the store refuses or fails, and 2 on a usage error.
 Errors are written to standard error and nothing is written to standard output.
@@ -42,10 +46,10 @@ An unknown `--kind` is a usage error.
 | Task kind | Workflow | What it is for |
 |---|---|---|
 | `feature` | The repository's `workflow` setting, `default` when it names none | New or changed behaviour: grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver. |
-| `bug` | The repository's [`[repository.kinds]`](configuration.md#repositories) `bug` workflow, the shipped `bug` when it names none | A fix for a defect in behaviour that should already work, with no Guildmaster stage: the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, merging under the repository's merge requirements. Research reproduces the defect from the task title and finds its cause, or fails with what it found; plan proceeds on recommended answers, or fails with a question that needs the Guildmaster; build writes a regression test that fails before the fix and passes after it, and review checks that test. |
+| `bug` | The repository's [`[repository.kinds]`](configuration.md#repositories) `bug` workflow, the shipped `bug` when it names none | A fix for a defect in behaviour that should already work, with no Guildmaster stage: the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, merging under the repository's merge requirements. Research reproduces the defect from the task title and detail and finds its cause, or fails with what it found; plan proceeds on recommended answers, or fails with a question that needs the Guildmaster; build writes a regression test that fails before the fix and passes after it, and review checks that test. |
 
 The descriptions are in the binary, `task new --help`, not in the workflows, so rewording them changes no digest.
-Every Artisan prompt shows the task's title, quoted as text after its header; a bug task has no grill, so its title, with the symptom and the exact error, is the only statement of the defect its research is given.
+Every Artisan prompt shows the task's title and detail, quoted as text after its header; a bug task has no grill, so its title and its detail, with the symptom and the exact error, are the only statement of the defect its research is given.
 A failed research or plan attempt of a bug task carries its findings or its question in its summary, which the Director reads with `task show` and brings to the Guildmaster before any `step retry`.
 The task records no kind: its bound workflow's name says what it was created as.
 A repository with no `kinds` table, and a `task new` with neither `--kind` nor `--fixes`, bind exactly the workflow they did before kinds.

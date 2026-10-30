@@ -219,7 +219,11 @@ func TestStartQueueRoundDropsAStartNoLongerDue(t *testing.T) {
 	d := newRunDirector(t)
 	newTask(t, d.store, d.config, "app", "Another", "t-3")
 	caps := store.AttemptCaps{MaxRunning: 1, Queue: &store.StartRequest{Kind: store.StartByTask}}
-	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+	// t-3's plan is queued twice under a store clock a second apart: on wall time a coarse clock (Windows) can give
+	// both the same queue time, and the second entry would then leave under the first one's mutation id.
+	queuedAt := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return queuedAt }
+	if _, err := withStoreClock(d.store, false, clock, func(s *store.Store) (store.Receipt, error) {
 		if _, err := s.StartCappedAttempt("t-1-plan", "app", "t-1", "other", caps); err != nil {
 			return store.Receipt{}, err
 		}
@@ -240,7 +244,8 @@ func TestStartQueueRoundDropsAStartNoLongerDue(t *testing.T) {
 	}
 
 	// An advance that now queues another step of the task does not keep the old entry at the front.
-	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+	queuedAt = queuedAt.Add(time.Second)
+	if _, err := withStoreClock(d.store, false, clock, func(s *store.Store) (store.Receipt, error) {
 		return s.StartCappedAttempt("t-3-plan", "app", "t-3", "plan", caps)
 	}); !errors.Is(err, store.ErrStartQueued) {
 		t.Fatalf("t-3's start again = %v, want it queued", err)

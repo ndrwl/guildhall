@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -21,7 +22,7 @@ import (
 )
 
 var taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> --repo <id> <task> --json
@@ -35,6 +36,8 @@ var taskUsage = `usage:
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
 --copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
 config.toml and state
+--title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
+from a file or - for standard input
 --kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
 ` + taskKindHelp
 
@@ -48,8 +51,8 @@ var taskKindDescriptions = map[string]string{
 		"[repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps " +
 		"without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and " +
 		"deliver, and merges under the repository's merge requirements: research reproduces the defect from the title " +
-		"and finds its cause, plan's spec goes straight to build, build writes a regression test that fails before the " +
-		"fix and passes after it, and review checks that test.",
+		"and detail and finds its cause, plan's spec goes straight to build, build writes a regression test that fails " +
+		"before the fix and passes after it, and review checks that test.",
 }
 
 var taskKindHelp = func() string {
@@ -152,6 +155,8 @@ func (a *App) task(args []string) int {
 	cfgPath := flags.String("config", "", "Director config file")
 	repo := flags.String("repo", "", "repository id")
 	title := flags.String("title", "", "task title")
+	detail := flags.String("detail", "", "task detail")
+	detailFile := flags.String("detail-file", "", "file holding the task detail, - for standard input")
 	asJSON := flags.Bool("json", false, "print JSON")
 	outcome := flags.String("outcome", "", "review outcome document")
 	finding := flags.String("finding", "", "finding id")
@@ -173,7 +178,7 @@ func (a *App) task(args []string) int {
 	var allowed map[string]bool
 	switch sub {
 	case "new":
-		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "kind": true, "depends-on": true, "fixes": true, "priority": true}
+		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "detail": true, "detail-file": true, "kind": true, "depends-on": true, "fixes": true, "priority": true}
 	case "priority":
 		want, allowed = 2, map[string]bool{"store": true, "repo": true}
 	case "hold-merge":
@@ -237,6 +242,8 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("--store is required, or --copy")
 	case sub == "new" && (*cfgPath == "" || *repo == "" || *title == ""):
 		return a.taskUsage("task new requires --config, --repo and --title")
+	case *detail != "" && *detailFile != "":
+		return a.taskUsage("give --detail or --detail-file, not both")
 	case sub != "new" && sub != "list" && *repo == "":
 		return a.taskUsage(fmt.Sprintf("task %s requires --repo", sub))
 	case sub == "finding rule" && (*outcome == "" || *finding == "" || *move == "" || *reason == ""):
@@ -266,13 +273,23 @@ func (a *App) task(args []string) int {
 	var task store.Task
 	var accepted acceptedWorkflow
 	if sub == "new" {
+		// A long title is refused first, naming where its detail belongs; the store enforces the same limit.
+		if n := utf8.RuneCountInString(*title); n > store.MaxTitleRunes {
+			return fail(fmt.Errorf("title is %d characters; the limit is %d; put the full statement in --detail or --detail-file", n, store.MaxTitleRunes))
+		}
+		if *detailFile != "" {
+			var err error
+			if *detail, err = a.readText("detail", *detailFile, store.MaxTextBytes); err != nil {
+				return fail(err)
+			}
+		}
 		// Resolve configuration and validate the effective workflow before opening the store.
 		// Task fields and dependencies are validated by CreateTask in the store.
 		var err error
 		if task, accepted, err = acceptTask(*cfgPath, *repo, kind.resolve(fixed.ref)); err != nil {
 			return fail(err)
 		}
-		task.ID, task.Title, task.DependsOn, task.Fixes = positional[0], *title, deps, fixed.ref
+		task.ID, task.Title, task.Detail, task.DependsOn, task.Fixes = positional[0], *title, *detail, deps, fixed.ref
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(noStore(*path))
