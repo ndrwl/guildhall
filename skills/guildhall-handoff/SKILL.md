@@ -20,7 +20,7 @@ A grill in progress need not be finished or noted: the next session restarts it.
 
 ## Before you reload
 
-Record everything the next session must not lose: a reply the Guildmaster gave that is not yet a `guildhall decide answer`, a task they asked for that is not yet a `guildhall task new`.
+Record everything the next session must not lose: a reply the Guildmaster gave that is not yet a `guildhall decide answer`, a task they asked for that is not yet a `guildhall task new`, requirements they gave about one task that are not yet its `guildhall task context add`.
 The store is the record, so a note never carries what a command can record.
 
 Then check your notes are current; you keep them as you go (`guildhall-director-inbox`), so this is a check, not a write-up:
@@ -31,7 +31,7 @@ guildhall director note list
 
 - Edit a note that has changed: `guildhall director note edit <id> <text>`.
 - Remove one that is done or no longer true: `guildhall director note remove <id> --reason <text>`.
-- Add only what no record holds and the next session cannot restart or re-read: a promise to the Guildmaster (`promised`), a preference or context they gave (`guildmaster`), or your intent (`plan`), with `guildhall director note add --kind <kind> [--task <repo>/<id>] <text>`.
+- Add only what no record holds and the next session cannot restart or re-read: a promise to the Guildmaster (`promised`), a preference or context they gave that is not about one task (`guildmaster`; requirements about one task go in its task context), or your intent (`plan`), with `guildhall director note add --kind <kind> [--task <repo>/<id>] <text>`.
 - When the Guildmaster said what the next session is for, add it as a `plan` note.
 - A standing rule for one repository is not a note: propose it for that repository's `.guildhall/policies.md` as a task, or tell the Guildmaster the exact line to add, and keep `guildmaster` notes for context that is not a policy.
 

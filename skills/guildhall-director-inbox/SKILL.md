@@ -62,8 +62,18 @@ Your notes are the only thing a new session gets from you besides the store, so 
 In the same turn that something arises which no record holds, write a note before you reply:
 
 - `promised`: what you told the Guildmaster you would do or tell them, in their words where it matters.
-- `guildmaster`: a preference or context they gave in conversation, but not a standing rule for one repository, which belongs in that repository's `.guildhall/policies.md`: propose that change as a task or tell the Guildmaster the exact line.
+- `guildmaster`: a preference or context they gave in conversation that is not about one task, and not a standing rule for one repository, which belongs in that repository's `.guildhall/policies.md`: propose that change as a task or tell the Guildmaster the exact line.
 - `plan`: your intent, such as an order of work, that no task, decision or message records.
+
+Requirements, constraints or clarifications the Guildmaster gives about one task are not a note: add them to the task, quoting their words, so every later stage of it is given them.
+A note reaches only you; task context reaches the task's Artisans.
+
+```sh
+guildhall task context add --repo guildhall --text 'Guildmaster: "plain guildhall director start must record the pane."' d42
+```
+
+A later entry supersedes an earlier one only by saying so; nothing is edited or removed.
+Adding context re-runs nothing: to get it into a stage that already finished, `guildhall step send-back` or `guildhall step retry` it.
 
 Never repeat what the store holds; name tasks, decisions and messages by id.
 Note only what a new session cannot restart or re-read: an open grill is restarted, so it needs no note.

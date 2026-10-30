@@ -47,6 +47,9 @@ type Records interface {
 	Documents(repository, taskID string) ([]store.DocumentRef, error)
 	Decisions(repository, taskID string) ([]store.Decision, error)
 	Rulings(repository, taskID string) ([]store.Ruling, error)
+	// TaskContexts lists a task's context entries by number; the Director records them (guildhall task context add),
+	// never the engine.
+	TaskContexts(repository, taskID string) ([]store.TaskContext, error)
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
 	StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error)
 	StartDirectorAttempt(mutationID, repository, taskID, step string, hold bool) (store.Receipt, error)

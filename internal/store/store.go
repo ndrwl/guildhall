@@ -327,7 +327,10 @@ func (s *Store) commit(tx *bolt.Tx, mutationID, op, requestDigest string, apply 
 	if err := apply(tx, &r); err != nil {
 		return Receipt{}, err
 	}
-	r.CommittedAt = s.now().UTC()
+	// An apply that records its commit time in what it writes sets it first, so the two agree.
+	if r.CommittedAt.IsZero() {
+		r.CommittedAt = s.now().UTC()
+	}
 	if err := putJSON(receipts, []byte(mutationID), r); err != nil {
 		return Receipt{}, err
 	}

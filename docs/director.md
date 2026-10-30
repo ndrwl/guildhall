@@ -305,6 +305,9 @@ To keep tokens low, `add`, `edit` and `remove` print only a receipt such as `n7 
 `note list` prints the live notes grouped by kind, each kind under a `### <kind>` line, one line per note, such as `- n7 guildhall/d20 (s16, 2d): rebase after d18 merges`: the id, the task if any, the session that last changed it and its age, then the text, with `[task done, check it]` at the end when the task is `done` or `cancelled`; notes are never removed automatically.
 With no live notes it prints `No notes.`
 
+Notes reach only Director sessions, never an Artisan.
+Requirements, constraints or clarifications the Guildmaster gives about one task go in that task's [task context](tasks.md#task-context), `guildhall task context add`, which every later stage of the task is given, not in a `guildmaster` note; a `guildmaster` note keeps a preference that is not about one task.
+
 Every new session's `startup.md` lists the live notes in the same form before the in-flight snapshot, so the Director writes a note in the same turn something arises that no record holds, rather than at the end of a session.
 When their text totals more than 8 KB the list opens with a line asking the Director to compact them; it is a warning only, and no note is ever refused for the total.
 Notes are not in the [status feed](#status), which `note list` covers.
