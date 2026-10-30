@@ -26,9 +26,13 @@ type MaintenanceKind string
 const (
 	// MaintenanceNotes is a note audit.
 	MaintenanceNotes MaintenanceKind = "notes"
-	// MaintenanceHallmark is a hallmark task launched for one repository.
+	// MaintenanceHallmark is a hallmark task launched for one repository. No run of this kind is recorded any more:
+	// runs recorded before still read, as the fallback for a repository with no done hallmark task.
 	MaintenanceHallmark MaintenanceKind = "hallmark"
 )
+
+// HallmarkRecordRetired is why recording a hallmark run is refused (docs/decisions/engine-owned-hallmark-cadence.md).
+const HallmarkRecordRetired = "hallmarks are recorded when the task finishes"
 
 // MaintenancePolicy is the maintenance cadences a session was started under; zero turns a part off.
 type MaintenancePolicy struct {
@@ -69,9 +73,10 @@ func maintenanceRecord(seq uint64) string {
 // RecordMaintenance records run m of session m.Session as the next maintenance run, under the mutation id
 // "director-maintenance:<sequence>", where sequence is one more than the newest run's: recording the run that is
 // already the newest again replays it, returning the run and its receipt, and two different runs recorded at
-// once conflict with ErrMutationConflict. A kind other than notes or hallmark, a note audit naming a repository or
-// task, a hallmark without both, a blank, multi-line or oversized summary, store-set fields and a session that is
-// not the newest or is stopped are ErrInvalid; an unknown session or hallmark task is ErrNotFound.
+// once conflict with ErrMutationConflict. A hallmark, which is recorded when its task finishes
+// (docs/decisions/engine-owned-hallmark-cadence.md), a kind other than notes, a note audit naming a repository or
+// task, a blank, multi-line or oversized summary, store-set fields and a session that is not the newest or is stopped
+// are ErrInvalid; an unknown session is ErrNotFound.
 func (s *Store) RecordMaintenance(m MaintenanceRun) (MaintenanceRun, Receipt, error) {
 	if err := validateMaintenanceRun(m); err != nil {
 		return MaintenanceRun{}, Receipt{}, err
@@ -97,11 +102,6 @@ func (s *Store) RecordMaintenance(m MaintenanceRun) (MaintenanceRun, Receipt, er
 		r.Record = maintenanceRecord(seq)
 		if err := checkWriterSession(tx, m.Session); err != nil {
 			return err
-		}
-		if m.Kind == MaintenanceHallmark {
-			if _, err := getTask(tx, m.Repository, m.Task); err != nil {
-				return err
-			}
 		}
 		runs, err := createDirectorBucket(tx, bucketMaintenance)
 		if err != nil {
@@ -134,14 +134,9 @@ func validateMaintenanceRun(m MaintenanceRun) error {
 			return invalid("a note audit names no repository or task")
 		}
 	case m.Kind == MaintenanceHallmark:
-		if m.Repository == "" || m.Task == "" {
-			return invalid("a hallmark run names its repository and task")
-		}
-		if err := validateIDs(m.Repository, m.Task); err != nil {
-			return err
-		}
+		return invalid("%s", HallmarkRecordRetired)
 	default:
-		return invalid("maintenance kind %q must be %q or %q", m.Kind, MaintenanceNotes, MaintenanceHallmark)
+		return invalid("maintenance kind %q must be %q", m.Kind, MaintenanceNotes)
 	}
 	return validateNoteText("maintenance summary", m.Summary, MaxMaintenanceSummaryBytes)
 }
@@ -168,7 +163,9 @@ type MaintenanceView struct {
 	Repositories []RepositoryMaintenance `json:"repositories"`
 }
 
-// RepositoryMaintenance is one repository's hallmark count.
+// RepositoryMaintenance is one repository's hallmark count from its recorded runs. A repository's last hallmark is
+// its done hallmark task (interp.LastHallmark), which the status feed counts from with MergedSequences; these runs
+// are read only for a repository with none (docs/decisions/engine-owned-hallmark-cadence.md).
 type RepositoryMaintenance struct {
 	Repository string `json:"repository"`
 	// LastHallmark is the repository's newest hallmark run, nil when none is recorded.
@@ -176,6 +173,9 @@ type RepositoryMaintenance struct {
 	// Merged counts the repository's merged messages sent after LastHallmark's receipt, or after the baseline's
 	// start receipt when that is later or there is no hallmark.
 	Merged int `json:"merged"`
+	// MergedSequences are the sequences of the repository's merged messages sent after the baseline's start
+	// receipt, in no particular order, so a reader can count from another point without a second scan.
+	MergedSequences []uint64 `json:"-"`
 }
 
 // maintenanceView reads the maintenance view in tx.
@@ -238,7 +238,11 @@ func maintenanceView(tx *bolt.Tx) (MaintenanceView, error) {
 				if err := json.Unmarshal(raw, &m); err != nil {
 					return fmt.Errorf("message %q: %w", k, err)
 				}
-				if m.Type == MessageMerged && m.Sequence > after {
+				if m.Type != MessageMerged || m.Sequence <= v.BaselineReceipt {
+					return nil
+				}
+				rm.MergedSequences = append(rm.MergedSequences, m.Sequence)
+				if m.Sequence > after {
 					rm.Merged++
 				}
 				return nil

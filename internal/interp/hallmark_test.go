@@ -231,6 +231,27 @@ func TestHallmarkPreviousReport(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			// The shared selector, which the Director's cadence reads too, names the hallmark whose report is copied.
+			last := func() string {
+				t.Helper()
+				tasks, err := e.h.Records.Tasks("app")
+				if err != nil {
+					t.Fatal(err)
+				}
+				closes, err := e.h.Records.TaskCloses()
+				if err != nil {
+					t.Fatal(err)
+				}
+				h, err := interp.LastHallmark(tasks, closes, e.h.Records.Documents, e.eng.Workflow, "")
+				if err != nil || h == nil {
+					t.Fatalf("LastHallmark = %+v, %v", h, err)
+				}
+				return h.Task.ID
+			}
+			if got := last(); got != "t3" {
+				t.Fatalf("last hallmark = %s, want t3", got)
+			}
+
 			// t7 is given t3's report, copied as its own previous-hallmark document.
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			prev, ok := e.documents(t)["previous-hallmark"]
@@ -245,6 +266,9 @@ func TestHallmarkPreviousReport(t *testing.T) {
 			}
 			want(t, advance("t8", interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			want(t, advance("t8", interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
+			if got := last(); got != "t8" {
+				t.Fatalf("last hallmark after t8 = %s, want t8", got)
+			}
 
 			// t7's retry keeps the report it was first given, not t8's.
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptRetried, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 2})

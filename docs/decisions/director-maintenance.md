@@ -23,6 +23,7 @@ Director maintenance is now one skill, `guildhall-maintenance`, with two parts, 
 - **Each run is a small record.**
   `director maintenance record` keeps a run in the store's `director-maintenance` bucket with its kind, a hallmark's repository and task, the session, the time and a one-line summary of at most 1024 bytes, what was removed and what was proposed, written only by the newest session that is not stopped, as notes are ([D94](0094-director-notes.md)).
   A hallmark is recorded when its task is launched, so merges made while it runs count toward the next one.
+  Superseded for the hallmark by [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md): a repository's last hallmark is its last done hallmark task, counted from that task's launch, `record --hallmark` is refused, and hallmark runs recorded before are read only for a repository with no done hallmark task.
 - **The status feed carries counts and times, never note text.**
   `director status` gains a `maintenance` object with the last note audit and sessions until the next, and per repository the last hallmark and merges until the next; D94's "notes are not in the feed" still holds, and `director maintenance list` shows the history.
 - **The Guildmaster stays in the loop.**

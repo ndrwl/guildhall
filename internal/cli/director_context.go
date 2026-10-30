@@ -66,7 +66,8 @@ func (a *App) directorContextReport(args []string) int {
 	}
 	if *band {
 		counts := lanterns.Counts{}
-		if status, err := readDirectorStatus(context.Background(), filepath.Join(copyDir, "director.store"), filepath.Join(copyDir, "state"), a.Now); err == nil {
+		if status, err := readDirectorStatusConfig(context.Background(), filepath.Join(copyDir, "director.store"), filepath.Join(copyDir, "state"),
+			filepath.Join(copyDir, "config.toml"), a.Now); err == nil {
 			counts = lanternCounts(status)
 		}
 		_, _ = fmt.Fprint(a.Stdout, lanterns.Band(counts))

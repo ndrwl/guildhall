@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -101,7 +102,7 @@ func TestDirectorStatusMaintenance(t *testing.T) {
 	st = status()
 	want := []string{
 		": note audit due: 3 sessions since the upgrade (session 5) | guildhall director maintenance record --notes --summary <text>",
-		"app: hallmark due: 5 merged since the upgrade | guildhall director maintenance record --hallmark --repo app --task <id> --summary <text>",
+		"app: hallmark due: 5 merged since the upgrade | guildhall task new --repo app --kind hallmark --title <text> <id>",
 	}
 	if got := maintenanceItems(st); !slices.Equal(got, want) {
 		t.Fatalf("items = %q\nwant %q", got, want)
@@ -114,23 +115,28 @@ func TestDirectorStatusMaintenance(t *testing.T) {
 		t.Fatalf("maintenance = %+v", m)
 	}
 
-	// Recording each run clears its item; the other repository keeps counting.
+	// Recording the note audit clears its item, and launching a hallmark task clears the hallmark's while it runs; once
+	// it finishes it is the last hallmark. The other repository keeps counting.
 	run := func(args ...string) (int, string, string) {
 		return runCLI(t, append(append([]string{"director", "maintenance"}, args...), "--store", d.store)...)
 	}
 	if code, out, stderr := run("record", "--notes", "--summary", "removed 4 (held by d47, D94, config); proposed 2: d58, skill change"); code != 0 || out != "run 1 recorded\n" {
 		t.Fatalf("record notes: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if code, out, stderr := run("record", "--hallmark", "--repo", "app", "--task", "t-1", "--summary", "hallmark launched"); code != 0 || out != "run 2 recorded\n" {
-		t.Fatalf("record hallmark: exit %d, %q, stderr %s", code, out, stderr)
-	}
+	createHallmarkTask(t, d.store, "app", "h-1")
 	st = status()
 	if items := maintenanceItems(st); len(items) != 0 {
-		t.Fatalf("after recording: items %q; want none", items)
+		t.Fatalf("after recording and launching: items %q; want none", items)
 	}
 	if m := st.Maintenance; m.NoteAudit.LastSession != 8 || m.NoteAudit.LastAt.IsZero() || *m.NoteAudit.SessionsUntilDue != 3 ||
-		m.Hallmarks[0].LastTask != "t-1" || m.Hallmarks[0].MergedSince != 0 || m.Hallmarks[1].LastTask != "" || m.Hallmarks[1].MergedSince != 2 {
-		t.Fatalf("maintenance after recording = %+v", m)
+		m.Hallmarks[0].RunningTask != "h-1" || m.Hallmarks[0].LastTask != "" || m.Hallmarks[0].MergedSince != 5 || m.Hallmarks[1].RunningTask != "" {
+		t.Fatalf("maintenance while the hallmark runs = %+v", m)
+	}
+	finishHallmarkTask(t, d.store, "app", "h-1")
+	st = status()
+	if m := st.Maintenance; len(maintenanceItems(st)) != 0 || m.Hallmarks[0].RunningTask != "" ||
+		m.Hallmarks[0].LastTask != "h-1" || m.Hallmarks[0].MergedSince != 0 || m.Hallmarks[1].LastTask != "" || m.Hallmarks[1].MergedSince != 2 {
+		t.Fatalf("maintenance after the hallmark finished = %+v, items %q", m, maintenanceItems(st))
 	}
 	sendMergedMessages(t, d.store, "web", "w-1", "web-more", 2)
 	sendMergedMessages(t, d.store, "app", "t-1", "after", 3)
@@ -139,7 +145,7 @@ func TestDirectorStatusMaintenance(t *testing.T) {
 	}
 	want = []string{
 		": note audit due: 3 sessions since the last (session 8) | guildhall director maintenance record --notes --summary <text>",
-		"web: hallmark due: 4 merged since the upgrade | guildhall director maintenance record --hallmark --repo web --task <id> --summary <text>",
+		"web: hallmark due: 4 merged since the upgrade | guildhall task new --repo web --kind hallmark --title <text> <id>",
 	}
 	if got := maintenanceItems(status()); !slices.Equal(got, want) {
 		t.Fatalf("items = %q\nwant %q", got, want)
@@ -153,7 +159,8 @@ func TestDirectorStatusMaintenance(t *testing.T) {
 	}
 }
 
-// TestDirectorMaintenanceCommands: record prints the run, list prints the history, and bad flags are usage errors.
+// TestDirectorMaintenanceCommands: record prints the note audit's run, list prints the history with old hallmark
+// runs, and recording a hallmark and bad flags are usage errors.
 func TestDirectorMaintenanceCommands(t *testing.T) {
 	d := newRunDirector(t)
 	run := func(args ...string) (int, string, string) {
@@ -169,25 +176,31 @@ func TestDirectorMaintenanceCommands(t *testing.T) {
 		t.Fatalf("list --json of none: exit %d, %q", code, out)
 	}
 	startMaintenanceSession(t, d.store, 1, store.MaintenancePolicy{NoteAuditEverySessions: 3})
-	for _, args := range [][]string{
-		{"record", "--notes", "--summary", "removed 2; proposed none"},
-		{"record", "--hallmark", "--repo", "app", "--task", "t-1", "--summary", "launched"},
-	} {
-		if code, _, stderr := run(args...); code != 0 {
-			t.Fatalf("%q: exit %d, stderr %s", args, code, stderr)
-		}
+	if code, _, stderr := run("record", "--notes", "--summary", "removed 2; proposed none"); code != 0 {
+		t.Fatalf("record notes: exit %d, stderr %s", code, stderr)
 	}
 	code, out, stderr := run("list")
-	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	if code != 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "1 s1 ") || !strings.HasSuffix(lines[0], " notes: removed 2; proposed none") ||
-		!strings.HasPrefix(lines[1], "2 s1 ") || !strings.HasSuffix(lines[1], " hallmark app/t-1: launched") {
+	if code != 0 || !strings.HasPrefix(out, "1 s1 ") || !strings.HasSuffix(out, " notes: removed 2; proposed none\n") || strings.Count(out, "\n") != 1 {
 		t.Fatalf("list: exit %d, stderr %s\n%s", code, stderr, out)
 	}
-	if code, out, _ := run("list", "--json"); code != 0 || !strings.Contains(out, `"kind":"hallmark","repository":"app","task":"t-1","session":1,"summary":"launched"`) {
+	if code, out, _ := run("list", "--json"); code != 0 || !strings.Contains(out, `"kind":"notes","session":1,"summary":"removed 2; proposed none"`) {
 		t.Fatalf("list --json: exit %d, %s", code, out)
 	}
+	// A hallmark run recorded before hallmarks were recorded when their task finishes still lists.
+	old := store.MaintenanceRun{Sequence: 2, Kind: store.MaintenanceHallmark, Repository: "app", Task: "t-1", Session: 1, Summary: "launched",
+		Time: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
+	if got, want := maintenanceLine(old), "2 s1 2026-10-01T09:00:00Z hallmark app/t-1: launched"; got != want {
+		t.Fatalf("old hallmark line = %q, want %q", got, want)
+	}
+	// Recording a hallmark is retired, with the reason, and records nothing.
+	if code, out, stderr := run("record", "--hallmark", "--repo", "app", "--task", "t-1", "--summary", "launched"); code != 2 || out != "" ||
+		!strings.Contains(stderr, "director maintenance record: hallmarks are recorded when the task finishes") {
+		t.Fatalf("record --hallmark: exit %d, %q, stderr %s; want the usage error", code, out, stderr)
+	}
+	if _, out, _ := run("list"); strings.Count(out, "\n") != 1 {
+		t.Fatalf("list after the refused hallmark:\n%s", out)
+	}
 	for name, args := range map[string][]string{
-		"unknown task":  {"record", "--hallmark", "--repo", "app", "--task", "t-9", "--summary", "x"},
 		"multi-line":    {"record", "--notes", "--summary", "a\nb"},
 		"over 1024":     {"record", "--notes", "--summary", strings.Repeat("x", store.MaxMaintenanceSummaryBytes+1)},
 		"blank summary": {"record", "--notes", "--summary", " "},
@@ -199,10 +212,10 @@ func TestDirectorMaintenanceCommands(t *testing.T) {
 	for name, args := range map[string][]string{
 		"no subcommand":      nil,
 		"unknown":            {"show"},
-		"neither part":       {"record", "--summary", "x"},
-		"both parts":         {"record", "--notes", "--hallmark", "--repo", "app", "--task", "t-1", "--summary", "x"},
+		"no part":            {"record", "--summary", "x"},
+		"with a hallmark":    {"record", "--notes", "--hallmark", "--repo", "app", "--task", "t-1", "--summary", "x"},
 		"notes with a repo":  {"record", "--notes", "--repo", "app", "--summary", "x"},
-		"hallmark no task":   {"record", "--hallmark", "--repo", "app", "--summary", "x"},
+		"hallmark alone":     {"record", "--hallmark", "--summary", "x"},
 		"no summary":         {"record", "--notes"},
 		"record an argument": {"record", "--notes", "--summary", "x", "extra"},
 		"list an argument":   {"list", "extra"},
@@ -248,7 +261,7 @@ func TestDirectorStartRecordsMaintenanceAndListsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	line := "- maintenance: hallmark due: 4 merged since the upgrade; run `guildhall director maintenance record --hallmark --repo app --task <id> --summary <text>`\n"
+	line := "- maintenance: hallmark due: 4 merged since the upgrade; run `guildhall task new --repo app --kind hallmark --title <text> <id>`\n"
 	if !strings.Contains(string(b), line) {
 		t.Errorf("startup.md lacks %q:\n%s", line, b)
 	}

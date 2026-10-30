@@ -143,7 +143,7 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 		if err != nil {
 			return nil, err
 		}
-		closed, err := s.CloseTimes()
+		closes, err := s.TaskCloses()
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +200,7 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 				case err != nil && !errors.Is(err, store.ErrNotFound):
 					return nil, err
 				}
-				pt := pruneTask{ref: ref, state: t.State, closed: closed[ref]}
+				pt := pruneTask{ref: ref, state: t.State, closed: closes[ref].At}
 				if pt.skip, err = p.skipReason(s, pt, dependants[ref], now); err != nil {
 					return nil, err
 				}

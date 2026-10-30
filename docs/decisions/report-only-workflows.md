@@ -23,7 +23,7 @@ Running the test suite needs a per-repository grant for the researcher profile (
 
 ## The previous report is copied once
 
-The first attempt of a hallmark step looks for the newest done task of the repository, by close time, whose bound workflow has a `hallmark` step and recorded a report, and copies that report into the task's documents once as `previous-<step>`, given as the `previous` input.
+The first attempt of a hallmark step looks for the newest done task of the repository, by close time, whose bound workflow has a `hallmark` step and recorded a report, and, since [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md), its `finished` document (`interp.LastHallmark`, which the Director's cadence reads too), and copies that report into the task's documents once as `previous-<step>`, given as the `previous` input.
 It matches a hallmark step rather than a workflow name, so a `[repository.kinds] hallmark` override still continues the ledger.
 Later attempts reuse the copy, and every attempt's binding records it, so a hallmark that finishes later never changes what an earlier attempt was given.
 With no such task the input is absent, and the stage says the report is the repository's first recorded hallmark.
@@ -37,4 +37,5 @@ A repository's `workflow_overrides` are keyed by step id across every workflow i
 
 ## Not decided here
 
-The Guildmaster's "pick follow-ups" decision and recording the maintenance run when a hallmark task starts are follow-up work: the Director reads the report, brings its follow-ups to the Guildmaster, and still runs `director maintenance record --hallmark` after `task start`.
+The Guildmaster's "pick follow-ups" decision is follow-up work: the Director reads the report and brings its follow-ups to the Guildmaster.
+Recording the maintenance run when a hallmark task starts was deferred here too; that part is superseded by [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md): the cadence reads the repository's last done hallmark task, and `director maintenance record --hallmark` is refused.

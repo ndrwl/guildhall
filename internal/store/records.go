@@ -231,9 +231,12 @@ func (s *Store) CreateLegacyTaskForTests(mutationID string, t Task) (Receipt, er
 	return s.createTask(mutationID, t)
 }
 
+// opCreateTask is the operation recorded on a task's create receipt.
+const opCreateTask = "create-task"
+
 func (s *Store) createTask(mutationID string, t Task) (Receipt, error) {
 	t.State = TaskOpen
-	return s.mutate(mutationID, "create-task", t, func(tx *bolt.Tx, r *Receipt) error {
+	return s.mutate(mutationID, opCreateTask, t, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = t.Repository, t.ID, "task"
 		for _, dep := range t.DependsOn {
 			if _, err := getTask(tx, dep.Repository, dep.ID); err != nil {
