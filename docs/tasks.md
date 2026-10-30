@@ -120,6 +120,7 @@ A change reorders the tasks waiting behind the front at once; it never takes the
 
 `task hold-merge <task>` toggles a recorded hold on the task's merge, receipt record `merge-hold`: run once it holds, run again it unholds.
 A held task stays authorized and keeps its ready time, but the [merge queue](interpreter.md#the-merge-queue) skips it; a held front gives up the front at its next advance, and the next task in order may claim it.
+While a Director session runs, its [merge-queue watcher](director.md#merge-queue) runs that advance within one `checks_refresh`, whatever the task last waited on, so a front stuck on a failing push or an unanswered decision still yields the queue.
 Unholding lets the task claim the front again when it is first, in a new stay with three more rebase rounds.
 Every change shows in `task timeline`, and `director status` and `task list --json` show `held`.
 

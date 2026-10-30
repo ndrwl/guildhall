@@ -99,31 +99,67 @@ func dependenciesWaiting(path, state string) func() ([]taskRef, error) {
 }
 
 // mergeQueueWaiting lists, as checksWaiting does, the open tasks whose next.json says they wait in their
-// repository's merge queue (docs/interpreter.md#the-merge-queue).
+// repository's merge queue (docs/interpreter.md#the-merge-queue), and then each repository's held front, whatever
+// its next.json waits on, so its advance releases the front to the next task; each task is listed once.
 func mergeQueueWaiting(path, state string) func() ([]taskRef, error) {
-	return waitingFor(path, state, interp.WaitMergeQueue)
+	return waitingAlso(path, state, interp.WaitMergeQueue, heldFronts)
+}
+
+// heldFronts lists, for each repository of s, the task holding its merge queue's front when that task's merge is
+// held.
+func heldFronts(s *store.Store) ([]taskRef, error) {
+	repos, err := s.Repositories()
+	if err != nil {
+		return nil, err
+	}
+	var out []taskRef
+	for _, repo := range repos {
+		q, err := s.MergeQueue(repo)
+		if err != nil {
+			return nil, err
+		}
+		if q.Front != nil && q.Holds[q.Front.TaskID] {
+			out = append(out, taskRef{repo, q.Front.TaskID})
+		}
+	}
+	return out, nil
 }
 
 // waitingFor lists the open tasks whose next.json under state says wait, while the newest session of the store at
 // path is running or recovering.
 func waitingFor(path, state string, wait interp.Wait) func() ([]taskRef, error) {
+	return waitingAlso(path, state, wait, nil)
+}
+
+// waitingAlso is waitingFor followed by the tasks also lists from the same read of the store, when also is set,
+// each not listed already.
+func waitingAlso(path, state string, wait interp.Wait, also func(*store.Store) ([]taskRef, error)) func() ([]taskRef, error) {
+	type read struct {
+		tasks []store.Task
+		also  []taskRef
+	}
 	return func() ([]taskRef, error) {
-		tasks, err := withStore(path, true, func(s *store.Store) ([]store.Task, error) {
+		r, err := withStore(path, true, func(s *store.Store) (read, error) {
 			d, err := s.LatestDirectorSession()
 			switch {
 			case errors.Is(err, store.ErrNotFound):
 			case err != nil:
-				return nil, err
+				return read{}, err
 			case d.State != store.DirectorRunning && d.State != store.DirectorRecovering:
-				return nil, nil
+				return read{}, nil
 			}
-			return listTasks(s, "")
+			var r read
+			if r.tasks, err = listTasks(s, ""); err != nil || also == nil {
+				return r, err
+			}
+			r.also, err = also(s)
+			return r, err
 		})
 		if err != nil {
 			return nil, err
 		}
 		var out []taskRef
-		for _, t := range tasks {
+		for _, t := range r.tasks {
 			if t.State != store.TaskOpen {
 				continue
 			}
@@ -136,6 +172,11 @@ func waitingFor(path, state string, wait interp.Wait) func() ([]taskRef, error) 
 			var n next
 			if json.Unmarshal(b, &n) == nil && n.Wait == wait {
 				out = append(out, taskRef{t.Repository, t.ID})
+			}
+		}
+		for _, t := range r.also {
+			if !slices.Contains(out, t) {
+				out = append(out, t)
 			}
 		}
 		return out, nil
@@ -158,7 +199,7 @@ func (a *App) watchDependencies(p startPlan, n int, dir, copyDir, storePath, sta
 
 // watchMergeQueue is session n's merge-queue watcher: a third checks watcher, on the same interval, advancing each
 // task waiting in its repository's merge queue, so the next task claims the front once the one ahead merges, with no
-// model turn; it logs to merge-queue.log in dir. Like the others it runs only while the session is running or
+// model turn, and each held front, so its advance releases the front to the next task; it logs to merge-queue.log in dir. Like the others it runs only while the session is running or
 // recovering, so a paused Director pauses the queue.
 func (a *App) watchMergeQueue(p startPlan, n int, dir, copyDir, storePath, state string) (*checksWatch, error) {
 	return a.watchWaiting(p, dir, copyDir, storePath, state, mergeQueueWaiting(storePath, state), mergeQueueLog)

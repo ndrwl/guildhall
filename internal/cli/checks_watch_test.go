@@ -258,6 +258,50 @@ func TestChecksWaitingListsOpenTasksWhileTheSessionWorks(t *testing.T) {
 	}
 }
 
+// TestMergeQueueWaitingListsAHeldFront: the merge-queue watcher's list holds the task at its repository's merge-queue
+// front when its merge is held, whatever its next.json waits on, so its advance releases the front; an unheld front
+// waiting elsewhere is not listed, a held front that also waits in the queue is listed once, and nothing is listed
+// while the session is paused.
+func TestMergeQueueWaitingListsAHeldFront(t *testing.T) {
+	const decision, queued = `{"wait":"decision","step":"deliver","decision":"deliver-1"}`, `{"wait":"merge-queue","step":"deliver"}`
+	for name, c := range map[string]struct {
+		held   bool
+		next   string
+		states []store.DirectorState
+		want   []taskRef
+	}{
+		"held front waiting for a decision":   {true, decision, nil, []taskRef{t1}},
+		"unheld front waiting for a decision": {false, decision, nil, nil},
+		"held front waiting in the queue":     {true, queued, []store.DirectorState{store.DirectorRunning}, []taskRef{t1}},
+		"held front while paused":             {true, decision, []store.DirectorState{store.DirectorRunning, store.DirectorPaused}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := newRunDirector(t)
+			_, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+				if _, err := s.PutDocument("auth", store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "deliver-1-authorized", Path: "tasks/app/t-1/a.json", SHA256: strings.Repeat("0", 64)}); err != nil {
+					return store.Receipt{}, err
+				}
+				if _, err := s.JoinMergeQueue("join", "app", "t-1", "deliver-1", "document/deliver-1-authorized", ""); err != nil {
+					return store.Receipt{}, err
+				}
+				if _, err := s.ClaimMergeFront("front", "app", "t-1"); err != nil {
+					return store.Receipt{}, err
+				}
+				return s.SetMergeHold("hold", "app", "t-1", c.held)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			recordSession(t, d.store, false, c.states...)
+			writeNext(t, d.state, "t-1", c.next+"\n")
+			got, err := mergeQueueWaiting(d.store, d.state)()
+			if err != nil || !slices.Equal(got, c.want) {
+				t.Errorf("waiting = %v, %v; want %v", got, err, c.want)
+			}
+		})
+	}
+}
+
 // validateCopy is a short-pathed Director copy on the fake-validate workflow whose fake Director says it is ready
 // and then waits on its input, over forge f, with task app/t-1 driven by the test to its validate step, where its
 // published head's checks are pending.
