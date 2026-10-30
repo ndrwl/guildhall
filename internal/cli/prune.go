@@ -33,9 +33,9 @@ const pruneHelp = `Usage: guildhall prune [--dry-run] [--repo <name>] [--task <i
   --copy <dir>   Director copy (or GUILDHALL_COPY)
   --dry-run      list what would be pruned and skipped, removing nothing
   --repo <name>  repository filter (default: all)
-  --task <id>    one task (default: every done task)
+  --task <id>    one task (default: every done or cancelled task)
   --help         show this help
-Removes the worktree and the bulky attempt files of each done task closed longer ago than prune_after
+Removes the worktree and the bulky attempt files of each done or cancelled task closed longer ago than prune_after
 (default 336h, 14 days), keeping its store records, recorded documents, result.json, outcome.json and
 prompt/manifest.json (docs/running.md#pruning).
 `
@@ -60,7 +60,7 @@ func boundKept(reason string) string {
 // selfReviewFile is a self-review document's name in the copy's quality directory.
 var selfReviewFile = regexp.MustCompile(`^self-review-([1-9][0-9]*)\.json$`)
 
-// pruner selects the done tasks of a copy that are due a prune and removes their worktrees and bulky attempt files
+// pruner selects the done and cancelled tasks of a copy that are due a prune and removes their worktrees and bulky attempt files
 // (docs/running.md#pruning). The command and the session supervisor's daily prune share it.
 type pruner struct {
 	storePath, state, quality string
@@ -99,6 +99,8 @@ func (a *App) pruner(cfg *config.Config, copyDir string) (*pruner, error) {
 // pruneResult is what a prune did, or would do, with one task.
 type pruneResult struct {
 	Task store.TaskRef
+	// State is the task's state, done or cancelled.
+	State store.TaskState
 	// Skip is why the task was left alone; empty when it was pruned.
 	Skip string
 	// Bytes is what was freed, or would be.
@@ -114,9 +116,10 @@ func (r pruneResult) complete() bool {
 	return r.Skip == "" && r.Worktree == store.WorktreeRemoved && len(r.Failed) == 0 && len(r.Panes) == 0
 }
 
-// pruneTask is a done task the store does not record as pruned completely.
+// pruneTask is a done or cancelled task the store does not record as pruned completely.
 type pruneTask struct {
 	ref    store.TaskRef
+	state  store.TaskState
 	closed time.Time
 	// skip is why it is not prunable, empty when it is.
 	skip string
@@ -129,7 +132,7 @@ func (p *pruner) clock() time.Time {
 	return time.Now()
 }
 
-// selectTasks lists, in repository then id order, every done task of repository (all when empty) and taskID (all
+// selectTasks lists, in repository then id order, every done or cancelled task of repository (all when empty) and taskID (all
 // when empty) that is not pruned completely, each with why it is not prunable now, if it is not. A task named by
 // taskID that is open or pruned completely is listed with that as its reason.
 func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
@@ -172,7 +175,7 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 				}
 				ref := store.TaskRef{Repository: repo, ID: t.ID}
 				named := taskID != ""
-				if t.State != store.TaskDone {
+				if t.State != store.TaskDone && t.State != store.TaskCancelled {
 					if named {
 						out = append(out, pruneTask{ref: ref, skip: "task is " + string(t.State)})
 					}
@@ -187,7 +190,7 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 				case err != nil && !errors.Is(err, store.ErrNotFound):
 					return nil, err
 				}
-				pt := pruneTask{ref: ref, closed: closed[ref]}
+				pt := pruneTask{ref: ref, state: t.State, closed: closed[ref]}
 				if pt.skip, err = p.skipReason(s, pt, dependants[ref], now); err != nil {
 					return nil, err
 				}
@@ -198,8 +201,8 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 	})
 }
 
-// skipReason is why the done task t is not prunable now, or empty when it is: too recent, an open dependant, an
-// unanswered audit, a pending self-review, an unfinished attempt, an unreleased ownership record or a repository the
+// skipReason is why the done or cancelled task t is not prunable now, or empty when it is: too recent, an open
+// dependant, an unanswered audit that is not void, a pending self-review, an unfinished attempt, an unreleased ownership record or a repository the
 // config does not list.
 func (p *pruner) skipReason(s *store.Store, t pruneTask, dependants []store.TaskRef, now time.Time) (string, error) {
 	repo, id := t.ref.Repository, t.ref.ID
@@ -219,7 +222,7 @@ func (p *pruner) skipReason(s *store.Store, t pruneTask, dependants []store.Task
 		return "", err
 	}
 	for _, d := range decisions {
-		if d.Kind == store.DecisionAudit && !d.Answered {
+		if d.Kind == store.DecisionAudit && d.Open() {
 			return "audit " + d.ID + " open", nil
 		}
 	}
@@ -285,7 +288,7 @@ func (p *pruner) run(ctx context.Context, repository, taskID string, dry bool, k
 	var out []pruneResult
 	for _, t := range tasks {
 		if t.skip != "" {
-			out = append(out, pruneResult{Task: t.ref, Skip: t.skip})
+			out = append(out, pruneResult{Task: t.ref, State: t.state, Skip: t.skip})
 			continue
 		}
 		var r pruneResult
@@ -315,7 +318,7 @@ func (p *pruner) taskDir(t store.TaskRef) string {
 // inspect is what pruning t would do, removing nothing and taking no lock: a work directory with a .git file is
 // taken for a worktree Retire removes, so a dry run cannot foresee a worktree a real run keeps.
 func (p *pruner) inspect(t pruneTask) (pruneResult, error) {
-	r := pruneResult{Task: t.ref, Worktree: store.WorktreeRemoved}
+	r := pruneResult{Task: t.ref, State: t.state, Worktree: store.WorktreeRemoved}
 	h, err := withRecords(storeRecords{path: p.storePath, wait: p.wait}, true, nil, func(s *store.Store) (store.TaskHistory, error) {
 		return s.TaskHistory(t.ref.Repository, t.ref.ID)
 	})
@@ -343,7 +346,7 @@ func (p *pruner) inspect(t pruneTask) (pruneResult, error) {
 // pruneLocked prunes t under its task lock, checking again under the lock that it is prunable, and records the
 // prune once removal has finished.
 func (p *pruner) pruneLocked(ctx context.Context, t pruneTask) (pruneResult, error) {
-	r := pruneResult{Task: t.ref}
+	r := pruneResult{Task: t.ref, State: t.state}
 	dir := p.taskDir(t.ref)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return r, err
@@ -400,7 +403,10 @@ func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory
 	}
 	r.Worktree = store.WorktreeRemoved
 	if head == "" {
-		if exists {
+		switch {
+		case exists && h.Task.State == store.TaskCancelled:
+			r.Worktree, r.Kept = store.WorktreeKept, "the task was cancelled unmerged, so no merge record names a head its work is safe at"
+		case exists:
 			r.Worktree, r.Kept = store.WorktreeKept, "no merge record names the head the task merged at"
 		}
 		return nil
@@ -748,8 +754,8 @@ func pruneKeptMessage(r pruneResult) store.Message {
 	if len(id) > 100 {
 		id = store.MessagePruneKept + "." + digest.Of([]byte(id)).Hex()
 	}
-	text := fmt.Sprintf("The daily prune left the working directory of done task %s/%s, because %s. Its attempt files were pruned; the Director decides what happens to the working directory.",
-		r.Task.Repository, r.Task.ID, boundKept(r.Kept))
+	text := fmt.Sprintf("The daily prune left the working directory of %s task %s/%s, because %s. Its attempt files were pruned; the Director decides what happens to the working directory.",
+		r.State, r.Task.Repository, r.Task.ID, boundKept(r.Kept))
 	return store.Message{ID: id, Recipient: store.RecipientDirector, Repository: r.Task.Repository, TaskID: r.Task.ID,
 		Type: store.MessagePruneKept, Text: text}
 }

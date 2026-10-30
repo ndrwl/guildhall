@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"io"
 	"os"
@@ -53,6 +54,8 @@ Commands:
                  create, list, show and inspect Director tasks and record rulings, full-review requests, priorities and merge holds
   task start --store <path> --config <file> --state <dir> ...
                  advance a task, launching its next ready stage
+  task cancel --store <path> --config <file> --state <dir> --reason <text> ...
+                 end an open task for good, closing its pull request and voiding its decisions
   step done --store <path> --config <file> --state <dir> ...
                  take one attempt's result file and advance its task
   step finish --store <path> --config <file> --state <dir> ...
@@ -152,6 +155,9 @@ type App struct {
 	// Forge publishes and merges task branches for task start and step done; nil means forge.GitHub over git
 	// and gh found on PATH.
 	Forge interp.Forge
+	// StopAttempt stops a running Artisan attempt of a task task cancel cancels; nil means launch.Stop, as
+	// artisan stop runs.
+	StopAttempt func(ctx context.Context, a launch.Attempt) (launch.StopReport, error)
 	// Workspaces makes each task's working directory a worktree of its repository for task start, step done and
 	// step retry; nil means git.Program over git found on PATH.
 	Workspaces interp.Workspaces
@@ -267,6 +273,9 @@ func (a *App) Run(args []string) int {
 	case "task":
 		if len(rest) > 0 && rest[0] == "start" {
 			return a.taskStart(rest[1:])
+		}
+		if len(rest) > 0 && rest[0] == "cancel" {
+			return a.taskCancel(rest[1:])
 		}
 		return a.task(rest)
 	case "step":

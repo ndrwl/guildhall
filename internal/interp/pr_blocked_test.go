@@ -30,7 +30,7 @@ func TestMergeabilityWaitsForDirectorOncePerHeadAndState(t *testing.T) {
 				for _, text := range messages {
 					if strings.Contains(text, "State: "+state) {
 						found = true
-						for _, required := range []string{head, baseHead, "https://forge.invalid/1", "docs/contracts/cli.md", "2", "step send-back", "hold", "abandoning"} {
+						for _, required := range []string{head, baseHead, "https://forge.invalid/1", "docs/contracts/cli.md", "2", "step send-back", "hold", "guildhall task cancel --reason <reason> --repo app t7"} {
 							if !strings.Contains(text, required) {
 								t.Errorf("missing %q in %s", required, text)
 							}

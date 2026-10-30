@@ -81,6 +81,9 @@ func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer stri
 		if d.Answered {
 			return fmt.Errorf("%w: decision %q is already answered", store.ErrInvalid, id)
 		}
+		if d.Void {
+			return fmt.Errorf("%w: decision %q is void", store.ErrInvalid, id)
+		}
 		if len(d.Options) > 0 {
 			first, rest, _ := strings.Cut(answer, "\n")
 			first = strings.TrimSuffix(first, "\r")
@@ -90,6 +93,59 @@ func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer stri
 			d.Choice, d.Note = first, strings.TrimSpace(rest)
 		}
 		d.Answered, d.Answer = true, answer
+		return nil
+	})
+}
+
+// VoidDecision voids an unanswered decision, as store.VoidDecision does.
+func (r *Records) VoidDecision(mutationID, repository, taskID, id, reason string) (store.Receipt, error) {
+	if strings.TrimSpace(reason) == "" {
+		return store.Receipt{}, fmt.Errorf("%w: void reason must not be empty", store.ErrInvalid)
+	}
+	req := struct{ Repository, TaskID, ID, Reason string }{repository, taskID, id, reason}
+	return r.mutate(mutationID, "void-decision", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, "decision/"+id
+		i := slices.IndexFunc(r.decisions, func(d store.Decision) bool {
+			return d.Repository == repository && d.TaskID == taskID && d.ID == id
+		})
+		if i < 0 {
+			return fmt.Errorf("decision %q: %w", id, store.ErrNotFound)
+		}
+		d := &r.decisions[i]
+		switch {
+		case d.Void:
+			body, _ := json.Marshal(req)
+			for _, prior := range r.receipts {
+				if prior.op == "void-decision" && prior.req == string(body) {
+					return standing{prior.r}
+				}
+			}
+			return fmt.Errorf("%w: decision %q is already void", store.ErrInvalid, id)
+		case d.Answered:
+			return fmt.Errorf("%w: decision %q is answered", store.ErrInvalid, id)
+		}
+		d.Void, d.VoidReason = true, reason
+		return nil
+	})
+}
+
+// CancelTask cancels an open task with its reason and the receipt's time, as store.CancelTask does.
+func (r *Records) CancelTask(mutationID, repository, taskID, reason string) (store.Receipt, error) {
+	if strings.TrimSpace(reason) == "" {
+		return store.Receipt{}, fmt.Errorf("%w: cancel reason must not be empty", store.ErrInvalid)
+	}
+	req := struct{ Repository, TaskID, Reason string }{repository, taskID, reason}
+	return r.mutate(mutationID, "cancel-task", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, "task"
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		}
+		t.State, t.CancelReason, t.CancelledAt = store.TaskCancelled, reason, r.now()
+		r.tasks[[2]string{repository, taskID}] = t
 		return nil
 	})
 }
@@ -757,6 +813,10 @@ type RecordsHarness struct {
 	SetTaskPriority func(mutationID, repository, taskID string, p store.Priority) (store.Receipt, error)
 	// PauseDirector pauses the Director, so a start with AttemptCaps.Hold is refused with store.ErrDirectorHeld.
 	PauseDirector func() error
+	// CancelTask and VoidDecision are `guildhall task cancel`'s writes, as store.CancelTask and store.VoidDecision
+	// make them; nil skips the cancel cases.
+	CancelTask   func(mutationID, repository, taskID, reason string) (store.Receipt, error)
+	VoidDecision func(mutationID, repository, taskID, id, reason string) (store.Receipt, error)
 	// Clock stamps the receipts Records writes, so it decides the day the daily cap counts.
 	Clock *Clock
 	// Writers and Operations size the concurrent case, defaulting to 4 writers of 30 operations each;
@@ -770,7 +830,7 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
 		RequestFullReview: r.RequestFullReview, OverrideDependencies: r.OverrideDependencies, SetTaskPriority: r.SetTaskPriority,
-		PauseDirector: r.PauseDirector, Clock: clock}
+		PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
 }
 
 // Clock is a settable clock for a RecordsHarness; until Set it reads wall time.
@@ -1352,5 +1412,93 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		want(t, "SetTaskState of a closed task", err, store.ErrInvalid)
 		_, err = h.Records.StartAttempt("start-closed", "app", "t7", "plan")
 		want(t, "StartAttempt on a closed task", err, store.ErrInvalid)
+	})
+
+	t.Run("cancels an open task once with its reason and time", func(t *testing.T) {
+		h := setup(t)
+		if h.CancelTask == nil {
+			t.Skip("the harness records no cancels")
+		}
+		_, err := h.CancelTask("cancel-x", "app", "t8", "Duplicate.")
+		want(t, "CancelTask of an unknown task", err, store.ErrNotFound)
+		_, err = h.CancelTask("cancel-blank", "app", "t7", " ")
+		want(t, "CancelTask without a reason", err, store.ErrInvalid)
+		at := time.Date(2031, 3, 10, 8, 30, 0, 0, time.UTC)
+		h.Clock.Set(at)
+		rc, err := h.CancelTask("cancel.app.t7", "app", "t7", "Duplicate of t3.")
+		if err != nil || rc.Record != "task" || rc.Repository != "app" || rc.TaskID != "t7" {
+			t.Fatalf("CancelTask = %+v, %v", rc, err)
+		}
+		h.Clock.Set(at.Add(time.Hour))
+		if replay, err := h.CancelTask("cancel.app.t7", "app", "t7", "Duplicate of t3."); err != nil || replay != rc {
+			t.Fatalf("replay = %+v, %v; want %+v", replay, err, rc)
+		}
+		got, err := h.Records.Task("app", "t7")
+		if err != nil || got.State != store.TaskCancelled || got.CancelReason != "Duplicate of t3." || !got.CancelledAt.Equal(at) {
+			t.Errorf("Task after cancelling = %+v, %v; want cancelled with the reason at %v", got, err, at)
+		}
+		_, err = h.CancelTask("cancel-again", "app", "t7", "Duplicate of t3.")
+		want(t, "CancelTask of a cancelled task", err, store.ErrInvalid)
+		_, err = h.Records.SetTaskState("close-cancelled", "app", "t7", store.TaskDone)
+		want(t, "SetTaskState of a cancelled task", err, store.ErrInvalid)
+		_, err = h.Records.StartAttempt("start-cancelled", "app", "t7", "plan")
+		want(t, "StartAttempt on a cancelled task", err, store.ErrInvalid)
+		_, err = h.Records.StartAttempt("judge-cancelled", "app", "t7", workflow.JudgeStep)
+		want(t, "a judge attempt on a cancelled task", err, store.ErrInvalid)
+	})
+
+	t.Run("refuses to cancel a done task", func(t *testing.T) {
+		h := setup(t)
+		if h.CancelTask == nil {
+			t.Skip("the harness records no cancels")
+		}
+		if _, err := h.Records.SetTaskState("done", "app", "t7", store.TaskDone); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.CancelTask("cancel.app.t7", "app", "t7", "Too late.")
+		want(t, "CancelTask of a done task", err, store.ErrInvalid)
+		if got, err := h.Records.Task("app", "t7"); err != nil || got.State != store.TaskDone || got.CancelReason != "" || !got.CancelledAt.IsZero() {
+			t.Errorf("Task = %+v, %v; want it done, without a cancel", got, err)
+		}
+	})
+
+	t.Run("voids an open decision once, which then refuses an answer", func(t *testing.T) {
+		h := setup(t)
+		if h.VoidDecision == nil {
+			t.Skip("the harness records no voids")
+		}
+		open := func(id string) {
+			t.Helper()
+			d := store.Decision{Repository: "app", TaskID: "t7", ID: id, Kind: store.DecisionQuestion, Question: "Which?"}
+			if _, err := h.Records.OpenDecision("open-"+id, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+		open("q-1")
+		open("q-2")
+		if _, err := h.AnswerDecision("answer-q-2", "app", "t7", "q-2", "This one."); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.VoidDecision("void-x", "app", "t7", "q-9", "Cancelled.")
+		want(t, "VoidDecision of an unknown decision", err, store.ErrNotFound)
+		_, err = h.VoidDecision("void-q-2", "app", "t7", "q-2", "Cancelled.")
+		want(t, "VoidDecision of an answered decision", err, store.ErrInvalid)
+		rc, err := h.VoidDecision("void-q-1", "app", "t7", "q-1", "Cancelled.")
+		if err != nil || rc.Record != "decision/q-1" {
+			t.Fatalf("VoidDecision = %+v, %v", rc, err)
+		}
+		for _, m := range []string{"void-q-1", "void-q-1-again"} {
+			if again, err := h.VoidDecision(m, "app", "t7", "q-1", "Cancelled."); err != nil || again != rc {
+				t.Errorf("VoidDecision again under %s = %+v, %v; want %+v", m, again, err, rc)
+			}
+		}
+		_, err = h.VoidDecision("void-q-1-other", "app", "t7", "q-1", "Another reason.")
+		want(t, "VoidDecision of a void decision with another reason", err, store.ErrInvalid)
+		_, err = h.AnswerDecision("answer-q-1", "app", "t7", "q-1", "Too late.")
+		want(t, "AnswerDecision of a void decision", err, store.ErrInvalid)
+		got, err := h.Records.Decisions("app", "t7")
+		if err != nil || len(got) != 2 || !got[0].Void || got[0].VoidReason != "Cancelled." || got[0].Answered || got[0].Open() || got[1].Void || got[1].Open() {
+			t.Errorf("Decisions = %+v, %v; want q-1 void and unanswered, q-2 answered", got, err)
+		}
 	})
 }

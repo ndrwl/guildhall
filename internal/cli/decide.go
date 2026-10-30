@@ -113,7 +113,7 @@ func (a *App) decide(args []string) int {
 	case "show":
 		out, err = findDecision(s, *repo, *task, *id)
 	case "answer":
-		out, err = s.AnswerDecision(mutationID("decision-answer", *repo, *task, *id), *repo, *task, *id, answer)
+		out, err = answerDecision(s, *repo, *task, *id, answer)
 	}
 	if cerr := s.Close(); err == nil {
 		err = cerr
@@ -143,12 +143,26 @@ func openDecisions(s *store.Store, repo string) ([]store.Decision, error) {
 			return nil, err
 		}
 		for _, d := range all {
-			if !d.Answered {
+			if d.Open() {
 				out = append(out, d)
 			}
 		}
 	}
 	return out, nil
+}
+
+// answerDecision records an answer unless the decision's task is cancelled: a cancelled task's decisions are void
+// and nothing waits for them (docs/tasks.md#task-cancel). A done task's decisions, such as its audit, are answered
+// as any other.
+func answerDecision(s *store.Store, repo, task, id, answer string) (store.Receipt, error) {
+	t, err := s.Task(repo, task)
+	if err != nil {
+		return store.Receipt{}, err
+	}
+	if t.State == store.TaskCancelled {
+		return store.Receipt{}, fmt.Errorf("task %s/%s is cancelled (%s); its decisions are not answered", repo, task, t.CancelReason)
+	}
+	return s.AnswerDecision(mutationID("decision-answer", repo, task, id), repo, task, id, answer)
 }
 
 func findDecision(s *store.Store, repo, task, id string) (store.Decision, error) {

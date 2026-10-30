@@ -46,6 +46,8 @@ type runDirector struct {
 	advanceContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 	// installSkills, when set, installs the release skills; otherwise none are.
 	installSkills func(string) error
+	// stopAttempt, when set, is the App's StopAttempt.
+	stopAttempt func(context.Context, launch.Attempt) (launch.StopReport, error)
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -119,6 +121,7 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app.InstallBaseline = baseline.Install
 	app.Forge = d.forge
 	app.AdvanceContext = d.advanceContext
+	app.StopAttempt = d.stopAttempt
 	if d.workspaces != nil {
 		app.Workspaces = d.workspaces
 	}

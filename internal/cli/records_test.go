@@ -64,6 +64,12 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 		SetTaskPriority: func(m, repo, id string, p store.Priority) (store.Receipt, error) {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.SetTaskPriority(m, repo, id, p) })
 		},
+		CancelTask: func(m, repo, id, reason string) (store.Receipt, error) {
+			return withStoreClock(path, false, clock.Now, func(s *store.Store) (store.Receipt, error) { return s.CancelTask(m, repo, id, reason) })
+		},
+		VoidDecision: func(m, repo, id, decision, reason string) (store.Receipt, error) {
+			return write(func(s *store.Store) (store.Receipt, error) { return s.VoidDecision(m, repo, id, decision, reason) })
+		},
 		PauseDirector: func() error {
 			_, err := write(func(s *store.Store) (store.Receipt, error) { return store.Receipt{}, interptest.PauseStoreDirector(s) })
 			return err

@@ -295,6 +295,45 @@ func TestGitHubArguments(t *testing.T) {
 	}
 }
 
+// TestGitHubCloseArguments pins what closing a cancelled task's pull request asks gh for: pr close of the number
+// on the repository named from the remote, with the comment, and never --delete-branch, so the branch is kept.
+func TestGitHubCloseArguments(t *testing.T) {
+	g := newGitHub(t)
+	h := g.harness
+	ctx := context.Background()
+	pr, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: remote, Branch: "guildhall/t7", Head: h.Heads[0], Title: "Task t7", Body: "Body text"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const comment = "Cancelled by Guildhall: duplicate of t3"
+	if _, err := h.Forge.Close(ctx, forge.Close{Repository: h.Repository, Remote: remote, Number: pr.Number, Comment: comment}); err != nil {
+		t.Fatal(err)
+	}
+	s := g.readState(t)
+	closes := slices.DeleteFunc(slices.Clone(s.Calls), func(c []string) bool { return len(c) < 2 || c[0] != "pr" || c[1] != "close" })
+	if len(closes) != 1 {
+		t.Fatalf("pr close calls = %q, want one", closes)
+	}
+	c := closes[0]
+	t.Logf("gh %q", c)
+	t.Run("installed-gh-flags", func(t *testing.T) { checkInstalledGHFlags(t, c) })
+	if c[2] != strconv.Itoa(pr.Number) || !slices.Equal(flagValues(c, "--repo", "--comment"), []string{"github.com/acme/widgets", comment}) {
+		t.Errorf("pr close = %q, want number %d, --repo and --comment", c, pr.Number)
+	}
+	if slices.Contains(c, "--delete-branch") || slices.Contains(c, "-d") {
+		t.Errorf("pr close %q deletes the branch", c)
+	}
+	if got := s.PRs[0].CloseComment; got != comment {
+		t.Errorf("close comment = %q, want %q", got, comment)
+	}
+	if _, err := h.Forge.Close(ctx, forge.Close{Repository: h.Repository, Remote: remote, Number: pr.Number, Comment: comment}); err != nil {
+		t.Fatal(err)
+	}
+	if again := g.readState(t).Calls; slices.ContainsFunc(again[len(s.Calls):], func(c []string) bool { return len(c) > 1 && c[1] == "close" }) {
+		t.Errorf("a repeated close ran pr close again: %q", again[len(s.Calls):])
+	}
+}
+
 // TestGitHubCheckStates: every check run status and conclusion and every commit status state GitHub reports
 // maps to pending, passed or failed, a commit status is named by its context, and the checks are sorted.
 func TestGitHubCheckStates(t *testing.T) {
@@ -603,6 +642,8 @@ type ghPR struct {
 	// Title and Body are what pr create and pr edit set.
 	Title string `json:"title"`
 	Body  string `json:"body"`
+	// CloseComment is the comment pr close posted.
+	CloseComment string `json:"close_comment,omitempty"`
 }
 
 func loadState(file string) (ghState, error) {
@@ -774,6 +815,22 @@ func runGH(s *ghState, bare string, args []string) int {
 			return code
 		}
 		return out(view(*p))
+	case "pr close":
+		p, code := number()
+		if p == nil {
+			return code
+		}
+		switch {
+		case flags["--comment"] == "":
+			return fail(2, "fake gh: close without --comment")
+		case p.State == "MERGED":
+			return fail(1, "X Pull request acme/widgets#%d can't be closed because it was already merged", p.Number)
+		case p.State == "CLOSED":
+			fmt.Fprintf(os.Stderr, "! Pull request acme/widgets#%d is already closed\n", p.Number)
+			return 0
+		}
+		p.State, p.CloseComment = "CLOSED", flags["--comment"]
+		return 0
 	default: // pr merge
 		p, code := number()
 		if p == nil {

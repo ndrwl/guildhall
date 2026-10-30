@@ -468,7 +468,7 @@ Both modes use the same owned launcher, result recording, spend accounting, guar
 The pane runs an internal `artisan start --pane-launch` bridge that starts the owned launcher detached from the terminal, with no terminal input and its output appended to `launcher.log`, and streams that log into the pane.
 The [Claude adapter](adapters.md#claude-adapter) defines the plain live stream's contents and limits; richer formatting is a later stage.
 This is a watchable print-mode Artisan, not an interactive model session.
-Closing the workspace or tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or task cancellation to stop work.
+Closing the workspace or tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or [`task cancel`](tasks.md#task-cancel) to stop work.
 After the launcher and its watcher finish, the bridge prints a finished line and leaves the Herdr workspace open for inspection until the Director session supervisor's workspace close sweep closes it.
 The launcher passes the bridge the effective `artisan_workspace_close_after` as the internal `--workspace-close-after` flag, so the line states it: `This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open.`, or, when the setting is `0`, that the Herdr workspace stays open.
 A person may close the presentation sooner without losing the attempt's log, result or isolated copy.

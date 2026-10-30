@@ -30,8 +30,10 @@ type Fake struct {
 	// logs and logErrs are each job's log and log failure.
 	logs    map[string][]byte
 	logErrs map[string]error
-	// publishes, merges and logReads count calls, and edits the publishes that changed an open pull request's text.
-	publishes, merges, logReads, edits int
+	// comments are the comments of the closes that closed a pull request.
+	comments []string
+	// publishes, merges, closes and logReads count calls, and edits the publishes that changed an open pull request's text.
+	publishes, merges, closes, logReads, edits int
 }
 
 // text is a pull request's title and body.
@@ -262,6 +264,38 @@ func (f *Fake) Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, err
 	sum := sha1.Sum([]byte("merge " + pr.Head))
 	pr.State, pr.MergeCommit = forge.Merged, hex.EncodeToString(sum[:])
 	f.setBranch(m.Remote, f.bases[m.Remote], pr.MergeCommit)
+	return *pr, nil
+}
+
+// Closes returns how many times Close was called, and the comment of each close that closed a pull request, in
+// order.
+func (f *Fake) Closes() (closes int, comments []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closes, slices.Clone(f.comments)
+}
+
+// Close implements forge.GitHub.Close's contract.
+func (f *Fake) Close(ctx context.Context, c forge.Close) (forge.PullRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closes++
+	if err := c.Validate(); err != nil {
+		return forge.PullRequest{}, err
+	}
+	prs := f.prs[c.Remote]
+	if c.Number > len(prs) {
+		return forge.PullRequest{}, fmt.Errorf("fake forge: no pull request %d on %s", c.Number, c.Remote)
+	}
+	pr := &prs[c.Number-1]
+	switch pr.State {
+	case forge.Closed:
+		return *pr, nil
+	case forge.Merged:
+		return forge.PullRequest{}, fmt.Errorf("%w: pull request %d is merged", forge.ErrRefused, pr.Number)
+	}
+	pr.State = forge.Closed
+	f.comments = append(f.comments, c.Comment)
 	return *pr, nil
 }
 

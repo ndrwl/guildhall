@@ -561,6 +561,7 @@ The document has these sections:
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
   While it is `recovering` or `running` with no bound Herdr pane, a `no_pane` item follows, since no wake can reach it and messages wait until its next turn; `guildhall director start --tab`, once this session is stopped ([start](#start)).
   Done and cancelled tasks contribute no `advance`, `retry`, `resume`, `director`, `paused`, `checks` or `dependencies` item.
+  A [cancelled](tasks.md#task-cancel) task's decisions are void, so it contributes no `decision` item either: only its unread messages count, in `messages`, until they are read.
   A park leaves an `advance` or `paused` item in place: a failure never taken still needs taking, and a retry asked for while paused wins over a park.
 - `parked`: the attempts the Director [parked](running.md#step-park-and-step-unpark), held on purpose and so not in `needs_me`, in repository, task, step and attempt order, each with its `repository`, `task_id`, `step`, `attempt`, `outcome`, `reason`, `parked_at`, the commit time of its newest park, and the `command` to run when the hold ends, `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`.
   A park counts only while it is parked, its task is open and its attempt is still the step's latest, finished `failed` or `stopped`; a park whose attempt was retried, whose task closed or that was unparked is ignored ([decision](decisions/0092-park-attempt.md)).

@@ -367,6 +367,70 @@ func TestPruneSelection(t *testing.T) {
 	}
 }
 
+// TestPruneCancelledTask: a cancelled task is selected like a done one, from its cancel-task receipt, a voided audit
+// does not hold it, and its unmerged worktree and branch are kept, saying it was cancelled, while its attempt files
+// are pruned.
+func TestPruneCancelledTask(t *testing.T) {
+	f := newPruneFixture(t)
+	for _, id := range []string{"t-cancelled", "t-recent"} {
+		f.task("app", id)
+	}
+	k := f.attempt("app", "t-cancelled", "build", store.AttemptStopped, nil)
+	w := f.workspace("t-cancelled")
+	if err := os.MkdirAll(filepath.Dir(w.Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := (git.Program{}).Ensure(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	writeTree(t, filepath.Join(w.Dir, "change.txt"), "change\n")
+	f.git(w.Dir, "add", "change.txt")
+	f.git(w.Dir, "commit", "-q", "-m", "change")
+	f.mutate(func(s *store.Store) error {
+		if _, err := s.OpenDecision(f.id(), store.Decision{Repository: "app", TaskID: "t-cancelled", ID: "audit", Kind: store.DecisionAudit,
+			Subject: &store.Subject{Kind: store.SubjectHead, Digest: strings.Repeat("a", 40)}, Options: []string{"yes", "no"}, Question: "Audit?"}); err != nil {
+			return err
+		}
+		if _, err := s.VoidDecision(f.id(), "app", "t-cancelled", "audit", "duplicate"); err != nil {
+			return err
+		}
+		_, err := s.CancelTask(f.id(), "app", "t-cancelled", "duplicate")
+		return err
+	})
+	f.at = f.now.Add(-time.Hour)
+	f.mutate(func(s *store.Store) error {
+		_, err := s.CancelTask(f.id(), "app", "t-recent", "duplicate")
+		return err
+	})
+
+	got := f.run(false)
+	want := map[string]string{"app/t-cancelled": "", "app/t-recent": "too recent: closed 2026-10-16, prunable from 2026-10-30"}
+	if s := skips(got); !mapsEqual(s, want) {
+		t.Fatalf("prune = %v\nwant %v", s, want)
+	}
+	var r pruneResult
+	for _, g := range got {
+		if g.Task.ID == "t-cancelled" {
+			r = g
+		}
+	}
+	if r.State != store.TaskCancelled || r.Worktree != store.WorktreeKept || !strings.Contains(r.Kept, "cancelled unmerged") || r.complete() {
+		t.Fatalf("t-cancelled = %+v, want its worktree kept as cancelled", r)
+	}
+	if _, err := os.Lstat(w.Dir); err != nil {
+		t.Errorf("worktree: %v, want it kept", err)
+	}
+	if exec.Command("git", "-C", f.repository, "show-ref", "--verify", "--quiet", "refs/heads/"+w.Branch).Run() != nil {
+		t.Errorf("branch %s was removed", w.Branch)
+	}
+	if left := listFiles(t, k.Dir(f.state)); len(left) != len(keptFiles) {
+		t.Errorf("attempt left %q", left)
+	}
+	if m := pruneKeptMessage(r); !strings.Contains(m.Text, "of cancelled task app/t-cancelled") {
+		t.Errorf("kept message %q", m.Text)
+	}
+}
+
 func mapsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false
