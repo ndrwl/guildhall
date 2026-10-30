@@ -11,6 +11,7 @@ A `claude` profile named `builder`, `planner`, `reviewer` or `researcher` that d
 - each gets read-only git: `Bash(git <command>:*)` for `status`, `diff`, `log`, `show`, `rev-list` and `merge-base`;
 - `builder` also gets `git add`, `git commit`, `git fetch`, `git rebase` and `git switch`;
 - `researcher` also gets `WebSearch` and `WebFetch`.
+- Amended by d50: `reviewer` also gets `Bash(guildhall review check:*)`, so it can check its review outcome as intake will before it finishes.
 
 No default grants `git checkout`, which can discard work and which `git switch` covers for branch moves, or `git push`, which the publish stage does.
 The build stage guide tells the builder to use `git switch` and that it may not push.

@@ -209,11 +209,12 @@ The shipped default grants are the grants of the five [role profiles](configurat
 | `builder` | read-only git, plus `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git fetch:*)`, `Bash(git rebase:*)` and `Bash(git switch:*)` |
 | `rebaser` | read-only git, plus `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git fetch:*)` and `Bash(git rebase:*)` |
 | `planner` | read-only git |
-| `reviewer` | read-only git |
+| `reviewer` | read-only git, plus `Bash(guildhall review check:*)` |
 | `researcher` | read-only git, plus `WebSearch` and `WebFetch` |
 
 Read-only git is `Bash(git <command>:*)` for `status`, `diff`, `log`, `show`, `rev-list`, `merge-base` and `ls-files`.
 No default grants `git checkout`, which can discard work, `git push`, which the publish stage does, or any toolchain command; a profile of any other name, or of another adapter, gets no default.
+The reviewer's `guildhall review check` checks its review outcome as intake will before it finishes, as the [`guildhall-review`](../skills/guildhall-review/SKILL.md) skill requires; a copy profile that sets its own `allowed_tools` for a reviewer must add `Bash(guildhall review check:*)` to them.
 The rules come only from the Guildhall release and the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file, repository file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
 
 A repository's checks are a repository grant, which needs no `[profile.*]` section for a shipped profile. The suggested one for a Go repository's builder, `claude.SuggestedGoAllowedTools`, runs `go test` and `go vet`; its git comes from the builder's default, and the reviewer and rebaser may run the tests too:

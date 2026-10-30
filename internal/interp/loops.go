@@ -407,10 +407,8 @@ func (r *run) checkOutcome(s workflow.Step, n int, data []byte) (*workflow.Revie
 	if err != nil || prev == nil {
 		return o, err
 	}
-	for _, f := range prev.Findings {
-		if !slices.ContainsFunc(o.Dispositions, func(d workflow.Disposition) bool { return d.Finding == f.ID }) {
-			return nil, rejectOutput(fmt.Errorf("%w: previous finding %q has no disposition", ErrOutcome, f.ID))
-		}
+	if err := o.Covers(*prev); err != nil {
+		return nil, rejectOutput(fmt.Errorf("%w: %v", ErrOutcome, err))
 	}
 	return o, nil
 }
