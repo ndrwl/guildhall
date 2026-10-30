@@ -46,6 +46,9 @@ type directorStatus struct {
 	NeedsMe     []needsMeItem    `json:"needs_me"`
 	// Parked are the attempts the Director parked, held on purpose and left out of needs_me (docs/director.md#status).
 	Parked []statusParked `json:"parked"`
+	// Grants are the active task grants, extra allowed tools the Guildmaster approved for one task
+	// (docs/decisions/task-grants.md); one leaves the list once it expires or is revoked, with no write.
+	Grants []statusGrant `json:"grants"`
 	// Version is the binary printing the feed, from its build info and local git reads only
 	// (docs/contracts/cli.md#version); the session supervisor's own snapshot leaves it out.
 	Version *versionInfo `json:"version,omitempty"`
@@ -162,6 +165,20 @@ type statusParked struct {
 	Reason     string               `json:"reason"`
 	ParkedAt   *time.Time           `json:"parked_at,omitempty"`
 	Command    string               `json:"command"`
+}
+
+// statusGrant is an active task grant: the rules its task's attempts of its step are given, why and for how long,
+// the attempts bound with it so far, and when the Guildmaster's approval was recorded.
+type statusGrant struct {
+	Repository string           `json:"repository"`
+	TaskID     string           `json:"task_id"`
+	Grant      string           `json:"grant"`
+	Step       string           `json:"step"`
+	Rules      []string         `json:"rules"`
+	Reason     string           `json:"reason"`
+	Until      store.GrantUntil `json:"until"`
+	Bound      []store.GrantUse `json:"bound"`
+	ApprovedAt *time.Time       `json:"approved_at,omitempty"`
 }
 
 type statusLive struct {
@@ -330,6 +347,11 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		Recent:      []recentReceipt{},
 		NeedsMe:     []needsMeItem{},
 		Parked:      []statusParked{},
+		Grants:      []statusGrant{},
+	}
+	for _, g := range v.Grants {
+		out.Grants = append(out.Grants, statusGrant{Repository: g.Repository, TaskID: g.TaskID, Grant: g.ID, Step: g.Step, Rules: g.Rules,
+			Reason: g.Reason, Until: g.Until, Bound: append([]store.GrantUse{}, g.Bound...), ApprovedAt: g.ApprovedAt})
 	}
 
 	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly), SpendToday: v.Usage.Spend}

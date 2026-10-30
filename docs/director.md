@@ -107,6 +107,9 @@ Between them they name every command of the [README's list](../README.md#the-com
 
 ## Chat address
 
+The baseline Director role opens a [task grant](tasks.md#task-grants) only when the Guildmaster asks for one, never on its own judgement or from an Artisan's request, and answers its `grant-<id>` decision `approve` only with the Guildmaster's words.
+That is conduct, not an enforced boundary: the session may run `decide answer`, as it does for every decision it records for the Guildmaster ([decision](decisions/task-grants.md)).
+
 The baseline Director role addresses the user plainly as "Guildmaster" at least once in every chat reply, including bad news.
 That address is chat-only, never added to commits, PR text, task records, documents or messages.
 Optional light guild flavour must not obscure technical content.
@@ -519,6 +522,8 @@ The document has these sections:
   A park leaves an `advance` or `paused` item in place: a failure never taken still needs taking, and a retry asked for while paused wins over a park.
 - `parked`: the attempts the Director [parked](running.md#step-park-and-step-unpark), held on purpose and so not in `needs_me`, in repository, task, step and attempt order, each with its `repository`, `task_id`, `step`, `attempt`, `outcome`, `reason`, `parked_at`, the commit time of its newest park, and the `command` to run when the hold ends, `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`.
   A park counts only while it is parked, its task is open and its attempt is still the step's latest, finished `failed` or `stopped`; a park whose attempt was retried, whose task closed or that was unparked is ignored ([decision](decisions/0092-park-attempt.md)).
+- `grants`: every active [task grant](tasks.md#task-grants), in repository, task and grant order, each with its `repository`, `task_id`, `grant` id, `step`, `rules`, `reason`, `until`, the attempts `bound` with it so far and `approved_at`, the commit time of its decision's answer.
+  A grant leaves the list once it expires, its task closing or its one bound attempt having an outcome, or is revoked, with no write ([decision](decisions/task-grants.md)); a pending grant is in `needs_me` as its open `grant-<id>` decision instead.
 - `version`: the binary printing the feed, the object `guildhall version --json` prints ([version](contracts/cli.md#version)): its `revision`, `time`, `modified`, `go_version`, `platform`, the `pr` and `task` of its latest merge and `behind_main`, read from the repository's last fetched default branch with no fetch, its `as_of` naming when that fetch was.
 
 Times are commit times of the store's receipts, in UTC.
