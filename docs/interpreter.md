@@ -551,6 +551,9 @@ The task's custody lock serialises advances; external writers must not change th
 A workflow with no `deliver` step, such as the shipped `hallmark` workflow of a [hallmark task](tasks.md#task-kinds), finishes once every step is done ([decision](decisions/report-only-workflows.md)).
 The advance records document `finished`, at `tasks/<repo>/<task>/finished.json`, `{"schema":"guildhall.finished/1","head":…}`, sends the Director a `finished` message, id `<repo>.<task>.finished`, naming the last step's output, sets the task `done` and returns `{"wait":"done"}`.
 It sends no `merged` message and opens no audit, so a hallmark counts toward no hallmark cadence.
+When the last step is a `hallmark` step that recorded a report, the close opens decision `follow-ups`, kind `follow-ups`, before anything else is sent, so a close that fails replays to the same decision; the order is `finished` recorded, the decision opened and announced (`<repo>.<task>.decision.follow-ups`), the `finished` message, which says the decision is open, and the task set `done`.
+The decision is bound to the latest attempt's report as a document subject and offers `pick` and `none`; its question names the repository, task and report path, lists the report's `### H<n>. <title>` headings in order, best effort and cut with `… see the report` to fit `MaxTextBytes`, and asks for the picked ids on the lines after `pick`.
+Answering it records the answer only; the Director creates the picked tasks.
 `head` is set only when every step that runs attempts is a `hallmark` step: the prepared commit of the last step's latest attempt, at which [prune](running.md#pruning) retires the worktree as it does at a merge record's head; without it the worktree is kept.
 A definition that has a deliver step and somehow runs past it is still refused with `ErrUnsupported`.
 

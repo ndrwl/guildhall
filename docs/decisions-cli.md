@@ -40,6 +40,15 @@ Keep the migration behind a flag.
 
 records the whole text as the answer, `approve` as the choice and `Keep the migration behind a flag.` as the note.
 
+A finished hallmark's `follow-ups` decision, kind `follow-ups`, offers `pick` and `none` ([decision](decisions/report-only-workflows.md#the-guildmaster-picks-the-follow-ups)); `pick` takes the picked ids on the following lines, so this answer:
+
+```
+pick
+H1, H3
+```
+
+records `pick` as the choice and `H1, H3` as the note, and creates no task: the Director runs `guildhall task new` for each id.
+
 The answer is recorded with mutation id `decision-answer:<repo>:<task>:<decision>`, or `decision-answer:sha256:<hex>` of that text when it is longer than 128 bytes.
 Repeating the same answer prints the original receipt; a different answer to an answered decision is refused, so a decision is answered once.
 Answering records the answer only: it never advances, resumes or launches a task.

@@ -61,8 +61,13 @@ A hallmark that fails and is cancelled never resets the count; the item comes ba
 
 The task runs one read-only stage that uses `guildhall-hallmark` and is given the repository's previous hallmark report; Guildhall fails the stage if it changes the project.
 Its test evidence needs the repository's `[repository.profiles.researcher]` grant for the test commands; without one the report lists that evidence as missing.
-When it finishes, the task is done with no pull request and you get a `finished` message naming the report.
-Read the report and bring its ranked follow-ups to the Guildmaster as a short numbered list; create tasks only for the ones they pick.
+When it finishes, the task is done with no pull request, and Guildhall opens its `follow-ups` decision and sends you a `finished` message naming the report.
+Read the report, then:
+
+1. Present the `follow-ups` decision to the Guildmaster: `guildhall decide show` gives the report path and its ranked `H<n>` titles.
+2. Answer it with `guildhall decide answer`, in the Guildmaster's words: `pick` with the ids they chose on the following lines, such as `H1, H3`, or `none`.
+3. Run `guildhall task new` for each picked id only; Guildhall creates no task from the answer.
+
 Then read the self-review ledger, as `guildhall-self-review` asks at hallmark time, and give its lowest criteria to the hallmark's findings.
 A hallmark the Guildmaster asks for out of turn is launched the same way.
 

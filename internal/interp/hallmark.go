@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -156,6 +157,12 @@ func hallmarkSteps(t store.Task, resolve func(workflow.Revision) (*workflow.Defi
 	if err != nil {
 		return nil
 	}
+	return definitionHallmarkSteps(def)
+}
+
+// definitionHallmarkSteps returns the ids of def's hallmark steps, in workflow order: a task bound to def is a
+// hallmark task when there is one. The last-hallmark selector and the follow-ups decision of a finished task use it.
+func definitionHallmarkSteps(def *workflow.Definition) []string {
 	var steps []string
 	for _, s := range def.Steps {
 		if s.Type == hallmarkKindType {
@@ -240,9 +247,11 @@ type finishedDoc struct {
 }
 
 // finish closes a task whose workflow has no deliver step once every step is done: it records the finished document,
-// tells the Director the task finished with its last step's output, and marks the task done. It sends no merged
-// message, which would count toward the repository's hallmark cadence, and opens no audit, which is bound to a merged
-// head (docs/decisions/report-only-workflows.md). Every write is replay safe.
+// opens the follow-ups decision when the last step is a hallmark step that recorded a report, tells the Director the
+// task finished with its last step's output, and marks the task done. The decision opens before the task closes, so a
+// close that fails replays to the same decision. It sends no merged message, which would count toward the
+// repository's hallmark cadence, and opens no audit, which is bound to a merged head
+// (docs/decisions/report-only-workflows.md). Every write is replay safe.
 func (r *run) finish() (Next, error) {
 	last := r.def.Steps[len(r.def.Steps)-1]
 	if r.document(FinishedDocument) == nil {
@@ -267,12 +276,19 @@ func (r *run) finish() (Next, error) {
 			return Next{}, err
 		}
 	}
+	followUps, err := r.openFollowUps(last)
+	if err != nil {
+		return Next{}, err
+	}
 	text := fmt.Sprintf("Workflow %s has no deliver step and ran every step; the task is done, with no pull request.", r.def.Name)
 	kind, _ := workflow.LookupKind(last.Type, last.Version)
 	for _, port := range kind.Outputs {
 		if doc, _, err := r.output(last.ID, port.Name); err == nil {
 			text += fmt.Sprintf("\nStep %s's %s: %s", last.ID, port.Name, filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path)))
 		}
+	}
+	if followUps {
+		text += fmt.Sprintf("\nDecision %s is open for the Guildmaster to pick the report's follow-ups.", followUpsDecision)
 	}
 	if err := r.notify(store.MessageFinished, store.MessageFinished, text); err != nil {
 		return Next{}, err
@@ -281,4 +297,78 @@ func (r *run) finish() (Next, error) {
 		return Next{}, err
 	}
 	return Next{Wait: WaitDone, Step: last.ID}, nil
+}
+
+// followUpsDecision is the id of a finished hallmark task's follow-ups decision; a step's decisions are always
+// <step>-<round>, so it is never one of them. followUpsOptions are its answers: pick, with the picked ids on the
+// following lines, or none.
+const followUpsDecision = "follow-ups"
+
+var followUpsOptions = []string{"pick", "none"}
+
+// followUpHeading matches a ranked fix of the hallmark template, "### H<n>. <title>".
+var followUpHeading = regexp.MustCompile(`^###[ \t]+(H[0-9]+)\.[ \t]+(.+?)[ \t]*$`)
+
+// followUpsCut ends a list of follow-ups cut to fit the question.
+const followUpsCut = "… see the report\n"
+
+// openFollowUps opens, once, the Guildmaster's follow-ups decision of a task whose last step, last, is a hallmark
+// step that recorded a report, bound to the report its latest attempt recorded, and tells the Director; it reports
+// whether the decision is open. Answering it records the answer only: the Director creates a task for each id the
+// Guildmaster picks, and Guildhall creates none (docs/decisions/report-only-workflows.md).
+func (r *run) openFollowUps(last workflow.Step) (bool, error) {
+	if !slices.Contains(definitionHallmarkSteps(r.def), last.ID) {
+		return false, nil
+	}
+	d := r.decision(followUpsDecision)
+	if d == nil {
+		doc, _, err := r.output(last.ID, "report")
+		if err != nil {
+			return false, nil
+		}
+		// The headings are best effort: a report that cannot be read here is named by its path only.
+		data, _ := r.read(doc)
+		nd := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: followUpsDecision, Kind: store.DecisionFollowUps,
+			Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + doc.SHA256}, Options: followUpsOptions,
+			Question: followUpsQuestion(r.task.Repository, r.task.ID, filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path)), data)}
+		if _, err := r.e.Records.OpenDecision(r.mutation("decision", followUpsDecision), nd); err != nil {
+			return false, err
+		}
+		d = r.addDecision(nd)
+	}
+	return true, r.notifyDecision(*d, last.ID)
+}
+
+// followUpsQuestion is the follow-ups decision's question for task repo/task's report at file, with content report:
+// the report's ranked "### H<n>. <title>" headings in report order, when any parse, and the answer format. The list
+// is cut, ending with followUpsCut, so the question fits store.MaxTextBytes.
+func followUpsQuestion(repo, task, file string, report []byte) string {
+	head := fmt.Sprintf("Follow-ups of hallmark task %s/%s.\nReport: %s\n", repo, task, file)
+	tail := "\nAnswer pick, then the ids of the follow-ups to make tasks of on the following lines, one per line or comma-separated, for example:\n" +
+		"pick\nH1, H3\n" +
+		"or answer none to make no task. Guildhall creates no task; the Director creates one for each id picked.\n"
+	const listHead = "\nRanked follow-ups:\n"
+	room := store.MaxTextBytes - len(head) - len(tail) - len(listHead) - len(followUpsCut)
+	var list strings.Builder
+	cut := false
+	for _, line := range strings.Split(strings.ToValidUTF8(string(report), "�"), "\n") {
+		m := followUpHeading.FindStringSubmatch(strings.TrimSuffix(line, "\r"))
+		if m == nil {
+			continue
+		}
+		item := m[1] + ". " + m[2] + "\n"
+		if list.Len()+len(item) > room {
+			cut = true
+			break
+		}
+		list.WriteString(item)
+	}
+	if list.Len() == 0 && !cut {
+		return head + tail
+	}
+	text := head + listHead + list.String()
+	if cut {
+		text += followUpsCut
+	}
+	return text + tail
 }
