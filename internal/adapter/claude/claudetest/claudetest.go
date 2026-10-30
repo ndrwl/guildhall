@@ -222,9 +222,6 @@ func stub(args []string) error {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(draft), SettingsFile), data, 0o600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(draft), CopyFile), []byte(os.Getenv(adapter.CopyEnv)), 0o600); err != nil {
-		return err
-	}
 	id, err := identity(instruction)
 	if err != nil {
 		return err
@@ -281,15 +278,6 @@ func stub(args []string) error {
 		return errExit{}
 	}
 	return nil
-}
-
-// CopyFile is the record, in the model directory, of the GUILDHALL_COPY a print-mode stub session ran with.
-const CopyFile = "claude-stub-copy"
-
-// Copy returns the GUILDHALL_COPY the stub's print-mode session for the result file result ran with.
-func Copy(result string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(claude.ModelDir(result), CopyFile))
-	return string(data), err
 }
 
 // SettingsFile is the record, in the model directory, of the --model and --effort a print-mode stub session was

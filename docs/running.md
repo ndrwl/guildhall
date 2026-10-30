@@ -187,7 +187,7 @@ While the Director is [paused or stopping](director.md#pause-and-resume), an adv
 ## Pruning
 
 `guildhall prune [--dry-run] [--repo <name>] [--task <id>] [--copy <dir>]` reclaims the disk space of `done` and `cancelled` tasks closed longer ago than [`prune_after`](configuration.md#settings), 14 days by default.
-It takes `--copy <dir>`, or `GUILDHALL_COPY`, and reads the copy's `config.toml`, `director.store`, `state` and `quality` directories.
+It takes `--copy <dir>`, or the copy found from the current directory, and reads the copy's `config.toml`, `director.store`, `state` and `quality` directories.
 A task's close time is the commit time of its `task-state` receipt, or for a [cancelled](tasks.md#task-cancel) task its `cancel-task` receipt, which set its `cancelled_at`.
 
 A task is prunable only when all of these hold, and is otherwise listed as skipped with the reason:

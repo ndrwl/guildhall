@@ -48,6 +48,8 @@ What used it is redone:
   This reverses D82's reason for naming no path in a hook: a failed `turn-ended` or `wait-wake` stalls the supervisor or stops wakes, so these must not depend on the directory Claude Code runs a hook in once the Director has `cd`'d into a repository.
 - **Lanterns.** The session renders `calm.json` beside the plugin, `{"preference":"<copy>/director/lanterns-calm"}`, and the plugin reads it from its own root; without it Calm is unavailable, as it was with no copy.
 - **Skills.** `director status --json` prints the absolute `copy`, from which the self-review skill takes `<copy>/quality/`; the Director tasks skill says bare commands work because the session runs inside its copy, and to use `git -C` rather than `cd` for repositories.
+- **Message senders.** `messages send` tells this copy's Director from another copy's by the copy discovery finds from where it runs, not by `--copy`: a session runs inside its copy, and a session where discovery finds no copy, such as under `state/`, is `unknown`.
+- **CI logs.** The Claude adapter no longer sets the variable for Artisans. An Artisan runs under `state/`, where discovery finds no copy, so the `guildhall ci log` command validate records names the copy as `--copy '<copy>'` when the advance runs from one.
 
 ## Accepted limitation
 

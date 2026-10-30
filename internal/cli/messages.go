@@ -101,7 +101,7 @@ func (a *App) messages(args []string) int {
 	var out any
 	switch sub {
 	case "send":
-		out, err = box.Send(to, messageSender(a.Getenv, *path), env)
+		out, err = box.Send(to, messageSender(a.Getenv, a.Getwd, *path), env)
 	case "list":
 		var page messaging.Page
 		if page, err = box.List(to, *after, *limit); err == nil {

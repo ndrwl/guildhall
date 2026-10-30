@@ -206,7 +206,7 @@ The session's **effective grant** is, in order and with a repeated rule kept onc
    No `gh`, `curl` or GitHub API rule is granted: Guildhall's own gh fetches the logs.
 4. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
 
-When the attempt has a copy, the wrapper runs Claude with `GUILDHALL_COPY` set to it, replacing an inherited value, so `guildhall ci log` needs no `--copy`; the command, like the grant, assumes `guildhall` resolves on the Artisan's `PATH`.
+The Artisan runs under the copy's `state/`, where [copy discovery](running.md#copies) finds no copy, so the `guildhall ci log` command validate records names the copy with `--copy` when the advance runs from one ([CI logs](ci-logs.md)); the command, like the grant, assumes `guildhall` resolves on the Artisan's `PATH`.
 
 A task grant is temporary and for one task: the Guildmaster approves extra rules for one step of one task, or all its claude steps, for its next attempt or until the task is done, through `guildhall task grant create` and the decision it opens.
 The engine records it in the attempt's binding, `<step>-<n>.inputs.json`, when the binding is first written, and the wrapper reads it back at every run from the copy's `director.store`, opened read-only, checking the binding file against the SHA-256 the store holds.

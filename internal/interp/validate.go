@@ -110,11 +110,21 @@ func (r *run) failedLogs(c forge.Commit, checks []forge.Check) ([]logDoc, error)
 			l.Excerpt, l.Dropped = &excerpt, &got.Dropped
 		}
 		if ch.Job != "" {
-			l.Command = fmt.Sprintf("guildhall ci log %s/%s %s", r.task.Repository, r.task.ID, ch.Job)
+			l.Command = ciLogCommand(r.e.Copy, r.task.Repository, r.task.ID, ch.Job)
 		}
 		out = append(out, l)
 	}
 	return out, nil
+}
+
+// ciLogCommand is the guildhall ci log command that serves job's log for repo/task. With a copy it names the copy,
+// single-quoted for a POSIX shell with any ' in it escaped, since an Artisan runs it under the copy's state/, where
+// copy discovery finds no copy (docs/ci-logs.md).
+func ciLogCommand(copyDir, repo, task, job string) string {
+	if copyDir == "" {
+		return fmt.Sprintf("guildhall ci log %s/%s %s", repo, task, job)
+	}
+	return fmt.Sprintf("guildhall ci log --copy '%s' %s/%s %s", strings.ReplaceAll(copyDir, "'", `'\''`), repo, task, job)
 }
 
 // parseValidation decodes a recorded validation result and refuses one of another schema or verdict.

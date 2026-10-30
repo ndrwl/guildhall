@@ -255,7 +255,7 @@ guildhall task context add  --store <path> --repo <id> (--text <text> | --file <
 guildhall task context list --store <path> --repo <id> <task> --json
 ```
 
-`--copy <dir>`, or `GUILDHALL_COPY`, stands in for `--store`.
+`--copy <dir>`, or the copy found from the current directory, stands in for `--store`.
 
 - `add` records the task's next entry, numbered from 1, with author `director` and the time it was added, and prints its receipt, record `task-context/<n>`, mutation `task-context:<repo>:<task>:<sha256 of the text>`, hashed as for `task new` when longer than 128 bytes; running the same command again prints the original receipt and records nothing. The text comes from exactly one of `--text` and `--file`, which names a file (`--file -` is not supported); it must be non-blank UTF-8 of at most 64 KiB. A task that is unknown or not open is refused with exit 1 and nothing is written.
 - `list` prints the task's entries as a JSON array in number order; it opens the store read-only.
@@ -278,7 +278,7 @@ guildhall task grant revoke --store <path> --repo <id> --task <id> --grant <id> 
 guildhall task grant list   --store <path> [--repo <id>] [--task <id>]
 ```
 
-`--copy <dir>`, or `GUILDHALL_COPY`, stands in for `--store` and `--config`.
+`--copy <dir>`, or the copy found from the current directory, stands in for `--store` and `--config`.
 
 - `create` records grant `g<n>`, numbered from 1 per task, for one step of the task's bound workflow whose profile runs the `claude` adapter, or `all` of them, and in the same transaction opens decision `grant-g<n>` of kind `grant` with the options `approve` and `reject`, whose question quotes the step, rules, reason and expiry. It prints the receipt, record `task-grant/g<n>`, mutation `task-grant:<repo>:<task>:g<n>`. `--until` is `attempt`, the default, which lasts for the first attempt of the step bound after approval until it has an outcome, or `done`, which lasts until the task is merged or closed; `--step all` needs `--until done`.
 - `revoke` records the revoke once, mutation `task-grant-revoke:<repo>:<task>:<id>`, on a pending or an active grant. A pending grant's decision stays open, but approving it no longer activates anything.

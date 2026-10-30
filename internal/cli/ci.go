@@ -27,7 +27,7 @@ import (
 )
 
 const ciLogHelp = `Usage: guildhall ci log [--copy <dir>] [--tail <lines>] [--out <file>] <repo>/<task> <job|check>
-  --copy <dir>      Director copy (or GUILDHALL_COPY)
+  --copy <dir>      Director copy (or the copy found from the current directory)
   --tail <lines>    print only the log's last lines
   --out <file>      write the log to file and print its path, size and dropped bytes
   --help            show this help
@@ -67,11 +67,11 @@ func (a *App) ciCmd(args []string) int {
 		return a.usageError(fmt.Sprintf("ci log: %q is not <repo>/<task>\n%s", fl.Arg(0), ciLogHelp))
 	}
 	var storePath, cfgPath, state string
-	if err := cp.apply(a.Getenv, &storePath, &cfgPath, &state); err != nil {
+	if err := cp.apply(a, &storePath, &cfgPath, &state); err != nil {
 		return a.usageError(err.Error())
 	}
 	if cp.dir == "" {
-		return a.usageError("ci log: --copy or " + copyEnvVar + " required\n" + ciLogHelp)
+		return a.usageError("ci log: " + cp.missing(a).Error() + "\n" + ciLogHelp)
 	}
 	cfg, err := config.Load(cfgPath)
 	if err != nil {

@@ -45,12 +45,17 @@ func failedValidate(t *testing.T) (string, runDirector, *forgetest.Fake) {
 	return dir, d, f
 }
 
-// ciRun runs guildhall ci log in this process over d's forge, with env as the environment.
-func ciRun(d runDirector, env map[string]string, args ...string) (int, string, string) {
+// ciRun runs guildhall ci log in this process over d's forge, from the working directory wd, a new empty directory
+// when wd is empty.
+func ciRun(t *testing.T, d runDirector, wd string, args ...string) (int, string, string) {
+	t.Helper()
+	if wd == "" {
+		wd = t.TempDir()
+	}
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.InstallBaseline = baseline.Install
 	app.Forge = d.forge
-	app.Getenv = func(k string) string { return env[k] }
+	app.Getwd = func() (string, error) { return wd, nil }
 	code := app.Run(append([]string{"ci", "log"}, args...))
 	return code, stdout.String(), stderr.String()
 }
@@ -102,28 +107,37 @@ func TestCILog(t *testing.T) {
 	}
 	defer release()
 	for _, arg := range []string{"123", "ci"} {
-		if code, out, stderr := ciRun(d, nil, "--copy", dir, "app/t-1", arg); code != 0 || out != string(cached) {
+		if code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", arg); code != 0 || out != string(cached) {
 			t.Errorf("ci log %s = %d, %d bytes, %s; want the cached log", arg, code, len(out), stderr)
 		}
 	}
-	if code, out, stderr := ciRun(d, map[string]string{"GUILDHALL_COPY": dir}, "app/t-1", "123"); code != 0 || out != string(cached) {
-		t.Errorf("ci log with GUILDHALL_COPY = %d, %d bytes, %s", code, len(out), stderr)
+	if code, out, stderr := ciRun(t, d, dir, "app/t-1", "123"); code != 0 || out != string(cached) {
+		t.Errorf("ci log in the copy = %d, %d bytes, %s", code, len(out), stderr)
+	}
+	// An Artisan runs it in its working directory under the copy's state/, where discovery finds no copy, so the
+	// command validate records names the copy.
+	work := filepath.Join(d.state, "app", "t-1", "work")
+	if code, _, stderr := ciRun(t, d, work, "app/t-1", "123"); code != 2 || !strings.Contains(stderr, noCopyLine(work)) {
+		t.Errorf("ci log under state/ = %d, %s; want 2 and no copy found", code, stderr)
+	}
+	if code, out, stderr := ciRun(t, d, work, "--copy", dir, "app/t-1", "123"); code != 0 || out != string(cached) {
+		t.Errorf("ci log --copy under state/ = %d, %d bytes, %s", code, len(out), stderr)
 	}
 	if n := f.LogCalls(); n != 1 {
 		t.Errorf("forge read %d logs, want only validate's", n)
 	}
 
-	code, out, stderr := ciRun(d, nil, "--copy", dir, "--tail", "2", "app/t-1", "ci")
+	code, out, stderr := ciRun(t, d, "", "--copy", dir, "--tail", "2", "app/t-1", "ci")
 	last := fmt.Sprintf("2026-10-29T10:00:01.0000000Z line %04d %s\n2026-10-29T10:00:02.0000000Z ##[error]Process completed with exit code 1.\n", ciLogLines-1, strings.Repeat("x", 40))
 	if code != 0 || out != last {
 		t.Errorf("ci log --tail 2 = %d, %q, %s; want only the last 2 lines, with no dropped-bytes line", code, out, stderr)
 	}
-	code, out, stderr = ciRun(d, nil, "--copy", dir, "--tail", strconv.Itoa(2*ciLogLines), "app/t-1", "ci")
+	code, out, stderr = ciRun(t, d, "", "--copy", dir, "--tail", strconv.Itoa(2*ciLogLines), "app/t-1", "ci")
 	if code != 0 || out != string(cached) {
 		t.Errorf("ci log --tail past the kept lines = %d, %d bytes, %s; want the whole cached log, its dropped-bytes line first", code, len(out), stderr)
 	}
 	file := filepath.Join(t.TempDir(), "ci.log")
-	code, out, stderr = ciRun(d, nil, "--copy", dir, "--out", file, "app/t-1", "123")
+	code, out, stderr = ciRun(t, d, "", "--copy", dir, "--out", file, "app/t-1", "123")
 	if data, err := os.ReadFile(file); code != 0 || err != nil || string(data) != string(cached) || !strings.Contains(out, file) ||
 		!strings.Contains(out, fmt.Sprintf("%d bytes,", len(cached))) || !strings.Contains(out, "dropped") {
 		t.Errorf("ci log --out = %d, %q, %s; file %d bytes, %v", code, out, stderr, len(data), err)
@@ -132,7 +146,7 @@ func TestCILog(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(d.state, "app", "t-1", "ci-logs")); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, stderr := ciRun(d, nil, "--copy", dir, "app/t-1", "123"); code != 0 || out != string(cached) || f.LogCalls() != 2 {
+	if code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", "123"); code != 0 || out != string(cached) || f.LogCalls() != 2 {
 		t.Errorf("ci log after pruning = %d, %d bytes, %s, %d forge reads; want the log fetched again", code, len(out), stderr, f.LogCalls())
 	}
 }
@@ -142,17 +156,17 @@ func TestCILog(t *testing.T) {
 func TestCILogRefusals(t *testing.T) {
 	dir, d, f := failedValidate(t)
 	for _, arg := range []string{"999", "lint", "build"} {
-		code, out, stderr := ciRun(d, nil, "--copy", dir, "app/t-1", arg)
+		code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", arg)
 		if code != 2 || out != "" || !strings.Contains(stderr, "123\tci") || !strings.Contains(stderr, "-\tlint") {
 			t.Errorf("ci log %s = %d, %q, %s; want exit 2 listing the failed checks", arg, code, out, stderr)
 		}
 	}
 	for _, args := range [][]string{{"app/t-1"}, {"app", "123"}, {"--tail", "-1", "app/t-1", "123"}} {
-		if code, _, _ := ciRun(d, nil, append([]string{"--copy", dir}, args...)...); code != 2 {
+		if code, _, _ := ciRun(t, d, "", append([]string{"--copy", dir}, args...)...); code != 2 {
 			t.Errorf("ci log %q = %d, want 2", args, code)
 		}
 	}
-	if code, _, stderr := ciRun(d, nil, "app/t-1", "123"); code != 2 || !strings.Contains(stderr, "GUILDHALL_COPY") {
+	if code, _, stderr := ciRun(t, d, "", "app/t-1", "123"); code != 2 || !strings.Contains(stderr, "no Guildhall copy found from ") {
 		t.Errorf("ci log without a copy = %d, %s; want 2", code, stderr)
 	}
 
@@ -160,13 +174,13 @@ func TestCILogRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.SetLogError("123", &forge.LogUnavailableError{Reason: "gh: Gone (HTTP 410)", Expired: true})
-	code, out, stderr := ciRun(d, nil, "--copy", dir, "app/t-1", "ci")
+	code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", "ci")
 	result := filepath.Join(d.state, "documents", "tasks", "app", "t-1", "validate-1", "result.json")
 	if want := "guildhall: GitHub no longer keeps the log of job 123 (expired); only the excerpt in " + result + " remains\n"; code != 1 || out != "" || stderr != want {
 		t.Errorf("ci log of an expired log = %d, %q, %q; want 1 and %q", code, out, stderr, want)
 	}
 	f.SetLogError("123", &forge.LogUnavailableError{Reason: "gh: Forbidden (HTTP 403)"})
-	if code, _, stderr := ciRun(d, nil, "--copy", dir, "app/t-1", "ci"); code != 1 || stderr != "guildhall: the log of job 123 is unavailable: gh: Forbidden (HTTP 403)\n" {
+	if code, _, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", "ci"); code != 1 || stderr != "guildhall: the log of job 123 is unavailable: gh: Forbidden (HTTP 403)\n" {
 		t.Errorf("ci log of a forbidden log = %d, %q", code, stderr)
 	}
 }

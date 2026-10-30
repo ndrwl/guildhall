@@ -202,11 +202,13 @@ func (a *App) decideDefer(sub string, args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return a.decideUsage(err.Error())
 	}
-	switch err := cp.apply(a.Getenv, path, nil, nil); {
+	switch err := cp.apply(a, path, nil, nil); {
 	case fl.NArg() > 0:
 		return a.decideUsage(fmt.Sprintf("%s takes no arguments", name))
 	case err != nil:
 		return a.decideUsage(err.Error())
+	case cp.searched:
+		return a.decideUsage(cp.missing(a).Error())
 	case *path == "" || *repo == "" || *task == "" || *id == "":
 		return a.decideUsage(name + " requires --store, --repo, --task and --decision")
 	case !workflow.ValidID(*repo) || !workflow.ValidID(*task) || !workflow.ValidID(*id):

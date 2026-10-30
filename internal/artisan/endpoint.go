@@ -82,7 +82,7 @@ func (k AttemptKey) String() string {
 // AttemptEnv names, in an attempt's launcher and worker environment, the attempt they run, as
 // "<repository>/<task>/<step>/<n>" (AttemptKey.String). The launcher sets it over any inherited value, so
 // `guildhall messages send` run inside an attempt records the sender "artisan", even when the attempt inherited a
-// Director session's GUILDHALL_SESSION and GUILDHALL_COPY. It is asserted, not authenticated.
+// Director session's GUILDHALL_SESSION. It is asserted, not authenticated.
 const AttemptEnv = "GUILDHALL_ATTEMPT"
 
 // Env returns the AttemptEnv entry naming k.

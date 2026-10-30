@@ -23,7 +23,8 @@ const taskGrantUsage = `usage:
   guildhall task grant create --store <path> --config <director.toml> --repo <id> --task <id> --step <id|all> --tool <rule> [--tool <rule>]... --reason <text> [--until attempt|done]
   guildhall task grant revoke --store <path> --repo <id> --task <id> --grant <id> --reason <text>
   guildhall task grant list --store <path> [--repo <id>] [--task <id>]
---copy <dir>, or GUILDHALL_COPY, may stand in for --store and --config: the copy's director.store and config.toml`
+--copy <dir>, or the copy found from the current directory, may stand in for --store and --config: the copy's
+director.store and config.toml`
 
 // taskGrant runs a task grant subcommand and prints its result as one JSON document (docs/tasks.md#task-grants).
 // create records a grant of extra allowed_tools rules to one task's attempts of one step, or of every claude step,
@@ -78,8 +79,11 @@ func (a *App) taskGrant(args []string) int {
 			usageErr = fmt.Sprintf("--%s does not apply to task grant %s", f.Name, sub)
 		}
 	})
-	if err := cp.apply(a.Getenv, path, copyConfig, nil); err != nil {
+	if err := cp.apply(a, path, copyConfig, nil); err != nil {
 		return a.taskGrantUsage(err.Error())
+	}
+	if cp.searched && usageErr == "" {
+		return a.taskGrantUsage(cp.missing(a).Error())
 	}
 	for _, name := range required {
 		if flags.Lookup(name).Value.String() == "" {
