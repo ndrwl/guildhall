@@ -18,6 +18,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/cilog"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
@@ -35,7 +36,7 @@ const pruneHelp = `Usage: guildhall prune [--dry-run] [--repo <name>] [--task <i
   --repo <name>  repository filter (default: all)
   --task <id>    one task (default: every done or cancelled task)
   --help         show this help
-Removes the worktree and the bulky attempt files of each done or cancelled task closed longer ago than prune_after
+Removes the worktree, the bulky attempt files and the CI log cache of each done or cancelled task closed longer ago than prune_after
 (default 336h, 14 days), keeping its store records, recorded documents, result.json, outcome.json and
 prompt/manifest.json (docs/running.md#pruning).
 `
@@ -60,8 +61,8 @@ func boundKept(reason string) string {
 // selfReviewFile is a self-review document's name in the copy's quality directory.
 var selfReviewFile = regexp.MustCompile(`^self-review-([1-9][0-9]*)\.json$`)
 
-// pruner selects the done and cancelled tasks of a copy that are due a prune and removes their worktrees and bulky attempt files
-// (docs/running.md#pruning). The command and the session supervisor's daily prune share it.
+// pruner selects the done and cancelled tasks of a copy that are due a prune and removes their worktrees, bulky attempt files
+// and CI log caches (docs/running.md#pruning). The command and the session supervisor's daily prune share it.
 type pruner struct {
 	storePath, state, quality string
 	// repositories are the config's repositories by id: a prune retires a worktree only of a listed repository.
@@ -116,7 +117,8 @@ func (r pruneResult) complete() bool {
 	return r.Skip == "" && r.Worktree == store.WorktreeRemoved && len(r.Failed) == 0 && len(r.Panes) == 0
 }
 
-// pruneTask is a done or cancelled task the store does not record as pruned completely.
+// pruneTask is a done or cancelled task the store does not record as pruned completely, or one that is and still has
+// a CI log cache.
 type pruneTask struct {
 	ref    store.TaskRef
 	state  store.TaskState
@@ -133,8 +135,8 @@ func (p *pruner) clock() time.Time {
 }
 
 // selectTasks lists, in repository then id order, every done or cancelled task of repository (all when empty) and taskID (all
-// when empty) that is not pruned completely, each with why it is not prunable now, if it is not. A task named by
-// taskID that is open or pruned completely is listed with that as its reason.
+// when empty) that is not pruned completely, or is but still has a CI log cache, each with why it is not prunable now,
+// if it is not. A task named by taskID that is open, or pruned completely with no cache, is listed with that as its reason.
 func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 	return withRecords(storeRecords{path: p.storePath, wait: p.wait}, true, nil, func(s *store.Store) ([]pruneTask, error) {
 		repos, err := s.Repositories()
@@ -183,10 +185,18 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 				}
 				switch prior, err := s.TaskPrune(repo, t.ID); {
 				case err == nil && prior.Complete:
-					if named {
-						out = append(out, pruneTask{ref: ref, skip: "already pruned on " + prior.PrunedAt.UTC().Format(time.DateOnly)})
+					// A task pruned completely is pruned again only for a CI log cache: one fetched since, or one
+					// a prune from before the cache was pruned left.
+					cached, err := p.hasCILogs(ref)
+					if err != nil {
+						return nil, err
 					}
-					continue
+					if !cached {
+						if named {
+							out = append(out, pruneTask{ref: ref, skip: "already pruned on " + prior.PrunedAt.UTC().Format(time.DateOnly)})
+						}
+						continue
+					}
 				case err != nil && !errors.Is(err, store.ErrNotFound):
 					return nil, err
 				}
@@ -199,6 +209,15 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 		}
 		return out, nil
 	})
+}
+
+// hasCILogs reports whether the task's CI log cache directory exists.
+func (p *pruner) hasCILogs(t store.TaskRef) (bool, error) {
+	_, err := os.Lstat(cilog.Dir(p.state, t.Repository, t.ID))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // skipReason is why the done or cancelled task t is not prunable now, or empty when it is: too recent, an open
@@ -340,6 +359,7 @@ func (p *pruner) inspect(t pruneTask) (pruneResult, error) {
 			return r, err
 		}
 	}
+	r.Bytes += treeSize(cilog.Dir(p.state, t.ref.Repository, t.ref.ID))
 	return r, nil
 }
 
@@ -383,7 +403,27 @@ func (p *pruner) pruneLocked(ctx context.Context, t pruneTask) (pruneResult, err
 			return r, err
 		}
 	}
+	p.pruneCILogs(&r)
 	return r, p.record(r, h.Pruned)
+}
+
+// pruneCILogs removes the task's CI log cache, cancelled tasks' included: guildhall ci log fetches a missing log
+// again. A cache that cannot be removed is added to r.Failed as ci-logs, and what is left is not counted as freed.
+func (p *pruner) pruneCILogs(r *pruneResult) {
+	dir := cilog.Dir(p.state, r.Task.Repository, r.Task.ID)
+	remove := p.remove
+	if remove == nil {
+		remove = os.RemoveAll
+	}
+	size := treeSize(dir)
+	if err := remove(dir); err != nil {
+		rel, _ := filepath.Rel(p.taskDir(r.Task), dir)
+		r.Failed = append(r.Failed, filepath.ToSlash(rel))
+		if _, err := os.Lstat(dir); err == nil {
+			size -= treeSize(dir)
+		}
+	}
+	r.Bytes += size
 }
 
 // retire removes the task's worktree with git.Program.Retire, at the head its merge record names, when nothing in
@@ -630,14 +670,14 @@ func writePruneReport(w io.Writer, results []pruneResult, dry bool) error {
 		}
 		size := humanBytes(r.Bytes)
 		if r.Worktree != store.WorktreeRemoved {
-			// The worktree is what a prune is mostly for, so a task that keeps it is a skip, with the attempt files
-			// it freed.
+			// The worktree is what a prune is mostly for, so a task that keeps it is a skip, with the attempt and CI
+			// log files it freed.
 			skipped++
 			verb := "freed"
 			if dry {
 				verb = "would be freed"
 			}
-			fmt.Fprintf(&b, "skipped %s: %s; %s of attempt files %s\n", name, strings.Join(notes, "; "), size, verb)
+			fmt.Fprintf(&b, "skipped %s: %s; %s of attempt and CI log files %s\n", name, strings.Join(notes, "; "), size, verb)
 			continue
 		}
 		pruned++
