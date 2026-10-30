@@ -245,6 +245,20 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	for _, h := range status.Held {
 		held = append(held, heldLine(h))
 	}
+	// Running attempts come from the same read too, with their ages by the supervisor's clock.
+	var running []string
+	for _, r := range status.Running {
+		line := fmt.Sprintf("running: attempt %d of %s of %s/%s; state %s", r.Attempt, r.Step, r.Repository, r.TaskID, r.State)
+		if r.HeartbeatAt.IsZero() {
+			line += "; no heartbeat"
+		} else {
+			line += "; heartbeat " + runningAge(a.now().Sub(r.HeartbeatAt)) + " ago"
+		}
+		if !r.LastOutputAt.IsZero() {
+			line += "; last output " + runningAge(a.now().Sub(r.LastOutputAt)) + " ago"
+		}
+		running = append(running, fmt.Sprintf("%s; %s; check with `%s`", line, oneLine(r.Reason), r.Command))
+	}
 	// Every live note goes to the new session; the old handoff note is not shown (D94).
 	type startupNotes struct {
 		lines []string
@@ -268,7 +282,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	dir := sessionDir(copyDir, n)
 	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
-		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Parked: parked, Held: held, Notes: notes.lines, NotesBytes: notes.bytes}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
+		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Running: running, Parked: parked, Held: held, Notes: notes.lines, NotesBytes: notes.bytes}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}

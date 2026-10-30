@@ -754,6 +754,15 @@ func admitConfig(copyDir, cfgPath string) (*config.Config, error) {
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
+// runningAge is a running attempt's heartbeat or output age for startup.md: seconds under a minute, as heartbeats
+// are seconds apart, and otherwise as a note's age.
+func runningAge(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", max(d, 0)/time.Second)
+	}
+	return noteAge(d)
+}
+
 // directorReady runs `guildhall director ready [--copy <dir> | --store <path>]`: the newest session moves from
 // recovering to running and is printed; a running one is printed unchanged (docs/director.md#ready).
 func (a *App) directorReady(args []string) int {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/reconcile"
+	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -49,7 +52,9 @@ func exitedLauncher(t *testing.T) store.ProcessIdentity {
 // was stopped, while each task's next.json still waits on that attempt, as a watcher whose advance failed leaves them.
 // app/t-3's plan attempt reported a measured and estimated spend and its build attempt an unknown one. app/t-9's
 // plan attempt is a Director stage the engine handed to the Director, with no ownership record (F46). app/t-10's
-// build attempt failed and was parked, while its next.json waits for the Director on it.
+// build attempt failed and was parked, while its next.json waits for the Director on it. t-6's attempt has a heartbeat.
+// app/t-11's plan attempt, on an open task, and app/t-12's, on a done one, have a failed outcome.json the store never
+// recorded, as a launcher that died before FinishAttempt leaves them.
 // The question woke the Director and the worker-stalled message, woken last, was queued.
 func statusCopy(t *testing.T) string {
 	t.Helper()
@@ -160,6 +165,13 @@ func statusCopy(t *testing.T) string {
 		func() (store.Receipt, error) {
 			return s.ParkAttempt("i-39", "app", "t-10", "build", 1, "Held until app/t-4 merges.", 0, nil)
 		},
+		func() (store.Receipt, error) { return s.CreateTask("i-40", task("app", "t-11", "Settled on disk")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-41", "app", "t-11", "plan") },
+		func() (store.Receipt, error) {
+			return s.CreateTask("i-42", task("app", "t-12", "Settled on disk, done"))
+		},
+		func() (store.Receipt, error) { return s.StartAttempt("i-43", "app", "t-12", "plan") },
+		func() (store.Receipt, error) { return s.SetTaskState("i-44", "app", "t-12", store.TaskDone) },
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
@@ -169,8 +181,21 @@ func statusCopy(t *testing.T) string {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(artisan.AttemptKey{Repository: "app", TaskID: "t-6", Step: "build", Attempt: 1}.Dir(state), 0o755); err != nil {
+	t6 := artisan.AttemptKey{Repository: "app", TaskID: "t-6", Step: "build", Attempt: 1}
+	if err := os.MkdirAll(t6.Dir(state), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if err := artisan.WriteHeartbeat(t6.Dir(state), artisan.Heartbeat{Repository: "app", TaskID: "t-6", Step: "build", Attempt: 1, Sequence: 7,
+		Time: time.Date(2026, 10, 22, 11, 59, 40, 0, time.UTC), WorkerState: "running", LastOutputAt: time.Date(2026, 10, 22, 11, 57, 0, 0, time.UTC)}); err != nil {
+		t.Fatal(err)
+	}
+	// The launchers of t-11 and t-12 wrote a failed outcome.json and died before the store recorded it.
+	for _, task := range []string{"t-11", "t-12"} {
+		dir := artisan.AttemptKey{Repository: "app", TaskID: task, Step: "plan", Attempt: 1}.Dir(state)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(dir, artisan.OutcomeFile), `{"schema":"`+artisan.OutcomeSchema+`","state":"failed","detail":"worker exited 1"}`+"\n")
 	}
 	for _, task := range []string{"t-3", "t-4"} {
 		if err := os.MkdirAll(filepath.Join(state, "app", task), 0o755); err != nil {
@@ -322,7 +347,7 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 		`"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22",` +
 		`"spend_today":{"attempts":0,"tokens_unknown":0,"cost_unknown":0,"tokens":"unknown","input_tokens":0,"output_tokens":0,` +
 		`"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost":"unknown","cost_usd":0}},"start_queue":[]},"mode":{"name":"standalone"},"tasks":[],"merge_queues":[],"decisions":[],` +
-		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],"parked":[],"held":[],"grants":[],` +
+		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],"parked":[],"held":[],"running":[],"grants":[],` +
 		`"version":{"version":"dev","revision":"` + testRevision + `","time":"2026-10-27T21:00:24Z","modified":false,"go_version":"go1.27.2",` +
 		`"platform":"linux/amd64","pr":null,"task":null,"behind_main":null}}` + "\n"
 	if out != want {
@@ -444,6 +469,102 @@ func TestDirectorStatusNext(t *testing.T) {
 		if item.Kind == "director" {
 			t.Errorf("a next.json waiting on an attempt is not a director item: %s", out)
 		}
+	}
+}
+
+// TestDirectorStatusMeasuresHeartbeatsByItsClock: a live launcher's heartbeat that is fresh by the wall clock but
+// older than reconcile.DefaultStaleAfter by the status clock is stuck, listed under running and a resume item.
+func TestDirectorStatusMeasuresHeartbeatsByItsClock(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, err := artisan.Self()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateTask("i-1", store.Task{Repository: "app", ID: "t-1", Title: "Live", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartOwnedAttempt("i-2", store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", LauncherIdentity: store.ProcessIdentity(self)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	beat := time.Now().UTC().Truncate(time.Second)
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
+	if err := os.MkdirAll(key.Dir(filepath.Join(dir, "state")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := artisan.WriteHeartbeat(key.Dir(filepath.Join(dir, "state")), artisan.Heartbeat{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1,
+		Sequence: 1, Time: beat, WorkerState: "running", LastOutputAt: beat}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := readDirectorStatus(context.Background(), filepath.Join(dir, "director.store"), filepath.Join(dir, "state"),
+		func() time.Time { return beat.Add(reconcile.DefaultStaleAfter + time.Minute) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Running) != 1 {
+		t.Fatalf("running = %+v, want the one attempt", st.Running)
+	}
+	r := st.Running[0]
+	if r.State != reconcile.Stuck || r.Launcher != "alive" || !r.HeartbeatAt.Equal(beat) || !r.LastOutputAt.Equal(beat) || r.WorkerState != "running" ||
+		r.Command != "guildhall artisan status --repo app --task t-1 --step build --attempt 1" {
+		t.Errorf("running entry %+v, want stuck with the heartbeat's times", r)
+	}
+	if len(st.NeedsMe) != 1 || st.NeedsMe[0].Kind != "resume" || !strings.HasPrefix(st.NeedsMe[0].Reason, "stuck: ") {
+		t.Errorf("needs_me = %+v, want one stuck resume item", st.NeedsMe)
+	}
+}
+
+// TestDirectorStartStartupListsRunningAttempts: a new session's startup.md lists an attempt with no store outcome
+// under its own Running section, with its state, heartbeat and output ages and the artisan status command, between
+// In flight and Parked; its killed launcher also makes it an in-flight resume item.
+func TestDirectorStartStartupListsRunningAttempts(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
+	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
+		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
+	}
+	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-2")
+	killed := exitedLauncher(t)
+	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
+		return s.StartOwnedAttempt("start", store.Ownership{Repository: "app", TaskID: "t-2", Step: "build", LauncherIdentity: killed})
+	})
+	attempt := artisan.AttemptKey{Repository: "app", TaskID: "t-2", Step: "build", Attempt: 1}.Dir(filepath.Join(dir, "state"))
+	if err := os.MkdirAll(attempt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := artisan.WriteHeartbeat(attempt, artisan.Heartbeat{Repository: "app", TaskID: "t-2", Step: "build", Attempt: 1, Sequence: 3,
+		Time: now.Add(-2 * time.Minute), WorkerState: "running", LastOutputAt: now.Add(-3 * time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--copy", dir); code != 0 {
+		t.Fatalf("second session: exit %d\n%s\n%s", code, out, stderr)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "director", "session-2", render.StartupFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	startup := string(b)
+	inFlight, running, ok := strings.Cut(startup, "## Running\n")
+	if !ok {
+		t.Fatalf("startup.md has no running section:\n%s", startup)
+	}
+	if !strings.Contains(inFlight, "## In flight\n") || !strings.Contains(inFlight, "resume: exited: ") {
+		t.Errorf("in-flight section before Running lacks the exited attempt's resume item:\n%s", startup)
+	}
+	want := "- running: attempt 1 of build of app/t-2; state exited; heartbeat 2m ago; last output 3m ago; launcher identity gone; no containment recorded; " +
+		"check with `guildhall artisan status --repo app --task t-2 --step build --attempt 1`\n"
+	if !strings.Contains(running, "guildhall director ready") || !strings.HasSuffix(running, want) {
+		t.Errorf("running section = %q, want it to ask for confirmation before director ready and end with %q", running, want)
 	}
 }
 

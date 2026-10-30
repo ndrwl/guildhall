@@ -49,6 +49,9 @@ type directorStatus struct {
 	// Held are the decision deferrals and follow-ups still waiting for the tasks they name to merge, left out of
 	// needs_me until they are released (docs/decisions/0096-hold-until-merged.md).
 	Held []statusHeld `json:"held"`
+	// Running are the attempts with no store outcome yet and how each classifies, for information and not work: one
+	// that is not healthy is also a needs_me item (docs/director.md#status).
+	Running []statusRunning `json:"running"`
 	// Grants are the active task grants, extra allowed tools the Guildmaster approved for one task
 	// (docs/decisions/task-grants.md); one leaves the list once it expires or is revoked, with no write.
 	Grants []statusGrant `json:"grants"`
@@ -203,6 +206,24 @@ type statusGrant struct {
 	Until      store.GrantUntil `json:"until"`
 	Bound      []store.GrantUse `json:"bound"`
 	ApprovedAt *time.Time       `json:"approved_at,omitempty"`
+}
+
+// statusRunning is an attempt with no store outcome yet, other than a Director stage, with the classification
+// `director status` made of it: what `guildhall artisan status` would say, and the command to ask again.
+type statusRunning struct {
+	Repository string          `json:"repository"`
+	TaskID     string          `json:"task_id"`
+	Step       string          `json:"step"`
+	Attempt    int             `json:"attempt"`
+	State      reconcile.State `json:"state"`
+	Reason     string          `json:"reason"`
+	Launcher   string          `json:"launcher,omitempty"`
+	Endpoint   string          `json:"endpoint,omitempty"`
+	// WorkerState, HeartbeatAt and LastOutputAt are from the attempt's last heartbeat, absent when it has none.
+	WorkerState  string    `json:"worker_state,omitempty"`
+	HeartbeatAt  time.Time `json:"heartbeat_at,omitzero"`
+	LastOutputAt time.Time `json:"last_output_at,omitzero"`
+	Command      string    `json:"command"`
 }
 
 type statusLive struct {
@@ -383,6 +404,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		NeedsMe:     []needsMeItem{},
 		Parked:      []statusParked{},
 		Held:        []statusHeld{},
+		Running:     []statusRunning{},
 		Grants:      []statusGrant{},
 	}
 	for _, g := range v.Grants {
@@ -552,8 +574,19 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			key := artisan.AttemptKey{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number}
 			switch at.Outcome {
 			case "":
-				c := launch.Classify(ctx, launch.Attempt{Store: path, StateDir: stateDir, Key: key}, owners[key])
+				c := launch.ClassifyAt(ctx, launch.Attempt{Store: path, StateDir: stateDir, Key: key}, owners[key], now)
 				ss.Live = &statusLive{State: c.State, Reason: c.Reason}
+				handed, _ := interp.HandedToDirector(key.Dir(stateDir))
+				// A Director stage runs in the Director's own session, so it stays quiet here as in needs_me.
+				if c.State != reconcile.Handed && !handed {
+					r := statusRunning{Repository: t.Repository, TaskID: t.ID, Step: at.Step, Attempt: at.Number, State: c.State, Reason: c.Reason,
+						Launcher: c.Launcher, Endpoint: c.Endpoint, Command: "guildhall artisan status " + flags}
+					if h := c.Heartbeat; h != nil {
+						r.WorkerState, r.HeartbeatAt, r.LastOutputAt = h.WorkerState, h.Time, h.LastOutputAt
+					}
+					out.Running = append(out.Running, r)
+				}
+				settled := c.State == reconcile.Finished || c.State == reconcile.Failed || c.State == reconcile.Cancelled
 				_, launchedErr := os.Stat(filepath.Join(key.Dir(stateDir), "launched.json"))
 				if judge && owners[key] == nil && errors.Is(launchedErr, fs.ErrNotExist) {
 					item.Kind, item.Retryable = "retry", true
@@ -565,14 +598,16 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 					}
 					retry = append(retry, item)
 				} else if (open || judge) && (c.State == reconcile.Stuck || c.State == reconcile.Exited || c.State == reconcile.Unknown ||
-					(judge && (c.State == reconcile.Finished || c.State == reconcile.Failed || c.State == reconcile.Cancelled))) {
+					// Files that settled an attempt the store did not, as when its launcher died before recording
+					// the outcome, are settled by artisan resume; a Director stage's published result is an advance.
+					(settled && !handed)) {
 					item.Kind, item.Resume, item.Reason, item.Command = "resume", true, string(c.State)+": "+c.Reason, "guildhall artisan resume "+flags
 					resume = append(resume, item)
 				}
 				// No launcher announces a Director stage's result, so one published by a step finish that stopped
 				// before its advance waits here until it is taken.
 				result := filepath.Join(key.Dir(stateDir), artisan.ResultFile)
-				if handed, _ := interp.HandedToDirector(key.Dir(stateDir)); open && handed {
+				if open && handed {
 					if _, err := os.Stat(result); err == nil {
 						it := item
 						it.Kind, it.Reason = "advance", fmt.Sprintf("attempt %d of Director stage %s has a published result that was not taken", at.Number, at.Step)
@@ -660,6 +695,10 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	}
 
 	slices.SortFunc(out.Parked, func(a, b statusParked) int {
+		return cmp.Or(strings.Compare(a.Repository, b.Repository), strings.Compare(a.TaskID, b.TaskID), strings.Compare(a.Step, b.Step),
+			cmp.Compare(a.Attempt, b.Attempt))
+	})
+	slices.SortFunc(out.Running, func(a, b statusRunning) int {
 		return cmp.Or(strings.Compare(a.Repository, b.Repository), strings.Compare(a.TaskID, b.TaskID), strings.Compare(a.Step, b.Step),
 			cmp.Compare(a.Attempt, b.Attempt))
 	})

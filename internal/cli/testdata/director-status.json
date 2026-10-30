@@ -6,8 +6,8 @@
       "transcripts",
       "forge state"
     ],
-    "sequence": 41,
-    "committed_at": "2026-10-22T09:44:00Z"
+    "sequence": 46,
+    "committed_at": "2026-10-22T09:49:00Z"
   },
   "session": {
     "state": "running",
@@ -54,8 +54,8 @@
       },
       "max_running_attempts": 3,
       "max_attempts_per_day": 40,
-      "running_attempts": 3,
-      "attempts_today": 10,
+      "running_attempts": 5,
+      "attempts_today": 12,
       "day": "2026-10-22",
       "spend_today": {
         "attempts": 7,
@@ -135,6 +135,70 @@
         "attempts": 1,
         "tokens_unknown": 1,
         "cost_unknown": 1,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
+    },
+    {
+      "repository": "app",
+      "id": "t-11",
+      "title": "Settled on disk",
+      "state": "open",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "live": {
+            "state": "failed",
+            "reason": "launcher outcome: worker exited 1"
+          }
+        }
+      ],
+      "spend": {
+        "attempts": 0,
+        "tokens_unknown": 0,
+        "cost_unknown": 0,
+        "tokens": "unknown",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cost": "unknown",
+        "cost_usd": 0
+      }
+    },
+    {
+      "repository": "app",
+      "id": "t-12",
+      "title": "Settled on disk, done",
+      "state": "done",
+      "workflow": {
+        "name": "default",
+        "digest": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea"
+      },
+      "steps": [
+        {
+          "step": "plan",
+          "attempt": 1,
+          "live": {
+            "state": "failed",
+            "reason": "launcher outcome: worker exited 1"
+          }
+        }
+      ],
+      "spend": {
+        "attempts": 0,
+        "tokens_unknown": 0,
+        "cost_unknown": 0,
         "tokens": "unknown",
         "input_tokens": 0,
         "output_tokens": 0,
@@ -487,52 +551,6 @@
   },
   "recent": [
     {
-      "mutation_id": "message:app.t-2.worker-stalled.plan-1.abc",
-      "operation": "send-message",
-      "repository": "app",
-      "task_id": "t-2",
-      "attempt": 1,
-      "record": "message/app.t-2.worker-stalled.plan-1.abc",
-      "sequence": 20,
-      "committed_at": "2026-10-22T09:19:00Z"
-    },
-    {
-      "mutation_id": "message:n-1",
-      "operation": "send-message",
-      "repository": "app",
-      "task_id": "t-4",
-      "record": "message/n-1",
-      "sequence": 21,
-      "committed_at": "2026-10-22T09:20:00Z"
-    },
-    {
-      "mutation_id": "message-ack:n-1",
-      "operation": "ack-message",
-      "repository": "app",
-      "task_id": "t-4",
-      "record": "message/n-1",
-      "sequence": 22,
-      "committed_at": "2026-10-22T09:21:00Z"
-    },
-    {
-      "mutation_id": "message:q-1",
-      "operation": "send-message",
-      "repository": "lib",
-      "task_id": "t-1",
-      "record": "message/q-1",
-      "sequence": 23,
-      "committed_at": "2026-10-22T09:22:00Z"
-    },
-    {
-      "mutation_id": "i-26",
-      "operation": "create-task",
-      "repository": "app",
-      "task_id": "t-7",
-      "record": "task",
-      "sequence": 26,
-      "committed_at": "2026-10-22T09:27:00Z"
-    },
-    {
       "mutation_id": "i-27",
       "operation": "start-attempt",
       "repository": "app",
@@ -676,6 +694,53 @@
       "record": "attempt-park/build/1",
       "sequence": 41,
       "committed_at": "2026-10-22T09:44:00Z"
+    },
+    {
+      "mutation_id": "i-40",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-11",
+      "record": "task",
+      "sequence": 42,
+      "committed_at": "2026-10-22T09:45:00Z"
+    },
+    {
+      "mutation_id": "i-41",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-11",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 43,
+      "committed_at": "2026-10-22T09:46:00Z"
+    },
+    {
+      "mutation_id": "i-42",
+      "operation": "create-task",
+      "repository": "app",
+      "task_id": "t-12",
+      "record": "task",
+      "sequence": 44,
+      "committed_at": "2026-10-22T09:47:00Z"
+    },
+    {
+      "mutation_id": "i-43",
+      "operation": "start-attempt",
+      "repository": "app",
+      "task_id": "t-12",
+      "attempt": 1,
+      "record": "attempt/plan/1",
+      "sequence": 45,
+      "committed_at": "2026-10-22T09:48:00Z"
+    },
+    {
+      "mutation_id": "i-44",
+      "operation": "set-task-state",
+      "repository": "app",
+      "task_id": "t-12",
+      "record": "task",
+      "sequence": 46,
+      "committed_at": "2026-10-22T09:49:00Z"
     }
   ],
   "needs_me": [
@@ -716,6 +781,16 @@
       "retryable": true,
       "reason": "attempt 1 of plan stopped",
       "command": "guildhall step retry --repo app --task t-8 --step plan --attempt 1"
+    },
+    {
+      "kind": "resume",
+      "repository": "app",
+      "task_id": "t-11",
+      "step": "plan",
+      "attempt": 1,
+      "resume": true,
+      "reason": "failed: launcher outcome: worker exited 1",
+      "command": "guildhall artisan resume --repo app --task t-11 --step plan --attempt 1"
     },
     {
       "kind": "resume",
@@ -772,6 +847,48 @@
     }
   ],
   "held": [],
+  "running": [
+    {
+      "repository": "app",
+      "task_id": "t-11",
+      "step": "plan",
+      "attempt": 1,
+      "state": "failed",
+      "reason": "launcher outcome: worker exited 1",
+      "command": "guildhall artisan status --repo app --task t-11 --step plan --attempt 1"
+    },
+    {
+      "repository": "app",
+      "task_id": "t-12",
+      "step": "plan",
+      "attempt": 1,
+      "state": "failed",
+      "reason": "launcher outcome: worker exited 1",
+      "command": "guildhall artisan status --repo app --task t-12 --step plan --attempt 1"
+    },
+    {
+      "repository": "app",
+      "task_id": "t-2",
+      "step": "plan",
+      "attempt": 1,
+      "state": "absent",
+      "reason": "no attempt directory and no ownership record",
+      "command": "guildhall artisan status --repo app --task t-2 --step plan --attempt 1"
+    },
+    {
+      "repository": "app",
+      "task_id": "t-6",
+      "step": "build",
+      "attempt": 1,
+      "state": "exited",
+      "reason": "launcher identity gone; no containment recorded",
+      "launcher": "gone",
+      "worker_state": "running",
+      "heartbeat_at": "2026-10-22T11:59:40Z",
+      "last_output_at": "2026-10-22T11:57:00Z",
+      "command": "guildhall artisan status --repo app --task t-6 --step build --attempt 1"
+    }
+  ],
   "grants": [],
   "version": {
     "version": "dev",

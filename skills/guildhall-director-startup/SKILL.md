@@ -23,11 +23,12 @@ The binary refuses `guildhall task new`, and `guildhall task start` of a task wi
    - `recovering`: this session; it is the last thing you do, in step 6.
    - `advance`: a finished attempt whose launcher could not hand it on; run the `guildhall step done` or `guildhall task start` the item names.
    - `retry`: a failed or stopped attempt; decide whether to retry it with `guildhall-director-tasks`.
-   - `resume`: a running attempt whose launcher is stuck, exited or unknown; run `guildhall artisan resume` with the flags the item names.
+   - `resume`: a running attempt whose launcher is stuck, exited, unknown, or settled on disk but not recorded; run `guildhall artisan resume` with the flags the item names.
    - `stalled`, `decision`, `messages` and `director`: handle them with `guildhall-director-inbox`.
    - `paused`: a task held while the session was paused; once you are ready and not paused, start it again with `guildhall task start` as the item names.
    - `checks`: not yours; your session's supervisor reads the task's checks again on its own and wakes you when they finish, so never poll them or run its `guildhall task start` yourself.
 
+   The `## Running` section in `startup.md`, and `running` in the status, list every attempt in flight with its state and its last heartbeat and output; read it and confirm each attempt is `running` before `guildhall director ready`, as anything that is not healthy is already a `resume` or `stalled` item.
    Parked attempts, listed under `Parked` in `startup.md` and `parked` in the status, are held on purpose with the reason shown; they are information, not work, so leave them parked unless their hold has ended.
 5. A `director-stage` message is a grill or other stage that is yours to run; run it with `guildhall-director-stage`; a grill the previous session left open starts again.
 6. When nothing left in `needs_me` is yours to act on now, run `guildhall director ready`.
