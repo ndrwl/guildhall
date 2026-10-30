@@ -217,8 +217,9 @@ func TestDirectorResumeListsHeldTasks(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil {
 		t.Fatalf("resume: exit %d, %v\n%s", code, err, stderr)
 	}
-	if len(doc.NeedsMe) != 1 || doc.NeedsMe[0] != want {
-		t.Errorf("resume needs_me = %+v, want [%+v]", doc.NeedsMe, want)
+	// Running again with no pane, the session also has its no_pane item.
+	if len(doc.NeedsMe) != 2 || doc.NeedsMe[0].Kind != noPaneKind || doc.NeedsMe[1] != want {
+		t.Errorf("resume needs_me = %+v, want [no_pane %+v]", doc.NeedsMe, want)
 	}
 }
 
