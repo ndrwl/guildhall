@@ -1,0 +1,6 @@
+Decisions, as of 2026-10-30 12:00 UTC, local state
+
+app/a-approve accept-plan (approval)
+  Accept the plan?
+  1. approve
+  2. reject

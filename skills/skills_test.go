@@ -754,6 +754,11 @@ var notAskedOfTheDirector = map[string]string{
 	"director context-report": "the runtime's status line runs it after each message",
 	"quality judged":          "a judge attempt's launcher runs it when the attempt ends",
 	"ci log":                  "Artisans run it from a failed validate result's logs[].command",
+	"clerk guild":             "the Clerk plugin's /guild runs it for the Guildmaster",
+	"clerk decisions":         "the Clerk plugin's /decisions runs it for the Guildmaster",
+	"clerk task":              "the Clerk plugin's /task runs it for the Guildmaster",
+	"clerk inspect":           "the Clerk plugin's /inspect runs it for the Guildmaster",
+	"clerk queue":             "the Clerk plugin's /queue runs it for the Guildmaster",
 }
 
 // readmeCommand finds each `guildhall <command>` in the README's command list.

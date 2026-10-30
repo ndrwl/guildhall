@@ -1,0 +1,11 @@
+Task app/a-checks, as of 2026-10-30 12:00 UTC, local state
+
+a-checks: Checks pending
+State:            open
+Priority:         p2
+Kind:             feature
+Where it stands:  CI pending, PR #212
+Pull request:     #212 https://forge.invalid/app/pull/212 (CI pending)
+
+Steps
+No steps yet.

@@ -1,0 +1,5 @@
+{
+  "name": "clerk",
+  "version": "0.1.0",
+  "description": "Guildhall Clerk: the Guildmaster's read-only answers from the local copy: /guild, /decisions, /task, /inspect and /queue."
+}

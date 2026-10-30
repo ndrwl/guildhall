@@ -1,6 +1,7 @@
 package claude_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,6 +18,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/clerk"
+	"github.com/ndrwl/guildhall/internal/lanterns"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -37,7 +40,7 @@ func TestSessionCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--model", "opus", "--effort", "high", "--", spec.FirstMessage}
+	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--plugin-dir", filepath.Join(dir, claude.ClerkPluginDir), "--model", "opus", "--effort", "high", "--", spec.FirstMessage}
 	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"A=1"}) {
 		t.Errorf("command = %+v, want %q in %s with only the spec's environment", cmd, want, spec.Dir)
 	}
@@ -46,7 +49,7 @@ func TestSessionCommand(t *testing.T) {
 	}
 	spec.Model, spec.Effort = "", ""
 	named := filepath.Join(c, "claude")
-	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--", spec.FirstMessage}) {
+	if cmd, err := (claude.Adapter{Claude: named}).Session(spec); err != nil || !slices.Equal(cmd.Argv, []string{named, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--plugin-dir", filepath.Join(dir, claude.ClerkPluginDir), "--", spec.FirstMessage}) {
 		t.Errorf("named claude, no model: %+v, %v", cmd, err)
 	}
 	if cmd, err := (claude.Adapter{Claude: "bin/claude"}).Session(spec); err == nil || len(cmd.Argv) > 0 {
@@ -62,6 +65,38 @@ func TestSessionCommand(t *testing.T) {
 	a := claude.Adapter{}
 	if a.Program() != "claude" || a.SkillsDir() != ".claude/skills" || !a.TurnEndHook() {
 		t.Errorf("Program, SkillsDir, TurnEndHook = %q, %q, %v; want the Stop hook", a.Program(), a.SkillsDir(), a.TurnEndHook())
+	}
+}
+
+// TestSessionFilesClerk: the session files carry every Clerk plugin file, byte for byte, under ClerkPluginDir beside
+// the unchanged Lanterns files and calm.json, and nothing else under the Clerk directory.
+func TestSessionFilesClerk(t *testing.T) {
+	files := claude.Adapter{}.SessionFiles("/home/g/copy")
+	want := clerk.Files()
+	if len(want) == 0 {
+		t.Fatal("clerk.Files is empty")
+	}
+	for name, data := range want {
+		if got := files[claude.ClerkPluginDir+"/"+name]; !bytes.Equal(got, data) {
+			t.Errorf("%s/%s = %q, want the embedded file", claude.ClerkPluginDir, name, got)
+		}
+	}
+	clerkFiles := 0
+	for name := range files {
+		if strings.HasPrefix(name, claude.ClerkPluginDir+"/") {
+			clerkFiles++
+		}
+	}
+	if clerkFiles != len(want) {
+		t.Errorf("%d files under %s, want %d", clerkFiles, claude.ClerkPluginDir, len(want))
+	}
+	for name, data := range lanterns.Files() {
+		if !bytes.Equal(files[claude.PluginDir+"/"+name], data) {
+			t.Errorf("Lanterns file %s changed", name)
+		}
+	}
+	if len(files[claude.CalmFile]) == 0 {
+		t.Errorf("%s missing", claude.CalmFile)
 	}
 }
 

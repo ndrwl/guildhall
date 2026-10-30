@@ -1,0 +1,41 @@
+Inspect app/a-approve, as of 2026-10-30 12:00 UTC, local state
+
+a-approve: Approve the plan
+State:            open
+Priority:         p2
+Kind:             feature
+Where it stands:  waiting for your approval
+Pull request:     none
+
+Steps
+STEP  ATTEMPT  OUTCOME
+plan  1        succeeded
+
+Attempts
+STEP  ATTEMPT  OUTCOME    STARTED           FINISHED          TOOK
+plan  1        succeeded  2026-10-30 06:24  2026-10-30 06:25  1m
+
+Attempt summaries
+- plan 1: Planned the change in three steps.
+
+Decisions
+DECISION     KIND      STATE  OPENED            ANSWERED  WAITED
+accept-plan  approval  open   2026-10-30 06:26  -         -
+
+Findings
+No review findings.
+
+Rulings
+No rulings.
+
+Priority changes
+- p2 set 2026-10-30 06:07
+
+Merge holds
+None.
+
+Documents
+No documents.
+
+Spend
+1 attempt: tokens unknown; cost unknown

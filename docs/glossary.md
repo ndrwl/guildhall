@@ -110,6 +110,11 @@ A finished outcome without a readable result is refused, not guessed.
   The `hold` answer on a merge decision is another thing: it refuses the merge it was asked for, and the task waits for the Director.
 - **Priority** is a task's level, `p0 urgent` to `p5 someday`, `p3` by default ([priority](tasks.md#priority)).
 
+## Clerk
+
+- **Clerk** is the Guildmaster's read-only Claude Code plugin, `/guild`, `/decisions`, `/task`, `/inspect` and `/queue`, each echoing a `guildhall clerk` answer from the local copy ([Clerk](clerk.md)); it decides and changes nothing, and is neither a dashboard nor the Director.
+- **Where it stands** is a task's position in its workflow as one plain phrase, such as `build running`, `waiting for your approval`, `CI pending, PR #212`, `in merge queue 2/3` or `not started` ([where it stands](clerk.md#where-it-stands)).
+
 ## Rebase
 
 - A **rebase** here is Guildhall replaying a task's whole change as one commit onto the base tip mergeability measured, with `git merge-tree`, never `git rebase` ([tiered rebase](interpreter.md#tiered-rebase)).
