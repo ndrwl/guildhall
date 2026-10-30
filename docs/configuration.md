@@ -76,6 +76,12 @@ It never changes the config it is given.
 An override that does not apply when it is read, because its key is unknown, machine-wide, kept out or pinned by managed config, or its value fails the setting's check or leaves the config invalid, is skipped with its reason rather than failing.
 `config.CheckTaskOverride` refuses such an override with that reason.
 
+A task's [overrides](tasks.md#task-overrides) take effect at every advance of the task, whichever command or the checks watcher runs it: under the task's lock the advance reads the task's overrides in effect and applies them with `WithTaskOverrides`, so its stages' `default_effort`, the `quality_*` settings, `stall_interval` for the engine and the launcher, `checks_refresh` and `ci_log_limit` are the task's effective values.
+Machine-wide values, such as `lock_wait` and the guard rails, are read from the copy's config, and `task cancel` and `task reconcile`, which launch nothing, read it too.
+Readers outside an advance keep the copy's values: `guildhall ci log`, the standalone quality judge, the self-review size budget in `director status` and the Director's checks watcher pacing.
+An override that is skipped never fails the advance; each Artisan attempt's binding records the overrides applied and those skipped, with why.
+A relaunch of an attempt already bound, after a crash, runs with the task's overrides at the relaunch.
+
 ### Claude skill policies
 
 `claude_skills_director`, `claude_skills_artisan` and `claude_skills_profile_<declared-name>` are string-valued managed/local settings containing a typed JSON policy.
@@ -198,6 +204,9 @@ A string such as `"true"`, an unknown key and the removed merge policy key are r
   The question lists `guildmaster_approval: required (the head changes .guildhall/policies.md)` and says why; Guildhall never records `deliver-<k>-authorized` by itself for such a head, and a rebase of it follows `reapprove_after_rebase` as if `guildmaster_approval` were set.
   Only the Guildmaster's answer carries over to such a head: an authorization Guildhall recorded by itself for an earlier head, one that did not change the file, never does, even under `reapprove_after_rebase = never`, so the head gets a merge decision instead.
   `artisan_approval`, `ci_green` and `nothing_open` keep their own settings.
+- A requirement a [task override](#setting-scopes) turns on applies to that task alone, at publish, deliver, the rebased head at the queue front and the recorded authorization, whose `requires` are the task's: the question lists it as `required (this task's override)` and leads "This task also requires your approval (its override), whatever merge_requires says." for `guildmaster_approval`, or names the requirement for the others; a failing `artisan_approval` or `ci_green` it turned on is the gate's error, naming the override.
+  With the policy-file guard as well, the condition gives both reasons, `required (the head changes .guildhall/policies.md; this task's override)`, and the question both leads.
+  An override added after a head's merge was authorized does not retract that authorization, as for a change to the repository's settings above; `task show` lists the requirements a task's overrides add as `also_requires`.
 
 Turning a requirement off changes only what deliver demands, not which steps a workflow must have.
 No workflow can change a repository's merge requirements, and a [task override](#setting-scopes) can only add requirements.

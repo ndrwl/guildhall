@@ -457,18 +457,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
-	stall, err := cfg.StallInterval()
-	if err != nil {
-		return interp.Next{}, fmt.Errorf("config: %w", err)
-	}
-	refresh, err := cfg.ChecksRefresh()
-	if err != nil {
-		return interp.Next{}, fmt.Errorf("config: %w", err)
-	}
-	logLimit, err := cfg.CILogLimit()
-	if err != nil {
-		return interp.Next{}, fmt.Errorf("config: %w", err)
-	}
+	// The rails and the lock wait are machine-wide, so they are read from the copy's config, never a task's.
 	rails, err := cfg.GuardRails()
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
@@ -520,6 +509,25 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		return interp.Next{}, fmt.Errorf("lock task %s/%s: %w", ev.Repository, ev.Task, err)
 	}
 	defer release()
+	// The task's overrides are read once, under its lock, and every task-scoped value below comes from its effective
+	// config (docs/tasks.md#task-overrides); one that does not apply is skipped, recorded in the bindings, never fatal.
+	overrides, err := interp.ApplyTaskOverrides(records, cfg, ev.Repository, ev.Task)
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("task overrides: %w", err)
+	}
+	eff := overrides.Config
+	stall, err := eff.StallInterval()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
+	refresh, err := eff.ChecksRefresh()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
+	logLimit, err := eff.CILogLimit()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
 	skills, err := os.MkdirTemp("", "guildhall-release-*")
 	if err != nil {
 		return interp.Next{}, err
@@ -565,7 +573,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Workflow: func(rev workflow.Revision) (*workflow.Definition, error) {
 			return boundWorkflow(filepath.Join(cfgDir, "workflows"), cfg, r, rev)
 		},
-		Config: cfg, StandardsRevision: standards, CheckSettings: runtimeSettings,
+		Config: eff, Overrides: &overrides, StandardsRevision: standards, CheckSettings: runtimeSettings,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, CILogLimit: logLimit,
 		Forge: fg, Workspaces: ws,
 		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the
@@ -710,6 +718,10 @@ func (p storeRecords) TaskContexts(repo, id string) ([]store.TaskContext, error)
 
 func (p storeRecords) TaskLinks(repo, id string) ([]store.TaskLink, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskLink, error) { return s.TaskLinks(repo, id) })
+}
+
+func (p storeRecords) TaskOverrides(repo, id string) ([]store.TaskOverride, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskOverride, error) { return s.TaskOverrides(repo, id) })
 }
 
 func (p storeRecords) FullReviews(repo, id string) ([]store.FullReview, error) {

@@ -80,6 +80,14 @@ When the Guildmaster wants a task's Artisans to see another task's document, suc
 guildhall task link add --repo guildhall --document guildhall/d14/plan-5-spec --text 'Guildmaster: "d63 must follow the d14 plan-5 spec."' d63
 ```
 
+Only when the Guildmaster asks for one task to run with its own value of a task-scoped setting, such as `default_effort`, record a task override, quoting their words; never set one on your own judgment.
+A refusal names why the key cannot be overridden: tell the Guildmaster, do not work around it.
+An override applies from the task's next stage and re-runs nothing; `unset` removes it:
+
+```sh
+guildhall task override set --repo guildhall --key default_effort --value high --text 'Guildmaster: "run d63 at high effort."' d63
+```
+
 Never repeat what the store holds; name tasks, decisions and messages by id.
 Note only what a new session cannot restart or re-read: an open grill is restarted, so it needs no note.
 Each note is one line of at most 1024 bytes, and every command prints only a one-line receipt:

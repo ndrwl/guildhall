@@ -254,7 +254,9 @@ func (r *run) designer(brief store.DocumentRef) (*store.StageAttempt, Next, erro
 			if err != nil {
 				return nil, Next{}, err
 			}
-			if err := r.bind(s, k, inputs, binding{Retry: r.retryContext(s.ID, k)}); err != nil {
+			b := binding{Retry: r.retryContext(s.ID, k)}
+			r.bindOverrides(&b)
+			if err := r.bind(s, k, inputs, b); err != nil {
 				return nil, Next{}, err
 			}
 		}

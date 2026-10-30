@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/render"
@@ -61,6 +62,11 @@ type binding struct {
 	// Grant is the task grant the attempt was given, when one was active as it was bound; the Claude wrapper reads
 	// it from here, checking the binding against its recorded digest (docs/decisions/task-grants.md).
 	Grant *store.BoundGrant `json:"grant,omitempty"`
+	// Overrides are the task overrides in effect as the attempt was bound, and SkippedOverrides those that were not
+	// applied, with why (docs/tasks.md#task-overrides); a task with none has neither. stale ignores both, so a later
+	// override never re-runs a finished stage.
+	Overrides        []boundOverride  `json:"overrides,omitempty"`
+	SkippedOverrides []config.Skipped `json:"skipped_overrides,omitempty"`
 }
 
 // retryContext is a Director retry of attempt Attempt, which ended Outcome, as the next attempt's prompt quotes it:

@@ -203,6 +203,8 @@ type statusTask struct {
 	Steps      []statusStep      `json:"steps"`
 	// Spend sums what the task's finished attempts reported they spent (docs/director.md#spend).
 	Spend store.SpendTotal `json:"spend"`
+	// Overrides marks a task with a task override in effect; task show lists them (docs/tasks.md#task-overrides).
+	Overrides bool `json:"overrides,omitempty"`
 }
 
 // statusStep is a step's latest attempt: its outcome, or while it runs its live classification.
@@ -623,6 +625,7 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 		if total, ok := spend[t.Repository+"/"+t.ID]; ok {
 			st.Spend = total
 		}
+		st.Overrides = slices.ContainsFunc(v.Overrides, func(o store.TaskOverride) bool { return o.Repository == t.Repository && o.TaskID == t.ID })
 		st.Next, st.NextError = readNext(filepath.Join(stateDir, t.Repository, t.ID, "next.json"))
 		prefix := t.Repository + "/" + t.ID + "/"
 		var steps []string

@@ -95,6 +95,8 @@ A finished outcome without a readable result is refused, not guessed.
 
 ## Setting scope
 
+- A **task override** is a value for one task-scoped setting that applies to one task only, recorded by the Director with the Guildmaster's words ([task overrides](tasks.md#task-overrides)).
+  Avoid "per-task config", "task config" and "one-off override".
 - A **task-scoped setting** is a setting Guildhall reads while running a particular task, such as `default_effort` or `stall_interval`, so a task override may replace it for that task ([setting scopes](configuration.md#setting-scopes)).
 - A **machine-wide setting** is read for the whole copy, outside any one task, such as `lock_wait` or `max_running_attempts`; no task can override it.
   Avoid "global setting", which reads as a managed one.
