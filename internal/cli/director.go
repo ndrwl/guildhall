@@ -137,7 +137,7 @@ func (a *App) directorStart(args []string) int {
 			a.preflightLine("pane", "%s (tab %s, workspace %s, from HERDR_*)", pane.Pane, pane.Tab, pane.Workspace)
 		}
 	}
-	return a.superviseSession(p, copyDir, storePath, state, pane)
+	return a.superviseSession(p, copyDir, storePath, state, pane, append([]string{"director", "start"}, args...))
 }
 
 // ambientPanes are the HERDR_* variables, in the order they are checked, that name the Herdr pane a process runs

@@ -91,7 +91,13 @@ func decideEnd(in endInput) endAction {
 // child and records the session stopped when the runtime ends; when it ended for a reload, it records the session
 // stopped as reloaded and starts the next session the same way. From before the first session is recorded until
 // the last is recorded stopped the supervisor handles the session signals rather than dying of them.
-func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pane store.DirectorPane) int {
+//
+// At a reload, where it can exec, the supervisor moves onto the guildhall binary on PATH when its sha256 differs
+// from the supervisor's own image: it pre-flights that binary, then replaces its image with it, run with argv, the
+// supervisor's own arguments after its name, so the new image records the next session in the same process and
+// pane. A binary refused, or an exec that fails, leaves it reloading on its own binary, the refusal recorded with
+// the reload (docs/director.md#reload).
+func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pane store.DirectorPane, argv []string) int {
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, sessionSignals...)
 	defer signal.Stop(signals)
@@ -102,14 +108,21 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 	if state, err = filepath.Abs(state); err != nil {
 		return a.fail(err)
 	}
+	// The image is hashed once: the file it was started from may since hold another binary.
+	own, err := a.imageSHA256()
+	if err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "director start: warning: cannot hash this binary, so a reload always checks the guildhall on PATH: %v\n", err)
+	}
+	var refused store.ReloadRefusal
 	for {
-		base := store.DirectorSession{Pane: pane, Adapter: p.name}
+		base := store.DirectorSession{Pane: pane, Adapter: p.name, BinarySHA256: own}
 		if base.Maintenance, err = maintenancePolicy(p.cfg); err != nil {
 			return a.fail(fmt.Errorf("director start: record session: %w", err))
 		}
-		n, sp, err := recordNextSession(storePath, self, p.cfg, base, copyDir, func(n int) (store.HandoffPolicy, error) {
+		n, sp, err := recordNextSession(storePath, self, p.cfg, base, copyDir, refused, func(n int) (store.HandoffPolicy, error) {
 			return handoffPolicy(p.cfg, p.runtime, sessionDir(copyDir, n))
 		})
+		refused = store.ReloadRefusal{}
 		if err != nil {
 			return a.fail(fmt.Errorf("director start: record session: %w", err))
 		}
@@ -121,6 +134,9 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 			}
 			return code
 		}
+		if a.endedForReload != nil {
+			a.endedForReload(n)
+		}
 		stopped, err := reloadSession(storePath, n)
 		if err != nil {
 			return a.fail(fmt.Errorf("director start: record session %d reloaded: %w", n, err))
@@ -130,6 +146,14 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 			return 0
 		}
 		_, _ = fmt.Fprintf(a.Stdout, "session: %d reloaded\n", n)
+		if canReexec {
+			var replaced bool
+			if refused, replaced, err = a.reexec(p, n, own, copyDir, signals, argv); err != nil {
+				return a.fail(fmt.Errorf("director start: reload: %w", err))
+			} else if replaced {
+				return 0
+			}
+		}
 		// A reload takes the copy's current settings, its runtime among them.
 		if p.cfg, err = admitConfig(copyDir, p.cfgPath); err != nil {
 			return a.fail(fmt.Errorf("director start: reload: %w", err))
@@ -144,11 +168,12 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 }
 
 // recordNextSession records the next session as recovering for supervisor self under cfg, in base's pane and
-// with its runtime adapter and maintenance policy, its directory in copyDir and the handoff policy policy gives for its number, and
-// returns its number beside what checkSupersede found of the session it supersedes, whose failed removal the
-// caller warns of. A reload requested before it started is recorded applied by it.
+// with its runtime adapter, binary sha256 and maintenance policy, its directory in copyDir and the handoff policy
+// policy gives for its number, and returns its number beside what checkSupersede found of the session it
+// supersedes, whose failed removal the caller warns of. A reload requested before it started is recorded applied by
+// it, with refused, the guildhall binary the supervisor refused to move onto at that reload, if any.
 func recordNextSession(storePath string, self artisan.Identity, cfg any, base store.DirectorSession, copyDir string,
-	policy func(n int) (store.HandoffPolicy, error)) (int, superseded, error) {
+	refused store.ReloadRefusal, policy func(n int) (store.HandoffPolicy, error)) (int, superseded, error) {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return 0, superseded{}, err
@@ -159,7 +184,8 @@ func recordNextSession(storePath string, self artisan.Identity, cfg any, base st
 	var sp superseded
 	n, err := withStore(storePath, false, func(s *store.Store) (int, error) {
 		d := store.DirectorSession{State: store.DirectorRecovering, Identity: store.ProcessIdentity(self),
-			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: base.Pane, Adapter: base.Adapter, Maintenance: base.Maintenance}
+			Release: Version(), BinarySHA256: base.BinarySHA256, ConfigDigest: string(digest.Of(data)), Pane: base.Pane, Adapter: base.Adapter,
+			Maintenance: base.Maintenance}
 		var err error
 		if sp, err = checkSupersede(s); err != nil {
 			return 0, err
@@ -180,7 +206,7 @@ func recordNextSession(storePath string, self artisan.Identity, cfg any, base st
 		case err != nil:
 			return 0, err
 		case r.State == store.ReloadRequested:
-			_, err = s.ApplyDirectorReload(r.Sequence, newest, d.Number)
+			_, err = s.ApplyDirectorReload(r.Sequence, newest, d.Number, refused)
 		}
 		return d.Number, err
 	})

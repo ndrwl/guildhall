@@ -101,7 +101,7 @@ func (a *App) versionCmd(args []string) int {
 	}
 	out := v.plain()
 	if *startup {
-		out = v.startup(a.supervisorRelease(storePath))
+		out = v.startup(a.supervisorBinary(storePath))
 	}
 	if _, err := io.WriteString(a.Stdout, out); err != nil {
 		return 1
@@ -346,24 +346,48 @@ func readFetchTime(path, repo string) string {
 	return r.FetchedAt.UTC().Format(time.RFC3339)
 }
 
-// supervisorRelease is the release the supervisor of this session recorded, read-only from the store at
-// storePath, for the session GUILDHALL_SESSION names; "" outside a session or when it cannot be read.
-func (a *App) supervisorRelease(storePath string) string {
+// startupSupervisor is what `version --startup` compares itself with: the release and binary sha256 the
+// supervisor of its session recorded, its own image's sha256, and the guildhall binary that supervisor refused to
+// move onto at the reload that started the session, if it refused one.
+type startupSupervisor struct {
+	Release, SHA256, OwnSHA256 string
+	Refused                    store.ReloadRefusal
+}
+
+// supervisorBinary reads, read-only from the store at storePath, what the supervisor of the session
+// GUILDHALL_SESSION names recorded of its binary; nothing outside a session or when it cannot be read.
+func (a *App) supervisorBinary(storePath string) startupSupervisor {
 	if storePath == "" || a.Getenv == nil {
-		return ""
+		return startupSupervisor{}
 	}
 	n, err := strconv.Atoi(a.Getenv(session.NumberEnv))
 	if err != nil || n < 1 {
-		return ""
+		return startupSupervisor{}
 	}
 	if _, err := os.Stat(storePath); errors.Is(err, fs.ErrNotExist) || err != nil {
-		return ""
+		return startupSupervisor{}
 	}
-	d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) { return s.DirectorSession(n) })
+	sup, err := withStore(storePath, true, func(s *store.Store) (startupSupervisor, error) {
+		d, err := s.DirectorSession(n)
+		if err != nil {
+			return startupSupervisor{}, err
+		}
+		sup := startupSupervisor{Release: d.Release, SHA256: d.BinarySHA256}
+		if r, err := s.LatestDirectorReload(); err == nil && r.State == store.ReloadApplied && r.NewSession == n {
+			sup.Refused = store.ReloadRefusal{SHA256: r.RefusedSHA256, Reason: r.RefusedReason}
+		}
+		return sup, nil
+	})
 	if err != nil {
-		return ""
+		return startupSupervisor{}
 	}
-	return d.Release
+	if sup.SHA256 != "" {
+		// An image that cannot be hashed is compared by release, as with a supervisor that recorded no sha256.
+		if sup.OwnSHA256, err = a.imageSHA256(); err != nil {
+			sup.SHA256 = ""
+		}
+	}
+	return sup
 }
 
 // plain is the terminal form: the release line, then the revision, latest merge and behind-main lines it has.
@@ -398,8 +422,9 @@ func (v versionInfo) plain() string {
 }
 
 // startup is the chat form: one line, then one warning line when the binary is behind main, modified, or not the
-// release its session's supervisor recorded (release, "" for none).
-func (v versionInfo) startup(release string) string {
+// binary its session's supervisor sup recorded, by sha256 or, for a supervisor that recorded none, by release; or
+// when that supervisor refused to move onto a new binary at the reload that started the session.
+func (v versionInfo) startup(sup startupSupervisor) string {
 	parts := []string{"guildhall", v.Version}
 	if v.Revision != "" {
 		parts[1] = v.Revision[:min(8, len(v.Revision))]
@@ -429,8 +454,15 @@ func (v versionInfo) startup(release string) string {
 	if v.Modified {
 		warnings = append(warnings, "this binary was built with uncommitted or untracked files")
 	}
-	if release != "" && release != v.Version {
-		warnings = append(warnings, fmt.Sprintf("this binary is not the one running this session's supervisor (%s)", release))
+	switch {
+	case sup.SHA256 != "" && sup.SHA256 != sup.OwnSHA256:
+		warnings = append(warnings, fmt.Sprintf("this binary is not the one running this session's supervisor (%s %s)", sup.Release, shortSHA(sup.SHA256)))
+	case sup.SHA256 == "" && sup.Release != "" && sup.Release != v.Version:
+		warnings = append(warnings, fmt.Sprintf("this binary is not the one running this session's supervisor (%s)", sup.Release))
+	}
+	if sup.Refused.Reason != "" {
+		warnings = append(warnings, fmt.Sprintf("this session's supervisor refused to move onto guildhall %s at its reload, so it still runs its old binary: %s",
+			shortSHA(sup.Refused.SHA256), sup.Refused.Reason))
 	}
 	line += "\n"
 	if len(warnings) > 0 {

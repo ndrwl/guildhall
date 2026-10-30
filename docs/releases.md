@@ -115,7 +115,8 @@ Steps 1 and 2 alone already make new tasks use the new release, because `task ne
 ### `guildhall director reload`
 
 `director reload` asks the running Director to restart its agent session on the current pin and settings.
-Its request, its `--now` form and the end-of-turn rule a standalone Director applies it by are built, as [the Director](director.md#reload) describes; moving onto a new release's binary lands with release pins.
+Its request, its `--now` form and the end-of-turn rule a standalone Director applies it by are built, as [the Director](director.md#reload) describes.
+The supervisor already moves onto a new binary at a reload: when the `guildhall` on `PATH` differs from its own image by sha256, it pre-flights it and replaces its image with it in the same process and pane, and records the old and new release and sha256 on the applied reload ([the supervisor's binary](director.md#the-supervisors-binary)); taking the binary from the pin rather than `PATH`, and the config digest on the record, land with release pins.
 It records a `director-reload` request event and returns at once; it never interrupts a step.
 
 - The Director checks for a pending reload at each step boundary, the same boundary where it applies a new managed revision.

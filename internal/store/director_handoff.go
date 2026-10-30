@@ -7,6 +7,8 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // Nested buckets of the director bucket holding handoff notes and reload requests, each keyed by zero-padded
@@ -65,7 +67,27 @@ type DirectorReload struct {
 	OldSession int       `json:"old_session,omitempty"`
 	NewSession int       `json:"new_session,omitempty"`
 	AppliedAt  time.Time `json:"applied_at,omitzero"`
+	// OldRelease and OldSHA256 are the release and binary sha256 the old session's supervisor recorded, and
+	// NewRelease and NewSHA256 the new session's, copied from the two session records when the reload is applied.
+	OldRelease string `json:"old_release,omitempty"`
+	OldSHA256  string `json:"old_sha256,omitempty"`
+	NewRelease string `json:"new_release,omitempty"`
+	NewSHA256  string `json:"new_sha256,omitempty"`
+	// RefusedSHA256 and RefusedReason are set when the supervisor refused to move onto the guildhall binary on
+	// PATH, whose sha256 RefusedSHA256 is, and reloaded on its own binary instead.
+	RefusedSHA256 string `json:"refused_sha256,omitempty"`
+	RefusedReason string `json:"refused_reason,omitempty"`
 }
+
+// ReloadRefusal is a guildhall binary a supervisor refused to move onto at a reload: its sha256, "" when it could
+// not be hashed, and a one-line reason. The zero refusal is none.
+type ReloadRefusal struct {
+	SHA256 string `json:"sha256,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// MaxRefusedReasonBytes bounds a reload refusal's reason.
+const MaxRefusedReasonBytes = 1024
 
 // seqKey keys handoff notes, note versions and reloads by receipt sequence, as wakes are keyed.
 func seqKey(seq uint64) []byte { return wakeKey(seq) }
@@ -142,16 +164,30 @@ func (s *Store) LatestDirectorReload() (DirectorReload, error) {
 // ApplyDirectorReload records the requested reload at sequence seq applied by session newSession, which
 // followed session oldSession (0 for none), with the mutation id "director-reload-applied:<seq>". It is refused
 // with ErrNotFound for no reload at seq and ErrInvalid for a newSession below 1 or an oldSession not below
-// newSession; applying it again with other sessions is ErrMutationConflict. Replaying returns the applied reload.
-func (s *Store) ApplyDirectorReload(seq uint64, oldSession, newSession int) (DirectorReload, error) {
+// newSession; applying it again with other sessions or another refusal is ErrMutationConflict. Replaying returns the
+// applied reload. The old and new release and binary sha256 are copied from the two sessions' records, as recorded
+// (none for a session not recorded), so whichever binary applies the reload records the same; refused, when it is
+// not the zero refusal, is the PATH binary the old session's supervisor refused to move onto.
+func (s *Store) ApplyDirectorReload(seq uint64, oldSession, newSession int, refused ReloadRefusal) (DirectorReload, error) {
 	if newSession < 1 || oldSession < 0 || oldSession >= newSession {
 		return DirectorReload{}, invalid("a reload applied by session %d must follow an earlier session, not %d", newSession, oldSession)
 	}
+	if _, err := digest.ParseHex(refused.SHA256); refused.SHA256 != "" && err != nil {
+		return DirectorReload{}, invalid("a refused binary's sha256 %q must be 64 lowercase hex characters", refused.SHA256)
+	}
+	if err := validateText("reload refusal reason", refused.Reason, MaxRefusedReasonBytes); refused != (ReloadRefusal{}) && err != nil {
+		return DirectorReload{}, err
+	}
+	// The refusal is left out when there is none, so the request digest of a reload without one is unchanged.
 	req := struct {
-		Sequence   uint64 `json:"sequence"`
-		OldSession int    `json:"old_session"`
-		NewSession int    `json:"new_session"`
-	}{seq, oldSession, newSession}
+		Sequence   uint64         `json:"sequence"`
+		OldSession int            `json:"old_session"`
+		NewSession int            `json:"new_session"`
+		Refused    *ReloadRefusal `json:"refused,omitempty"`
+	}{Sequence: seq, OldSession: oldSession, NewSession: newSession}
+	if refused != (ReloadRefusal{}) {
+		req.Refused = &refused
+	}
 	_, err := s.mutate(fmt.Sprintf("director-reload-applied:%d", seq), opApplyDirectorReload, req, func(tx *bolt.Tx, r *Receipt) error {
 		r.Record = reloadRecord(seq)
 		reloads := directorBucket(tx, bucketReloads)
@@ -163,6 +199,21 @@ func (s *Store) ApplyDirectorReload(seq uint64, oldSession, newSession int) (Dir
 			return invalid("director reload %d is already %s", seq, d.State)
 		}
 		d.State, d.OldSession, d.NewSession, d.AppliedAt = ReloadApplied, oldSession, newSession, s.now().UTC()
+		sessions := directorBucket(tx, bucketSessions)
+		for _, side := range []struct {
+			n               int
+			release, sha256 *string
+		}{{oldSession, &d.OldRelease, &d.OldSHA256}, {newSession, &d.NewRelease, &d.NewSHA256}} {
+			var ds DirectorSession
+			switch err := getJSON(sessions, sessionKey(side.n), &ds); {
+			case side.n == 0 || errors.Is(err, ErrNotFound):
+			case err != nil:
+				return err
+			default:
+				*side.release, *side.sha256 = ds.Release, ds.BinarySHA256
+			}
+		}
+		d.RefusedSHA256, d.RefusedReason = refused.SHA256, refused.Reason
 		return putJSON(reloads, seqKey(seq), d)
 	})
 	if err != nil {
