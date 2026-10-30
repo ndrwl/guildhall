@@ -2,7 +2,7 @@
 
 `internal/interp` advances a task through the workflow revision it bound when it was created.
 `interp.Engine.Advance(ctx, event)` is deterministic: it derives workflow progress from the task's store records, never from prompt instructions or the Director's say-so, and makes no model call.
-It follows `changes_requested` and `failed` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review and validation gates before `deliver`, [publishes and merges](#publish-and-deliver) through the forge and [validates](#validate) the published head against the forge's checks; it hands [Director stages](#director-stages) to the Director; the checks gate and loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
+It follows `changes_requested` and `failed` loop rules with their `max`, asks the Guildmaster at a loop's exit, checks the review and validation gates before `deliver`, [publishes and merges](#publish-and-deliver) through the forge and [validates](#validate) the published head against the forge's checks; it hands [Director stages](#director-stages) to the Director; the checks gate, `changes_requested` loops back to a step run by neither an Artisan nor the Director, and `failed` loops back to a step not run by an Artisan are refused with `ErrUnsupported`.
 [`task start`, `step done`, `step finish`, `step retry` and `step send-back`](running.md) run it from the command line; from a copy, each attempt's launcher runs them itself as the task's [watcher](running.md#the-watcher).
 
 ## Seams
@@ -165,6 +165,8 @@ A crash between recording the attempt and the mark replays the hand-off from the
 An advance that finds the stage marked and without a result waits again, sending nothing; there is no heartbeat, so no `worker-stalled` observation.
 An advance that finds the stage's result published but not taken, as a `step finish` that stopped after writing it leaves, takes it as `attempt-result` would, whatever its event: no launcher announces a Director stage's result, so `task start` recovers it.
 `interp.HandedToDirector(dir)` reports whether an attempt directory's `launched.json` names the director launcher.
+
+A `changes_requested` [loop](#rounds-and-loops) may go back to a Director stage: its next attempt is handed over the same way, its binding and prompt carrying `feedback`, `previous` and `reviewed`.
 
 The Director ends the stage with [`step finish`](running.md#step-finish), which writes the attempt's `result.json` with `adapter.WriteResult` and feeds `attempt-result`, so the intake, the output documents (`<step>-<n>-<port>`), the outcome and replay are an Artisan's.
 A stage the Director abandons is finished `--failed`: the task waits for the Director with `attempt-failed`, as after a failed Artisan attempt, and `step retry` hands attempt `n+1` to the Director in the same way.
@@ -426,6 +428,10 @@ Besides its wired inputs, an attempt may be given:
 - `previous`: a review step's own latest outcome, whose findings the new outcome must disposition;
 - `rulings`: the Director's [rulings](#director-rulings) on findings of a review step's previous outcome, recorded first as document `<step>-<n>-rulings` (`tasks/<repo>/<task>/<step>-<n>.rulings.json`), a JSON array of rulings;
 - `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`).
+- For a [Director stage](#director-stages) a loop sent back, besides that `feedback`: `previous`, the stage's own latest document on each output port, and `reviewed`, each document a blocking result among the feedback was bound to (a Guildmaster decision's or a document review outcome's subject), once each; a result bound to a head has none.
+  The grill resumes from them rather than starting over (`baseline/stages/grill.md`).
+
+`previous`, `rulings`, `reviewed`, `resolution` and `feedback` play no part in staleness: only the wired inputs do.
 
 Feedback a failed or stopped attempt was given is still pending, so the attempt that retries it is given it again.
 A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.
@@ -436,7 +442,8 @@ Comments without a rule are suggestions, listed in `suggestions` in /2: a review
 A `validate` step's `failed` result is blocking too, and is one round of its `on.failed` rule ([validate](#validate)).
 Each blocking result of a step is one round of its `on.changes_requested` rule (`on.failed` for validate); the step may loop `max` rounds, plus one for every loop exit answered `continue`.
 
-- **Within `max`.** The rule's target, which must be an Artisan step, runs again with the result as `feedback`.
+- **Within `max`.** The rule's target runs again with the result as `feedback`.
+  The target of a `changes_requested` rule may be an Artisan step or a Director stage, which starts its next attempt as a new `director-stage` hand-off; a `failed` rule's must be an Artisan step.
   When the target has run and the step's inputs did not change, as when a build returns the same head, the step runs again on the same subject with its previous outcome.
 - **Past `max`.** The engine opens decision `<step>-x<round>`, kind `loop-exit`, bound to the round's subject, with options `continue` (one more round), `accept` and `reject`.
   `accept` on a review step records the Guildmaster's approval as `<step>-x<round>-outcome`, an outcome by reviewer `human` bound to the originating review's recorded revisions, and completes the step.
@@ -630,6 +637,7 @@ Changes to the role, guide, standards, skills or inputs after preparation reach 
 
 `validate_test.go`, red first against the engine that refused `validate` (`validate steps run by the engine`; see the [interpreter contract tests](contracts/interp.md#tests) for the case that was not red), runs `testdata/workflows/validate.json`, plan through an Artisan review, publish, validate with `on.failed` back to build at most once, and deliver, over `forgetest.Fake`: no checks and pending checks wait with one `checks-pending` message per head and record nothing, passed checks record `validate-1-result` and open the merge decision, failed checks record a failed result and start build 2 with it as `feedback` and its next head is reviewed, published and validated as round 2, a failed round past `max` opens `validate-x2` with `continue` and `reject`, a build that leaves the head unchanged has its checks read again and spends a round only on a newly failed run, failed checks without a rule and a rejected exit wait for the Director and read a re-run pass, no checks under `no_ci` pass, `ChecksRefresh` paces the reads, a forge that cannot read checks fails the advance and records nothing, and a failure before or after recording a passed or failed result replays to one result, its message and one launch of build 2.
 `director_stage_test.go` runs `testdata/workflows/director-grill.json`, a Director grill before research and the straight path, on both backends: the grill is recorded, bound and prepared with the Director's role and its skills, marked launched by the Director and handed over with one `director-stage` message and no launch; a repeated advance, or one after a crash before the mark, renders and sends nothing new; the Director's result records `grill-1-notes` and moves the task to research, and the plan gets both notes as `context`; a failed stage waits for the Director and `step retry` hands attempt 2 over; a Director stage after an Artisan stage is handed over in the advance that takes the Artisan's result.
+`director_loop_test.go` runs `testdata/workflows/director-loop.json`, whose Guildmaster document review of the research notes loops back to the Director's grill, on both backends: `changes_requested` hands grill attempt 2 to the Director with `feedback`, `previous` and `reviewed` in its binding and prompt, a crash before the mark replays with no second message, the review is asked again on the same notes, and past `max` the `-x` decision is asked; a `validate` loop to a Director stage is still `ErrUnsupported`.
 `TestDefaultWorkflowDelivers` runs the shipped default workflow, its grill overridden to an Artisan with no skills, on both backends from task creation through grill, research, plan, acceptance, build, review, publish, a failed validation looping to build, the new head's review, publish and passed validation, to the merge and the closed task.
 
 `internal/interp/engine_test.go` runs the straight workflow, `testdata/workflows/straight.json` (plan, Guildmaster acceptance, build, Artisan review, Guildmaster sign-off, deliver), twice: against the scripted mock with the in-memory records and `messagingtest.Fake`, and against the same mock with a real store file and its mailbox.

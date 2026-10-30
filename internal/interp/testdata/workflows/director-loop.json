@@ -1,0 +1,22 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "director-loop",
+  "description": "A Director grill, an Artisan's research, and the Guildmaster's review of the research notes, whose changes_requested loops back to the grill once, before the plan, acceptance, build, review and delivery.",
+  "steps": [
+    {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director", "skills": ["go-tdd"]}},
+    {"id": "research", "type": "research", "version": 1, "settings": {"profile": "researcher"}},
+    {"id": "look", "type": "document-review", "version": 1, "settings": {"actor": "guildmaster"},
+     "inputs": {"subject": ["research.notes"]},
+     "on": {"changes_requested": {"goto": "grill", "max": 1}}},
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "planner"},
+     "inputs": {"context": ["grill.notes", "research.notes"]}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "builder", "skills": ["go-tdd", "guildhall-contributing"]},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan", "profile": "reviewer"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}}
+  ]
+}
