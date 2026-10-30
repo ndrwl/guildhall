@@ -112,7 +112,7 @@ func TestHallmarkFinishesDone(t *testing.T) {
 			}
 			msgs := h.messages(t)
 			text, ok := msgs["app.t7.finished"]
-			if !ok || !strings.Contains(text, "no pull request") || !strings.Contains(text, docs["hallmark-1-report"].Path) {
+			if !ok || !strings.Contains(text, "no pull request") || !strings.Contains(text, filepath.FromSlash(docs["hallmark-1-report"].Path)) {
 				t.Fatalf("finished message = %q (sent %v), want it to name the report", text, ok)
 			}
 			for id := range msgs {
