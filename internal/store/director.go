@@ -537,10 +537,13 @@ const (
 	MessageMergeHeld        = "merge-held"
 	MessageMergeRefused     = "merge-refused"
 	MessageMerged           = "merged"
-	MessagePublished        = "published"
-	MessageStall            = "stall"
-	MessageWorkerStalled    = "worker-stalled"
-	MessageWorkspaceKept    = "workspace-kept"
+	// MessageFinished: a task whose workflow has no deliver step, such as a hallmark, ran every step and is done,
+	// with no pull request; it is never a merged message, so it counts toward no maintenance cadence.
+	MessageFinished      = "finished"
+	MessagePublished     = "published"
+	MessageStall         = "stall"
+	MessageWorkerStalled = "worker-stalled"
+	MessageWorkspaceKept = "workspace-kept"
 	// MessagePruneKept: the session supervisor's daily prune left a done task's worktree, because retiring it would
 	// lose something or it is not a worktree.
 	MessagePruneKept = "prune-workspace-kept"
@@ -570,7 +573,7 @@ var MessageTypes = map[string]string{
 	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
 	MessageDependencyHeld: "engine", MessageBranchKept: "engine",
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
-	MessageMergeRefused: "engine", MessageMerged: "engine", MessagePublished: "engine", MessageStall: "engine",
+	MessageMergeRefused: "engine", MessageMerged: "engine", MessageFinished: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
 	MessageMergeQueued: "engine", MessageRebased: "engine", MessageRebaseEscalated: "engine", MessageRebaseStuck: "engine",
 	MessageApprovalCarried: "engine",

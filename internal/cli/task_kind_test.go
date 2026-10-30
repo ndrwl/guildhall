@@ -122,7 +122,7 @@ func TestTaskNewKindRefusals(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML)
 	path := emptyStore(t)
 	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--kind", "docs", "t-1")
-	if code != 2 || out != "" || !strings.Contains(stderr, `--kind "docs" is not a task kind; use feature or bug`) {
+	if code != 2 || out != "" || !strings.Contains(stderr, `--kind "docs" is not a task kind; use feature, bug or hallmark`) {
 		t.Fatalf("unknown --kind: exit %d, stdout %q, stderr %s", code, out, stderr)
 	}
 	for table, want := range map[string]string{
@@ -156,7 +156,7 @@ func TestTaskNewHelpDescribesKinds(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
 	}
-	for _, want := range []string{"[--kind feature|bug]", "[--detail <text> | --detail-file <file|->]", "at most 100 characters", "--fixes without --kind means bug", "  feature  " + taskKindDescriptions[config.TaskKindFeature], "  bug      " + taskKindDescriptions[config.TaskKindBug]} {
+	for _, want := range []string{"[--kind feature|bug|hallmark]", "[--detail <text> | --detail-file <file|->]", "at most 100 characters", "--fixes without --kind means bug", "  feature  " + taskKindDescriptions[config.TaskKindFeature], "  bug      " + taskKindDescriptions[config.TaskKindBug], "  hallmark " + taskKindDescriptions[config.TaskKindHallmark]} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help does not contain %q:\n%s", want, out)
 		}

@@ -31,7 +31,8 @@ Report findings in terms of locality and leverage, never "cleaner".
 
 ## Steps
 
-1. Baseline: read the previous hallmark report first, record its commit and the current one, and list the merged pull requests and recent CI runs between them, with their failures and cancellations.
+1. Baseline: read the previous hallmark report first, your `previous` input, record its commit and the current one, and list the merged pull requests and recent CI runs between them, with their failures and cancellations.
+   With no previous report, this is the first recorded hallmark: say so, take the repository's recent history as the baseline, and leave the disposition table empty.
    Start a disposition table for every earlier finding: resolved, partly resolved, unchanged or worse.
    Do not report unchanged debt as a fresh discovery.
 2. Destination: read the requirements, the contract rules, every recorded decision, the module documents and the plans for the next slices.

@@ -222,6 +222,17 @@ var kinds = []Kind{
 		Actors: engineOnly,
 	},
 	{
+		// Hallmark reviews the whole repository without changing it and writes one ranked report of follow-ups
+		// (docs/decisions/report-only-workflows.md). Intake refuses a result that leaves a tracked change or moves
+		// HEAD, and the engine gives the first attempt the report of the repository's previous done hallmark, if
+		// any, as previous; a workflow does not wire it.
+		Type: "hallmark", Version: 1,
+		Inputs:   []Port{{Name: "previous", Type: Document, Optional: true}},
+		Outputs:  []Port{{Name: "report", Type: Document}},
+		Settings: map[string]Setting{"profile": artisan["profile"], "skills": artisan["skills"], "instructions": instructions["instructions"]},
+		Actors:   artisanOnly,
+	},
+	{
 		Type: "handoff-wait", Version: 1,
 		Outputs:  []Port{{Name: "handoff", Type: Document}},
 		Settings: map[string]Setting{"from": {Type: StringSetting, Required: true}},

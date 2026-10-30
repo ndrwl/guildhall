@@ -1,0 +1,8 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "hallmark",
+  "description": "One read-only hallmark step with no deliver step.",
+  "steps": [
+    {"id": "hallmark", "type": "hallmark", "version": 1, "settings": {"profile": "researcher", "instructions": "Read only."}}
+  ]
+}

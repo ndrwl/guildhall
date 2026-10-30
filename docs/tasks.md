@@ -9,7 +9,7 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or found from the current directory, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
   The title is a short name; the task's full statement, such as a bug's symptom and exact error, goes in its detail, given as text with `--detail` or read with `--detail-file` from a file, or from standard input for `-`, with the same rules as [`decide answer --answer-file`](decisions-cli.md) (a leading byte order mark is dropped, UTF-16 is refused and CRLF becomes LF).
   Both are optional, and giving both is a usage error.
   A title over 100 characters is refused with exit 1 before the configuration is read, naming `--detail` and `--detail-file`.
@@ -51,6 +51,7 @@ An unknown `--kind` is a usage error.
 |---|---|---|
 | `feature` | The repository's `workflow` setting, `default` when it names none | New or changed behaviour: grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver. |
 | `bug` | The repository's [`[repository.kinds]`](configuration.md#repositories) `bug` workflow, the shipped `bug` when it names none | A fix for a defect in behaviour that should already work, with no Guildmaster stage: the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, merging under the repository's merge requirements. Research reproduces the defect from the task title and detail and finds its cause, or fails with what it found; plan proceeds on recommended answers, or fails with a question that needs the Guildmaster; build writes a regression test that fails before the fix and passes after it, and review checks that test. |
+| `hallmark` | The repository's `[repository.kinds]` `hallmark` workflow, the shipped `hallmark` when it names none | A report-only review of the whole repository, launched when a [hallmark is due](director.md#maintenance): one read-only `hallmark` stage, under the `researcher` profile with the `guildhall-hallmark` skill, is given the repository's previous hallmark report as `previous` and writes a ranked report of PR-sized follow-ups. Intake fails the stage if it leaves a tracked change or moves HEAD, and the task finishes as done with no pull request ([decision](decisions/report-only-workflows.md)). |
 
 The descriptions are in the binary, `task new --help`, not in the workflows, so rewording them changes no digest.
 Every Artisan prompt shows the task's title and detail, quoted as text after its header; a bug task has no grill, so its title and its detail, with the symptom and the exact error, are the only statement of the defect its research is given.
@@ -61,11 +62,11 @@ A repository with no `kinds` table, and a `task new` with neither `--kind` nor `
 ## The bound workflow
 
 `task new` loads the configuration with the [configuration loader](configuration.md), including a Steward-owned `managed.toml` beside it, and finds the repository there.
-The task's kind names the effective workflow: the repository's `workflow` setting, `default` when it names none, for a feature, and its `kinds` table's `bug`, `bug` when it names none, for a bug.
+The task's kind names the effective workflow: the repository's `workflow` setting, `default` when it names none, for a feature, and its `kinds` table's `bug` or `hallmark`, the kind's own name when it names none, for a bug or a hallmark.
 A name resolves to:
 
-- the definition of that name shipped with this Guildhall release, for `default` and `bug`.
-  Any `workflows/default.json` or `workflows/bug.json` beside the configuration is ignored.
+- the definition of that name shipped with this Guildhall release, for `default`, `bug` and `hallmark`.
+  Any `workflows/default.json`, `workflows/bug.json` or `workflows/hallmark.json` beside the configuration is ignored.
 - the file `workflows/<name>.json` in the configuration file's directory for any other name, and the file's `name` must equal it.
 
 The definition is parsed with `workflow.Parse`, the repository's `workflow_overrides` are applied with `workflow.ApplyOverrides`, and the result is checked with `workflow.Validate` (R1.59); no role profile is written into it.

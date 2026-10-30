@@ -429,7 +429,7 @@ func TestBoundWorkflowRefusesAnUnshippedDigest(t *testing.T) {
 }
 
 // TestRetiredRevisionIsNotAdmittedForANewTask: a retired revision resolves only for a task that bound it: the
-// release ships exactly today's default and bug, and admission refuses a new task on a retired one.
+// release ships exactly today's default, bug and hallmark, and admission refuses a new task on a retired one.
 func TestRetiredRevisionIsNotAdmittedForANewTask(t *testing.T) {
 	def, err := workflow.Default()
 	if err != nil {
@@ -439,12 +439,16 @@ func TestRetiredRevisionIsNotAdmittedForANewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	hallmark, err := workflow.Hallmark()
+	if err != nil {
+		t.Fatal(err)
+	}
 	shipped, err := shippedDefinitions()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shipped) != 2 || shipped[0].Digest() != def.Digest() || shipped[1].Digest() != bug.Digest() {
-		t.Fatalf("shippedDefinitions = %v, want exactly the current default and bug", shipped)
+	if len(shipped) != 3 || shipped[0].Digest() != def.Digest() || shipped[1].Digest() != bug.Digest() || shipped[2].Digest() != hallmark.Digest() {
+		t.Fatalf("shippedDefinitions = %v, want exactly the current default, bug and hallmark", shipped)
 	}
 	s, err := store.Open(emptyStore(t), store.Options{})
 	if err != nil {

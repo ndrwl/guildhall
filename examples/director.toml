@@ -68,6 +68,15 @@ allowed_tools = ["Bash(go test:*)"]
 [repository.profiles.rebaser]
 allowed_tools = ["Bash(go test:*)"]
 
+# A hallmark's read-only stage runs under the researcher profile; to give its report test evidence, grant the
+# researcher the test commands too.
+# [repository.profiles.researcher]
+# allowed_tools = ["Bash(go test:*)"]
+
+# A hallmark task runs the shipped hallmark workflow; a repository may name its own instead.
+# [repository.kinds]
+# hallmark = "my-hallmark"
+
 [[repository]]
 id = "docs-site"
 path = '/srv/src/docs-site'

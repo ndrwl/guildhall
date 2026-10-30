@@ -333,7 +333,8 @@ Director maintenance has two parts, which the [`guildhall-maintenance`](#skills)
 - The note audit: for each live [note](#notes), is it still true, does the store already hold it (a task, decision, message, document or config), and is it a recurring kind of note that should become standard procedure or a follow-up task?
   The Director removes, edits and compacts notes on its own, each removal with a reason naming the record that holds it, and brings proposed tasks and procedure changes to the Guildmaster as a short numbered list, creating nothing from it before they approve.
   Every [handoff](#handoff) runs it too.
-- The hallmark: for each repository whose hallmark is due, the Director launches a task whose stage uses `guildhall-hallmark`, records it as soon as it is launched, so merges made while it runs count toward the next, and reads the self-review ledger.
+- The hallmark: for each repository whose hallmark is due, the Director launches a [`hallmark` task](tasks.md#task-kinds) with `guildhall task new --kind hallmark` and `guildhall task start`, then records it at once with `guildhall director maintenance record --hallmark`, so merges made while it runs count toward the next, and reads the self-review ledger.
+  The task runs one read-only stage that uses `guildhall-hallmark`, is given the repository's previous hallmark report, and finishes as done with a `finished` message naming its report and no pull request, so it sends no `merged` message; the Director reads the report and brings its ranked follow-ups to the Guildmaster, creating tasks only for the ones they pick.
   It needs `task new`, so maintenance waits until the session is no longer `recovering`.
 
 Two [`[director]` settings](configuration.md#the-director-table) set when each part is due, and 0 turns a part off:

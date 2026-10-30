@@ -696,6 +696,14 @@ func (p storeRecords) Rulings(repo, id string) ([]store.Ruling, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.Ruling, error) { return s.Rulings(repo, id) })
 }
 
+func (p storeRecords) Tasks(repo string) ([]store.Task, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.Task, error) { return s.Tasks(repo) })
+}
+
+func (p storeRecords) CloseTimes() (map[store.TaskRef]time.Time, error) {
+	return withRecords(p, true, nil, func(s *store.Store) (map[store.TaskRef]time.Time, error) { return s.CloseTimes() })
+}
+
 func (p storeRecords) TaskContexts(repo, id string) ([]store.TaskContext, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskContext, error) { return s.TaskContexts(repo, id) })
 }

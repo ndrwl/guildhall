@@ -116,6 +116,14 @@ func Default() (*Definition, error) { return shipped(defaultJSON) }
 // defect, proceed or fail back without acceptance, test it first and check that test.
 func Bug() (*Definition, error) { return shipped(bugJSON) }
 
+//go:embed hallmark.json
+var hallmarkJSON []byte
+
+// Hallmark returns Guildhall's shipped hallmark workflow, the workflow of a hallmark task: one read-only hallmark step
+// that writes a ranked report, with no deliver step, so the task finishes as done without a pull request
+// (docs/decisions/report-only-workflows.md).
+func Hallmark() (*Definition, error) { return shipped(hallmarkJSON) }
+
 //go:embed retired/*.json
 var retiredFS embed.FS
 
@@ -216,6 +224,23 @@ func ApplyOverrides(def *Definition, overrides map[string]Override) (*Definition
 		step.Settings[ActorSetting] = actor
 	}
 	return &out, nil
+}
+
+// OwnOverrides returns the overrides of overrides that name a step of def, nil when none do. A repository's
+// overrides are keyed by step id across every workflow its task kinds run, so a workflow without a step, such as the
+// hallmark workflow without review, takes the overrides of the steps it has.
+func OwnOverrides(def *Definition, overrides map[string]Override) map[string]Override {
+	var out map[string]Override
+	for id, ov := range overrides {
+		if def.stepIndex(id) < 0 {
+			continue
+		}
+		if out == nil {
+			out = map[string]Override{}
+		}
+		out[id] = ov
+	}
+	return out
 }
 
 // Actor returns who fulfils the step: its "actor" setting, or the only actor its kind allows.

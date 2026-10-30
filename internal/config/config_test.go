@@ -173,7 +173,8 @@ workflow`, `one owner machine`},
 		{"credential-like key", `notes_dir = "notes"`, `github_token = "x"`, `looks like a credential`},
 		{"invalid workflow name", `workflow = "careful"`, `workflow = "../careful"`, `invalid workflow name`},
 		{"feature kind", "no_ci = true\n", "no_ci = true\n[repository.kinds]\nfeature = \"careful\"\n", `kinds.feature is not accepted; the repository's workflow setting is the feature kind's workflow`},
-		{"unknown kind", "no_ci = true\n", "no_ci = true\n[repository.kinds]\ndocs = \"careful\"\n", `unknown task kind "docs" in kinds; the only one is bug`},
+		{"unknown kind", "no_ci = true\n", "no_ci = true\n[repository.kinds]\ndocs = \"careful\"\n", `unknown task kind "docs" in kinds; the only ones are bug and hallmark`},
+		{"invalid hallmark workflow name", "no_ci = true\n", "no_ci = true\n[repository.kinds]\nhallmark = \"../x\"\n", `kinds.hallmark: invalid workflow name "../x"`},
 		{"invalid kind workflow name", "no_ci = true\n", "no_ci = true\n[repository.kinds]\nbug = \"../my-bug\"\n", `kinds.bug: invalid workflow name "../my-bug"`},
 	}
 	for _, c := range cases {
@@ -190,12 +191,12 @@ workflow`, `one owner machine`},
 	}
 }
 
-// TestTaskKindWorkflow: a feature runs the repository's workflow setting and a bug its [repository.kinds] bug
-// workflow, or the shipped bug workflow; an unknown kind has none. A config without a kinds table encodes no Kinds
-// field, so its digest is unchanged.
+// TestTaskKindWorkflow: a feature runs the repository's workflow setting, and a bug or hallmark its [repository.kinds]
+// workflow, or the shipped workflow named for its kind; an unknown kind has none. A config without a kinds table
+// encodes no Kinds field, so its digest is unchanged.
 func TestTaskKindWorkflow(t *testing.T) {
 	base := director(t)
-	cfg, err := Parse([]byte(strings.Replace(base, "no_ci = true\n", "no_ci = true\n[repository.kinds]\nbug = \"my-bug\"\n", 1)))
+	cfg, err := Parse([]byte(strings.Replace(base, "no_ci = true\n", "no_ci = true\n[repository.kinds]\nbug = \"my-bug\"\nhallmark = \"x\"\n", 1)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +211,8 @@ func TestTaskKindWorkflow(t *testing.T) {
 		{tool, TaskKindBug, "bug", true},
 		{site, TaskKindFeature, "careful", true},
 		{site, TaskKindBug, "my-bug", true},
+		{tool, TaskKindHallmark, "hallmark", true},
+		{site, TaskKindHallmark, "x", true},
 		{site, "docs", "", false},
 	} {
 		if got, ok := c.r.TaskKindWorkflow(c.taskKind); got != c.want || ok != c.ok {
@@ -228,7 +231,7 @@ func TestTaskKindWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(with), `"Kinds":{"bug":"my-bug"}`) || strings.Contains(string(without), "Kinds") {
+	if !strings.Contains(string(with), `"Kinds":{"bug":"my-bug","hallmark":"x"}`) || strings.Contains(string(without), "Kinds") {
 		t.Fatalf("encoded with kinds %s\nwithout %s", with, without)
 	}
 }

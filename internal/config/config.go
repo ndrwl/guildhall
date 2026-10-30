@@ -137,15 +137,17 @@ func (m MergeRequires) Effective() MergeRequires {
 const DefaultWorkflow = "default"
 
 // Task kinds: a task is created as one, which chooses its workflow (docs/tasks.md#task-kinds).
-// A feature task runs the repository's Workflow; a bug task runs Kinds[TaskKindBug], or the shipped workflow "bug".
-// A task kind is not a step kind (workflow.Kind).
+// A feature task runs the repository's Workflow; a bug or hallmark task runs Kinds[<kind>], or the shipped workflow
+// named for its kind. A task kind is not a step kind (workflow.Kind).
 const (
 	TaskKindFeature = "feature"
 	TaskKindBug     = "bug"
+	// TaskKindHallmark is a report-only review of the whole repository, which finishes without a pull request.
+	TaskKindHallmark = "hallmark"
 )
 
 // TaskKinds lists every task kind, the default first.
-var TaskKinds = []string{TaskKindFeature, TaskKindBug}
+var TaskKinds = []string{TaskKindFeature, TaskKindBug, TaskKindHallmark}
 
 // TaskKindWorkflow returns the workflow name repository r runs for a task of kind taskKind, and whether the kind is
 // known.
@@ -153,11 +155,11 @@ func (r Repository) TaskKindWorkflow(taskKind string) (string, bool) {
 	switch taskKind {
 	case TaskKindFeature:
 		return r.Workflow, true
-	case TaskKindBug:
-		if name := r.Kinds[TaskKindBug]; name != "" {
+	case TaskKindBug, TaskKindHallmark:
+		if name := r.Kinds[taskKind]; name != "" {
 			return name, true
 		}
-		return TaskKindBug, true
+		return taskKind, true
 	}
 	return "", false
 }
@@ -371,7 +373,7 @@ type Repository struct {
 	Merge MergeOptions `toml:"merge"`
 	// Workflow names the Director's workflow definition this repository runs for a feature task.
 	Workflow string `toml:"workflow"`
-	// Kinds names the workflow this repository runs for each other task kind, keyed by kind (KindBug only); a kind
+	// Kinds names the workflow this repository runs for each other task kind, keyed by kind (TaskKindBug or TaskKindHallmark); a kind
 	// it does not name runs the shipped workflow of that name. It is omitted from JSON when unset, so the config
 	// digest of a config without it is unchanged.
 	Kinds map[string]string `toml:"kinds" json:",omitempty"`
@@ -653,8 +655,8 @@ func (c *Config) validate() []string {
 			switch {
 			case k == TaskKindFeature:
 				add("%s: kinds.feature is not accepted; the repository's workflow setting is the feature kind's workflow", name)
-			case k != TaskKindBug:
-				add("%s: unknown task kind %q in kinds; the only one is %s", name, k, TaskKindBug)
+			case k != TaskKindBug && k != TaskKindHallmark:
+				add("%s: unknown task kind %q in kinds; the only ones are %s and %s", name, k, TaskKindBug, TaskKindHallmark)
 			case !workflow.ValidID(r.Kinds[k]):
 				add("%s: kinds.%s: invalid workflow name %q", name, k, r.Kinds[k])
 			}

@@ -545,6 +545,22 @@ The check is skipped when the head document is already recorded, so a replay aft
 A git failure, a missing branch and an ended context reading the tip or ancestry are operational errors that leave intake replayable, never a rejection.
 The task's custody lock serialises advances; external writers must not change the worktree during intake.
 
+## Report-only workflows
+
+A workflow with no `deliver` step, such as the shipped `hallmark` workflow of a [hallmark task](tasks.md#task-kinds), finishes once every step is done ([decision](decisions/report-only-workflows.md)).
+The advance records document `finished`, at `tasks/<repo>/<task>/finished.json`, `{"schema":"guildhall.finished/1","head":…}`, sends the Director a `finished` message, id `<repo>.<task>.finished`, naming the last step's output, sets the task `done` and returns `{"wait":"done"}`.
+It sends no `merged` message and opens no audit, so a hallmark counts toward no hallmark cadence.
+`head` is set only when every step that runs attempts is a `hallmark` step: the prepared commit of the last step's latest attempt, at which [prune](running.md#pruning) retires the worktree as it does at a merge record's head; without it the worktree is kept.
+A definition that has a deliver step and somehow runs past it is still refused with `ErrUnsupported`.
+
+With `Engine.Workspaces`, launching an attempt of a `hallmark` step records document `<step>-<n>-prepared`, the worktree's HEAD after the task branch was fast-forwarded, once, as the head check records its base.
+At intake, before its report is recorded, the result is [rejected](#replay-and-recovery) when the worktree has a staged or unstaged tracked change, or HEAD is not the prepared commit, with a reason starting "hallmarks must not change the project"; untracked files are allowed, and a report already recorded stands on replay.
+A git failure is an operational error, never a rejection.
+
+The first attempt of a `hallmark` step that wires no `previous` input is given, as `previous`, the report of the newest done task of the same repository, by close time then id, whose bound workflow has a `hallmark` step and that recorded a `<step>-<n>-report`.
+The report is copied once into the task's documents as `previous-<step>`, at `tasks/<repo>/<task>/previous-<step>-<source task>.md`; later attempts reuse the copy and every binding records it, so a hallmark that finishes later never changes what an earlier attempt was given.
+With no such task the input is absent.
+
 ## Review gate
 
 Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.

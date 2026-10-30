@@ -1,0 +1,8 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "hallmark",
+  "description": "A report-only review of the whole repository: one read-only hallmark stage writes ranked, PR-sized follow-ups, starting from the repository's previous hallmark report, and the task finishes as done without a pull request.",
+  "steps": [
+    {"id": "hallmark", "type": "hallmark", "version": 1, "settings": {"profile": "researcher", "skills": ["guildhall-hallmark"], "instructions": "This stage is read-only: do not edit, commit, stage or reset tracked files, and leave HEAD where it is. Tracked files changed by tests or builds count as changes and fail the stage; untracked files, such as caches and your report, are fine. Write your report as one file in the work directory and list it as the report output. If you were given no previous input, this is the repository's first recorded hallmark: say so in the report's baseline and start the disposition table empty."}}
+  ]
+}
