@@ -125,7 +125,52 @@ func (a *App) directorStart(args []string) int {
 	if *tab {
 		return a.openDirectorTab(host, p, copyDir, storePath, fl.Arg(0))
 	}
+	if pane == (store.DirectorPane{}) {
+		var reason string
+		if pane, reason = ambientPane(a.Getenv); reason != "" {
+			a.notef("director start: warning: this session has no Herdr pane (%s), so messages will not wake the Director; start it with --tab or inside a Herdr pane\n", reason)
+		} else {
+			a.preflightLine("pane", "%s (tab %s, workspace %s, from HERDR_*)", pane.Pane, pane.Tab, pane.Workspace)
+		}
+	}
 	return a.superviseSession(p, copyDir, storePath, state, pane)
+}
+
+// ambientPanes are the HERDR_* variables, in the order they are checked, that name the Herdr pane a process runs
+// in, beside the field of the pane each fills.
+var ambientPanes = []struct {
+	name  string
+	field func(*store.DirectorPane) *string
+}{
+	{"HERDR_SESSION", func(p *store.DirectorPane) *string { return &p.Session }},
+	{"HERDR_WORKSPACE_ID", func(p *store.DirectorPane) *string { return &p.Workspace }},
+	{"HERDR_TAB_ID", func(p *store.DirectorPane) *string { return &p.Tab }},
+	{"HERDR_PANE_ID", func(p *store.DirectorPane) *string { return &p.Pane }},
+}
+
+// ambientPane is the Herdr pane getenv's HERDR_* variables name, adopted, which a plain director start binds
+// (docs/director.md#start), or no pane and the reason it binds none: a variable is unset, the session is Herdr's
+// default one or a value is not the shape Herdr's client accepts. A nil getenv is an empty environment.
+func ambientPane(getenv func(string) string) (store.DirectorPane, string) {
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	p := store.DirectorPane{Adopted: true}
+	for _, v := range ambientPanes {
+		val := getenv(v.name)
+		switch {
+		case val == "":
+			return store.DirectorPane{}, v.name + " not set"
+		case v.name == "HERDR_SESSION" && val == "default":
+			return store.DirectorPane{}, `HERDR_SESSION is "default"`
+		case v.name == "HERDR_SESSION" && !herdr.ValidSession(val):
+			return store.DirectorPane{}, fmt.Sprintf("HERDR_SESSION %q is not a Herdr session name", val)
+		case v.name != "HERDR_SESSION" && !herdr.ValidID(val):
+			return store.DirectorPane{}, fmt.Sprintf("%s %q is not a Herdr id", v.name, val)
+		}
+		*v.field(&p) = val
+	}
+	return p, ""
 }
 
 // startPlan is what the preflight resolved for a session.
@@ -550,7 +595,8 @@ func (a *App) retireDirectorTabs(ctx context.Context, host adapter.TabHost, stor
 		}
 		p := d.Pane
 		ref := adapter.TabRef{Session: p.Session, WorkspaceID: p.Workspace, TabID: p.Tab, PaneID: p.Pane}
-		if p == (store.DirectorPane{}) || ref.Session != replacement.Session || ref.WorkspaceID != replacement.WorkspaceID || ref == replacement || seen[ref] {
+		// An adopted pane's tab is one Guildhall did not create, so it is never retired.
+		if p == (store.DirectorPane{}) || p.Adopted || ref.Session != replacement.Session || ref.WorkspaceID != replacement.WorkspaceID || ref == replacement || seen[ref] {
 			continue
 		}
 		seen[ref] = true

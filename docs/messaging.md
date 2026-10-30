@@ -195,7 +195,7 @@ Otherwise nothing is delivered and the wake is recorded `queued` with its reason
 |---|---|
 | `no session` | No Director session has been recorded. |
 | `paused`, `stopping`, `stopped` | The newest session is in that state; a paused Director is not woken. |
-| `no pane` | The session has no bound pane: it runs in a terminal Guildhall did not create. |
+| `no pane` | The session has no bound pane: it was started outside Herdr, or without a complete `HERDR_*` pane ([start](director.md#start)). |
 | `nothing unread` | The Director has no unread message: this one was acknowledged before the wake counted unread messages. |
 | `no waiter` | A session that is not typed into had no waiter registered with its supervisor, or no supervisor listening. |
 | `runtime not running` | The pane's shell is idle, so the Director's runtime has ended and the line would reach a shell prompt. |

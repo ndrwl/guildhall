@@ -60,13 +60,16 @@ var directorRank = map[DirectorState]int{
 	DirectorRecovering: 0, DirectorRunning: 1, DirectorPaused: 1, DirectorStopping: 2, DirectorStopped: 3,
 }
 
-// DirectorPane is the Herdr pane a Director session runs in: one Guildhall created for it (R1.54).
+// DirectorPane is the Herdr pane a Director session runs in: one Guildhall created for it (R1.54), or, Adopted,
+// the pane a plain director start found itself running in from its HERDR_* environment.
 // The zero value means the session has no bound pane. It is presentation only (R1.52).
 type DirectorPane struct {
 	Session   string `json:"session"`
 	Workspace string `json:"workspace"`
 	Tab       string `json:"tab"`
 	Pane      string `json:"pane"`
+	// Adopted says Guildhall did not create the pane's tab, so it never retires it.
+	Adopted bool `json:"adopted,omitempty"`
 }
 
 // DirectorSession is one run of the Director's runtime under its session supervisor.
