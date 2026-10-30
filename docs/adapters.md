@@ -201,7 +201,12 @@ The session's **effective grant** is, in order and with a repeated rule kept onc
 
 1. the profile's [`allowed_tools`](configuration.md#profiles) when it sets them, even to `[]`; otherwise the **shipped default grant** for its name, which only a `claude` profile gets;
 2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any;
-3. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
+3. then, for every `claude` profile, the **`guildhall` grant**, `Bash(guildhall ci log:*)` (`claude.CILogRule`), which lets the Artisan read its task's [failed CI job logs](ci-logs.md) ([decision](decisions/failed-job-logs.md)).
+   It is added even when the copy sets the profile's own `allowed_tools`, which replace the shipped default and would otherwise drop it, because the command is read-only and serves only the logs its task's validate results record.
+   No `gh`, `curl` or GitHub API rule is granted: Guildhall's own gh fetches the logs.
+4. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
+
+When the attempt has a copy, the wrapper runs Claude with `GUILDHALL_COPY` set to it, replacing an inherited value, so `guildhall ci log` needs no `--copy`; the command, like the grant, assumes `guildhall` resolves on the Artisan's `PATH`.
 
 A task grant is temporary and for one task: the Guildmaster approves extra rules for one step of one task, or all its claude steps, for its next attempt or until the task is done, through `guildhall task grant create` and the decision it opens.
 The engine records it in the attempt's binding, `<step>-<n>.inputs.json`, when the binding is first written, and the wrapper reads it back at every run from the copy's `director.store`, opened read-only, checking the binding file against the SHA-256 the store holds.

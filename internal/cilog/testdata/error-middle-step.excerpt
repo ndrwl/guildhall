@@ -1,0 +1,10 @@
+##[group]Run go test ./...
+go test ./...
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+ok  	github.com/ndrwl/guildhall/internal/config	0.071s
+--- FAIL: TestCILog (0.01s)
+    cilog_test.go:42: Get = "", want "log"
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/cilog	0.012s
+##[error]Process completed with exit code 1.

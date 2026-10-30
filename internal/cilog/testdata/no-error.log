@@ -1,0 +1,8 @@
+2026-10-29T10:00:00.1000000Z Current runner version: '2.329.0'
+2026-10-29T10:00:01.0000000Z ##[group]Run actions/checkout@v5
+2026-10-29T10:00:01.0100000Z with:
+2026-10-29T10:00:01.0300000Z ##[endgroup]
+2026-10-29T10:00:05.0000000Z ##[group]Run ./scripts/check.sh
+2026-10-29T10:00:05.0300000Z ##[endgroup]
+2026-10-29T10:00:06.0000000Z check.sh: 3 files need formatting
+2026-10-29T10:10:00.0000000Z The job was canceled because it exceeded the maximum execution time.

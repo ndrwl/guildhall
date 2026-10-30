@@ -1,0 +1,29 @@
+Evidence for d45 open question 1: gh api follows the job-logs endpoint's redirect to the plain-text log.
+
+Gathered by the Director with gh on 2026-10-30 against a live job, and given to the d45 build-3 attempt as the
+Director's reason for retrying build-2 (the build attempts themselves could not run gh). Recorded here as given.
+
+Job: 123750055293, a failed windows-latest job of PR #171 in ndrwl/guildhall.
+
+$ gh api repos/ndrwl/guildhall/actions/jobs/123750055293/logs
+  exit 1, printing:
+  the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway
+
+$ gh api repos/ndrwl/guildhall/actions/jobs/123750055293/logs --allow-escape-sequences
+  exit 0. gh followed the endpoint's redirect and printed the plain-text log itself, not a redirect body:
+  - 29,920 bytes;
+  - the first bytes are a UTF-8 byte order mark (EF BB BF), before the first timestamp;
+  - every line starts with an ISO timestamp and ends in CRLF;
+  - 9 '##[group]Run' lines;
+  - '##[error]Process completed with exit code 1.' near the end.
+
+Conclusions applied by build-3:
+- forge.GitHub.CheckLog keeps gh api (the gh run view --job <id> --log fallback is not needed) and passes
+  --allow-escape-sequences; the gh stand-in refuses a log holding an escape sequence without that flag, as gh does.
+- The tail writer keeps the log byte for byte (byte order mark, CRLF and escape sequences); TestTailWriter pins
+  byte order mark and CRLF cases.
+- The excerpt drops the byte order mark, each line's CR and timestamp, and every ANSI escape sequence before it
+  matches ##[error] and ##[group]Run; the generated bom-crlf-escapes fixture in TestExcerptGolden pins this.
+
+Not gathered: gh's message for a job past log retention. The HTTP 404 and 410 handling (ErrLogExpired) stays
+modelled by the stand-in on gh's usual "gh: <status> (HTTP <code>)" error form.

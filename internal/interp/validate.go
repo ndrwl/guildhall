@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/cilog"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
@@ -52,6 +53,68 @@ type validationDoc struct {
 	// is the build's feedback.
 	Rebase     []string       `json:"rebase,omitempty"`
 	Escalation *escalationDoc `json:"rebase_escalation,omitempty"`
+	// Logs holds, in a failed result, each failed check's log excerpt, or why it has none, in the order of Checks.
+	Logs []logDoc `json:"logs,omitempty"`
+}
+
+// logDoc is one failed check's entry in a failed validation result's logs.
+type logDoc struct {
+	Check string `json:"check"`
+	// Job is the check's GitHub Actions job id; empty for a check that is not an Actions job.
+	Job string `json:"job,omitempty"`
+	// Excerpt and Dropped are the job log's excerpt and the bytes cut from the head of the cached log, when it
+	// was fetched; Unavailable is why it was not.
+	Excerpt     *string `json:"excerpt,omitempty"`
+	Dropped     *int64  `json:"dropped,omitempty"`
+	Unavailable string  `json:"unavailable,omitempty"`
+	// Command is the guildhall ci log command that serves the job's full log.
+	Command string `json:"command,omitempty"`
+}
+
+// maxRoundLogs is how many failed job logs one validate round fetches.
+const maxRoundLogs = 10
+
+// failedLogs returns the logs entry of each failed check of checks, fetching at most maxRoundLogs job logs, in
+// order, through the CI log cache. A log that cannot be had is an entry naming why; only a cancelled advance is
+// an error.
+func (r *run) failedLogs(c forge.Commit, checks []forge.Check) ([]logDoc, error) {
+	reader, _ := r.e.Forge.(CheckLogReader)
+	dir := cilog.Dir(r.e.StateDir, r.task.Repository, r.task.ID)
+	var out []logDoc
+	fetched := 0
+	for _, ch := range checks {
+		if ch.State != forge.CheckFailed {
+			continue
+		}
+		l := logDoc{Check: ch.Name, Job: ch.Job}
+		switch {
+		case ch.Job == "":
+			l.Unavailable = "not a GitHub Actions job"
+		case r.e.CILogLimit <= 0:
+			l.Unavailable = "log fetching is off"
+		case reader == nil:
+			l.Unavailable = "forge does not provide logs"
+		case fetched >= maxRoundLogs:
+			l.Unavailable = fmt.Sprintf("log limit of %d per round reached", maxRoundLogs)
+		default:
+			fetched++
+			got, err := cilog.Get(r.ctx, reader, dir, c, ch.Job, r.e.CILogLimit)
+			if err != nil {
+				if r.ctx.Err() != nil {
+					return nil, r.ctx.Err()
+				}
+				l.Unavailable = forge.LogReason(err)
+				break
+			}
+			excerpt := cilog.Excerpt(got.Text)
+			l.Excerpt, l.Dropped = &excerpt, &got.Dropped
+		}
+		if ch.Job != "" {
+			l.Command = fmt.Sprintf("guildhall ci log %s/%s %s", r.task.Repository, r.task.ID, ch.Job)
+		}
+		out = append(out, l)
+	}
+	return out, nil
 }
 
 // parseValidation decodes a recorded validation result and refuses one of another schema or verdict.
@@ -234,6 +297,12 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	}
 	if last != nil && v.Verdict == validationFailed && !newFailure(v.Checks, last.Checks) {
 		return false, wait, nil
+	}
+	if v.Verdict == validationFailed {
+		// Only a round about to be recorded fetches logs; the result, recorded once, is the only write.
+		if v.Logs, err = r.failedLogs(forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h}, checks); err != nil {
+			return false, Next{}, err
+		}
 	}
 	id := decisionID(s.ID, k, false)
 	data, err := json.Marshal(v)

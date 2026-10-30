@@ -27,8 +27,11 @@ type Fake struct {
 	checks       map[string]map[string][]forge.Check
 	refuse       string
 	mergeability forge.Mergeability
-	// publishes and merges count calls, and edits the publishes that changed an open pull request's text.
-	publishes, merges, edits int
+	// logs and logErrs are each job's log and log failure.
+	logs    map[string][]byte
+	logErrs map[string]error
+	// publishes, merges and logReads count calls, and edits the publishes that changed an open pull request's text.
+	publishes, merges, logReads, edits int
 }
 
 // text is a pull request's title and body.
@@ -171,6 +174,66 @@ func (f *Fake) Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error
 	out := append([]forge.Check{}, f.checks[c.Remote][c.Head]...)
 	slices.SortStableFunc(out, forge.CompareChecks)
 	return out, nil
+}
+
+// SetLog makes text the log of job, clearing any log failure set for it.
+func (f *Fake) SetLog(job, text string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.logs == nil {
+		f.logs, f.logErrs = map[string][]byte{}, map[string]error{}
+	}
+	f.logs[job] = []byte(text)
+	delete(f.logErrs, job)
+}
+
+// SetLogError makes reading job's log fail with err; a nil err clears the failure.
+func (f *Fake) SetLogError(job string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.logs == nil {
+		f.logs, f.logErrs = map[string][]byte{}, map[string]error{}
+	}
+	f.logErrs[job] = err
+	if err == nil {
+		delete(f.logErrs, job)
+	}
+}
+
+// LogCalls returns how many times CheckLog was called.
+func (f *Fake) LogCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.logReads
+}
+
+// CheckLog implements forge.GitHub.CheckLog's contract: the log SetLog set, with the same tail cap, or the error
+// SetLogError set; a job with neither has an expired log.
+func (f *Fake) CheckLog(ctx context.Context, c forge.Commit, job string, limit int64) (forge.CheckLog, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.logReads++
+	switch {
+	case ctx.Err() != nil:
+		return forge.CheckLog{}, ctx.Err()
+	case job == "":
+		return forge.CheckLog{}, &forge.LogUnavailableError{Reason: "not a GitHub Actions job"}
+	case limit <= 0:
+		return forge.CheckLog{}, &forge.LogUnavailableError{Reason: "log fetching is off"}
+	}
+	if err := c.Validate(); err != nil {
+		return forge.CheckLog{}, err
+	}
+	if err := f.logErrs[job]; err != nil {
+		return forge.CheckLog{}, err
+	}
+	text, ok := f.logs[job]
+	if !ok {
+		return forge.CheckLog{}, &forge.LogUnavailableError{Reason: "gh: Gone (HTTP 410)", Expired: true}
+	}
+	w := &forge.TailWriter{Limit: limit}
+	_, _ = w.Write(text)
+	return w.Log(), nil
 }
 
 // Merge implements forge.GitHub.Merge's contract.

@@ -100,6 +100,8 @@ Commands:
                  without it, record runtime context for legacy workspaces
   spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]
                  report recorded attempt tokens and cost without changing state
+  ci log [--copy <dir>] [--tail <lines>] [--out <file>] <repo>/<task> <job|check>
+                 print the full log of a failed CI job the task's validate results record
   quality judge|judged|agreement --copy <dir> ...
                  judge a delivered task's self-review in a separate session, take a finished judge
                  attempt as its launcher does, and print the judge's agreement with the audits
@@ -267,6 +269,8 @@ func (a *App) Run(args []string) int {
 		return a.qualityCmd(rest)
 	case "review":
 		return a.review(rest)
+	case "ci":
+		return a.ciCmd(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

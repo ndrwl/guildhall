@@ -453,6 +453,10 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
+	logLimit, err := cfg.CILogLimit()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
 	rails, err := cfg.GuardRails()
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
@@ -548,8 +552,8 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 			return boundWorkflow(filepath.Join(cfgDir, "workflows"), cfg, r, rev)
 		},
 		Config: cfg, StandardsRevision: standards, CheckSettings: runtimeSettings,
-		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, Forge: fg,
-		Workspaces: ws,
+		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, CILogLimit: logLimit,
+		Forge: fg, Workspaces: ws,
 		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the
 		// classifier runs over the same repository.
 		Base:    func(string) (string, error) { return git.Program{}.Base(ctx, r.Path, interp.TaskBranch(ev.Task)) },

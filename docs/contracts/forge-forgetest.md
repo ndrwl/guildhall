@@ -13,11 +13,15 @@ Its merge moves the default branch to a merge commit derived from the head; it n
 An empty scripted head resolves to the requested head, and an omitted URL resolves to the published PR's URL.
 It performs no network or git operations; production evidence computation is tested separately against real git and strict gh process syntax.
 
+`Fake.CheckLog` implements the optional `interp.CheckLogReader` as `forge.GitHub.CheckLog` does: `SetLog(job, text)` sets a job's log, served through the same `forge.TailWriter` cap, and `SetLogError(job, err)` makes reading it fail with `err` until a nil error clears it; a job with neither has an expired log (`forge.ErrLogExpired`), an empty job or a limit of zero or less is `forge.ErrLogUnavailable` and a cancelled context is returned as it is.
+`LogCalls` counts its calls, so consumers can show a log served from a cache made no forge call.
+
 `RunMergeabilityContract` is the shared observation contract for the scripted fake and the strict-gh/real-git fixture.
 It checks exact evidence, immutable returned slices, repeated reads, malformed requests and refusal when the requested head no longer matches the observation.
 
 ## Tests
 
+`TestFakeCheckLog` in `internal/forge/checklog_test.go` pins the fake's log cap, its failures and its call count.
 `TestFakeMergeabilityContract` and `TestGitHubMergeabilityEvidence` run the same `RunMergeabilityContract` suite against both sources.
 
 Run by `internal/forge/forge_test.go` against `Fake` and `forge.GitHub`; `Fake` is the double in `internal/interp/deliver_test.go` and `internal/cli/advance_test.go`.

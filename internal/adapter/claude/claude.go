@@ -460,6 +460,7 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	ctx, cancel := watchMarker(ctx, a)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, ClaudeArgs(a)...)
+	cmd.Env = claudeEnv(os.Environ(), a.Copy)
 	output := &limitedBuffer{limit: maxOutputBytes}
 	stream := &readableStream{out: stdout, result: output}
 	cmd.Stdout, cmd.Stderr = stream, stderr
@@ -513,6 +514,16 @@ func withBoundTaskGrant(a Args, rules []string, stderr io.Writer) ([]string, err
 		grants = append(grants, Grant{Rule: rule})
 	}
 	return GrantRules(WithTaskGrant(grants, g.Rules)), nil
+}
+
+// claudeEnv is the environment Claude runs with: environ, with adapter.CopyEnv set to copyDir when there is a copy,
+// so the guildhall ci log an Artisan runs finds its copy without --copy; with no copy, nil inherits environ as it is.
+func claudeEnv(environ []string, copyDir string) []string {
+	if copyDir == "" {
+		return nil
+	}
+	env := slices.DeleteFunc(slices.Clone(environ), func(kv string) bool { return strings.HasPrefix(kv, adapter.CopyEnv+"=") })
+	return append(env, adapter.CopyEnv+"="+copyDir)
 }
 
 // report writes the usage Claude's output reports as a's usage file, unknown when the output reports none, names

@@ -456,8 +456,9 @@ func TestTaskStartLaunchesClaude(t *testing.T) {
 	if err != nil || r.Summary != claudetest.Summary {
 		t.Errorf("plan-1 result %+v, %v; want the stub Claude's", r, err)
 	}
-	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, claude.ShippedDefaultGrants["planner"]) {
-		t.Errorf("plan-1 was granted %q, %v; want the planner's shipped default %q", got, err, claude.ShippedDefaultGrants["planner"])
+	planner := append(slices.Clone(claude.ShippedDefaultGrants["planner"]), claude.CILogRule)
+	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, planner) {
+		t.Errorf("plan-1 was granted %q, %v; want the planner's shipped default and guildhall ci log %q", got, err, planner)
 	}
 	// The launcher records the usage the stub's JSON output reported on the attempt.
 	u := claudetest.Usage
@@ -481,7 +482,7 @@ func TestTaskStartGrantsTheProfilesAllowedTools(t *testing.T) {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	want := []string{"Bash(go test:*)", "Bash(git commit:*)"}
+	want := []string{"Bash(go test:*)", "Bash(git commit:*)", claude.CILogRule}
 	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, want) {
 		t.Errorf("plan-1 was granted %q, %v; want %q", got, err, want)
 	}

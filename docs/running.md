@@ -148,6 +148,10 @@ Both commands refuse a repository the config does not list, as every command tha
 See the command guide for admission requirements, prepared-input refusals, replay semantics and downstream review behaviour.
 This is one option after a `pr-blocked` or `rebase-stuck` report, when Guildhall could not [rebase the pull request itself](interpreter.md#tiered-rebase); holding the task or leaving it unadvanced are alternatives.
 
+## `ci log`
+
+[`ci log`](ci-logs.md) prints the full log of a failed CI job that one of the task's validate results records, from the CI log cache or fetched with Guildhall's own gh; it takes no task lock and changes nothing.
+
 ## Output and exit status
 
 All five print one JSON line, what the task waits for, and write the same line to `next.json` beside the task lock, `<state>/<repository>/<task>/next.json`, before releasing the lock, which [`director status`](director.md#status) reports: `{"wait":"attempt","step":"plan","attempt":1}`, `{"wait":"director-stage","step":"grill","attempt":1}`, `{"wait":"decision","step":"accept","decision":"accept-1"}`, `{"wait":"director","step":"build","attempt":2}` (or, after a held or refused merge, `{"wait":"director","step":"deliver","decision":"deliver-1"}`), `{"wait":"checks","step":"validate"}` while the published head's [checks](interpreter.md#validate) are pending or a failed head waits for a re-run, which a later `task start`, or a Director session's [checks watcher](director.md#checks), reads again once `checks_refresh` has passed, `{"wait":"dependencies","step":"research"}` while the [dependency gate](interpreter.md#the-dependency-gate) holds the task, which a Director session's [dependency watcher](director.md#dependencies) advances again, `{"wait":"merge-queue","step":"deliver"}` while an authorized merge waits in its repository's [merge queue](interpreter.md#the-merge-queue) or is held, which a Director session's [merge-queue watcher](director.md#merge-queue) advances again, or, once the merge landed, `{"wait":"done","step":"deliver"}`.

@@ -10,9 +10,11 @@
 package forge
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -178,6 +180,90 @@ type Check struct {
 	// ID is the forge's id of this run of the check: a re-run of the check reports a new one. Empty when the
 	// forge gives none.
 	ID string `json:"id,omitempty"`
+	// Job is the GitHub Actions job id of a check run GitHub Actions produced, whose log CheckLog reads; empty for
+	// any other check or status. It is not part of a check's JSON, so recorded checks stay as they were.
+	Job string `json:"-"`
+}
+
+// CheckLog is the log of one failed job, as much of it as a limit keeps.
+type CheckLog struct {
+	// Text is the log's tail, starting at a line boundary when anything was dropped.
+	Text []byte
+	// Dropped is how many bytes were cut from the head of the log to keep Text within the limit.
+	Dropped int64
+}
+
+var (
+	// ErrLogUnavailable reports a job log the forge cannot give: not a GitHub Actions job, expired, forbidden, or
+	// gh failing or not signed in. The error text carries the reason.
+	ErrLogUnavailable = errors.New("job log unavailable")
+	// ErrLogExpired reports a job log the forge no longer keeps; it is also ErrLogUnavailable.
+	ErrLogExpired = errors.New("job log expired")
+)
+
+// LogUnavailableError is an ErrLogUnavailable with its reason, and ErrLogExpired too when Expired.
+type LogUnavailableError struct {
+	Reason  string
+	Expired bool
+}
+
+func (e *LogUnavailableError) Error() string { return "job log unavailable: " + e.Reason }
+
+// Is matches ErrLogUnavailable, and ErrLogExpired when the log expired.
+func (e *LogUnavailableError) Is(target error) bool {
+	return target == ErrLogUnavailable || e.Expired && target == ErrLogExpired
+}
+
+// LogReason is why err left a job log unavailable: a LogUnavailableError's reason, or err's text.
+func LogReason(err error) string {
+	if u, ok := errors.AsType[*LogUnavailableError](err); ok {
+		return u.Reason
+	}
+	return err.Error()
+}
+
+// TailWriter keeps the last Limit bytes written to it; Log returns them from a line boundary.
+type TailWriter struct {
+	Limit   int64
+	buf     []byte
+	dropped int64
+	// last is the last byte dropped, so a cut that already fell after a newline drops nothing more.
+	last byte
+}
+
+// Write keeps p's tail within twice the limit, so memory stays bounded however much is written.
+func (w *TailWriter) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+	if int64(len(w.buf)) > 2*w.Limit {
+		w.trim()
+	}
+	return len(p), nil
+}
+
+func (w *TailWriter) trim() {
+	if cut := int64(len(w.buf)) - w.Limit; cut > 0 {
+		w.dropped += cut
+		w.last = w.buf[cut-1]
+		w.buf = append(w.buf[:0], w.buf[cut:]...)
+	}
+}
+
+// Log returns what the writer kept. A log cut short starts after the first newline it kept, so no line and no
+// UTF-8 rune is split; one line longer than the limit is cut at a rune boundary instead.
+func (w *TailWriter) Log() CheckLog {
+	w.trim()
+	if w.dropped > 0 && w.last != '\n' {
+		i := bytes.IndexByte(w.buf, '\n') + 1
+		if i == 0 {
+			for i < len(w.buf) && !utf8.RuneStart(w.buf[i]) {
+				i++
+			}
+		}
+		w.dropped += int64(i)
+		w.last = '\n'
+		w.buf = w.buf[i:]
+	}
+	return CheckLog{Text: slices.Clone(w.buf), Dropped: w.dropped}
 }
 
 // CompareChecks orders checks by name, URL and then ID, the order Checks returns them in.

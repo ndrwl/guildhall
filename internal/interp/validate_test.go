@@ -55,6 +55,17 @@ type validationResult struct {
 	Checks  []forge.Check `json:"checks"`
 	Failing []string      `json:"failing,omitempty"`
 	NoCI    bool          `json:"no_ci,omitempty"`
+	Logs    []logEntry    `json:"logs,omitempty"`
+}
+
+// logEntry is one failed check's entry in a failed result's logs.
+type logEntry struct {
+	Check       string  `json:"check"`
+	Job         string  `json:"job,omitempty"`
+	Excerpt     *string `json:"excerpt,omitempty"`
+	Dropped     *int64  `json:"dropped,omitempty"`
+	Unavailable string  `json:"unavailable,omitempty"`
+	Command     string  `json:"command,omitempty"`
 }
 
 // digest is the digest of the document the engine records for v.
@@ -67,10 +78,17 @@ func (v validationResult) digest(t *testing.T) string {
 	return "sha256:" + sum(data)
 }
 
-// result is the validation result of head h on pull request 1 with checks.
+// result is the validation result of head h on pull request 1 with checks, none of them a GitHub Actions job, so
+// each failed check's log is unavailable.
 func result(h, verdict string, checks []forge.Check, failing ...string) validationResult {
-	return validationResult{Schema: "guildhall.validation-result/1", Remote: repoRemote, Number: 1, URL: "https://forge.invalid/1",
+	v := validationResult{Schema: "guildhall.validation-result/1", Remote: repoRemote, Number: 1, URL: "https://forge.invalid/1",
 		Head: h, Verdict: verdict, Checks: checks, Failing: failing}
+	for _, c := range checks {
+		if c.State == forge.CheckFailed {
+			v.Logs = append(v.Logs, logEntry{Check: c.Name, Unavailable: "not a GitHub Actions job"})
+		}
+	}
+	return v
 }
 
 var (

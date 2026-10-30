@@ -290,6 +290,14 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// The rule Guildhall gives every claude profile is named apart, after the profile's own grant.
+		var guildhall []string
+		base = slices.DeleteFunc(base, func(g claude.Grant) bool {
+			if g.Source == claude.SourceGuildhall {
+				guildhall = append(guildhall, g.Rule)
+			}
+			return g.Source == claude.SourceGuildhall
+		})
 		var additions []string
 		for _, r := range cfg.Repositories {
 			grant, err := claude.EffectiveGrant(cfg, name, r.ID)
@@ -305,6 +313,9 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 			if len(added) > 0 {
 				additions = append(additions, fmt.Sprintf(", plus for repository %s %s", r.ID, strings.Join(added, ", ")))
 			}
+		}
+		if len(guildhall) > 0 {
+			additions = append(additions, ", plus from Guildhall "+strings.Join(guildhall, ", "))
 		}
 		var s string
 		switch rules := strings.Join(claude.GrantRules(base), ", "); {

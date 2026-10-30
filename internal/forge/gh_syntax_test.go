@@ -3,6 +3,7 @@ package forge_test
 import (
 	"fmt"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -27,8 +28,10 @@ func validateGHArgs(args []string) error {
 		"pr view":     {values: []string{"--repo", "--json"}, positional: 1},
 		"pr merge":    {values: []string{"--repo", "--match-head-commit"}, bools: []string{"--squash"}, positional: 1},
 		"api graphql": {values: []string{"--hostname", "-f"}},
+		// gh api <endpoint> is a REST GET; the only endpoint read is a job's logs.
+		"api jobs-logs": {values: []string{"--hostname"}, bools: []string{"--allow-escape-sequences"}},
 	}
-	cmd := strings.Join(args[:2], " ")
+	cmd := ghCommand(args)
 	s, ok := shapes[cmd]
 	if !ok {
 		return fmt.Errorf("unknown command %q", cmd)
@@ -55,6 +58,17 @@ func validateGHArgs(args []string) error {
 	return nil
 }
 
+// jobLogsEndpoint is the REST endpoint of one Actions job's log, the one gh api endpoint besides graphql.
+var jobLogsEndpoint = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/jobs/([0-9]+)/logs$`)
+
+// ghCommand names the command of args: its first two words, with a job logs endpoint named api jobs-logs.
+func ghCommand(args []string) string {
+	if args[0] == "api" && jobLogsEndpoint.MatchString(args[1]) {
+		return "api jobs-logs"
+	}
+	return strings.Join(args[:2], " ")
+}
+
 func ghCallShapes() [][]string {
 	return [][]string{
 		{"repo", "view", "github.com/acme/widgets", "--json", "defaultBranchRef"},
@@ -65,6 +79,7 @@ func ghCallShapes() [][]string {
 		{"pr", "merge", "1", "--repo", "github.com/acme/widgets", "--squash", "--match-head-commit", strings.Repeat("a", 40)},
 		{"api", "graphql", "--hostname", "github.com", "-f", "query=query { viewer { login } }", "-f", "owner=acme", "-f", "name=widgets", "-f", "oid=" + strings.Repeat("a", 40)},
 		{"pr", "edit", "1", "--repo", "github.com/acme/widgets", "--title", "Task t7", "--body", "Body text"},
+		{"api", "repos/acme/widgets/actions/jobs/123/logs", "--hostname", "github.com", "--allow-escape-sequences"},
 	}
 }
 

@@ -1,0 +1,29 @@
+﻿2026-10-29T10:00:00.1000000Z Current runner version: '2.329.0'
+2026-10-29T10:00:00.2000000Z ##[group]Runner Image
+2026-10-29T10:00:00.2100000Z   Image: ubuntu-24.04
+2026-10-29T10:00:00.2200000Z ##[endgroup]
+2026-10-29T10:00:01.0000000Z ##[group]Run actions/checkout@v5
+2026-10-29T10:00:01.0100000Z with:
+2026-10-29T10:00:01.0200000Z   repository: ndrwl/guildhall
+2026-10-29T10:00:01.0300000Z ##[endgroup]
+2026-10-29T10:00:02.0000000Z Syncing repository: ndrwl/guildhall
+2026-10-29T10:00:05.0000000Z ##[group]Run go build ./...
+2026-10-29T10:00:05.0100000Z go build ./...
+2026-10-29T10:00:05.0200000Z shell: /usr/bin/bash -e {0}
+2026-10-29T10:00:05.0300000Z ##[endgroup]
+2026-10-29T10:00:20.0000000Z ##[group]Run go test ./...
+2026-10-29T10:00:20.0100000Z go test ./...
+2026-10-29T10:00:20.0200000Z shell: /usr/bin/bash -e {0}
+2026-10-29T10:00:20.0300000Z ##[endgroup]
+2026-10-29T10:01:00.0000000Z ok  	github.com/ndrwl/guildhall/internal/config	0.071s
+2026-10-29T10:01:01.0000000Z --- FAIL: TestCILog (0.01s)
+2026-10-29T10:01:01.0100000Z     cilog_test.go:42: Get = "", want "log"
+2026-10-29T10:01:01.0200000Z FAIL
+2026-10-29T10:01:01.0300000Z FAIL	github.com/ndrwl/guildhall/internal/cilog	0.012s
+2026-10-29T10:01:02.0000000Z ##[error]Process completed with exit code 1.
+2026-10-29T10:01:03.0000000Z ##[group]Run golangci-lint run
+2026-10-29T10:01:03.0100000Z golangci-lint run
+2026-10-29T10:01:03.0200000Z ##[endgroup]
+2026-10-29T10:01:04.0000000Z ##[error]Process completed with exit code 1.
+2026-10-29T10:01:05.0000000Z Post job cleanup.
+2026-10-29T10:01:06.0000000Z Cleaning up orphan processes

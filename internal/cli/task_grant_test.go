@@ -217,7 +217,7 @@ func TestTaskGrantReachesTheClaudeSession(t *testing.T) {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	want := append(slices.Clone(claude.ShippedDefaultGrants["planner"]), "Bash(go:*)")
+	want := append(slices.Clone(claude.ShippedDefaultGrants["planner"]), claude.CILogRule, "Bash(go:*)")
 	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, want) {
 		t.Errorf("plan-1 was granted %q, %v; want %q", got, err, want)
 	}

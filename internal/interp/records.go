@@ -110,3 +110,12 @@ type Forge interface {
 }
 
 var _ Forge = forge.GitHub{}
+
+// CheckLogReader reads a failed GitHub Actions job's log, at most limit bytes of its tail; it is optional on the
+// forge, and validate fetches the logs of a failed round's checks through it (docs/interpreter.md#validate).
+// forge.GitHub and forgetest.Fake implement it; a forge without it gives no logs.
+type CheckLogReader interface {
+	CheckLog(ctx context.Context, c forge.Commit, job string, limit int64) (forge.CheckLog, error)
+}
+
+var _ CheckLogReader = forge.GitHub{}

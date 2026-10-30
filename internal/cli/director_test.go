@@ -309,7 +309,8 @@ func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 
 // TestDirectorStartCheckNamesArtisanPermissions: the preflight's artisans line names the Director and the config
 // file whose profiles grant the Artisans' tools, each claude profile's effective grant by source (the copy's list,
-// the shipped default, or a note that a profile of another name gets none, then each repository's additions), and
+// the shipped default, or a note that a profile of another name gets none, then each repository's additions and the
+// rule Guildhall adds), and
 // the permissions print mode lacks for a build's checks and commits, without refusing.
 func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 	claudetest.Install(t)
@@ -325,9 +326,10 @@ func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 			line = l
 		}
 	}
-	reviewer := "profile reviewer grants the shipped default " + strings.Join(claude.ShippedDefaultGrants["reviewer"], ", ") + ", plus for repository app Bash(go vet:*);"
-	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants from the copy Bash(go test:*), Bash(git commit:*);",
-		reviewer, "profile worker gets no shipped default and grants nothing", "edits only", "Bash", "docs/adapters.md#artisan-permissions",
+	const guildhall = ", plus from Guildhall Bash(guildhall ci log:*);"
+	reviewer := "profile reviewer grants the shipped default " + strings.Join(claude.ShippedDefaultGrants["reviewer"], ", ") + ", plus for repository app Bash(go vet:*)" + guildhall
+	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants from the copy Bash(go test:*), Bash(git commit:*)" + guildhall,
+		reviewer, "profile worker gets no shipped default" + guildhall, "edits only", "Bash", "docs/adapters.md#artisan-permissions",
 		"copy/profile/repository reference, never raw rule flags"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("artisans line %q lacks %q:\n%s", line, want, out)
