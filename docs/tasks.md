@@ -75,6 +75,7 @@ The digest covers the local and managed settings together and not the files' for
 Later edits to either file, or to the workflow file, apply to new tasks only.
 Every later advance resolves the task's workflow by its bound name, not the repository's current `workflow` setting, so changing that setting leaves open tasks on the workflow they were created with ([running](running.md#what-an-advance-runs-over)).
 Editing the bound workflow's file, the repository's `workflow_overrides` or the profiles its steps were defaulted from changes the digest, and the task's next advance is refused naming its bound workflow; keep a workflow's file until every task bound to it has closed.
+A task bound to `default` or `bug` under an earlier release keeps resolving after an upgrade changes the shipped bytes: the bound name also resolves to the earlier releases' shipped revisions of it, with the repository's current overrides, though none of them is admitted for a new task ([decision](decisions/retired-shipped-revisions.md)).
 
 ## Dependencies
 

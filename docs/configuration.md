@@ -420,6 +420,7 @@ Directors may propose workflow changes.
 Guildmaster approval is required before applying changes that affect review requirements, required checks or approval steps.
 No blanket delegated authority or automatic self-approval is granted.
 A task keeps its pinned workflow revision when a workflow is edited or the repository's `workflow` setting changes: it resolves its workflow by the bound name, and an edit that changes the bound revision's digest refuses its next advance rather than changing it.
+An upgrade that changes the shipped `default` or `bug` does not strand a task bound to the earlier shipped revision, which stays resolvable for that task only and is never admitted for a new one ([decision](decisions/retired-shipped-revisions.md)).
 Approvals are recorded per Director, against a definition's exact digest:
 
 ```sh

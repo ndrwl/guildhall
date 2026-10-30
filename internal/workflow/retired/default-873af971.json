@@ -1,0 +1,26 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "default",
+  "description": "Grill and research, plan, Guildmaster acceptance, build, independent automated review with bounded fix rounds, publish, validation, delivery under the repository's merge policy.",
+  "steps": [
+    {"id": "grill", "type": "grill", "version": 1, "settings": {"actor": "director"}},
+    {"id": "research", "type": "research", "version": 1},
+    {"id": "plan", "type": "plan", "version": 1,
+     "inputs": {"context": ["grill.notes", "research.notes"]}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]},
+     "on": {"changes_requested": {"goto": "plan", "max": 3}}},
+    {"id": "build", "type": "build", "version": 1,
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "review", "type": "review", "version": 1, "settings": {"actor": "artisan"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]},
+     "on": {"changes_requested": {"goto": "build", "max": 3}}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["review.outcome"]}},
+    {"id": "validate", "type": "validate", "version": 1,
+     "inputs": {"head": ["publish.head"]},
+     "on": {"failed": {"goto": "build", "max": 3}}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["publish.head"], "review": ["review.outcome"], "validation": ["validate.result"]}}
+  ]
+}

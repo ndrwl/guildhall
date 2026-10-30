@@ -124,6 +124,7 @@ The existing commands cited are shorthand; invocation must retain the selected c
 - **Evidence:** `internal/cli/advance.go:285-288,373`; `internal/interp/engine.go:232-243`; `internal/cli/task.go:330-368`.
 - **Director needs:** pinned and available revision identities and the source of the mismatch, plus restore/use-bound-revision or explicit Guildmaster-approved migration.
 - **Small fix:** persist and resolve accepted definitions by digest before designing migration; never silently use today's definition for yesterday's task.
+- **Addendum (d67, after this audit):** for the shipped `default` and `bug`, a task's bound revision now also resolves to the exact bytes an earlier release shipped, so an upgrade no longer strands it ([decision](../decisions/retired-shipped-revisions.md)); custom workflow files are still not archived. The evidence above is unchanged.
 
 ### A15 — General task route and lifecycle operations are absent
 
