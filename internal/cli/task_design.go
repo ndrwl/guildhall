@@ -20,7 +20,7 @@ reopens the grill. Replaying the request with an identical brief is safe while i
 is answered, the same brief asks for the next round.
 Refused for a bug task, once build has started, while a round is open or any attempt runs, and until the grill has
 succeeded. Pauses, attempt caps and the dependency gate still apply to the designer.
-Examples (with GUILDHALL_COPY set):
+Examples (run inside the copy):
   guildhall task design --repo app --task t-12 --brief brief.md
 Flags: --repo, --task, --brief are required; --copy, --store, --config, --state default to the selected copy; --help needs no store.`
 
@@ -42,7 +42,7 @@ func (a *App) taskDesign(args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("task design: " + err.Error() + "\n" + taskDesignUsage)
 	}
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError("task design: " + ferr.Error())
 	case fl.NArg() != 0:
