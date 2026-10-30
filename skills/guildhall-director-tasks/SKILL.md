@@ -20,7 +20,7 @@ guildhall task new --repo app --title "Let users export reports as CSV" t-12
 guildhall task start --repo app t-12
 ```
 
-Choose a short task id of lowercase letters, digits and hyphens that is new in the repository, and a title in the Guildmaster's words.
+Choose a short task id of lowercase letters, digits and hyphens that is new in the repository, and a title in the Guildmaster's words that is short, at most 100 characters.
 Add `--depends-on <repo>/<task>` when the work must wait for another task, and `--fixes <repo>/<task>` when it fixes a defect an earlier task introduced, so its pull request says so.
 Set its priority from the Guildmaster's words with `--priority <level>`: `p0 urgent`, `p1 highest`, `p2 high`, `p3 normal` (the default, so leave it off when they say nothing), `p4 low` or `p5 someday`.
 When they later say a task matters more or less, run `guildhall task priority --repo <id> <task> <level>`; priority orders the merge queue and the start queue.
@@ -28,17 +28,18 @@ When they later say a task matters more or less, run `guildhall task priority --
 Every task is created as a kind, which chooses its workflow:
 
 - `feature`: New or changed behaviour, and the default: it runs the repository's workflow setting, the shipped default when it names none, with grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver.
-- `bug`: A fix for a defect in behaviour that should already work: it runs the repository's [repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, and merges under the repository's merge requirements: research reproduces the defect from the title and finds its cause, plan's spec goes straight to build, build writes a regression test that fails before the fix and passes after it, and review checks that test.
+- `bug`: A fix for a defect in behaviour that should already work: it runs the repository's [repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, and merges under the repository's merge requirements: research reproduces the defect from the title and detail and finds its cause, plan's spec goes straight to build, build writes a regression test that fails before the fix and passes after it, and review checks that test.
 
 Pick the kind from the Guildmaster's words: something that is broken, wrong or a regression is a `bug`, and anything new or changed is a `feature`.
 Pass `--kind bug` for a bug; `--fixes` alone already makes a task a bug, and `--kind feature --fixes <repo>/<task>` keeps a fix of an earlier task on the feature workflow.
 When it is unclear, ask.
-A bug task has no grill, so its title is the only statement of the bug its Artisans see: put the symptom and the exact error in it, in the Guildmaster's words.
+A bug task has no grill, so its title and detail are the only statement of the bug its Artisans see: give a short title naming the bug, and put the symptom and the exact error, in the Guildmaster's words, in `--detail` (or `--detail-file` for long or multi-line text).
 When the research or plan attempt of a bug task fails, it has either not reproduced the defect or found a question that needs the Guildmaster: read the attempt's summary with `guildhall task show`, and bring its findings or its question to the Guildmaster before any `guildhall step retry`.
 Tell the Guildmaster which kind you chose, with the task id:
 
 ```sh
-guildhall task new --repo app --title "CSV export drops the last row" --kind bug t-13
+guildhall task new --repo app --title "CSV export drops the last row" --kind bug \
+  --detail "Exporting a report of 10 rows as CSV writes only 9; the last row is missing and no error is shown." t-13
 ```
 
 Pick the repository from what they said; when the copy has several and it is unclear, ask.

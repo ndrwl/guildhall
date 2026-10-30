@@ -25,7 +25,8 @@ Each quoted text sits in a `text` fence longer than any backtick run inside it, 
 Prompts without `Stage.Retry` have no such section.
 
 The task title is quoted after the attempt identity under `Task title:`, in a `text` fence longer than any backtick run inside it, so a Director-written title cannot open a prompt section; an empty title renders nothing.
-The interpreter passes the task's title; it is not part of the manifest's `identity`, so the manifest schema is unchanged ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
+The task's detail, its full statement, follows under `Task detail:`, fenced the same way, in every stage's prompt; an empty detail renders nothing.
+The interpreter passes the task's title and detail; it is not part of the manifest's `identity`, so the manifest schema is unchanged ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
 
 Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory.
 The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.

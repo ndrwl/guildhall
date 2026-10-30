@@ -67,6 +67,20 @@ func taskGrants(t *testing.T, e *env, task string) []store.TaskGrant {
 	return gs
 }
 
+// TestPrepareRendersTheTaskDetail: a task's detail reaches the rendered stage with its title.
+func TestPrepareRendersTheTaskDetail(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			const detail = "Running X fails:\n\n    error: Y"
+			e := newEnvTasks(t, b, straight(t), func(task *store.Task) { task.Detail = detail }, planExpectation(t, interptest.Fail("no plan")))
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			if len(e.stages) != 1 || e.stages[0].Title != "Straight path" || e.stages[0].Detail != detail {
+				t.Fatalf("rendered stages = %+v, want plan-1 with the task's title and detail", e.stages)
+			}
+		})
+	}
+}
+
 // TestTaskGrantBindsOneAttempt: an approved grant that lasts one attempt is recorded on the binding of the first
 // attempt of its step bound after approval, and the next attempt, after a retry, gets none; another task's grant
 // never reaches this task.

@@ -40,6 +40,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 
 Options must be non-blank valid UTF-8 without line breaks or surrounding white space, distinct and at most 256 bytes each.
 Titles, questions, answers and approval words must be non-blank valid UTF-8 and are limited to 64 KiB per field; larger content belongs in a referenced document.
+A task title is also limited to 100 characters (runes), and a task's optional detail, its full statement, follows the 64 KiB rule.
 Message payload limits and artifact requirements are defined in the [envelope contract](messaging.md#envelope).
 Pane binding fields must be non-blank valid UTF-8 and are limited to 256 bytes each.
 An ownership record's launcher token is limited to 256 bytes, and its endpoint to 1024 bytes.

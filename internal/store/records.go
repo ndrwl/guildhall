@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"testing"
 	"time"
 	"unicode/utf8"
 
@@ -19,6 +20,9 @@ import (
 
 // MaxTextBytes bounds every free-text field; larger content belongs in a referenced document.
 const MaxTextBytes = 64 << 10
+
+// MaxTitleRunes bounds a task title: it is a short name, and the full statement goes in the task's detail.
+const MaxTitleRunes = 100
 
 // Per-repository buckets inside the repositories bucket.
 var (
@@ -50,6 +54,8 @@ type Task struct {
 	Repository string `json:"repository"`
 	ID         string `json:"id"`
 	Title      string `json:"title"`
+	// Detail is the task's full statement, such as a bug's symptom and exact error; every Artisan prompt shows it.
+	Detail string `json:"detail,omitempty"`
 	// Workflow is the immutable workflow revision the task runs.
 	Workflow workflow.Revision `json:"workflow"`
 	// ConfigDigest is the "sha256:<hex>" digest of the configuration the task was accepted under.
@@ -207,6 +213,25 @@ func (s *Store) CreateTask(mutationID string, t Task) (Receipt, error) {
 	if err := validateTask(t); err != nil {
 		return Receipt{}, err
 	}
+	if n := utf8.RuneCountInString(t.Title); n > MaxTitleRunes {
+		return Receipt{}, invalid("title is %d characters; the limit is %d", n, MaxTitleRunes)
+	}
+	return s.createTask(mutationID, t)
+}
+
+// CreateLegacyTaskForTests records t as CreateTask does but without the MaxTitleRunes limit, as a task created before
+// titles were limited, so tests can show such a task still runs. It panics outside a test binary (testing.Testing).
+func (s *Store) CreateLegacyTaskForTests(mutationID string, t Task) (Receipt, error) {
+	if !testing.Testing() {
+		panic("store: CreateLegacyTaskForTests called outside a test binary")
+	}
+	if err := validateTask(t); err != nil {
+		return Receipt{}, err
+	}
+	return s.createTask(mutationID, t)
+}
+
+func (s *Store) createTask(mutationID string, t Task) (Receipt, error) {
 	t.State = TaskOpen
 	return s.mutate(mutationID, "create-task", t, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = t.Repository, t.ID, "task"
@@ -727,6 +752,11 @@ func validateTask(t Task) error {
 	}
 	if err := validateText("title", t.Title, MaxTextBytes); err != nil {
 		return err
+	}
+	if t.Detail != "" {
+		if err := validateText("detail", t.Detail, MaxTextBytes); err != nil {
+			return err
+		}
 	}
 	if !workflow.ValidID(t.Workflow.Name) {
 		return invalid("workflow name %q is not a valid id", t.Workflow.Name)
