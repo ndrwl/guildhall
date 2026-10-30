@@ -268,6 +268,11 @@ type Director struct {
 	HandoffAfterTasks     int    `toml:"handoff_after_tasks" json:",omitempty"`
 	HandoffContextPercent *int   `toml:"handoff_context_percent" json:",omitempty"`
 	HandoffIdle           string `toml:"handoff_idle" json:",omitempty"`
+	// NoteAuditEverySessions and HallmarkAfterMerges are the maintenance cadences
+	// (docs/director.md#maintenance): sessions between note audits and merged pull requests per repository between
+	// hallmarks, 0 for off, DefaultNoteAuditEverySessions and DefaultHallmarkAfterMerges when unset.
+	NoteAuditEverySessions *int `toml:"note_audit_every_sessions" json:",omitempty"`
+	HallmarkAfterMerges    *int `toml:"hallmark_after_merges" json:",omitempty"`
 }
 
 // DefaultHandoffContextPercent is the [director] handoff_context_percent a config that does not set it gets.
@@ -278,6 +283,19 @@ type Handoff struct {
 	AfterTasks     int
 	ContextPercent int
 	Idle           time.Duration
+}
+
+// DefaultNoteAuditEverySessions and DefaultHallmarkAfterMerges are the [director] note_audit_every_sessions and
+// hallmark_after_merges a config that does not set them gets.
+const (
+	DefaultNoteAuditEverySessions = 3
+	DefaultHallmarkAfterMerges    = 4
+)
+
+// Maintenance is a config's effective maintenance cadences; zero turns a part off.
+type Maintenance struct {
+	NoteAuditEverySessions int
+	HallmarkAfterMerges    int
 }
 
 // DefaultIdleAfter is the [director] idle_after a config that does not set it gets.
@@ -693,6 +711,12 @@ func (c *Config) validate() []string {
 				add("director: %v", err)
 			}
 		}
+		if p := d.NoteAuditEverySessions; p != nil && *p < 0 {
+			add("director: note_audit_every_sessions %d must not be negative", *p)
+		}
+		if p := d.HallmarkAfterMerges; p != nil && *p < 0 {
+			add("director: hallmark_after_merges %d must not be negative", *p)
+		}
 	}
 
 	seenID, seenPath := map[string]bool{}, map[string]bool{}
@@ -1076,6 +1100,24 @@ func (c *Config) Handoff() (Handoff, error) {
 		err = fmt.Errorf("handoff thresholds %d tasks and %d%% are out of range", h.AfterTasks, h.ContextPercent)
 	}
 	return h, err
+}
+
+// Maintenance returns the effective [director] maintenance cadences: DefaultNoteAuditEverySessions and
+// DefaultHallmarkAfterMerges when they are not set. A value Parse would refuse is an error.
+func (c *Config) Maintenance() (Maintenance, error) {
+	m := Maintenance{NoteAuditEverySessions: DefaultNoteAuditEverySessions, HallmarkAfterMerges: DefaultHallmarkAfterMerges}
+	if d := c.Director; d != nil {
+		if d.NoteAuditEverySessions != nil {
+			m.NoteAuditEverySessions = *d.NoteAuditEverySessions
+		}
+		if d.HallmarkAfterMerges != nil {
+			m.HallmarkAfterMerges = *d.HallmarkAfterMerges
+		}
+	}
+	if m.NoteAuditEverySessions < 0 || m.HallmarkAfterMerges < 0 {
+		return m, fmt.Errorf("maintenance cadences %d sessions and %d merges must not be negative", m.NoteAuditEverySessions, m.HallmarkAfterMerges)
+	}
+	return m, nil
 }
 
 func parseHandoffIdle(v string) (time.Duration, error) {

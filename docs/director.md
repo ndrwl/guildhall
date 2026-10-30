@@ -108,7 +108,8 @@ The release ships the Director's own skills beside the stage skills, each render
 - `guildhall-director-inbox`: on every wake line and turn start, read `director status` and each unread message, act and acknowledge.
 - `guildhall-director-tasks`: turn what the Guildmaster says into commands, from giving work and answering decisions to merging, retrying, stopping, rulings and pausing.
 - `guildhall-director-stage`: run a [Director stage](interpreter.md#director-stages) from its brief and finish it with `step finish`.
-- `guildhall-handoff`: check the notes are current, then reload; the Guildmaster can type `/guildhall-handoff`.
+- `guildhall-handoff`: run and record the note audit, then reload; the Guildmaster can type `/guildhall-handoff`.
+- `guildhall-maintenance`: when a [maintenance](#maintenance) item is due and at every handoff, audit the notes against the store, launch a due hallmark, and record each run.
 - `guildhall-self-review`: after a task merges, when the [quality settings](configuration.md#quality-settings) turn it on, record the task against the [quality rubric](quality.md) without changing it.
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
@@ -198,7 +199,7 @@ The hold is read in the same store transaction that records a new attempt, so an
 `director resume` moves a paused session back to `running` and prints one JSON line, `{"session":{...},"needs_me":[...]}`, with the [status feed](#status)'s `needs_me`, which the Director then works using each item's recovery command.
 It is the Director's resume, not [`artisan resume`](artisan.md#commands), which settles one attempt whose launcher is gone.
 
-A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies`, `merge-queue`, `decision` and `install` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
+A resume that moves the session wakes the Director once for what waited while it was paused, such as messages queued `paused` and held tasks: when `needs_me` holds anything for the Director, anything but `checks`, `dependencies`, `merge-queue`, `decision`, `install` and `maintenance` items, and the session has a bound pane (a [parked](running.md#step-park-and-step-unpark) attempt is not in `needs_me`, so it wakes nothing), it wakes it with one line of counts by kind, never any text, as a [wake](messaging.md#waking-the-director) does, handed to a Claude Code session's waiter and typed only into the fake runtime's pane, and prints `"wake":{"decision":"woke"}` in its line:
 
 ```text
 guildhall: resumed, 2 waiting (messages 1, paused 1)
@@ -289,7 +290,7 @@ The stop does not yet send the Director a `stop-requested` message asking it to 
 
 ## Handoff
 
-A handoff is a fresh session picking up from this one: the Director checks its [notes](#notes) are current, then runs [`director reload --now`](#reload) ([decision](decisions/0094-director-notes.md)).
+A handoff is a fresh session picking up from this one: the Director runs and records the [note audit](#maintenance), then runs [`director reload --now`](#reload) ([decision](decisions/0094-director-notes.md)).
 The single handoff-note document and `director handoff --note-file` that recorded it ([D82](decisions/0082-director-handoff-reload.md)) are retired: stores keep the [handoff notes](store.md#handoff-notes) already recorded and `store doctor` still decodes them, but nothing writes or shows them.
 
 ## Notes
@@ -316,6 +317,44 @@ Every new session's `startup.md` lists the live notes in the same form before th
 When their text totals more than 8 KB the list opens with a line asking the Director to compact them; it is a warning only, and no note is ever refused for the total.
 Notes are not in the [status feed](#status), which `note list` covers.
 A note saying "once X merges, do Y" is better kept as a [hold](#holds), which comes back by itself.
+The Director reviews every note regularly in the [note audit](#maintenance), removing what the store already holds and proposing a task or procedure for a recurring kind of note.
+
+## Maintenance
+
+```sh
+guildhall director maintenance record (--notes | --hallmark --repo <r> --task <id>) --summary <text> [--copy <dir> | --store <file>]
+guildhall director maintenance list [--json] [--copy <dir> | --store <file>]
+```
+
+Director maintenance has two parts, which the [`guildhall-maintenance`](#skills) skill runs and Guildhall says are due, so neither depends on the Director remembering ([decision](decisions/director-maintenance.md)):
+
+- The note audit: for each live [note](#notes), is it still true, does the store already hold it (a task, decision, message, document or config), and is it a recurring kind of note that should become standard procedure or a follow-up task?
+  The Director removes, edits and compacts notes on its own, each removal with a reason naming the record that holds it, and brings proposed tasks and procedure changes to the Guildmaster as a short numbered list, creating nothing from it before they approve.
+  Every [handoff](#handoff) runs it too.
+- The hallmark: for each repository whose hallmark is due, the Director launches a task whose stage uses `guildhall-hallmark`, records it as soon as it is launched, so merges made while it runs count toward the next, and reads the self-review ledger.
+  It needs `task new`, so maintenance waits until the session is no longer `recovering`.
+
+Two [`[director]` settings](configuration.md#the-director-table) set when each part is due, and 0 turns a part off:
+
+| Setting | Default | Due when |
+|---|---|---|
+| `note_audit_every_sessions` | 3 | the newest session's number less the session of the last recorded note audit, or the baseline session if none, is at least the setting |
+| `hallmark_after_merges` | 4 | per repository, the `merged` messages sent after the last recorded hallmark of that repository, or after the baseline if none, are at least the setting |
+
+The settings are recorded on each session when it starts, so a change takes effect at the next session; the feed reads the newest session's.
+Counting starts at the baseline: the start of the earliest session recorded with a maintenance policy, which in an upgraded copy is the first session started by a release with maintenance, and in a fresh store session 1.
+Sessions and merges before it count for nothing, so an upgrade shows no item at once: the first hallmark is due after `hallmark_after_merges` merges made after it, and the first note audit `note_audit_every_sessions` sessions after it.
+A session started with both parts off records no policy, so it is not a baseline.
+A merge counts after a run or the baseline when its message's send receipt is newer than the run's receipt or the baseline session's start receipt.
+
+A due part is a `maintenance` item in [`needs_me`](#status), computed on each status read with nothing recorded: `note audit due: <n> sessions since the last (session <s>)`, `since the upgrade` before any audit, with the command `guildhall director maintenance record --notes --summary <text>`, and one per repository `hallmark due: <n> merged since the last`, with that `repository`, the `count` of merges and `guildhall director maintenance record --hallmark --repo <r> --task <id> --summary <text>`.
+It is not urgent: it adds nothing to the wake line, does not wake the Director on [resume](#pause-and-resume) and does not hold back [`director ready`](#ready); the Director works it after recovery, and `startup.md`'s in-flight list shows it like any other item.
+
+`maintenance record` records one run as the newest session, which must not be `stopped`, as notes are: a note audit with `--notes`, or a launched hallmark with `--hallmark`, its repository and its task, which must exist; `--summary` is one line of at most 1024 bytes, what was removed and what was proposed, such as `removed 4 (held by d47, D94, config); proposed 2: d58, skill change`.
+It prints `run <k> recorded`; recording the newest run again prints the same receipt and records nothing.
+A missing part, both parts, `--repo` or `--task` with `--notes`, or a missing summary is a usage error; an unknown task, a summary that is blank, multi-line or too long, no session or a session that cannot write is exit 1 and records nothing ([store](store.md#director-maintenance)).
+The item leaves `needs_me` once its run is recorded.
+`maintenance list` prints every recorded run, oldest first, one line each, `<k> s<session> <time> notes: <summary>` or `<k> s<session> <time> hallmark <repo>/<task>: <summary>`, or `No maintenance runs.`; `--json` prints the runs as a JSON array.
 
 ## Holds
 
@@ -397,7 +436,7 @@ Three triggers tell the Director a handoff is due before its context runs out ([
 - `handoff_context_percent` (70 unless set): the context the runtime last reported as used reaches the percent;
 - `handoff_idle` (off unless set): the Director has had no turn signal and no wake for that long and, with turn hooks, its turn is over.
 
-A trigger never ends the session itself: it asks the Director to run the [`guildhall-handoff`](#skills) skill, which checks the Director's [notes](#notes) are current and then runs `director reload --now`.
+A trigger never ends the session itself: it asks the Director to run the [`guildhall-handoff`](#skills) skill, which runs and records the [note audit](#maintenance) and then runs `director reload --now`.
 The first two ride on a [wake](messaging.md#waking-the-director): when a wake delivers its line and a trigger holds, the line ends `; handoff due (<reason>)`, such as `guildhall: 2 unread (question 2); handoff due (context 72%)`, with two reasons joined by `, ` when both hold, so no model turn is spent on the reminder alone.
 The idle trigger is the session supervisor's one timer: once the Director has been quiet for `handoff_idle` it wakes it with the same line, the unread counts with `; handoff due (idle <duration>)`, handed to a Claude Code session's waiter and typed only into the fake runtime's pane.
 Each crossing is announced once and recorded as a [handoff due](store.md#handoff-dues): the task trigger's crossings are every `handoff_after_tasks` finished tasks, so a Director that carries on is reminded again after as many more; the context trigger crosses once per session; the idle trigger once per quiet period, which a turn signal or a wake ends.
@@ -567,7 +606,9 @@ The document has these sections:
   9. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>` when that step's latest attempt failed or stopped, or `guildhall task start --repo <r> <t>` otherwise, including recovery of a recorded-but-unlaunched attempt.
   10. `checks`: an open task whose `next.json` says `"wait":"checks"`, with its `step`, which the session supervisor's [checks watcher](#checks) advances; `guildhall task start --repo <r> <t>`.
   11. `dependencies`: an open task whose `next.json` says `"wait":"dependencies"`, with its held `step`, which the [dependency gate](interpreter.md#the-dependency-gate) holds until its dependencies merge and the supervisor's [dependency watcher](#dependencies) advances; `guildhall task start --repo <r> <t>`, or `--ignore-deps --reason <text>` added to start it anyway.
-  12. `install`: last, after every other item, one item when the binary printing the feed is behind Guildhall's own repository's default branch, its `version` block's `behind_main` with a `count` above 0, with that `repository` and `count` and the reason `the installed guildhall (<first 8 of the revision>) is <n> merge[s] behind main[ (#<pr>, …)]; ask the Guildmaster to install`; `guildhall version`.
+  12. `maintenance`: a due [note audit](#maintenance), then one item per repository, in id order, whose hallmark is due, with its `repository` and the `count` of merges since; after the `merge-queue` items, and before only `install`.
+      It is the Director's but not urgent, so it does not wake the Director on [resume](#pause-and-resume) and does not hold back `director ready`.
+  13. `install`: last, after every other item, one item when the binary printing the feed is behind Guildhall's own repository's default branch, its `version` block's `behind_main` with a `count` above 0, with that `repository` and `count` and the reason `the installed guildhall (<first 8 of the revision>) is <n> merge[s] behind main[ (#<pr>, …)]; ask the Guildmaster to install`; `guildhall version`.
       It is read from the default branch as last fetched, with no fetch, and is not stored, so it changes on every read and is gone once an installed binary is no longer behind; a binary with no revision, or a copy that lists no own repository, has none.
       The advance that leaves a task of Guildhall's own repository done with a merge fetches that branch first, bounded and ignoring failure, so the feed the `merged` message wakes the Director for counts it; a merge made by hand is counted once anything fetches the branch, as plain `guildhall version` does.
       It waits on the Guildmaster, so it neither counts nor wakes the Director on [resume](#pause-and-resume), and the supervisor's snapshot, which has no `version` block, leaves it out.
@@ -588,6 +629,8 @@ The document has these sections:
   An `absent` attempt, the moment between an advance and its launcher taking ownership, is listed but not flagged, and attempts of done or cancelled tasks are listed while their store outcome is empty.
 - `grants`: every active [task grant](tasks.md#task-grants), in repository, task and grant order, each with its `repository`, `task_id`, `grant` id, `step`, `rules`, `reason`, `until`, the attempts `bound` with it so far and `approved_at`, the commit time of its decision's answer.
   A grant leaves the list once it expires, its task closing or its one bound attempt having an outcome, or is revoked, with no write ([decision](decisions/task-grants.md)); a pending grant is in `needs_me` as its open `grant-<id>` decision instead.
+- `maintenance`: when [maintenance](#maintenance) was last run and is next due under the newest session's settings, absent until a session was started with a maintenance policy: `baseline_session`; `note_audit` with `every_sessions`, the last audit's `last_session` and `last_at` once one is recorded, `sessions_since` and `sessions_until_due`, absent when the audit is off; and `hallmarks`, one per repository in id order, with its `repository`, `after_merges`, the last hallmark's `last_task` and `last_at` once one is recorded, `merged_since` and `merges_until_due`, absent when hallmarks are off.
+  It carries counts and times only, never a note's text, so notes stay out of the feed ([decision](decisions/director-maintenance.md)); `director maintenance list` shows the history.
 - `repository_policies`: each configured repository's [policies](configuration.md#repository-policies), read from its default branch as last fetched into `refs/guildhall/policies` with no fetch, in config order: `{"repository", "commit", "policies": [...]}`, `policies` empty for a repository without a policy file; `{"repository", "error"}` when its file is refused or cannot be read; or `{"repository", "not_read_yet": true}` before the first fetch.
   The field is absent when no repository has a policy file and none has an error, and the session supervisor's own snapshot leaves it out.
   Policies are guidance, not [guard rails](#guard-rails), which are limits the binary enforces, so they are not under `guard_rails`.

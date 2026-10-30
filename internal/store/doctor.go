@@ -92,6 +92,7 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketFollowUps, nil, func() any { return new(FollowUp) }},
 			{bucketReloads, nil, func() any { return new(DirectorReload) }},
 			{bucketHandoffDues, nil, func() any { return new(HandoffDue) }},
+			{bucketMaintenance, nil, func() any { return new(MaintenanceRun) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {

@@ -113,6 +113,10 @@ type DirectorSession struct {
 	// Handoff is the automatic handoff policy the wakes of this session read; zero turns every trigger a wake
 	// reads off.
 	Handoff HandoffPolicy `json:"handoff,omitzero"`
+	// Maintenance is the maintenance policy the status feed reads for this session; zero for a session recorded
+	// before it was kept and for one with both parts off. The earliest session with a policy that is not zero is
+	// where maintenance counting starts (docs/director.md#maintenance).
+	Maintenance MaintenancePolicy `json:"maintenance,omitzero"`
 }
 
 // Holds reports whether the session holds new attempts: while it is paused or stopping, and while a stop's sweep
@@ -666,6 +670,9 @@ func validateSession(d DirectorSession) error {
 		return invalid("director session context report %q must be an absolute path", p.ContextFile)
 	case len(p.ContextFile) > 4096:
 		return invalid("director session context report path is %d bytes; the limit is 4096", len(p.ContextFile))
+	}
+	if p := d.Maintenance; p.NoteAuditEverySessions < 0 || p.HallmarkAfterMerges < 0 {
+		return invalid("director session maintenance cadences %d sessions and %d merges must not be negative", p.NoteAuditEverySessions, p.HallmarkAfterMerges)
 	}
 	if d.Pane != (DirectorPane{}) {
 		for name, v := range map[string]string{"session": d.Pane.Session, "workspace": d.Pane.Workspace, "tab": d.Pane.Tab, "pane": d.Pane.Pane} {

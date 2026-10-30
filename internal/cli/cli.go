@@ -98,6 +98,10 @@ Commands:
                  keep a one-line follow-up, back in needs_me once the named tasks merge
   director follow-up list|done <id> --copy <dir>
                  print the follow-ups not done, or mark one done
+  director maintenance record (--notes | --hallmark --repo <r> --task <id>) --summary <text> --copy <dir>
+                 record a note audit or a launched hallmark, clearing its maintenance item
+  director maintenance list [--json] --copy <dir>
+                 print every recorded maintenance run
   director reload [--now] --copy <dir>
                  restart the Director session at a quiet point, or at the end of the turn
   director turn-started --copy <dir>

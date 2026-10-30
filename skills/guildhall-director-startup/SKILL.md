@@ -27,6 +27,7 @@ The binary refuses `guildhall task new`, and `guildhall task start` of a task wi
    - `stalled`, `decision`, `messages` and `director`: handle them with `guildhall-director-inbox`.
    - `paused`: a task held while the session was paused; once you are ready and not paused, start it again with `guildhall task start` as the item names.
    - `checks`: not yours; your session's supervisor reads the task's checks again on its own and wakes you when they finish, so never poll them or run its `guildhall task start` yourself.
+   - `maintenance`: a note audit or a hallmark is due; it does not hold back `guildhall director ready`, so work it with `guildhall-maintenance` after recovery.
    - `install`: the installed `guildhall` is behind main; it waits on the Guildmaster, not you.
      When it appears or its count changes, tell the Guildmaster how many merges behind it is and which pull requests it is missing, and that it is time to install.
      If tasks in flight are worth waiting for before installing, name them; that is your judgement.

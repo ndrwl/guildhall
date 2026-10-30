@@ -57,6 +57,9 @@ type directorStatus struct {
 	// Grants are the active task grants, extra allowed tools the Guildmaster approved for one task
 	// (docs/decisions/task-grants.md); one leaves the list once it expires or is revoked, with no write.
 	Grants []statusGrant `json:"grants"`
+	// Maintenance is when Director maintenance was last run and is next due (docs/director.md#maintenance), counts
+	// and times only; absent until a session started with a maintenance policy.
+	Maintenance *statusMaintenance `json:"maintenance,omitempty"`
 	// RepositoryPolicies is each configured repository's policies as last fetched, read with no fetch
 	// (docs/configuration.md#repository-policies); absent when no repository has a policy file and none has an
 	// error. They are guidance, not guard rails: nothing enforces them. The session supervisor's own snapshot
@@ -233,6 +236,34 @@ type statusRunning struct {
 	Command      string    `json:"command"`
 }
 
+// statusMaintenance is the maintenance counts under the newest session's policy, from the baseline session on.
+type statusMaintenance struct {
+	BaselineSession int              `json:"baseline_session"`
+	NoteAudit       statusNoteAudit  `json:"note_audit"`
+	Hallmarks       []statusHallmark `json:"hallmarks"`
+}
+
+// statusNoteAudit is the last note audit and the sessions until the next; SessionsUntilDue is absent when the note
+// audit is off.
+type statusNoteAudit struct {
+	EverySessions    int       `json:"every_sessions"`
+	LastSession      int       `json:"last_session,omitempty"`
+	LastAt           time.Time `json:"last_at,omitzero"`
+	SessionsSince    int       `json:"sessions_since"`
+	SessionsUntilDue *int      `json:"sessions_until_due,omitempty"`
+}
+
+// statusHallmark is one repository's last hallmark and the merges since; MergesUntilDue is absent when hallmarks
+// are off.
+type statusHallmark struct {
+	Repository     string    `json:"repository"`
+	AfterMerges    int       `json:"after_merges"`
+	LastTask       string    `json:"last_task,omitempty"`
+	LastAt         time.Time `json:"last_at,omitzero"`
+	MergedSince    int       `json:"merged_since"`
+	MergesUntilDue *int      `json:"merges_until_due,omitempty"`
+}
+
 type statusLive struct {
 	State  reconcile.State `json:"state"`
 	Reason string          `json:"reason"`
@@ -307,6 +338,10 @@ const mergeQueueKind = "merge-queue"
 
 // followUpKind is the needs_me kind and held kind of a follow-up (docs/decisions/0096-hold-until-merged.md).
 const followUpKind = "follow-up"
+
+// maintenanceKind is the needs_me kind of a due note audit or hallmark, which the Director works after recovery
+// (docs/director.md#maintenance).
+const maintenanceKind = "maintenance"
 
 // installKind is the needs_me kind of a binary behind its repository's default branch, which waits on the
 // Guildmaster to install it; director status adds it from its own version block, so the supervisor's snapshot
@@ -812,10 +847,58 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "messages", Count: others, Reason: fmt.Sprintf("%d unread Director message%s", others, plural),
 			Command: "guildhall messages list director"})
 	}
-	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued); out.NeedsMe == nil {
+	var due []needsMeItem
+	out.Maintenance, due = maintenanceStatus(v)
+	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued, due); out.NeedsMe == nil {
 		out.NeedsMe = []needsMeItem{}
 	}
 	return out, nil
+}
+
+// maintenanceStatus is the feed's maintenance object and its due maintenance items under the newest session's
+// policy, counted from the baseline session: none before a session started with a policy
+// (docs/decisions/director-maintenance.md).
+func maintenanceStatus(v store.DirectorView) (*statusMaintenance, []needsMeItem) {
+	m := v.Maintenance
+	if m.Baseline == 0 || v.Session == nil {
+		return nil, nil
+	}
+	p := v.Session.Maintenance
+	out := &statusMaintenance{BaselineSession: m.Baseline, NoteAudit: statusNoteAudit{EverySessions: p.NoteAuditEverySessions}, Hallmarks: []statusHallmark{}}
+	var items []needsMeItem
+	since, last := m.Baseline, "the upgrade"
+	if r := m.LastNotes; r != nil {
+		out.NoteAudit.LastSession, out.NoteAudit.LastAt = r.Session, r.Time
+		since, last = max(since, r.Session), "the last"
+	}
+	out.NoteAudit.SessionsSince = max(0, v.Session.Number-since)
+	if n := p.NoteAuditEverySessions; n > 0 {
+		until := max(0, n-out.NoteAudit.SessionsSince)
+		out.NoteAudit.SessionsUntilDue = &until
+		if until == 0 {
+			items = append(items, needsMeItem{Kind: maintenanceKind,
+				Reason:  fmt.Sprintf("note audit due: %d sessions since %s (session %d)", out.NoteAudit.SessionsSince, last, since),
+				Command: "guildhall director maintenance record --notes --summary <text>"})
+		}
+	}
+	for _, r := range m.Repositories {
+		h := statusHallmark{Repository: r.Repository, AfterMerges: p.HallmarkAfterMerges, MergedSince: r.Merged}
+		last := "the upgrade"
+		if l := r.LastHallmark; l != nil {
+			h.LastTask, h.LastAt, last = l.Task, l.Time, "the last"
+		}
+		if n := p.HallmarkAfterMerges; n > 0 {
+			until := max(0, n-r.Merged)
+			h.MergesUntilDue = &until
+			if until == 0 {
+				items = append(items, needsMeItem{Kind: maintenanceKind, Repository: r.Repository, Count: r.Merged,
+					Reason:  fmt.Sprintf("hallmark due: %d merged since %s", r.Merged, last),
+					Command: fmt.Sprintf("guildhall director maintenance record --hallmark --repo %s --task <id> --summary <text>", r.Repository)})
+			}
+		}
+		out.Hallmarks = append(out.Hallmarks, h)
+	}
+	return out, items
 }
 
 // readNext reads a task's next.json as written, or says why it cannot; a missing file is neither.

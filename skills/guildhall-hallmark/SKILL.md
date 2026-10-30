@@ -1,6 +1,6 @@
 ---
 name: guildhall-hallmark
-description: Use after every three or four merged pull requests, or before a large slice starts, to review the whole repository for long-term cost and write ranked, PR-sized follow-ups without changing the project.
+description: Use when guildhall director status lists a hallmark due for a repository, or before a large slice starts, to review the whole repository for long-term cost and write ranked, PR-sized follow-ups without changing the project.
 ---
 
 Adapted from `improve-codebase-architecture` and `codebase-design` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
@@ -13,7 +13,8 @@ Nobody answers you during the stage, so settle what the evidence settles and ask
 
 ## When to run
 
-Run a hallmark after every three or four merged pull requests, and before a large slice or integration boundary is joined.
+Run a hallmark after the merged pull requests the copy's `[director] hallmark_after_merges` sets, 4 by default, and before a large slice or integration boundary is joined.
+Guildhall counts the merges per repository and lists a `maintenance` item in `guildhall director status` when one is due; the Director launches it and records it with `guildhall-maintenance`.
 A shorter cadence finds little new, and a longer one lets one shortcut become the pattern later changes copy.
 Each hallmark starts from the previous one, so the reports form a ledger of how the codebase is ageing.
 
