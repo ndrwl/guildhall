@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -299,23 +300,25 @@ type Retirement struct {
 	// Head is the full commit id the task's change was merged at: work at it or behind it was delivered.
 	Head string
 	// Outputs are the files Guildhall recorded from the working directory, by clean slash-separated path relative
-	// to it, with their sha256 in lowercase hex: untracked files that are copies of them are not work.
-	Outputs map[string]string
+	// to it, with the sha256 in lowercase hex of every copy recorded at that path: an untracked file that is a copy
+	// of any of them is not work.
+	Outputs map[string][]string
 }
 
 // Retire removes a merged task's worktree, w.Dir, and its local branch, w.Branch, when nothing in them would be
 // lost, and otherwise removes nothing and returns why it kept them.
 //
-// Something would be lost when a tracked file is changed or staged; when an untracked file is not one of
-// r.Outputs with the same bytes; when the worktree's HEAD is not r.Head or one of its ancestors; or when the
+// Something would be lost when a tracked file is changed or staged; when an untracked file has none of the
+// bytes r.Outputs records at its path; when the worktree's HEAD is not r.Head or one of its ancestors; or when the
 // branch exists and its tip is not. Files git ignores are not work and are removed with the worktree; other local
 // branches and stashes are the repository's and are kept. The branch is deleted only while still at the tip
 // that was checked.
 //
 // Retire is idempotent and replay safe: a missing w.Dir with no branch is already retired, whatever r.Head is, and a branch left by an interrupted
 // Retire is deleted when its tip is merged. It refuses an invalid workspace or head (ErrInvalidWorkspace) and a
-// w.Dir that exists and is not a worktree of w.Repository (ErrNotWorkspace), removing nothing; a git failure,
-// including a head the repository does not have, is an error, and ctx ending is an error.
+// w.Dir that exists and is not a worktree of w.Repository (ErrNotWorkspace), removing nothing. A head the
+// repository does not have, as when the forge made it, is fetched from w.Remote by its commit id once, writing no
+// ref; a git failure, including a head that fetch cannot get, is an error, and ctx ending is an error.
 func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -348,7 +351,7 @@ func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err e
 		_, err := p.git(ctx, r.Repository, "update-ref", "-d", DefaultRef(r.Branch))
 		return nil, err
 	}
-	if _, err := p.git(ctx, r.Repository, "cat-file", "-e", r.Head+"^{commit}"); err != nil {
+	if err := p.fetchHead(ctx, r); err != nil {
 		return nil, err
 	}
 	if tip != "" {
@@ -384,8 +387,25 @@ func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err e
 	return nil, err
 }
 
+// fetchHead ensures the repository has the commit r.Head, fetching it from r.Remote by its id when it is missing,
+// as after a merge outside Guildhall of a head the forge made. A head already there makes no network call.
+func (p Program) fetchHead(ctx context.Context, r Retirement) error {
+	_, err := p.git(ctx, r.Repository, "cat-file", "-e", r.Head+"^{commit}")
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	if _, ferr := p.git(ctx, r.Repository, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", r.Remote, r.Head); ferr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("the merged head %s is not in the repository and fetching it failed: %w", r.Head, ferr)
+	}
+	_, err = p.git(ctx, r.Repository, "cat-file", "-e", r.Head+"^{commit}")
+	return err
+}
+
 // unmerged lists what in the worktree r.Dir would be lost: a HEAD that is not r.Head or behind it, a changed or
-// staged tracked file, and an untracked file that is not one of r.Outputs with the same bytes.
+// staged tracked file, and an untracked file with none of the bytes r.Outputs records at its path.
 func (p Program) unmerged(ctx context.Context, r Retirement) ([]string, error) {
 	var kept []string
 	out, err := p.git(ctx, r.Dir, "rev-parse", "--verify", "HEAD^{commit}")
@@ -416,9 +436,9 @@ func (p Program) unmerged(ctx context.Context, r Retirement) ([]string, error) {
 			kept = append(kept, "changed "+name)
 			continue
 		}
-		want, ok := r.Outputs[name]
+		want := r.Outputs[name]
 		data, err := os.ReadFile(filepath.Join(r.Dir, filepath.FromSlash(name)))
-		if !ok || err != nil || digest.Of(data).Hex() != want {
+		if len(want) == 0 || err != nil || !slices.Contains(want, digest.Of(data).Hex()) {
 			kept = append(kept, "untracked "+name)
 		}
 	}

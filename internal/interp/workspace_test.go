@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -161,6 +162,40 @@ func TestMergeRetiresTheWorkspace(t *testing.T) {
 	}
 }
 
+// TestMergeRetiresAnEarlierRecordedOutput: a workspace whose untracked file is a copy of the task's earliest
+// recorded document at its path, while a document that sorts after it records other bytes there (as a narrowed
+// review after a rebase, deliver-rebase-review-1, sorts before review-1), is removed with no workspace-kept message.
+func TestMergeRetiresAnEarlierRecordedOutput(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, f, ws := newRetireEnv(t, b)
+			want(t, e.toSignOff(t), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			spec, ok := e.documents(t)["plan-1-spec"]
+			if !ok {
+				t.Fatal("plan-1-spec not recorded")
+			}
+			if _, err := os.Stat(filepath.Join(ws.Dir, "spec.md")); err != nil {
+				t.Fatalf("the workspace holds no spec.md: %v", err)
+			}
+			later := store.DocumentRef{Repository: "app", TaskID: "t7", Name: "research-1-spec", Path: "tasks/app/t7/research-1/spec.md", SHA256: sum([]byte("a later spec\n"))}
+			if later.SHA256 == spec.SHA256 {
+				t.Fatal("the later spec has the recorded spec's bytes")
+			}
+			if _, err := e.h.Records.PutDocument("test.later-spec", later); err != nil {
+				t.Fatal(err)
+			}
+			e.answer(t, "deliver-1", "merge")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), interp.Next{Wait: interp.WaitDone, Step: "deliver"})
+			if got := e.keptMessage(t); got != "" {
+				t.Errorf("workspace-kept = %q, want none", got)
+			}
+			if _, err := os.Stat(ws.Dir); !errors.Is(err, os.ErrNotExist) || f.Head(ws.Dir) != "" {
+				t.Errorf("workspace still there after the merge: %v", err)
+			}
+		})
+	}
+}
+
 // TestMergeKeepsUnmergedWork: a workspace holding work the merge did not deliver is kept, the Director is told what
 // it holds, and the task still closes.
 func TestMergeKeepsUnmergedWork(t *testing.T) {
@@ -243,5 +278,36 @@ func TestInterruptedRetirementKeepsTheTaskOpen(t *testing.T) {
 				t.Errorf("task state = %q, want done", got)
 			}
 		})
+	}
+}
+
+// TestRetirementOutputs: every document recorded at a path below its record directory is listed under that path,
+// whatever order the document names sort in, and a document with no directory component is not.
+func TestRetirementOutputs(t *testing.T) {
+	doc := func(name, p, data string) store.DocumentRef {
+		return store.DocumentRef{Repository: "app", TaskID: "t7", Name: name, Path: "tasks/app/t7/" + p, SHA256: sum([]byte(data))}
+	}
+	docs := []store.DocumentRef{
+		doc("deliver-rebase-review-1-outcome", "deliver-rebase-review-1/outcome.json", "rebased"),
+		doc("review-1-outcome", "review-1/outcome.json", "one"),
+		doc("review-10-outcome", "review-10/outcome.json", "ten"),
+		doc("review-9-outcome", "review-9/outcome.json", "nine"),
+		doc("review-x1-outcome", "review-x1/outcome.json", "x1"),
+		doc("plan-1-spec", "plan-1/spec.md", "spec"),
+		doc("plan-1-inputs", "plan-1.inputs.json", "inputs"),
+		{Repository: "app", TaskID: "t8", Name: "review-1-outcome", Path: "tasks/app/t8/review-1/outcome.json", SHA256: sum([]byte("other task"))},
+	}
+	got := interp.RetirementOutputs("app", "t7", docs)
+	for rel, data := range map[string][]string{"outcome.json": {"rebased", "one", "ten", "nine", "x1"}, "spec.md": {"spec"}} {
+		var want []string
+		for _, d := range data {
+			want = append(want, sum([]byte(d)))
+		}
+		if !slices.Equal(got[rel], want) {
+			t.Errorf("outputs at %s = %q, want %q", rel, got[rel], want)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("outputs = %q, want only outcome.json and spec.md", got)
 	}
 }

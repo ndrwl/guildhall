@@ -385,6 +385,49 @@ func TestRetireProgram(t *testing.T) {
 			t.Fatalf("kept %q, branch there %v; want the branch deleted", kept, branch(t, ret))
 		}
 	})
+	// forgeHead commits on the remote's default branch from a clone of its own and pushes it only to a pull request
+	// ref, as a forge's "Update branch" before a merge outside Guildhall does, so the repository lacks it.
+	forgeHead := func(t *testing.T, ret git.Retirement) string {
+		t.Helper()
+		clone := filepath.Join(t.TempDir(), "forge")
+		repo{t, filepath.Dir(clone), global}.run("clone", "-q", ret.Remote, clone)
+		r := repo{t, clone, global}
+		head := r.commit("update branch", map[string]string{"f.txt": "f\n"})
+		r.run("push", "-q", "origin", "HEAD:refs/pull/1/head")
+		if exec.Command("git", "-C", ret.Repository, "cat-file", "-e", head+"^{commit}").Run() == nil {
+			t.Fatal("the repository already has the forge's head")
+		}
+		return head
+	}
+	unmergedWorkspace := func(t *testing.T) git.Retirement {
+		t.Helper()
+		w, _ := arrangeWorkspace(t, repositories)
+		if err := (git.Program{}).Ensure(ctx, w); err != nil {
+			t.Fatal(err)
+		}
+		return git.Retirement{Workspace: w}
+	}
+	t.Run("a merged head the repository lacks is fetched from the remote", func(t *testing.T) {
+		ret := unmergedWorkspace(t)
+		ret.Head = forgeHead(t, ret)
+		if kept := retire(t, ret); len(kept) > 0 {
+			t.Fatalf("kept %q", kept)
+		}
+		if _, err := os.Stat(ret.Dir); !errors.Is(err, os.ErrNotExist) || branch(t, ret) {
+			t.Errorf("worktree there: %v, branch there %v; want both removed", err, branch(t, ret))
+		}
+	})
+	t.Run("a merged head that cannot be fetched is an error", func(t *testing.T) {
+		ret := unmergedWorkspace(t)
+		ret.Head = forgeHead(t, ret)
+		ret.Remote = filepath.Join(t.TempDir(), "gone.git")
+		if _, err := (git.Program{}).Retire(ctx, ret); err == nil || !strings.Contains(err.Error(), " fetch ") {
+			t.Fatalf("Retire with an unreachable remote = %v, want the fetch's error", err)
+		}
+		if _, err := os.Stat(ret.Dir); err != nil || !branch(t, ret) {
+			t.Errorf("worktree there: %v, branch there %v; want both kept", err, branch(t, ret))
+		}
+	})
 	t.Run("a head the repository lacks is an error", func(t *testing.T) {
 		ret, _ := merged(t)
 		ret.Head = strings.Repeat("0", 40)

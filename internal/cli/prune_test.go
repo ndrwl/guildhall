@@ -620,6 +620,37 @@ func TestPruneKeepsAWorktreeRetireKeeps(t *testing.T) {
 	}
 }
 
+// TestPruneRetiresAnEarlierAttemptsOutput: a done task whose worktree a merge kept because its untracked
+// outcome.json is the copy a narrowed review after a rebase recorded, while review-1 (which sorts after it) recorded
+// other bytes at that path, is retired by the next prune.
+func TestPruneRetiresAnEarlierAttemptsOutput(t *testing.T) {
+	f := newPruneFixture(t)
+	f.task("app", "t-1")
+	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
+	f.worktree("t-1")
+	w := f.workspace("t-1")
+	rebased := `{"verdict":"approved","attempt":"deliver-rebase-review-1"}` + "\n"
+	f.document("t-1", "deliver-rebase-review-1-outcome", "deliver-rebase-review-1/outcome.json", rebased)
+	f.document("t-1", "review-1-outcome", "review-1/outcome.json", `{"verdict":"approved","attempt":"review-1"}`+"\n")
+	writeTree(t, filepath.Join(w.Dir, "outcome.json"), rebased)
+	f.close("app", "t-1")
+	f.mutate(func(s *store.Store) error {
+		_, err := s.PruneTask(f.id(), store.TaskPrune{Repository: "app", TaskID: "t-1", Worktree: store.WorktreeKept, Kept: "untracked outcome.json"})
+		return err
+	})
+
+	got := f.run(false)
+	if len(got) != 1 || got[0].Worktree != store.WorktreeRemoved || !got[0].complete() {
+		t.Fatalf("prune = %+v; want the worktree removed", got)
+	}
+	if _, err := os.Lstat(w.Dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("worktree: %v, want it removed", err)
+	}
+	if rec, err := f.record("t-1"); err != nil || rec.Worktree != store.WorktreeRemoved || !rec.Complete {
+		t.Fatalf("record = %+v, %v", rec, err)
+	}
+}
+
 func (f *pruneFixture) messages(typ string) []store.Message {
 	f.t.Helper()
 	var out []store.Message
