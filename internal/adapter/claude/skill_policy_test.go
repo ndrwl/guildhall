@@ -105,7 +105,7 @@ func TestSkillPolicyArtisanResolvesOverrides(t *testing.T) {
 	if err := json.Unmarshal(b, &settings); err != nil {
 		t.Fatal(err)
 	}
-	if !settings.Sync || settings.Disable || settings.Overrides["anthropic-skills:pdf"] != "on" || settings.Overrides["dataviz"] != "off" || settings.Overrides["run"] != "on" || !slices.Equal(settings.Permissions.Allow, []string{"WebSearch", "WebFetch"}) {
+	if !settings.Sync || settings.Disable || settings.Overrides["anthropic-skills:pdf"] != "on" || settings.Overrides["dataviz"] != "off" || settings.Overrides["run"] != "on" || !slices.Equal(settings.Permissions.Allow, []string{"WebSearch", "WebFetch", claude.CILogRule}) {
 		t.Fatalf("wrong resolved settings: %s", b)
 	}
 	b, err = os.ReadFile(filepath.Join(filepath.Dir(spec.ResultFile), claude.SkillPolicyFile))

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
@@ -63,9 +64,14 @@ func TestWrapperProfileAuthority(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// An empty list still keeps the rule Guildhall gives every claude profile; no reference grants nothing.
+			var want []string
+			if name == "empty" {
+				want = []string{claude.CILogRule}
+			}
 			got, err := claudetest.Granted(spec.ResultFile)
-			if err != nil || len(got) != 0 {
-				t.Fatalf("granted %q: %v", got, err)
+			if err != nil || !slices.Equal(got, want) {
+				t.Fatalf("granted %q: %v; want %q", got, err, want)
 			}
 			if _, err := os.Stat(claude.ArtisanSettingsPath(spec.ResultFile)); err != nil {
 				t.Fatalf("settings: %v", err)

@@ -217,6 +217,10 @@ type Engine struct {
 	// reads that head's checks again; zero or negative reads them at every advance (docs/interpreter.md#validate).
 	// `task start` and `step done` set it from the config's checks_refresh.
 	ChecksRefresh time.Duration
+	// CILogLimit caps the bytes of each failed job log validate fetches into the CI log cache, keeping the log's
+	// tail; zero or negative fetches none (docs/interpreter.md#validate). `task start` and `step done` set it from
+	// the config's ci_log_limit.
+	CILogLimit int64
 	// Now is the clock the observations and ChecksRefresh read; nil is wall time.
 	Now func() time.Time
 	// Base returns the commit a repository's tasks are based on now; nil or an error means every code review

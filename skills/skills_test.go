@@ -752,6 +752,7 @@ var notAskedOfTheDirector = map[string]string{
 	"director turn-ended":     "the runtime's hook runs it when a turn ends",
 	"director context-report": "the runtime's status line runs it after each message",
 	"quality judged":          "a judge attempt's launcher runs it when the attempt ends",
+	"ci log":                  "Artisans run it from a failed validate result's logs[].command",
 }
 
 // readmeCommand finds each `guildhall <command>` in the README's command list.

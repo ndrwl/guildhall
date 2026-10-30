@@ -42,7 +42,13 @@ const (
 	SourceRepository GrantSource = "repository"
 	// SourceTask is the task grant the attempt's binding records (docs/decisions/task-grants.md), added last.
 	SourceTask GrantSource = "task"
+	// SourceGuildhall is a rule Guildhall gives every claude profile, whatever its allowed_tools: CILogRule.
+	SourceGuildhall GrantSource = "guildhall"
 )
+
+// CILogRule lets an Artisan run guildhall ci log, which serves its task's failed CI job logs read-only through
+// Guildhall's own gh (docs/adapters.md#artisan-permissions). No gh, curl or GitHub API rule is ever granted.
+const CILogRule = "Bash(guildhall ci log:*)"
 
 // Grant is one rule of an effective grant and its source.
 type Grant struct {
@@ -52,7 +58,8 @@ type Grant struct {
 
 // EffectiveGrant is the effective grant cfg gives profile for a task of repository, in order: the profile's own
 // allowed_tools when it sets them, even to an empty list, or else its shipped default when it runs the claude
-// adapter; then repository's grant for the profile, if any. A rule already granted is dropped, keeping the first.
+// adapter; then repository's grant for the profile, if any; then, for a claude profile, CILogRule. A rule already
+// granted is dropped, keeping the first.
 // An empty repository, or one cfg does not list, adds nothing; a profile cfg does not declare is an error.
 func EffectiveGrant(cfg *config.Config, profile, repository string) ([]Grant, error) {
 	p, err := cfg.Profile(profile)
@@ -68,6 +75,10 @@ func EffectiveGrant(cfg *config.Config, profile, repository string) ([]Grant, er
 	}
 	if r, ok := cfg.Repository(repository); ok && repository != "" {
 		grants = addGrants(grants, r.Profiles[profile].AllowedTools, SourceRepository)
+	}
+	// A copy's allowed_tools replace the shipped default, so the read-only, task-scoped log command is added apart.
+	if p.Adapter == adapter.ClaudeName {
+		grants = addGrants(grants, []string{CILogRule}, SourceGuildhall)
 	}
 	return grants, nil
 }

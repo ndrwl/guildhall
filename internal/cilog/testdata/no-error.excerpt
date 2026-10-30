@@ -1,0 +1,8 @@
+Current runner version: '2.329.0'
+##[group]Run actions/checkout@v5
+with:
+##[endgroup]
+##[group]Run ./scripts/check.sh
+##[endgroup]
+check.sh: 3 files need formatting
+The job was canceled because it exceeded the maximum execution time.

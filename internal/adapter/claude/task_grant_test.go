@@ -21,6 +21,9 @@ import (
 // profileRules are the builder's own allowed_tools in the task grant tests' copy.
 var profileRules = []string{"Bash(go test:*)", "Bash(git commit:*)"}
 
+// effectiveRules are the builder's effective grant without a task grant: profileRules and the guildhall CILogRule.
+var effectiveRules = append(slices.Clone(profileRules), claude.CILogRule)
+
 // grantCopy is a copy whose builder grants profileRules, with a store holding task app/task-1 and, when rules is not
 // nil, its approved one-attempt grant g1 of rules for build, bound to attempt build-1 by its binding document.
 // It returns the copy, the spec of build-1 and the binding's path.
@@ -107,7 +110,7 @@ func runGranted(t *testing.T, spec adapter.Spec) ([]string, string) {
 func TestRunAddsTheBoundTaskGrant(t *testing.T) {
 	claudetest.Install(t)
 	copyDir, spec, _ := grantCopy(t, []string{"Bash(go test:*)", "Bash(go:*)", "Bash(claude:*)"})
-	want := append(slices.Clone(profileRules), "Bash(go:*)", "Bash(claude:*)")
+	want := append(slices.Clone(effectiveRules), "Bash(go:*)", "Bash(claude:*)")
 	got, stderr := runGranted(t, spec)
 	if !slices.Equal(got, want) {
 		t.Errorf("granted %q; want %q", got, want)
@@ -136,8 +139,8 @@ func TestRunAddsTheBoundTaskGrant(t *testing.T) {
 		return err
 	})
 	got, stderr = runGranted(t, spec)
-	if !slices.Equal(got, profileRules) {
-		t.Errorf("after the revoke: granted %q; want %q", got, profileRules)
+	if !slices.Equal(got, effectiveRules) {
+		t.Errorf("after the revoke: granted %q; want %q", got, effectiveRules)
 	}
 	if !strings.Contains(stderr, "task grant g1 is revoked") {
 		t.Errorf("stderr = %q", stderr)
@@ -161,8 +164,8 @@ func TestRunWithoutATaskGrant(t *testing.T) {
 			_, spec, _ := grantCopy(t, nil)
 			edit(&spec)
 			got, stderr := runGranted(t, spec)
-			if !slices.Equal(got, profileRules) {
-				t.Errorf("granted %q; want %q", got, profileRules)
+			if !slices.Equal(got, effectiveRules) {
+				t.Errorf("granted %q; want %q", got, effectiveRules)
 			}
 			if said := strings.Contains(stderr, "no director.store"); said != (name == "no store") {
 				t.Errorf("stderr = %q", stderr)

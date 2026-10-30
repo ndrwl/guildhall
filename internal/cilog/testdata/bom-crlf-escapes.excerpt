@@ -1,0 +1,7 @@
+##[group]Run go test ./...
+go test ./...
+shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+##[endgroup]
+--- FAIL: TestCheckLog (0.01s)
+FAIL	github.com/acme/widgets	0.412s
+##[error]Process completed with exit code 1.

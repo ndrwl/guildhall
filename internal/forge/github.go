@@ -2,13 +2,16 @@ package forge
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -158,7 +161,7 @@ const checksQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!) 
             pageInfo { hasNextPage }
             nodes {
               __typename
-              ... on CheckRun { id name status conclusion detailsUrl }
+              ... on CheckRun { id databaseId name status conclusion detailsUrl checkSuite { app { slug } } }
               ... on StatusContext { id context state targetUrl }
             }
           }
@@ -170,8 +173,14 @@ const checksQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!) 
 
 // ghContext is one check run or commit status of a rollup.
 type ghContext struct {
-	Typename   string  `json:"__typename"`
-	ID         string  `json:"id"`
+	Typename   string `json:"__typename"`
+	ID         string `json:"id"`
+	DatabaseID int64  `json:"databaseId"`
+	CheckSuite *struct {
+		App *struct {
+			Slug string `json:"slug"`
+		} `json:"app"`
+	} `json:"checkSuite"`
 	Name       string  `json:"name"`
 	Status     string  `json:"status"`
 	Conclusion *string `json:"conclusion"`
@@ -186,6 +195,9 @@ func (c ghContext) check() (Check, error) {
 	switch c.Typename {
 	case "CheckRun":
 		out := Check{Name: c.Name, URL: deref(c.DetailsURL), ID: c.ID}
+		if c.DatabaseID > 0 && c.CheckSuite != nil && c.CheckSuite.App != nil && c.CheckSuite.App.Slug == actionsApp {
+			out.Job = strconv.FormatInt(c.DatabaseID, 10)
+		}
 		switch c.Status {
 		case "QUEUED", "IN_PROGRESS", "WAITING", "PENDING", "REQUESTED":
 			out.State = CheckPending
@@ -285,6 +297,59 @@ func (g GitHub) Checks(ctx context.Context, c Commit) ([]Check, error) {
 	return out, nil
 }
 
+// actionsApp is the slug of the GitHub app whose check runs are GitHub Actions jobs.
+const actionsApp = "github-actions"
+
+// LogTimeout bounds the gh run that reads one job log; a shorter GitHub.Timeout bounds it instead.
+const LogTimeout = 2 * time.Minute
+
+// expiredLog matches gh's report of an HTTP 404 or 410 answer, which for a job's log means GitHub no longer keeps it.
+var expiredLog = regexp.MustCompile(`\(HTTP 4(04|10)\)`)
+
+// CheckLog reads the log of GitHub Actions job job of c's repository with gh api, following GitHub's redirect to
+// the plain-text log, and keeps its last limit bytes from a line boundary as it streams. The log is kept as
+// GitHub serves it: a UTF-8 byte order mark first, CRLF line ends and ANSI escape sequences included.
+// An empty job, a limit of zero or less, and any gh failure, including a timeout and gh not signed in, are
+// ErrLogUnavailable with the reason; an HTTP 404 or 410 is also ErrLogExpired. A cancelled ctx is returned as it is.
+func (g GitHub) CheckLog(ctx context.Context, c Commit, job string, limit int64) (CheckLog, error) {
+	switch {
+	case job == "":
+		return CheckLog{}, &LogUnavailableError{Reason: "not a GitHub Actions job"}
+	case limit <= 0:
+		return CheckLog{}, &LogUnavailableError{Reason: "log fetching is off"}
+	case strings.Trim(job, "0123456789") != "":
+		return CheckLog{}, fmt.Errorf("%w: job %q is not a GitHub Actions job id", ErrInvalid, job)
+	}
+	if err := c.Validate(); err != nil {
+		return CheckLog{}, err
+	}
+	repo, err := GitHubRepository(c.Remote)
+	if err != nil {
+		return CheckLog{}, err
+	}
+	parts := strings.Split(repo, "/")
+	timeout := LogTimeout
+	if g.Timeout > 0 && g.Timeout < timeout {
+		timeout = g.Timeout
+	}
+	w := &TailWriter{Limit: limit}
+	_, err = runTo(ctx, timeout, c.Repository, orDefault(g.GH, "gh"), ghEnv, w,
+		"api", "repos/"+parts[1]+"/"+parts[2]+"/actions/jobs/"+job+"/logs", "--hostname", parts[0],
+		// A job log carries the ANSI colour codes its steps printed, and gh refuses to print those without this flag.
+		"--allow-escape-sequences")
+	switch {
+	case err == nil:
+		return w.Log(), nil
+	case ctx.Err() != nil:
+		return CheckLog{}, ctx.Err()
+	}
+	reason := err.Error()
+	if run, ok := errors.AsType[*runError](err); ok {
+		reason = cmp.Or(run.output, run.err.Error())
+	}
+	return CheckLog{}, &LogUnavailableError{Reason: reason, Expired: expiredLog.MatchString(reason)}
+}
+
 // GitHubRepository returns the github.com/<owner>/<repo> a remote names, from its https://, ssh:// or
 // scp-like git@ form, with or without .git; any other remote is ErrUnsupportedRemote.
 func GitHubRepository(remote string) (string, error) {
@@ -369,8 +434,11 @@ func (g GitHub) ghJSON(ctx context.Context, dir string, v any, args ...string) e
 }
 
 func (g GitHub) gh(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	return run(ctx, g.timeout(), dir, orDefault(g.GH, "gh"), []string{"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}, args...)
+	return run(ctx, g.timeout(), dir, orDefault(g.GH, "gh"), ghEnv, args...)
 }
+
+// ghEnv keeps gh from prompting or checking for updates.
+var ghEnv = []string{"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}
 
 func (g GitHub) timeout() time.Duration {
 	if g.Timeout == 0 {
@@ -404,26 +472,39 @@ func (e *runError) Unwrap() error { return e.err }
 const runWaitDelay = 5 * time.Second
 
 func run(ctx context.Context, timeout time.Duration, dir, program string, env []string, args ...string) ([]byte, error) {
+	var stdout bytes.Buffer
+	if failed, err := runTo(ctx, timeout, dir, program, env, &stdout, args...); err != nil {
+		if !failed {
+			return nil, err
+		}
+		return stdout.Bytes(), err
+	}
+	return stdout.Bytes(), nil
+}
+
+// runTo runs program like run, streaming its stdout to stdout; failed reports a run that exited unsuccessfully,
+// whose error is a runError.
+func runTo(ctx context.Context, timeout time.Duration, dir, program string, env []string, stdout io.Writer, args ...string) (failed bool, _ error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, program, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
 	cmd.WaitDelay = runWaitDelay
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		// A run past its timeout gave no answer: it is not the forge's refusal, so it is not a runError.
 		if ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("%s %s: no answer within %v: %w", program, strings.Join(args, " "), timeout, context.DeadlineExceeded)
+			return false, fmt.Errorf("%s %s: no answer within %v: %w", program, strings.Join(args, " "), timeout, context.DeadlineExceeded)
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return stdout.Bytes(), &runError{program: program, args: args, output: strings.TrimSpace(stderr.String()), err: err}
+			return true, &runError{program: program, args: args, output: strings.TrimSpace(stderr.String()), err: err}
 		}
-		return nil, fmt.Errorf("%s: %w", program, err)
+		return false, fmt.Errorf("%s: %w", program, err)
 	}
-	return stdout.Bytes(), nil
+	return false, nil
 }
 
 func orDefault(s, fallback string) string {

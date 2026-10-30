@@ -56,6 +56,13 @@ A finished outcome without a readable result is refused, not guessed.
 - `interp.Forge` is the interpreter's seam for delivery: it publishes a task branch as a pull request and merges it ([forge contract](contracts/forge.md)).
 - `forge.GitHub` is its only implementation, over the `gh` program; any other remote is refused ([D60](decisions/0060-delivery-stage.md)).
 
+## CI logs
+
+- A **failed job log** is the CI log of one failed check's GitHub Actions job, as Guildhall fetches it from the forge with its own `gh`, at most `ci_log_limit` bytes of its tail ([validate](interpreter.md#validate)).
+- A **log excerpt** is the bounded tail of the failing step of a failed job log, inlined in a failed validate result's `logs` ([validate](interpreter.md#validate)).
+- The **CI log cache** is `<state>/<repo>/<task>/ci-logs/`, the failed job logs validate and [`ci log`](ci-logs.md) fetched; it is no store document and may be deleted at any time.
+- Avoid "build log" for any of these: a build is the Artisan's build step, not CI.
+
 ## Copy
 
 - A Director copy is one directory holding `config.toml`, `director.store` and `state/`, selected with `--copy <dir>` or `GUILDHALL_COPY` ([copies](running.md#copies)).

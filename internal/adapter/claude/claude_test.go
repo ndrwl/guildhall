@@ -475,6 +475,7 @@ func TestSuggestedGoAllowedToolsAreValidConfig(t *testing.T) {
 // TestRunGrantsAllowedTools: the session Claude runs is granted exactly the attempt's effective grant, through a
 // settings file outside the directories Claude may write; empty grants still receive the skill policy. A builder
 // whose copy sets no list gets its shipped default plus its repository's grant, and nothing of another repository's.
+// Every grant ends with guildhall ci log.
 func TestRunGrantsAllowedTools(t *testing.T) {
 	claudetest.Install(t)
 	for name, rules := range map[string][]string{
@@ -490,9 +491,10 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
 			}
+			want := append(slices.Clone(rules), claude.CILogRule)
 			got, err := claudetest.Granted(spec.ResultFile)
-			if err != nil || !slices.Equal(got, rules) || got == nil {
-				t.Errorf("granted %q, %v; want exactly %q", got, err, rules)
+			if err != nil || !slices.Equal(got, want) {
+				t.Errorf("granted %q, %v; want exactly %q", got, err, want)
 			}
 			_, err = os.Stat(claude.ArtisanSettingsPath(spec.ResultFile))
 			if err != nil {
@@ -517,9 +519,32 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
 			}
-			want := append(slices.Clone(claude.ShippedDefaultGrants["builder"]), extra...)
+			want := append(append(slices.Clone(claude.ShippedDefaultGrants["builder"]), extra...), claude.CILogRule)
 			if got, err := claudetest.Granted(spec.ResultFile); err != nil || !slices.Equal(got, want) {
 				t.Errorf("granted %q, %v; want exactly %q", got, err, want)
+			}
+		})
+	}
+}
+
+// TestRunSetsTheCopy: Claude runs with GUILDHALL_COPY set to the attempt's copy, replacing an inherited one, so
+// guildhall ci log needs no --copy; without a copy the environment is inherited as it is.
+func TestRunSetsTheCopy(t *testing.T) {
+	claudetest.Install(t)
+	t.Setenv(adapter.CopyEnv, "/inherited/copy")
+	for name, withCopy := range map[string]bool{"copy": true, "no copy": false} {
+		t.Run(name, func(t *testing.T) {
+			spec := testSpec(t)
+			want := "/inherited/copy"
+			if withCopy {
+				spec.Copy, spec.Profile = grantProfile(t, nil)
+				want = spec.Copy
+			}
+			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := claudetest.Copy(spec.ResultFile); err != nil || got != want {
+				t.Errorf("Claude's %s = %q, %v; want %q", adapter.CopyEnv, got, err, want)
 			}
 		})
 	}

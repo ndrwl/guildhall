@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
@@ -58,7 +59,7 @@ func grants(source claude.GrantSource, rules ...string) []claude.Grant {
 
 // TestEffectiveGrant: the copy's list, set even to empty, replaces a claude profile's shipped default, which only a
 // well-known name has; the task's repository grant is appended without repeating a rule, and no other
-// repository's grant leaks.
+// repository's grant leaks; every claude profile, with or without a copy list, gets guildhall ci log and no gh.
 func TestEffectiveGrant(t *testing.T) {
 	readOnly := []string{"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-list:*)", "Bash(git merge-base:*)", "Bash(git ls-files:*)"}
 	builder := append(slices.Clone(readOnly), "Bash(git add:*)", "Bash(git commit:*)", "Bash(git fetch:*)", "Bash(git rebase:*)", "Bash(git switch:*)")
@@ -93,9 +94,19 @@ func TestEffectiveGrant(t *testing.T) {
 		"fake builder":               {"[profile.builder]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n[profile.planner]\nadapter = \"fake\"\n", "planner", "app", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
+			// Every claude profile, even one whose copy list is empty, is granted guildhall ci log last.
+			want := c.want
+			if name != "fake builder" {
+				want = append(slices.Clone(want), grants(claude.SourceGuildhall, "Bash(guildhall ci log:*)")...)
+			}
 			got, err := claude.EffectiveGrant(grantConfig(t, c.extra), c.profile, c.repository)
-			if err != nil || !slices.Equal(got, c.want) {
-				t.Errorf("EffectiveGrant = %v, %v; want %v", got, err, c.want)
+			if err != nil || !slices.Equal(got, want) {
+				t.Errorf("EffectiveGrant = %v, %v; want %v", got, err, want)
+			}
+			for _, r := range claude.GrantRules(got) {
+				if strings.Contains(r, "gh ") || strings.Contains(r, "curl") || strings.Contains(r, "gh:") {
+					t.Errorf("EffectiveGrant grants %s", r)
+				}
 			}
 		})
 	}

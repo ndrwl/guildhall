@@ -15,6 +15,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -173,6 +174,13 @@ const ChecksRefreshKey = "checks_refresh"
 
 // DefaultChecksRefresh is the checks refresh of a config that does not set ChecksRefreshKey.
 const DefaultChecksRefresh = time.Minute
+
+// CILogLimitKey is the setting that caps the bytes of one failed job log Guildhall fetches and caches
+// (docs/configuration.md#settings).
+const CILogLimitKey = "ci_log_limit"
+
+// DefaultCILogLimit is the failed job log cap of a config that does not set CILogLimitKey.
+const DefaultCILogLimit int64 = 5 << 20
 
 // ArtisanWorkspaceCloseAfterKey is the setting that sets how long after an attempt finishes the supervisor's
 // workspace close sweep closes the attempt's Herdr workspace (docs/configuration.md#settings).
@@ -531,6 +539,16 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	if m, ok := c.Managed[CILogLimitKey]; ok {
+		if _, err := parseCILogLimit(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[CILogLimitKey]; ok {
+		if _, err := parseCILogLimit(v); err != nil {
+			add("local %v", err)
+		}
+	}
 	if m, ok := c.Managed[ArtisanWorkspaceCloseAfterKey]; ok {
 		if _, err := parseArtisanWorkspaceCloseAfter(m.Value); err != nil {
 			add("managed %v", err)
@@ -773,6 +791,50 @@ func parseChecksRefresh(v string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"1m\", or \"0s\" to read at every advance", ChecksRefreshKey, v)
 	}
 	return d, nil
+}
+
+// CILogLimit returns the effective CILogLimitKey setting in bytes: DefaultCILogLimit when it is not set, and
+// zero, which fetches no failed job log, for "0". A value that is not whole bytes, with an optional KiB, MiB, KB
+// or MB suffix (all 1024-based), from 64 KiB to 100 MiB is an error; Parse refuses one already.
+func (c *Config) CILogLimit() (int64, error) {
+	v, ok := c.Setting(CILogLimitKey)
+	if !ok {
+		return DefaultCILogLimit, nil
+	}
+	return parseCILogLimit(v)
+}
+
+// The bounds of a nonzero CILogLimitKey.
+const (
+	minCILogLimit int64 = 64 << 10
+	maxCILogLimit int64 = 100 << 20
+)
+
+func parseCILogLimit(v string) (int64, error) {
+	bad := fmt.Errorf("%s %q must be whole bytes from 64KiB to 100MiB, such as \"5MiB\", \"512KiB\" or \"1048576\", or \"0\" to fetch no logs", CILogLimitKey, v)
+	digits, unit := v, int64(1)
+	for _, s := range []struct {
+		suffix string
+		unit   int64
+	}{{"KiB", 1 << 10}, {"KB", 1 << 10}, {"MiB", 1 << 20}, {"MB", 1 << 20}} {
+		if d, ok := strings.CutSuffix(v, s.suffix); ok {
+			digits, unit = d, s.unit
+			break
+		}
+	}
+	// At most 12 digits keeps the product with the unit inside int64.
+	if digits == "" || len(digits) > 12 || strings.Trim(digits, "0123456789") != "" {
+		return 0, bad
+	}
+	n, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil {
+		return 0, bad
+	}
+	n *= unit
+	if n != 0 && (n < minCILogLimit || n > maxCILogLimit) {
+		return 0, bad
+	}
+	return n, nil
 }
 
 // ArtisanWorkspaceCloseAfter returns the effective ArtisanWorkspaceCloseAfterKey setting as a duration:

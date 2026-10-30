@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -240,7 +241,17 @@ func TestGitHubArguments(t *testing.T) {
 	if _, err := h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]}); err != nil {
 		t.Fatal(err)
 	}
+	s := g.readState(t)
+	s.Logs = map[string]string{"123": "log\n"}
+	g.writeState(t, s)
+	if _, err := h.Forge.(forge.GitHub).CheckLog(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]}, "123", 1<<20); err != nil {
+		t.Fatal(err)
+	}
 	calls := g.readState(t).Calls
+	logs := []string{"api", "repos/acme/widgets/actions/jobs/123/logs", "--hostname", "github.com", "--allow-escape-sequences"}
+	if !slices.ContainsFunc(calls, func(c []string) bool { return slices.Equal(c, logs) }) {
+		t.Errorf("no gh %q call reads the job log: %v", logs, calls)
+	}
 	t.Run("installed-gh-flags", func(t *testing.T) {
 		for _, c := range calls {
 			checkInstalledGHFlags(t, c)
@@ -248,6 +259,9 @@ func TestGitHubArguments(t *testing.T) {
 	})
 	for _, c := range calls {
 		t.Logf("gh %q", c)
+		if slices.Equal(c, logs) {
+			continue
+		}
 		if len(c) > 1 && c[0] == "api" {
 			if !slices.Equal(flagValues(c, "--hostname"), []string{"github.com"}) || !slices.Contains(c, "owner=acme") || !slices.Contains(c, "name=widgets") ||
 				!slices.Contains(c, "oid="+h.Heads[0]) {
@@ -290,8 +304,11 @@ func TestGitHubCheckStates(t *testing.T) {
 	if _, err := h.Forge.Publish(ctx, forge.Change{Repository: h.Repository, Remote: remote, Branch: "guildhall/t7", Head: h.Heads[0], Title: "Task t7"}); err != nil {
 		t.Fatal(err)
 	}
+	jobs := 0
 	run := func(name, status string, conclusion any) map[string]any {
-		return map[string]any{"__typename": "CheckRun", "id": "CR_" + name, "name": name, "status": status, "conclusion": conclusion, "detailsUrl": "https://ci.invalid/" + name}
+		jobs++
+		return map[string]any{"__typename": "CheckRun", "id": "CR_" + name, "databaseId": 1000 + jobs, "name": name, "status": status, "conclusion": conclusion,
+			"detailsUrl": "https://ci.invalid/" + name, "checkSuite": map[string]any{"app": map[string]any{"slug": "github-actions"}}}
 	}
 	status := func(context, state string) map[string]any {
 		return map[string]any{"__typename": "StatusContext", "id": "SC_" + context, "context": context, "state": state, "targetUrl": nil}
@@ -330,9 +347,33 @@ func TestGitHubCheckStates(t *testing.T) {
 		if c.ID != id {
 			t.Errorf("check %s has id %q, want %q", c.Name, c.ID, id)
 		}
+		if strings.HasPrefix(c.Name, "s-") != (c.Job == "") {
+			t.Errorf("check %s has job %q; only a GitHub Actions check run has one", c.Name, c.Job)
+		}
 		if strings.HasPrefix(c.Name, "s-") != (c.URL == "") || !strings.HasPrefix(c.Name, "s-") && c.URL != "https://ci.invalid/"+c.Name {
 			t.Errorf("check %s has URL %q", c.Name, c.URL)
 		}
+	}
+
+	// Only a GitHub Actions check run has a job, and the job is not part of a check's JSON.
+	other, bare := run("other-app", "COMPLETED", "FAILURE"), run("no-suite", "COMPLETED", "FAILURE")
+	other["checkSuite"] = map[string]any{"app": map[string]any{"slug": "circleci-checks"}}
+	delete(bare, "checkSuite")
+	actions := run("actions", "COMPLETED", "FAILURE")
+	g.setChecks(t, h.Heads[0], []map[string]any{other, bare, actions})
+	got, err = h.Forge.Checks(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobOf := map[string]string{}
+	for _, c := range got {
+		jobOf[c.Name] = c.Job
+	}
+	if want := map[string]string{"actions": strconv.Itoa(1000 + jobs), "no-suite": "", "other-app": ""}; !maps.Equal(jobOf, want) {
+		t.Errorf("jobs = %v, want %v", jobOf, want)
+	}
+	if data, err := json.Marshal(got[0]); err != nil || strings.Contains(string(data), "job") || strings.Contains(string(data), "100") {
+		t.Errorf("check JSON = %s, %v; want no job", data, err)
 	}
 
 	// A status GitHub adds later would be read wrongly, so an unknown state or kind fails the read.
@@ -541,9 +582,14 @@ type ghState struct {
 	// Checks are each head's statusCheckRollup contexts, in GitHub's form; a head without an entry has no rollup.
 	Checks map[string][]map[string]any `json:"checks"`
 	// MoreChecks reports another page of contexts.
-	MoreChecks       bool   `json:"more_checks"`
-	Mergeable        string `json:"mergeable"`
-	MergeStateStatus string `json:"merge_state_status"`
+	MoreChecks bool `json:"more_checks"`
+	// Logs are each Actions job's plain-text log; LogStatus is an HTTP error a job's log read answers with, and
+	// HangLogs makes every log read hang.
+	Logs             map[string]string `json:"logs,omitempty"`
+	LogStatus        map[string]int    `json:"log_status,omitempty"`
+	HangLogs         bool              `json:"hang_logs,omitempty"`
+	Mergeable        string            `json:"mergeable"`
+	MergeStateStatus string            `json:"merge_state_status"`
 }
 
 type ghPR struct {
@@ -609,9 +655,12 @@ func runGH(s *ghState, bare string, args []string) int {
 	if err := validateGHArgs(args); err != nil {
 		return fail(2, "fake gh: %v", err)
 	}
-	cmd, rest := args[0]+" "+args[1], args[2:]
-	if cmd == "api graphql" {
+	cmd, rest := ghCommand(args), args[2:]
+	switch cmd {
+	case "api graphql":
 		return graphQL(s, bare, rest)
+	case "api jobs-logs":
+		return jobLogs(s, args[1], rest)
 	}
 	flags := map[string]string{}
 	var positional []string
@@ -753,6 +802,46 @@ func runGH(s *ghState, bare string, args []string) int {
 			return 0
 		}
 	}
+}
+
+// jobLogs answers gh api repos/<owner>/<repo>/actions/jobs/<job>/logs as gh does once it has followed GitHub's
+// redirect: the log as plain text, or gh's message for an HTTP error, exit 1, or a sign-in failure, exit 4.
+// Like gh, it refuses a log holding an escape sequence, exit 1, unless --allow-escape-sequences is passed.
+func jobLogs(s *ghState, endpoint string, args []string) int {
+	fail := func(code int, format string, a ...any) int {
+		fmt.Fprintf(os.Stderr, format+"\n", a...)
+		return code
+	}
+	m := jobLogsEndpoint.FindStringSubmatch(endpoint)
+	escapes := slices.Contains(args, "--allow-escape-sequences")
+	if escapes {
+		args = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return a == "--allow-escape-sequences" })
+	}
+	switch {
+	case len(args) != 2 || args[0] != "--hostname" || args[1] != "github.com":
+		return fail(2, "fake gh: api %s %q", endpoint, args)
+	case s.SignedOut:
+		return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
+	case s.Offline:
+		return fail(1, "error connecting to api.github.com")
+	case m[1] != "acme" || m[2] != "widgets":
+		return fail(1, "gh: Not Found (HTTP 404)")
+	case s.HangLogs:
+		time.Sleep(time.Minute) // timing:allow hung forge subprocess; caller timeout kills and reaps it.
+		return fail(1, "fake gh: hung log read was not killed")
+	}
+	if code := s.LogStatus[m[3]]; code != 0 {
+		return fail(1, "gh: %s (HTTP %d)", map[int]string{403: "Forbidden", 404: "Not Found", 410: "Gone"}[code], code)
+	}
+	text, ok := s.Logs[m[3]]
+	if !ok {
+		return fail(1, "gh: Not Found (HTTP 404)")
+	}
+	if !escapes && strings.Contains(text, "\x1b") {
+		return fail(1, "the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway")
+	}
+	fmt.Print(text)
+	return 0
 }
 
 // graphQL answers the statusCheckRollup query the GitHub forge reads checks with, and refuses any other.
