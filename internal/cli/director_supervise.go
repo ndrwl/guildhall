@@ -53,9 +53,6 @@ type endInput struct {
 	Quiet, IdleAfter time.Duration
 	// Hook is set when the runtime signals the start and end of its turns and the session endpoint is bound.
 	Hook bool
-	// StageRunning is set when a Director stage attempt is running. It is read only for a plain reload that would
-	// otherwise be applied.
-	StageRunning bool
 	// Waited is how long the end now decided on has been wanted, and Grace how long the end of a turn is
 	// awaited without a hook.
 	Waited, Grace time.Duration
@@ -67,8 +64,7 @@ type endInput struct {
 //   - a stop, or a reload --now, ends it at the end of the current turn: at a turn-ended signal or, once Grace
 //     has passed, when the runtime has no hook or the Director is idle;
 //   - a runtime with a hook is idle, too, once it has been Quiet for IdleAfter, such as after an interrupted turn;
-//   - a plain reload ends it at a quiet point, with no Director stage attempt running and the Director idle, or,
-//     once Grace has passed, with no stage running and no hook;
+//   - a plain reload ends it at a quiet point, with the Director idle, or, once Grace has passed, with no hook;
 //   - a stop wins over a reload, and nothing else ends it.
 func decideEnd(in endInput) endAction {
 	afterGrace := in.Waited >= in.Grace
@@ -81,7 +77,7 @@ func decideEnd(in endInput) endAction {
 		return keepRunning
 	case in.Reload.Now && turnOver:
 		return endForReload
-	case !in.Reload.Now && !in.StageRunning && (idle || afterGrace && !in.Hook):
+	case !in.Reload.Now && (idle || afterGrace && !in.Hook):
 		return endForReload
 	}
 	return keepRunning
@@ -390,7 +386,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
-	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
+	w := sessionWatch{copyDir: copyDir, storePath: storePath, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
 		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, starts: starts, holds: holds, closes: closes,
 		prunes: prunes, quiet: quiet, maxDelay: maxDelay}
 	if ep != nil {
@@ -503,7 +499,7 @@ func (a *App) stopGrace() time.Duration {
 
 // sessionWatch is what the supervisor of session n follows while its runtime runs.
 type sessionWatch struct {
-	storePath, state string
+	storePath        string
 	copyDir          string
 	labelsAt         time.Time
 	n                int
@@ -730,18 +726,6 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 		w.wanted = now
 	}
 	in.Waited = now.Sub(w.wanted)
-	act := decideEnd(in)
-	if act != endForReload || in.Reload.Now {
-		return act
-	}
-	running, err := withStore(w.storePath, true, func(s *store.Store) (bool, error) {
-		starts, err := runningDirectorStages(s, w.state)
-		return len(starts) > 0, err
-	})
-	if err != nil {
-		return keepRunning
-	}
-	in.StageRunning = running
 	return decideEnd(in)
 }
 

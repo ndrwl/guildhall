@@ -10,6 +10,8 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -148,6 +150,70 @@ func TestDirectorReloadNowDuringAStage(t *testing.T) {
 	}
 	if code, out, stderr := runCLI(t, append([]string{"director", "reload", "--now"}, flags...)...); code != 0 {
 		t.Fatalf("--now mid-grill: exit %d, %q, stderr %s", code, out, stderr)
+	}
+}
+
+// TestPlainReloadAppliesWithAGrillOpen: a grill waiting on the Guildmaster does not hold a plain reload, which
+// applies at the next quiet point and leaves the grill attempt unfinished and handed for the next session to
+// restart (docs/decisions/plain-reload-ignores-director-stages.md).
+func TestPlainReloadAppliesWithAGrillOpen(t *testing.T) {
+	dir, d := supervisedCopy(t)
+	cfg := filepath.Join(dir, "config.toml")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, cfg, strings.Replace(string(b), `workflow = "fake-straight"`, `workflow = "fake-grill"`, 1))
+	// fake-grill has no validate step, so it is below the review floor; t-1 was created on fake-straight by
+	// supervisedCopy.
+	approveRepo(t, d.store, cfg, "app")
+	newTask(t, d.store, cfg, "app", "Grill first", "t-2")
+	done := supervise(t, dir, 0)
+	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-2")...)...)
+	if code != 0 || !strings.Contains(out, `"wait":"director-stage"`) {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	var started struct {
+		Step    string `json:"step"`
+		Attempt int    `json:"attempt"`
+	}
+	if err := json.Unmarshal([]byte(out), &started); err != nil {
+		t.Fatal(err)
+	}
+	copyRun(t, dir, "director", "reload")
+	copyRun(t, dir, "director", "turn-ended")
+	waitSessions(t, dir, 2)
+	if r := readReload(t, d.store); r.State != store.ReloadApplied || r.OldSession != 1 || r.NewSession != 2 || r.Now {
+		t.Errorf("reload = %+v; want a plain reload applied from session 1 to 2", r)
+	}
+	s, err := store.Open(d.store, store.Options{ReadOnly: true, RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.DirectorView()
+	_ = s.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, at := range v.Attempts {
+		if at.TaskID == "t-2" && at.Step == started.Step && at.Number == started.Attempt {
+			found = true
+			if at.Outcome != "" {
+				t.Errorf("grill attempt = %+v; want it unfinished", at)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("attempts = %+v; want attempt %d of %s of t-2", v.Attempts, started.Attempt, started.Step)
+	}
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t-2", Step: started.Step, Attempt: started.Attempt}
+	if handed, err := interp.HandedToDirector(k.Dir(d.state)); err != nil || !handed {
+		t.Errorf("grill attempt handed = %v, %v; want still handed to the Director", handed, err)
+	}
+	copyRun(t, dir, "director", "stop", "--now")
+	if code := ended(t, done); code != 0 {
+		t.Errorf("director start exited %d, want 0", code)
 	}
 }
 
@@ -361,7 +427,7 @@ func hookedWatch(t *testing.T) (*sessionWatch, *time.Time, string) {
 	path := filepath.Join(dir, "director.store")
 	recordSession(t, path, false, store.DirectorRunning)
 	clock := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
-	w := &sessionWatch{storePath: path, state: filepath.Join(dir, "state"), n: 1, grace: time.Minute, hook: true,
+	w := &sessionWatch{storePath: path, n: 1, grace: time.Minute, hook: true,
 		idleAfter: 5 * time.Minute, now: func() time.Time { return clock }}
 	return w, &clock, path
 }
@@ -458,16 +524,13 @@ func TestDecideEnd(t *testing.T) {
 		{"stop wins over reload", endInput{Session: stopping, Reload: now, TurnEnded: true}, endForStop},
 		{"plain reload when idle", endInput{Session: running, Reload: plain, Hook: true, Idle: true}, endForReload},
 		{"plain reload when idle and paused", endInput{Session: paused, Reload: plain, Hook: true, Idle: true}, endForReload},
-		{"plain reload mid-stage", endInput{Session: running, Reload: plain, Hook: true, Idle: true, TurnEnded: true, StageRunning: true}, keepRunning},
 		{"plain reload with a wake pending", endInput{Session: running, Reload: plain, Hook: true, TurnEnded: true}, keepRunning},
 		{"plain reload with no hook after the grace", endInput{Session: running, Reload: plain, Waited: grace}, endForReload},
-		{"plain reload with no hook mid-stage after the grace", endInput{Session: running, Reload: plain, Waited: grace, StageRunning: true}, keepRunning},
 		{"plain reload with a hook, busy, after the grace", endInput{Session: running, Reload: plain, Hook: true, Waited: grace}, keepRunning},
 		{"stop with a hook, quiet for idle_after, after the grace", endInput{Session: stopping, Hook: true, Waited: grace, Quiet: idleAfter}, endForStop},
 		{"stop with a hook, quiet for idle_after, in the grace", endInput{Session: stopping, Hook: true, Quiet: idleAfter}, keepRunning},
 		{"reload --now with a hook, quiet for idle_after, after the grace", endInput{Session: running, Reload: now, Hook: true, Waited: grace, Quiet: idleAfter}, endForReload},
 		{"plain reload with a hook, quiet for idle_after", endInput{Session: running, Reload: plain, Hook: true, Quiet: idleAfter}, endForReload},
-		{"plain reload with a hook, quiet for idle_after, mid-stage", endInput{Session: running, Reload: plain, Hook: true, Quiet: idleAfter, StageRunning: true}, keepRunning},
 		{"plain reload with a hook, quiet for less than idle_after", endInput{Session: running, Reload: plain, Hook: true, Quiet: idleAfter - time.Second}, keepRunning},
 	}
 	for _, c := range cases {

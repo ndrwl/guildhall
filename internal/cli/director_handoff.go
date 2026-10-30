@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ndrwl/guildhall/internal/artisan"
-	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -29,8 +27,8 @@ func (a *App) directorReload(args []string) int {
 	}
 	r, err := withStore(path, false, func(s *store.Store) (store.DirectorReload, error) {
 		if now {
-			// --now needs no note and does not wait for a running Director stage: the next session restarts an open
-			// grill (D94).
+			// --now needs no note and, like a plain reload, does not wait for a running Director stage: the next
+			// session restarts an open grill (D94).
 			switch d, err := s.LatestDirectorSession(); {
 			case errors.Is(err, store.ErrNotFound):
 				return store.DirectorReload{}, errors.New("no Director session to reload; a plain guildhall director reload is applied by the next director start")
@@ -46,37 +44,6 @@ func (a *App) directorReload(args []string) int {
 		return a.fail(fmt.Errorf("director reload: %w", err))
 	}
 	return a.printJSON(r)
-}
-
-// runningDirectorStages returns each running attempt the engine handed to the Director as a Director stage, with
-// the sequence of the receipt that started it, read from the store and the attempt directories under state.
-func runningDirectorStages(s *store.Store, state string) (map[artisan.AttemptKey]uint64, error) {
-	v, err := s.DirectorView()
-	if err != nil {
-		return nil, err
-	}
-	out := map[artisan.AttemptKey]uint64{}
-	for _, at := range v.Attempts {
-		if at.Outcome != "" {
-			continue
-		}
-		k := artisan.AttemptKey{Repository: at.Repository, TaskID: at.TaskID, Step: at.Step, Attempt: at.Number}
-		handed, err := interp.HandedToDirector(k.Dir(state))
-		if err != nil {
-			return nil, err
-		}
-		if !handed {
-			continue
-		}
-		record := fmt.Sprintf("attempt/%s/%d", at.Step, at.Number)
-		for _, r := range v.Receipts {
-			if r.Repository == at.Repository && r.TaskID == at.TaskID && r.Record == record {
-				out[k] = r.Sequence
-				break
-			}
-		}
-	}
-	return out, nil
 }
 
 // turnSignalTimeout bounds one turn signal, so a hook never holds the runtime long.
