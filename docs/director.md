@@ -50,6 +50,10 @@ A start is refused with exit 1 the same way, naming `director: stop sweeping`, w
 
 Then it records session `<n>`, one more than the newest, as `recovering` with its own process identity, release and config digest, which records an earlier session still recorded live as `stopped` with the end reason `superseded`.
 `--herdr-session`, `--herdr-workspace`, `--herdr-tab` and `--herdr-pane`, given all together and never with `--tab`, are the pane binding the [tab wrapper](#the-directors-tab) passes; the session records them, and a [wake](messaging.md#waking-the-director) types into that pane.
+Without those flags and without `--tab`, a start run inside a Herdr pane binds that pane from its environment: when `HERDR_SESSION`, `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID` and `HERDR_PANE_ID` are all set, the session is not Herdr's `default` one and each value has the shape Herdr's client accepts, the session records that pane marked `adopted`, and the start prints `pane: <pane> (tab <tab>, workspace <workspace>, from HERDR_*)` before recording it; a [reload](#reload) keeps it.
+The flags always win over the environment, and `--tab` never binds from it, since the wrapper runs in the Guildmaster's own pane.
+Guildhall did not create an adopted pane's tab, so it never [retires](#the-directors-tab) it.
+A session recorded with no pane gets no wake (it is queued `no pane`), so such a start first writes one warning line to stderr, `director start: warning: this session has no Herdr pane (<reason>), so messages will not wake the Director; start it with --tab or inside a Herdr pane`, where `<reason>` is such as `HERDR_PANE_ID not set` or `HERDR_SESSION is "default"`, and [`director status`](#status) lists a `no_pane` item while it runs.
 It renders the session into `<copy>/director/session-<n>/` with [`render.Session`](rendering.md#director-sessions):
 
 - `role.md`: the role prompt, from `[director] role` relative to the config directory, else the copy's `baseline/roles/director.md`, else the release's;
@@ -139,6 +143,7 @@ With `--tab`, `director start` is the wrapper the Guildmaster runs: it opens the
 Normal operation leaves one Director tab in the workspace ([decision](decisions/director-tab-replacement.md)).
 When Guildhall creates the workspace, it replaces Herdr's starting shell under the [adapter's starting-shell cleanup contract](contracts/adapter.md#contract); a cleanup failure aborts the launch before typing input and names both tabs.
 After a successful start, it retires earlier Director tabs only when a persisted session binding proves ownership, the session is stopped or superseded, its runtime unit is empty, and the tab contains one idle shell pane.
+A session's [adopted](#start) pane is never retired, since Guildhall did not create its tab.
 A failed runtime leaves its output visible until the next successful start replaces its tab; a command that fails before recording a session leaves an unrecorded tab that Guildhall cannot safely reclaim.
 Busy, split, foreign or ambiguous older tabs are left untouched; failures while retiring them are reported on stderr without failing the new session.
 Closing tabs is presentation cleanup only and never changes a task or session record.
@@ -518,6 +523,7 @@ The document has these sections:
   10. `dependencies`: an open task whose `next.json` says `"wait":"dependencies"`, with its held `step`, which the [dependency gate](interpreter.md#the-dependency-gate) holds until its dependencies merge and the supervisor's [dependency watcher](#dependencies) advances; `guildhall task start --repo <r> <t>`, or `--ignore-deps --reason <text>` added to start it anyway.
 
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
+  While it is `recovering` or `running` with no bound Herdr pane, a `no_pane` item follows, since no wake can reach it and messages wait until its next turn; `guildhall director start --tab`, once this session is stopped ([start](#start)).
   Done and cancelled tasks contribute no `advance`, `retry`, `resume`, `director`, `paused`, `checks` or `dependencies` item.
   A park leaves an `advance` or `paused` item in place: a failure never taken still needs taking, and a retry asked for while paused wins over a park.
 - `parked`: the attempts the Director [parked](running.md#step-park-and-step-unpark), held on purpose and so not in `needs_me`, in repository, task, step and attempt order, each with its `repository`, `task_id`, `step`, `attempt`, `outcome`, `reason`, `parked_at`, the commit time of its newest park, and the `command` to run when the hold ends, `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`.
