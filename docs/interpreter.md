@@ -282,9 +282,10 @@ Before validate reads checks, and before the front of the [merge queue](#the-mer
 A conflicting (`CONFLICTING` or `DIRTY`) PR, or a `BEHIND` PR blocked by strict branch protection, is obstructed.
 At validate a conflicting PR is [rebased](#tiered-rebase), since GitHub runs no checks on it, and a behind one reads its checks as usual; at deliver the front is rebased.
 Only a PR Guildhall cannot rebase there waits with `{"wait":"director","step":"<validate-or-deliver>"}`: a front that rebased three times in one stay, or a copy that cannot rebase, such as one whose forge gives no base tip.
-`UNKNOWN` and an otherwise `BLOCKED` PR are not assumed to be conflicts or strict-behind states.
+Only `CLEAN`, `UNSTABLE` and `HAS_HOOKS` confirm a PR clear as it stands. GitHub recomputes `mergeStateStatus` after the base moves, reporting `UNKNOWN` or `BLOCKED` meanwhile, so every other status of an open PR (`UNKNOWN`, `BLOCKED`, `DRAFT` or any unrecognised one) is measured locally: it is behind when its head lacks commits of the base tip, with the same evidence as a GitHub `BEHIND`, and clear otherwise; a local measurement is never conflicting.
+So when the task ahead merges, the new front is rebased onto the moved base before it tries to merge, rather than being refused as not up to date.
 Observations must match the published head; a moved PR or a failed observation is an error, not permission to merge.
-For a conflicting or behind PR, the forge reads the base tip, the base branch's commit on the remote when measured, with `git ls-remote <remote> refs/heads/<baseRefName>` rather than trusting GitHub's possibly stale recorded base; a missing or ambiguous tip is an error.
+For any PR but a confirmed one, the forge reads the base tip, the base branch's commit on the remote when measured, with `git ls-remote <remote> refs/heads/<baseRefName>` rather than trusting GitHub's possibly stale recorded base; a missing or ambiguous tip is an error.
 It fetches that exact tip without updating a branch and computes the behind count with `rev-list` and conflicting paths with `merge-tree`; it never checks out, merges or rebases the task's worktree.
 
 When the PR waits for the Director, the observation is recorded as document `pr-blocked-<full-head>-<state>` before sending the Director a message with the same suffix and type `pr-blocked`, or, for a front that rebased three times, `rebase-stuck`.

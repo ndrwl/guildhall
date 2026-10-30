@@ -455,6 +455,49 @@ func TestQueueCancelledFront(t *testing.T) {
 	}
 }
 
+// TestQueueFrontRebasedWhenTheTaskAheadMerges (d85): once the task ahead merges and leaves the queue, the watcher's
+// advance rebases the new front onto the moved main, which GitHub reports UNKNOWN and the reader measures as behind,
+// without trying a merge the forge would refuse; once the rebased head's checks pass it merges, with no Director
+// answer or task start along the way.
+func TestQueueFrontRebasedWhenTheTaskAheadMerges(t *testing.T) {
+	e, f, ws := queueEnv(t, backends[1])
+	s := peer(t, e, "t1")
+	if _, err := s.ClaimMergeFront("front-t1", "app", "t1"); err != nil {
+		t.Fatal(err)
+	}
+	e.answer(t, "deliver-1", "merge")
+	want(t, e.advance(t, answeredMerge), queuedWait)
+	if _, err := s.LeaveMergeQueue("leave-t1", "app", "t1", false); err != nil {
+		t.Fatal(err)
+	}
+	// What GitHub.Mergeability reports for an UNKNOWN pull request behind the main t1 moved.
+	base := baseN(1)
+	clean(ws, base, head, head2)
+	f.SetMergeability(forge.Mergeability{Head: head, Base: base, State: "behind", Behind: 1, Files: []string{"one"}})
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	if publishes, merges := f.Calls(); publishes != 2 || merges != 0 {
+		t.Fatalf("publishes = %d, merges = %d, want the rebased head pushed and no merge tried", publishes, merges)
+	}
+	if rb := e.pullRequestDoc(t, "deliver-1-rebase-1"); rb["from"] != head || rb["onto"] != base || rb["rebased"] != head2 {
+		t.Fatalf("rebase document = %v", rb)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	f.SetChecks(repoRemote, head2, ciPassed...)
+	f.SetMergeability(forge.Mergeability{})
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+	if got := mergedHead(f); got != head2 {
+		t.Fatalf("merged head = %q, want the rebased head", got)
+	}
+	if _, merges := f.Calls(); merges != 1 {
+		t.Fatalf("merges = %d, want 1", merges)
+	}
+	for id := range e.messages(t) {
+		if strings.Contains(id, "merge-refused") {
+			t.Fatalf("merge-refused message %s: %v", id, e.messages(t))
+		}
+	}
+}
+
 // TestQueueTwoTasksRaceForTheFront: once the front is free, the task's advance and another queued task's claim, run
 // at once, never both act as the front: the task first in queue order holds it, and the other waits, rebasing and merging nothing.
 func TestQueueTwoTasksRaceForTheFront(t *testing.T) {

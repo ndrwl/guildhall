@@ -58,16 +58,18 @@ Platform differences: none in the contract.
 It returns URL, head, base tip, conflicting or strict-protection-behind state, sorted unique conflict paths and a behind count.
 The `pr view` fields are `url,state,headRefOid,baseRefName,mergeable,mergeStateStatus`; GitHub's recorded base commit goes stale, so it is not read.
 The base tip is the base branch's commit on the remote when measured, and is empty when no obstruction is reported.
-Unknown mergeability and generic protection `BLOCKED` are not guessed to be conflicts or strict-behind states.
+`CONFLICTING` or `DIRTY` is conflicting and `BEHIND` is behind; `CLEAN`, `UNSTABLE` and `HAS_HOOKS` are confirmed clear and need only `pr view`.
+Every other status of an open PR (`UNKNOWN`, `BLOCKED`, `DRAFT` or unrecognised) is unconfirmed and measured locally: behind, with base tip, behind count and paths, when the base tip has commits the head lacks, and clear with an empty base tip otherwise; a local measurement is never conflicting.
 A moved PR is `ErrRefused`; malformed requests are `ErrInvalid`, and unsupported remotes and operational errors remain errors.
-For a blocked observation it reads the base tip with `git ls-remote <remote> refs/heads/<baseRefName>`; a missing, ambiguous or invalid tip is an error, not a guessed state.
+For an obstructed or unconfirmed observation it reads the base tip with `git ls-remote <remote> refs/heads/<baseRefName>`; a missing, ambiguous or invalid tip is an error, not a guessed state.
 It fetches that exact tip without updating branches or `FETCH_HEAD`, counts base-only commits and reads `merge-tree --write-tree --name-only -z`, including stdout on conflict exit 1.
 It never modifies a worktree or rebases; concurrent observations only write git objects.
 The base tip it returns is the one the interpreter's [tiered rebase](../interpreter.md#tiered-rebase) replays onto, through [`internal/git`](git.md#rebase), so the measurement and the rebase see the same base; `Publish` then force-pushes the rebased head to the same pull request.
 
 ## Tests
 
-`TestGitHubMergeabilityEvidence` crosses real git and the strict command-specific gh stand-in: a genuinely divergent base produces conflict paths and a behind count without changing HEAD or worktree; conflicting, strict-behind, unknown, generic-blocked and moved-head cases are checked.
+`TestGitHubMergeabilityEvidence` crosses real git and the strict command-specific gh stand-in: a genuinely divergent base produces conflict paths and a behind count without changing HEAD or worktree; conflicting, strict-behind, unknown and generic-blocked (measured behind the moved base), clean and unstable (clear though the base moved), and moved-head cases are checked.
+`TestGitHubMergeabilityUnknownUpToDate` checks that an `UNKNOWN` PR whose head contains the base tip stays clear with an empty base tip.
 The mergeability command shape also crosses installed gh's offline help parser when available.
 These forge tests were added after implementation as integration evidence, not claimed as red-first history.
 
