@@ -567,6 +567,20 @@ func TestQuestionGoldenPerKind(t *testing.T) {
 	}
 }
 
+// TestDesignQuestionGolden: a design round's decision offers approved and changes_requested, says what each does and
+// lists the brief and the design by digest.
+func TestDesignQuestionGolden(t *testing.T) {
+	inputs := []Input{
+		{Port: "brief", Name: "tasks/app/t7/design-1/brief.md", SHA256: strings.Repeat("cd", 32)},
+		{Port: "design", Name: "tasks/app/t7/designer-1/design.md", SHA256: strings.Repeat("ef", 32)},
+	}
+	ask := DesignQuestion("app", "t7", "design-1", 1, inputs)
+	if !slices.Equal(ask.Options, []string{"approved", "changes_requested"}) {
+		t.Errorf("options = %q", ask.Options)
+	}
+	golden(t, "question-design.txt", []byte(ask.Question))
+}
+
 func TestQuestionNormalisesHandoffFrom(t *testing.T) {
 	stage := attempt(t, step(t, "handoff", "handoff-wait", `{"from":"design team\r\nrelease team"}`))
 	ask, err := Question(stage, nil)

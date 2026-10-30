@@ -30,6 +30,9 @@ const (
 	StartByRetry StartRequestKind = "retry"
 	// StartBySendBack is a `step send-back`.
 	StartBySendBack StartRequestKind = "send-back"
+	// StartByDesign is the designer attempt of a design round that `task design` requested, or any advance that starts
+	// it as that request would (docs/interpreter.md#design-rounds).
+	StartByDesign StartRequestKind = "design"
 	// StartByEngine is one of the engine's own advances, such as the launcher's after an attempt ends or a loop
 	// back from a review.
 	StartByEngine StartRequestKind = "engine"
@@ -44,7 +47,7 @@ type StartRequest struct {
 
 func (q StartRequest) validate() error {
 	switch q.Kind {
-	case StartByTask, StartByDecision, StartBySendBack, StartByEngine:
+	case StartByTask, StartByDecision, StartBySendBack, StartByDesign, StartByEngine:
 		if q.Retried != 0 {
 			return invalid("a %s start names no retried attempt", q.Kind)
 		}
@@ -53,7 +56,7 @@ func (q StartRequest) validate() error {
 			return invalid("a retry start names the retried attempt, not %d", q.Retried)
 		}
 	default:
-		return invalid("start request %q is not one of start, decision, retry, send-back and engine", q.Kind)
+		return invalid("start request %q is not one of start, decision, retry, send-back, design and engine", q.Kind)
 	}
 	return nil
 }

@@ -26,6 +26,9 @@ adapter = "fake"
 [profile.rebaser]
 adapter = "fake"
 
+[profile.designer]
+adapter = "fake"
+
 [[repository]]
 id = "app"
 path = "/srv/app"

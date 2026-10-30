@@ -15,7 +15,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
   A title over 100 characters is refused with exit 1 before the configuration is read, naming `--detail` and `--detail-file`.
 - `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
-- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...], "context": [...]}` for one task; `context` is its [task context](#task-context) entries, in number order.
+- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...], "context": [...]}` for one task; `context` is its [task context](#task-context) entries, in number order, and `design_rounds`, present once the task has had a [design round](#design-rounds), the rounds used.
 - `guildhall task list --store <path> [--repo <id>] [--workflow <name>] [--open] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
   `--workflow` keeps only the tasks bound to that workflow name, and `--open` only open tasks; before deleting `workflows/<name>.json` the Director checks that `task list --workflow <name> --open --json` prints `[]`, since an open task bound to it would strand, and nothing else refuses the deletion.
   A task in its repository's [merge queue](interpreter.md#the-merge-queue) also has a `merge_queue` object, the entry `director status` lists ([status](director.md#status)); it is absent for a task that is not queued.
@@ -26,6 +26,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task reconcile --store <path> --config <director.toml> --state <dir> --repo <id> <task>` [records an open task done](#task-reconcile) whose pull request was merged outside Guildhall.
 - `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
 - `guildhall task context add --store <path> --repo <id> (--text <text> | --file <path>) <task>` adds an entry of [task context](#task-context) and prints its receipt; `guildhall task context list --store <path> --repo <id> <task> --json` prints the task's entries.
+- `guildhall task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]` adds a [design round](#design-rounds) to a feature task and advances it, printing where the task waits as [`task start`](running.md#task-start) does; it takes `--task <id>` rather than a positional task.
 
 For every command but `list`, the positional task id may appear before or after flags.
 `show`, `list`, `timeline`, `files` and `context list` open the store read-only and change nothing.
@@ -230,6 +231,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
 - `context`: every entry of [task context](#task-context) with its `number`, `text`, `author` and `added_at`, ordered by when it was added.
+- `design_rounds`: the [design rounds](#design-rounds) used, counted from their briefs; absent when the task has had none. Each round's designer attempts and its decision are among `attempts` and `decisions`.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
 - `priority` and `priority_changes`: the task's [priority](#priority) now and every level set, each with `set_at`.
 - `merge_holds`: every [hold-merge](#holding-a-merge) value set, `held` true or false, each with `set_at`.
@@ -299,6 +301,41 @@ Every Artisan attempt of the task bound after an entry is added is given every e
 An attempt already bound, running or recorded but not yet launched, keeps the inputs it was given, and a finished stage is not stale because of new context.
 To get context into a finished stage, send it back with [`step send-back`](step-send-back.md) or retry it with `step retry`; either way its next attempt is bound with the context.
 A task with no entries is given no `context` document.
+
+## Design rounds
+
+A design round asks for a design of a feature task before anyone builds it, for the Guildmaster to decide on.
+The Director runs one when the Guildmaster, or the Director itself, wants a design before build; whether to run one, and how many, is the Director's call, and there is no cap.
+
+```
+guildhall task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]
+```
+
+The brief says what the design must show and why; `-` reads it from standard input, with the same rules as `--detail-file`.
+A missing, unreadable or empty brief, or a bad flag, is a usage error, exit 2, before the store is opened.
+The command records the brief as round `n`'s and advances the task under the task lock and the admission gates, printing where it waits, as `task start` does.
+Running it again with an identical brief is a safe replay that records nothing while the round is open; once the round's decision is answered, the same brief asks for the next round.
+
+It is refused with exit 1, recording nothing:
+
+- for a task that is not a feature task, one whose workflow has no Director `grill` and `build` step, as every bug task's: "bugs have no design round";
+- once any `build` attempt exists: "build has started";
+- while a round is open, until its decision is answered, even for a request with another brief;
+- while any attempt of the task runs;
+- until the grill has succeeded, and again after a `changes_requested` reopened it, until it succeeds again;
+- for a done or cancelled task.
+
+Each accepted request is one round, whatever its outcome.
+The round's designer Artisan, `designer-<k>`, runs under the shipped `designer` profile at effort `high`, given the brief and the latest grill notes, research notes and spec, and writes a design: the options, mock-ups as text or diagrams, and the trade-offs.
+It waits for the task's [dependencies](#dependencies) and the pause hold, and counts against the attempt caps; a failed designer is retried with `step retry --step designer`, within the same round.
+The design is then asked as the Guildmaster decision `design-<n>`, and `task start --decision design-<n>` moves the task on once it is answered:
+
+- `approved`: plan is given the design; if plan already ran, it runs again with it and its acceptance is asked again on the new spec.
+- `changes_requested`: the grill reopens, handed to the Director with the answer as `feedback`, its notes as `previous` and the design as `reviewed`; once it finishes, the Director may ask for another round.
+
+When the task's workflow has a step named `design` or `designer`, the round's ids are prefixed with `round-` (`round-design-<n>`, `round-designer-<k>`).
+`task show` and `task timeline` print `design_rounds`, the rounds used, once the task has had one.
+See the [interpreter](interpreter.md#design-rounds) for how the round runs and replays.
 
 ## Task grants
 

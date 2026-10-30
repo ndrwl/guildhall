@@ -187,7 +187,8 @@ func (r *run) want(s workflow.Step, inputs []render.Input) (workflow.Revisions, 
 
 // stale reports whether a finished attempt of s was given other inputs, or for a review other
 // revisions, than s would be given now. The engine-added inputs are left out: a new loop's feedback, rulings or
-// task context never makes a finished attempt stale.
+// task context never makes a finished attempt stale. Plan's design is the one engine-added input counted, and only for
+// plan: a newly approved design makes its finished attempt stale.
 func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	b, err := r.binding(s.ID, n)
 	if err != nil {
@@ -196,6 +197,9 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	inputs, err := r.inputs(s)
 	if err != nil {
 		return false, err
+	}
+	if d := r.designInput(s); d != nil {
+		inputs = append(inputs, *d)
 	}
 	var given []render.Input
 	for _, in := range r.boundInputs(b) {
@@ -226,12 +230,18 @@ func (r *run) pending(t workflow.Step) ([]render.Input, error) {
 }
 
 // unserved returns pending's feedback inputs and, when t is a Director stage, the document each loop's blocking
-// result among them was bound to, as reviewed inputs, once per document.
+// result among them was bound to, as reviewed inputs, once per document. Besides send-back feedback and workflow
+// loops, the grill is given each design round's changes_requested answer it has not served (designFeedback).
 func (r *run) unserved(t workflow.Step) (feedback, reviewed []render.Input, err error) {
 	out, err := r.sentBackFeedback(t)
 	if err != nil {
 		return nil, nil, err
 	}
+	design, reviewed, err := r.designFeedback(t)
+	if err != nil {
+		return nil, nil, err
+	}
+	out = append(out, design...)
 	for _, s := range r.def.Steps {
 		if rule, ok := s.On[loopOutcome(s)]; !ok || rule.Goto != t.ID {
 			continue

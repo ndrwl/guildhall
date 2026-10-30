@@ -214,13 +214,14 @@ So a resume keeps it, a revoke drops it at the next wrapper run, never inside a 
 A task grant never allows `guildhall`, `gh`, `glab`, `git` without a subcommand or `git push`, nor a wildcard command such as `g*` that could complete to one, nor one of them after a wrapper such as `env` or `sudo`; this is a speed bump, not a boundary, since a granted shell or interpreter can run anything.
 Use it, not `config.toml`, for a tool one task needs for a while.
 
-The shipped default grants are the grants of the five [role profiles](configuration.md#profiles) Guildhall ships, and of a copy's `claude` profile of the same name that sets no `allowed_tools`:
+The shipped default grants are the grants of the six [role profiles](configuration.md#profiles) Guildhall ships, and of a copy's `claude` profile of the same name that sets no `allowed_tools`:
 
 | Profile | Shipped default |
 |---|---|
 | `builder` | read-only git, plus `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git fetch:*)`, `Bash(git rebase:*)` and `Bash(git switch:*)` |
 | `rebaser` | read-only git, plus `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git fetch:*)` and `Bash(git rebase:*)` |
 | `planner` | read-only git |
+| `designer` | read-only git |
 | `reviewer` | read-only git, plus `Bash(guildhall review check:*)` |
 | `researcher` | read-only git, plus `WebSearch` and `WebFetch` |
 

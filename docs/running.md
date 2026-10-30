@@ -165,6 +165,12 @@ Both commands refuse a repository the config does not list, as every command tha
 See the command guide for admission requirements, prepared-input refusals, replay semantics and downstream review behaviour.
 This is one option after a `pr-blocked` or `rebase-stuck` report, when Guildhall could not [rebase the pull request itself](interpreter.md#tiered-rebase); holding the task or leaving it unadvanced are alternatives.
 
+## `task design`
+
+`guildhall task design --repo <id> --task <id> --brief <file|->` adds a [design round](tasks.md#design-rounds) to a feature task after its grill and before its first build: it feeds `design-requested` with the brief, under the same flags, task lock and admission gates as `task start`, and prints where the task waits.
+The round's designer is an Artisan attempt, so it waits for the task's dependencies, the pause hold and the attempt caps as any attempt does, and prints `{"wait":"attempt","step":"designer","attempt":<k>}` once launched; its design is then asked as the decision `design-<n>`, answered with `decide answer` and fed with `task start --decision design-<n>`.
+A missing or empty brief and bad flags exit 2 before the store is opened; the [refusals](tasks.md#design-rounds), such as a bug task or a started build, exit 1 and record nothing.
+
 ## `ci log`
 
 [`ci log`](ci-logs.md) prints the full log of a failed CI job that one of the task's validate results records, from the CI log cache or fetched with Guildhall's own gh; it takes no task lock and changes nothing.

@@ -60,6 +60,7 @@ There is no seam: like `launched.json` and `result.json`, the file is read from 
 | `attempt-result` | The named attempt of the named step exists. | When it is still running: its result file, read with `adapter.ReadResult` for identity `<task>`, `<step>-<n>`; a succeeded result's outputs as documents; then the outcome. When its launcher already recorded the outcome, that outcome stands, and a succeeded one has its outputs recorded by the next advance, whatever its event. |
 | `decision-answered` | The named decision exists and is answered. | Nothing by itself: the answer is already recorded. |
 | `step-sent-back` | The [send-back admission and replay requirements](step-send-back.md). | Immutable `send-back-<step>-<attempt>` feedback document, then the step's next attempt under ordinary admission gates; changed-feedback replays are refused. |
+| `design-requested` | A nonempty brief, and the [design round](#design-rounds) refusals: the task is a feature task, build has not started, no round is open, no attempt runs and the grill has succeeded. A brief equal to the latest round's is a replay while that round is open. | Immutable `<decision>-<n>-brief` document for round `n`, then the round's designer attempt under ordinary admission gates; a replay records nothing. A refusal is `ErrDesignRound` and records nothing. |
 | `attempt-retried` | The named attempt of the named step exists, finished `failed` or `stopped`, and is the step's latest. When the step's latest attempt is the next one, the event is a replay. | The step's next attempt, started as a first attempt starts, with the retry recorded in its [binding](#rounds-and-loops) so its prompt says why it is a retry; once it has launched, the Director's reason bound to it, when given, as message `<repo>.<task>.attempt-retried.<step>-<n>`, type `attempt-retried`. A replay launches the next attempt if it was recorded but not launched, and records nothing but that message, sent again when it is missing. |
 
 Any other event, or one that does not match the records, is refused with `ErrEvent` and changes nothing.
@@ -170,6 +171,43 @@ A `changes_requested` [loop](#rounds-and-loops) may go back to a Director stage:
 
 The Director ends the stage with [`step finish`](running.md#step-finish), which writes the attempt's `result.json` with `adapter.WriteResult` and feeds `attempt-result`, so the intake, the output documents (`<step>-<n>-<port>`), the outcome and replay are an Artisan's.
 A stage the Director abandons is finished `--failed`: the task waits for the Director with `attempt-failed`, as after a failed Artisan attempt, and `step retry` hands attempt `n+1` to the Director in the same way.
+
+A design round's `changes_requested` also goes back to the grill, through the same path; see [design rounds](#design-rounds).
+
+## Design rounds
+
+A design round is a design the Director asks for with [`task design`](tasks.md#design-rounds), on a feature task, after its grill has succeeded and before its first `build` attempt.
+It is a Director tool, not a workflow step: no workflow names it, and the shipped workflows and their digests do not change.
+Each accepted request is one round, whatever its outcome; the rounds used are counted from the round briefs, never from a stored counter.
+There is no cap: how many rounds to run is the Director's call.
+
+**Feature tasks.** A task records no kind, so the rule is read from its bound workflow: it must have a `grill` step run by the Director and a `build` step.
+The shipped bug workflow has no grill, so a bug task is refused with "bugs have no design round".
+
+**Step ids.** A round's decisions use step id `design`, so round `n`'s decision is `design-<n>`; its designer's Artisan attempts use `designer`, so attempt `k` is `designer-<k>` and its output document `designer-<k>-design`.
+Attempt and round numbers drift apart after a retry, so the two never share a document prefix.
+When the bound workflow already has a step `design` or `designer`, both ids are prefixed with `round-`, again until neither is taken: the choice depends on the bound workflow alone, so it is stable for the life of the task, and no workflow is refused (`interp.DesignSteps`).
+
+**The request.** `design-requested` records the brief as the immutable document `<decision>-<n>-brief`, at `tasks/<repo>/<task>/<decision>-<n>/brief.md`, before anything launches; a request whose brief equals the latest round's is a replay and records nothing while that round is open; once its decision is answered, the same brief is a new request for the next round.
+It is refused with `ErrDesignRound`, recording nothing, for a task that is not a feature task, once any `build` attempt exists ("build has started"), while a round is open (its decision is not answered), while any attempt of the task runs, and until the grill's latest attempt has succeeded and has served every design answer that reopened it.
+A done or cancelled task is refused with `ErrTaskClosed`, as for every event.
+
+**Running the round.** Before the walk, every round answered `approved` has its design recorded, once, as `<decision>-<n>-design`.
+While the latest round is open, the advance starts no workflow step:
+
+1. With no designer attempt bound to the round's brief, the [dependency gate](#the-dependency-gate) is checked for the designer as for any Artisan attempt, then the [pause hold](director.md#pause-and-resume); the designer's attempts never count as passing the gate, so a design never lets research past it.
+   The attempt is bound and started as the rebaser's synthetic attempts are: under the attempt caps, in the [start queue](#the-start-queue) under request `design`, and under the task lock, with the shipped `designer` profile, at effort `high`, and the `design` stage guide.
+   Its inputs are `brief` and, as `context`, the latest grill notes, research notes and plan spec, in workflow order, when they exist, then the task's context.
+2. While the designer runs, the advance waits for it, relaunching one recorded but never launched, as for any attempt; a failed or stopped designer waits for the Director (`attempt-failed`), and `step retry` of it starts the next designer attempt in the same round.
+3. Once the designer succeeds, the engine opens decision `<decision>-<n>`, kind `approval`, options `approved` and `changes_requested`, bound to the design's digest, and waits; `task start --decision <decision>-<n>` moves the task on once it is answered.
+
+**The answer.** `approved` closes the round: plan's binding gains the latest approved design on the engine-added `design` port.
+It is the one engine-added port [staleness](#rounds-and-loops) counts, and only for a `plan` step: a plan that already succeeded becomes stale, runs again with the design, and its acceptance is asked again on the new spec's digest.
+No other finished attempt becomes stale, so research is kept; build sees the design only through the spec.
+`changes_requested` closes the round and reopens the grill: until a later grill attempt that did not fail or stop has bound it on `feedback`, the answer is the grill's pending feedback, recorded as `<decision>-<n>-answer`, so the grill's next attempt is handed to the Director with `feedback`, `previous` (its latest notes) and `reviewed` (the design), as a [loop to a Director stage](#director-stages) is.
+Once the grill finishes, the walk goes on: plan runs again if it had run, because the grill notes changed, and the Director may ask for another round, which is round `n+1`.
+
+A crashed round replays from the records: the designer is found by the brief its binding holds, so it is never launched twice, and the decision is opened once.
 
 ## Publish and deliver
 
@@ -431,8 +469,10 @@ Besides its wired inputs, an attempt may be given:
 - `context`: the [task context](tasks.md#task-context) the Director added, when the task has any: with `k` entries recorded as the attempt is bound, document `context-<k>` (`tasks/<repo>/<task>/context-<k>.md`), written once when absent and shared by every attempt bound while the task has `k` entries, holding every entry in number order, each under `## Context <n>` with its time and author and its text fenced. A workflow may also wire step outputs to a port named `context`, as the shipped plan step does; those stay wired inputs.
 - For a [Director stage](#director-stages) a loop sent back, besides that `feedback`: `previous`, the stage's own latest document on each output port, and `reviewed`, each document a blocking result among the feedback was bound to (a Guildmaster decision's or a document review outcome's subject), once each; a result bound to a head has none.
   The grill resumes from them rather than starting over (`baseline/stages/grill.md`).
+  A [design round](#design-rounds)'s `changes_requested` answer is such feedback for the grill too, with the design as `reviewed`.
+- `design`: for a `plan` step, the design of the task's latest [design round](#design-rounds) the Guildmaster approved, `<decision>-<n>-design`, when there is one.
 
-`previous`, `rulings`, `reviewed`, `resolution`, `feedback` and the engine's `context` document play no part in staleness: only the wired inputs do.
+`previous`, `rulings`, `reviewed`, `resolution`, `feedback` and the engine's `context` document play no part in staleness: only the wired inputs do, and plan's `design`, so a newly approved design makes a finished plan stale.
 
 Feedback a failed or stopped attempt was given is still pending, so the attempt that retries it is given it again.
 A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.

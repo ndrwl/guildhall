@@ -146,6 +146,10 @@ Unknown flags, extra arguments and missing or malformed required fields exit 2; 
 It starts a new attempt only for a succeeded Artisan step, preserves old attempts and passes the Director's feedback as an input document; identical replay starts nothing extra and conflicting feedback is refused.
 See [the command](../step-send-back.md).
 
+`task design` accepts the usual advance path flags plus required `--repo`, `--task` and `--brief <file|->`, read as `--detail-file` is.
+Unknown flags, extra arguments, a missing or unreadable brief and an empty one exit 2 before the store is opened; it then runs `DesignRequested` under the existing task lock and admission gates and prints the standard advance JSON, and the engine's refusals exit 1, recording nothing.
+`--help` prints usage and examples without requiring a store; `task show` and `task timeline` print `design_rounds` once a task has had a round ([design rounds](../tasks.md#design-rounds)).
+
 ### Version
 
 `guildhall version [--startup | --json] [--copy <dir>]` says which revision the binary is, which pull request it ends at and how far it is behind the repository's main ([decision](../decisions/version-from-build-info.md)).
@@ -235,7 +239,7 @@ Making the current terminal the default, with `--tab` opting into the wrapper an
 `TestTaskNewEnforcesWorkflowAuthority` and `TestWorkflowApproveRepositoryEffectiveRevision`, and the new `TestWorkflowUsageErrors` cases, were written red first ([red run](../evidence/s10-approval-enforcement-2026-10-21-red.txt)): a weakening override refused until its effective digest is approved, approving the file alone not enough, a workflow below the floor refused until approved, a non-weakening change admitted with no approval, and the approve form's refusals and usage errors.
 The task fixtures name a `demo` profile whose adapter is `fake`: app selects `test-default`, a custom copy of the default with explicit Artisan profiles, and lib selects human-review with explicit profiles and an Artisan review override.
 Both effective workflows require approval: test-default changes the reviewer's profile and lib weakens the shipped default; the task helpers approve them before creation.
-The testdata/run Director likewise uses named fake profiles and approves fake-straight, which has no validate step, before `task new`; its `config.toml` declares the five role profiles with the fake adapter, so no shipped claude profile is launched or probed by `director start`.
+The testdata/run Director likewise uses named fake profiles and approves fake-straight, which has no validate step, before `task new`; its `config.toml` declares the six role profiles with the fake adapter, so no shipped claude profile is launched or probed by `director start`.
 The original workflow-approval tests failed in their red run only because `workflow approve --config --repo` did not exist yet.
 
 `advance_test.go` runs task app/t-1 over `testdata/run` (the fake-straight workflow, whose stage guides carry the fake adapter's directives) with the test binary playing every launcher: `TestTaskStartAndStepDone` and `TestStepDoneRefusesAResultItDoesNotTake` were written red first against a stub advance and failed with it; `TestTaskStartAndStepDoneUsage` passed against the stub, whose flag checks were already written.

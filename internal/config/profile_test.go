@@ -236,8 +236,9 @@ func TestInvalidAllowedToolsRefused(t *testing.T) {
 }
 
 // TestShippedProfiles: a parsed Director config has every shipped role profile it does not declare, each on the
-// claude adapter with nothing else set; a copy section replaces the shipped profile as a whole; and every check of a
-// declared profile accepts the shipped names. A Steward config gets none.
+// claude adapter with nothing else set but designer's effort high; a copy section replaces the shipped profile as a
+// whole, so a copy designer without effort runs at default_effort; and every check of a declared profile accepts the
+// shipped names. A Steward config gets none.
 func TestShippedProfiles(t *testing.T) {
 	cfg, err := Parse([]byte(director(t)))
 	if err != nil {
@@ -249,8 +250,19 @@ func TestShippedProfiles(t *testing.T) {
 			t.Errorf("Profile(%s) = %+v, %v; want the shipped claude profile", name, p, err)
 		}
 	}
+	if p, err := cfg.Profile("designer"); err != nil || !reflect.DeepEqual(p, Profile{Adapter: "claude", Effort: "high"}) || cfg.EffectiveEffort(p.Effort) != "high" {
+		t.Errorf("Profile(designer) = %+v, %v; want the shipped claude profile at effort high", p, err)
+	}
 	if len(cfg.Profiles) != len(ShippedProfiles) {
 		t.Errorf("profiles = %v, want only the shipped ones", cfg.Profiles)
+	}
+
+	cfg, err = Parse([]byte(director(t) + "\n[profile.designer]\nadapter = \"claude\"\nmodel = \"m\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Profiles["designer"]; !reflect.DeepEqual(p, Profile{Adapter: "claude", Model: "m"}) || cfg.EffectiveEffort(p.Effort) != cfg.EffectiveEffort("") {
+		t.Errorf("designer = %+v, want the copy's section alone, at default_effort", p)
 	}
 
 	cfg, err = Parse([]byte(director(t) + "\n[profile.reviewer]\nadapter = \"fake\"\nmodel = \"m\"\n"))

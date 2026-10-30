@@ -510,6 +510,26 @@ func Question(stage Stage, inputs []Input) (Ask, error) {
 	return Ask{Question: normalise(b.String()), Options: slices.Clone(options)}, nil
 }
 
+// DesignOptions are the answers a design round's decision offers.
+var DesignOptions = []string{string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested)}
+
+// DesignQuestion renders the decision a design round opens, decision id, round n of the task's design rounds, once its
+// designer attempt wrote the design: it says what each answer does and lists the inputs, the brief and the design,
+// by name and recorded digest. It reads no files and has LF line endings.
+func DesignQuestion(repository, task, id string, n int, inputs []Input) Ask {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Design decision needed for %s/%s, design round %d, decision %s.\n", repository, task, n, id)
+	b.WriteString("\napproved makes the design an input to plan, which runs again if it already ran; changes_requested reopens the grill with your answer.\n")
+	if len(inputs) > 0 {
+		b.WriteString("\nInputs:\n")
+		for _, in := range inputs {
+			fmt.Fprintf(&b, "- %s: %s (sha256:%s)\n", in.Port, slashName(in.Name), in.SHA256)
+		}
+	}
+	fmt.Fprintf(&b, "\nAnswer with one of: %s.\n", strings.Join(DesignOptions, ", "))
+	return Ask{Question: normalise(b.String()), Options: slices.Clone(DesignOptions)}
+}
+
 var questionOptions = map[string][]string{
 	"guildmaster-approval": {string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested)},
 	"review":               {string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested), string(workflow.VerdictRejected)},

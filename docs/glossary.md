@@ -17,8 +17,8 @@ This page says which is meant where.
 
 ## Profile
 
-- A **role profile** is the Artisan profile a step runs under because of its step kind when it names no `profile`: `researcher`, `planner`, `builder`, `reviewer`, and `rebaser` for the merge queue's rebaser ([profiles](configuration.md#profiles)).
-  It is resolved at use, `workflow.EffectiveProfile`, and is outside the workflow's digest; Guildhall ships all five, and a copy's `[profile.<name>]` replaces one.
+- A **role profile** is the Artisan profile a step runs under because of its step kind when it names no `profile`: `researcher`, `planner`, `builder`, `reviewer`, `rebaser` for the merge queue's rebaser, and `designer` for a design round's designer ([profiles](configuration.md#profiles)).
+  It is resolved at use, `workflow.EffectiveProfile`, and is outside the workflow's digest; Guildhall ships all six, and a copy's `[profile.<name>]` replaces one.
   Avoid "step profile" for it and "dogfood profile".
 - A **repository grant**, `[repository.profiles.<name>]`, is what one repository adds to a profile's effective grant, such as a Go repository's `go test` for its builder ([Artisan permissions](adapters.md#artisan-permissions)).
   It is also called a **repository override**; the docs say repository grant.
@@ -83,6 +83,14 @@ A finished outcome without a readable result is refused, not guessed.
 - A task **held by a dependency** is one the gate holds: its last advance recorded nothing and waits `{"wait":"dependencies"}`, the Director has a `dependency-held` message and `director status` a `dependencies` item.
 - A **dependency override** is the Director's recorded decision, with a reason, to start a held task anyway, `task start --ignore-deps --reason <text>`; it lasts for the rest of the task's life ([`task start`](running.md#task-start)).
 - None of these is the `dependency-notice`, a designed message type between Directors ([Director messaging](messaging.md#message-types)).
+
+## Design round
+
+- A **design round** is one design the Director asks for with `task design`, on a feature task before its first build: a designer Artisan writes the design and the Guildmaster decides on it in decision `design-<n>` ([design rounds](tasks.md#design-rounds)).
+  It is a Director tool, not a workflow step; say design round, not "design loop" or "design step".
+- **Rounds used** is how many design rounds a task has had, one per accepted request whatever its outcome, printed as `design_rounds`; a retry of a failed designer stays within its round.
+  There is no cap on them; say rounds used, not "cap" or "limit".
+- The **designer** is the round's Artisan, the synthetic step `designer`, run under the copy's `designer` profile, shipped at effort `high`.
 
 ## Merge queue
 

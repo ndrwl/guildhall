@@ -8,13 +8,14 @@ import (
 
 // roleProfiles maps each step type that has a role profile to that profile's name.
 // Profiles keep role names, so Claude skill policy and quality judge profiles keyed by them are unchanged.
-// The rebase entry only names the profile of the interpreter's synthetic rebaser step.
+// The rebase and design entries only name the profiles of the interpreter's synthetic rebaser and designer steps.
 var roleProfiles = map[string]string{
 	"research": "researcher",
 	"plan":     "planner",
 	"build":    "builder",
 	"review":   "reviewer",
 	"rebase":   "rebaser",
+	"design":   "designer",
 }
 
 // RoleProfile returns the role profile of a step of this type, or "" when the type has none.
@@ -45,7 +46,7 @@ func ApplyProfileDefaults(def *Definition, declared func(name string) bool) *Def
 	for i := range out.Steps {
 		step := &out.Steps[i]
 		name := RoleProfile(step.Type)
-		if _, set := step.Settings["profile"]; set || name == "" || step.Type == "rebase" || step.Actor() != ArtisanActor || !declared(name) {
+		if _, set := step.Settings["profile"]; set || name == "" || step.Type == "rebase" || step.Type == "design" || step.Actor() != ArtisanActor || !declared(name) {
 			continue
 		}
 		raw, err := json.Marshal(name)
