@@ -8,7 +8,8 @@ guildhall ci log [--copy <dir>] [--tail <lines>] [--out <file>] <repo>/<task> <j
 guildhall ci log --help
 ```
 
-The copy is `--copy`, or else `GUILDHALL_COPY`, which the Claude adapter sets for every Artisan, so an Artisan needs no `--copy`.
+The copy is `--copy`, or else the copy [copy discovery](running.md#copies) finds from the current directory.
+An Artisan runs under the copy's `state/`, where discovery finds no copy, so the command a validate result's `logs` names carries `--copy '<copy>'`, single-quoted for a POSIX shell, when the advance ran from a copy.
 The second argument is a job id, or a check name, meaning that check's latest failed job.
 The command reads the store read-only and takes no task lock, so it runs while the task advances.
 It serves only jobs the task's failed validate results record in their `logs`, so an Artisan cannot read another task's or another repository's logs through it.

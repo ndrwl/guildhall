@@ -38,8 +38,11 @@ func TestSessionCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--model", "opus", "--effort", "high", "--", spec.FirstMessage}
-	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
-		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
+	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"A=1"}) {
+		t.Errorf("command = %+v, want %q in %s with only the spec's environment", cmd, want, spec.Dir)
+	}
+	if !adapter.Under(spec.Copy, cmd.Dir) {
+		t.Errorf("session directory %s does not lie under the copy %s", cmd.Dir, spec.Copy)
 	}
 	spec.Model, spec.Effort = "", ""
 	named := filepath.Join(c, "claude")
@@ -117,7 +120,6 @@ func TestSessionStubRequiresMessageSeparator(t *testing.T) {
 				args = append(args, first)
 				cmd := exec.Command("claude", args...)
 				cmd.Dir = dir
-				cmd.Env = append(os.Environ(), "GUILDHALL_COPY="+dir)
 				out, err := cmd.CombinedOutput()
 				if separator {
 					if err != nil {
@@ -281,13 +283,13 @@ func TestSessionSettingsSignalEveryTurn(t *testing.T) {
 	if err := json.Unmarshal(claude.Settings("/home/g/copy"), &settings); err != nil {
 		t.Fatal(err)
 	}
-	waiter := hook{Type: "command", Command: claude.WaitWakeCommand, Async: true, AsyncRewake: true, Timeout: 86400} // timing:allow the hook's timeout in seconds, a settings value, not a test wait.
+	waiter := hook{Type: "command", Command: claude.WaitWakeCommand + " --copy '/home/g/copy'", Async: true, AsyncRewake: true, Timeout: 86400} // timing:allow the hook's timeout in seconds, a settings value, not a test wait.
 	want := map[string][]hook{
 		"SessionStart":     {waiter},
 		"Notification":     {waiter},
-		"UserPromptSubmit": {{Type: "command", Command: claude.TurnStartCommand}, waiter},
-		"Stop":             {{Type: "command", Command: claude.TurnEndCommand}, waiter},
-		"StopFailure":      {{Type: "command", Command: claude.TurnEndCommand}},
+		"UserPromptSubmit": {{Type: "command", Command: claude.TurnStartCommand + " --copy '/home/g/copy'"}, waiter},
+		"Stop":             {{Type: "command", Command: claude.TurnEndCommand + " --copy '/home/g/copy'"}, waiter},
+		"StopFailure":      {{Type: "command", Command: claude.TurnEndCommand + " --copy '/home/g/copy'"}},
 	}
 	if len(settings.Hooks) != len(want) {
 		t.Errorf("hook events = %v, want %v", settings.Hooks, want)
@@ -303,6 +305,64 @@ func TestSessionSettingsSignalEveryTurn(t *testing.T) {
 	}
 	if claude.TurnStartCommand != "guildhall director turn-started" || claude.TurnEndCommand != "guildhall director turn-ended" {
 		t.Errorf("hook commands = %q, %q", claude.TurnStartCommand, claude.TurnEndCommand)
+	}
+}
+
+// TestSessionSettingsNameTheCopy sees every hook and the status line name the copy single-quoted for a POSIX
+// shell, so they do not depend on the directory Claude Code runs them in, even for a copy whose path has a space
+// and a quote in it; the shell reads the quoted copy back as the one argument after --copy.
+func TestSessionSettingsNameTheCopy(t *testing.T) {
+	copyDir := "/home/g/my copy's"
+	quoted := ` --copy '/home/g/my copy'\''s'`
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"`
+	}
+	if err := json.Unmarshal(claude.Settings(copyDir), &settings); err != nil {
+		t.Fatal(err)
+	}
+	commands := []string{settings.StatusLine.Command}
+	for _, m := range settings.Hooks {
+		for _, h := range m[0].Hooks {
+			commands = append(commands, h.Command)
+		}
+	}
+	for _, c := range commands {
+		if !strings.Contains(c, quoted) {
+			t.Errorf("command %q does not name the copy as %q", c, quoted)
+		}
+	}
+	if want := claude.ContextReportCommand + quoted + " --lanterns"; settings.StatusLine.Command != want {
+		t.Errorf("status line = %q, want %q", settings.StatusLine.Command, want)
+	}
+	if sh, err := exec.LookPath("sh"); err == nil {
+		out, err := exec.Command(sh, "-c", `printf '%s\n' `+strings.TrimPrefix(claude.CopyCommand("", copyDir), " --copy ")).Output()
+		if err != nil || string(out) != copyDir+"\n" {
+			t.Errorf("sh reads the quoted copy as %q, %v; want %q", out, err, copyDir)
+		}
+	}
+}
+
+// TestSessionFilesNameTheCalmPreference sees calm.json beside the plugin name the copy's Calm preference.
+func TestSessionFilesNameTheCalmPreference(t *testing.T) {
+	copyDir := filepath.Join(t.TempDir(), "copy")
+	var calm struct {
+		Preference string `json:"preference"`
+	}
+	if err := json.Unmarshal(claude.Adapter{}.SessionFiles(copyDir)[claude.CalmFile], &calm); err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(copyDir, "director", "lanterns-calm"); calm.Preference != want {
+		t.Errorf("calm.json preference = %q, want %q", calm.Preference, want)
+	}
+	if claude.CalmFile != ".claude/plugins/lanterns/calm.json" {
+		t.Errorf("CalmFile = %q", claude.CalmFile)
 	}
 }
 

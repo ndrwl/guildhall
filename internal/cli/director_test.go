@@ -85,8 +85,8 @@ func directorCopy(t *testing.T, table string, steps ...string) string {
 	return dir
 }
 
-// runDirectorCmd runs `guildhall director <args>` in this process as cmd/guildhall assembles it, with no
-// GUILDHALL_COPY and empty standard input.
+// runDirectorCmd runs `guildhall director <args>` in this process as cmd/guildhall assembles it, with no working
+// directory to discover a copy from and empty standard input.
 func runDirectorCmd(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	return runDirectorCmdWith(t, nil, args...)
@@ -514,17 +514,18 @@ func TestRecoveringSessionStartsNoNewWork(t *testing.T) {
 	if code != 1 || !strings.Contains(stderr, "guildhall director ready") || hasTask(t, dir, "t-2") {
 		t.Fatalf("task new while recovering: exit %d, stderr %q; want exit 1 naming director ready", code, stderr)
 	}
-	code, out, stderr := runEnv(t, dir, "task", "start", "--repo", "app", "t-1")
+	markCopy(t, dir)
+	code, out, stderr := runIn(t, dir, "task", "start", "--repo", "app", "t-1")
 	if code != 1 || !strings.Contains(stderr, "guildhall director ready") {
 		t.Fatalf("task start while recovering: exit %d, stdout %q, stderr %q; want exit 1 naming director ready", code, out, stderr)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "state", "app", "t-1", "next.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("refused task start advanced the task: %v", err)
 	}
-	if code, _, stderr := runEnv(t, dir, "task", "list", "--json"); code != 0 {
+	if code, _, stderr := runIn(t, dir, "task", "list", "--json"); code != 0 {
 		t.Errorf("task list while recovering: exit %d, %s", code, stderr)
 	}
-	if code, _, stderr := runEnv(t, dir, "messages", "list", "director"); code != 0 {
+	if code, _, stderr := runIn(t, dir, "messages", "list", "director"); code != 0 {
 		t.Errorf("messages list while recovering: exit %d, %s", code, stderr)
 	}
 	if code, _, stderr := runDirectorCmd(t, "ready", "--copy", dir); code != 0 {

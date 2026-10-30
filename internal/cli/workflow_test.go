@@ -270,7 +270,7 @@ func TestWorkflowUsageErrors(t *testing.T) {
 	}{
 		{"no subcommand", nil, "missing workflow subcommand"},
 		{"validate is not here yet", []string{"validate", "x.json"}, `unknown workflow subcommand "validate"`},
-		{"approve without store", []string{"approve", "--file", "w.json", "--words-file", "-"}, "--store is required"},
+		{"approve without store", []string{"approve", "--file", "w.json", "--words-file", "-"}, "no Guildhall copy found"},
 		{"approve without file", []string{"approve", "--store", "s", "--words-file", "-"}, "--file is required"},
 		{"approve without words", []string{"approve", "--store", "s", "--file", "w.json"}, "--words-file is required"},
 		{"approve argument", []string{"approve", "--store", "s", "--file", "w.json", "--words-file", "-", "extra"}, "takes no arguments"},

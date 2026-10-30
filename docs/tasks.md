@@ -7,7 +7,7 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 ## Commands
 
-Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or `GUILDHALL_COPY`, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
+Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or found from the current directory, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
 - `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
   The title is a short name; the task's full statement, such as a bug's symptom and exact error, goes in its detail, given as text with `--detail` or read with `--detail-file` from a file, or from standard input for `-`, with the same rules as [`decide answer --answer-file`](decisions-cli.md) (a leading byte order mark is dropped, UTF-16 is refused and CRLF becomes LF).
@@ -255,7 +255,7 @@ guildhall task context add  --store <path> --repo <id> (--text <text> | --file <
 guildhall task context list --store <path> --repo <id> <task> --json
 ```
 
-`--copy <dir>`, or `GUILDHALL_COPY`, stands in for `--store`.
+`--copy <dir>`, or the copy found from the current directory, stands in for `--store`.
 
 - `add` records the task's next entry, numbered from 1, with author `director` and the time it was added, and prints its receipt, record `task-context/<n>`, mutation `task-context:<repo>:<task>:<sha256 of the text>`, hashed as for `task new` when longer than 128 bytes; running the same command again prints the original receipt and records nothing. The text comes from exactly one of `--text` and `--file`, which names a file (`--file -` is not supported); it must be non-blank UTF-8 of at most 64 KiB. A task that is unknown or not open is refused with exit 1 and nothing is written.
 - `list` prints the task's entries as a JSON array in number order; it opens the store read-only.
@@ -278,7 +278,7 @@ guildhall task grant revoke --store <path> --repo <id> --task <id> --grant <id> 
 guildhall task grant list   --store <path> [--repo <id>] [--task <id>]
 ```
 
-`--copy <dir>`, or `GUILDHALL_COPY`, stands in for `--store` and `--config`.
+`--copy <dir>`, or the copy found from the current directory, stands in for `--store` and `--config`.
 
 - `create` records grant `g<n>`, numbered from 1 per task, for one step of the task's bound workflow whose profile runs the `claude` adapter, or `all` of them, and in the same transaction opens decision `grant-g<n>` of kind `grant` with the options `approve` and `reject`, whose question quotes the step, rules, reason and expiry. It prints the receipt, record `task-grant/g<n>`, mutation `task-grant:<repo>:<task>:g<n>`. `--until` is `attempt`, the default, which lasts for the first attempt of the step bound after approval until it has an outcome, or `done`, which lasts until the task is merged or closed; `--step all` needs `--until done`.
 - `revoke` records the revoke once, mutation `task-grant-revoke:<repo>:<task>:<id>`, on a pending or an active grant. A pending grant's decision stays open, but approving it no longer activates anything.

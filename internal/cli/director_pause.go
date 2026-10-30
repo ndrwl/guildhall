@@ -49,13 +49,15 @@ func (a *App) sessionOperands(name string, args []string, withState bool, operan
 		}
 		values, rest = append(values, fl.Arg(0)), fl.Args()[1:]
 	}
-	switch err := cp.apply(a.Getenv, path, nil, state); {
+	switch err := cp.apply(a, path, nil, state); {
 	case fl.NArg() > 0:
 		return "", "", nil, a.usageError(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
 	case len(values) < len(operands):
 		return "", "", nil, a.usageError(fmt.Sprintf("%s: %s is required", name, operands[len(values)]))
 	case err != nil:
 		return "", "", nil, a.usageError(name + ": " + err.Error())
+	case *path == "" && (state == nil || *state == ""):
+		return "", "", nil, a.usageError(name + ": " + cp.missing(a).Error())
 	case *path == "" || withState && *state == "":
 		if withState {
 			return "", "", nil, a.usageError(name + ": --store and --state are required, or --copy")

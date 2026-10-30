@@ -54,7 +54,7 @@ The legacy `director context-report` without `--lanterns` still supports old wor
 
 ## Calm and the S2 smithy
 
-With function hooks enabled and `GUILDHALL_COPY` set, Calm is on by default when no preference has been saved.
+With function hooks enabled and the session's `calm.json` beside the plugin, Calm is on by default when no preference has been saved.
 `/calm` toggles the presentation preference and remembers both `on` and `off`.
 It hides routine `ToolUse`, `ToolResult` and `ToolGroup` drawings, not their execution or stored transcript entries.
 Assistant and user messages remain visible.
@@ -70,7 +70,8 @@ The preference is `<copy>/director/lanterns-calm`, containing `on` or `off` and 
 It belongs to this Director copy, survives numbered session handoffs and generated workspace replacement, and is not a `config.toml` setting.
 An absent file means on; an unreadable or invalid existing file falls back to native drawings.
 A failed preference write leaves the current choice unchanged and shows a transient notice.
-Without `GUILDHALL_COPY`, Calm is unavailable and has no plugin-local preference fallback.
+The plugin learns where the preference is from `calm.json` in its own directory, `{"preference":"<copy>/director/lanterns-calm"}`, which the session renders with the plugin, and reads it from the plugin root rather than from the environment.
+Without `calm.json`, Calm is unavailable and has no plugin-local preference fallback.
 
 ## Vitals labels
 

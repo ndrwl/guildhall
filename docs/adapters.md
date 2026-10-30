@@ -206,7 +206,7 @@ The session's **effective grant** is, in order and with a repeated rule kept onc
    No `gh`, `curl` or GitHub API rule is granted: Guildhall's own gh fetches the logs.
 4. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
 
-When the attempt has a copy, the wrapper runs Claude with `GUILDHALL_COPY` set to it, replacing an inherited value, so `guildhall ci log` needs no `--copy`; the command, like the grant, assumes `guildhall` resolves on the Artisan's `PATH`.
+The Artisan runs under the copy's `state/`, where [copy discovery](running.md#copies) finds no copy, so the `guildhall ci log` command validate records names the copy with `--copy` when the advance runs from one ([CI logs](ci-logs.md)); the command, like the grant, assumes `guildhall` resolves on the Artisan's `PATH`.
 
 A task grant is temporary and for one task: the Guildmaster approves extra rules for one step of one task, or all its claude steps, for its next attempt or until the task is done, through `guildhall task grant create` and the decision it opens.
 The engine records it in the attempt's binding, `<step>-<n>.inputs.json`, when the binding is first written, and the wrapper reads it back at every run from the copy's `director.store`, opened read-only, checking the binding file against the SHA-256 the store holds.
@@ -227,7 +227,7 @@ The shipped default grants are the grants of the five [role profiles](configurat
 Read-only git is `Bash(git <command>:*)` for `status`, `diff`, `log`, `show`, `rev-list`, `merge-base` and `ls-files`.
 No default grants `git checkout`, which can discard work, `git push`, which the publish stage does, or any toolchain command; a profile of any other name, or of another adapter, gets no default.
 The reviewer's `guildhall review check` checks its review outcome as intake will before it finishes, as the [`guildhall-review`](../skills/guildhall-review/SKILL.md) skill requires; a copy profile that sets its own `allowed_tools` for a reviewer must add `Bash(guildhall review check:*)` to them.
-The rules come only from the Guildhall release and the copy `--copy` or `GUILDHALL_COPY` selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file, repository file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
+The rules come only from the Guildhall release and the copy `--copy` or [copy discovery](running.md#copies) selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file, repository file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
 
 A repository's checks are a repository grant, which needs no `[profile.*]` section for a shipped profile. The suggested one for a Go repository's builder, `claude.SuggestedGoAllowedTools`, runs `go test` and `go vet`; its git comes from the builder's default, and the reviewer and rebaser may run the tests too:
 

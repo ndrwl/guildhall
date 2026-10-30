@@ -23,8 +23,8 @@ func TestLanternsDisplayCannotOverwriteHandoffContext(t *testing.T) {
 	if err := session.WriteContext(dir, original); err != nil {
 		t.Fatal(err)
 	}
-	env := map[string]string{"GUILDHALL_COPY": copyDir, session.NumberEnv: "1"}
-	code, out, stderr := contextReport(t, fixture(t, "statusline.json"), env, "--lanterns")
+	env := map[string]string{session.NumberEnv: "1"}
+	code, out, stderr := contextReport(t, fixture(t, "statusline.json"), env, "--copy", copyDir, "--lanterns")
 	if code != 0 || !strings.HasPrefix(out, "⚪ status unavailable") || !strings.Contains(out, "context 72%") {
 		t.Fatalf("display = %d %s %s", code, out, stderr)
 	}
@@ -76,14 +76,11 @@ func TestTurnEndedContextTriggersHandoffWithoutStatusLine(t *testing.T) {
 			input += ".missing"
 		}
 		b, _ := json.Marshal(map[string]string{"transcript_path": input})
+		// The hook finds the copy by discovery from the session directory, as a bare command in the session does.
+		markCopy(t, copyDir)
 		app, _, stderr := newTestApp(nil, nil)
 		app.Stdin = strings.NewReader(string(b))
-		app.Getenv = func(k string) string {
-			if k == "GUILDHALL_COPY" {
-				return copyDir
-			}
-			return ""
-		}
+		app.Getwd = func() (string, error) { return dir, nil }
 		if code := app.Run([]string{"director", "turn-ended"}); code != 0 {
 			t.Fatalf("hook=%d %s", code, stderr.String())
 		}
@@ -119,13 +116,7 @@ func TestTurnEndedContextTriggersHandoffWithoutStatusLine(t *testing.T) {
 		b, _ := json.Marshal(map[string]string{"transcript_path": transcript})
 		app, _, stderr := newTestApp(nil, nil)
 		app.Stdin = strings.NewReader(string(b))
-		app.Getenv = func(k string) string {
-			if k == "GUILDHALL_COPY" {
-				return copyDir
-			}
-			return ""
-		}
-		if code := app.Run([]string{"director", "turn-ended"}); code != 0 {
+		if code := app.Run([]string{"director", "turn-ended", "--copy", copyDir}); code != 0 {
 			t.Fatalf("hook=%d %s", code, stderr.String())
 		}
 		select {

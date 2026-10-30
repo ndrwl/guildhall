@@ -147,12 +147,12 @@ func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
 		// The fake build commits nothing, so the head it reports is the task branch's tip, the default branch.
 		return strings.Replace(b, fixtureHead, base, 1) + "guildhall-fake: inventory=" + c.inventory + "\n"
 	})
-	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
-	if err != nil {
-		t.Fatal(err)
+	// store init --copy makes the empty store and gives the copy its marker, as a Guildmaster's new copy gets it.
+	if out, err := c.command(nil, "store", "init", "--copy", dir).CombinedOutput(); err != nil {
+		t.Fatalf("store init --copy: %v\n%s", err, out)
 	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(filepath.Join(dir, ".guildhall-copy")); err != nil {
+		t.Fatalf("store init --copy wrote no copy marker: %v", err)
 	}
 	if live, turns := c.liveProcesses(), c.turnLines(); len(live) != 0 || len(turns) != 0 {
 		t.Fatalf("before the check: owned processes %v, stand-in turns %q", live, turns)
@@ -208,15 +208,23 @@ func (c *safetyCopy) command(stdin io.Reader, args ...string) *exec.Cmd {
 	cmd := exec.Command(filepath.Join(strings.SplitN(c.path, string(os.PathListSeparator), 2)[0], "guildhall"), args...)
 	cmd.Env = append(os.Environ(), "PATH="+c.path, fake.TurnLogEnv+"="+c.turns, HerdrStubEnv+"="+c.herdr)
 	cmd.Stdin = stdin
+	// Outside any copy, so a command finds a copy only from --copy.
+	cmd.Dir = c.t.TempDir()
 	return cmd
 }
 
-// guildhall runs the binary as the Guildmaster would, in the copy, and fails the check unless it exits 0.
+// guildhall runs the binary as the Guildmaster would, in the copy, which it finds by copy discovery, and fails
+// the check unless it exits 0.
 func (c *safetyCopy) guildhall(stdin string, args ...string) string {
 	c.t.Helper()
 	cmd := c.command(strings.NewReader(stdin), args...)
 	// Run as the Guildmaster's shell would, whatever session or attempt runs these tests (d33).
-	cmd.Env = append(cmd.Env, "GUILDHALL_COPY="+c.dir, "GUILDHALL_SESSION=", "GUILDHALL_ATTEMPT=")
+	cmd.Env = append(cmd.Env, "GUILDHALL_SESSION=", "GUILDHALL_ATTEMPT=")
+	// PWD is the copy as given, as a Guildmaster's shell sets it, so discovery finds the copy spelled as --copy
+	// spells it. Without it the child reports the resolved directory, and macOS's /var -> /private/var lengthens
+	// the launchers' endpoint socket paths past the platform limit.
+	cmd.Dir = c.dir
+	cmd.Env = append(cmd.Env, "PWD="+c.dir)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {

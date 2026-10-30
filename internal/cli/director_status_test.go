@@ -297,21 +297,31 @@ owner_machine = "workstation"
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkIndentedGolden(t, "director-status.json", strings.Replace(out, strings.Trim(string(result), `"`), "$COPY/state/app/t-7/plan-1/result.json", 1))
+	// The feed names the copy it was read from, written in the golden as $COPY.
+	copyField, err := json.Marshal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyField = append([]byte(`"copy":`), append(copyField, ',')...)
+	if !strings.Contains(out, string(copyField)) {
+		t.Fatalf("status does not name the copy as %s: %s", copyField, out)
+	}
+	golden := strings.Replace(out, strings.Trim(string(result), `"`), "$COPY/state/app/t-7/plan-1/result.json", 1)
+	checkIndentedGolden(t, "director-status.json", strings.Replace(golden, string(copyField), `"copy":"$COPY",`, 1))
 	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("status changed the store (%v)", err)
 	}
 
-	// The explicit paths read the same copy, and GUILDHALL_COPY selects it.
+	// The explicit paths read the same copy, though they name no copy, and discovery from inside the copy selects it.
 	_, explicit, _ := directorCmdPolicies(t, nil, pol, "status", "--store", path, "--state", filepath.Join(dir, "state"), "--config", filepath.Join(dir, "config.toml"), "--json")
-	_, env, _ := directorCmdPolicies(t, func(k string) string {
-		if k == copyEnvVar {
-			return dir
-		}
-		return ""
-	}, pol, "status", "--json")
-	if explicit != out || env != out {
-		t.Fatalf("explicit paths or GUILDHALL_COPY read differently:\n%s\n%s\n%s", out, explicit, env)
+	app, stdout, _ := newTestApp(nil, nil)
+	app.PolicyGit = pol
+	app.Now = func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }
+	app.BuildInfo = testBuildInfo(nil)
+	app.Getwd = func() (string, error) { return filepath.Join(dir, "workflows"), nil }
+	app.Run([]string{"director", "status", "--json"})
+	if explicit != strings.Replace(out, string(copyField), "", 1) || stdout.String() != out {
+		t.Fatalf("explicit paths or discovery read differently:\n%s\n%s\n%s", out, explicit, stdout)
 	}
 }
 
@@ -362,8 +372,12 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
 	}
+	copyField, err := json.Marshal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := `{"as_of":{"partial":true,"excluded":["worker files","transcripts","forge state"],"sequence":0,"committed_at":"0001-01-01T00:00:00Z"},` +
-		`"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22",` +
+		`"copy":` + string(copyField) + `,"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22",` +
 		`"spend_today":{"attempts":0,"tokens_unknown":0,"cost_unknown":0,"tokens":"unknown","input_tokens":0,"output_tokens":0,` +
 		`"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost":"unknown","cost_usd":0}},"start_queue":[]},"mode":{"name":"standalone"},"tasks":[],"merge_queues":[],"decisions":[],` +
 		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],"parked":[],"held":[],"running":[],"grants":[],` +
@@ -598,7 +612,7 @@ func TestDirectorStatusUsage(t *testing.T) {
 		{"no subcommand", nil, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, reload, turn-started, turn-ended, wait-wake and context-report"},
 		{"unknown subcommand", []string{"enrol"}, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, reload, turn-started, turn-ended, wait-wake and context-report"},
 		{"no json", []string{"status", "--copy", dir}, 2, "prints JSON only; pass --json"},
-		{"no store", []string{"status", "--json"}, 2, "--store and --state are required, or --copy"},
+		{"no copy", []string{"status", "--json"}, 2, "director status: no Guildhall copy found from the current directory; pass --copy <dir> or cd into a copy"},
 		{"store without state", []string{"status", "--json", "--store", filepath.Join(dir, "director.store")}, 2, "--store and --state are required, or --copy"},
 		{"argument", []string{"status", "--json", "--copy", dir, "extra"}, 2, `unexpected argument "extra"`},
 		{"unknown flag", []string{"status", "--json", "--copy", dir, "--repo", "app"}, 2, "flag provided but not defined: -repo"},

@@ -95,7 +95,7 @@ func (a *App) directorTurnSignal(turn session.Turn, args []string) int {
 	var storePath string
 	err := fl.Parse(args)
 	if err == nil {
-		err = cp.apply(a.Getenv, &storePath, nil, nil)
+		err = cp.apply(a, &storePath, nil, nil)
 	}
 	switch {
 	case err != nil:
@@ -103,7 +103,7 @@ func (a *App) directorTurnSignal(turn session.Turn, args []string) int {
 	case fl.NArg() > 0:
 		return a.fail(fmt.Errorf("%s: unexpected argument %q", name, fl.Arg(0)))
 	case cp.dir == "":
-		return a.fail(fmt.Errorf("%s: --copy is required, or GUILDHALL_COPY", name))
+		return a.fail(fmt.Errorf("%s: %w", name, cp.missing(a)))
 	}
 	copyDir, err := filepath.Abs(cp.dir)
 	if err != nil {

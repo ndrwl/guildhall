@@ -39,7 +39,7 @@ func (a *App) taskCancel(args []string) int {
 	if err := parseInterspersed(fl, args); err != nil {
 		return a.taskUsage("task cancel: " + err.Error())
 	}
-	if err := f.resolve(a.Getenv); err != nil {
+	if err := f.resolve(a); err != nil {
 		return a.taskUsage("task cancel: " + err.Error())
 	}
 	switch {

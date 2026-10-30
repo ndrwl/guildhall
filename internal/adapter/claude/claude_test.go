@@ -527,29 +527,6 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 	}
 }
 
-// TestRunSetsTheCopy: Claude runs with GUILDHALL_COPY set to the attempt's copy, replacing an inherited one, so
-// guildhall ci log needs no --copy; without a copy the environment is inherited as it is.
-func TestRunSetsTheCopy(t *testing.T) {
-	claudetest.Install(t)
-	t.Setenv(adapter.CopyEnv, "/inherited/copy")
-	for name, withCopy := range map[string]bool{"copy": true, "no copy": false} {
-		t.Run(name, func(t *testing.T) {
-			spec := testSpec(t)
-			want := "/inherited/copy"
-			if withCopy {
-				spec.Copy, spec.Profile = grantProfile(t, nil)
-				want = spec.Copy
-			}
-			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
-				t.Fatal(err)
-			}
-			if got, err := claudetest.Copy(spec.ResultFile); err != nil || got != want {
-				t.Errorf("Claude's %s = %q, %v; want %q", adapter.CopyEnv, got, err, want)
-			}
-		})
-	}
-}
-
 // TestRunWritesUsage: once Claude exits the wrapper writes the usage its output reports beside the result, a
 // draft or not, and passes the session's result text through; a stopped session writes none, so its usage is
 // unknown.

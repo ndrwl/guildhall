@@ -222,9 +222,6 @@ func stub(args []string) error {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(draft), SettingsFile), data, 0o600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(draft), CopyFile), []byte(os.Getenv(adapter.CopyEnv)), 0o600); err != nil {
-		return err
-	}
 	id, err := identity(instruction)
 	if err != nil {
 		return err
@@ -281,15 +278,6 @@ func stub(args []string) error {
 		return errExit{}
 	}
 	return nil
-}
-
-// CopyFile is the record, in the model directory, of the GUILDHALL_COPY a print-mode stub session ran with.
-const CopyFile = "claude-stub-copy"
-
-// Copy returns the GUILDHALL_COPY the stub's print-mode session for the result file result ran with.
-func Copy(result string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(claude.ModelDir(result), CopyFile))
-	return string(data), err
 }
 
 // SettingsFile is the record, in the model directory, of the --model and --effort a print-mode stub session was
@@ -483,8 +471,8 @@ func session(args []string) int {
 	if !filepath.IsAbs(role) || !filepath.IsAbs(copyDir) {
 		return fail("role %q and copy %q must be absolute", role, copyDir)
 	}
-	if got := os.Getenv(adapter.CopyEnv); got != copyDir {
-		return fail("%s = %q, want the added copy %q", adapter.CopyEnv, got, copyDir)
+	if wd, err := os.Getwd(); err != nil || !adapter.Under(copyDir, wd) {
+		return fail("session directory %q does not lie under the added copy %q", wd, copyDir)
 	}
 	// Opt-in trust gate: a fresh working directory cannot consume the startup message.
 	// The test supplies the one directory whose approval a person has already saved.
@@ -518,7 +506,8 @@ func session(args []string) int {
 // armRewake plays Claude Code's async rewake hooks from the session settings: it runs the SessionStart hook
 // marked asyncRewake in the background with the hook input on stdin and, when it exits 2, sends its standard error
 // as a rewake turn and runs the Stop hook's asyncRewake command for the next one, as the turn's end would. An exit 0,
-// such as a retired waiter, arms nothing. stop ends the running hook. A command is run from PATH, split on spaces.
+// such as a retired waiter, arms nothing. stop ends the running hook. A command is run from PATH, split into words
+// as a POSIX shell splits single-quoted words (shellWords).
 func armRewake(settings []byte) (<-chan string, func(), error) {
 	var s struct {
 		Hooks map[string][]struct {
@@ -535,7 +524,7 @@ func armRewake(settings []byte) (<-chan string, func(), error) {
 		for _, m := range s.Hooks[event] {
 			for _, h := range m.Hooks {
 				if h.AsyncRewake {
-					return strings.Fields(h.Command)
+					return shellWords(h.Command)
 				}
 			}
 		}
@@ -590,4 +579,40 @@ func armRewake(settings []byte) (<-chan string, func(), error) {
 			_ = running.Process.Kill()
 		}
 	}, nil
+}
+
+// shellWords splits a hook command into words as a POSIX shell does for words that are plain or single-quoted,
+// the only quoting the session settings use (claude.CopyCommand), where a quote in the copy is written as
+// quote, backslash, quote, quote.
+func shellWords(command string) []string {
+	var words []string
+	var word strings.Builder
+	inWord, quoted, escaped := false, false, false
+	for _, r := range command {
+		switch {
+		case escaped:
+			word.WriteRune(r)
+			escaped = false
+		case quoted && r == '\'':
+			quoted = false
+		case quoted:
+			word.WriteRune(r)
+		case r == '\'':
+			quoted, inWord = true, true
+		case r == '\\':
+			escaped, inWord = true, true
+		case r == ' ' || r == '\t':
+			if inWord {
+				words, inWord = append(words, word.String()), false
+				word.Reset()
+			}
+		default:
+			word.WriteRune(r)
+			inWord = true
+		}
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words
 }

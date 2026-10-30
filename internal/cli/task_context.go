@@ -18,7 +18,7 @@ import (
 const taskContextUsage = `usage:
   guildhall task context add --store <path> --repo <id> (--text <text> | --file <path>) <task>
   guildhall task context list --store <path> --repo <id> <task> --json
---copy <dir>, or GUILDHALL_COPY, may stand in for --store: the copy's director.store`
+--copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store`
 
 // taskContext runs a task context subcommand and prints its result as one JSON document (docs/tasks.md#task-context).
 // add records the next entry of Guildmaster context on an open task, its text from --text or from the file --file
@@ -76,11 +76,13 @@ func (a *App) taskContext(args []string) int {
 			usageErr = fmt.Sprintf("--%s does not apply to task context %s", f.Name, sub)
 		}
 	})
-	cerr := cp.apply(a.Getenv, path, nil, nil)
+	cerr := cp.apply(a, path, nil, nil)
 	switch {
 	case usageErr != "":
 	case cerr != nil:
 		usageErr = cerr.Error()
+	case cp.searched:
+		usageErr = cp.missing(a).Error()
 	case *path == "":
 		usageErr = "--store is required, or --copy"
 	case *repo == "":

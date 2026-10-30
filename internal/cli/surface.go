@@ -16,19 +16,22 @@ import (
 
 // messageSender is the sender `messages send` records for a message to the store at storePath, from where it
 // runs (docs/messaging.md#senders): an Artisan attempt the launcher marked, a session of this copy's Director or of
-// another copy's, or the Guildmaster outside any session or attempt. An exported GUILDHALL_COPY alone is not a
-// session. It is asserted by the environment, not authenticated.
-func messageSender(getenv func(string) string, storePath string) string {
+// another copy's, or the Guildmaster outside any session or attempt. A session's copy is the copy discovery finds
+// from where the command runs, since a Director session runs inside its copy; --copy does not choose it. It is
+// asserted by the environment, not authenticated.
+func messageSender(getenv func(string) string, getwd func() (string, error), storePath string) string {
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
-	copyDir := getenv(copyEnvVar)
 	switch {
 	case getenv(artisan.AttemptEnv) != "":
 		return store.SenderArtisan
 	case getenv(session.NumberEnv) == "":
 		return store.SenderGuildmaster
-	case copyDir == "" || !filepath.IsAbs(copyDir):
+	}
+	copyDir, ok, err := discoverCopy(getwd)
+	switch {
+	case err != nil || !ok:
 		return store.SenderUnknown
 	case samePath(filepath.Join(copyDir, "director.store"), storePath):
 		return store.SenderDirector

@@ -119,11 +119,20 @@ func writePullRequest(t *testing.T, copyDir, task string, pr int) {
 }
 
 // runVersion runs version with args in the environment env, with the build info and git given.
+// cwdKey is the entry of runVersion's env that is not an environment variable but its working directory; with
+// none it runs in a new empty directory.
+const cwdKey = "\x00cwd"
+
 func runVersion(t *testing.T, info func() (*debug.BuildInfo, bool), g VersionGit, env map[string]string, args ...string) (int, string, string) {
 	t.Helper()
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.BuildInfo, app.VersionGit, app.Now = info, g, func() time.Time { return testVersionClock }
 	app.Getenv = func(k string) string { return env[k] }
+	wd := env[cwdKey]
+	if wd == "" {
+		wd = t.TempDir()
+	}
+	app.Getwd = func() (string, error) { return wd, nil }
 	code := app.Run(append([]string{"version"}, args...))
 	return code, stdout.String(), stderr.String()
 }
@@ -209,7 +218,7 @@ func TestVersionForms(t *testing.T) {
 			env := map[string]string{}
 			if tt.copy != "" {
 				dir := versionCopy(t, tt.copy)
-				env[copyEnvVar] = dir
+				env[cwdKey] = markCopy(t, dir)
 				if tt.delivered {
 					writePullRequest(t, dir, "d10", 158)
 				}
@@ -243,12 +252,12 @@ func TestVersionForms(t *testing.T) {
 	}
 }
 
-// TestVersionCopyFlag reads the copy --copy names, over GUILDHALL_COPY.
+// TestVersionCopyFlag reads the copy --copy names, over the copy discovery would find.
 func TestVersionCopyFlag(t *testing.T) {
 	setVersion(t, "v1.2.3")
 	dir := versionCopy(t, "git@github.com:ndrwl/guildhall.git")
 	g := &fakeVersionGit{subjects: map[string]string{testRevision: "x (#158)"}}
-	code, out, _ := runVersion(t, testBuildInfo(nil), g, map[string]string{copyEnvVar: versionCopy(t, "git@github.com:example/app.git")}, "--json", "--copy", dir)
+	code, out, _ := runVersion(t, testBuildInfo(nil), g, map[string]string{cwdKey: markCopy(t, versionCopy(t, "git@github.com:example/app.git"))}, "--json", "--copy", dir)
 	if code != 0 || !strings.Contains(out, `"pr":158`) {
 		t.Errorf("version --json --copy = %d, %s; want pr 158 from the named copy", code, out)
 	}
@@ -267,7 +276,7 @@ func TestVersionSupervisorRelease(t *testing.T) {
 				return s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 7, Token: "boot:7"},
 					Release: tt.release, ConfigDigest: "sha256:" + strings.Repeat("c", 64)})
 			})
-			env := map[string]string{copyEnvVar: dir, session.NumberEnv: "1"}
+			env := map[string]string{cwdKey: markCopy(t, dir), session.NumberEnv: "1"}
 			if code, out, _ := runVersion(t, testBuildInfo(nil), &fakeVersionGit{}, env, "--startup"); code != 0 || out != tt.want {
 				t.Errorf("version --startup = %d\n%s\nwant\n%s", code, out, tt.want)
 			}
@@ -359,7 +368,7 @@ func TestVersionRepositoryGit(t *testing.T) {
 	writePullRequest(t, dir, "d10", 158)
 
 	info := testBuildInfo(func(i *debug.BuildInfo) { i.Settings[3].Value = revision })
-	env := map[string]string{copyEnvVar: dir}
+	env := map[string]string{cwdKey: markCopy(t, dir)}
 	if code, out, stderr := runVersion(t, info, nil, env, "--startup"); code != 0 || out != "guildhall "+revision[:8]+" #158 d10 2026-10-27, 2 behind main (#160, #159)\nwarning: this binary is 2 merges behind main\n" {
 		t.Errorf("version --startup = %d\n%s%s", code, out, stderr)
 	}

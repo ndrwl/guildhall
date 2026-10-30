@@ -43,16 +43,16 @@ type waitResult struct {
 	stderr string
 }
 
-// runWaiter runs `director wait-wake` as session 1's hook, in the background.
+// runWaiter runs `director wait-wake --copy <copy>` as session 1's hook, in the background.
 func runWaiter(copyDir string, args ...string) <-chan waitResult {
 	out := make(chan waitResult, 1)
 	go func() {
 		var stdout, stderr bytes.Buffer
 		app := &App{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader(`{"hook_event_name":"Stop"}`),
 			Getenv: func(k string) string {
-				return map[string]string{"GUILDHALL_COPY": copyDir, session.NumberEnv: "1"}[k]
+				return map[string]string{session.NumberEnv: "1"}[k]
 			}}
-		code := app.Run(append([]string{"director", "wait-wake"}, args...))
+		code := app.Run(append([]string{"director", "wait-wake", "--copy", copyDir}, args...))
 		out <- waitResult{code, stderr.String()}
 	}()
 	return out

@@ -65,8 +65,10 @@ A finished outcome without a readable result is refused, not guessed.
 
 ## Copy
 
-- A Director copy is one directory holding `config.toml`, `director.store` and `state/`, selected with `--copy <dir>` or `GUILDHALL_COPY` ([copies](running.md#copies)).
-- `store init --copy <dir>` creates its store; a copy is not a release install, which [release upgrades](releases.md) design.
+- A Director copy is one directory holding its copy marker, `config.toml`, `director.store` and `state/`, selected with `--copy <dir>` or by copy discovery ([copies](running.md#copies)).
+- `store init --copy <dir>` creates its store and its copy marker; a copy is not a release install, which [release upgrades](releases.md) design.
+- The **copy marker** is the `.guildhall-copy` file at a copy's root that copy discovery looks for ([the copy marker](running.md#the-copy-marker)).
+- **Copy discovery** finds the copy by searching upward from the current directory for the copy marker; a start under the copy's `state/` finds none ([copies](running.md#copies)).
 
 ## Cancel
 

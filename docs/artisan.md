@@ -364,7 +364,7 @@ See [Artisan permissions](adapters.md#artisan-permissions) for inherited setting
 
 `guildhall artisan start`, `stop`, `status` and `resume` name an owned attempt with `--store <file> --state <dir> --repo <id> --task <id> --step <id> --attempt <n>`.
 The repository flag is `--repo`, as on `task start`, `step done` and `decide` ([D53](decisions/0053-cli-role-grammar.md)); the pre-release `--repository` is a usage error, exit code 2, naming `--repo`.
-A [copy](running.md#copies), `--copy <dir>` or `GUILDHALL_COPY`, stands in for `--store` and `--state`; it does not apply to the manual fake-only `artisan start --herdr-session` mode.
+A [copy](running.md#copies), `--copy <dir>` or the copy found from the current directory, stands in for `--store` and `--state`; it does not apply to the manual fake-only `artisan start --herdr-session` mode.
 The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
 `artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`, `ModelDir`) for both.
 For build results, see [code-head output intake](interpreter.md#code-head-output-intake) for the final-commit output contract, workspace requirements and recovery of an already-succeeded empty-output result.
@@ -387,7 +387,7 @@ Refusing an already-decided attempt preserves its ownership record and containme
 4. it supervises the attempt with the stop ladder and heartbeat until it is decided and the unit is empty; a positive `--timeout` starts after worker startup and containment recording and requests the stop ladder when the result wait expires, without bounding ownership acquisition or setup (zero, the default, imposes no result limit), as do the endpoint's `stop` and SIGTERM or SIGHUP;
 5. it records the store outcome with `FinishAttempt`, which releases the ownership;
 6. with `--advance`, it then advances the task over the copy as its [watcher](running.md#the-watcher): `step done` after a finished attempt with a valid result, otherwise `task start`, or `quality judged` for a delivered task's judge attempt, with the output appended to `launcher.log` and an `advance` event in `events.jsonl` for each run; a failed advance is run once more and, failing again, [told to the Director](running.md#the-watcher) as `advance-failed`, and never changes the outcome.
-   `--advance` needs a copy, `--copy` or `GUILDHALL_COPY`, and is a usage error without one; `launch.Process` passes `--copy <dir> --advance` only when the engine runs from a copy.
+   `--advance` needs a copy, `--copy` or the copy found from the current directory, and is a usage error without one; `launch.Process` passes `--copy <dir> --advance` only when the engine runs from a copy.
 
 With a positive `--stall-interval` (zero, the default, observes nothing), the launcher also sends the Director `worker-stalled` from its heartbeat when the worker has been silent past the interval ([heartbeat](#heartbeat)); `launch.Process` passes the engine's `stall_interval` when it is positive.
 

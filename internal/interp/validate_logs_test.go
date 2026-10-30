@@ -74,7 +74,27 @@ func TestValidateLogs(t *testing.T) {
 	}
 }
 
-// TestValidateLogsCapped: a round fetches at most 10 logs, in the order of the checks; the rest name the cap and
+// TestValidateLogsCommandNamesTheCopy: an advance from a copy records the command with --copy, quoted for a POSIX
+// shell, since the Artisan runs it under the copy's state/, where copy discovery finds no copy.
+func TestValidateLogsCommandNamesTheCopy(t *testing.T) {
+	e, f := newValidateEnv(t, backends[0])
+	e.eng.CILogLimit = 5 << 20
+	e.eng.Copy = "/copies/o'neil copy"
+	checks := []forge.Check{actionsCheck("test (ubuntu)", "123", forge.CheckFailed)}
+	f.SetChecks(repoRemote, head, checks...)
+	f.SetLog("123", jobLog)
+	w := result(head, "failed", checks, "test (ubuntu)")
+	l := available("test (ubuntu)", "123", 0)
+	l.Command = `guildhall ci log --copy '/copies/o'\''neil copy' app/t7 123`
+	w.Logs = []logEntry{l}
+	e.script.Expect(buildExp(t, 2, head2, w.digest(t)))
+	want(t, e.toValidate(t), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 2})
+	if got := e.recordedDigest(t, "validate-1-result"); got != w.digest(t) {
+		t.Errorf("validate-1-result is %s, want %s: %+v", got, w.digest(t), e.pullRequestDoc(t, "validate-1-result"))
+	}
+}
+
+// TestValidateLogsCapped:a round fetches at most 10 logs, in the order of the checks; the rest name the cap and
 // keep their command, as does every failed check when log fetching is off or the forge gives no logs.
 func TestValidateLogsCapped(t *testing.T) {
 	var checks []forge.Check

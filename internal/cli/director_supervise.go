@@ -312,7 +312,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		defer func() { _ = ep.Close() }()
 	}
 	c := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
-	c.Dir, c.Env = cmd.Dir, append(os.Environ(), cmd.Env...)
+	c.Dir, c.Env = cmd.Dir, runtimeEnv(os.Environ(), cmd.Dir, cmd.Env)
 	c.Stdin, c.Stdout, c.Stderr = a.Stdin, a.Stdout, a.Stderr
 	select {
 	case s := <-signals:
@@ -844,4 +844,17 @@ func reloadSession(storePath string, n int) (bool, error) {
 		_, err = s.EndDirectorSession(n, "reloaded", d.StateSequence)
 		return false, err
 	})
+}
+
+// runtimeEnv is the runtime's environment: environ, then PWD naming dir as a shell would, then extra. Without it the
+// runtime inherits the supervisor's PWD, so the commands it runs bare report the resolved working directory, and
+// copy discovery finds the copy spelled differently from --copy (macOS's /var is /private/var).
+func runtimeEnv(environ []string, dir string, extra []string) []string {
+	env := append([]string{}, environ...)
+	if dir != "" {
+		if abs, err := filepath.Abs(dir); err == nil {
+			env = append(env, "PWD="+abs)
+		}
+	}
+	return append(env, extra...)
 }

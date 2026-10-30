@@ -42,11 +42,11 @@ func (a *App) qualityJudge(args []string) int {
 		return a.usageError("quality judge: " + err.Error())
 	}
 	n, err := strconv.Atoi(*review)
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError("quality judge: " + ferr.Error())
 	case f.copy.dir == "":
-		return a.usageError("quality judge: a copy is required, --copy or " + copyEnvVar + ", for its quality directory")
+		return a.usageError("quality judge: " + f.copy.missing(a).Error())
 	case fl.NArg() != 1 || !workflow.ValidID(fl.Arg(0)):
 		return a.usageError("quality judge takes one task id")
 	case err != nil || n < 1:
@@ -79,11 +79,11 @@ func (a *App) qualityJudged(args []string) int {
 		return a.usageError("quality judged: " + err.Error())
 	}
 	n, err := strconv.Atoi(*attempt)
-	switch ferr := f.resolve(a.Getenv); {
+	switch ferr := f.resolve(a); {
 	case ferr != nil:
 		return a.usageError("quality judged: " + ferr.Error())
 	case f.copy.dir == "":
-		return a.usageError("quality judged: a copy is required, --copy or " + copyEnvVar)
+		return a.usageError("quality judged: " + f.copy.missing(a).Error())
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("quality judged: unexpected argument %q", fl.Arg(0)))
 	case !workflow.ValidID(*task):
@@ -191,10 +191,12 @@ func (a *App) qualityAgreement(args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("quality agreement: " + err.Error())
 	}
-	if err := f.copy.apply(a.Getenv, &f.store, &f.config, &f.state); err != nil {
+	if err := f.copy.apply(a, &f.store, &f.config, &f.state); err != nil {
 		return a.usageError("quality agreement: " + err.Error())
 	}
 	switch {
+	case f.store == "" && f.config == "" && f.state == "":
+		return a.usageError("quality agreement: " + f.copy.missing(a).Error())
 	case f.store == "" || f.config == "" || f.state == "":
 		return a.usageError("quality agreement: --store, --config and --state are required, or --copy")
 	case fl.NArg() > 0:

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -52,7 +51,7 @@ func testReleaseRenderingKind(t *testing.T, bin, kind string) {
 	if err := os.WriteFile(request, data, 0644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(bin, "render", request).CombinedOutput()
+	out, err := binCommand(t, bin, "render", request).CombinedOutput()
 	if err != nil {
 		t.Fatalf("render: %v\n%s", err, out)
 	}
@@ -89,7 +88,7 @@ func testReleaseRenderingKind(t *testing.T, bin, kind string) {
 			t.Errorf("rendered %s differs from release", file)
 		}
 	}
-	out, err = exec.Command(bin, "render", request).CombinedOutput()
+	out, err = binCommand(t, bin, "render", request).CombinedOutput()
 	if err == nil {
 		t.Fatalf("replaced existing attempt: %s", out)
 	}
@@ -108,7 +107,7 @@ func testReleaseBaseline(t *testing.T, bin string) {
 	if err := os.WriteFile(request, data, 0644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(bin, "render", request).CombinedOutput()
+	out, err := binCommand(t, bin, "render", request).CombinedOutput()
 	if err != nil {
 		t.Fatalf("render: %v\n%s", err, out)
 	}

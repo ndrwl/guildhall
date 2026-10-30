@@ -295,12 +295,8 @@ func TestSpendReportCopyAndHelp(t *testing.T) {
 		t.Fatal(err)
 	}
 	app, out, stderr := newTestApp(nil, nil)
-	app.Getenv = func(key string) string {
-		if key == copyEnvVar {
-			return dir
-		}
-		return ""
-	}
+	markCopy(t, dir)
+	app.Getwd = func() (string, error) { return dir, nil }
 	if code := app.Run([]string{"spend", "report", "--json"}); code != 0 {
 		t.Fatalf("code %d: %s", code, stderr)
 	}
@@ -326,8 +322,9 @@ func TestSpendReportRejectsInvalidInput(t *testing.T) {
 	if code := app.Run([]string{"spend", "report", "--copy", dir, "--json"}); code != 1 {
 		t.Fatalf("missing store code %d", code)
 	}
+	// Only the copy marker --copy writes is there.
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 0 {
-		t.Fatal("created copy state")
+	if len(entries) != 1 || entries[0].Name() != copyMarkerFile {
+		t.Fatalf("created copy state: %v", entries)
 	}
 }

@@ -40,7 +40,7 @@ func TestFakeDirectorSessionCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"/bin/guildhall", DirectorSubcommand, "--role", spec.RolePrompt, "--model", "m", "--effort", "high", "Start."}
-	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"GUILDHALL_COPY=" + c, "A=1"}) {
+	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"A=1"}) {
 		t.Errorf("command = %+v, want %q in %s", cmd, want, spec.Dir)
 	}
 	if cmd, err := (Adapter{}).Session(spec); err == nil || len(cmd.Argv) > 0 {

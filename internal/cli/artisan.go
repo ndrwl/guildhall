@@ -102,12 +102,14 @@ func (f *attemptFlags) register(fl *flag.FlagSet) {
 }
 
 // parse fills the paths from the copy, if one is selected, leaving it in f.copy, and returns the attempt the flags name.
-func (f *attemptFlags) parse(getenv func(string) string) (launch.Attempt, error) {
-	if err := f.copy.apply(getenv, &f.store, nil, &f.state); err != nil {
+func (f *attemptFlags) parse(a *App) (launch.Attempt, error) {
+	if err := f.copy.apply(a, &f.store, nil, &f.state); err != nil {
 		return launch.Attempt{}, err
 	}
 	n, err := strconv.Atoi(f.attempt)
 	switch {
+	case f.store == "" && f.state == "":
+		return launch.Attempt{}, f.copy.missing(a)
 	case f.store == "" || f.state == "" || f.repo == "" || f.task == "" || f.step == "":
 		return launch.Attempt{}, errors.New("--store, --state, --repo, --task, --step and --attempt are required, or --copy, --repo, --task, --step and --attempt")
 	case err != nil || n < 1:
@@ -130,7 +132,7 @@ func (a *App) artisanOwned(cmd string, args []string) int {
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan " + cmd + ": " + err.Error())
 	}
-	at, err := f.parse(a.Getenv)
+	at, err := f.parse(a)
 	switch {
 	case err != nil:
 		return a.usageError("artisan " + cmd + ": " + err.Error())
@@ -254,12 +256,12 @@ func (a *App) artisanStart(args []string) int {
 		if result != "" || workspace != "" || len(herdrExec) > 0 || label != "" || stopOnTimeout {
 			return a.usageError("artisan start: --result, --herdr-workspace, --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
 		}
-		at, err := owned.parse(a.Getenv)
+		at, err := owned.parse(a)
 		if err != nil || prompt == "" || workdir == "" {
 			return a.usageError(fmt.Sprintf("artisan start: --prompt and --workdir are required: %v", err))
 		}
 		if advance && owned.copy.dir == "" {
-			return a.usageError("artisan start: --advance advances the task over a copy, so it needs --copy or " + copyEnvVar)
+			return a.usageError("artisan start: --advance advances the task over a copy: " + owned.copy.missing(a).Error())
 		}
 		if _, err := os.Stat(at.Store); errors.Is(err, fs.ErrNotExist) {
 			return a.fail(fmt.Errorf("artisan start: %w", noStore(at.Store)))

@@ -122,10 +122,10 @@ An envelope cannot declare its own sender: `sender` is not an envelope field, so
 |---|---|
 | `guildhall` | Guildhall sends in process: the engine's outbox, an attempt's launcher, a quality judge and the workspace close sweep. |
 | `artisan` | `messages send` runs with `GUILDHALL_ATTEMPT` set, which the launcher sets to `<repository>/<task>/<step>/<n>` for an attempt's launcher and worker. This takes precedence over every row below, since a worker started from a Director session inherits its session variables. |
-| `director` | `GUILDHALL_SESSION` is set and `GUILDHALL_COPY` names the copy whose store the message is sent to. |
-| `other-director` | `GUILDHALL_SESSION` is set and `GUILDHALL_COPY` names a different copy. |
-| `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set. An exported `GUILDHALL_COPY` alone is not a session. |
-| `unknown` | Anything else, such as `GUILDHALL_SESSION` without `GUILDHALL_COPY`. A message stored with no sender also reads as `unknown`. |
+| `director` | `GUILDHALL_SESSION` is set and [copy discovery](running.md#copies) from where `messages send` runs finds the copy whose store the message is sent to. A Director session runs inside its copy; `--copy` does not choose the sender's copy. |
+| `other-director` | `GUILDHALL_SESSION` is set and copy discovery finds a different copy. |
+| `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set, wherever it runs. |
+| `unknown` | Anything else, such as `GUILDHALL_SESSION` where copy discovery finds no copy. A message stored with no sender also reads as `unknown`. |
 
 The copy's name is not stored.
 A sender is asserted by the sending process's environment, not authenticated: anything that can write the store, or set those variables, can claim any sender but `guildhall`.

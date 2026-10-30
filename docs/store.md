@@ -279,4 +279,5 @@ Usage errors exit 2.
 A record that does not decode, such as a damaged session or wake, is printed as a `problem:` line.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.
 
-Both commands take `--copy <dir>`, or `GUILDHALL_COPY`, in place of `<path>`, naming the copy's `director.store`; a path given with `--copy` must be that file, and a path given without it overrides `GUILDHALL_COPY` ([copies](running.md#copies)).
+Both commands take `--copy <dir>`, or the copy found from the current directory, in place of `<path>`, naming the copy's `director.store`; a path given with `--copy` must be that file, and a path given without it bypasses copy discovery ([copies](running.md#copies)).
+`store init --copy <dir>` also gives the copy its [copy marker](running.md#the-copy-marker), which a bare `store init <path>` does not write.

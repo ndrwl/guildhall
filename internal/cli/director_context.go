@@ -35,7 +35,7 @@ func (a *App) directorContextReport(args []string) int {
 	band := fl.Bool("lanterns", false, "display the Lanterns status band without writing context")
 	err := fl.Parse(args)
 	if err == nil {
-		err = cp.apply(a.Getenv, nil, nil, nil)
+		err = cp.apply(a, nil, nil, nil)
 	}
 	switch {
 	case err != nil:
@@ -43,7 +43,7 @@ func (a *App) directorContextReport(args []string) int {
 	case fl.NArg() > 0:
 		return a.fail(fmt.Errorf("%s: unexpected argument %q", name, fl.Arg(0)))
 	case cp.dir == "":
-		return a.fail(fmt.Errorf("%s: --copy is required, or GUILDHALL_COPY", name))
+		return a.fail(fmt.Errorf("%s: %w", name, cp.missing(a)))
 	}
 	var n int
 	if a.Getenv != nil {

@@ -7,7 +7,8 @@ description: Use as the Director whenever the Guildmaster asks for work, asks wh
 
 The Guildmaster talks to you in plain English and never needs to type a command.
 This skill turns what they say into `guildhall` commands, which are your tools and record everything in the store.
-Your session sets `GUILDHALL_COPY`, so no command needs `--copy`, `--store`, `--config` or `--state`.
+Your session runs inside its copy, and every command finds the copy from its current directory, so no command needs `--copy`, `--store`, `--config` or `--state`.
+Run `guildhall` commands from your session workspace, and to work in a repository use `git -C <path>` rather than `cd`, so you never leave the copy.
 Every command prints JSON; read it, then answer the Guildmaster in plain English with what you did, the ids involved and what happens next.
 When you are unsure what they want, ask before you run anything that changes the store.
 

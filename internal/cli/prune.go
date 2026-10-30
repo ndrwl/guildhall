@@ -30,7 +30,7 @@ import (
 )
 
 const pruneHelp = `Usage: guildhall prune [--dry-run] [--repo <name>] [--task <id>] [--copy <dir>]
-  --copy <dir>   Director copy (or GUILDHALL_COPY)
+  --copy <dir>   Director copy (or the copy found from the current directory)
   --dry-run      list what would be pruned and skipped, removing nothing
   --repo <name>  repository filter (default: all)
   --task <id>    one task (default: every done or cancelled task)
@@ -577,11 +577,11 @@ func (a *App) prune(args []string) int {
 		return a.usageError("prune: --repo and --task take ids")
 	}
 	var storePath string
-	if err := cp.apply(a.Getenv, &storePath, nil, nil); err != nil {
+	if err := cp.apply(a, &storePath, nil, nil); err != nil {
 		return a.usageError("prune: " + err.Error())
 	}
 	if cp.dir == "" {
-		return a.usageError("prune: --copy or GUILDHALL_COPY required\n" + pruneHelp)
+		return a.usageError("prune: " + cp.missing(a).Error() + "\n" + pruneHelp)
 	}
 	cfg, err := config.Load(filepath.Join(cp.dir, "config.toml"))
 	if err != nil {

@@ -10,7 +10,7 @@ guildhall step send-back --store <file> --config <file> --state <dir> --repo <id
 guildhall step send-back --help
 ```
 
-With `GUILDHALL_COPY` set, the path flags can be omitted.
+Run inside a [copy](running.md#copies), the path flags can be omitted.
 `--attempt` names the succeeded attempt, not the next attempt to create.
 The task must be open, the step must run as an Artisan, the named attempt must be the step's latest succeeded attempt, and no task attempt may still be running.
 A new request is also refused if the target or any downstream attempt-running step already has immutable inputs prepared for its next attempt, whether recorded as a binding document or only written to disk before an interrupted record.

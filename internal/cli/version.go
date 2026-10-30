@@ -91,7 +91,7 @@ func (a *App) versionCmd(args []string) int {
 		return a.usageError("version: --startup and --json cannot be used together")
 	}
 	var storePath, cfgPath, state string
-	if err := cp.apply(a.Getenv, &storePath, &cfgPath, &state); err != nil {
+	if err := cp.apply(a, &storePath, &cfgPath, &state); err != nil {
 		// A copy that does not resolve gives no repository fields; version never fails for it.
 		cfgPath, state, storePath = "", "", ""
 	}
