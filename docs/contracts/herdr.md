@@ -22,6 +22,7 @@ It refuses missing or duplicate identities, renamed or detached siblings, interl
 An already-adjacent child needs no move; otherwise it verifies the entire returned order after exactly one `workspace.move` request.
 Ordering errors grant no retry, rollback, rename, close or task-record authority; callers warn and continue launching.
 `ShellCommand` renders argv so the named shell starts exactly that argv, or refuses (D20).
+`ValidSession` and `ValidID` report whether a session name or a workspace, tab or pane id has the shape the client accepts, for callers such as `director start`'s environment binding that check an id before recording it; neither refuses the `default` session.
 
 ## Tests
 

@@ -226,6 +226,13 @@ func decode(out []byte, result any) error {
 	return nil
 }
 
+// ValidSession reports whether name has the shape of an explicit session name New accepts; it does not refuse
+// the default session.
+func ValidSession(name string) bool { return sessionName.MatchString(name) }
+
+// ValidID reports whether id has the shape of a workspace, tab or pane id the client accepts.
+func ValidID(id string) bool { return idShape.MatchString(id) }
+
 func checkID(kind, id string) error {
 	if !idShape.MatchString(id) {
 		return fmt.Errorf("herdr %s id %q is malformed", kind, id)

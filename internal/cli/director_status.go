@@ -213,6 +213,10 @@ type needsMeItem struct {
 	Command    string `json:"command"`
 }
 
+// noPaneKind is the needs_me kind of a recovering or running Director session with no Herdr pane, which no wake
+// reaches (docs/director.md#start).
+const noPaneKind = "no_pane"
+
 // decisionKind is the needs_me kind of an open decision, which waits on the Guildmaster.
 const decisionKind = "decision"
 
@@ -347,6 +351,12 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		if d.State == store.DirectorRecovering {
 			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "recovering",
 				Reason: fmt.Sprintf("Director session %d is recovering and starts no new work until it is ready", d.Number), Command: "guildhall director ready"})
+		}
+		// Every wake to a session with no pane stops at "no pane" before any waiter is tried.
+		if (d.State == store.DirectorRecovering || d.State == store.DirectorRunning) && d.Pane == (store.DirectorPane{}) {
+			out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: noPaneKind,
+				Reason:  fmt.Sprintf("Director session %d has no Herdr pane, so no wake can reach it; messages wait until its next turn; stop this session first, then start it in a Herdr tab", d.Number),
+				Command: "guildhall director start --tab"})
 		}
 	}
 	out.Session.StartQueue = []statusQueuedStart{}
