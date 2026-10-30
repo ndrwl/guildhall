@@ -461,21 +461,54 @@ func repositoryWorkflow(dir string, cfg *config.Config, r config.Repository, tas
 // the defaulted definition (docs/decisions/role-profiles-outside-the-digest.md). A task could bind it only with
 // every role step defaulted, since a role step left without a profile was refused, so the legacy digest is computed
 // with every role profile declared.
+// A shipped name also resolves to an earlier release's shipped revision of it (workflow.Retired), with the
+// repository's current overrides and, again, the legacy defaulted variant, so a task survives an upgrade that changes
+// the shipped bytes (docs/decisions/retired-shipped-revisions.md).
 func boundWorkflow(dir string, cfg *config.Config, r config.Repository, rev workflow.Revision) (*workflow.Definition, error) {
 	w, err := resolveWorkflow(dir, rev.Name, cfg, r)
 	if err != nil {
 		return nil, fmt.Errorf("bound %w", err)
 	}
 	got := w.effective.Digest()
-	if got == rev.Digest {
-		return w.effective, nil
+	if def := matchBound(w.effective, rev); def != nil {
+		return def, nil
 	}
-	legacy := workflow.ApplyProfileDefaults(w.effective, func(string) bool { return true })
-	if legacy.Digest() == rev.Digest && workflow.Validate(legacy) == nil {
-		return legacy, nil
+	shipped, err := shippedDefinitions()
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("%w: bound workflow %q is %s but now resolves to %s; its file or the repository's workflow_overrides changed after the task was created",
+	if !slices.ContainsFunc(shipped, func(d *workflow.Definition) bool { return d.Name == rev.Name }) {
+		return nil, fmt.Errorf("%w: bound workflow %q is %s but now resolves to %s; its file or the repository's workflow_overrides changed after the task was created",
+			interp.ErrRevision, rev.Name, rev.Digest, got)
+	}
+	retired, err := workflow.Retired(rev.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, old := range retired {
+		effective, err := workflow.ApplyOverrides(old, r.WorkflowOverrides)
+		if err != nil || workflow.Validate(effective) != nil {
+			continue
+		}
+		if def := matchBound(effective, rev); def != nil {
+			return def, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: bound workflow %q is %s, which is not a revision shipped with this or an earlier release (with the repository's current workflow_overrides); it now resolves to %s",
 		interp.ErrRevision, rev.Name, rev.Digest, got)
+}
+
+// matchBound returns effective when its digest is rev's, or its legacy variant with every role profile defaulted when
+// that validates and its digest is rev's, and otherwise nil.
+func matchBound(effective *workflow.Definition, rev workflow.Revision) *workflow.Definition {
+	if effective.Digest() == rev.Digest {
+		return effective
+	}
+	legacy := workflow.ApplyProfileDefaults(effective, func(string) bool { return true })
+	if legacy.Digest() == rev.Digest && workflow.Validate(legacy) == nil {
+		return legacy
+	}
+	return nil
 }
 
 // resolveWorkflow returns workflow name with repository r's overrides applied and validated, and the definition

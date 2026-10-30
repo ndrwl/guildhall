@@ -30,5 +30,5 @@ The shipped `default` workflow and a copy's own workflows, such as guildhall's `
 
 ## Rollout
 
-The shipped `bug` digest changes, so an approval of the old resolved bug revision stops applying and an in-flight bug task would strand at its next advance.
+The shipped `bug` digest changes, so an approval of the old resolved bug revision stops applying; an in-flight bug task would have stranded at its next advance, and since [retired shipped revisions](retired-shipped-revisions.md) it resolves to the old bug revision instead.
 A copy whose role profiles change the bug workflow's review step re-approves the new revision once it runs a Guildhall with this change: `guildhall workflow approve --config <config> --repo <id> --kind bug --words-file -` with the Guildmaster's words; approving before the release lands approves the old digest.

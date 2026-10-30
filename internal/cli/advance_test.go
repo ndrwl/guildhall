@@ -44,6 +44,8 @@ type runDirector struct {
 	panes          *typedPanes
 	pane           messaging.DirectorPane
 	advanceContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
+	// installSkills, when set, installs the release skills; otherwise none are.
+	installSkills func(string) error
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -111,6 +113,9 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Executable = os.Executable
 	app.InstallSkills = func(string) error { return nil }
+	if d.installSkills != nil {
+		app.InstallSkills = d.installSkills
+	}
 	app.InstallBaseline = baseline.Install
 	app.Forge = d.forge
 	app.AdvanceContext = d.advanceContext

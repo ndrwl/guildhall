@@ -10,7 +10,9 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
+	"github.com/ndrwl/guildhall/skills"
 )
 
 // rolesTOML has repository "app" on the shipped default with the four role profiles declared and no custom workflow.
@@ -357,5 +359,131 @@ func TestOpenTaskStrandsWhenItsWorkflowFileIsEdited(t *testing.T) {
 	}
 	if got := d.attempts(t); len(got) != 0 {
 		t.Fatalf("attempts = %+v, want none", got)
+	}
+}
+
+// retiredDefault is the shipped default as it was at a10f8e3a, before #166 gave publish its spec input: the revision
+// d46 and d47 bound.
+func retiredDefault(t *testing.T) *workflow.Definition {
+	t.Helper()
+	defs, err := workflow.Retired("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range defs {
+		if d.Digest() == "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d" {
+			return d
+		}
+	}
+	t.Fatalf("no retired default a10f8e3a among %d", len(defs))
+	return nil
+}
+
+// TestBoundWorkflowResolvesARetiredShippedRevision: a task bound to an earlier release's shipped default keeps
+// resolving after the shipped bytes change, with no overrides, with the repository's overrides applied to the
+// retired definition, and as the retired definition with every role profile defaulted.
+func TestBoundWorkflowResolvesARetiredShippedRevision(t *testing.T) {
+	const humanReview = "\n[repository.workflow_overrides.review]\nactor = \"guildmaster\"\n"
+	retired := retiredDefault(t)
+	human, err := workflow.ApplyOverrides(retired, map[string]workflow.Override{"review": {Actor: workflow.GuildmasterActor}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := func(string) bool { return true }
+	for name, c := range map[string]struct {
+		toml  string
+		bound *workflow.Definition
+	}{
+		"no overrides":   {rolesTOML, retired},
+		"overrides":      {rolesTOML + humanReview, human},
+		"profile legacy": {rolesTOML, workflow.ApplyProfileDefaults(retired, all)},
+		"both":           {rolesTOML + humanReview, workflow.ApplyProfileDefaults(human, all)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := writeDirector(t, c.toml)
+			dir := filepath.Join(filepath.Dir(cfg), "workflows")
+			got, err := boundWorkflow(dir, mustLoad(t, cfg), mustRepository(t, cfg, "app"), c.bound.Revision())
+			if err != nil || got.Revision() != c.bound.Revision() {
+				t.Fatalf("boundWorkflow = %v, %v; want %+v", got, err, c.bound.Revision())
+			}
+		})
+	}
+}
+
+// TestBoundWorkflowRefusesAnUnshippedDigest: a digest for a shipped name that no release shipped is refused with the
+// shipped-name wording, and a workflow file keeps its own.
+func TestBoundWorkflowRefusesAnUnshippedDigest(t *testing.T) {
+	cfg := writeDirector(t, rolesTOML)
+	dir := filepath.Join(filepath.Dir(cfg), "workflows")
+	other := workflow.Revision{Name: "default", Digest: "sha256:" + strings.Repeat("e", 64)}
+	_, err := boundWorkflow(dir, mustLoad(t, cfg), mustRepository(t, cfg, "app"), other)
+	if !errors.Is(err, interp.ErrRevision) || !strings.Contains(err.Error(), `bound workflow "default"`) ||
+		!strings.Contains(err.Error(), "not a revision shipped with this or an earlier release") || strings.Contains(err.Error(), "its file") {
+		t.Fatalf("boundWorkflow(other) = %v, want ErrRevision in the shipped-name wording", err)
+	}
+	file := workflow.Revision{Name: "human-review", Digest: other.Digest}
+	_, err = boundWorkflow(dir, mustLoad(t, cfg), mustRepository(t, cfg, "app"), file)
+	if !errors.Is(err, interp.ErrRevision) || !strings.Contains(err.Error(), "its file or the repository's workflow_overrides changed") {
+		t.Fatalf("boundWorkflow(file) = %v, want ErrRevision in the file wording", err)
+	}
+}
+
+// TestRetiredRevisionIsNotAdmittedForANewTask: a retired revision resolves only for a task that bound it: the
+// release ships exactly today's default and bug, and admission refuses a new task on a retired one.
+func TestRetiredRevisionIsNotAdmittedForANewTask(t *testing.T) {
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bug, err := workflow.Bug()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped, err := shippedDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shipped) != 2 || shipped[0].Digest() != def.Digest() || shipped[1].Digest() != bug.Digest() {
+		t.Fatalf("shippedDefinitions = %v, want exactly the current default and bug", shipped)
+	}
+	s, err := store.Open(emptyStore(t), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for _, name := range []string{"default", "bug"} {
+		retired, err := workflow.Retired(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(retired) == 0 {
+			t.Errorf("no retired %s", name)
+		}
+		for _, r := range retired {
+			if err := admitWorkflow(s, acceptedWorkflow{effective: r, file: r}); !errors.Is(err, workflow.ErrNotAuthorized) {
+				t.Errorf("admitWorkflow(retired %s %s) = %v, want ErrNotAuthorized", name, r.Digest(), err)
+			}
+		}
+	}
+}
+
+// TestRetiredShippedTaskStillAdvances: a task bound to the retired default, as d46 and d47 are, starts its grill
+// instead of failing with ErrRevision.
+func TestRetiredShippedTaskStillAdvances(t *testing.T) {
+	d := newRunDirector(t)
+	d.installSkills = skills.Install
+	s, err := store.Open(d.store, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CreateTask("retired", store.Task{Repository: "app", ID: "retired", Title: "Retired task", Workflow: retiredDefault(t).Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("retired")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 }

@@ -8,9 +8,10 @@
 package workflow
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"maps"
 	"regexp"
 	"slices"
@@ -114,6 +115,35 @@ func Default() (*Definition, error) { return shipped(defaultJSON) }
 // stage and build and review take plan's spec; research, plan, build and review are instructed to reproduce the
 // defect, proceed or fail back without acceptance, test it first and check that test.
 func Bug() (*Definition, error) { return shipped(bugJSON) }
+
+//go:embed retired/*.json
+var retiredFS embed.FS
+
+// Retired returns the earlier releases' shipped definitions named name, each the exact bytes that release shipped
+// (retired/<name>-<commit>.json), parsed and validated. They are not shipped by this release and admit no new task:
+// they keep resolvable a task that bound one before the shipped bytes changed
+// (docs/decisions/retired-shipped-revisions.md).
+func Retired(name string) ([]*Definition, error) {
+	files, err := fs.Glob(retiredFS, "retired/*.json")
+	if err != nil {
+		return nil, fmt.Errorf("workflow: retired: %w", err)
+	}
+	var defs []*Definition
+	for _, f := range files {
+		data, err := retiredFS.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("workflow: retired %s: %w", f, err)
+		}
+		def, err := shipped(data)
+		if err != nil {
+			return nil, fmt.Errorf("workflow: retired %s: %w", f, err)
+		}
+		if def.Name == name {
+			defs = append(defs, def)
+		}
+	}
+	return defs, nil
+}
 
 func shipped(data []byte) (*Definition, error) {
 	def, err := Parse(data)
