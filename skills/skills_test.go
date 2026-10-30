@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/testenv"
@@ -26,7 +27,7 @@ import (
 	"github.com/ndrwl/guildhall/skills"
 )
 
-var update = flag.Bool("update", false, "rewrite the digest golden")
+var update = flag.Bool("update", false, "rewrite the digest goldens")
 
 // roleEnv makes the test binary act as go or gofmt in a child process, named by its executable.
 const roleEnv = "GUILDHALL_SKILLS_TEST_ROLE"
@@ -65,7 +66,8 @@ func fakeTool(args []string) int {
 // maxDescription caps a skill's description, the only part a runtime loads before the skill fires.
 const maxDescription = 256
 
-const goldenPath = "testdata/digests.txt"
+// goldenDir holds one sha256sum-format <skill>.sha256 file per shipped skill.
+const goldenDir = "testdata/digests"
 
 // shipped lists the skill directories on disk: every directory of the root except testdata.
 func shipped(t *testing.T) []string {
@@ -110,22 +112,159 @@ func treeDigest(t *testing.T, fsys fs.FS, name string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// goldenDigests reads testdata/digests.txt: one "<hex>  <skill>" line per skill, recorded with sha256sum.
-func goldenDigests(t *testing.T) map[string]string {
-	t.Helper()
-	data, err := os.ReadFile(goldenPath)
+// hexDigest is a sha256 as sha256sum prints it.
+var hexDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// readGolden reads a golden directory: one <skill>.sha256 file per skill, holding its "<hex>  <skill>" sha256sum line.
+// It does not trim a CR, so a CRLF checkout fails here rather than passing unnoticed.
+func readGolden(fsys fs.FS) (map[string]string, error) {
+	files, err := fs.Glob(fsys, "*.sha256")
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	want := map[string]string{}
-	for line := range strings.Lines(string(data)) {
-		hexsum, name, ok := strings.Cut(strings.TrimSuffix(line, "\n"), "  ")
-		if !ok {
-			t.Fatalf("%s: malformed line %q", goldenPath, line)
+	for _, file := range files {
+		data, err := fs.ReadFile(fsys, file)
+		if err != nil {
+			return nil, err
+		}
+		line, ok := strings.CutSuffix(string(data), "\n")
+		hexsum, name, cut := strings.Cut(line, "  ")
+		if !ok || !cut || strings.Contains(line, "\n") || !hexDigest.MatchString(hexsum) {
+			return nil, fmt.Errorf("%s: want one %q line, got %q", file, "<hex>  <skill>", data)
+		}
+		if skill := strings.TrimSuffix(file, ".sha256"); name != skill {
+			return nil, fmt.Errorf("%s: records skill %q, want %q", file, name, skill)
 		}
 		want[name] = hexsum
 	}
+	return want, nil
+}
+
+// checkSkills compares the golden's skills with the shipped ones: a skill with no file and an orphan file each fail.
+func checkSkills(golden map[string]string, names []string) error {
+	var errs []error
+	for _, name := range names {
+		if _, ok := golden[name]; !ok {
+			errs = append(errs, fmt.Errorf("skill %s has no golden %s.sha256", name, name))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(golden)) {
+		if !slices.Contains(names, name) {
+			errs = append(errs, fmt.Errorf("golden %s.sha256 names no shipped skill", name))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// checkGolden compares the golden directory fsys with each skill's tree digest in got.
+func checkGolden(fsys fs.FS, got map[string]string) error {
+	golden, err := readGolden(fsys)
+	if err != nil {
+		return err
+	}
+	errs := []error{checkSkills(golden, slices.Sorted(maps.Keys(got)))}
+	for _, name := range slices.Sorted(maps.Keys(got)) {
+		if want, ok := golden[name]; ok && got[name] != want {
+			errs = append(errs, fmt.Errorf("%s: tree digest %s, golden %s (a CRLF checkout changes it: see .gitattributes)",
+				name, got[name], want))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// writeGolden writes one <skill>.sha256 file per skill of got into dir and removes any orphan .sha256 file.
+func writeGolden(dir string, got map[string]string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for name, hexsum := range got {
+		if err := os.WriteFile(filepath.Join(dir, name+".sha256"), fmt.Appendf(nil, "%s  %s\n", hexsum, name), 0o644); err != nil {
+			return err
+		}
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "*.sha256"))
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if _, ok := got[strings.TrimSuffix(filepath.Base(file), ".sha256")]; !ok {
+			if err := os.Remove(file); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// goldenDigests reads the release's golden directory, failing the test when it is malformed.
+func goldenDigests(t *testing.T) map[string]string {
+	t.Helper()
+	want, err := readGolden(os.DirFS(goldenDir))
+	if err != nil {
+		t.Fatal(err)
+	}
 	return want
+}
+
+// releaseDigests is each shipped skill's tree digest in the release.
+func releaseDigests(t *testing.T) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	for _, name := range shipped(t) {
+		got[name] = treeDigest(t, skills.Release(), name)
+	}
+	return got
+}
+
+func TestGoldenRefusesAMissingOrphanOrMalformedFile(t *testing.T) {
+	const a, b = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	file := func(s string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(s)} }
+	good := fstest.MapFS{"one.sha256": file(a + "  one\n"), "two.sha256": file(b + "  two\n")}
+	got := map[string]string{"one": a, "two": b}
+	if err := checkGolden(good, got); err != nil {
+		t.Fatalf("matching golden: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		fsys fstest.MapFS
+		got  map[string]string
+		want string
+	}{
+		{"missing file", fstest.MapFS{"one.sha256": good["one.sha256"]}, got, "skill two has no golden two.sha256"},
+		{"orphan file", good, map[string]string{"one": a}, "golden two.sha256 names no shipped skill"},
+		{"two lines", fstest.MapFS{"one.sha256": file(a + "  one\n" + a + "  one\n")}, got, "one.sha256: want one"},
+		{"no separator", fstest.MapFS{"one.sha256": file(a + " one\n")}, got, "one.sha256: want one"},
+		{"bad hex", fstest.MapFS{"one.sha256": file("xyz  one\n")}, got, "one.sha256: want one"},
+		{"no newline", fstest.MapFS{"one.sha256": file(a + "  one")}, got, "one.sha256: want one"},
+		{"CRLF", fstest.MapFS{"one.sha256": file(a + "  one\r\n")}, got, `one.sha256: records skill "one\r"`},
+		{"other name", fstest.MapFS{"one.sha256": file(a + "  two\n")}, got, `one.sha256: records skill "two", want "one"`},
+		{"other digest", good, map[string]string{"one": b, "two": b}, "one: tree digest " + b + ", golden " + a},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := checkGolden(tc.fsys, tc.got); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("checkGolden = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestWriteGoldenRemovesAnOrphan(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "gone.sha256"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{"one": strings.Repeat("a", 64)}
+	if err := writeGolden(dir, got); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkGolden(os.DirFS(dir), got); err != nil {
+		t.Error(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "gone.sha256")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("orphan kept: %v", err)
+	}
 }
 
 func TestReleaseHoldsEveryShippedSkill(t *testing.T) {
@@ -139,12 +278,11 @@ func TestReleaseHoldsEveryShippedSkill(t *testing.T) {
 			embedded = append(embedded, e.Name())
 		}
 	}
-	want := slices.Sorted(maps.Keys(goldenDigests(t)))
-	if got := shipped(t); !slices.Equal(got, want) {
-		t.Errorf("skill directories = %q, golden = %q", got, want)
+	if err := checkSkills(goldenDigests(t), shipped(t)); err != nil {
+		t.Error(err)
 	}
-	if !slices.Equal(embedded, want) {
-		t.Errorf("embedded skills = %q, golden = %q", embedded, want)
+	if got := shipped(t); !slices.Equal(embedded, got) {
+		t.Errorf("embedded skills = %q, skill directories = %q", embedded, got)
 	}
 	if _, err := fs.Stat(skills.Release(), "CREDITS.md"); err != nil {
 		t.Errorf("release root has no CREDITS.md: %v", err)
@@ -152,21 +290,14 @@ func TestReleaseHoldsEveryShippedSkill(t *testing.T) {
 }
 
 func TestTreeDigestsMatchGolden(t *testing.T) {
-	want := goldenDigests(t)
+	got := releaseDigests(t)
 	if *update {
-		var out strings.Builder
-		for _, name := range shipped(t) {
-			fmt.Fprintf(&out, "%s  %s\n", treeDigest(t, skills.Release(), name), name)
-		}
-		if err := os.WriteFile(goldenPath, []byte(out.String()), 0o644); err != nil {
+		if err := writeGolden(goldenDir, got); err != nil {
 			t.Fatal(err)
 		}
-		want = goldenDigests(t)
 	}
-	for name, hexsum := range want {
-		if got := treeDigest(t, skills.Release(), name); got != hexsum {
-			t.Errorf("%s: tree digest %s, golden %s (a CRLF checkout changes it: see .gitattributes)", name, got, hexsum)
-		}
+	if err := checkGolden(os.DirFS(goldenDir), got); err != nil {
+		t.Error(err)
 	}
 }
 

@@ -14,7 +14,7 @@ Pure over embedded files: no interface and no double.
 
 ## Tests
 
-`baseline_test.go`: the root holds exactly the two roles and a guide per Artisan kind of `workflow.Kinds` and no standards; every file is frontmatter-free, LF-only, ends in one newline and has one sentence per line; the sha256sum listing of every file equals `testdata/digests.txt`, with LF checkout enforced by `.gitattributes`; `Install` writes the exact bytes and refuses a non-empty directory.
+`baseline_test.go`: the root holds exactly the two roles and a guide per Artisan kind of `workflow.Kinds` and no standards; every file is frontmatter-free, LF-only, ends in one newline and has one sentence per line; every file's sha256sum line equals its own golden `testdata/digests/<path>.sha256` (one line per embedded file, no orphans), with LF checkout enforced by `.gitattributes`; `Install` writes the exact bytes and refuses a non-empty directory.
 `internal/cli/baseline_test.go` renders every Artisan stage of the default workflow on a copy holding only `config.toml`, sees a copy's `roles/artisan.md` and standard win over the release with the manifest saying so, refuses a kind with no guide in either root, and refuses rather than replaces a copy file whose stat fails for a reason other than absence (skipped on Windows, which reports that fixture as absent).
 `cmd/guildhall` renders a request with no baseline through the built binary and finds the release role and guide in the prompt.
 They were written red first ([red run](../evidence/release-baseline-2026-10-22-red.txt)).
