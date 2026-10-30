@@ -25,6 +25,8 @@ guildhall step finish --repo app --task t-12 --step grill --attempt 1 --summary 
 
 6. Acknowledge the message with `guildhall messages ack director <id>`.
 
+Once a grill has finished, when the Guildmaster or you want a design before build, run `task design` with `guildhall-director-tasks`.
+
 `guildhall step finish` copies each file into the task's working directory, records the attempt's result and advances the task, printing what it waits for next.
 It is refused when the attempt is not the step's current one or is already finished, so a repeated finish never finishes the wrong attempt.
 

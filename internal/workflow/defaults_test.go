@@ -102,7 +102,7 @@ func TestApplyProfileDefaultsSkipsAGuildmasterReview(t *testing.T) {
 }
 
 func TestRoleProfile(t *testing.T) {
-	for typ, want := range map[string]string{"research": "researcher", "plan": "planner", "build": "builder", "review": "reviewer", "rebase": "rebaser", "refute": "", "document-review": "", "grill": ""} {
+	for typ, want := range map[string]string{"research": "researcher", "plan": "planner", "build": "builder", "review": "reviewer", "rebase": "rebaser", "design": "designer", "refute": "", "document-review": "", "grill": ""} {
 		if got := RoleProfile(typ); got != want {
 			t.Errorf("RoleProfile(%q) = %q, want %q", typ, got, want)
 		}
@@ -110,9 +110,9 @@ func TestRoleProfile(t *testing.T) {
 }
 
 func TestApplyProfileDefaultsLeavesARebaseStep(t *testing.T) {
-	def := &Definition{Name: "x", Steps: []Step{{ID: "r", Type: "rebase", Version: 1}}}
-	if p := profiles(ApplyProfileDefaults(def, declared("rebaser"))); len(p) != 0 {
-		t.Fatalf("profiles = %v, want none: the legacy defaults never covered rebase", p)
+	def := &Definition{Name: "x", Steps: []Step{{ID: "r", Type: "rebase", Version: 1}, {ID: "d", Type: "design", Version: 1}}}
+	if p := profiles(ApplyProfileDefaults(def, declared("rebaser", "designer"))); len(p) != 0 {
+		t.Fatalf("profiles = %v, want none: the legacy defaults never covered rebase or design", p)
 	}
 }
 

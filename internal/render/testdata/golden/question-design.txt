@@ -1,0 +1,9 @@
+Design decision needed for app/t7, design round 1, decision design-1.
+
+approved makes the design an input to plan, which runs again if it already ran; changes_requested reopens the grill with your answer.
+
+Inputs:
+- brief: tasks/app/t7/design-1/brief.md (sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd)
+- design: tasks/app/t7/designer-1/design.md (sha256:efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef)
+
+Answer with one of: approved, changes_requested.

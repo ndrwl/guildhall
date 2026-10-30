@@ -231,7 +231,7 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | `adapter` | Required: the runtime adapter, such as `claude`. |
 | `model`, `effort` | The attempt's [runtime settings](adapters.md#runtime-settings), which defines defaults, supported values and refusals. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
-| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `planner`, `rebaser`, `reviewer` or `researcher`, shipped or declared, gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant). |
+| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `designer`, `planner`, `rebaser`, `reviewer` or `researcher`, shipped or declared, gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant). |
 
 A profile names no credential.
 For how the copy/profile reference reaches the runtime, see [Artisan permissions](adapters.md#artisan-permissions).
@@ -252,21 +252,24 @@ Profiles keep role names, and each step type with a role has a **role profile**:
 | `build` | `builder` |
 | `review` | `reviewer` |
 | `rebase` (the merge queue's synthetic rebaser step) | `rebaser` |
+| `design` (a design round's synthetic designer step) | `designer` |
 
 A step that an Artisan runs and that names no `profile` runs under its type's role profile (`workflow.EffectiveProfile`).
 An explicit step profile always wins, a review overridden to the Guildmaster gets none, and other step types, such as `refute` and `document-review`, get none, so they must name a profile and are refused without one.
 The role profile is resolved when the step is checked, launched and rendered, never written into the workflow definition, so it is outside the workflow's digest: a task on the shipped default or bug workflow binds the shipped revision byte for byte and needs no approval, and declaring, changing or removing a role profile neither changes which revision a new task binds nor strands an open one ([decision](decisions/role-profiles-outside-the-digest.md)).
 That includes the reviewer: changing the `reviewer` profile changes who reviews without the Guildmaster's approval, while a profile written into a review step is still a weakening ([workflow-edit authority](#workflow-edit-authority)).
 
-Guildhall ships the five role profiles, `researcher`, `planner`, `builder`, `reviewer` and `rebaser`, each `adapter = "claude"` with no `model`, `effort`, `role` or `allowed_tools`, so each runs the adapter's default model with its shipped default grant.
+Guildhall ships the six role profiles, `researcher`, `planner`, `builder`, `reviewer`, `rebaser` and `designer`, each `adapter = "claude"` with no `model`, `role` or `allowed_tools`, so each runs the adapter's default model with its shipped default grant; each has no `effort` but `designer`, whose effort is `high`.
 When a Director config is parsed, each shipped profile it does not declare is added to its profiles, so every check that a profile is declared, such as a repository grant, `claude_skills_profile_<name>`, `quality_judge_profiles` and the `director start` preflight, accepts the shipped names; a Steward config gets none.
 A copy's own `[profile.<name>]` with a shipped name replaces the shipped profile as a whole, not key by key; one that sets no `allowed_tools` still gets the shipped grant, so choosing only a `model` or `effort` keeps the permissions.
+So a copy's `[profile.designer]` without `effort` runs at `default_effort`, not at the shipped `high`.
 So a copy with no `[profile.*]` section runs the shipped default and bug workflows, every role step on claude.
 To deliberately run a no-model demo, name an explicit profile whose `adapter = "fake"`, or declare the role profiles with it.
 
 One profile is chosen by name rather than by a workflow step: `rebaser` runs the rebaser Artisan of a `minor_conflicts` [rebase](#rebase-settings), the synthetic step `<step>-rebase`, which resolves a few conflicts and reports whether resolving them changed behaviour.
 The shipped one runs with the rebaser's shipped grant; the example config shows a copy section giving it a small model and low effort, and repository grants adding a repository's test command.
 The narrowed review that follows, `<step>-rebase-review`, runs under the effective profile of the workflow's review step, the `reviewer` role profile when that step names none.
+Another is `designer`, which runs the designer Artisan of a [design round](tasks.md#design-rounds), the synthetic step `designer`, which writes the design the Guildmaster decides on before build.
 For when profile settings are checked, see [runtime settings](adapters.md#runtime-settings).
 
 ### The director table

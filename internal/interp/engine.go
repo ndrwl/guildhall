@@ -39,6 +39,9 @@ const (
 	AttemptRetried EventKind = "attempt-retried"
 	// StepSentBack: the Director sends a succeeded Artisan step back as a new attempt with Reason as feedback.
 	StepSentBack EventKind = "step-sent-back"
+	// DesignRequested: the Director asks for a design round of a feature task before its first build, with Reason as
+	// the brief (docs/interpreter.md#design-rounds).
+	DesignRequested EventKind = "design-requested"
 )
 
 // Event is one thing that happened to a task, given to Engine.Advance.
@@ -52,10 +55,11 @@ type Event struct {
 	Attempt int
 	// Decision is the id of the answered decision (DecisionAnswered only).
 	Decision string
-	// Reason is the Director's reason for a retry (AttemptRetried), or required feedback for StepSentBack.
+	// Reason is the Director's reason for a retry (AttemptRetried), required feedback for StepSentBack, or the
+	// required brief for DesignRequested.
 	// A retry binds it to the next attempt, whose prompt quotes it, and records it as a Director message once that
-	// attempt launches; a retry repeated after a refusal keeps the first bound reason. Send-back records an
-	// immutable input document.
+	// attempt launches; a retry repeated after a refusal keeps the first bound reason. Send-back and a design request
+	// record an immutable input document.
 	Reason string
 }
 
@@ -294,6 +298,12 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 			}
 		}
 	}
+	// An open design round runs before, and instead of, any workflow step (docs/interpreter.md#design-rounds).
+	if done, next, err := r.designRun(); err != nil {
+		return Next{}, fmt.Errorf("interp: %s/%s design round: %w", t.Repository, t.ID, err)
+	} else if !done {
+		return next, nil
+	}
 	gated := false
 	for _, step := range def.Steps {
 		// The dependency gate stands before the first step not run by the Director, whatever its kind, and before
@@ -420,6 +430,9 @@ func (r *run) startRequest(s workflow.Step, n int) store.StartRequest {
 	if r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt+1 == n {
 		return store.StartRequest{Kind: store.StartByRetry, Retried: r.retry.Attempt}
 	}
+	if s.Type == designKindType {
+		return store.StartRequest{Kind: store.StartByDesign}
+	}
 	switch r.event.Kind {
 	case TaskCreated:
 		return store.StartRequest{Kind: store.StartByTask}
@@ -446,7 +459,8 @@ func (r *run) intake(ev Event) error {
 		case i >= 0:
 			s = r.def.Steps[i]
 		case ok:
-			// A rebaser or narrowed review attempt, run under a deliver or validate step (docs/interpreter.md#tiered-rebase).
+			// A rebaser or narrowed review attempt, run under a deliver or validate step (docs/interpreter.md#tiered-rebase),
+			// or a design round's designer attempt (docs/interpreter.md#design-rounds).
 			s = synthetic
 		default:
 			return fmt.Errorf("interp: %w: no attempt %d of step %q", ErrEvent, ev.Attempt, ev.Step)
@@ -459,6 +473,8 @@ func (r *run) intake(ev Event) error {
 		return r.retried(ev)
 	case StepSentBack:
 		return r.sentBack(ev)
+	case DesignRequested:
+		return r.designRequested(ev)
 	case DecisionAnswered:
 		d := r.decision(ev.Decision)
 		switch {
@@ -476,10 +492,11 @@ func (r *run) intake(ev Event) error {
 // retried validates a retry of attempt n of a step: n must have finished failed or stopped and be the step's
 // latest attempt, which the walk then follows with the next. When attempt n+1 already exists the event is a
 // replay: it resends the reason once n+1 has launched, launching it first when it has not; any other attempt is
-// refused.
+// refused. Besides workflow steps, a design round's designer attempts are retried, within the same round.
 func (r *run) retried(ev Event) error {
 	a := r.attempt(ev.Step, ev.Attempt)
-	if !slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == ev.Step }) || a == nil {
+	_, designer := DesignSteps(r.def)
+	if !slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == ev.Step }) && ev.Step != designer || a == nil {
 		if i := r.queuedStart(ev.Step, ev.Attempt); i >= 0 {
 			return fmt.Errorf("interp: %w: no attempt %d of step %q: %s", ErrEvent, ev.Attempt, ev.Step, r.queuedText(i))
 		}
@@ -717,8 +734,8 @@ func (r *run) admissionHeld() (bool, error) {
 	return held, nil
 }
 
-// start records the step's binding and its next attempt, then launches it with its wired inputs plus
-// the engine's extras (previous outcome, loop feedback).
+// start records the step's binding and its next attempt, then launches it with its wired inputs, for plan the
+// approved design (designInput), plus the engine's extras (previous outcome, loop feedback).
 func (r *run) start(s workflow.Step) (Next, error) {
 	if held, err := r.admissionHeld(); err != nil {
 		return Next{}, err
@@ -741,6 +758,9 @@ func (r *run) start(s workflow.Step) (Next, error) {
 				return Next{}, err
 			}
 			b.Revisions = &want
+		}
+		if d := r.designInput(s); d != nil {
+			inputs = append(inputs, *d)
 		}
 		extras, err := r.extras(s, n)
 		if err != nil {

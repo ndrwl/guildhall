@@ -49,7 +49,7 @@ func directorCopy(t *testing.T, table string, steps ...string) string {
 		t.Fatal(err)
 	}
 	// A role profile the table declares replaces the fixture's fake one.
-	for _, role := range []string{"researcher", "planner", "builder", "reviewer", "rebaser"} {
+	for _, role := range []string{"researcher", "planner", "builder", "reviewer", "rebaser", "designer"} {
 		if section := "[profile." + role + "]"; strings.Contains(table, section) {
 			b = bytes.Replace(b, []byte(section+"\nadapter = \"fake\"\n"), nil, 1)
 		}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -103,6 +104,9 @@ type taskTimeline struct {
 	FullReviews []timedFullReview `json:"full_reviews"`
 	// Context is the Guildmaster context the Director added to the task, in the order it was added.
 	Context []timedContext `json:"context"`
+	// DesignRounds is how many design rounds the task has used, counted from their briefs; absent when none. Each
+	// round's designer attempts and decision are among Attempts and Decisions.
+	DesignRounds int `json:"design_rounds,omitempty"`
 	// DependencyOverride is the Director's dependency override, with its reason; absent when there is none.
 	DependencyOverride *timedOverride `json:"dependency_override,omitempty"`
 	// Priority is the task's priority now, and PriorityChanges every level set, in order.
@@ -192,6 +196,7 @@ func timeline(h store.TaskHistory) taskTimeline {
 		t.OpenedAt, t.AnsweredAt, t.WaitSeconds, t.seq = span(byRecord["decision/"+d.ID], "open-decision", "answer-decision")
 		out.Decisions = append(out.Decisions, t)
 	}
+	out.DesignRounds = interp.DesignRounds(h.Documents)
 	for _, d := range h.Documents {
 		if d.Review == nil {
 			continue

@@ -155,6 +155,23 @@ You may choose any appropriate recovery; the available options are not a fixed p
 It does not answer a Guildmaster decision or approve a merge.
 Use `step retry`, not send-back, for a failed or stopped attempt.
 
+## Design rounds
+
+When the Guildmaster or you want a design before build, run `task design` with a brief that says what the design must show and why; whether to run one, and how many, is your call:
+
+```sh
+guildhall task design --repo app --task t-12 --brief - <<'BRIEF'
+Show two layouts for the export dialog as text mock-ups, so the Guildmaster can choose before anything is planned.
+BRIEF
+```
+
+A `designer` Artisan writes the design, and the task waits for the Guildmaster's decision `design-<n>`: put its design to them, record their answer with `guildhall decide answer`, then `guildhall task start --decision design-<n>`.
+You may show them the design on any surface, but the decision is bound to the stored document, so answer for that one.
+`approved` gives the design to plan, which runs again if it already ran, and the plan is asked for acceptance again; `changes_requested` reopens the grill, handed to you with their answer, your last notes and the design, and once it finishes you may ask for another round.
+A failed designer is retried with `guildhall step retry --step <step>`, naming the step the task's wait names (`designer`, or `round-designer` on a workflow that already has a `design` or `designer` step), within the same round; repeating `task design` with the same brief is a safe replay only while its round is open, and once the round is answered it asks for the next round.
+It is refused, recording nothing, for a bug task ("bugs have no design round"), once build has started, while a round is open, while any attempt runs and until the grill has succeeded.
+`task show` and `task timeline` print `design_rounds`, the rounds used.
+
 ## Rulings and full review
 
 When a reviewer's finding is outside the accepted spec, repeats another or belongs in a follow-up, you may rule on it instead of waiting for the reviewer:

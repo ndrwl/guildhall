@@ -66,3 +66,8 @@ Avoid: <rejected words>.
 ```
 
 The notes are complete when every decision of the tree appears under Decisions with the Guildmaster's answer, so the plan stage can follow them without asking again.
+
+## A resumed grill
+
+When the Guildmaster's changes_requested sends the task back to the grill, from a loop or a design round, the stage's inputs include `feedback`, their request; `previous`, your last notes; and `reviewed`, the document they asked changes to, such as the design.
+Start from them rather than starting over: keep every decision in `previous` that still stands, put the request to the Guildmaster in rounds as before, and record the full notes again, the new decisions with the ones that stand.

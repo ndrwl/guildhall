@@ -42,11 +42,13 @@ func (r *run) dependencyGate(s workflow.Step) (held bool, next Next, err error) 
 }
 
 // pastGate reports whether the task has an attempt of any step not run by the Director: it passed the gate before,
-// so a loop, retry or send-back to that step is never held again.
+// so a loop, retry or send-back to that step is never held again. A design round's designer attempt does not count,
+// so it never lets research past the gate.
 func (r *run) pastGate() bool {
+	_, designer := DesignSteps(r.def)
 	return slices.ContainsFunc(r.attempts, func(a store.StageAttempt) bool {
 		i := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == a.Step })
-		return i < 0 || r.def.Steps[i].Actor() != workflow.DirectorActor
+		return a.Step != designer && (i < 0 || r.def.Steps[i].Actor() != workflow.DirectorActor)
 	})
 }
 

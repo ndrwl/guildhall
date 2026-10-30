@@ -185,3 +185,25 @@ func TestQueuedStartWritesOnlyItsEntry(t *testing.T) {
 		t.Fatalf("StartQueue after leaving = %+v, want it empty", got)
 	}
 }
+
+// TestDesignStartRequestValidates: a design round's designer start queues under the design request, which names no
+// retried attempt, and an unknown request is still refused.
+func TestDesignStartRequestValidates(t *testing.T) {
+	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
+	s := capStore(t, &now)
+	for _, id := range []string{"t1", "t2"} {
+		mustCreate(t, s, "task-"+id, sampleTask("app", id))
+	}
+	if _, err := s.StartCappedAttempt("start-t1", "app", "t1", "build", AttemptCaps{MaxRunning: 1}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.StartCappedAttempt("start-t2", "app", "t2", "designer", AttemptCaps{MaxRunning: 1, Queue: &StartRequest{Kind: StartByDesign}})
+	if q, ok := errors.AsType[*StartQueued](err); !ok || q.Entry.Kind != StartByDesign || q.Entry.Retried != 0 {
+		t.Fatalf("designer start past the running cap = %v, want it queued under the design request", err)
+	}
+	for _, bad := range []StartRequest{{Kind: StartByDesign, Retried: 1}, {Kind: "designer"}} {
+		if _, err := s.StartCappedAttempt("start-t2-bad", "app", "t2", "designer", AttemptCaps{MaxRunning: 1, Queue: &bad}); !errors.Is(err, ErrInvalid) {
+			t.Errorf("start under %+v = %v, want ErrInvalid", bad, err)
+		}
+	}
+}

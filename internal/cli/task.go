@@ -36,8 +36,14 @@ var taskUsage = `usage:
   guildhall task reconcile --store <path> --config <director.toml> --state <dir> --repo <id> <task>
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
   guildhall task context add|list ... (guildhall task context for its usage)
+<<<<<<< a6992388274f2c14859a9aadb17e92d3380013e6
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
 the copy's director.store, config.toml and state
+=======
+  guildhall task design --repo <id> --task <id> --brief <file|-> ... (guildhall task design --help for its usage)
+--copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
+config.toml and state
+>>>>>>> 8226164995d9379a68abe2f2db0469ea22e5c0e1
 --title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
 from a file or - for standard input
 --kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
@@ -126,6 +132,8 @@ type taskDetail struct {
 	Decisions []store.Decision     `json:"decisions"`
 	// Context is the Guildmaster context the Director added to the task, by number.
 	Context []store.TaskContext `json:"context"`
+	// DesignRounds is how many design rounds the task has used, counted from their briefs; absent when none.
+	DesignRounds int `json:"design_rounds,omitempty"`
 }
 
 // task runs a task subcommand against an existing store and prints its result as one JSON document (docs/tasks.md).
@@ -149,6 +157,9 @@ func (a *App) task(args []string) int {
 	}
 	if sub == "context" {
 		return a.taskContext(args[1:])
+	}
+	if sub == "design" {
+		return a.taskDesign(args[1:])
 	}
 	if sub == "finding" {
 		if len(args) < 2 || args[1] != "rule" {
@@ -606,6 +617,7 @@ func showTask(s *store.Store, repo, id string) (taskDetail, error) {
 	d.Documents = append(d.Documents, documents...)
 	d.Decisions = append(d.Decisions, decisions...)
 	d.Context = append(d.Context, contexts...)
+	d.DesignRounds = interp.DesignRounds(documents)
 	return d, nil
 }
 

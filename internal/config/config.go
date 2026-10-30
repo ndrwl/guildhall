@@ -461,11 +461,13 @@ func Parse(data []byte) (*Config, error) {
 }
 
 // ShippedProfiles are the role profiles this release gives every Director copy, one per role
-// (workflow.RoleProfile), so a role step always resolves a profile. Each runs the claude adapter with no model,
-// effort, role or allowed_tools, so it gets the adapter's default model and its shipped default grant
-// (docs/adapters.md#artisan-permissions). A copy's own [profile.<name>] replaces the shipped one as a whole.
+// (workflow.RoleProfile), so a role step always resolves a profile. Each runs the claude adapter with no model, role
+// or allowed_tools, so it gets the adapter's default model and its shipped default grant
+// (docs/adapters.md#artisan-permissions), and with no effort but designer's, which is high. A copy's own
+// [profile.<name>] replaces the shipped one as a whole, so a copy designer without effort runs at default_effort.
 var ShippedProfiles = map[string]Profile{
 	"builder":    {Adapter: "claude"},
+	"designer":   {Adapter: "claude", Effort: "high"},
 	"planner":    {Adapter: "claude"},
 	"rebaser":    {Adapter: "claude"},
 	"researcher": {Adapter: "claude"},

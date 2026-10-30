@@ -101,7 +101,7 @@ The caps are not part of the request, so a replay returns its receipt whatever t
 
 ### The start queue
 
-The per-repository `start-queue` bucket holds one entry per task and step, keyed `<task>/<step>`, for a start the running cap did not admit ([decision](decisions/queue-over-cap-starts.md)): the attempt number it will start, its `queued_at` by the store's clock, and the `request` that asked for it, `start`, `decision`, `retry` with `retried`, the retried attempt, `send-back` or `engine`.
+The per-repository `start-queue` bucket holds one entry per task and step, keyed `<task>/<step>`, for a start the running cap did not admit ([decision](decisions/queue-over-cap-starts.md)): the attempt number it will start, its `queued_at` by the store's clock, and the `request` that asked for it, `start`, `decision`, `retry` with `retried`, the retried attempt, `send-back`, `design`, for the designer attempt of a [design round](interpreter.md#design-rounds), or `engine`.
 `StartQueue` reads every repository's entries in one transaction, each with its task's priority read then, ordered by `OrderStartQueue`: priority, then `queued_at`, then task id, then repository and step.
 Entries of tasks that are not open, and of attempts since recorded, are left out.
 

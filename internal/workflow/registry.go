@@ -170,6 +170,17 @@ var kinds = []Kind{
 		Actors:   artisanOnly,
 	},
 	{
+		// Design writes the design a design round asks for (docs/interpreter.md#design-rounds). The engine runs it, as
+		// the synthetic designer step of a round the Director requested with `task design`, never from a workflow: its
+		// brief says what the design must show and why, and its context is the latest grill notes, research notes and
+		// spec, when they exist.
+		Type: "design", Version: 1,
+		Inputs:   []Port{{Name: "brief", Type: Document}, {Name: "context", Type: Document, Optional: true, Many: true}},
+		Outputs:  []Port{{Name: "design", Type: Document}},
+		Settings: artisan,
+		Actors:   artisanOnly,
+	},
+	{
 		// Review reviews a code head against the spec the build was given; its outcome is bound to the head (Subject.CodeHead).
 		Type: "review", Version: 1,
 		Inputs:   []Port{specPort, {Name: "head", Type: CodeHead}},

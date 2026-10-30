@@ -81,8 +81,12 @@ func (r *run) narrowStep(owner string) (workflow.Step, error) {
 	return workflow.Step{ID: owner + "-rebase-review", Type: rv.Type, Version: rv.Version, Settings: rv.Settings}, nil
 }
 
-// syntheticStep returns the synthetic step named id of a deliver or validate step of the workflow.
+// syntheticStep returns the synthetic step named id of a deliver or validate step of the workflow, or of the task's
+// design rounds.
 func (r *run) syntheticStep(id string) (workflow.Step, bool) {
+	if _, designer := DesignSteps(r.def); id == designer {
+		return r.designerStep(), true
+	}
 	for _, s := range r.def.Steps {
 		if s.Type != "deliver" && s.Type != "validate" {
 			continue

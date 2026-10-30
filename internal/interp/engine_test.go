@@ -122,6 +122,9 @@ func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*s
 				"planner":    {Adapter: interp.MockAdapter},
 				"builder":    {Adapter: interp.MockAdapter},
 				"reviewer":   {Adapter: interp.MockAdapter},
+				// The fixture mirrors the shipped designer's effort, so the design tests prove it reaches the launch;
+				// config.ShippedProfiles' own value is tested in internal/config.
+				"designer": {Adapter: interp.MockAdapter, Effort: "high"},
 				// The Guildhall repository's three code reviews (report.md §7.1).
 				"reviewer-opus":        {Adapter: interp.MockAdapter},
 				"reviewer-opus-strict": {Adapter: interp.MockAdapter},
