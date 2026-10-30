@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -799,5 +800,14 @@ func TestDirectorResumeWithOnlyDecisionsTypesNothing(t *testing.T) {
 	}
 	if doc.Wake == nil || *doc.Wake != (messaging.ResumeWake{Decision: store.WakeQueued, Reason: "nothing waiting"}) || len(panes.lines) != 0 {
 		t.Errorf("resume printed wake %+v and typed %q; want queued: nothing waiting", doc.Wake, panes.lines)
+	}
+}
+
+// TestWaitingKindsLeavesTheGuildmastersOut: a due install waits on the Guildmaster, as an open decision does, so
+// neither wakes the Director.
+func TestWaitingKindsLeavesTheGuildmastersOut(t *testing.T) {
+	got := waitingKinds([]needsMeItem{{Kind: "retry"}, {Kind: decisionKind}, {Kind: installKind, Count: 3}, {Kind: "messages", Count: 2}})
+	if want := map[string]int{"retry": 1, "messages": 2}; !maps.Equal(got, want) {
+		t.Errorf("waitingKinds = %v, want %v", got, want)
 	}
 }

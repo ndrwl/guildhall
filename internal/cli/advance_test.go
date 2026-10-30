@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -48,6 +50,9 @@ type runDirector struct {
 	installSkills func(string) error
 	// stopAttempt, when set, is the App's StopAttempt.
 	stopAttempt func(context.Context, launch.Attempt) (launch.StopReport, error)
+	// buildInfo and versionGit, when set, are the App's.
+	buildInfo  func() (*debug.BuildInfo, bool)
+	versionGit VersionGit
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -122,6 +127,7 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app.Forge = d.forge
 	app.AdvanceContext = d.advanceContext
 	app.StopAttempt = d.stopAttempt
+	app.BuildInfo, app.VersionGit = d.buildInfo, d.versionGit
 	if d.workspaces != nil {
 		app.Workspaces = d.workspaces
 	}
@@ -576,11 +582,90 @@ func TestTaskStartAndStepDoneUsage(t *testing.T) {
 // through the App's forge and opens the merge decision; answering merge squash-merges it and the task is done.
 func TestTaskDelivers(t *testing.T) {
 	d := newRunDirectorWith(t, "publish.toml")
-	const remote, head = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
 	f := forgetest.NewFake()
+	d.forge = f
+	merge := d.deliverToMerge(t)
+	if got := merge(); got != `{"wait":"done","step":"deliver"}` {
+		t.Fatalf("after the merge answer: %s", got)
+	}
+	if prs := f.PullRequests(deliveryRemote); prs[0].State != forge.Merged {
+		t.Errorf("pull request = %+v, want merged", prs[0])
+	}
+	// Each attempt ran in the task's workspace, a worktree of the repository on the branch publish pushes.
+	ws := git.Workspace{Repository: appRepo, Remote: deliveryRemote, Branch: "guildhall/t-1", Dir: filepath.Join(d.state, "app", "t-1", "work")}
+	if calls := d.workspaces.Calls(); len(calls) != 2 || calls[0] != ws || calls[1] != ws {
+		t.Errorf("workspaces = %+v, want %+v for the plan and build attempts", calls, ws)
+	}
+	// The merge retired it.
+	if _, err := os.Stat(ws.Dir); !os.IsNotExist(err) {
+		t.Errorf("workspace after the merge: %v, want it removed", err)
+	}
+}
+
+// TestMergeRefreshesTheVersionRef: the advance that merges a task into the running binary's own repository
+// fetches its default branch for the behind-main count once and records when; one in another repository, or an
+// advance that leaves the task open, does not, and a fetch that fails changes nothing about the merge.
+func TestMergeRefreshesTheVersionRef(t *testing.T) {
+	for name, c := range map[string]struct {
+		module   string
+		fetchErr error
+		fetches  int
+	}{
+		"own repository":     {module: "github.com/example/app", fetches: 1},
+		"another repository": {module: testModule},
+		"failing fetch":      {module: "github.com/example/app", fetchErr: errors.New("could not read from remote"), fetches: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := newRunDirectorWith(t, "publish.toml")
+			d.forge = forgetest.NewFake()
+			g := &fakeVersionGit{fetchErr: c.fetchErr}
+			d.versionGit = g
+			d.buildInfo = testBuildInfo(func(i *debug.BuildInfo) { i.Main.Path = c.module })
+			merge := d.deliverToMerge(t)
+			if len(g.calls) != 0 {
+				t.Fatalf("git calls before the merge = %q, want none", g.calls)
+			}
+			if got := merge(); got != `{"wait":"done","step":"deliver"}` {
+				t.Fatalf("after the merge answer: %s", got)
+			}
+			if want := slices.Repeat([]string{"fetch " + deliveryRemote + " " + versionMainRef}, c.fetches); !slices.Equal(g.calls, want) {
+				t.Errorf("git calls = %q, want %q", g.calls, want)
+			}
+			fetched := readFetchTime(filepath.Join(d.state, versionFetchFile), appRepo)
+			if want := c.fetches > 0 && c.fetchErr == nil; (fetched != "") != want {
+				t.Errorf("fetch time = %q, want one recorded: %v", fetched, want)
+			}
+			msgs, err := withStore(d.store, true, func(s *store.Store) ([]store.Message, error) {
+				m, _, err := s.Inbox(store.Recipient{Role: store.RecipientDirector}, 0, 100)
+				return m, err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var merged []string
+			for _, m := range msgs {
+				if m.Type == store.MessageMerged {
+					merged = append(merged, m.Text)
+				}
+			}
+			if len(merged) != 1 || !strings.HasPrefix(merged[0], "Merged head "+deliveryHead+" (") || !strings.HasSuffix(merged[0], "; the task is done.") {
+				t.Errorf("merged messages = %q, want the one", merged)
+			}
+		})
+	}
+}
+
+// deliveryRemote and deliveryHead are app's remote and the build's head in deliverToMerge.
+const deliveryRemote, deliveryHead = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
+
+// deliverToMerge runs task t-1 of d, on publish.toml with d's forge a fake, through its plan, build and sign-off to
+// the merge decision, and returns the advance that answers it merge, which prints where it left the task.
+func (d runDirector) deliverToMerge(t *testing.T) func() string {
+	t.Helper()
+	const remote, head = deliveryRemote, deliveryHead
+	f := d.forge.(*forgetest.Fake)
 	f.SetBranch(remote, "main", strings.Repeat("a", 40))
 	f.AddCommit(appRepo, head)
-	d.forge = f
 	// The fake build reports the remote's default branch as its head, so its worktree holds nothing undelivered.
 	d.workspaces.SetDefault(remote, head)
 	step := func(args ...string) string {
@@ -614,21 +699,7 @@ func TestTaskDelivers(t *testing.T) {
 	if prs := f.PullRequests(remote); len(prs) != 1 || prs[0].Branch != "guildhall/t-1" || prs[0].Head != head {
 		t.Fatalf("pull requests = %+v", prs)
 	}
-	if got := answer("deliver-1", "merge\n"); got != `{"wait":"done","step":"deliver"}` {
-		t.Fatalf("after the merge answer: %s", got)
-	}
-	if prs := f.PullRequests(remote); prs[0].State != forge.Merged {
-		t.Errorf("pull request = %+v, want merged", prs[0])
-	}
-	// Each attempt ran in the task's workspace, a worktree of the repository on the branch publish pushes.
-	ws := git.Workspace{Repository: appRepo, Remote: remote, Branch: "guildhall/t-1", Dir: filepath.Join(d.state, "app", "t-1", "work")}
-	if calls := d.workspaces.Calls(); len(calls) != 2 || calls[0] != ws || calls[1] != ws {
-		t.Errorf("workspaces = %+v, want %+v for the plan and build attempts", calls, ws)
-	}
-	// The merge retired it.
-	if _, err := os.Stat(ws.Dir); !os.IsNotExist(err) {
-		t.Errorf("workspace after the merge: %v, want it removed", err)
-	}
+	return func() string { return answer("deliver-1", "merge\n") }
 }
 
 // sweep runs artisan resume over an attempt whose launcher is gone and fails the test unless it succeeds.

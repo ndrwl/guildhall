@@ -34,6 +34,12 @@ A request from another Director becomes a task only when it is worth doing, and 
 If another Director floods you with messages, you may close your inbox to Directors and raise an alert for the Guildmaster.
 On every start your first message is a snapshot of what needs you; handle it and your queued inbox before you start new work.
 
+## Installing Guildhall
+
+When `guildhall director status` shows an `install` item, or its count changes, the installed `guildhall` is behind main: tell the Guildmaster how many merges behind it is, which pull requests it is missing, and that it is time to install.
+If tasks in flight are worth waiting for first, name them; that is your judgement.
+Never keep a note about installs: the item stays until the installed binary catches up.
+
 ## Commands
 
 These are your tools; the store records everything they do.

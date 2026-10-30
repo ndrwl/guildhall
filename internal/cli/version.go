@@ -59,6 +59,8 @@ type versionInfo struct {
 	PR         *int        `json:"pr"`
 	Task       *string     `json:"task"`
 	BehindMain *behindMain `json:"behind_main"`
+	// repository is the id of Guildhall's own repository in the copy's config, "" when it lists none.
+	repository string
 }
 
 // behindMain is how far the binary's revision is behind the repository's default branch as last fetched.
@@ -113,12 +115,8 @@ func (a *App) versionCmd(args []string) int {
 // repository fields empty.
 func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool) versionInfo {
 	v := versionInfo{Version: Version(), GoVersion: runtime.Version(), Platform: runtime.GOOS + "/" + runtime.GOARCH}
-	read := a.BuildInfo
-	if read == nil {
-		read = debug.ReadBuildInfo
-	}
-	info, ok := read()
-	if !ok || info == nil {
+	info, ok := a.buildInfo()
+	if !ok {
 		return v
 	}
 	if info.GoVersion != "" {
@@ -147,10 +145,8 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 	if !ok {
 		return v
 	}
-	g := a.VersionGit
-	if g == nil {
-		g = git.Program{Timeout: versionGitTimeout}
-	}
+	v.repository = repo.ID
+	g := a.versionGit()
 	if subject, err := g.Subject(ctx, repo.Path, v.Revision); err == nil {
 		if pr, ok := subjectPR(subject); ok {
 			v.PR = &pr
@@ -160,14 +156,7 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 		}
 	}
 	fetched := filepath.Join(state, versionFetchFile)
-	stale := false
-	if fetch {
-		if err := g.FetchDefault(ctx, repo.Path, repo.Remote, versionMainRef); err == nil {
-			writeFetchTime(fetched, repo.Path, a.now())
-		} else {
-			stale = true
-		}
-	}
+	stale := fetch && !a.fetchMain(ctx, g, repo, state)
 	count, subjects, err := g.Behind(ctx, repo.Path, v.Revision, versionMainRef)
 	if err != nil {
 		return v
@@ -179,6 +168,67 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 		}
 	}
 	return v
+}
+
+// buildInfo is the running binary's build information, from the App's BuildInfo, nil being debug.ReadBuildInfo.
+func (a *App) buildInfo() (*debug.BuildInfo, bool) {
+	read := a.BuildInfo
+	if read == nil {
+		read = debug.ReadBuildInfo
+	}
+	info, ok := read()
+	return info, ok && info != nil
+}
+
+// versionGit is the App's VersionGit; nil is git.Program bounded by versionGitTimeout.
+func (a *App) versionGit() VersionGit {
+	if a.VersionGit != nil {
+		return a.VersionGit
+	}
+	return git.Program{Timeout: versionGitTimeout}
+}
+
+// fetchMain fetches the default branch of repo, Guildhall's own repository, into versionMainRef with g and records
+// when in state's versionFetchFile; it reports whether the fetch succeeded.
+func (a *App) fetchMain(ctx context.Context, g VersionGit, repo config.Repository, state string) bool {
+	if err := g.FetchDefault(ctx, repo.Path, repo.Remote, versionMainRef); err != nil {
+		return false
+	}
+	writeFetchTime(filepath.Join(state, versionFetchFile), repo.Path, a.now())
+	return true
+}
+
+// refreshVersionAfterMerge fetches the default branch of Guildhall's own repository when task of repository repoID,
+// which an advance just left done, merged into it: repoID is the repository the config at cfgPath lists for the
+// running binary's module and the task has a merge.json document under state. Every failure is ignored; the
+// fetch lets the next director status count the merge (docs/director.md#status).
+func (a *App) refreshVersionAfterMerge(ctx context.Context, cfgPath, state, repoID, task string) {
+	info, ok := a.buildInfo()
+	if !ok {
+		return
+	}
+	repo, ok := ownRepository(cfgPath, info.Main.Path)
+	if !ok || repo.ID != repoID {
+		return
+	}
+	if merges, err := filepath.Glob(filepath.Join(state, "documents", "tasks", repoID, task, "*", "merge.json")); err != nil || len(merges) == 0 {
+		return
+	}
+	a.fetchMain(ctx, a.versionGit(), repo, state)
+}
+
+// installItem is the needs_me item saying the binary is behind its repository's default branch as last fetched,
+// so it is time for the Guildmaster to install (docs/director.md#status); none when it is not behind or that is not
+// known.
+func (v versionInfo) installItem() (needsMeItem, bool) {
+	m := v.BehindMain
+	if m == nil || m.Count <= 0 || v.repository == "" {
+		return needsMeItem{}, false
+	}
+	return needsMeItem{Kind: installKind, Repository: v.repository, Count: m.Count,
+		Reason: fmt.Sprintf("the installed guildhall (%s) is %d %s behind main%s; ask the Guildmaster to install",
+			v.Revision[:min(8, len(v.Revision))], m.Count, plural(m.Count, "merge", "merges"), m.prs()),
+		Command: "guildhall version"}, true
 }
 
 // now is the App's clock; nil is wall time.

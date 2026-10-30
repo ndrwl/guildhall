@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -589,6 +590,60 @@ func TestDirectorStatusUsage(t *testing.T) {
 			code, out, stderr := directorCmd(t, nil, c.args...)
 			if code != c.code || out != "" || !strings.Contains(stderr, c.want) {
 				t.Fatalf("exit %d, stdout %q, stderr %q; want exit %d naming %q", code, out, stderr, c.code, c.want)
+			}
+		})
+	}
+}
+
+// TestDirectorStatusInstall: a binary behind its own repository's default branch as last fetched adds one install
+// item at the end of needs_me, which is not a wake; one up to date, with no revision or with no own repository adds
+// none.
+func TestDirectorStatusInstall(t *testing.T) {
+	behind := []string{"y (#160)", "x (#159)"}
+	for name, c := range map[string]struct {
+		remote string
+		behind []string
+		info   func(*debug.BuildInfo)
+		want   bool
+	}{
+		"behind":        {remote: "git@github.com:ndrwl/guildhall.git", behind: behind, want: true},
+		"up to date":    {remote: "git@github.com:ndrwl/guildhall.git"},
+		"no revision":   {remote: "git@github.com:ndrwl/guildhall.git", behind: behind, info: func(i *debug.BuildInfo) { i.Settings = nil }},
+		"no own remote": {remote: "git@github.com:ndrwl/other.git", behind: behind},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := versionCopy(t, c.remote)
+			g := &fakeVersionGit{subjects: map[string]string{testRevision: "x (#158)"}, ref: true, behind: c.behind}
+			app, stdout, stderr := newTestApp(nil, nil)
+			app.BuildInfo, app.VersionGit = testBuildInfo(c.info), g
+			if code := app.Run([]string{"director", "status", "--json", "--copy", dir}); code != 0 {
+				t.Fatalf("director status = %d, %s", code, stderr)
+			}
+			var out struct {
+				NeedsMe []needsMeItem `json:"needs_me"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
+			for _, call := range g.calls {
+				if strings.HasPrefix(call, "fetch ") {
+					t.Errorf("director status ran %q", call)
+				}
+			}
+			if !c.want {
+				if len(out.NeedsMe) != 0 {
+					t.Errorf("needs_me = %+v, want none", out.NeedsMe)
+				}
+				return
+			}
+			want := needsMeItem{Kind: installKind, Repository: "guildhall", Count: 2,
+				Reason:  "the installed guildhall (abd97485) is 2 merges behind main (#160, #159); ask the Guildmaster to install",
+				Command: "guildhall version"}
+			if len(out.NeedsMe) != 1 || out.NeedsMe[0] != want {
+				t.Errorf("needs_me = %+v, want only %+v", out.NeedsMe, want)
+			}
+			if n := waitingKinds(out.NeedsMe); len(n) != 0 {
+				t.Errorf("waitingKinds = %v, want the install item not to wake the Director", n)
 			}
 		})
 	}
