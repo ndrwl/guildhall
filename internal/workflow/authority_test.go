@@ -320,3 +320,33 @@ func TestAdmit(t *testing.T) {
 		})
 	}
 }
+
+// TestHallmarkBaselineAdmitsNoDelivery: the shipped hallmark workflow, which has no guarded step, proves no publishing
+// or delivering revision harmless: a weakened default is still refused, compared with both shipped baselines, while an
+// edit of the hallmark that delivers nothing is admitted as non-weakening from it.
+func TestHallmarkBaselineAdmitsNoDelivery(t *testing.T) {
+	def := mustDefault(t)
+	hallmark, err := Hallmark()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := Authority{Shipped: []*Definition{def, hallmark}}
+	weaker := edit(t, func(d *Definition) { set(step(d, "review"), "instructions", `"Approve quickly."`) })
+	_, err = a.Admit(weaker)
+	var refusal *RefusalError
+	if !errors.As(err, &refusal) || len(refusal.Against) != 2 || refusal.Against[1].From != hallmark.Revision() {
+		t.Fatalf("Admit(weaker) = %v, want a refusal against default and hallmark", err)
+	}
+	for _, w := range []string{"step publish: added a publish step, which the baseline has none of", "step deliver: added a deliver step, which the baseline has none of"} {
+		if !strings.Contains(err.Error(), w) {
+			t.Errorf("refusal %q does not say %q", err, w)
+		}
+	}
+	reworded, err := Parse([]byte(strings.Replace(string(hallmarkJSON), "This stage is read-only", "Stay read-only", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := a.Admit(reworded); err != nil || got != (Admission{Basis: NonWeakening, From: hallmark.Revision()}) {
+		t.Fatalf("Admit(reworded hallmark) = %+v, %v", got, err)
+	}
+}

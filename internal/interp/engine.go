@@ -326,6 +326,15 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 			return next, nil
 		}
 	}
+	// A workflow with no deliver step, such as the hallmark workflow, is done once every step is; one with deliver
+	// never runs past it (docs/decisions/report-only-workflows.md).
+	if !slices.ContainsFunc(def.Steps, func(s workflow.Step) bool { return s.Type == "deliver" }) {
+		next, err := r.finish()
+		if err != nil {
+			return Next{}, fmt.Errorf("interp: %s/%s finish: %w", t.Repository, t.ID, err)
+		}
+		return next, nil
+	}
 	return Next{}, fmt.Errorf("interp: %w: workflow %s ends without a step to wait for", ErrUnsupported, def.Name)
 }
 
@@ -895,6 +904,9 @@ func (r *run) launch(s workflow.Step, n int, rt artisanRuntime, inputs []render.
 	if err := r.recordBase(s, n); err != nil {
 		return err
 	}
+	if err := r.recordPrepared(s, n); err != nil {
+		return err
+	}
 	p, err := r.preparation(s, n, inputs, main)
 	if err != nil {
 		return err
@@ -1022,6 +1034,12 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	port := kind.Outputs[0]
 	if s.Type == rebaseKindType {
 		return r.recordRebaseOutputs(s, n, port.Name, outputs)
+	}
+	// A report already recorded stands on replay, even after the worktree moved on.
+	if s.Type == hallmarkKindType && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
+		if err := r.checkReadOnly(s, n); err != nil {
+			return err
+		}
 	}
 	if len(outputs) == 0 {
 		if port.Type == workflow.CodeHead {

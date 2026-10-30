@@ -150,7 +150,7 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 | `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. `publish` pushes task branches there, and the [GitHub forge](contracts/forge.md) supports only `github.com` remotes. |
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
 | `workflow` | Name of the Director's workflow definition a [feature task](tasks.md#task-kinds) runs; defaults to `default`. |
-| `[repository.kinds]` | The workflow each other [task kind](tasks.md#task-kinds) runs in this repository, such as `bug = "my-bug"`, resolved like `workflow`; a kind it does not name runs the shipped workflow of that name. `bug` is the only key: `feature` is refused, because `workflow` names it, and so is any other kind. Omitted, a config's digest is unchanged. |
+| `[repository.kinds]` | The workflow each other [task kind](tasks.md#task-kinds) runs in this repository, such as `bug = "my-bug"`, resolved like `workflow`; a kind it does not name runs the shipped workflow of that name. `bug` and `hallmark` are the only keys: `feature` is refused, because `workflow` names it, and so is any other kind. Omitted, a config's digest is unchanged. |
 | `no_ci` | `true` declares that the repository runs no CI, so [validate](interpreter.md#validate) passes a published head its forge reports no checks for, recording that it had no CI; default `false`, where no checks reported waits as pending. |
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 | `[repository.merge.requires]` | What a task's pull request needs before Guildhall merges it; see [merge requirements](#merge-requirements). |
@@ -323,6 +323,9 @@ It does not replace the task dependency graph: independent tasks still run in pa
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
 The shipped default, a feature task's workflow, is [`internal/workflow/default.json`](../internal/workflow/default.json); the shipped bug workflow is [`internal/workflow/bug.json`](../internal/workflow/bug.json), the default's steps without grill and the Guildmaster's acceptance, so a bug task has no Guildmaster stage and merges under the repository's [merge requirements](#merge-requirements); build and review take plan's spec, and research, plan, build and review are instructed to reproduce the defect from the task title, proceed on recommended answers or fail back with a question that needs the Guildmaster, test it first and check that test ([task kinds](tasks.md#task-kinds), [decision](decisions/0095-bug-workflow-without-acceptance.md)).
 Both name no profiles; Artisan steps run under their [role profiles](#profiles), resolved at use and outside the digest.
+The shipped hallmark workflow, [`internal/workflow/hallmark.json`](../internal/workflow/hallmark.json), is one read-only `hallmark` step under the `researcher` profile with the `guildhall-hallmark` skill and no deliver step, so a hallmark task finishes as done without a pull request ([decision](decisions/report-only-workflows.md)).
+Its test evidence needs a [repository grant](#profiles) for the researcher's test commands, such as `[repository.profiles.researcher] allowed_tools = ["Bash(go test:*)"]`; shipped grants carry no toolchain command.
+A repository's `workflow_overrides` apply in full to its feature workflow, which refuses an override naming a step it lacks; any other kind's workflow takes only the overrides of the steps it has.
 [`examples/workflows/human-review.json`](../examples/workflows/human-review.json) illustrates Guildmaster review of the plan and of every change, with reviewer instructions, and omits the default's research step; its Artisan steps run under their role profiles too.
 
 This structural example also leaves profile selection to the copy; see [profiles](#profiles) for the admission requirements.
@@ -370,6 +373,8 @@ The authoritative [built-in registry](../internal/workflow/registry.go), exposed
 `plan`, `refute`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
 `plan`, `build`, `document-review`, `review` and `guildmaster-approval` also accept `instructions` ([decision](decisions/research-build-instructions.md)).
 The `spec` input of `build` and `review` takes an accepted spec or, in a workflow with no acceptance step such as the shipped `bug`, plan's spec; the engine checks a spec against its approval only when it comes from an acceptance ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
+`hallmark` accepts `profile`, `skills` and `instructions`; it takes an optional `previous` document, which the engine wires to the repository's previous hallmark report, and writes a `report` document, and intake refuses its result when it leaves a tracked change or moves HEAD ([decision](decisions/report-only-workflows.md)).
+A workflow with no `deliver` step finishes as done once every step is.
 The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 
@@ -387,6 +392,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 | `grill` | `director` or `artisan` | notes: the Director interviews the Guildmaster live with `guildhall-grill` and `guildhall-domain-model`; an Artisan grills unattended with `guildhall-grill-unattended` |
 | `research`, `plan`, `build` | `artisan` | notes, a spec document, a code head |
 | `refute` | `artisan` | a findings document attacking the proposed spec, not a review verdict |
+| `hallmark` | `artisan` | a ranked report of the whole repository, written without changing it, given the repository's previous hallmark report as `previous` |
 | `document-review` | `artisan` or `guildmaster` | a review outcome for a document, such as the plan's spec |
 | `guildmaster-approval` | `guildmaster` | the accepted spec; may take document-review outcomes as `reviews` and refutation documents as `findings` |
 | `review` | `artisan` or `guildmaster` | a review outcome for a code head against the spec the build was given: the accepted spec, or plan's spec in a workflow with no acceptance step |
@@ -502,7 +508,8 @@ For a guarded step of the baseline, these are weakening:
 - removing a loop rule, sending it to another step, or lowering its `max`.
 
 Changing the relative order of any steps the baseline and the revision share is weakening too.
-Adding steps, adding input references or loop rules, raising `max`, and changing steps that are not guarded, the name or the description are not.
+So is a `publish` or `deliver` step of a kind the baseline has none of, since a baseline that delivers nothing, such as the shipped `hallmark` workflow, has no guarded step to compare a delivering revision with ([decision](decisions/report-only-workflows.md)).
+Adding other steps, adding input references or loop rules, raising `max`, and changing steps that are not guarded, the name or the description are not.
 The classifier compares definitions only: the contents of files that a profile or skill name points to are not part of the workflow digest, so it cannot see them.
 Nor are the role profile a step without a `profile` runs under and the settings of a profile, shipped or declared: only a `profile` written into a step is ([decision](decisions/role-profiles-outside-the-digest.md)).
 

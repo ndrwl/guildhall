@@ -67,6 +67,8 @@ func TestShippedDirectorSelectsRealArtisan(t *testing.T) {
 				def, err = workflow.Default()
 			case TaskKindBug:
 				def, err = workflow.Bug()
+			case TaskKindHallmark:
+				def, err = workflow.Hallmark()
 			default:
 				var data []byte
 				if data, err = os.ReadFile(filepath.Join(root, "workflows", name+".json")); err == nil {
@@ -76,7 +78,11 @@ func TestShippedDirectorSelectsRealArtisan(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			def, err = workflow.ApplyOverrides(def, repo.WorkflowOverrides)
+			overrides := repo.WorkflowOverrides
+			if taskKind != TaskKindFeature {
+				overrides = workflow.OwnOverrides(def, overrides)
+			}
+			def, err = workflow.ApplyOverrides(def, overrides)
 			if err != nil {
 				t.Fatal(err)
 			}

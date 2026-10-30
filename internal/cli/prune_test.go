@@ -22,6 +22,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/git/gittest"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -527,6 +528,46 @@ func TestPruneRemovesAMergedWorktreeAndAttemptFiles(t *testing.T) {
 	}
 	if docs := listFiles(t, filepath.Join(f.state, "documents")); len(docs) != 1 {
 		t.Errorf("documents = %q, want the merge record kept", docs)
+	}
+}
+
+// TestPruneRemovesAFinishedHallmarkWorktree: a done hallmark task, which has no merge record or pull request but a
+// finished record naming the commit its read-only worktree stayed at, has its worktree, branch and attempt files
+// pruned, its untracked report a recorded output; a finished record without a head keeps the worktree.
+func TestPruneRemovesAFinishedHallmarkWorktree(t *testing.T) {
+	f := newPruneFixture(t)
+	for _, id := range []string{"t-1", "t-2"} {
+		f.task("app", id)
+		f.attempt("app", id, "hallmark", store.AttemptSucceeded, nil)
+		w := f.workspace(id)
+		if err := os.MkdirAll(filepath.Dir(w.Dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := (git.Program{}).Ensure(context.Background(), w); err != nil {
+			t.Fatal(err)
+		}
+		writeTree(t, filepath.Join(w.Dir, "report.md"), "# Hallmark\n")
+		f.document(id, "hallmark-1-report", "hallmark-1/report.md", "# Hallmark\n")
+		finished := `{"schema":"guildhall.finished/1"}`
+		if id == "t-1" {
+			finished = `{"schema":"guildhall.finished/1","head":"` + f.git(w.Dir, "rev-parse", "HEAD") + `"}`
+		}
+		f.document(id, interp.FinishedDocument, "finished.json", finished)
+		f.close("app", id)
+	}
+	got := f.run(false)
+	if len(got) != 2 || got[0].Task.ID != "t-1" || !got[0].complete() || got[1].Worktree != store.WorktreeKept || !strings.Contains(got[1].Kept, "no merge record") {
+		t.Fatalf("prune = %+v", got)
+	}
+	w := f.workspace("t-1")
+	if _, err := os.Lstat(w.Dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("worktree: %v, want it removed", err)
+	}
+	if exec.Command("git", "-C", f.repository, "show-ref", "--verify", "--quiet", "refs/heads/"+w.Branch).Run() == nil {
+		t.Errorf("branch %s survived the prune", w.Branch)
+	}
+	if _, err := os.Lstat(f.workspace("t-2").Dir); err != nil {
+		t.Errorf("t-2 worktree: %v, want it kept", err)
 	}
 }
 

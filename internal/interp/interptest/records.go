@@ -354,6 +354,38 @@ func (r *Records) TaskLinks(repository, taskID string) ([]store.TaskLink, error)
 	return list(r, repository, taskID, r.links, func(l store.TaskLink) (string, string) { return l.Repository, l.TaskID })
 }
 
+// Tasks implements interp.Records.
+func (r *Records) Tasks(repository string) ([]store.Task, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []store.Task
+	for k, t := range r.tasks {
+		if k[0] == repository {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b store.Task) int { return cmp.Compare(a.ID, b.ID) })
+	return out, nil
+}
+
+// CloseTimes implements interp.Records, as store.CloseTimes does: the commit time of each task's first set-task-state
+// or cancel-task receipt.
+func (r *Records) CloseTimes() (map[store.TaskRef]time.Time, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[store.TaskRef]time.Time{}
+	for _, rc := range r.receipts {
+		if rc.op != "set-task-state" && rc.op != "cancel-task" {
+			continue
+		}
+		ref := store.TaskRef{Repository: rc.r.Repository, ID: rc.r.TaskID}
+		if at, seen := out[ref]; !seen || rc.r.CommittedAt.Before(at) {
+			out[ref] = rc.r.CommittedAt
+		}
+	}
+	return out, nil
+}
+
 // FullReviews implements interp.Records.
 func (r *Records) FullReviews(repository, taskID string) ([]store.FullReview, error) {
 	r.mu.Lock()

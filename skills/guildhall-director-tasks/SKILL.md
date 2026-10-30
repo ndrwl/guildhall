@@ -30,8 +30,10 @@ Every task is created as a kind, which chooses its workflow:
 
 - `feature`: New or changed behaviour, and the default: it runs the repository's workflow setting, the shipped default when it names none, with grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver.
 - `bug`: A fix for a defect in behaviour that should already work: it runs the repository's [repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, and merges under the repository's merge requirements: research reproduces the defect from the title and detail and finds its cause, plan's spec goes straight to build, build writes a regression test that fails before the fix and passes after it, and review checks that test.
+- `hallmark`: A report-only review of the whole repository, launched when guildhall director status lists a hallmark due: it runs the repository's [repository.kinds] hallmark workflow, the shipped hallmark workflow when it names none, whose one read-only hallmark stage uses the guildhall-hallmark skill, starts from the repository's previous hallmark report and writes ranked, PR-sized follow-ups; Guildhall fails the stage if it changes the project, and the task finishes as done with no pull request.
 
 Pick the kind from the Guildmaster's words: something that is broken, wrong or a regression is a `bug`, and anything new or changed is a `feature`.
+A `hallmark` is never picked from a request for work: launch one only as `guildhall-maintenance` says, when a hallmark is due.
 Pass `--kind bug` for a bug; `--fixes` alone already makes a task a bug, and `--kind feature --fixes <repo>/<task>` keeps a fix of an earlier task on the feature workflow.
 When it is unclear, ask.
 A bug task has no grill, so its title and detail are the only statement of the bug its Artisans see: give a short title naming the bug, and put the symptom and the exact error, in the Guildmaster's words, in `--detail` (or `--detail-file` for long or multi-line text).

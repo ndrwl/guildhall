@@ -47,13 +47,19 @@ guildhall director maintenance record --notes --summary "removed 4 (held by d47,
 
 ## The hallmark
 
-For each repository with a `hallmark due` item, launch a hallmark: a task of that repository whose stage uses `guildhall-hallmark`, created and started as earlier hallmarks were, with `guildhall task new` and `guildhall task start` (`guildhall-director-tasks`).
-Record the run with the task's id as soon as it is launched, so merges made while it runs count toward the next one:
+For each repository with a `hallmark due` item, launch a hallmark: a `hallmark` task of that repository, created with `--kind hallmark` and started (`guildhall-director-tasks`).
+Record the run with the task's id as soon as it is started, so merges made while it runs count toward the next one:
 
 ```sh
+guildhall task new --repo <repo> --kind hallmark --title "Hallmark after 4 merges" <id>
+guildhall task start --repo <repo> <id>
 guildhall director maintenance record --hallmark --repo <repo> --task <id> --summary "hallmark launched after 4 merges"
 ```
 
+The task runs one read-only stage that uses `guildhall-hallmark` and is given the repository's previous hallmark report; Guildhall fails the stage if it changes the project.
+Its test evidence needs the repository's `[repository.profiles.researcher]` grant for the test commands; without one the report lists that evidence as missing.
+When it finishes, the task is done with no pull request and you get a `finished` message naming the report.
+Read the report and bring its ranked follow-ups to the Guildmaster as a short numbered list; create tasks only for the ones they pick.
 Then read the self-review ledger, as `guildhall-self-review` asks at hallmark time, and give its lowest criteria to the hallmark's findings.
 A hallmark the Guildmaster asks for out of turn is launched and recorded the same way.
 

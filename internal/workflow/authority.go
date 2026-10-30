@@ -47,7 +47,10 @@ var actorStrength = map[Actor]int{ArtisanActor: 1, GuildmasterActor: 2}
 //
 // A step whose type or version changed is reported once, for that change alone.
 // Steps present in both that change relative order are weakening, whatever their kind, and are reported first.
-// Changes to steps that are not guarded, steps added by next, the name and the description are not weakening.
+// A publish or deliver step of next is weakening, after them, when base has no step of its type: a baseline that
+// publishes or delivers nothing, such as the shipped hallmark workflow, has no guarded steps to compare a delivering
+// revision with, so it cannot prove one harmless (docs/decisions/report-only-workflows.md).
+// Changes to steps that are not guarded, other steps added by next, the name and the description are not weakening.
 // It returns nil when next weakens nothing; base and next are not modified.
 func Weakenings(base, next *Definition) []Weakening {
 	var out []Weakening
@@ -64,6 +67,11 @@ func Weakenings(base, next *Definition) []Weakening {
 	}
 	if !slices.Equal(was, now) {
 		out = append(out, Weakening{Reason: fmt.Sprintf("step order changed from %s to %s", strings.Join(was, ", "), strings.Join(now, ", "))})
+	}
+	for _, n := range next.Steps {
+		if (n.Type == "publish" || n.Type == "deliver") && !slices.ContainsFunc(base.Steps, func(b Step) bool { return b.Type == n.Type }) {
+			out = append(out, Weakening{n.ID, fmt.Sprintf("added a %s step, which the baseline has none of", n.Type)})
+		}
 	}
 	for _, b := range base.Steps {
 		if !Guarded(b.Type) {

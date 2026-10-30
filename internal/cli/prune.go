@@ -476,11 +476,12 @@ func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory
 	return nil
 }
 
-// mergedHead is the head the task's newest merge record, the <id>-merge document, names, or empty when it has none.
+// mergedHead is the head the task's newest merge record, the <id>-merge document, names, or for a task whose workflow
+// has no deliver step the head its finished record names (interp.FinishedDocument), or empty when it has neither.
 func (p *pruner) mergedHead(docs []store.DocumentRef) (string, error) {
 	head := ""
 	for _, d := range docs {
-		if !strings.HasSuffix(d.Name, "-merge") {
+		if !strings.HasSuffix(d.Name, "-merge") && d.Name != interp.FinishedDocument {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(p.state, "documents", filepath.FromSlash(d.Path)))

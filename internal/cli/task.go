@@ -22,7 +22,7 @@ import (
 )
 
 var taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> --repo <id> <task> --json
@@ -57,6 +57,11 @@ var taskKindDescriptions = map[string]string{
 		"deliver, and merges under the repository's merge requirements: research reproduces the defect from the title " +
 		"and detail and finds its cause, plan's spec goes straight to build, build writes a regression test that fails " +
 		"before the fix and passes after it, and review checks that test.",
+	config.TaskKindHallmark: "A report-only review of the whole repository, launched when guildhall director status " +
+		"lists a hallmark due: it runs the repository's [repository.kinds] hallmark workflow, the shipped hallmark " +
+		"workflow when it names none, whose one read-only hallmark stage uses the guildhall-hallmark skill, starts from " +
+		"the repository's previous hallmark report and writes ranked, PR-sized follow-ups; Guildhall fails the stage if " +
+		"it changes the project, and the task finishes as done with no pull request.",
 }
 
 var taskKindHelp = func() string {
@@ -67,6 +72,9 @@ var taskKindHelp = func() string {
 	return strings.TrimSuffix(b.String(), "\n")
 }()
 
+// taskKindChoice lists the task kinds as a choice, "feature, bug or hallmark".
+var taskKindChoice = strings.Join(config.TaskKinds[:len(config.TaskKinds)-1], ", ") + " or " + config.TaskKinds[len(config.TaskKinds)-1]
+
 // taskKind is the --kind flag: the kind a new task is created as, "" when not given.
 type taskKind string
 
@@ -74,7 +82,7 @@ func (k *taskKind) String() string { return string(*k) }
 
 func (k *taskKind) Set(v string) error {
 	if !slices.Contains(config.TaskKinds, v) {
-		return fmt.Errorf("--kind %q is not a task kind; use %s", v, strings.Join(config.TaskKinds, " or "))
+		return fmt.Errorf("--kind %q is not a task kind; use %s", v, taskKindChoice)
 	}
 	*k = taskKind(v)
 	return nil
@@ -190,7 +198,7 @@ func (a *App) task(args []string) int {
 	var fixed fixes
 	flags.Var(&fixed, "fixes", "earlier task whose defect this one fixes")
 	var kind taskKind
-	flags.Var(&kind, "kind", "task kind: feature or bug")
+	flags.Var(&kind, "kind", "task kind: "+taskKindChoice)
 	var cp copyFlags
 	cp.register(flags)
 	var want int
@@ -486,7 +494,7 @@ func effectiveWorkflow(dir string, cfg *config.Config, r config.Repository, task
 func repositoryWorkflow(dir string, cfg *config.Config, r config.Repository, taskKind string) (acceptedWorkflow, error) {
 	name, ok := r.TaskKindWorkflow(taskKind)
 	if !ok {
-		return acceptedWorkflow{}, fmt.Errorf("unknown task kind %q; use %s", taskKind, strings.Join(config.TaskKinds, " or "))
+		return acceptedWorkflow{}, fmt.Errorf("unknown task kind %q; use %s", taskKind, taskKindChoice)
 	}
 	return resolveWorkflow(dir, name, cfg, r)
 }
@@ -525,7 +533,7 @@ func boundWorkflow(dir string, cfg *config.Config, r config.Repository, rev work
 		return nil, err
 	}
 	for _, old := range retired {
-		effective, err := workflow.ApplyOverrides(old, r.WorkflowOverrides)
+		effective, err := workflow.ApplyOverrides(old, overridesFor(old, r))
 		if err != nil || workflow.Validate(effective) != nil {
 			continue
 		}
@@ -572,7 +580,7 @@ func resolveWorkflow(dir, name string, cfg *config.Config, r config.Repository) 
 	if err != nil {
 		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}
-	effective, err := workflow.ApplyOverrides(def, r.WorkflowOverrides)
+	effective, err := workflow.ApplyOverrides(def, overridesFor(def, r))
 	if err != nil {
 		return acceptedWorkflow{}, fmt.Errorf("workflow %q: %w", name, err)
 	}
@@ -584,6 +592,16 @@ func resolveWorkflow(dir, name string, cfg *config.Config, r config.Repository) 
 		w.file = def
 	}
 	return w, nil
+}
+
+// overridesFor returns the workflow_overrides of repository r that def takes: every one for the repository's feature
+// workflow, so an override naming a step it lacks is still refused, and only those naming a step def has for any other
+// workflow, such as the hallmark workflow, which has none of the steps an override can name (workflow.OwnOverrides).
+func overridesFor(def *workflow.Definition, r config.Repository) map[string]workflow.Override {
+	if def.Name == r.Workflow {
+		return r.WorkflowOverrides
+	}
+	return workflow.OwnOverrides(def, r.WorkflowOverrides)
 }
 
 func showTask(s *store.Store, repo, id string) (taskDetail, error) {

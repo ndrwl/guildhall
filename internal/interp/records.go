@@ -2,6 +2,7 @@ package interp
 
 import (
 	"context"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -43,6 +44,10 @@ import (
 // Workflow approvals are not read here: they are enforced at task creation (docs/decisions/0056-approval-enforcement-at-task-creation.md).
 type Records interface {
 	Task(repository, taskID string) (store.Task, error)
+	// Tasks lists a repository's tasks in id order, and CloseTimes when each closed task was closed; the hallmark
+	// step reads them for the repository's previous done hallmark (docs/decisions/report-only-workflows.md).
+	Tasks(repository string) ([]store.Task, error)
+	CloseTimes() (map[store.TaskRef]time.Time, error)
 	Attempts(repository, taskID string) ([]store.StageAttempt, error)
 	Documents(repository, taskID string) ([]store.DocumentRef, error)
 	Decisions(repository, taskID string) ([]store.Decision, error)

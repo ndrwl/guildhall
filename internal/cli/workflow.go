@@ -19,7 +19,7 @@ import (
 
 const workflowUsage = `usage:
   guildhall workflow approve --store <path> --file <workflow.json> --words-file <path|->
-  guildhall workflow approve --store <path> --config <director.toml> --repo <id> [--kind feature|bug] --words-file <path|->
+  guildhall workflow approve --store <path> --config <director.toml> --repo <id> [--kind feature|bug|hallmark] --words-file <path|->
   guildhall workflow approvals --store <path> [--json]
 --copy <dir>, or the copy found from the current directory, may stand in for --store, and for --config with
 --repo: the copy's director.store and config.toml`
@@ -58,7 +58,7 @@ func (a *App) workflowCmd(args []string) int {
 	wordsFile := flags.String("words-file", "", "approval words file, or - for standard input")
 	asJSON := flags.Bool("json", false, "print JSON")
 	var kind taskKind
-	flags.Var(&kind, "kind", "task kind: feature or bug")
+	flags.Var(&kind, "kind", "task kind: "+taskKindChoice)
 	var cp copyFlags
 	cp.register(flags)
 	if err := flags.Parse(args[1:]); err != nil {
@@ -170,7 +170,11 @@ func shippedDefinitions() ([]*workflow.Definition, error) {
 	if err != nil {
 		return nil, fmt.Errorf("shipped bug workflow: %w", err)
 	}
-	return []*workflow.Definition{def, bug}, nil
+	hallmark, err := workflow.Hallmark()
+	if err != nil {
+		return nil, fmt.Errorf("shipped hallmark workflow: %w", err)
+	}
+	return []*workflow.Definition{def, bug, hallmark}, nil
 }
 
 // readDefinition parses and validates a workflow file.
