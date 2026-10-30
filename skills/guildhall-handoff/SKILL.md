@@ -33,6 +33,7 @@ guildhall director note list
 - Remove one that is done or no longer true: `guildhall director note remove <id> --reason <text>`.
 - Add only what no record holds and the next session cannot restart or re-read: a promise to the Guildmaster (`promised`), a preference or context they gave (`guildmaster`), or your intent (`plan`), with `guildhall director note add --kind <kind> [--task <repo>/<id>] <text>`.
 - When the Guildmaster said what the next session is for, add it as a `plan` note.
+- A standing rule for one repository is not a note: propose it for that repository's `.guildhall/policies.md` as a task, or tell the Guildmaster the exact line to add, and keep `guildmaster` notes for context that is not a policy.
 
 Each note is one line of at most 1024 bytes; redact anything sensitive: keys, tokens, passwords and personal details never go in a note.
 

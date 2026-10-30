@@ -34,6 +34,8 @@ type Workspaces interface {
 	Adopt(ctx context.Context, w git.Workspace, from, to string) error
 	Diff(ctx context.Context, repository, a, b string) ([]byte, error)
 	Log(ctx context.Context, repository, a, b string, paths ...string) ([]byte, error)
+	// Changes reports whether the change from base to head adds, removes or changes the file at path.
+	Changes(ctx context.Context, repository, base, head, path string) (bool, error)
 }
 
 var _ Workspaces = git.Program{}

@@ -550,11 +550,13 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	ctx, stop := notify(context.Background(), os.Interrupt)
 	defer stop()
 	context.AfterFunc(ctx, stop)
+	// Each advance pass refreshes the repository's policies, which this pass's prompts read.
+	a.refreshPolicies(ctx, r)
 	e := &interp.Engine{
 		Copy:     copyDir,
 		Records:  records,
 		Launcher: taskLockedProcess(cfg, exe, f.store, state, "", stall, wait, a.Stderr),
-		Prompter: baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
+		Prompter: a.baselinePrompter(cfg, cfgDir, releaseBaseline, skills),
 		Outbox:   outbox,
 		// The task's bound revision is resolved by its name, not the repository's current workflow setting.
 		Workflow: func(rev workflow.Revision) (*workflow.Definition, error) {
@@ -596,8 +598,9 @@ func nextOf(n interp.Next) next {
 
 // baselinePrompter renders from baseline/ beside the config file, falling back file by file to the installed
 // release baseline, and the release skills root (docs/running.md). A Director stage is rendered with the Director's
-// role, as its session is (docs/director.md#start).
-func baselinePrompter(cfg *config.Config, cfgDir, release, skills string) interp.PromptFunc {
+// role, as its session is (docs/director.md#start). Every prompt carries the stage repository's policies as last
+// fetched (docs/configuration.md#repository-policies).
+func (a *App) baselinePrompter(cfg *config.Config, cfgDir, release, skills string) interp.PromptFunc {
 	return func(stage render.Stage, inputs []render.Input) (render.Rendered, error) {
 		base := filepath.Join(cfgDir, "baseline")
 		b := render.Baseline{Role: baselineSource(base, release, "roles/artisan.md"), Guide: baselineSource(base, release, "stages/"+stage.Step.Type+".md")}
@@ -619,6 +622,7 @@ func baselinePrompter(cfg *config.Config, cfgDir, release, skills string) interp
 		for _, f := range files {
 			b.Standards = append(b.Standards, render.Source{Name: "standards/" + filepath.Base(f), Path: f, Root: "copy"})
 		}
+		a.promptPolicies(cfg, stage.Repository, &b)
 		return render.Prompt(stage, inputs, b, []render.SkillRoot{{Name: "release", Dir: skills}})
 	}
 }

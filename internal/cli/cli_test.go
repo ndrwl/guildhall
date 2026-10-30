@@ -28,7 +28,9 @@ func newTestApp(paths map[string]string, outputs map[string]result) (*App, *byte
 	f := &fakeTools{paths: paths, outputs: outputs}
 	app := &App{Stdout: &stdout, Stderr: &stderr, LookPath: f.lookPath, Output: f.output,
 		// No test reaches a real Herdr server's toasts; surfacing tests record their own.
-		Notify: func(context.Context, store.DirectorPane, string, string) error { return nil }}
+		Notify: func(context.Context, store.DirectorPane, string, string) error { return nil },
+		// No test fetches a real repository's policies; policy tests script their own.
+		PolicyGit: &fakePolicyGit{}}
 	return app, &stdout, &stderr
 }
 

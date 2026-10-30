@@ -12,7 +12,7 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 
 | Written | Contents |
 |---|---|
-| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the task title (`Stage.Title`) when there is one, then for a retried attempt (`Stage.Retry`) a "Why this is a retry" section, the role prompt, the stage guide, the step's `instructions`, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
+| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the task title (`Stage.Title`) when there is one, then for a retried attempt (`Stage.Retry`) a "Why this is a retry" section, the role prompt, the stage guide, the step's `instructions`, the repository's [policies](#repository-policies) when it has any, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
 | `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
@@ -27,6 +27,15 @@ Prompts without `Stage.Retry` have no such section.
 The task title is quoted after the attempt identity under `Task title:`, in a `text` fence longer than any backtick run inside it, so a Director-written title cannot open a prompt section; an empty title renders nothing.
 The task's detail, its full statement, follows under `Task detail:`, fenced the same way, in every stage's prompt; an empty detail renders nothing.
 The interpreter passes the task's title and detail; it is not part of the manifest's `identity`, so the manifest schema is unchanged ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
+
+### Repository policies
+
+`Baseline.Policies` are the repository's [policies](configuration.md#repository-policies), which the Director's prompter reads for the stage's repository from its default branch as last fetched, never from the task branch.
+The prompt renders them after the instructions under `## Repository policies`: one line saying they are the Guildmaster's standing rules for this repository, from its default branch, and guidance the stage must follow, then every policy as a `- ` line in one `text` fence longer than any backtick run inside it, as the title is fenced, so policy text cannot open a section or override the result template.
+A non-empty `Baseline.PolicyError` renders instead "The repository policies could not be read: <reason>. Tell the Director in your result.", and rendering goes on, so the pull request that fixes the file still gets its prompts.
+With neither, as for a repository with no policy file or none fetched yet, the section is left out, so the prompt and its digest are as before.
+Director-stage prompts, such as grill's, carry the section too; Guildmaster questions do not.
+The text is covered by the prompt digest, so the manifest schema is unchanged, and a published attempt replays as it was.
 
 Input documents are listed rather than inlined: the Artisan reads verified copies from `inputs/<recorded-name>`, relative to the prompt file, without needing access to the original document directory.
 The manifest retains the recorded names without the `inputs/` prefix or host-specific paths.
@@ -66,6 +75,7 @@ The JSON request contains `Stage`, `Inputs` and `Baseline` using the [renderer t
 Strict JSON decoding, request validation and refusal behavior are specified in the [CLI contract](contracts/cli.md).
 The command writes the manifest as JSON to stdout and leaves the self-contained prompt at `Stage.Dir/prompt.md`, ready for `artisan start --prompt`.
 The temporary release root is removed on success or failure.
+A request's `Baseline` may carry an optional `Policies` list of the repository's [policies](#repository-policies), and `PolicyError`; with neither, the prompt has no policies section.
 A request whose `Baseline` has no `Role` or `Guide` path takes the [release baseline](contracts/baseline.md)'s `roles/artisan.md` or `stages/<kind>.md`, installed temporarily and recorded with root `release`.
 Each adapted skill includes its own `CREDITS.md`, preserving the upstream MIT notice in the attempt.
 Release embedding is delivered here; Steward distribution of skill bundles follows in a later slice.
@@ -99,12 +109,12 @@ It writes, and lists with digests in `manifest.json`, schema `guildhall.session-
 |---|---|
 | `session` | The session number. |
 | `role` | `role.md`, the role prompt with line endings normalised to LF, the digest of that text and the baseline `root` it came from, so a CRLF checkout renders the same digest. |
-| `startup` | `startup.md` and the digest of its bytes: the session is starting up and recovering, then, only when there are any, a `Notes` section of the Director's live notes as preformatted lines, opening with a compact warning when their text totals more than `NotesWarnBytes` (8 KB), and the in-flight snapshot one item per line or `None.`, then, only when there are any, a `Running` section asking the Director to confirm its attempts before `guildhall director ready`, one per line, then, only when there are any, a `Parked` section saying its attempts are held on purpose and not work, one per line. |
+| `startup` | `startup.md` and the digest of its bytes: the session is starting up and recovering, then, only when there are any, a `Repository policies` section of the repositories' [policies](configuration.md#repository-policies) as preformatted `<repo>: <policy>` lines, a snapshot as of the session's start that a mid-session merge reaches at the next reload, then, only when there are any, a `Notes` section of the Director's live notes as preformatted lines, opening with a compact warning when their text totals more than `NotesWarnBytes` (8 KB), and the in-flight snapshot one item per line or `None.`, then, only when there are any, a `Running` section asking the Director to confirm its attempts before `guildhall director ready`, one per line, then, only when there are any, a `Parked` section saying its attempts are held on purpose and not work, one per line. |
 | `files[]` | The runtime's own files, such as Claude Code's `.claude/settings.json`, by slash path, with the digest of their bytes. |
 | `skills[]` | Every skill of the roots, in name order: `name`, the first `root` holding it, `path` under the runtime's skills directory, the tree `digest` and every file with its digest, copied as [skills](#skills) are for an attempt. |
 
 A root directory that does not exist holds no skills, and a root's files, such as `CREDITS.md`, are not skills.
-A skills directory or runtime file path that is not relative and slash-separated, or that collides with another file the session writes, and an in-flight, running or parked item of more than one line, are refused before anything is written; on any error nothing `Session` wrote is left behind.
+A skills directory or runtime file path that is not relative and slash-separated, or that collides with another file the session writes, and an in-flight, running, parked or policy item of more than one line, are refused before anything is written; on any error nothing `Session` wrote is left behind.
 `render.StartupMessage` names `startup.md` relative to the rendered session directory.
 For runtimes launched elsewhere, the supervisor supplies an absolute startup-file path instead ([Director start](director.md#start)): for Claude Code the first message is `/version startup "<absolute startup.md path>"`, the `/version` command at `.claude/commands/version.md`, one of the runtime's files listed in `files[]`, which shows the binary's version and then has the model follow `startup.md`.
 

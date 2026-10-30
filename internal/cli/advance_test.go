@@ -53,6 +53,8 @@ type runDirector struct {
 	// buildInfo and versionGit, when set, are the App's.
 	buildInfo  func() (*debug.BuildInfo, bool)
 	versionGit VersionGit
+	// policies, when set, is the App's policy git.
+	policies *fakePolicyGit
 }
 
 func newRunDirector(t *testing.T) runDirector {
@@ -130,6 +132,9 @@ func (d runDirector) run(t *testing.T, args ...string) (int, string, string) {
 	app.BuildInfo, app.VersionGit = d.buildInfo, d.versionGit
 	if d.workspaces != nil {
 		app.Workspaces = d.workspaces
+	}
+	if d.policies != nil {
+		app.PolicyGit = d.policies
 	}
 	if d.panes != nil {
 		app.DirectorPane = d.panes

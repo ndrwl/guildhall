@@ -18,6 +18,8 @@ type rebases struct {
 	scripts map[[2]string]git.Rebased
 	diffs   map[[2]string][]byte
 	replays []git.Replay
+	// changes holds the paths each head changes, for Changes.
+	changes map[string][]string
 }
 
 func (f *Workspaces) rebases() *rebases {
@@ -118,6 +120,28 @@ func (f *Workspaces) Log(ctx context.Context, repository, a, b string, paths ...
 		return nil, err
 	}
 	return []byte(fmt.Sprintf("log %s..%s %v\n", a, b, paths)), nil
+}
+
+// SetChanges scripts Changes: the change to head, from any base, changes each of paths.
+func (f *Workspaces) SetChanges(head string, paths ...string) {
+	rb := f.rebases()
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	if rb.changes == nil {
+		rb.changes = map[string][]string{}
+	}
+	rb.changes[head] = slices.Clone(paths)
+}
+
+// Changes implements git.Program.Changes with the scripted paths: without a script a head changes nothing.
+func (f *Workspaces) Changes(ctx context.Context, repository, base, head, path string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	rb := f.rebases()
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return slices.Contains(rb.changes[head], path), nil
 }
 
 // Adopt implements git.Program.Adopt over the double's directories: a tree on w.Branch at from moves to to, one

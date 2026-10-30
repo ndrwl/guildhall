@@ -106,7 +106,7 @@ Directories are compared by file identity, not by path text, so symbolic links s
 `w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/0011-repository-paths-are-absolute-in-the.md), is `ErrInvalidWorkspace` there.
 Paths with spaces are passed as single arguments, never through a shell.
 
-Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `Tip`, `IsAncestor`, `FinalHead`, `Retire`, `Subject`, `FetchDefault` and `Behind` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
+Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `Tip`, `IsAncestor`, `FinalHead`, `Retire`, `Subject`, `FetchDefault`, `Behind`, `Show` and `Changes` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
 A run past its bound is ended and is a plain error naming git's command and the bound; for `Classify` that is a full scope with that reason, since its context did not end.
 `forge.GitHub` keeps the same rule for `gh` and `git` ([forge](forge.md)); the shared runner both would use waits for a third consumer that runs a program under a bound, and is done when `exec.CommandContext` in `internal/forge`, `internal/git` and `internal/herdr` is found only in it.
 
@@ -120,10 +120,20 @@ A run past its bound is ended and is a plain error naming git's command and the 
 
 The CLI declares its own narrow interface over them, `cli.VersionGit`, and bounds each run at five seconds.
 
+### Policy reads
+
+[Repository policies](../configuration.md#repository-policies) are fetched with `FetchDefault` into `refs/guildhall/policies` and read through two more operations:
+
+- `Program.Show(ctx, repo, rev, path)` reads the file at `path` in commit `rev` from the object store, never a work tree (`git rev-parse --verify --quiet <rev>^{commit}`, `git ls-tree --full-tree` and `git cat-file blob`), and returns the commit with the file's bytes. A `rev` the repository does not have, such as a ref not fetched yet, is `ErrNoRevision`; a commit with no entry at `path` is `Absent`, not an error; an entry that is not a regular file, a `rev` starting with `-` and any git failure are errors.
+- `Program.Changes(ctx, repo, base, head, path)` reports whether the change from `base` to `head` adds, removes or changes `path`, through the same `git diff --name-only` with a literal pathspec `Classify` uses; any git failure is an error. Deliver reaches it through `interp.Workspaces` for the [merge guard](../configuration.md#merge-requirements), and `gittest.Workspaces` scripts it with `SetChanges`.
+
+The CLI declares `cli.PolicyGit` over `FetchDefault` and `Show`, and bounds each run at thirty seconds.
+
 ## Tests
 
 `history_test.go`'s `TestVersionReads` covers the version reads over `gittest.Repository`: a subject, an unknown commit and a name that is not a full id refused, `Behind` before any fetch failing, a fetch that names two new commits with and without a pull request number, none behind at the tip, and a fetch from a missing remote failing with the ref unmoved and invalid refs and remotes refused.
 It was written with the operations and passed on its first run.
+`show_test.go`'s `TestShowAndChanges` covers the policy reads over `gittest.Repository`: `Show` before the ref is fetched (`ErrNoRevision`), of a missing path (absent), at the fetched ref, past an uncommitted edit in the work tree, of a directory and in a missing repository, and `Changes` over a commit adding the file and one not touching it.
 
 `head_test.go` adds green-first boundary coverage for `FinalHead`: committed and detached HEAD, untracked notes, modified/staged/deleted/renamed/added tracked paths, unborn HEAD, non-repository directories, missing executable, cancellation and process timeout.
 The red-first integration regression that drove this new operation is linked from the [interpreter contract](interp.md).

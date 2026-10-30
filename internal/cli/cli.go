@@ -195,6 +195,10 @@ type App struct {
 	// VersionGit reads Guildhall's own repository for version and director status; nil means git.Program with a
 	// five-second bound on each run.
 	VersionGit VersionGit
+	// PolicyGit fetches and reads each repository's policy file for director start, director status and Artisan
+	// prompts (docs/configuration.md#repository-policies); nil means git.Program with a thirty-second bound on
+	// each run.
+	PolicyGit PolicyGit
 	// ArtisanWorkspaces opens the terminal host a Director session's supervisor closes finished Artisans' Herdr
 	// workspaces in, for the named Herdr session, after checking the session's server; nil means Herdr, found on
 	// PATH as herdr.
