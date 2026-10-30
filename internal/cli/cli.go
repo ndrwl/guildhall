@@ -102,6 +102,8 @@ Commands:
                  report recorded attempt tokens and cost without changing state
   ci log [--copy <dir>] [--tail <lines>] [--out <file>] <repo>/<task> <job|check>
                  print the full log of a failed CI job the task's validate results record
+  prune [--dry-run] [--repo <name>] [--task <id>] [--copy <dir>]
+                 reclaim the disk space of done tasks closed longer ago than prune_after
   quality judge|judged|agreement --copy <dir> ...
                  judge a delivered task's self-review in a separate session, take a finished judge
                  attempt as its launcher does, and print the judge's agreement with the audits
@@ -238,6 +240,8 @@ func (a *App) Run(args []string) int {
 		out = a.doctor()
 	case "spend":
 		return a.spend(rest)
+	case "prune":
+		return a.prune(rest)
 	case "store":
 		return a.storeCmd(rest)
 	case "messages":

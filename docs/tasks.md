@@ -171,6 +171,8 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 
 `task files` prints `documents`: every document reference of the task with its relative path, its recorded `sha256` and `recorded_at`, in name order.
 The digest is the one recorded when the reference was written; `files` does not open or re-hash the document.
+Once [`guildhall prune`](running.md#pruning) has reclaimed the task's files, it also prints `pruned`: the prune record's `pruned_at`, `bytes_freed`, `worktree`, `kept`, `complete` and `runs`, with a `summary` such as `pruned on 2026-10-16`, followed by `; worktree kept: <reason>` (or `; not a worktree: <reason>`) when the prune left the worktree; it is absent for a task never pruned.
+Documents are never pruned, so their references stay valid.
 
 Receipts committed before receipts named their record have no `record`; they still appear in `events`, but cannot supply record timestamps.
 Unknown timestamps are omitted from the JSON.

@@ -166,3 +166,39 @@ While the Director is [paused or stopping](director.md#pause-and-resume), an adv
 | 0 | The advance completed |
 | 1 | The configuration, workflow, store, result or engine refused or failed; the error is on standard error |
 | 2 | Usage error |
+
+## Pruning
+
+`guildhall prune [--dry-run] [--repo <name>] [--task <id>] [--copy <dir>]` reclaims the disk space of `done` tasks closed longer ago than [`prune_after`](configuration.md#settings), 14 days by default.
+It takes `--copy <dir>`, or `GUILDHALL_COPY`, and reads the copy's `config.toml`, `director.store`, `state` and `quality` directories.
+A task's close time is the commit time of its `task-state` receipt.
+
+A task is prunable only when all of these hold, and is otherwise listed as skipped with the reason:
+
+- it is `done` (`cancelled` is not produced today and is left out) and its close is at least `prune_after` ago (`too recent`);
+- no `open` task names it in `depends_on` (`open dependant`);
+- it has no unanswered `audit` decision (`audit ... open`);
+- no `self-review-<n>.json` under `<copy>/quality/<repo>/<task>/` has a criterion still pending its judge, or cannot be read (`self-review ... pending`);
+- it has no unfinished attempt, judge attempts included, and no unreleased ownership record;
+- its repository is in the config, whose `path` the worktree belongs to;
+- the store does not record it as pruned completely; a task pruned only in part is selected again.
+
+`--task` names one task; the same rules apply to it, and an open or completely pruned task named by `--task` is listed with that as its reason.
+`--dry-run` and the real run share this selection, and a dry run removes nothing, takes no lock and writes nothing.
+
+For each prunable task, while holding the task's lock (`attempt.lock` in `<state>/<repository>/<task>`, waiting at most `lock_wait`), and after checking the selection again under it, a prune:
+
+- Retires the worktree again with `git.Program.Retire`, at the head the task's `<id>-merge` document names and with the task's recorded documents as its outputs, as the merge did: it removes the worktree, the `guildhall/<task>` branch and the `refs/guildhall/default/…` ref only when nothing would be lost. A worktree Retire keeps is left untouched and the task is listed as skipped with `worktree kept: <reason>`; a `work` directory that is not a worktree, from before worktrees, is listed with `not a worktree` and left untouched. A worktree is never removed any other way.
+- Removes everything in each attempt directory (`<step>-<n>/`) but `result.json`, its `usage.json`, `outcome.json`, `prompt/manifest.json` and the attempt's `attempt.lock`, so [`spend report`](spend.md), the quality judge's builder lookup and `artisan status` read the same as before. An attempt with `pane-launch.json` and no `pane-closed.json`, its Herdr workspace not closed yet, keeps its pane files, so the [workspace close sweep](artisan.md#workflow-artisan-workspaces) can still close it, and the report says so.
+- Keeps the task's `attempt.lock`, the task directory, every store record and every recorded document under `<state>/documents`.
+
+A file that cannot be removed, such as one held open on Windows, makes the prune partial: the output says what remains, the task is not recorded as complete and the next run tries it again.
+Once removal has finished, the prune is recorded in the store as the task's [prune record](store.md#pruned-tasks); a crash before that leaves the task selectable and the rerun is idempotent, and a rerun that finds nothing new writes nothing.
+`task files` then shows `pruned on <date>` ([inspection](tasks.md#inspection)).
+
+The output lists each task pruned (or with `--dry-run`, that would be) with the space freed, each task skipped with its reason, and a total; a dry run counts a work directory with a `.git` file as a worktree Retire removes, so only the real run can find a worktree it keeps.
+It exits 0 when the prune ran, a partial prune included, 1 when the config or store cannot be read or a removal step failed, and 2 on a usage error.
+
+With [`prune_daily`](configuration.md#settings) `"true"`, the session supervisor runs the same prune, off its decision path, at session start when the copy's last prune, stamped in `<state>/prune-last.json`, was a day ago or more, and then once a day; its output goes to the supervisor's standard error.
+For a task whose worktree it leaves it sends the Director one unread `prune-workspace-kept` message per task, not one a day, which does not wake it.
+Claude Code's own transcripts, `director/session-<n>/` directories and caches outside the task directory are not pruned.

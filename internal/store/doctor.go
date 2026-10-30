@@ -37,6 +37,8 @@ type RepositoryCounts struct {
 	UncontainedStarting int
 	Messages            int
 	UnreadMessages      int
+	// Pruned counts the tasks with a prune record (docs/store.md#pruned-tasks).
+	Pruned int
 }
 
 // maxProblems bounds the problems Doctor collects from a badly damaged file.
@@ -107,6 +109,7 @@ func (s *Store) Doctor() (Report, error) {
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketRulings): &counts.Rulings,
 				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
+				string(bucketPruned): &counts.Pruned,
 			} {
 				b := tx.Bucket(bucketRepos).Bucket(repo).Bucket([]byte(name))
 				if b == nil {
@@ -150,6 +153,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(Ownership)
 	case string(bucketMessages):
 		rec = new(Message)
+	case string(bucketPruned):
+		rec = new(TaskPrune)
 	case string(bucketInbox):
 		// Inbox entries index messages by id rather than holding JSON.
 		if v == nil || !messageIDPattern.Match(v) {
