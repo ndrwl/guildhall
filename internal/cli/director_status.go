@@ -480,6 +480,12 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 // time), then each task's next.json and the live classification of every running attempt under the state directory.
 // Each repository's hallmark tasks resolve their workflows under the config at cfgPath (statusWorkflows).
 func readDirectorStatusConfig(ctx context.Context, path, stateDir, cfgPath string, now func() time.Time) (directorStatus, error) {
+	return readDirectorStatusRecords(ctx, storeRecords{path: path}, stateDir, cfgPath, now)
+}
+
+// readDirectorStatusRecords is readDirectorStatusConfig waiting p's wait for the store's lock.
+func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cfgPath string, now func() time.Time) (directorStatus, error) {
+	path := p.path
 	stateDir, err := filepath.Abs(stateDir)
 	if err != nil {
 		return directorStatus{}, err
@@ -487,7 +493,7 @@ func readDirectorStatusConfig(ctx context.Context, path, stateDir, cfgPath strin
 	var queues []mergeQueue
 	var starts []store.QueuedStart
 	var hallmarks map[string]repoHallmarks
-	v, err := withStoreClock(path, true, now, func(s *store.Store) (store.DirectorView, error) {
+	v, err := withRecords(p, true, now, func(s *store.Store) (store.DirectorView, error) {
 		v, err := s.DirectorView()
 		if err != nil {
 			return v, err

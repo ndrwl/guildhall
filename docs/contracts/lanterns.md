@@ -1,6 +1,6 @@
 # Lanterns contracts
 
-Lanterns is its own visuals-only plugin, separate from the future Clerk interaction plugin.
+Lanterns is its own visuals-only plugin, separate from the [Clerk](clerk.md) interaction plugin, which is installed beside it.
 It ships as embedded files in `internal/lanterns/plugin` and is installed in every generated Claude Director workspace.
 The Claude adapter passes its absolute plugin directory to Claude, without symlinks or a separate checkout.
 A classic session-start hook supplies the opening-marker convention even without function hooks.

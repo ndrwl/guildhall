@@ -120,6 +120,9 @@ Commands:
   director context-report [--lanterns] --copy <dir>
                  display status and context only with --lanterns (generated workspaces);
                  without it, record runtime context for legacy workspaces
+  clerk guild|decisions|task|inspect|queue [--all] [<id>] [--copy <dir>]
+                 print the Guildmaster's read-only answers behind the Clerk plugin's slash commands;
+                 guild takes --all, task and inspect take a task id
   spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]
                  report recorded attempt tokens and cost without changing state
   ci log [--copy <dir>] [--tail <lines>] [--out <file>] <repo>/<task> <job|check>
@@ -321,6 +324,8 @@ func (a *App) Run(args []string) int {
 		return a.review(rest)
 	case "ci":
 		return a.ciCmd(rest)
+	case "clerk":
+		return a.clerk(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

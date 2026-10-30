@@ -2,14 +2,14 @@
 
 Lanterns is Guildhall's visual Claude Code plugin, shipped inside the Guildhall release and automatically installed by `guildhall director start` for every Claude Director.
 There is no marketplace step and no dependency on bridge-lights or a Firstmate home.
-It is separate from **Clerk**, the future interaction plugin that will own `/guild`, `/decisions`, `/inspect` and `/task`.
-Clerk is not shipped by this change.
+It is separate from **[Clerk](clerk.md)**, the read-only interaction plugin that owns `/guild`, `/decisions`, `/task`, `/inspect` and `/queue`, which ships and installs beside it.
 Lanterns has no Guildhall interaction commands and never changes tasks, decisions, messages or workflow state.
 Artisan interactive presentation is deferred; only Artisan process labels are published today.
 
 ## Installation and support
 
 The generated workspace contains `.claude/plugins/lanterns/`, and the Director launch command passes its absolute path with `--plugin-dir`.
+Beside it, `.claude/plugins/clerk/` holds the [Clerk](clerk.md) plugin, passed with a second `--plugin-dir` after Lanterns'.
 The release embeds all plugin assets in the Go binary.
 A new session refreshes those assets without requiring a separate checkout, symlinks or user-level Claude settings.
 The classic session-start hook uses `node` on PATH to inject the reply-marker convention.

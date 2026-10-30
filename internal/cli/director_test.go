@@ -16,6 +16,7 @@ import (
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/clerk"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/skills"
@@ -223,6 +224,31 @@ func TestDirectorStartClaudeWithoutModel(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(claude.VersionCommandFile))); err != nil || !strings.Contains(string(b), "guildhall version --startup") {
 		t.Errorf("workspace /version command = %q, %v", b, err)
 	}
+}
+
+// TestDirectorStartWritesClerk: director start writes the Clerk plugin from the running binary into the Claude
+// workspace beside Lanterns, and a second start rewrites a copy that changed.
+func TestDirectorStartWritesClerk(t *testing.T) {
+	dir := directorCopy(t, "[director]\nadapter = \"claude\"\n", "guildhall director ready", "/exit")
+	claudetest.Install(t)
+	plugin := filepath.Join(dir, "director", "claude", filepath.FromSlash(claude.ClerkPluginDir))
+	check := func(when string) {
+		t.Helper()
+		for name, want := range clerk.Files() {
+			if got, err := os.ReadFile(filepath.Join(plugin, filepath.FromSlash(name))); err != nil || !bytes.Equal(got, want) {
+				t.Errorf("%s: %s = %q, %v; want the embedded file", when, name, got, err)
+			}
+		}
+	}
+	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
+		t.Fatalf("first start: exit %d\n%s\n%s", code, out, stderr)
+	}
+	check("first start")
+	writeFile(t, filepath.Join(plugin, "commands", "guild.md"), "stale\n")
+	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
+		t.Fatalf("second start: exit %d\n%s\n%s", code, out, stderr)
+	}
+	check("second start")
 }
 
 // TestDirectorStartStartupNamesWhatIsInFlight starts a second session over a store with an unread question:

@@ -3,7 +3,7 @@
 ## Decision
 
 Ship Lanterns as its own visual-only plugin embedded in the Guildhall binary and installed into each Claude Director's generated workspace.
-Keep the future Clerk interaction plugin separate; do not add its commands here.
+Keep the Clerk interaction plugin separate; do not add its commands here. Clerk now ships as its own plugin beside Lanterns ([decision](clerk-install-and-output.md)).
 Use Claude's native status line for one combined light/count/context band and function hooks for urgency frames and Calm presentation.
 The original N8 animation and opt-in Calm default are superseded by the [S2 decision](lanterns-calm-s2.md); see the [Lanterns contract](../contracts/lanterns.md) for current animation and preference behavior.
 Do not enable early-access function hooks implicitly.
@@ -28,7 +28,7 @@ Its only presentation write is the persisted Calm preference; the supervisor own
 The preference lives outside the replaced `.claude` tree so handoff preserves the Director's choice.
 Native status and core hooks work without function hooks; frames and `/calm` do not.
 The classic marker-instruction hook requires Node on PATH.
-No Artisan interactive rollout or Clerk commands are included.
+No Artisan interactive rollout or Clerk commands are included; Clerk's commands live in [their own plugin](clerk-install-and-output.md).
 
 Transcript context uses the published [Anthropic context-window table](https://platform.claude.com/docs/en/build-with-claude/context-windows), checked on 2026-10-24.
 Unknown or provider-specific model IDs do not manufacture a percentage, and malformed or unreadable transcripts cannot prevent the turn-end signal.

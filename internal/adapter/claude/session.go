@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/clerk"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/lanterns"
 )
@@ -102,7 +103,7 @@ func absoluteRule(path string) string {
 }
 
 // Session returns the Claude Code Director session for spec: `claude --append-system-prompt-file <role prompt>
-// --add-dir <copy> --settings <session settings> --plugin-dir <bundled Lanterns> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
+// --add-dir <copy> --settings <session settings> --plugin-dir <bundled Lanterns> --plugin-dir <bundled Clerk> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
 // the interactive command shape beside the Artisan's print mode. Session refuses invalid specs and settings
 // with no command and writes nothing; the caller writes
 // SessionFiles before starting it.
@@ -121,7 +122,7 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 		return adapter.Command{}, errors.New("claude adapter: Claude must be an absolute path")
 	}
 	argv := []string{prog, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", spec.Copy, "--settings", filepath.Join(spec.Dir, SettingsFile)}
-	argv = append(argv, "--plugin-dir", filepath.Join(spec.Dir, PluginDir))
+	argv = append(argv, "--plugin-dir", filepath.Join(spec.Dir, PluginDir), "--plugin-dir", filepath.Join(spec.Dir, ClerkPluginDir))
 	argv = append(argv, settingsArgs(adapter.Settings{Model: spec.Model, Effort: spec.Effort})...)
 	return adapter.Command{Argv: append(argv, "--", spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
 }
@@ -166,7 +167,8 @@ const (
 
 // SessionFiles are the files a Claude Code Director session needs beside its skills, by slash path relative to
 // the session directory: merged settings at SettingsFile, a policy receipt at SkillPolicyFile, the /version
-// command at VersionCommandFile and the embedded Lanterns plugin at PluginDir.
+// command at VersionCommandFile, the embedded Lanterns plugin at PluginDir and the embedded Clerk plugin at
+// ClerkPluginDir.
 func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 	p := a.SkillPolicy
 	if p == nil {
@@ -178,6 +180,9 @@ func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 		VersionCommandFile: append([]byte(nil), versionCommand...)}
 	for name, data := range lanterns.Files() {
 		files[filepath.ToSlash(filepath.Join(PluginDir, name))] = data
+	}
+	for name, data := range clerk.Files() {
+		files[filepath.ToSlash(filepath.Join(ClerkPluginDir, name))] = data
 	}
 	files[CalmFile] = calmFile(copyDir)
 	return files
@@ -200,6 +205,10 @@ func calmFile(copyDir string) []byte {
 
 // PluginDir is the bundled Guildhall plugin in a generated Director workspace.
 const PluginDir = ".claude/plugins/lanterns"
+
+// ClerkPluginDir is the bundled Clerk plugin in a generated Director workspace, beside Lanterns; the Guildmaster's
+// own sessions load the same directory with --plugin-dir (docs/clerk.md).
+const ClerkPluginDir = ".claude/plugins/clerk"
 
 // ContextReportCommand is the status-line command of a Director session: Claude Code runs it after each
 // assistant message with the session's status as JSON on standard input.
