@@ -14,7 +14,8 @@ import (
 
 // Mergeability is an observation of one PR head against its base branch.
 // State is conflicting, behind (blocked by strict branch protection), or empty
-// when no such obstruction is known, including GitHub's UNKNOWN state.
+// when no such obstruction is known. Behind is GitHub's BEHIND, or a head measured
+// behind the base tip when GitHub has not confirmed the PR mergeable as it stands.
 // Base is the base tip: the base branch's commit on the forge when measured, read
 // with ls-remote and fetched exactly. It is empty when no obstruction is reported.
 // Files and Behind are computed locally against that Base, without checking out,
@@ -32,9 +33,13 @@ type Mergeability struct {
 // Mergeability reads PR m.Number with command-specific gh flags. Invalid requests
 // are ErrInvalid; unsupported remotes, process and fetch failures are errors, not
 // assumed conflicts. A moved PR is ErrRefused. Only an open PR can obstruct work.
-// Only a conflicting or behind PR resolves its base tip, with git ls-remote of the
+// GitHub's CONFLICTING or DIRTY is conflicting and BEHIND is behind. CLEAN, UNSTABLE
+// and HAS_HOOKS are confirmed clear and need only gh pr view. Every other status of
+// an open PR (UNKNOWN, BLOCKED, DRAFT, ...) is unconfirmed: it is behind when its
+// head lacks commits of the base tip, and clear otherwise; it is never conflicting.
+// Every state but a confirmed one resolves the base tip, with git ls-remote of the
 // PR's baseRefName, and fetches that exact OID; a missing, ambiguous or invalid
-// tip is an error. Clear observations leave Base empty and need only gh pr view.
+// tip is an error. Clear observations leave Base empty.
 // Concurrent observations are safe; they fetch objects but change no branches.
 func (g GitHub) Mergeability(ctx context.Context, m Merge) (Mergeability, error) {
 	if err := m.Validate(); err != nil {
@@ -57,13 +62,19 @@ func (g GitHub) Mergeability(ctx context.Context, m Merge) (Mergeability, error)
 	if p.State != "OPEN" {
 		return out, nil
 	}
+	// GitHub recomputes mergeStateStatus after the base moves, reporting UNKNOWN or
+	// BLOCKED meanwhile, so only a confirmed status is trusted to be clear; any other
+	// is measured locally against the base tip below.
+	unconfirmed := false
 	switch {
 	case p.Mergeable == "CONFLICTING" || p.MergeStateStatus == "DIRTY":
 		out.State = "conflicting"
 	case p.MergeStateStatus == "BEHIND":
 		out.State = "behind"
-	default:
+	case p.MergeStateStatus == "CLEAN" || p.MergeStateStatus == "UNSTABLE" || p.MergeStateStatus == "HAS_HOOKS":
 		return out, nil
+	default:
+		unconfirmed = true
 	}
 	// GitHub's recorded base is the one it last compared against and goes stale, so
 	// read the base branch's tip now and measure everything against that one OID.
@@ -82,15 +93,22 @@ func (g GitHub) Mergeability(ctx context.Context, m Merge) (Mergeability, error)
 	if _, err := g.git(ctx, m.Repository, "fetch", "--no-tags", "--no-write-fetch-head", m.Remote, tip); err != nil {
 		return Mergeability{}, err
 	}
-	out.Base = tip
 	count, err := g.git(ctx, m.Repository, "rev-list", "--count", m.Head+".."+tip)
 	if err != nil {
 		return Mergeability{}, err
 	}
-	out.Behind, err = strconv.Atoi(strings.TrimSpace(string(count)))
+	behind, err := strconv.Atoi(strings.TrimSpace(string(count)))
 	if err != nil {
 		return Mergeability{}, err
 	}
+	if unconfirmed {
+		// A local measurement reports behind, never conflicting: that is GitHub's to say.
+		if behind == 0 {
+			return out, nil
+		}
+		out.State = "behind"
+	}
+	out.Base, out.Behind = tip, behind
 	data, err := g.git(ctx, m.Repository, "merge-tree", "--write-tree", "--name-only", "-z", m.Head, tip)
 	if err != nil {
 		var run *runError

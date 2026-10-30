@@ -36,8 +36,12 @@ func TestGitHubMergeabilityEvidence(t *testing.T) {
 	for _, tc := range []struct{ mergeable, status, want string }{
 		{"CONFLICTING", "DIRTY", "conflicting"},
 		{"MERGEABLE", "BEHIND", "behind"},
-		{"UNKNOWN", "UNKNOWN", ""},
-		{"MERGEABLE", "BLOCKED", ""},
+		// GitHub has not yet confirmed these against the moved main (d85), so the base is measured locally.
+		{"UNKNOWN", "UNKNOWN", "behind"},
+		{"MERGEABLE", "BLOCKED", "behind"},
+		// GitHub confirmed these mergeable as they stand, so they stay clear though main moved.
+		{"MERGEABLE", "CLEAN", ""},
+		{"MERGEABLE", "UNSTABLE", ""},
 	} {
 		t.Run(tc.status, func(t *testing.T) {
 			s := g.readState(t)
@@ -71,6 +75,32 @@ func TestGitHubMergeabilityEvidence(t *testing.T) {
 	if !errors.Is(err, forge.ErrRefused) {
 		t.Fatalf("moved head = %v", err)
 	}
+}
+
+// An UNKNOWN pull request whose head already contains the base tip is measured
+// locally, found not behind, and stays clear with Base empty.
+func TestGitHubMergeabilityUnknownUpToDate(t *testing.T) {
+	g := newGitHub(t)
+	h := g.harness
+	ctx := context.Background()
+	gh := h.Forge.(forge.GitHub)
+	head := h.Heads[0]
+	pr, err := gh.Publish(ctx, forge.Change{Repository: h.Repository, Remote: h.Remote, Branch: "guildhall/current", Head: head, Title: "current"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := g.readState(t)
+	s.Mergeable, s.MergeStateStatus = "UNKNOWN", "UNKNOWN"
+	g.writeState(t, s)
+	req := forge.Merge{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: head}
+	got, err := gh.Mergeability(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != "" || got.Base != "" || got.Behind != 0 || got.Head != head || got.URL != pr.URL {
+		t.Fatalf("observation = %+v", got)
+	}
+	forgetest.RunMergeabilityContract(t, forgetest.MergeabilityHarness{Reader: gh, Request: req, Want: got})
 }
 
 // A base branch deleted after pr create has no tip to measure against. Guildhall
