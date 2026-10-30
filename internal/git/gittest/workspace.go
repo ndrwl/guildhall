@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -342,7 +343,7 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 		ensure(t, h, w)
 		head := h.Commit(t, w.Dir, "change.txt")
 		writeFile(t, filepath.Join(w.Dir, "out", "spec.md"), "the spec\n")
-		return git.Retirement{Workspace: w, Head: head, Outputs: map[string]string{"out/spec.md": digest.Of([]byte("the spec\n")).Hex()}}
+		return git.Retirement{Workspace: w, Head: head, Outputs: map[string][]string{"out/spec.md": {digest.Of([]byte("the spec\n")).Hex()}}}
 	}
 	kept := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
 		t.Helper()
@@ -375,6 +376,19 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 	t.Run("keeps an output with other bytes", func(t *testing.T) {
 		h := newHarness(t)
 		r := arrangeMerged(t, h)
+		writeFile(t, filepath.Join(r.Dir, "out", "spec.md"), "edited after it was recorded\n")
+		kept(t, h, r)
+	})
+	t.Run("retires an output matching any of the hashes recorded at its path", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		r.Outputs["out/spec.md"] = append(r.Outputs["out/spec.md"], digest.Of([]byte("a later spec\n")).Hex())
+		retired(t, h, r)
+	})
+	t.Run("keeps an output matching none of the hashes recorded at its path", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		r.Outputs["out/spec.md"] = append(r.Outputs["out/spec.md"], digest.Of([]byte("a later spec\n")).Hex())
 		writeFile(t, filepath.Join(r.Dir, "out", "spec.md"), "edited after it was recorded\n")
 		kept(t, h, r)
 	})
@@ -829,7 +843,7 @@ func (f *Workspaces) Retire(ctx context.Context, r git.Retirement) ([]string, er
 		}
 		err := walkFiles(dir, func(rel string, data []byte) {
 			sum := digest.Of(data).Hex()
-			if tr.committed[rel] != sum && r.Outputs[rel] != sum {
+			if tr.committed[rel] != sum && !slices.Contains(r.Outputs[rel], sum) {
 				kept = append(kept, "changed or untracked "+rel)
 			}
 		})

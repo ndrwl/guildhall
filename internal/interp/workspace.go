@@ -149,20 +149,21 @@ func (r *run) retire(id string, repo config.Repository, head string) error {
 }
 
 // outputs are the task's recorded documents by their path below their record directory, the path an output had
-// in the working directory, with their sha256.
-func (r *run) outputs() map[string]string {
+// in the working directory, with the sha256 of each.
+func (r *run) outputs() map[string][]string {
 	return RetirementOutputs(r.task.Repository, r.task.ID, r.documents)
 }
 
 // RetirementOutputs are the documents of a task by their path below their record directory, the path an output had
-// in the working directory, with their sha256: the outputs git.Program.Retire takes, so `guildhall prune` retires a
-// done task's workspace as its merge did.
-func RetirementOutputs(repository, taskID string, documents []store.DocumentRef) map[string]string {
+// in the working directory, with the sha256 of every document recorded at that path, since many attempts write
+// the same file: the outputs git.Program.Retire takes, so `guildhall prune` retires a done task's workspace as its
+// merge did.
+func RetirementOutputs(repository, taskID string, documents []store.DocumentRef) map[string][]string {
 	prefix := path.Join("tasks", repository, taskID) + "/"
-	out := map[string]string{}
+	out := map[string][]string{}
 	for _, d := range documents {
 		if _, rel, ok := strings.Cut(strings.TrimPrefix(d.Path, prefix), "/"); ok && strings.HasPrefix(d.Path, prefix) {
-			out[rel] = d.SHA256
+			out[rel] = append(out[rel], d.SHA256)
 		}
 	}
 	return out

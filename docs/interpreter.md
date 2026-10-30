@@ -613,9 +613,10 @@ Research, plan and review attempts never get the note.
 The note is rendered only with the attempt's first [preparation](#attempt-preparation); a published prompt is never rendered again, so a relaunch keeps it as it was.
 A working directory that is not yet a worktree is left alone: `Ensure` creates the branch at the current main anyway.
 When a merge closes the task, the engine calls `Workspaces.Retire` with the merged head and the task's recorded documents, before marking the task `done`, so a replay retires it again.
-It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a recorded output with the same bytes, and a worktree HEAD and branch tip that are the merged head or behind it.
+It removes the worktree and deletes the local branch `guildhall/<task>` only when nothing in them would be lost: no changed or staged tracked file, no untracked file other than a copy of any document the store records for the task at that path below its record directory (an `outcome.json` from a review after a rebase matches although a later-sorting review recorded another), and a worktree HEAD and branch tip that are the merged head or behind it.
 Otherwise it removes nothing, and the Director is sent `<repo>.<task>.workspace-kept.<merge>.<digest>`, type `workspace-kept`, naming the directory, the branch and what they hold, where `<digest>` is the first 12 hex digits of the text's sha256; the Director decides what happens to them.
 A retirement that fails, such as git refusing to remove the worktree, is reported the same way and never fails the merge or keeps the task open.
+A merged head the local clone lacks, as after the forge's "Update branch" and a merge outside Guildhall, is fetched from the remote by its commit id before the check; one that cannot be fetched is such a failure, and nothing is removed.
 A retirement cut short by an interrupt is not: the advance fails before the task is marked `done`, no `workspace-kept` message is sent, and running the command again replays the merge and retires the working directory again.
 With no `Engine.Workspaces` the working directory is a plain directory, which is how the engine's own tests run; publish cannot push from one.
 
