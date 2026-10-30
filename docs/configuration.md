@@ -130,7 +130,7 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_self_review` | `on` runs the [`guildhall-self-review`](../skills/guildhall-self-review/SKILL.md) skill after each merged task; `off`, the default, never does. |
 | `quality_size_budget_lines` | The soft size budget's non-test lines changed: a whole number, default 400; a change over it is flagged in the self-review, never blocked, and `"0"` turns that half of the flag off. |
 | `quality_size_budget_files` | The soft size budget's files touched, the same way: default 15. |
-| `quality_audit_sample` | Independently of `quality_self_review`, about one in this many delivered tasks, chosen by the task's identity, is sampled for the Guildmaster's three-question [`audit` decision](interpreter.md#publish-and-deliver), as are reference runs once they exist: a whole number, default 5; `"0"` turns the audit off. |
+| `quality_audit_sample` | Deprecated, in favour of `[director] retrospective_after_merges`, and has no effect: it once sampled about one in this many delivered tasks for the Guildmaster's three-question audit, which is retired ([decision](decisions/retire-quality-audit.md)). It is still parsed as a whole number, default 5, so a config that sets it loads, and `director start` warns that it is deprecated. |
 | `quality_reference_runs` | When the reference task set runs on a real model: `off`, the default, or `on-change-and-release`, for each workflow-change proposal and each release tag. |
 | `quality_reference_runs_per_task` | How many times each reference task runs per workflow version: a positive whole number, default 3. |
 | `quality_reference_cost_cap_usd` | The cap on one reference evaluation's cost in US dollars, such as `"25"` or `"12.50"`; unset by default, and required while `quality_reference_runs` is not `off`. |
@@ -138,7 +138,7 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_judge_separate_family` | `on`, the default, prefers the first eligible listed judge profile of a different model family from the builder's when the builder's historical adapter is known, a family being a profile's adapter; otherwise it takes the first eligible profile. See [running the judge](quality.md#running-it) for the current historical-family limitation. `off` takes the first eligible listed profile, never the builder's session. |
 | `quality_skill_edits_need_approval` | `on`, the default for the first cycle, treats an edit to the review, build or spec skill text as a design change that needs the Guildmaster's approval; `off` treats it as any other lesson. |
 
-`quality_self_review` and the size budget are read by the self-review skill, `quality_audit_sample` by deliver as it closes a merged task, and the judge settings by [`quality judge`](quality.md#running-it) ([decision](decisions/quality-judge.md)); the other settings are read by nothing yet.
+`quality_self_review` and the size budget are read by the self-review skill and the judge settings by [`quality judge`](quality.md#running-it) ([decision](decisions/quality-judge.md)); the deprecated `quality_audit_sample` is read by nothing, and the other settings are read by nothing yet.
 The reference-run and skill-edit settings are parsed and validated so a copy can set them now; the reference runner and the lesson-proposal shape that will read them are later work.
 
 ### Repositories

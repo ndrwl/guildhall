@@ -1,8 +1,8 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -99,48 +99,40 @@ func TestQualityRefusesAnInvalidSetting(t *testing.T) {
 	}
 }
 
-// TestQualityAudits: no task is audited at sample 0, every task at 1, and otherwise the task's identity alone
-// chooses, so asking again gives the same answer and about one task in N is chosen, independent of self-review.
-func TestQualityAudits(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		q    Quality
-	}{
-		{"self-review off", Quality{SelfReview: false, AuditSample: 0}},
-		{"the audit off", Quality{SelfReview: true, AuditSample: 0}},
+// TestQualityAuditSampleDeprecated: quality_audit_sample, retired with the Guildmaster's audit, still parses, so a
+// config that sets it loads and keeps it in the JSON its config digest is taken over, and a config that sets nothing
+// has none; a local or managed value gets one deprecation warning naming the key and its replacement, and a config
+// that sets nothing gets none.
+func TestQualityAuditSampleDeprecated(t *testing.T) {
+	unset, err := Parse([]byte(director(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unset.Deprecations(); len(got) != 0 {
+		t.Errorf("Deprecations of a config that sets nothing = %q, want none", got)
+	}
+	if b, err := json.Marshal(unset); err != nil || strings.Contains(string(b), QualityAuditSampleKey) {
+		t.Errorf("JSON of a config that sets nothing = %s, %v; want no %s", b, err, QualityAuditSampleKey)
+	}
+	for name, data := range map[string]string{
+		"local":   strings.Replace(director(t), "[local]", "[local]\n"+`quality_audit_sample = "0"`, 1),
+		"managed": strings.Replace(director(t), "[local]", "[managed.quality_audit_sample]\nvalue = \"0\"\n[local]", 1),
 	} {
-		for i := range 50 {
-			if tc.q.Audits("app", fmt.Sprint("t-", i)) {
-				t.Errorf("%s: Audits(app, t-%d) = true", tc.name, i)
-			}
+		cfg, err := Parse([]byte(data))
+		if err != nil {
+			t.Fatalf("%s: Parse = %v", name, err)
 		}
-	}
-	for _, selfReview := range []bool{false, true} {
-		one := Quality{SelfReview: selfReview, AuditSample: 1}
-		for i := range 50 {
-			if !one.Audits("app", fmt.Sprint("t-", i)) {
-				t.Errorf("self-review %t, one in 1: Audits(app, t-%d) = false", selfReview, i)
-			}
+		got := cfg.Deprecations()
+		if len(got) != 1 || !strings.HasPrefix(got[0], name+" "+QualityAuditSampleKey+" is deprecated and has no effect") ||
+			!strings.Contains(got[0], "retrospective_after_merges") {
+			t.Errorf("%s: Deprecations = %q, want one warning naming %s and its replacement", name, got, QualityAuditSampleKey)
 		}
-	}
-	five := Quality{AuditSample: 5}
-	fiveWithReview := Quality{SelfReview: true, AuditSample: 5}
-	chosen := 0
-	for i := range 2000 {
-		id := fmt.Sprint("t-", i)
-		got := five.Audits("app", id)
-		if got != five.Audits("app", id) {
-			t.Fatalf("Audits(app, %s) changed between calls", id)
+		if q, err := cfg.Quality(); err != nil || q.AuditSample != 0 {
+			t.Errorf("%s: Quality = %+v, %v; want the sample parsed as 0", name, q, err)
 		}
-		if got != fiveWithReview.Audits("app", id) {
-			t.Fatalf("Audits(app, %s) changed with self-review", id)
+		if b, err := json.Marshal(cfg); err != nil || !strings.Contains(string(b), `"`+QualityAuditSampleKey+`"`) {
+			t.Errorf("%s: JSON = %s, %v; want %s kept", name, b, err, QualityAuditSampleKey)
 		}
-		if got {
-			chosen++
-		}
-	}
-	if chosen < 300 || chosen > 500 {
-		t.Errorf("one in 5 chose %d of 2000 tasks, want about 400", chosen)
 	}
 }
 

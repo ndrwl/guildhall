@@ -78,7 +78,7 @@ var done = interp.Next{Wait: interp.WaitDone, Step: "deliver"}
 
 // TestMergeWithoutGuildmaster: with guildmaster_approval off and everything else holding, deliver records
 // deliver-1-authorized with the requirements and the evidence it read, merges without a decision, tells the Director
-// who merged, runs the audit sample and closes the task.
+// who merged and closes the task, opening no audit even with quality_audit_sample at 1.
 func TestMergeWithoutGuildmaster(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -89,8 +89,8 @@ func TestMergeWithoutGuildmaster(t *testing.T) {
 			f.SetChecks(repoRemote, head, ciPassed...)
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
 
-			if ids := e.decisionIDs(t); slices.Contains(ids, "deliver-1") || !slices.Contains(ids, "audit") {
-				t.Errorf("decisions = %q, want no merge decision and the audit", ids)
+			if ids := e.decisionIDs(t); slices.Contains(ids, "deliver-1") || slices.Contains(ids, "audit") {
+				t.Errorf("decisions = %q, want no merge decision and no audit", ids)
 			}
 			a := e.pullRequestDoc(t, "deliver-1-authorized")
 			requires := a["requires"].(map[string]any)

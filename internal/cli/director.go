@@ -193,7 +193,8 @@ type startPlan struct {
 
 // preflight checks, in order, that the config is admitted, the runtime is known and on PATH, guildhall is on
 // PATH for the session's bare commands, the store opens and
-// the release skills install, printing one doctor-style line per check, then names the Artisan permissions the
+// the release skills install, printing one doctor-style line per check and a config warning line for each
+// deprecated setting the config sets (config.Deprecations), then names the Artisan permissions the
 // claude profiles depend on, which refuses nothing. A failed check prints its line, then
 // errStartRefused; nothing is recorded.
 func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPlan, error) {
@@ -206,6 +207,9 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 	}
 	p.cfg = cfg
 	line("config", "admitted (%s)", cfgPath)
+	for _, w := range cfg.Deprecations() {
+		line("config", "warning: %s", w)
+	}
 
 	p.positional = positional
 	program, err := a.resolveRuntime(&p)

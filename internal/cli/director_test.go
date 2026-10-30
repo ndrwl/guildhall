@@ -316,6 +316,31 @@ func TestDirectorStartCheckRecordsNothing(t *testing.T) {
 	}
 }
 
+// TestDirectorStartCheckWarnsOfDeprecatedSettings: a config that sets the retired quality_audit_sample is admitted,
+// and the preflight prints one config warning saying it has no effect and naming its replacement; a config that sets
+// nothing prints no warning.
+func TestDirectorStartCheckWarnsOfDeprecatedSettings(t *testing.T) {
+	const warning = "config: warning: local quality_audit_sample is deprecated and has no effect"
+	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
+	code, out, stderr := runDirectorCmd(t, "start", "--check", "--copy", dir)
+	if code != 0 || strings.Contains(out, "warning") {
+		t.Fatalf("a config that sets nothing: exit %d, want 0 and no warning\n%s\n%s", code, out, stderr)
+	}
+	cfg := filepath.Join(dir, "config.toml")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, bytes.Replace(b, []byte("[local]\n"), []byte("[local]\nquality_audit_sample = \"0\"\n"), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr = runDirectorCmd(t, "start", "--check", "--copy", dir)
+	if code != 0 || strings.Count(out, warning) != 1 || !strings.Contains(out, "[director] retrospective_after_merges") ||
+		!strings.Contains(out, "config: admitted") {
+		t.Errorf("exit %d, want 0, the config admitted and one line %q naming its replacement\n%s\n%s", code, warning, out, stderr)
+	}
+}
+
 // TestDirectorStartCheckNamesArtisanPermissions: the preflight's artisans line names the Director and the config
 // file whose profiles grant the Artisans' tools, each claude profile's effective grant by source (the copy's list,
 // the shipped default, or a note that a profile of another name gets none, then each repository's additions and the

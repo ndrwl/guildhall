@@ -163,7 +163,7 @@ A cancelled task leaves `task list --open`, and `task list` and `task show` prin
 It contributes nothing to `director status` but its unread messages, until they are read.
 A cancel counts toward `handoff_after_tasks` as a merge does.
 Stopping an attempt makes its launcher advance the task; `task start` and `step done` of a cancelled task print `task <repo>/<task> is cancelled; nothing to advance` and succeed, so no `advance-failed` message follows; of a done task they still fail.
-`decide answer` refuses a cancelled task's decisions; a done task's, such as its audit, are answered as before.
+`decide answer` refuses a cancelled task's decisions; a done task's, such as an audit an earlier release opened, are answered as before.
 Cancel never records `cancelled` for a task whose work landed.
 
 ## Merged outside Guildhall
@@ -176,12 +176,13 @@ A merge of deliver's own whose record a crash lost, the pull request merged at t
 When a task has landed outside Guildhall, Guildhall, in order:
 
 1. records the forge's merged pull request, with its head and `merge_commit`, as `outside-<number>-merge`, so `task cancel` sees the task as merged;
-2. voids each open decision with the reason `Task done: pull request <url> merged outside Guildhall`;
+2. voids each open decision with the reason `Task done: pull request <url> merged outside Guildhall`, except an `audit` an earlier release opened, which stays answerable;
 3. sends the Director a `merged` message, id `<repo>.<task>.merged.outside.<number>`, naming the pull request, the forge's head, its merge commit and the head Guildhall last recorded for it, so `task timeline` and `director status` show the merge;
 4. retires the working directory at the forge's head; a head Guildhall never fetched keeps it, with a `workspace-kept` message, as for any merge;
-5. opens the [audit](quality.md) when quality sampling selects the task, as a merge does;
-6. takes the task out of the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
-7. records the task `done`.
+5. takes the task out of the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
+6. records the task `done`.
+
+Like a merge by deliver, it opens no [audit](quality.md#honesty-and-evidence-g): the Guildmaster's audit is retired ([decision](decisions/retire-quality-audit.md)).
 
 Every write's mutation id is keyed on the pull request's remote and number, so a run that fails part-way is finished by the next from the recorded `outside-<number>-merge`, sending nothing twice.
 The forge must read pull requests (GitHub does); a forge that cannot never applies the rule.
