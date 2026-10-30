@@ -45,7 +45,7 @@ func TestVersionStartupComparesTheSupervisorBySHA256(t *testing.T) {
 				return s.StartDirectorSession(store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity{PID: 7, Token: "boot:7"},
 					Release: tt.release, BinarySHA256: tt.sha256, ConfigDigest: "sha256:" + strings.Repeat("c", 64)})
 			})
-			env := map[string]string{copyEnvVar: dir, session.NumberEnv: "1"}
+			env := map[string]string{cwdKey: markCopy(t, dir), session.NumberEnv: "1"}
 			if code, out, _ := runVersion(t, testBuildInfo(nil), &fakeVersionGit{}, env, "--startup"); code != 0 || out != "guildhall abd97485 2026-10-27\n"+tt.want {
 				t.Errorf("version --startup = %d\n%s\nwant the warning %q", code, out, tt.want)
 			}

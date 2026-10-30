@@ -285,7 +285,7 @@ func TestReloadRefusesABinaryThatFailsItsPreflight(t *testing.T) {
 		t.Errorf("status supervisor_binary = %+v; want the supervisor's binary and the refused one on PATH, differing", b)
 	}
 
-	env := map[string]string{copyEnvVar: dir, session.NumberEnv: "2"}
+	env := map[string]string{cwdKey: markCopy(t, dir), session.NumberEnv: "2"}
 	_, out, _ := runVersion(t, testBuildInfo(nil), &fakeVersionGit{}, env, "--startup")
 	if want := "warning: this session's supervisor refused to move onto guildhall " + shortSHA(sum) + " at its reload"; !strings.Contains(out, want) ||
 		strings.Contains(out, "not the one running") {
