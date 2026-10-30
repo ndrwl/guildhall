@@ -313,6 +313,7 @@ With no live notes it prints `No notes.`
 
 Notes reach only Director sessions, never an Artisan.
 Requirements, constraints or clarifications the Guildmaster gives about one task go in that task's [task context](tasks.md#task-context), `guildhall task context add`, which every later stage of the task is given, not in a `guildmaster` note; a `guildmaster` note keeps a preference that is not about one task.
+When the Guildmaster wants a task's Artisans to see another task's document, such as the spec its title names, link it with `guildhall task link add --document <repo>/<task>/<name>`, quoting their words, so every later stage is given a verified copy ([task links](tasks.md#task-links)); never paste the document into task context.
 
 Every new session's `startup.md` lists the live notes in the same form before the in-flight snapshot, so the Director writes a note in the same turn something arises that no record holds, rather than at the end of a session.
 When their text totals more than 8 KB the list opens with a line asking the Director to compact them; it is a warning only, and no note is ever refused for the total.

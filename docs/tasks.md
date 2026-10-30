@@ -15,7 +15,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
   A title over 100 characters is refused with exit 1 before the configuration is read, naming `--detail` and `--detail-file`.
 - `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
-- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...], "context": [...]}` for one task; `context` is its [task context](#task-context) entries, in number order, and `design_rounds`, present once the task has had a [design round](#design-rounds), the rounds used.
+- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...], "context": [...], "links": [...]}` for one task; `context` is its [task context](#task-context) entries, in number order, `links` its [task link](#task-links) records, adds and removes, in number order, each with `op`, `source` (`repository`, `task_id`, `name`, `path`, `sha256`), `text`, `author` and `added_at`, and `design_rounds`, present once the task has had a [design round](#design-rounds), the rounds used.
 - `guildhall task list --store <path> [--repo <id>] [--workflow <name>] [--open] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
   `--workflow` keeps only the tasks bound to that workflow name, and `--open` only open tasks; before deleting `workflows/<name>.json` the Director checks that `task list --workflow <name> --open --json` prints `[]`, since an open task bound to it would strand, and nothing else refuses the deletion.
   A task in its repository's [merge queue](interpreter.md#the-merge-queue) also has a `merge_queue` object, the entry `director status` lists ([status](director.md#status)); it is absent for a task that is not queued.
@@ -26,6 +26,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task reconcile --store <path> --config <director.toml> --state <dir> --repo <id> <task>` [records an open task done](#task-reconcile) whose pull request was merged outside Guildhall.
 - `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
 - `guildhall task context add --store <path> --repo <id> (--text <text> | --file <path>) <task>` adds an entry of [task context](#task-context) and prints its receipt; `guildhall task context list --store <path> --repo <id> <task> --json` prints the task's entries.
+- `guildhall task link add|remove --store <path> --repo <id> --document <repo>/<task>/<name> (--text <text> | --file <path>) <task>` links another task's recorded document to a task, or unlinks it, as a [task link](#task-links) and prints its receipt; `add` also takes `--state <dir>`; `guildhall task link list --store <path> --repo <id> <task> --json` prints the task's link records.
 - `guildhall task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]` adds a [design round](#design-rounds) to a feature task and advances it, printing where the task waits as [`task start`](running.md#task-start) does; it takes `--task <id>` rather than a positional task.
 
 For every command but `list`, the positional task id may appear before or after flags.
@@ -231,6 +232,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
 - `context`: every entry of [task context](#task-context) with its `number`, `text`, `author` and `added_at`, ordered by when it was added.
+- `links`: every [task link](#task-links) record with its `number`, `op`, `source`, `text`, `author` and `added_at`, ordered by when it was recorded; a removed link stays listed beside its removal.
 - `design_rounds`: the [design rounds](#design-rounds) used, counted from their briefs; absent when the task has had none. Each round's designer attempts and its decision are among `attempts` and `decisions`.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
 - `priority` and `priority_changes`: the task's [priority](#priority) now and every level set, each with `set_at`.
@@ -301,6 +303,33 @@ Every Artisan attempt of the task bound after an entry is added is given every e
 An attempt already bound, running or recorded but not yet launched, keeps the inputs it was given, and a finished stage is not stale because of new context.
 To get context into a finished stage, send it back with [`step send-back`](step-send-back.md) or retry it with `step retry`; either way its next attempt is bound with the context.
 A task with no entries is given no `context` document.
+
+## Task links
+
+A task link gives a task's Artisans another task's recorded document, such as the spec a task's title names, which their sandbox cannot otherwise read.
+The Director records it when the Guildmaster asks, quoting their words, instead of pasting the document into task context.
+
+```
+guildhall task link add    --store <path> --state <dir> --repo <id> --document <repo>/<task>/<name> (--text <text> | --file <path>) <task>
+guildhall task link remove --store <path> --repo <id> --document <repo>/<task>/<name> (--text <text> | --file <path>) <task>
+guildhall task link list   --store <path> --repo <id> <task> --json
+```
+
+`--copy <dir>`, or the copy found from the current directory, stands in for `--store` and, for `add`, `--state`.
+
+- `--document` names one recorded document exactly: its repository, its task and its record name, as `task show` lists them under `documents`. An Artisan output is named `<step>-<n>-<port>`, so "d14's plan-5 spec" is `guildhall/d14/plan-5-spec`. Moving references such as "latest spec" are not accepted. Any recorded document of any task in any repository of the copy may be linked, whatever the task's state, done, cancelled and pruned included, since [prune](store.md#pruned-tasks) keeps every recorded document; a task's own documents cannot be linked, since its attempts reach them already. Code heads and branches cannot be linked; `--depends-on` orders tasks on code.
+- `add` checks the document's file under `<state>/documents` against its recorded digest first, refusing a missing or changed file with an error naming the document; then it records the task's next link record, `op` `add`, with the source's `path` and `sha256` pinned. `remove` records `op` `remove`. Records are numbered from 1 per task, adds and removes alike, with author `director` and the time recorded, and each prints its receipt, record `task-link/<n>`, mutation `task-link:<repo>:<task>:<op>:<src repo>:<src task>:<name>:<prior>`, hashed as for `task new` when longer than 128 bytes, `prior` being how many records the task already has for that document. Running the same command again, while its record is still that document's latest, prints the original receipt and records nothing; removing and adding again records new records.
+- The text, the Guildmaster's words, comes from exactly one of `--text` and `--file`, which names a file (`--file -` is not supported); it must be non-blank UTF-8 of at most 64 KiB. A task that is unknown or not open, a document that is not recorded, an `add` of a document already linked, a `remove` of one not linked and a record made meanwhile for the same document are refused with exit 1 and nothing is written.
+- `list` prints the task's link records as a JSON array in number order; it opens the store read-only.
+
+For each document the latest record wins: the task's linked documents are those whose latest record is an `add`, in the order of those adds.
+Linking or unlinking launches, re-runs and invalidates nothing; run `task link add` straight after `task new`, before `task start`, so the first attempt gets the link.
+Every Artisan attempt of the task bound afterwards, Director stages and design-round designers included, is given on port `linked` first an index document `links-<m>` (`tasks/<repo>/<task>/links-<m>.md`, for a task with `m` link records) listing each linked document's link number, source, the path it is found at among the attempt's inputs, its digest and the Guildmaster's words fenced, then each linked document as recorded, under its own path, such as `inputs/tasks/guildhall/d14/plan-5/spec.md` ([engine-added inputs](interpreter.md#rounds-and-loops)).
+The attempt's binding, `<step>-<n>-inputs`, records exactly which linked documents it was given and their digests.
+Before an attempt is bound, every linked file is checked against the digest its link pinned; a missing or changed file refuses the binding, and the advance fails with an error naming the task, the link and its source, such as `task guildhall/d70: link 2 guildhall/d14/plan-5-spec: file missing`, so no attempt runs without a document its task links.
+An attempt already bound keeps the inputs it was given, and a finished stage is not stale because of a new or removed link; to reach it, `step send-back` or `step retry` it.
+A task with no linked documents is given no `linked` input.
+Rebaser and conflict-resolution attempts and Guildmaster questions are given neither linked documents nor task context.
 
 ## Design rounds
 

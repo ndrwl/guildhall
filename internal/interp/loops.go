@@ -31,6 +31,10 @@ const (
 	// attempt was bound, as one Markdown document context-<k> (docs/tasks.md#task-context). Workflows may wire
 	// step outputs to a port of the same name, such as plan's context; only the engine's document is engine-added.
 	ContextPort = "context"
+	// LinkedPort carries the documents of other tasks the Director linked to the task, every link active when the
+	// attempt was bound: first the index document links-<m> naming each one's source and the Guildmaster's words,
+	// then each linked document as recorded (docs/tasks.md#task-links).
+	LinkedPort = "linked"
 )
 
 // changesRequested is the outcome whose loop rules every looping kind but validate follows (loopOutcome).
@@ -115,7 +119,7 @@ func (r *run) boundInputs(b binding) []render.Input {
 // the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served; for a
 // Director stage a loop went back to, its own latest outputs as previous and the document each loop's blocking result
 // was bound to as reviewed, so the stage resumes from them rather than starting over; then the task's context, when it
-// has any.
+// has any, and its linked documents, when it has any.
 func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 	var out []render.Input
 	if isReview(s) {
@@ -153,10 +157,17 @@ func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 		out = append(out, reviewed...)
 	}
 	c, err := r.contextInput()
-	if err != nil || c == nil {
-		return out, err
+	if err != nil {
+		return nil, err
 	}
-	return append(out, *c), nil
+	if c != nil {
+		out = append(out, *c)
+	}
+	linked, err := r.linkInputs()
+	if err != nil {
+		return nil, err
+	}
+	return append(out, linked...), nil
 }
 
 // want is what an outcome of review step s must be bound to, given its current inputs.
@@ -186,8 +197,8 @@ func (r *run) want(s workflow.Step, inputs []render.Input) (workflow.Revisions, 
 }
 
 // stale reports whether a finished attempt of s was given other inputs, or for a review other
-// revisions, than s would be given now. The engine-added inputs are left out: a new loop's feedback, rulings or
-// task context never makes a finished attempt stale. Plan's design is the one engine-added input counted, and only for
+// revisions, than s would be given now. The engine-added inputs are left out: a new loop's feedback, rulings,
+// task context or linked documents never make a finished attempt stale. Plan's design is the one engine-added input counted, and only for
 // plan: a newly approved design makes its finished attempt stale.
 func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	b, err := r.binding(s.ID, n)
@@ -203,7 +214,7 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	}
 	var given []render.Input
 	for _, in := range r.boundInputs(b) {
-		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ReviewedPort && in.Port != ResolutionPort && !r.isTaskContext(in) {
+		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ReviewedPort && in.Port != ResolutionPort && in.Port != LinkedPort && !r.isTaskContext(in) {
 			given = append(given, in)
 		}
 	}

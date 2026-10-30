@@ -50,6 +50,9 @@ type Records interface {
 	// TaskContexts lists a task's context entries by number; the Director records them (guildhall task context add),
 	// never the engine.
 	TaskContexts(repository, taskID string) ([]store.TaskContext, error)
+	// TaskLinks lists a task's link records by number; the Director records them (guildhall task link add|remove),
+	// never the engine.
+	TaskLinks(repository, taskID string) ([]store.TaskLink, error)
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
 	StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error)
 	StartDirectorAttempt(mutationID, repository, taskID, step string, hold bool) (store.Receipt, error)

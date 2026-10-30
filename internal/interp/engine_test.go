@@ -41,7 +41,7 @@ func storeRecords(t *testing.T) interptest.RecordsHarness {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return interptest.RecordsHarness{Records: s, CreateTask: s.CreateTask, AnswerDecision: s.AnswerDecision, RuleFinding: s.RuleFinding,
-		RequestFullReview: s.RequestFullReview, AddTaskContext: s.AddTaskContext, OverrideDependencies: s.OverrideDependencies, SetTaskPriority: s.SetTaskPriority, PauseDirector: func() error { return interptest.PauseStoreDirector(s) },
+		RequestFullReview: s.RequestFullReview, AddTaskContext: s.AddTaskContext, AddTaskLink: s.AddTaskLink, OverrideDependencies: s.OverrideDependencies, SetTaskPriority: s.SetTaskPriority, PauseDirector: func() error { return interptest.PauseStoreDirector(s) },
 		CancelTask: s.CancelTask, VoidDecision: s.VoidDecision, Clock: clock}
 }
 

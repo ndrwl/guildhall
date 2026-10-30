@@ -403,11 +403,15 @@ func (r *run) load() error {
 	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
+	links, err := r.e.Records.TaskLinks(repo, id)
+	if err != nil {
+		return fmt.Errorf("interp: %w", err)
+	}
 	if r.queue, err = r.e.Records.StartQueue(); err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
 	r.history = newHistory(repo, id, r.def, r.read, attempts, documents, decisions)
-	r.rulings, r.fullReviews, r.grants, r.contexts = rulings, full, grants, contexts
+	r.rulings, r.fullReviews, r.grants, r.contexts, r.links = rulings, full, grants, contexts, links
 	return nil
 }
 

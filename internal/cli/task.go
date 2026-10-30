@@ -36,6 +36,7 @@ var taskUsage = `usage:
   guildhall task reconcile --store <path> --config <director.toml> --state <dir> --repo <id> <task>
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
   guildhall task context add|list ... (guildhall task context for its usage)
+  guildhall task link add|remove|list ... (guildhall task link for its usage)
   guildhall task design --repo <id> --task <id> --brief <file|-> ... (guildhall task design --help for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
 the copy's director.store, config.toml and state
@@ -127,6 +128,8 @@ type taskDetail struct {
 	Decisions []store.Decision     `json:"decisions"`
 	// Context is the Guildmaster context the Director added to the task, by number.
 	Context []store.TaskContext `json:"context"`
+	// Links are the task's link records, adds and removes, by number.
+	Links []store.TaskLink `json:"links"`
 	// DesignRounds is how many design rounds the task has used, counted from their briefs; absent when none.
 	DesignRounds int `json:"design_rounds,omitempty"`
 }
@@ -152,6 +155,9 @@ func (a *App) task(args []string) int {
 	}
 	if sub == "context" {
 		return a.taskContext(args[1:])
+	}
+	if sub == "link" {
+		return a.taskLink(args[1:])
 	}
 	if sub == "design" {
 		return a.taskDesign(args[1:])
@@ -581,7 +587,7 @@ func resolveWorkflow(dir, name string, cfg *config.Config, r config.Repository) 
 }
 
 func showTask(s *store.Store, repo, id string) (taskDetail, error) {
-	d := taskDetail{Attempts: []store.StageAttempt{}, Documents: []store.DocumentRef{}, Decisions: []store.Decision{}, Context: []store.TaskContext{}}
+	d := taskDetail{Attempts: []store.StageAttempt{}, Documents: []store.DocumentRef{}, Decisions: []store.Decision{}, Context: []store.TaskContext{}, Links: []store.TaskLink{}}
 	var err error
 	t, err := s.Task(repo, id)
 	if err != nil {
@@ -608,10 +614,15 @@ func showTask(s *store.Store, repo, id string) (taskDetail, error) {
 	if err != nil {
 		return taskDetail{}, err
 	}
+	links, err := s.TaskLinks(repo, id)
+	if err != nil {
+		return taskDetail{}, err
+	}
 	d.Attempts = append(d.Attempts, attempts...)
 	d.Documents = append(d.Documents, documents...)
 	d.Decisions = append(d.Decisions, decisions...)
 	d.Context = append(d.Context, contexts...)
+	d.Links = append(d.Links, links...)
 	d.DesignRounds = interp.DesignRounds(documents)
 	return d, nil
 }
