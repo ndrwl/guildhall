@@ -10,7 +10,7 @@ Every shipped skill keeps these rules, which the tests enforce:
 
 - `SKILL.md` starts with frontmatter of `name` and `description` lines only, using nonempty plain YAML scalars without leading indicators, mapping separators or inline comments; `name` equals the directory name and carries the `guildhall-` prefix, and `description` is at most 256 bytes.
 - Every file is a regular file with LF line endings, and every Markdown file outside fenced blocks has one sentence per line.
-- Each skill's tree digest, as [rendering](../rendering.md#skills) defines it, equals the golden recorded with `sha256sum` in `skills/testdata/digests.txt`.
+- Each skill's tree digest, as [rendering](../rendering.md#skills) defines it, equals its golden `skills/testdata/digests/<skill>.sha256`, one `sha256sum`-format line per skill; a skill with no file and an orphan file each fail.
 - Each adapted skill, one whose body names its upstream source, carries `CREDITS.md` with the upstream MIT notice inside its own directory, listing its source, so installed and rendered copies retain attribution; a skill adapted from nothing carries none.
 - A script lives in `scripts/` as a `.sh` and `.ps1` twin, and each parses in its shell.
 - `guildhall-contract-tdd`'s `check` twins run exactly `gofmt -l .`, `go vet ./...` and `go test ./...` in that order with `GOPROXY=off` and `GOTOOLCHAIN=local`, fail when `gofmt` lists a file, stop at the first failing command and exit non-zero, and both twins make the same calls and the same pass or fail decision.

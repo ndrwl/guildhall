@@ -1,7 +1,6 @@
 package render
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"os"
@@ -238,7 +237,7 @@ func TestSessionStartupListsRunningAttempts(t *testing.T) {
 }
 
 // TestSessionSkillsMatchTheRelease renders the embedded release skills and compares each tree digest with the
-// release's recorded one (skills/testdata/digests.txt), so a session's skills are the release's byte for byte.
+// release's recorded one (skills/testdata/digests/<skill>.sha256), so a session's skills are the release's byte for byte.
 func TestSessionSkillsMatchTheRelease(t *testing.T) {
 	release := filepath.Join(t.TempDir(), "release")
 	if err := skills.Install(release); err != nil {
@@ -249,15 +248,17 @@ func TestSessionSkillsMatchTheRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.Open(filepath.Join("..", "..", "skills", "testdata", "digests.txt"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "skills", "testdata", "digests", "*.sha256"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = f.Close() }()
 	want := map[string]string{}
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		hex, name, _ := strings.Cut(sc.Text(), "  ")
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hex, name, _ := strings.Cut(strings.TrimSuffix(string(data), "\n"), "  ")
 		want[name] = "sha256:" + hex
 	}
 	if len(r.Manifest.Skills) != len(want) {
