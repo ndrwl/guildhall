@@ -39,6 +39,7 @@ A repository's `Kinds` is its [`[repository.kinds]`](../configuration.md#reposit
 `Director` is the optional [`[director]` table](../configuration.md#the-director-table): an adapter that is an id when set, a config-relative role path, an `idle_after` that is a positive Go duration when set, and none in a Steward config; it is omitted from JSON when unset, as `idle_after` is, so a config without them keeps its digest.
 `IdleAfter` returns the effective `[director] idle_after`, `DefaultIdleAfter` (5 minutes) when unset.
 `Handoff` returns the effective [automatic handoff](../director.md#automatic-handoff) triggers: `handoff_after_tasks` (0, off, when unset), `handoff_context_percent` (`DefaultHandoffContextPercent`, 70, when unset; 0 is off) and `handoff_idle` (`0s`, off, when unset); `Parse` refuses a negative task count, a percent outside 0 to 100 and an idle period that is not a non-negative duration.
+`Maintenance` returns the effective [maintenance](../director.md#maintenance) cadences: `note_audit_every_sessions` (`DefaultNoteAuditEverySessions`, 3, when unset) and `hallmark_after_merges` (`DefaultHallmarkAfterMerges`, 4, when unset), 0 being off; `Parse` refuses a negative value, and both are omitted from JSON when unset; `TestDirectorMaintenanceCadences` checks them.
 
 `EffectiveEffort(explicit)` returns a nonempty explicit Director/profile effort unchanged, otherwise the effective `default_effort` managed/local setting, or `medium` when absent.
 It does not mutate the config or inject defaults into its digest; it is for validated configs.

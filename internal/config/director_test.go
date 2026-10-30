@@ -94,3 +94,40 @@ func TestDirectorHandoffTriggers(t *testing.T) {
 		}
 	}
 }
+
+// TestDirectorMaintenanceCadences: the two cadences parse, default to a note audit every 3 sessions and a
+// hallmark after 4 merges, take 0 as off and refuse negative values.
+func TestDirectorMaintenanceCadences(t *testing.T) {
+	cfg, err := Parse([]byte(director(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := cfg.Maintenance(); err != nil || m != (Maintenance{NoteAuditEverySessions: 3, HallmarkAfterMerges: 4}) {
+		t.Fatalf("no table: Maintenance = %+v, %v; want 3 sessions and 4 merges", m, err)
+	}
+	cfg, err = Parse([]byte(director(t) + "\n[director]\nnote_audit_every_sessions = 5\nhallmark_after_merges = 2\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := cfg.Maintenance(); err != nil || m != (Maintenance{NoteAuditEverySessions: 5, HallmarkAfterMerges: 2}) {
+		t.Fatalf("Maintenance = %+v, %v", m, err)
+	}
+	cfg, err = Parse([]byte(director(t) + "\n[director]\nnote_audit_every_sessions = 0\nhallmark_after_merges = 0\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := cfg.Maintenance(); err != nil || m != (Maintenance{}) {
+		t.Fatalf("all off: Maintenance = %+v, %v; want both off", m, err)
+	}
+	cases := map[string]string{
+		"note_audit_every_sessions = -1\n": `director: note_audit_every_sessions -1 must not be negative`,
+		"hallmark_after_merges = -2\n":     `director: hallmark_after_merges -2 must not be negative`,
+		"hallmark_after_merges = \"4\"\n":  `hallmark_after_merges`,
+	}
+	for body, want := range cases {
+		_, err := Parse([]byte(director(t) + "\n[director]\n" + body))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want %q", body, err, want)
+		}
+	}
+}

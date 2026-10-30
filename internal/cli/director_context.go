@@ -119,6 +119,16 @@ func sessionDir(copyDir string, n int) string {
 	return filepath.Join(copyDir, "director", fmt.Sprintf("session-%d", n))
 }
 
+// maintenancePolicy is the maintenance policy of a session started under cfg: the config's note audit and
+// hallmark cadences (docs/director.md#maintenance).
+func maintenancePolicy(cfg *config.Config) (store.MaintenancePolicy, error) {
+	m, err := cfg.Maintenance()
+	if err != nil {
+		return store.MaintenancePolicy{}, err
+	}
+	return store.MaintenancePolicy{NoteAuditEverySessions: m.NoteAuditEverySessions, HallmarkAfterMerges: m.HallmarkAfterMerges}, nil
+}
+
 // handoffPolicy is the automatic handoff policy of the session in directory dir under cfg for runtime rt: the
 // config's task and context thresholds and, when rt reports context, the session's context report.
 func handoffPolicy(cfg *config.Config, rt runtimes.Session, dir string) (store.HandoffPolicy, error) {

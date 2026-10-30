@@ -1,6 +1,6 @@
 ---
 name: guildhall-handoff
-description: Use as the Director to hand off to a fresh session, when the Guildmaster types /guildhall-handoff or asks for it, or a wake line says handoff due, by checking your notes are current and reloading.
+description: Use as the Director to hand off to a fresh session, when the Guildmaster types /guildhall-handoff or asks for it, or a wake line says handoff due, by running and recording the note audit and reloading.
 ---
 
 Adapted from `handoff` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
@@ -23,14 +23,16 @@ A grill in progress need not be finished or noted: the next session restarts it.
 Record everything the next session must not lose: a reply the Guildmaster gave that is not yet a `guildhall decide answer`, a task they asked for that is not yet a `guildhall task new`, requirements they gave about one task that are not yet its `guildhall task context add`.
 The store is the record, so a note never carries what a command can record.
 
-Then check your notes are current; you keep them as you go (`guildhall-director-inbox`), so this is a check, not a write-up:
+Then run the note audit from `guildhall-maintenance`, whether or not it is due, and record it with `guildhall director maintenance record --notes --summary <text>`.
+You keep notes as you go (`guildhall-director-inbox`), so this is a check, not a write-up:
 
 ```sh
 guildhall director note list
 ```
 
 - Edit a note that has changed: `guildhall director note edit <id> <text>`.
-- Remove one that is done or no longer true: `guildhall director note remove <id> --reason <text>`.
+- Remove one that is done, no longer true or already held by the store: `guildhall director note remove <id> --reason <text>`, naming the record that holds it.
+- Bring any recurring kind of note that should become procedure or a task to the Guildmaster as a short list, and create nothing from it before they approve.
 - Add only what no record holds and the next session cannot restart or re-read: a promise to the Guildmaster (`promised`), a preference or context they gave that is not about one task (`guildmaster`; requirements about one task go in its task context), or your intent (`plan`), with `guildhall director note add --kind <kind> [--task <repo>/<id>] <text>`.
 - When the Guildmaster said what the next session is for, add it as a `plan` note.
 - A standing rule for one repository is not a note: propose it for that repository's `.guildhall/policies.md` as a task, or tell the Guildmaster the exact line to add, and keep `guildmaster` notes for context that is not a policy.

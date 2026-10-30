@@ -104,6 +104,9 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 	}
 	for {
 		base := store.DirectorSession{Pane: pane, Adapter: p.name}
+		if base.Maintenance, err = maintenancePolicy(p.cfg); err != nil {
+			return a.fail(fmt.Errorf("director start: record session: %w", err))
+		}
 		n, sp, err := recordNextSession(storePath, self, p.cfg, base, copyDir, func(n int) (store.HandoffPolicy, error) {
 			return handoffPolicy(p.cfg, p.runtime, sessionDir(copyDir, n))
 		})
@@ -141,7 +144,7 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 }
 
 // recordNextSession records the next session as recovering for supervisor self under cfg, in base's pane and
-// with its runtime adapter, its directory in copyDir and the handoff policy policy gives for its number, and
+// with its runtime adapter and maintenance policy, its directory in copyDir and the handoff policy policy gives for its number, and
 // returns its number beside what checkSupersede found of the session it supersedes, whose failed removal the
 // caller warns of. A reload requested before it started is recorded applied by it.
 func recordNextSession(storePath string, self artisan.Identity, cfg any, base store.DirectorSession, copyDir string,
@@ -156,7 +159,7 @@ func recordNextSession(storePath string, self artisan.Identity, cfg any, base st
 	var sp superseded
 	n, err := withStore(storePath, false, func(s *store.Store) (int, error) {
 		d := store.DirectorSession{State: store.DirectorRecovering, Identity: store.ProcessIdentity(self),
-			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: base.Pane, Adapter: base.Adapter}
+			Release: Version(), ConfigDigest: string(digest.Of(data)), Pane: base.Pane, Adapter: base.Adapter, Maintenance: base.Maintenance}
 		var err error
 		if sp, err = checkSupersede(s); err != nil {
 			return 0, err

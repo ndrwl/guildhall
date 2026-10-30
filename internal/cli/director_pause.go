@@ -175,12 +175,14 @@ func (a *App) directorResume(args []string) int {
 
 // waitingKinds counts the needs_me items that wait on the Director by kind, the messages item by its count; a task
 // waiting for its checks or held by its dependencies waits on the session supervisor, and an open decision or a due
-// install on the Guildmaster, not the Director.
+// install on the Guildmaster, not the Director; due maintenance is not urgent and waits for the Director's next
+// turn.
 func waitingKinds(items []needsMeItem) map[string]int {
 	n := map[string]int{}
 	for _, it := range items {
 		switch {
-		case it.Kind == checksKind, it.Kind == dependenciesKind, it.Kind == mergeQueueKind, it.Kind == decisionKind, it.Kind == installKind:
+		case it.Kind == checksKind, it.Kind == dependenciesKind, it.Kind == mergeQueueKind, it.Kind == decisionKind, it.Kind == installKind,
+			it.Kind == maintenanceKind:
 		case it.Count > 0:
 			n[it.Kind] += it.Count
 		default:

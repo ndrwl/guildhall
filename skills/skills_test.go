@@ -736,6 +736,7 @@ var directorSkills = []string{
 	"guildhall-director-startup",
 	"guildhall-director-tasks",
 	"guildhall-handoff",
+	"guildhall-maintenance",
 }
 
 // notAskedOfTheDirector lists the README commands the Guildmaster never asks the Director to run, with why.
@@ -829,6 +830,12 @@ func TestDirectorSkillsNameEveryReadmeCommand(t *testing.T) {
 	for c := range notAskedOfTheDirector {
 		if !slices.Contains(commands, c) {
 			t.Errorf("%q is excused but the README does not list it", c)
+		}
+	}
+	// The other way round, for the maintenance commands: each one a Director skill names is in the README's list.
+	for _, n := range named {
+		if strings.HasPrefix(n, "director maintenance") && !slices.ContainsFunc(commands, func(c string) bool { return n == c || strings.HasPrefix(n, c+" ") }) {
+			t.Errorf("a Director skill names `guildhall %s`, which the README does not list", n)
 		}
 	}
 }

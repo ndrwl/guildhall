@@ -45,6 +45,8 @@ type DirectorView struct {
 	Usage AttemptUsage
 	// Reload is the newest reload request, nil when there is none.
 	Reload *DirectorReload
+	// Maintenance is what says when Director maintenance is due (docs/director.md#maintenance).
+	Maintenance MaintenanceView
 }
 
 // DirectorView reads the Director's view of the whole store without writing.
@@ -137,6 +139,9 @@ func (s *Store) DirectorView() (DirectorView, error) {
 		case err == nil:
 			v.Reload = &reload
 		case !errors.Is(err, ErrNotFound):
+			return err
+		}
+		if v.Maintenance, err = maintenanceView(tx); err != nil {
 			return err
 		}
 		var wake Wake
