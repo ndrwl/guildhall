@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,8 +38,22 @@ var (
 	WaiterLease = 5 * time.Second
 )
 
+// DueSuffix starts what a wake line carries when a handoff is due: "; handoff due (<reasons>)".
+const DueSuffix = "; handoff due ("
+
+// DueLine is line with the suffix naming the handoff reasons due, joined with ", ", or line itself with none.
+func DueLine(line string, due []string) string {
+	if len(due) == 0 {
+		return line
+	}
+	return line + DueSuffix + strings.Join(due, ", ") + ")"
+}
+
 // waiters is the registration of the one waiter of a session: the newest registered id, whether a poll of it is
-// open, when its last poll ended, whether it has taken a wake line, and a wake line handed and not yet taken.
+// open, when its last poll ended, whether it has taken a wake line, and a wake line handed and not yet taken with
+// its handoff reasons due. It also holds the session's held wakes: whether holding is on, the count of held wakes
+// accepted since the last release and in all, and the union of their reasons due in first-seen order. The held
+// wakes belong to the session, not to one waiter id.
 type waiters struct {
 	mu      sync.Mutex
 	id      string
@@ -45,12 +61,28 @@ type waiters struct {
 	ended   time.Time
 	spent   bool
 	line    string
+	due     []string
 	has     bool
 	wake    chan struct{}
 	retire  chan struct{}
 	handed  uint64
 	refresh uint64
 	closed  bool
+
+	holding bool
+	held    int
+	heldAll uint64
+	dues    []string
+}
+
+// union appends to a each reason of b it does not hold yet, keeping first-seen order.
+func union(a, b []string) []string {
+	for _, r := range b {
+		if !slices.Contains(a, r) {
+			a = append(a, r)
+		}
+	}
+	return a
 }
 
 // alive reports whether the newest waiter is registered: it has not taken a wake line, which ends it, and a poll
@@ -109,21 +141,29 @@ func (w *waiters) poll(id string, hold time.Duration) (string, error) {
 	if !w.has {
 		return "", nil
 	}
-	line := w.line
-	w.has, w.line, w.spent = false, "", true
+	line := DueLine(w.line, w.due)
+	w.has, w.line, w.due, w.spent = false, "", nil, true
 	w.handed++
 	return line, nil
 }
 
-// hand gives line to the registered waiter, replacing a line it has not taken yet, and reports whether one is
-// registered to take it.
-func (w *waiters) hand(line string) bool {
+// hand gives line, with the handoff reasons due, to the registered waiter, and reports whether one is registered
+// to take it. It replaces a line the waiter has not taken yet, keeping that line's reasons with its own.
+func (w *waiters) hand(line string, due []string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	return w.handLocked(line, due)
+}
+
+// handLocked is hand with mu held.
+func (w *waiters) handLocked(line string, due []string) bool {
 	if !w.alive(time.Now()) {
 		return false
 	}
-	w.line, w.has = line, true
+	if !w.has {
+		w.due = nil
+	}
+	w.line, w.due, w.has = line, union(w.due, due), true
 	if w.wake != nil {
 		close(w.wake)
 		w.wake = nil
@@ -131,10 +171,30 @@ func (w *waiters) hand(line string) bool {
 	return true
 }
 
-// release answers every open poll as retired, so Close need not wait out PollHold.
+// wakeWith answers a sender's wake: with hold set and holding on, it holds the wake for the supervisor's Release
+// when a waiter is registered, ending no poll, and otherwise it hands line at once. It reports whether a
+// registered waiter took or holds the wake.
+func (w *waiters) wakeWith(line string, hold bool, due []string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !hold || !w.holding {
+		return w.handLocked(line, due)
+	}
+	if !w.alive(time.Now()) {
+		return false
+	}
+	w.held++
+	w.heldAll++
+	w.dues = union(w.dues, due)
+	return true
+}
+
+// release answers every open poll as retired, so Close need not wait out PollHold, and drops any held wake, whose
+// messages stay unread.
 func (w *waiters) release() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.held, w.dues = 0, nil
 	if w.retire != nil {
 		close(w.retire)
 		w.retire = nil
@@ -149,19 +209,50 @@ type WaiterState struct {
 	// Handed counts the wake lines waiters have taken, and Refreshed the refreshes waiters have reported; each is
 	// a wake of the Director the supervisor counts as activity.
 	Handed, Refreshed uint64
+	// Held counts the held wakes the endpoint has accepted, so the supervisor sees new ones; Pending is set while
+	// a held wake waits for Release, and Due while one of those carried a handoff reason due.
+	Held         uint64
+	Pending, Due bool
 }
 
 // Waiter reads the session's waiter registration.
 func (e *Endpoint) Waiter() WaiterState {
 	e.w.mu.Lock()
 	defer e.w.mu.Unlock()
-	return WaiterState{Registered: e.w.alive(time.Now()), Handed: e.w.handed, Refreshed: e.w.refresh}
+	return WaiterState{Registered: e.w.alive(time.Now()), Handed: e.w.handed, Refreshed: e.w.refresh,
+		Held: e.w.heldAll, Pending: e.w.held > 0, Due: len(e.w.dues) > 0}
 }
 
 // Hand gives line, a counts-only wake line, to the session's registered waiter, which wakes the Director with it;
 // with none registered it gives nothing and returns ErrNoWaiter.
 func (e *Endpoint) Hand(line string) error {
-	if !e.w.hand(line) {
+	if !e.w.hand(line, nil) {
+		return ErrNoWaiter
+	}
+	return nil
+}
+
+// SetHold turns holding on or off: while on, a sender's wake that asks to be held is held for Release instead of
+// handed at once. It is off until set, so an endpoint whose user never sets it hands every wake at once.
+func (e *Endpoint) SetHold(on bool) {
+	e.w.mu.Lock()
+	defer e.w.mu.Unlock()
+	e.w.holding = on
+}
+
+// Release ends the held wakes: it hands line, a counts-only wake line, with the suffix of the held wakes' handoff
+// reasons due, to the session's registered waiter, whichever waiter was registered when they were held, and
+// clears them. With none registered it hands nothing, still clears them and returns ErrNoWaiter. An empty line
+// clears them and hands nothing.
+func (e *Endpoint) Release(line string) error {
+	e.w.mu.Lock()
+	defer e.w.mu.Unlock()
+	due := e.w.dues
+	e.w.held, e.w.dues = 0, nil
+	if line == "" {
+		return nil
+	}
+	if !e.w.handLocked(line, due) {
 		return ErrNoWaiter
 	}
 	return nil
@@ -185,7 +276,14 @@ func WaitWake(ctx context.Context, dir string, number int, id string) (string, e
 // Wake hands line, a counts-only wake line, to the waiter of session number in the absolute session directory
 // dir. A session with no registered waiter is ErrNoWaiter, and nothing listening ErrNoSupervisor.
 func Wake(ctx context.Context, dir string, number int, line string) error {
-	rep, err := call(ctx, dir, number, request{Op: OpWake, Line: line})
+	return WakeDue(ctx, dir, number, line, false, nil)
+}
+
+// WakeDue is Wake with due, the handoff reasons due, which the line the waiter takes carries as DueLine's suffix,
+// and hold, which asks a supervisor that holds wakes to hold this one for its Release rather than hand it at once.
+// A held wake answers at once too: it is accepted while a waiter is registered, and ErrNoWaiter otherwise.
+func WakeDue(ctx context.Context, dir string, number int, line string, hold bool, due []string) error {
+	rep, err := call(ctx, dir, number, request{Op: OpWake, Line: line, Hold: hold, Due: due})
 	if err != nil {
 		return err
 	}
@@ -244,7 +342,7 @@ func (s signalServer) serveWaiter(req request) reply {
 		if req.Line == "" {
 			return s.Refuse("wake needs a line")
 		}
-		rep.Delivered = w.hand(req.Line)
+		rep.Delivered = w.wakeWith(req.Line, req.Hold, req.Due)
 	case OpRefresh:
 		w.mu.Lock()
 		if w.id != req.Waiter {

@@ -48,13 +48,14 @@ func (h herdrPanes) TypeLine(ctx context.Context, p store.DirectorPane, line str
 	return err
 }
 
-// HandWake hands line to the waiter of session d through its supervisor's endpoint in the session's recorded
-// directory; a session recorded with no directory has no endpoint to reach, so no waiter.
-func (herdrPanes) HandWake(ctx context.Context, d store.DirectorSession, line string) error {
+// HandWake hands line, held when hold is set, with the handoff reasons due, to the waiter of session d through its
+// supervisor's endpoint in the session's recorded directory; a session recorded with no directory has no endpoint
+// to reach, so no waiter.
+func (herdrPanes) HandWake(ctx context.Context, d store.DirectorSession, line string, hold bool, due []string) error {
 	if d.Dir == "" {
 		return session.ErrNoWaiter
 	}
-	return session.Wake(ctx, d.Dir, d.Number, line)
+	return session.WakeDue(ctx, d.Dir, d.Number, line, hold, due)
 }
 
 var _ messaging.EndpointWaker = herdrPanes{}

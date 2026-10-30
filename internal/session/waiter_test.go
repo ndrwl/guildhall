@@ -240,3 +240,180 @@ func TestALineAnOlderWaiterDidNotTakeReachesTheNewer(t *testing.T) {
 		t.Fatalf("older refresh = %v, want ErrRetired", err)
 	}
 }
+
+// holdingEndpoint listens on session 1 in a new directory with holding on, a short poll hold and a lease far
+// longer than the test, so only a taken line ends a registration.
+func holdingEndpoint(t *testing.T) (*session.Endpoint, string) {
+	t.Helper()
+	shortWaits(t, 50*time.Millisecond, time.Minute)
+	dir := shortDir(t)
+	ep, err := session.Listen(dir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ep.Close() })
+	ep.SetHold(true)
+	return ep, dir
+}
+
+// TestAHeldWakeDoesNotEndAnOpenPoll (d20): a wake that asks to be held is accepted while a waiter is registered,
+// but the waiter's open poll ends with nothing, and the endpoint reports the wake held and pending.
+func TestAHeldWakeDoesNotEndAnOpenPoll(t *testing.T) {
+	ep, dir := holdingEndpoint(t)
+	open := poll(dir, 1, "w-1")
+	registered(t, ep)
+	if err := session.WakeDue(context.Background(), dir, 1, "guildhall: 1 unread (note 1)", true, nil); err != nil {
+		t.Fatalf("a held wake = %v", err)
+	}
+	if r := <-open; r.err != nil || r.line != "" {
+		t.Fatalf("the open poll = %+v, want it answered empty", r)
+	}
+	if st := ep.Waiter(); st.Held != 1 || !st.Pending || st.Due || st.Handed != 0 {
+		t.Fatalf("state = %+v, want one held wake pending", st)
+	}
+}
+
+// TestReleaseHandsTheLineWithTheMergedDues (d20): Release hands its line with the union of the held wakes'
+// handoff reasons, in first-seen order, and the waiter takes it; the hold is then cleared.
+func TestReleaseHandsTheLineWithTheMergedDues(t *testing.T) {
+	ep, dir := holdingEndpoint(t)
+	ctx := context.Background()
+	if r := <-poll(dir, 1, "w-1"); r.err != nil || r.line != "" {
+		t.Fatalf("a held poll = %+v", r)
+	}
+	for _, due := range [][]string{{"context 72%"}, nil, {"idle 5m0s", "context 72%"}} {
+		if err := session.WakeDue(ctx, dir, 1, "guildhall: 1 unread (note 1)", true, due); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := ep.Waiter(); st.Held != 3 || !st.Pending || !st.Due {
+		t.Fatalf("state = %+v, want three held with dues", st)
+	}
+	if err := ep.Release("guildhall: 4 unread (note 4)"); err != nil {
+		t.Fatalf("release = %v", err)
+	}
+	if r := <-poll(dir, 1, "w-1"); r.err != nil || r.line != "guildhall: 4 unread (note 4); handoff due (context 72%, idle 5m0s)" {
+		t.Fatalf("poll = %+v", r)
+	}
+	if st := ep.Waiter(); st.Held != 3 || st.Pending || st.Due || st.Handed != 1 {
+		t.Fatalf("state = %+v, want the hold cleared and one handed", st)
+	}
+}
+
+// TestAHeldWakeWithNoWaiterIsNotDelivered (d20): with no waiter registered a held wake is ErrNoWaiter, as a
+// handed one is, and nothing is held.
+func TestAHeldWakeWithNoWaiterIsNotDelivered(t *testing.T) {
+	ep, dir := holdingEndpoint(t)
+	if err := session.WakeDue(context.Background(), dir, 1, "guildhall: 1 unread (note 1)", true, []string{"context 72%"}); !errors.Is(err, session.ErrNoWaiter) {
+		t.Fatalf("a held wake with no waiter = %v, want ErrNoWaiter", err)
+	}
+	if st := ep.Waiter(); st.Held != 0 || st.Pending || st.Due {
+		t.Fatalf("state = %+v, want nothing held", st)
+	}
+}
+
+// TestAHeldWakeIsReleasedToTheNewerWaiter (d20): the hold is the session's, not one waiter's, so a wake held while
+// an older waiter was registered is released to the newer one that replaced it.
+func TestAHeldWakeIsReleasedToTheNewerWaiter(t *testing.T) {
+	ep, dir := holdingEndpoint(t)
+	if r := <-poll(dir, 1, "old"); r.err != nil || r.line != "" {
+		t.Fatalf("a held poll = %+v", r)
+	}
+	if err := session.WakeDue(context.Background(), dir, 1, "guildhall: 1 unread (note 1)", true, []string{"context 72%"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-poll(dir, 1, "new"); r.err != nil || r.line != "" {
+		t.Fatalf("the newer waiter's poll before the release = %+v", r)
+	}
+	if err := ep.Release("guildhall: 1 unread (note 1)"); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-poll(dir, 1, "new"); r.err != nil || r.line != "guildhall: 1 unread (note 1); handoff due (context 72%)" {
+		t.Fatalf("newer poll = %+v", r)
+	}
+}
+
+// TestReleaseWithNoWaiterClearsTheHold (d20): a release once the waiter has gone, here by taking a line, is
+// ErrNoWaiter and still clears the hold; an empty line clears it and hands nothing.
+func TestReleaseWithNoWaiterClearsTheHold(t *testing.T) {
+	ep, dir := holdingEndpoint(t)
+	ctx := context.Background()
+	open := poll(dir, 1, "w-1")
+	registered(t, ep)
+	if err := session.WakeDue(ctx, dir, 1, "guildhall: 1 unread (note 1)", true, []string{"context 72%"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-open; r.err != nil || r.line != "" {
+		t.Fatalf("open poll = %+v", r)
+	}
+	if err := session.Wake(ctx, dir, 1, "guildhall: 1 unread (note 1)"); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-poll(dir, 1, "w-1"); r.line != "guildhall: 1 unread (note 1)" {
+		t.Fatalf("poll = %+v, want the line handed at once", r)
+	}
+	if err := ep.Release("guildhall: 1 unread (note 1)"); !errors.Is(err, session.ErrNoWaiter) {
+		t.Fatalf("a release with no waiter = %v, want ErrNoWaiter", err)
+	}
+	if st := ep.Waiter(); st.Pending || st.Due {
+		t.Fatalf("state = %+v, want the hold cleared", st)
+	}
+	if r := <-poll(dir, 1, "w-2"); r.err != nil || r.line != "" {
+		t.Fatalf("the next waiter = %+v, want nothing handed", r)
+	}
+	if err := session.WakeDue(ctx, dir, 1, "guildhall: 1 unread (note 1)", true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ep.Release(""); err != nil || ep.Waiter().Pending {
+		t.Fatalf("an empty release = %v, state %+v", err, ep.Waiter())
+	}
+	if r := <-poll(dir, 1, "w-2"); r.err != nil || r.line != "" {
+		t.Fatalf("after an empty release the waiter = %+v, want nothing handed", r)
+	}
+}
+
+// TestHoldOffHandsAHeldWakeAtOnce (d20): with holding off, which an endpoint is until SetHold, a wake that asks
+// to be held is handed at once with its dues, as any wake is.
+func TestHoldOffHandsAHeldWakeAtOnce(t *testing.T) {
+	ep, dir := holdingEndpoint(t)
+	ep.SetHold(false)
+	open := poll(dir, 1, "w-1")
+	registered(t, ep)
+	if err := session.WakeDue(context.Background(), dir, 1, "guildhall: 1 unread (note 1)", true, []string{"context 72%"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-open; r.err != nil || r.line != "guildhall: 1 unread (note 1); handoff due (context 72%)" {
+		t.Fatalf("poll = %+v, want the line handed at once", r)
+	}
+	if st := ep.Waiter(); st.Held != 0 || st.Pending || st.Handed != 1 {
+		t.Fatalf("state = %+v", st)
+	}
+}
+
+// TestAReplacingLineKeepsTheUntakenDues (d20): a wake that replaces a line the waiter has not taken yet keeps that
+// line's handoff reasons with its own, so a reminder is not lost; a taken line's reasons are not handed again.
+func TestAReplacingLineKeepsTheUntakenDues(t *testing.T) {
+	_, dir := holdingEndpoint(t)
+	ctx := context.Background()
+	if r := <-poll(dir, 1, "w-1"); r.err != nil || r.line != "" {
+		t.Fatalf("a held poll = %+v", r)
+	}
+	if err := session.WakeDue(ctx, dir, 1, "guildhall: 1 unread (note 1)", false, []string{"context 72%"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.WakeDue(ctx, dir, 1, "guildhall: 2 unread (note 2)", false, []string{"idle 5m0s"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-poll(dir, 1, "w-1"); r.line != "guildhall: 2 unread (note 2); handoff due (context 72%, idle 5m0s)" {
+		t.Fatalf("poll = %+v, want the newer line with both reasons", r)
+	}
+	if r := <-poll(dir, 1, "w-2"); r.err != nil || r.line != "" {
+		t.Fatalf("a held poll = %+v", r)
+	}
+	if err := session.WakeDue(ctx, dir, 1, "guildhall: 2 unread (note 2)", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-poll(dir, 1, "w-2"); r.line != "guildhall: 2 unread (note 2)" {
+		t.Fatalf("poll = %+v, want a taken line's reasons not handed again", r)
+	}
+}

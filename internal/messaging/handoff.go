@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/session"
@@ -12,7 +11,7 @@ import (
 )
 
 // HandoffSuffix starts what a wake line carries when a handoff is due: "; handoff due (<reasons>)".
-const HandoffSuffix = "; handoff due ("
+const HandoffSuffix = session.DueSuffix
 
 // DueHandoffs returns the crossings of session d's task and context triggers that hold and are not yet announced
 // (docs/director.md#automatic-handoff), context first: the task trigger's crossing k once k × AfterTasks tasks
@@ -98,7 +97,7 @@ func HandoffLine(line string, dues []store.HandoffDue) string {
 	for i, d := range dues {
 		reasons[i] = d.Reason
 	}
-	return line + HandoffSuffix + strings.Join(reasons, ", ") + ")"
+	return session.DueLine(line, reasons)
 }
 
 // WakeIdle is the idle trigger (docs/director.md#automatic-handoff): the session supervisor calls it once the

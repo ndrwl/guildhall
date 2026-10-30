@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -14,10 +15,11 @@ import (
 )
 
 // fakeWaiter is the session endpoint's waiter registration as the supervisor reads it: the test moves its state
-// and it records each line the supervisor hands it.
+// and it records each line the supervisor hands it, and each it releases, which a registered waiter takes at once.
 type fakeWaiter struct {
-	state  session.WaiterState
-	handed []string
+	state    session.WaiterState
+	handed   []string
+	released []string
 }
 
 func (f *fakeWaiter) Waiter() session.WaiterState { return f.state }
@@ -29,6 +31,25 @@ func (f *fakeWaiter) Hand(line string) error {
 	f.handed = append(f.handed, line)
 	f.state.Handed++
 	return nil
+}
+
+func (f *fakeWaiter) Release(line string) error {
+	f.state.Pending, f.state.Due = false, false
+	f.released = append(f.released, line)
+	if line == "" {
+		return nil
+	}
+	if !f.state.Registered {
+		return session.ErrNoWaiter
+	}
+	f.state.Handed++
+	return nil
+}
+
+// hold is a sender's message wake the endpoint holds.
+func (f *fakeWaiter) hold() {
+	f.state.Held++
+	f.state.Pending = true
 }
 
 // notices records the wake notice shown, "" once cleared.
@@ -48,7 +69,7 @@ func (n *notices) Clear(context.Context) error {
 // anything typed is recorded, which a Claude session must never get.
 type handPanes struct{ typedPanes }
 
-func (*handPanes) HandWake(context.Context, store.DirectorSession, string) error {
+func (*handPanes) HandWake(context.Context, store.DirectorSession, string, bool, []string) error {
 	return session.ErrNoWaiter
 }
 
@@ -72,9 +93,11 @@ type endpointPanes struct {
 	dir string
 }
 
-func (p *endpointPanes) HandWake(ctx context.Context, _ store.DirectorSession, line string) error {
-	return session.Wake(ctx, p.dir, 1, line)
+func (p *endpointPanes) HandWake(ctx context.Context, _ store.DirectorSession, line string, hold bool, due []string) error {
+	return session.WakeDue(ctx, p.dir, 1, line, hold, due)
 }
+
+var _ messaging.EndpointWaker = (*endpointPanes)(nil)
 
 // sendNote sends a note to the Director with `messages send`, through a Claude session's seam that finds no
 // waiter, and fails the test on anything typed.
@@ -297,5 +320,156 @@ func TestASecondWakeWithinTheLeaseIsCaughtUpOnceByTheNextWaiter(t *testing.T) {
 	defer cancel()
 	if line, err := session.WaitWake(ctx, dir, 1, "w-3"); err != nil || line != "" {
 		t.Fatalf("w-3 = %q, %v; want nothing more handed", line, err)
+	}
+}
+
+// storeNote stores note id to the Director without waking it, as a sender does before its wake.
+func storeNote(t *testing.T, path, id string) {
+	t.Helper()
+	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		return s.SendMessage(store.Message{ID: id, Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-1", Type: "note", Text: "x", Sender: store.SenderGuildmaster})
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// holdingWatch is waiterWatch with a registered waiter and holding on at the default wake_quiet and
+// wake_max_delay, after a turn has ended.
+func holdingWatch(t *testing.T) (*sessionWatch, *time.Time, *fakeWaiter, *notices, string) {
+	t.Helper()
+	w, clock, waiter, notice, path := waiterWatch(t)
+	w.quiet, w.maxDelay = 3*time.Second, 15*time.Second
+	waiter.state.Registered = true
+	w.decide(session.TurnEnded)
+	return w, clock, waiter, notice, path
+}
+
+// TestABurstIsReleasedOnceAfterTheQuietPeriod (d20): five message wakes a second apart are held, and once none has
+// arrived for wake_quiet the supervisor releases one line whose counts are the store's at the release, not at
+// any wake.
+func TestABurstIsReleasedOnceAfterTheQuietPeriod(t *testing.T) {
+	w, clock, waiter, _, path := holdingWatch(t)
+	for i := range 5 {
+		storeNote(t, path, fmt.Sprintf("n-%d", i+1))
+		waiter.hold()
+		w.decide("")
+		*clock = clock.Add(time.Second)
+	}
+	// 4s after the first wake, 1s after the newest.
+	w.decide("")
+	*clock = clock.Add(time.Second)
+	w.decide("")
+	if len(waiter.released) != 0 {
+		t.Fatalf("released %q within the quiet period", waiter.released)
+	}
+	storeNote(t, path, "n-6")
+	*clock = clock.Add(time.Second)
+	w.decide("")
+	w.decide("")
+	if want := []string{"guildhall: 6 unread (note 6 from guildmaster)"}; !slices.Equal(waiter.released, want) || len(waiter.handed) != 0 {
+		t.Fatalf("released %q, handed %q; want once %q", waiter.released, waiter.handed, want)
+	}
+}
+
+// TestAHoldIsReleasedAtTheMaximumDelay (d20): message wakes every 2s never leave wake_quiet without one, so the
+// hold is released wake_max_delay after the first.
+func TestAHoldIsReleasedAtTheMaximumDelay(t *testing.T) {
+	w, clock, waiter, _, path := holdingWatch(t)
+	start := *clock
+	for i := 0; len(waiter.released) == 0 && i < 30; i++ {
+		if i%2 == 0 {
+			storeNote(t, path, fmt.Sprintf("n-%d", i))
+			waiter.hold()
+		}
+		w.decide("")
+		*clock = clock.Add(time.Second)
+	}
+	if at := clock.Add(-time.Second).Sub(start); len(waiter.released) != 1 || at != 15*time.Second {
+		t.Fatalf("released %q at %s, want once at 15s", waiter.released, at)
+	}
+}
+
+// TestWakeQuietZeroReleasesNothing (d20): with wake_quiet "0s" the endpoint hands every wake at once, and the
+// supervisor makes no release.
+func TestWakeQuietZeroReleasesNothing(t *testing.T) {
+	w, clock, waiter, _, path := holdingWatch(t)
+	w.quiet = 0
+	storeNote(t, path, "n-1")
+	waiter.hold()
+	for range 20 {
+		w.decide("")
+		*clock = clock.Add(time.Second)
+	}
+	if len(waiter.released) != 0 {
+		t.Fatalf("released %q with holding off", waiter.released)
+	}
+}
+
+// TestAReleaseWithNoWaiterIsAMissedWake (d20): a release that finds the waiter gone sets the missed wake, so the
+// notice shows meanwhile and the next registered waiter is handed one catch-up line.
+func TestAReleaseWithNoWaiterIsAMissedWake(t *testing.T) {
+	w, clock, waiter, notice, path := holdingWatch(t)
+	storeNote(t, path, "n-1")
+	waiter.hold()
+	w.decide("")
+	waiter.state.Registered = false
+	*clock = clock.Add(3 * time.Second)
+	w.decide("")
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)"}; !slices.Equal(waiter.released, want) || !w.missed {
+		t.Fatalf("released %q, missed %v; want %q missed", waiter.released, w.missed, want)
+	}
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)"}; !slices.Equal(notice.shown, want) {
+		t.Fatalf("notice %q, want %q", notice.shown, want)
+	}
+	waiter.state.Registered = true
+	w.decide("")
+	w.decide("")
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)"}; !slices.Equal(waiter.handed, want) {
+		t.Fatalf("handed %q, want one catch-up %q", waiter.handed, want)
+	}
+	if want := []string{"guildhall: 1 unread (note 1 from guildmaster)", ""}; !slices.Equal(notice.shown, want) {
+		t.Fatalf("notice %q, want shown then cleared", notice.shown)
+	}
+}
+
+// TestAPendingHoldKeepsAReloadWaiting (d20): a held wake keeps the Director from being idle, so a plain reload
+// requested while it is pending waits for the release and the turn it starts, and applies once that turn ends.
+func TestAPendingHoldKeepsAReloadWaiting(t *testing.T) {
+	w, clock, waiter, _, path := holdingWatch(t)
+	storeNote(t, path, "n-1")
+	waiter.hold()
+	requestReload(t, path)
+	for range 2 {
+		if got := w.decide(""); got != keepRunning {
+			t.Fatalf("a reload applied with a wake held: %d", got)
+		}
+		*clock = clock.Add(time.Second)
+	}
+	if got := w.decide(session.TurnEnded); got != keepRunning {
+		t.Fatalf("a reload applied at a turn end with a wake held: %d", got)
+	}
+	*clock = clock.Add(time.Second)
+	if got := w.decide(""); got != keepRunning || len(waiter.released) != 1 {
+		t.Fatalf("at the release: %d, released %q", got, waiter.released)
+	}
+	w.decide(session.TurnStarted)
+	if got := w.decide(session.TurnEnded); got != endForReload {
+		t.Fatalf("the rewake turn ended but the reload did not apply: %d", got)
+	}
+}
+
+// TestNothingLeftAtReleaseClearsTheHold (d20): a hold released once the Director has read everything, with no
+// handoff due, is cleared without a wake; with a handoff due it still wakes with the counts.
+func TestNothingLeftAtReleaseClearsTheHold(t *testing.T) {
+	for due, want := range map[bool]string{false: "", true: "guildhall: 0 unread"} {
+		w, clock, waiter, _, _ := holdingWatch(t)
+		waiter.hold()
+		waiter.state.Due = due
+		w.decide("")
+		*clock = clock.Add(3 * time.Second)
+		w.decide("")
+		if !slices.Equal(waiter.released, []string{want}) || w.missed {
+			t.Errorf("due %v: released %q, missed %v; want %q", due, waiter.released, w.missed, want)
+		}
 	}
 }

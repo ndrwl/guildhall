@@ -57,9 +57,13 @@ type request struct {
 	Schema  string `json:"schema"`
 	Op      string `json:"op"`
 	Session int    `json:"session"`
-	// Waiter is a wait-wake or refresh request's waiter id, and Line a wake request's counts-only line.
-	Waiter string `json:"waiter,omitempty"`
-	Line   string `json:"line,omitempty"`
+	// Waiter is a wait-wake or refresh request's waiter id, and Line a wake request's counts-only line. Hold asks
+	// for a wake to be held for the supervisor's release, and Due is a wake's handoff reasons due, which the line
+	// the waiter takes carries as a suffix.
+	Waiter string   `json:"waiter,omitempty"`
+	Line   string   `json:"line,omitempty"`
+	Hold   bool     `json:"hold,omitempty"`
+	Due    []string `json:"due,omitempty"`
 }
 
 type reply struct {

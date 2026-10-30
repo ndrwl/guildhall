@@ -301,13 +301,23 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
+	quiet, err := p.cfg.WakeQuiet()
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
+	maxDelay, err := p.cfg.WakeMaxDelay()
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, starts: starts, closes: closes}
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, starts: starts, closes: closes,
+		quiet: quiet, maxDelay: maxDelay}
 	if ep != nil {
 		w.turns = ep.Turns()
 		// A session that is not typed into is woken through its waiter, with the notice in its pane while none is
-		// registered (docs/decisions/director-wake-hook.md).
+		// registered (docs/decisions/director-wake-hook.md), and a burst's message wakes are held to wake it once.
 		if p.name != store.TypedWakeAdapter {
+			ep.SetHold(quiet > 0)
 			w.waiter = ep
 			if d, err := withStore(storePath, true, func(s *store.Store) (store.DirectorSession, error) { return s.DirectorSession(n) }); err == nil && d.Pane != (store.DirectorPane{}) {
 				w.notice = a.wakeNotice(d.Pane)
@@ -457,12 +467,19 @@ type sessionWatch struct {
 	handed  uint64
 	missed  bool
 	noticed string
+	// quiet is [local] wake_quiet, 0 for holding off, and maxDelay [local] wake_max_delay: held message wakes are
+	// released once none has arrived for quiet, or maxDelay after the first. heldSeen is the waiter's count of held
+	// wakes when last read, and heldFirst and heldLast when the first and the newest pending one were seen.
+	quiet, maxDelay     time.Duration
+	heldSeen            uint64
+	heldFirst, heldLast time.Time
 }
 
 // waiterSource is the session endpoint as the supervisor reads its waiter: *session.Endpoint.
 type waiterSource interface {
 	Waiter() session.WaiterState
 	Hand(line string) error
+	Release(line string) error
 }
 
 // wakeNotice shows and clears the wake notice outside the Director's input box, such as its pane's title.
@@ -548,11 +565,13 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 	// A wake a waiter took, or a waiter's refresh, is the wake's activity: the Director is not idle again until a
 	// turn ends after it, either the rewake turn it starts or the running turn it is added to. It is counted
 	// before the turn signal, which may already be that turn's end.
+	var held session.WaiterState
 	if w.waiter != nil {
-		st := w.waiter.Waiter()
-		if n := st.Handed + st.Refreshed; n > w.handed {
+		held = w.waiter.Waiter()
+		if n := held.Handed + held.Refreshed; n > w.handed {
 			w.handed, w.turned, w.signalled = n, false, now
 		}
+		w.seeHeld(held, now)
 	}
 	switch turn {
 	case session.TurnStarted:
@@ -592,7 +611,12 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 		if in.TurnEnded {
 			w.turnWake = w.wakes
 		}
-		in.Idle = w.turned && w.woke <= w.turnWake
+		// A held wake is a wake on its way: until it is released the Director is neither idle nor quiet, so a stop
+		// or reload does not end the session before the line reaches it.
+		if held.Pending {
+			w.signalled = now
+		}
+		in.Idle = w.turned && w.woke <= w.turnWake && !held.Pending
 		in.Quiet = now.Sub(w.signalled)
 		if w.waiter != nil {
 			if unread, err = s.DirectorUnread(); err != nil {
@@ -604,6 +628,7 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 	if err != nil {
 		return keepRunning
 	}
+	w.holdTick(in, held, unread, now)
 	w.waiterTick(in, unread)
 	w.idleTrigger(in)
 	if in.Session.State != store.DirectorStopping && in.Reload == nil {
@@ -627,6 +652,43 @@ func (w *sessionWatch) decide(turn session.Turn) endAction {
 	}
 	in.StageRunning = running
 	return decideEnd(in)
+}
+
+// seeHeld stamps the held wakes in st read at now: the first pending one when holding starts, and the newest
+// whenever the count of held wakes grows.
+func (w *sessionWatch) seeHeld(st session.WaiterState, now time.Time) {
+	if !st.Pending {
+		w.heldFirst = time.Time{}
+	}
+	if st.Held > w.heldSeen {
+		if w.heldFirst.IsZero() && st.Pending {
+			w.heldFirst = now
+		}
+		w.heldSeen, w.heldLast = st.Held, now
+	}
+}
+
+// holdTick releases the session's held message wakes (docs/messaging.md#waking-the-director) as one wake line of
+// the unread counts now, with the held wakes' handoff suffix, once none has arrived for quiet or maxDelay has
+// passed since the first. A release that finds no waiter is a missed wake, which the next waiter is handed and the
+// notice shows meanwhile. With nothing unread and no handoff due, or a session that is not running or recovering,
+// the hold is cleared without a wake.
+func (w *sessionWatch) holdTick(in endInput, st session.WaiterState, unread map[string]int, now time.Time) {
+	if w.waiter == nil || w.quiet <= 0 || !st.Pending {
+		return
+	}
+	if now.Sub(w.heldLast) < w.quiet && now.Sub(w.heldFirst) < w.maxDelay {
+		return
+	}
+	w.heldFirst = time.Time{}
+	live := in.Session.State == store.DirectorRunning || in.Session.State == store.DirectorRecovering
+	line := ""
+	if live && (len(unread) > 0 || st.Due) {
+		line = messaging.WakeLine(unread)
+	}
+	if errors.Is(w.waiter.Release(line), session.ErrNoWaiter) {
+		w.missed = true
+	}
 }
 
 // waiterTick keeps the session's waiter in step with its unread messages (docs/decisions/director-wake-hook.md):

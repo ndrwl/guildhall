@@ -474,6 +474,19 @@ func TestQueueTwoTasksRaceForTheFront(t *testing.T) {
 			e.answer(t, "deliver-1", "merge")
 			want(t, e.advance(t, answeredMerge), queuedWait)
 			if first == "t7" {
+				// t7 joined in the advance, not through peer: wait until the clock has passed its ready time, so on a
+				// coarse clock t1 cannot tie it and win on task id.
+				q, err := s.MergeQueue("app")
+				if err != nil {
+					t.Fatal(err)
+				}
+				i := q.Position("t7") - 1
+				if i < 0 {
+					t.Fatalf("queue = %+v, want t7 queued", q.Entries)
+				}
+				for !time.Now().After(q.Entries[i].ReadyAt) {
+					runtime.Gosched()
+				}
 				peer(t, e, "t1")
 			}
 			if _, err := s.LeaveMergeQueue("leave-t0", "app", "t0", false); err != nil {
