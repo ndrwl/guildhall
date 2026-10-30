@@ -632,6 +632,11 @@ func (r *run) decisionOn(s workflow.Step, x string) *store.Decision {
 
 // mergeQuestion is the text of a merge decision for head x, listing the findings and suggestions of outcomes.
 func (r *run) mergeQuestion(s workflow.Step, k int, x string, pr *pullRequestDoc, conditions []condition, outcomes []reviewOutcome, lead string) string {
+	for _, c := range conditions {
+		if c.Requirement == "guildmaster_approval" && c.RequiredBy != "" {
+			lead += fmt.Sprintf("The Guildmaster's answer is required because %s, the repository's policies, whatever merge_requires says.\n", c.RequiredBy)
+		}
+	}
 	question := lead + fmt.Sprintf("Merge needed for %s/%s, step %s, attempt %d: head %s.\n", r.task.Repository, r.task.ID, s.ID, k, x)
 	if pr != nil {
 		question += fmt.Sprintf("Pull request: %s\n", pr.URL)

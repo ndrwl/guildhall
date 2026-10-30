@@ -890,6 +890,20 @@
     }
   ],
   "grants": [],
+  "repository_policies": [
+    {
+      "repository": "app",
+      "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "policies": [
+        "Keep the up-to-date branch protection on main for now.",
+        "Squash merges only."
+      ]
+    },
+    {
+      "repository": "lib",
+      "error": ".guildhall/policies.md line 2: the item repeats line 1"
+    }
+  ],
   "version": {
     "version": "dev",
     "revision": "abd974855ac9d1e8f0c0a7b6e2f5d4c3b2a19087",

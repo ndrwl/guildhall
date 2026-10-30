@@ -174,6 +174,10 @@ A string such as `"true"`, an unknown key and the removed merge policy key are r
 - With `guildmaster_approval = true`, deliver opens the merge decision, whose question lists each requirement as `holds`, `fails: <reason>` or `not required`; a `merge` answer overrides a failing `nothing_open`, and nothing else.
 - With `guildmaster_approval = false` and every other required requirement holding, Guildhall records `deliver-<k>-authorized`, with the requirements in effect and the evidence it read, and merges by itself; otherwise it asks the Guildmaster, beginning the question "Guildhall did not merge by itself".
   A recorded `deliver-<k>-authorized` is reused for its head on every later advance, before `guildmaster_approval` is read: a merge the forge refused after it was authorized is retried without a decision even if `guildmaster_approval` is turned back on. To have the Guildmaster decide instead, publish a new head.
+- A head that changes the repository's [policy file](#repository-policies), `.guildhall/policies.md`, against the task's base needs `guildmaster_approval` whatever `merge_requires` says, as a change to review requirements needs it under the [workflow-edit authority](#workflow-edit-authority): an Artisan cannot change its own rules.
+  The question lists `guildmaster_approval: required (the head changes .guildhall/policies.md)` and says why; Guildhall never records `deliver-<k>-authorized` by itself for such a head, and a rebase of it follows `reapprove_after_rebase` as if `guildmaster_approval` were set.
+  Only the Guildmaster's answer carries over to such a head: an authorization Guildhall recorded by itself for an earlier head, one that did not change the file, never does, even under `reapprove_after_rebase = never`, so the head gets a merge decision instead.
+  `artisan_approval`, `ci_green` and `nothing_open` keep their own settings.
 
 Turning a requirement off changes only what deliver demands, not which steps a workflow must have.
 No workflow can change a repository's merge requirements.
@@ -203,6 +207,18 @@ minor_conflict_lines   = 50
 
 A `minor_conflicts` rebase is resolved by an Artisan run under the profile named [`rebaser`](#profiles), the shipped one unless the copy declares its own, so every Director copy resolves minor conflicts.
 A config without a `rebaser` profile, which only a config built in memory can be, escalates every minor rebase to `major_conflicts`, a build send-back, and tells the Director why.
+
+#### Repository policies
+
+A repository's policies are the Guildmaster's standing rules for it, such as "Keep the up-to-date branch protection on main until automatic rebases are proven".
+They live in the repository, not in `config.toml` or a Director note, so they are versioned, reviewed through pull requests and shared by every Director copy and contributor.
+
+- **File.** `.guildhall/policies.md` at the repository root; the path is fixed. No file means no policies, and nothing about them is shown.
+- **Format.** UTF-8 Markdown. Each top-level list item, a line starting with `- `, is one policy, written on one line of at most 1024 bytes, as a note is. Headings, blank lines and paragraphs are commentary and are not shown. An indented line under an item, which would cut a policy short, a blank or duplicate item, an item holding a carriage return, a file over 16 KiB and a file that is not valid UTF-8 are refused.
+- **Revision read.** The repository's default branch as last fetched into `refs/guildhall/policies`, refreshed with a bounded fetch at `director start`, at each reload and on each advance pass; an unreachable remote leaves the ref where it was. The file is never read from a task branch or a work tree, so an Artisan's edit in its own branch changes neither its prompts nor the Director's view until it merges. Before the first fetch the policies are "not read yet", which is not an error.
+- **Who sees them.** [`director status`](director.md#status) lists them as `repository_policies`, `startup.md` lists them under "Repository policies", and every Artisan and Director-stage prompt for the repository has them in a fenced "Repository policies" section ([rendering](rendering.md#artisan-prompts)). A refused or unreadable file is shown as such and never stops a prompt from rendering, so the pull request that fixes it still gets its prompts.
+- **Not enforced.** Policies are guidance: nothing reads their text to decide anything. Enforced behaviour stays in real settings, such as [`merge_requires`](#merge-requirements). This is unlike [Claude skill policies](#claude-skill-policies), which are config settings Guildhall enforces when it launches a runtime.
+- **Merge guard.** A head that changes the file needs the Guildmaster's merge answer whatever `merge_requires` says ([merge requirements](#merge-requirements)). A pull request merged outside Guildhall, by a person on the forge, is not guarded; a forge-side rule such as CODEOWNERS is the Guildmaster's choice.
 
 ### Profiles
 

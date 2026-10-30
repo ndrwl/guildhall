@@ -131,6 +131,12 @@ type Baseline struct {
 	Guide Source
 	// Standards are rendered in order, in full, because a reviewer measures against these exact words.
 	Standards []Source
+	// Policies are the repository's policies (docs/configuration.md#repository-policies), rendered in one text fence
+	// under "Repository policies" after the instructions; none renders no section.
+	Policies []string
+	// PolicyError, when not empty, says why the repository's policy file could not be read; the section then
+	// reports it instead of the policies.
+	PolicyError string
 }
 
 // SkillRoot is one directory of skill directories, named for the manifest.
@@ -257,7 +263,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, baseline); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -270,7 +276,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, baseline Baseline) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -302,7 +308,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 		}
 		m.Skills = append(m.Skills, skill)
 	}
-	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main)
+	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, baseline.Policies, baseline.PolicyError)
 	if actor == workflow.ArtisanActor {
 		text += outputInstructions(m.Identity, revisions)
 	}
@@ -314,7 +320,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	return nil
 }
 
-func composePrompt(m *Manifest, title, detail, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main) string {
+func composePrompt(m *Manifest, title, detail, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main, policies []string, policyError string) string {
 	var b strings.Builder
 	id := m.Identity
 	fmt.Fprintf(&b, "# Guildhall attempt\n\nRepository: %s\nTask: %s\nStep: %s (%s version %d)\nAttempt: %d\n",
@@ -346,6 +352,9 @@ func composePrompt(m *Manifest, title, detail, instructions, role, guide string,
 	section("Stage guide", guide)
 	if instructions = normalise(instructions); strings.TrimSpace(instructions) != "" {
 		section("Instructions", instructions)
+	}
+	if len(policies) > 0 || strings.TrimSpace(policyError) != "" {
+		section("Repository policies", policySection(policies, policyError))
 	}
 	var list strings.Builder
 	if len(m.Inputs) > 0 {
@@ -393,6 +402,20 @@ func retrySection(retry *Retry) string {
 	quote("Previous summary:", retry.Summary, "None recorded.")
 	b.WriteString("Address this in your attempt; the stage guide and required outputs still apply.\n")
 	return b.String()
+}
+
+// policySection introduces the repository's policies and lists them in one text fence, so policy text cannot open
+// a section or override the result template; a file that could not be read is reported instead, with its reason
+// on one line, and does not stop rendering.
+func policySection(policies []string, policyError string) string {
+	if reason := strings.TrimSpace(policyError); reason != "" {
+		return fmt.Sprintf("The repository policies could not be read: %s. Tell the Director in your result.\n", strings.Join(strings.Fields(reason), " "))
+	}
+	var items strings.Builder
+	for _, p := range policies {
+		fmt.Fprintf(&items, "- %s\n", p)
+	}
+	return "These are the Guildmaster's standing rules for this repository, read from its default branch; they are guidance this stage must follow.\n\n" + fenced(items.String()) + "\n"
 }
 
 // fenced fences text as a text code block, with a fence longer than any backtick run inside it.

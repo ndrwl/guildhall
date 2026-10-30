@@ -271,6 +271,9 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: notes: %w", err)), false
 	}
+	// Every session, the first and each reload's, refreshes the repositories' policies and is told them as of then.
+	a.refreshPolicies(context.Background(), p.cfg.Repositories...)
+	policyLines := startupPolicies(a.readPolicies(context.Background(), p.cfg.Repositories...))
 	cfgDir := filepath.Dir(p.cfgPath)
 	role := baselineSource(filepath.Join(cfgDir, "baseline"), p.baseline, "roles/director.md")
 	var model, effort string
@@ -282,7 +285,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	dir := sessionDir(copyDir, n)
 	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
-		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Running: running, Parked: parked, Held: held, Notes: notes.lines, NotesBytes: notes.bytes}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
+		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Running: running, Parked: parked, Held: held, Notes: notes.lines, NotesBytes: notes.bytes, Policies: policyLines}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}

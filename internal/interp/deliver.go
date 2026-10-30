@@ -14,6 +14,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
+	"github.com/ndrwl/guildhall/internal/policies"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -301,6 +302,15 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 		return false, Next{}, err
 	}
 	if id == "" {
+		// Only a head not yet authorized is checked, so a replay after the merge retired the branch needs no base.
+		if repo, dl.policies, err = r.guardPolicies(repo, d); err != nil {
+			return false, Next{}, err
+		}
+		if dl.policies {
+			if conditions, err = r.conditions(s, repo.Merge.Requires, outcomes, dl, nil); err != nil {
+				return false, Next{}, err
+			}
+		}
 		var next Next
 		id, record, next, err = r.authorizeHead(s, repo, dl, conditions, outcomes)
 		if err != nil || id == "" {
@@ -319,6 +329,54 @@ type deliverHead struct {
 	// checks is the recorded read of a rebased head's checks; nil for the delivered head, whose validation is the
 	// validation input.
 	checks *validationDoc
+	// policies is set when the head changes the repository's policy file, so its merge needs the Guildmaster's
+	// answer whatever merge_requires says (guardPolicies).
+	policies bool
+}
+
+// policyGuard is why guildmaster_approval is required for a head that changes the repository's policy file.
+const policyGuard = "the head changes " + policies.Path
+
+// guardPolicies reports whether head changes the repository's policy file against the task's base, and returns repo
+// with guildmaster_approval required when it does, whatever merge_requires says, so an Artisan cannot change its own
+// rules (docs/configuration.md#repository-policies). Without Workspaces nothing is checked.
+func (r *run) guardPolicies(repo config.Repository, head string) (config.Repository, bool, error) {
+	if r.e.Workspaces == nil {
+		return repo, false, nil
+	}
+	base, err := r.e.Workspaces.Base(r.ctx, repo.Path, TaskBranch(r.task.ID))
+	if err != nil {
+		return repo, false, fmt.Errorf("base of %s: %w", TaskBranch(r.task.ID), err)
+	}
+	changed, err := r.e.Workspaces.Changes(r.ctx, repo.Path, base, head, policies.Path)
+	if err != nil {
+		return repo, false, fmt.Errorf("whether head %s changes %s: %w", head, policies.Path, err)
+	}
+	if changed {
+		required := true
+		repo.Merge.Requires.GuildmasterApproval = &required
+	}
+	return repo, changed, nil
+}
+
+// byGuildmaster reports whether merge authorization id was the Guildmaster's answer: a merge decision answered merge,
+// or an authorization carried over from one. An authorization Guildhall recorded by itself is not, so it never
+// carries over to a head that changes the policy file.
+func (r *run) byGuildmaster(id string) (bool, error) {
+	for seen := map[string]bool{}; id != "" && !seen[id]; {
+		seen[id] = true
+		var a authorizationDoc
+		ok, err := r.readJSONDoc(id+"-authorized", &a)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			d := r.decision(id)
+			return d != nil && d.Answered && d.Choice == "merge", nil
+		}
+		id = a.CarriedFrom
+	}
+	return false, nil
 }
 
 // conditions are the merge requirements as they stand for x: guildmaster_approval, artisan_approval, ci_green and
@@ -362,6 +420,9 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 	guildmaster := condition{Requirement: "guildmaster_approval", Required: requires.Guildmaster()}
 	if guildmaster.Required {
 		guildmaster.Reason = "this decision is not answered yet"
+	}
+	if x.policies {
+		guildmaster.Required, guildmaster.RequiredBy = true, policyGuard
 	}
 	return []condition{guildmaster, artisan, ci, r.nothingOpen(s, requires.Open(), outcomes)}, nil
 }
@@ -423,13 +484,23 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 			}
 			if ok {
 				// The carry-over holds only as reauthorize's does: every condition holds, nothing_open included even
-				// when it is not required, and the accepted spec is the one the approval was given under.
+				// when it is not required, and the accepted spec is the one the approval was given under. A head that
+				// changes the policy file takes over only the Guildmaster's answer, never Guildhall's own authorization.
 				why := carryRefusals(conditions)
+				if x.policies {
+					gm, err := r.byGuildmaster(e.Authorization)
+					if err != nil {
+						return "", "", Next{}, err
+					}
+					if !gm {
+						why = append(why, fmt.Sprintf("%s, and Guildhall authorized %s by itself", policyGuard, e.Authorization))
+					}
+				}
 				if spec := r.specDigest(s); e.SpecDigest == "" || spec != e.SpecDigest {
 					why = append(why, fmt.Sprintf("the accepted spec %s is not %s, the one %s was approved under", cmp.Or(spec, "(none)"), cmp.Or(e.SpecDigest, "(none recorded)"), e.Authorization))
 				}
 				if len(why) == 0 {
-					if err := r.carry(s, id, x, conditions, e.Authorization, nil, config.RebaseMajorConflicts); err != nil {
+					if err := r.carry(s, repo, id, x, conditions, e.Authorization, nil, config.RebaseMajorConflicts); err != nil {
 						return "", "", Next{}, err
 					}
 					return id, "document/" + id + "-authorized", Next{}, nil
@@ -645,7 +716,6 @@ func (r *run) stuck(s workflow.Step, head string, m forge.Mergeability, why erro
 // unchanged, the earlier authorization carries over as <step>-<k>-authorized; otherwise a new merge decision for x is
 // asked.
 func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, x deliverHead, links []rebaseLink, outcomes []reviewOutcome) (bool, Next, error) {
-	requires := repo.Merge.Requires
 	// An authorization already recorded for x stands, so a replay after a crash, or a retry after the forge refused
 	// the merge, merges under it again and never records a second one.
 	if id, err := r.authorization(s, x.head); err != nil || id != "" {
@@ -654,6 +724,13 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		}
 		return r.merge(s, id, repo, x.head, x.pr)
 	}
+	// A rebased head that changes the policy file follows reapprove_after_rebase as guildmaster_approval requires.
+	repo, changed, err := r.guardPolicies(repo, x.head)
+	if err != nil {
+		return false, Next{}, err
+	}
+	x.policies = changed
+	requires := repo.Merge.Requires
 	conditions, err := r.conditions(s, requires, outcomes, x, nil)
 	if err != nil {
 		return false, Next{}, err
@@ -679,13 +756,22 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		return false, Next{}, err
 	}
 	needs := requires.Guildmaster() && repo.Merge.NeedsReapproval(kind)
+	// An authorization Guildhall recorded by itself never carries over to a head that changes the policy file.
+	selfAuthorized := false
+	if x.policies {
+		gm, err := r.byGuildmaster(from)
+		if err != nil {
+			return false, Next{}, err
+		}
+		selfAuthorized = !gm
+	}
 	// A narrowed review's findings and suggestions reach the Guildmaster whatever the threshold.
 	findings := 0
 	for _, l := range x.links {
 		findings += l.findings
 	}
-	if !needs && holds && spec && findings == 0 {
-		if err := r.carry(s, id, x, conditions, from, links, kind); err != nil {
+	if !needs && !selfAuthorized && holds && spec && findings == 0 {
+		if err := r.carry(s, repo, id, x, conditions, from, links, kind); err != nil {
 			return false, Next{}, err
 		}
 		return r.merge(s, id, repo, x.head, x.pr)
@@ -697,6 +783,9 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 	case !spec:
 		why = append(why, "the accepted spec changed since "+from)
 	}
+	if selfAuthorized && !needs {
+		why = append(why, fmt.Sprintf("%s, and Guildhall authorized %s by itself", policyGuard, from))
+	}
 	if findings > 0 {
 		why = append(why, fmt.Sprintf("the narrowed review of the resolution approved it with %d finding(s) or suggestion(s)", findings))
 	}
@@ -707,14 +796,11 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 }
 
 // carry records the authorization of merge id for head x carried over from authorization from after the rebases
-// links of kind, schema guildhall.merge-authorization/2, and tells the Director.
-func (r *run) carry(s workflow.Step, id string, x deliverHead, conditions []condition, from string, links []rebaseLink, kind config.RebaseKind) error {
+// links of kind, schema guildhall.merge-authorization/2, and tells the Director. It records repo's requirements, as
+// guardPolicies left them.
+func (r *run) carry(s workflow.Step, repo config.Repository, id string, x deliverHead, conditions []condition, from string, links []rebaseLink, kind config.RebaseKind) error {
 	if r.document(id+"-authorized") != nil {
 		return nil
-	}
-	repo, err := r.repository()
-	if err != nil {
-		return err
 	}
 	var names []string
 	for _, l := range links {
@@ -803,6 +889,9 @@ type condition struct {
 	// suggestions it did not count.
 	Reason   string   `json:"reason,omitempty"`
 	Evidence []string `json:"evidence,omitempty"`
+	// RequiredBy says why a requirement the repository's merge_requires does not ask for is required, such as
+	// guildmaster_approval for a head that changes the policy file.
+	RequiredBy string `json:"required_by,omitempty"`
 }
 
 // line is the condition as the merge question lists it.
@@ -810,6 +899,8 @@ func (c condition) line() string {
 	switch {
 	case !c.Required:
 		return "not required"
+	case !c.Holds && c.RequiredBy != "":
+		return "required (" + c.RequiredBy + ")"
 	case c.Holds && c.Reason != "":
 		return "holds (" + c.Reason + ")"
 	case c.Holds:

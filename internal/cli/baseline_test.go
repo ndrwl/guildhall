@@ -46,7 +46,7 @@ func TestBareCopyRendersEveryDefaultArtisanStage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := baselinePrompter(cfg, cfgDir, release, t.TempDir())
+	p := testPrompter(cfg, cfgDir, release, t.TempDir())
 	n := 0
 	for _, s := range def.Steps {
 		if s.Actor() != workflow.ArtisanActor {
@@ -79,7 +79,7 @@ func TestCopyBaselineWinsOverRelease(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r, err := renderStep(t, baselinePrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
+	r, err := renderStep(t, testPrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestKindWithoutAGuideIsRefused(t *testing.T) {
 	if err := os.Remove(filepath.Join(release, "stages", "build.md")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := renderStep(t, baselinePrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
+	_, err := renderStep(t, testPrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("render without a guide: %v, want not exist", err)
 	}
@@ -111,7 +111,7 @@ func TestUnreadableCopyFileIsRefusedNotReplaced(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cfgDir, "baseline", "roles"), []byte("not a directory\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r, err := renderStep(t, baselinePrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
+	r, err := renderStep(t, testPrompter(cfg, cfgDir, release, t.TempDir()), workflow.Step{ID: "build", Type: "build", Version: 1})
 	if err == nil {
 		t.Errorf("render over an unreadable copy role: role %+v, want refused", r.Manifest.Role)
 	}

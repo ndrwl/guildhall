@@ -121,6 +121,8 @@ It invokes `App.InstallSkills` to install a temporary first root named `release`
 Before installing or rendering, it validates the step settings through `workflow.ValidateStepSettings`, rejecting malformed values, invalid or duplicate names, disallowed actors and unknown setting keys with exit code 2.
 It returns the prompt manifest as JSON, retains the rendered attempt, removes the temporary root, and refuses to replace an existing attempt.
 A request without a baseline role or guide path takes it from `App.InstallBaseline`'s temporary release baseline.
+A baseline's optional `Policies` and `PolicyError` render the [repository policies](../rendering.md#repository-policies) section; `render` reads no repository.
+Every advance, `director start` and each reload fetch the repositories' default branches into `refs/guildhall/policies` through `App.PolicyGit`, and every advance's prompts, `director status` and `startup.md` read the policy file there ([repository policies](../configuration.md#repository-policies)).
 `cmd/guildhall` supplies the embedded release skills and baseline installers; an unconfigured installer is an error, in `render` and in every advance.
 
 Director preflight checks its own model and effective effort at the `runtime` check before recording a session, using the profile runtime refusal rules.

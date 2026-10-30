@@ -62,7 +62,7 @@ Your notes are the only thing a new session gets from you besides the store, so 
 In the same turn that something arises which no record holds, write a note before you reply:
 
 - `promised`: what you told the Guildmaster you would do or tell them, in their words where it matters.
-- `guildmaster`: a preference or context they gave in conversation.
+- `guildmaster`: a preference or context they gave in conversation, but not a standing rule for one repository, which belongs in that repository's `.guildhall/policies.md`: propose that change as a task or tell the Guildmaster the exact line.
 - `plan`: your intent, such as an order of work, that no task, decision or message records.
 
 Never repeat what the store holds; name tasks, decisions and messages by id.

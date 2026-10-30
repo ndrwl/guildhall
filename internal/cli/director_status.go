@@ -55,6 +55,11 @@ type directorStatus struct {
 	// Grants are the active task grants, extra allowed tools the Guildmaster approved for one task
 	// (docs/decisions/task-grants.md); one leaves the list once it expires or is revoked, with no write.
 	Grants []statusGrant `json:"grants"`
+	// RepositoryPolicies is each configured repository's policies as last fetched, read with no fetch
+	// (docs/configuration.md#repository-policies); absent when no repository has a policy file and none has an
+	// error. They are guidance, not guard rails: nothing enforces them. The session supervisor's own snapshot
+	// leaves them out.
+	RepositoryPolicies []statusPolicies `json:"repository_policies,omitempty"`
 	// Version is the binary printing the feed, from its build info and local git reads only
 	// (docs/contracts/cli.md#version); the session supervisor's own snapshot leaves it out.
 	Version *versionInfo `json:"version,omitempty"`
@@ -339,6 +344,12 @@ func (a *App) directorStatusCmd(args []string) int {
 		return a.fail(fmt.Errorf("director status: %w", err))
 	}
 	out.Session.GuardRails.GuardRails, out.Quality, out.Session.GuardRails.ConfigError = statusConfig(*cfg, named)
+	if *cfg != "" {
+		// A config that cannot be read gives no policies; the guard rails already say why.
+		if c, err := config.Load(*cfg); err == nil {
+			out.RepositoryPolicies = feedPolicies(a.readPolicies(context.Background(), c.Repositories...))
+		}
+	}
 	v := a.versionInfo(context.Background(), *cfg, *state, false)
 	out.Version = &v
 	if it, ok := v.installItem(); ok {

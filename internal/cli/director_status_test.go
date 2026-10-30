@@ -14,6 +14,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -22,7 +23,16 @@ import (
 
 func directorCmd(t *testing.T, getenv func(string) string, args ...string) (int, string, string) {
 	t.Helper()
+	return directorCmdPolicies(t, getenv, nil, args...)
+}
+
+// directorCmdPolicies is directorCmd reading repository policies with g; nil reads none.
+func directorCmdPolicies(t *testing.T, getenv func(string) string, g PolicyGit, args ...string) (int, string, string) {
+	t.Helper()
 	app, stdout, stderr := newTestApp(nil, nil)
+	if g != nil {
+		app.PolicyGit = g
+	}
 	app.Getenv = getenv
 	app.Now = func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }
 	// A fixed build, so the feed's version block is the same on every runner.
@@ -267,9 +277,17 @@ owner_machine = "workstation"
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, out, stderr := directorCmd(t, nil, "status", "--copy", dir, "--json")
+	// app has policies at main's commit; lib's policy file is refused.
+	pol := &fakePolicyGit{shown: map[string]git.Shown{
+		"/srv/app": {Commit: strings.Repeat("a", 40), Data: []byte("# Policies\n\n- Keep the up-to-date branch protection on main for now.\n- Squash merges only.\n")},
+		"/srv/lib": {Commit: strings.Repeat("b", 40), Data: []byte("- One\n- One\n")},
+	}}
+	code, out, stderr := directorCmdPolicies(t, nil, pol, "status", "--copy", dir, "--json")
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	if fetched := pol.fetches(); len(fetched) != 0 {
+		t.Errorf("status fetched %q; it only reads", fetched)
 	}
 	if strings.Count(out, "\n") != 1 || !strings.HasSuffix(out, "\n") {
 		t.Fatalf("status prints one JSON line: %q", out)
@@ -285,13 +303,13 @@ owner_machine = "workstation"
 	}
 
 	// The explicit paths read the same copy, and GUILDHALL_COPY selects it.
-	_, explicit, _ := directorCmd(t, nil, "status", "--store", path, "--state", filepath.Join(dir, "state"), "--config", filepath.Join(dir, "config.toml"), "--json")
-	_, env, _ := directorCmd(t, func(k string) string {
+	_, explicit, _ := directorCmdPolicies(t, nil, pol, "status", "--store", path, "--state", filepath.Join(dir, "state"), "--config", filepath.Join(dir, "config.toml"), "--json")
+	_, env, _ := directorCmdPolicies(t, func(k string) string {
 		if k == copyEnvVar {
 			return dir
 		}
 		return ""
-	}, "status", "--json")
+	}, pol, "status", "--json")
 	if explicit != out || env != out {
 		t.Fatalf("explicit paths or GUILDHALL_COPY read differently:\n%s\n%s\n%s", out, explicit, env)
 	}

@@ -89,7 +89,16 @@ func directorCopy(t *testing.T, table string, steps ...string) string {
 // GUILDHALL_COPY and empty standard input.
 func runDirectorCmd(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
+	return runDirectorCmdWith(t, nil, args...)
+}
+
+// runDirectorCmdWith is runDirectorCmd with the App changed by configure first, when it is not nil.
+func runDirectorCmdWith(t *testing.T, configure func(*App), args ...string) (int, string, string) {
+	t.Helper()
 	app, stdout, stderr := newTestApp(nil, nil)
+	if configure != nil {
+		configure(app)
+	}
 	app.Executable = os.Executable
 	app.LookPath = exec.LookPath
 	app.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
