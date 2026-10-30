@@ -751,10 +751,16 @@ func Status(ctx context.Context, a Attempt) (reconcile.Classification, error) {
 // Classify is Status given the attempt's ownership record o, nil when it has none, already read from the store,
 // so a caller that read many records in one transaction classifies without opening the store again.
 func Classify(ctx context.Context, a Attempt, o *store.Ownership) reconcile.Classification {
+	return ClassifyAt(ctx, a, o, nil)
+}
+
+// ClassifyAt is Classify by the clock now, nil meaning time.Now, so a caller with its own clock, as `director status`
+// has, measures heartbeat age and staleness by it.
+func ClassifyAt(ctx context.Context, a Attempt, o *store.Ownership, now func() time.Time) reconcile.Classification {
 	if _, err := os.Stat(a.Dir()); o == nil && errors.Is(err, fs.ErrNotExist) {
 		return reconcile.Classification{State: reconcile.Absent, Reason: "no attempt directory and no ownership record"}
 	}
 	// A mark that cannot be read is not a hand-over: the attempt is classified as any other.
 	handed, _ := interp.HandedToDirector(a.Dir())
-	return reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o, Handed: handed}, reconcile.Options{})
+	return reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o, Handed: handed}, reconcile.Options{Now: now})
 }

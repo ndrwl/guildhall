@@ -98,7 +98,7 @@ func TestSessionStartupWithNoNotesAndNothingInFlight(t *testing.T) {
 			t.Errorf("startup.md lacks %q:\n%s", want, b)
 		}
 	}
-	for _, not := range []string{"## Notes", "andoff", "Parked"} {
+	for _, not := range []string{"## Notes", "andoff", "Parked", "## Running"} {
 		if strings.Contains(string(b), not) {
 			t.Errorf("startup.md with no notes or parked attempts has %q:\n%s", not, b)
 		}
@@ -209,6 +209,34 @@ func TestSessionStartupListsHeldItems(t *testing.T) {
 	}
 }
 
+// TestSessionStartupListsRunningAttempts: running attempts have their own section between the in-flight list and the
+// parked attempts, which asks the Director to confirm them before it is ready, one line each.
+func TestSessionStartupListsRunningAttempts(t *testing.T) {
+	in := sessionInput(t)
+	in.Running = []string{
+		"running: attempt 1 of build of app/t-4; state running; heartbeat 20s ago; last output 3m ago; endpoint answers and launcher identity is live; check with `guildhall artisan status --repo app --task t-4 --step build --attempt 1`",
+		"running: attempt 1 of plan of lib/t-2; state absent; no heartbeat; no ownership record; check with `guildhall artisan status --repo lib --task t-2 --step plan --attempt 1`",
+	}
+	in.Parked = []string{"parked: attempt 3 of review of app/t-4 failed; reason: Held.; retry with `guildhall step retry --repo app --task t-4 --step review --attempt 3`"}
+	r, err := Session(in, roots())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(r.StartupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "- messages: 2 unread Director messages: guildhall messages list director\n" +
+		"\n## Running\n\n" +
+		"These attempts are in flight: confirm each is running before you run `guildhall director ready`. One that is not healthy is also an in-flight item.\n\n" +
+		"- " + in.Running[0] + "\n" +
+		"- " + in.Running[1] + "\n" +
+		"\n## Parked\n\n"
+	if !strings.Contains(string(b), want) {
+		t.Errorf("startup.md lacks the running section between In flight and Parked %q:\n%s", want, b)
+	}
+}
+
 // TestSessionSkillsMatchTheRelease renders the embedded release skills and compares each tree digest with the
 // release's recorded one (skills/testdata/digests.txt), so a session's skills are the release's byte for byte.
 func TestSessionSkillsMatchTheRelease(t *testing.T) {
@@ -299,15 +327,16 @@ func TestSessionRefusals(t *testing.T) {
 				t.Fatal(err)
 			}
 		},
-		"missing role":           func(in *SessionInput) { in.Role.Path = filepath.Join(t.TempDir(), "none.md") },
-		"absolute runtime file":  func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{"/etc/x": nil} },
-		"escaping runtime file":  func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{"../x": nil} },
-		"runtime file on role":   func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{RoleFile: nil} },
-		"runtime file in skills": func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{".claude/skills/x": nil} },
-		"escaping skills dir":    func(in *SessionInput) { in.SkillsDir = "../skills" },
-		"number":                 func(in *SessionInput) { in.Number = 0 },
-		"multi-line item":        func(in *SessionInput) { in.InFlight = []string{"one\ntwo"} },
-		"multi-line parked item": func(in *SessionInput) { in.Parked = []string{"one\rtwo"} },
+		"missing role":            func(in *SessionInput) { in.Role.Path = filepath.Join(t.TempDir(), "none.md") },
+		"absolute runtime file":   func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{"/etc/x": nil} },
+		"escaping runtime file":   func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{"../x": nil} },
+		"runtime file on role":    func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{RoleFile: nil} },
+		"runtime file in skills":  func(in *SessionInput) { in.RuntimeFiles = map[string][]byte{".claude/skills/x": nil} },
+		"escaping skills dir":     func(in *SessionInput) { in.SkillsDir = "../skills" },
+		"number":                  func(in *SessionInput) { in.Number = 0 },
+		"multi-line item":         func(in *SessionInput) { in.InFlight = []string{"one\ntwo"} },
+		"multi-line parked item":  func(in *SessionInput) { in.Parked = []string{"one\rtwo"} },
+		"multi-line running item": func(in *SessionInput) { in.Running = []string{"one\ntwo"} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
