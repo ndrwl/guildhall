@@ -122,7 +122,7 @@ An attempt whose launcher died is first settled with [`artisan resume`](artisan.
 ## `step park` and `step unpark`
 
 ```sh
-guildhall step park --repo <id> --task <id> --step <id> --attempt <n> --reason <text> [--copy <dir> | --store <path> --config <file> --state <dir>]
+guildhall step park --repo <id> --task <id> --step <id> --attempt <n> --reason <text> [--until-merged <repo>/<task>]... [--copy <dir> | --store <path> --config <file> --state <dir>]
 guildhall step unpark --repo <id> --task <id> --step <id> --attempt <n> [--copy <dir> | --store <path> --config <file> --state <dir>]
 ```
 
@@ -134,6 +134,13 @@ Parking is a record only: it takes no task lock, writes no attempt outcome and n
 It does not acknowledge the attempt's `attempt-failed` message; acknowledge that separately.
 It is refused with exit status 1, writing nothing, for a task that is not open, the `quality-judge` step, an attempt that is not the step's latest, and an attempt that is running or succeeded; an unknown task or attempt is also exit 1.
 Repeating an identical park prints the record and writes nothing; a park with another reason while the attempt is parked is refused with `step park: attempt <n> of <step> of <repo>/<task> is already parked, with reason "<prior>"; unpark it first`.
+
+`--until-merged <repo>/<task>`, which may be repeated, holds the park only until every named task merges ([decision](decisions/0096-hold-until-merged.md)); the record gains `"until_merged":[{"repository":...,"id":...},...]`.
+Each named task must be a task of this store that is still open and not the parked attempt's own task: one already done is refused with `<repo>/<task> already merged; act now instead`, and one cancelled likewise, so the Director acts at once.
+While any named task is open the park counts exactly as one without the flag, and its `parked` entry gains `until_merged` and `waiting_for`, the named tasks not merged yet.
+Once all have merged, or as soon as one is cancelled, the park stops counting with no write: the `retry` item is back in `needs_me`, its reason ending `; released: <repo>/<task> merged <time>` or `; dependency cancelled: <repo>/<task>`, then `; park reason: <reason>`, and the session supervisor wakes the Director once with a `hold-released` message ([holds](director.md#holds)).
+Nothing is retried automatically.
+A park while already parked with another `--until-merged` set, or without one, is refused as another reason is; `step unpark` lifts a held park early, and `step retry` clears it as it clears any park.
 
 `step unpark` lifts the park, so the attempt's `retry` and `director` items are back in `needs_me` exactly as before; an attempt that is not parked is refused with exit status 1.
 A later park of the same attempt records a new park.

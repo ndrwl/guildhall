@@ -108,3 +108,4 @@ Until then a new decision is cited by its file path rather than a number.
 - [D93. Well-known Claude profiles get a shipped default grant, and a repository can add to it](decisions/0093-shipped-default-grants.md)
 - [D94. Director notes replace the handoff note](decisions/0094-director-notes.md)
 - [D95. The shipped bug workflow has no grill and no acceptance](decisions/0095-bug-workflow-without-acceptance.md)
+- [D96. Holding a park, a decision or a follow-up until named tasks merge](decisions/0096-hold-until-merged.md)

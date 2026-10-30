@@ -158,7 +158,7 @@ func statusCopy(t *testing.T) string {
 			return s.FinishAttempt("i-38", "app", "t-10", "build", 1, store.AttemptFailed)
 		},
 		func() (store.Receipt, error) {
-			return s.ParkAttempt("i-39", "app", "t-10", "build", 1, "Held until app/t-4 merges.", 0)
+			return s.ParkAttempt("i-39", "app", "t-10", "build", 1, "Held until app/t-4 merges.", 0, nil)
 		},
 	}
 	for _, step := range steps {
@@ -322,7 +322,7 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 		`"session":{"state":"no session","guard_rails":{"running_attempts":0,"attempts_today":0,"day":"2026-10-22",` +
 		`"spend_today":{"attempts":0,"tokens_unknown":0,"cost_unknown":0,"tokens":"unknown","input_tokens":0,"output_tokens":0,` +
 		`"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost":"unknown","cost_usd":0}},"start_queue":[]},"mode":{"name":"standalone"},"tasks":[],"merge_queues":[],"decisions":[],` +
-		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],"parked":[],"grants":[],` +
+		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],"parked":[],"held":[],"grants":[],` +
 		`"version":{"version":"dev","revision":"` + testRevision + `","time":"2026-10-27T21:00:24Z","modified":false,"go_version":"go1.27.2",` +
 		`"platform":"linux/amd64","pr":null,"task":null,"behind_main":null}}` + "\n"
 	if out != want {
@@ -455,8 +455,8 @@ func TestDirectorStatusUsage(t *testing.T) {
 		code int
 		want string
 	}{
-		{"no subcommand", nil, 2, "director: the commands are status, start, ready, pause, resume, stop, note, reload, turn-started, turn-ended, wait-wake and context-report"},
-		{"unknown subcommand", []string{"enrol"}, 2, "director: the commands are status, start, ready, pause, resume, stop, note, reload, turn-started, turn-ended, wait-wake and context-report"},
+		{"no subcommand", nil, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, reload, turn-started, turn-ended, wait-wake and context-report"},
+		{"unknown subcommand", []string{"enrol"}, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, reload, turn-started, turn-ended, wait-wake and context-report"},
 		{"no json", []string{"status", "--copy", dir}, 2, "prints JSON only; pass --json"},
 		{"no store", []string{"status", "--json"}, 2, "--store and --state are required, or --copy"},
 		{"store without state", []string{"status", "--json", "--store", filepath.Join(dir, "director.store")}, 2, "--store and --state are required, or --copy"},

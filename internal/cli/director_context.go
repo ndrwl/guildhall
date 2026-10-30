@@ -67,20 +67,7 @@ func (a *App) directorContextReport(args []string) int {
 	if *band {
 		counts := lanterns.Counts{}
 		if status, err := readDirectorStatus(context.Background(), filepath.Join(copyDir, "director.store"), filepath.Join(copyDir, "state"), a.Now); err == nil {
-			counts.Known = true
-			for _, t := range status.Tasks {
-				if t.State == store.TaskOpen {
-					counts.Tasks++
-				}
-			}
-			counts.Running = status.Session.GuardRails.RunningAttempts
-			counts.Decisions = len(status.Decisions)
-			for _, item := range status.NeedsMe {
-				switch item.Kind {
-				case "stalled", "retry", "resume", "recovering":
-					counts.Attention++
-				}
-			}
+			counts = lanternCounts(status)
 		}
 		_, _ = fmt.Fprint(a.Stdout, lanterns.Band(counts))
 		if ok {
@@ -101,6 +88,30 @@ func (a *App) directorContextReport(args []string) int {
 	}
 	_, _ = fmt.Fprintf(a.Stdout, "context %d%%\n", percent)
 	return 0
+}
+
+// lanternCounts is what the Lanterns band counts in status: open tasks, running attempts, open decisions not
+// deferred until tasks merge, and the needs_me items that need the Director's attention.
+func lanternCounts(status directorStatus) lanterns.Counts {
+	counts := lanterns.Counts{Known: true, Running: status.Session.GuardRails.RunningAttempts}
+	for _, t := range status.Tasks {
+		if t.State == store.TaskOpen {
+			counts.Tasks++
+		}
+	}
+	// A deferred decision still waiting for its tasks to merge is held, not waiting on anyone.
+	for _, d := range status.Decisions {
+		if !d.Deferred {
+			counts.Decisions++
+		}
+	}
+	for _, item := range status.NeedsMe {
+		switch item.Kind {
+		case "stalled", "retry", "resume", "recovering", followUpKind:
+			counts.Attention++
+		}
+	}
+	return counts
 }
 
 // sessionDir is the directory of Director session n in the copy.

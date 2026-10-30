@@ -268,8 +268,10 @@ func (a *App) parkCommand(name string, args []string, park bool) int {
 	step := fl.String("step", "", "step id")
 	attempt := fl.String("attempt", "", "attempt number")
 	var reason *string
+	var until untilMerged
 	if park {
 		reason = fl.String("reason", "", "the Director's reason")
+		fl.Var(&until, "until-merged", "a task the park waits to merge, <repo>/<task>")
 	}
 	if err := fl.Parse(args); err != nil {
 		return a.usageError(name + ": " + err.Error())
@@ -300,7 +302,7 @@ func (a *App) parkCommand(name string, args []string, park bool) int {
 	records := storeRecords{path: f.store, wait: f.wait}
 	var p store.AttemptPark
 	if park {
-		p, err = parkAttempt(records, f.repo, *task, *step, n, *reason)
+		p, err = parkAttempt(records, f.repo, *task, *step, n, *reason, until)
 	} else {
 		p, err = unparkAttempt(records, f.repo, *task, *step, n)
 	}
@@ -310,21 +312,26 @@ func (a *App) parkCommand(name string, args []string, park bool) int {
 	return a.printJSON(p)
 }
 
-// parkAttempt parks an attempt under the mutation id of its park record's current cycle, so repeating an identical
-// park replays it, and refuses a park with another reason while the attempt is parked.
-func parkAttempt(records storeRecords, repo, task, step string, n int, reason string) (store.AttemptPark, error) {
+// parkAttempt parks an attempt, until the tasks until names merge when it names any, under the mutation id of its
+// park record's current cycle, so repeating an identical park replays it, and refuses a park with another reason or
+// another until-merged set while the attempt is parked.
+func parkAttempt(records storeRecords, repo, task, step string, n int, reason string, until []store.TaskRef) (store.AttemptPark, error) {
 	return withRecords(records, false, nil, func(s *store.Store) (store.AttemptPark, error) {
 		prior, err := s.AttemptPark(repo, task, step, n)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return store.AttemptPark{}, err
 		}
 		alreadyParked := func(p store.AttemptPark) error {
+			if len(p.UntilMerged) > 0 {
+				return fmt.Errorf("attempt %d of %s of %s/%s is already parked, with reason %q until %s merges; unpark it first", n, step, repo, task, p.Reason,
+					store.TaskRefList(p.UntilMerged))
+			}
 			return fmt.Errorf("attempt %d of %s of %s/%s is already parked, with reason %q; unpark it first", n, step, repo, task, p.Reason)
 		}
-		if prior.Parked && prior.Reason != reason {
+		if prior.Parked && (prior.Reason != reason || !slices.Equal(prior.UntilMerged, until)) {
 			return store.AttemptPark{}, alreadyParked(prior)
 		}
-		_, err = s.ParkAttempt(attemptParkMutation("park", repo, task, step, n, prior.Cycle), repo, task, step, n, reason, prior.Cycle)
+		_, err = s.ParkAttempt(attemptParkMutation("park", repo, task, step, n, prior.Cycle), repo, task, step, n, reason, prior.Cycle, until)
 		if errors.Is(err, store.ErrMutationConflict) || errors.Is(err, store.ErrExists) {
 			// A park or unpark between the read and the write: report the record as it now stands.
 			if now, rerr := s.AttemptPark(repo, task, step, n); rerr == nil && now.Parked {

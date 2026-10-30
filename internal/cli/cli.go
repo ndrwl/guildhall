@@ -61,12 +61,14 @@ Commands:
                  start the next attempt after a failed or stopped one
   step send-back --repo <id> --task <id> --step <id> --attempt <n> --feedback <instructions> [--copy <dir> | --store <path> --config <file> --state <dir>]
                  send a succeeded Artisan step back with Director feedback
-  step park --repo <id> --task <id> --step <id> --attempt <n> --reason <text> [--copy <dir> | --store <path> --config <file> --state <dir>]
-                 hold a failed or stopped attempt on purpose, out of needs_me
+  step park --repo <id> --task <id> --step <id> --attempt <n> --reason <text> [--until-merged <repo>/<task>]... [--copy <dir> | --store <path> --config <file> --state <dir>]
+                 hold a failed or stopped attempt on purpose, out of needs_me, until lifted or until the named tasks merge
   step unpark --repo <id> --task <id> --step <id> --attempt <n> [--copy <dir> | --store <path> --config <file> --state <dir>]
                  lift a park, so the attempt is back in needs_me
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
+  decide defer|undefer --store <path> --repo <id> --task <id> --decision <id> [--until-merged <repo>/<task>... --reason <text>]
+                 hold an open decision out of needs_me until the named tasks merge, or lift that hold
   director status --json --store <path> --state <dir>
                  print the Director's status feed and what needs the Director or Guildmaster
   director start [runtime] [--tab] [--check] --copy <dir>
@@ -87,6 +89,10 @@ Commands:
                  remove a note; its history stays in the store
   director note list --copy <dir>
                  print the live notes, grouped by kind
+  director follow-up add --until-merged <repo>/<task>... <text> --copy <dir>
+                 keep a one-line follow-up, back in needs_me once the named tasks merge
+  director follow-up list|done <id> --copy <dir>
+                 print the follow-ups not done, or mark one done
   director reload [--now] --copy <dir>
                  restart the Director session at a quiet point, or at the end of the turn
   director turn-started --copy <dir>

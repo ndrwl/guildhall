@@ -544,6 +544,9 @@ const (
 	MessageApprovalCarried = "approval-carried"
 	MessageQuestion        = "question"
 	MessageNote            = "note"
+	// MessageHoldReleased is the session supervisor's report that a hold was released: a park, decision deferral or
+	// follow-up whose named tasks merged or one of which was cancelled (docs/decisions/0096-hold-until-merged.md).
+	MessageHoldReleased = "hold-released"
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
@@ -562,7 +565,7 @@ var MessageTypes = map[string]string{
 	MessageApprovalCarried: "engine",
 	MessageQuestion:        "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
-	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor",
+	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
 }
 
 // UnreadFrom is DirectorUnread's key for unread messages of type t from sender: "<t> from <sender>".

@@ -46,12 +46,18 @@ type directorStatus struct {
 	NeedsMe     []needsMeItem    `json:"needs_me"`
 	// Parked are the attempts the Director parked, held on purpose and left out of needs_me (docs/director.md#status).
 	Parked []statusParked `json:"parked"`
+	// Held are the decision deferrals and follow-ups still waiting for the tasks they name to merge, left out of
+	// needs_me until they are released (docs/decisions/0096-hold-until-merged.md).
+	Held []statusHeld `json:"held"`
 	// Grants are the active task grants, extra allowed tools the Guildmaster approved for one task
 	// (docs/decisions/task-grants.md); one leaves the list once it expires or is revoked, with no write.
 	Grants []statusGrant `json:"grants"`
 	// Version is the binary printing the feed, from its build info and local git reads only
 	// (docs/contracts/cli.md#version); the session supervisor's own snapshot leaves it out.
 	Version *versionInfo `json:"version,omitempty"`
+
+	// released are the released holds that still matter, which the holds watcher wakes the Director for once each.
+	released []releasedHold
 }
 
 // recentReceipt is a receipt without its request digest, which only replay checks need.
@@ -165,6 +171,24 @@ type statusParked struct {
 	Reason     string               `json:"reason"`
 	ParkedAt   *time.Time           `json:"parked_at,omitempty"`
 	Command    string               `json:"command"`
+	// UntilMerged are the tasks a held park waits to merge, and WaitingFor those of them not merged yet.
+	UntilMerged []string `json:"until_merged,omitempty"`
+	WaitingFor  []string `json:"waiting_for,omitempty"`
+}
+
+// statusHeld is a waiting hold other than a park: a deferred decision or a follow-up, with what it waits for and
+// the command that lifts it.
+type statusHeld struct {
+	Kind       string `json:"kind"`
+	Repository string `json:"repository,omitempty"`
+	TaskID     string `json:"task_id,omitempty"`
+	// Item is the decision id or the follow-up id.
+	Item string `json:"item"`
+	// Reason is a deferral's reason or a follow-up's text.
+	Reason      string   `json:"reason"`
+	UntilMerged []string `json:"until_merged"`
+	WaitingFor  []string `json:"waiting_for"`
+	Command     string   `json:"command"`
 }
 
 // statusGrant is an active task grant: the rules its task's attempts of its step are given, why and for how long,
@@ -195,6 +219,9 @@ type statusDecision struct {
 	Options    []string           `json:"options,omitempty"`
 	Question   string             `json:"question"`
 	OpenedAt   *time.Time         `json:"opened_at,omitempty"`
+	// Deferred says the Director deferred the decision until tasks merge and they have not, which is why it is not in
+	// needs_me; the held section says what it waits for.
+	Deferred bool `json:"deferred,omitempty"`
 }
 
 type statusMessages struct {
@@ -222,6 +249,7 @@ type needsMeItem struct {
 	Step       string `json:"step,omitempty"`
 	Attempt    int    `json:"attempt,omitempty"`
 	Decision   string `json:"decision,omitempty"`
+	FollowUp   string `json:"follow_up,omitempty"`
 	Message    string `json:"message,omitempty"`
 	Count      int    `json:"count,omitempty"`
 	Retryable  bool   `json:"retryable,omitempty"`
@@ -248,6 +276,9 @@ const dependenciesKind = "dependencies"
 // mergeQueueKind is the needs_me kind of a task waiting in its repository's merge queue, which the session
 // supervisor advances (docs/interpreter.md#the-merge-queue).
 const mergeQueueKind = "merge-queue"
+
+// followUpKind is the needs_me kind and held kind of a follow-up (docs/decisions/0096-hold-until-merged.md).
+const followUpKind = "follow-up"
 
 // directorStatusCmd runs `guildhall director status` (docs/director.md#status).
 func (a *App) directorStatusCmd(args []string) int {
@@ -351,6 +382,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		Recent:      []recentReceipt{},
 		NeedsMe:     []needsMeItem{},
 		Parked:      []statusParked{},
+		Held:        []statusHeld{},
 		Grants:      []statusGrant{},
 	}
 	for _, g := range v.Grants {
@@ -392,7 +424,12 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	}
 	// Steps are ordered by their first attempt's start; decisions are timed by their opening and parks by their newest park.
 	firstStart, openedAt, parkedAt := map[string]uint64{}, map[string]time.Time{}, map[string]time.Time{}
+	// A hold's release names when each task it waited for merged, by the task's state receipt.
+	closedAt := map[store.TaskRef]time.Time{}
 	for _, r := range v.Receipts {
+		if r.Operation == "set-task-state" {
+			closedAt[store.TaskRef{Repository: r.Repository, ID: r.TaskID}] = r.CommittedAt
+		}
 		key := r.Repository + "/" + r.TaskID + "/"
 		if step, _, ok := strings.Cut(strings.TrimPrefix(r.Record, "attempt/"), "/"); ok && strings.HasPrefix(r.Record, "attempt/") {
 			if _, seen := firstStart[key+step]; !seen {
@@ -466,20 +503,33 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		}
 		// A park counts only while its attempt is its open task's step's latest and failed or stopped; a retry clears
 		// it by starting the next attempt (docs/decisions/0092-park-attempt.md).
-		counting := map[string]store.AttemptPark{}
+		// A park held until tasks merge stops counting once they have, so its retry item returns with the release
+		// (docs/decisions/0096-hold-until-merged.md).
+		counting, releasedPark := map[string]store.AttemptPark{}, map[string]string{}
 		for _, step := range steps {
 			at := latest[prefix+step]
 			p, ok := parks[fmt.Sprintf("%s%s/%d", prefix, step, at.Number)]
 			if !ok || !open || (at.Outcome != store.AttemptFailed && at.Outcome != store.AttemptStopped) {
 				continue
 			}
-			counting[step] = p
-			var when *time.Time
-			if c, ok := parkedAt[prefix+store.AttemptParkRecord(step, at.Number)]; ok {
-				when = &c
+			sp := statusParked{Repository: t.Repository, TaskID: t.ID, Step: step, Attempt: at.Number, Outcome: at.Outcome,
+				Reason: p.Reason, Command: fmt.Sprintf("guildhall step retry --repo %s --task %s --step %s --attempt %d", t.Repository, t.ID, step, at.Number)}
+			if len(p.UntilMerged) > 0 {
+				j := store.JudgeHold(p.UntilMerged, v.Tasks)
+				if j.State != store.HoldWaiting {
+					release := holdRelease(j, p.UntilMerged, closedAt)
+					releasedPark[step] = release + "; park reason: " + p.Reason
+					out.released = append(out.released, releasedHold{Kind: "park", Repository: t.Repository, TaskID: t.ID, Step: step, Attempt: at.Number,
+						Item: fmt.Sprintf("%s.%d", step, at.Number), Cycle: p.Cycle, Release: release, Reason: p.Reason, Command: sp.Command})
+					continue
+				}
+				sp.UntilMerged, sp.WaitingFor = refStrings(p.UntilMerged), refStrings(j.Waiting)
 			}
-			out.Parked = append(out.Parked, statusParked{Repository: t.Repository, TaskID: t.ID, Step: step, Attempt: at.Number, Outcome: at.Outcome,
-				Reason: p.Reason, ParkedAt: when, Command: fmt.Sprintf("guildhall step retry --repo %s --task %s --step %s --attempt %d", t.Repository, t.ID, step, at.Number)})
+			counting[step] = p
+			if c, ok := parkedAt[prefix+store.AttemptParkRecord(step, at.Number)]; ok {
+				sp.ParkedAt = &c
+			}
+			out.Parked = append(out.Parked, sp)
 		}
 		var attempts []store.StageAttempt
 		for _, step := range steps {
@@ -536,6 +586,9 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 					it.Kind, it.Retryable, it.Reason, it.Command = "retry", true, fmt.Sprintf("attempt %d of %s %s", at.Number, at.Step, at.Outcome), "guildhall step retry "+flags
 					if at.IntakeRejection != "" {
 						it.Reason += "; result rejected: " + at.IntakeRejection
+					}
+					if release, ok := releasedPark[at.Step]; ok {
+						it.Reason += "; " + release
 					}
 					retry = append(retry, it)
 				}
@@ -610,17 +663,64 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 		return cmp.Or(strings.Compare(a.Repository, b.Repository), strings.Compare(a.TaskID, b.TaskID), strings.Compare(a.Step, b.Step),
 			cmp.Compare(a.Attempt, b.Attempt))
 	})
-	var stalled, decisions []needsMeItem
+	var stalled, decisions, follows []needsMeItem
+	deferrals := map[string]store.DecisionDeferral{}
+	for _, d := range v.Deferrals {
+		if d.Deferred {
+			deferrals[d.Repository+"/"+d.TaskID+"/"+d.Decision] = d
+		}
+	}
 	for _, d := range v.OpenDecisions {
 		var opened *time.Time
 		if at, ok := openedAt[d.Repository+"/"+d.TaskID+"/"+d.ID]; ok {
 			opened = &at
 		}
-		out.Decisions = append(out.Decisions, statusDecision{Repository: d.Repository, TaskID: d.TaskID, ID: d.ID, Kind: d.Kind, Subject: d.Subject,
-			Options: d.Options, Question: d.Question, OpenedAt: opened})
-		decisions = append(decisions, needsMeItem{Kind: decisionKind, Repository: d.Repository, TaskID: d.TaskID, Decision: d.ID, Reason: d.Question,
-			Command: fmt.Sprintf("guildhall decide show --repo %s --task %s --decision %s", d.Repository, d.TaskID, d.ID)})
+		sd := statusDecision{Repository: d.Repository, TaskID: d.TaskID, ID: d.ID, Kind: d.Kind, Subject: d.Subject,
+			Options: d.Options, Question: d.Question, OpenedAt: opened}
+		item := needsMeItem{Kind: decisionKind, Repository: d.Repository, TaskID: d.TaskID, Decision: d.ID, Reason: d.Question,
+			Command: fmt.Sprintf("guildhall decide show --repo %s --task %s --decision %s", d.Repository, d.TaskID, d.ID)}
+		// A deferred decision stays open but leaves needs_me until the tasks it waits for merge.
+		if df, ok := deferrals[d.Repository+"/"+d.TaskID+"/"+d.ID]; ok {
+			j := store.JudgeHold(df.UntilMerged, v.Tasks)
+			if j.State == store.HoldWaiting {
+				sd.Deferred = true
+				out.Decisions = append(out.Decisions, sd)
+				out.Held = append(out.Held, statusHeld{Kind: decisionKind, Repository: d.Repository, TaskID: d.TaskID, Item: d.ID, Reason: df.Reason,
+					UntilMerged: refStrings(df.UntilMerged), WaitingFor: refStrings(j.Waiting),
+					Command: fmt.Sprintf("guildhall decide undefer --repo %s --task %s --decision %s", d.Repository, d.TaskID, d.ID)})
+				continue
+			}
+			release := holdRelease(j, df.UntilMerged, closedAt)
+			item.Reason += "; " + release + "; deferral reason: " + df.Reason
+			out.released = append(out.released, releasedHold{Kind: decisionKind, Repository: d.Repository, TaskID: d.TaskID, Item: d.ID, Cycle: df.Cycle,
+				Release: release, Reason: df.Reason, Command: item.Command})
+		}
+		out.Decisions = append(out.Decisions, sd)
+		decisions = append(decisions, item)
 	}
+	for _, f := range v.FollowUps {
+		j := store.JudgeHold(f.UntilMerged, v.Tasks)
+		command := "guildhall director follow-up done " + f.ID
+		if j.State == store.HoldWaiting {
+			out.Held = append(out.Held, statusHeld{Kind: followUpKind, Item: f.ID, Reason: f.Text, UntilMerged: refStrings(f.UntilMerged),
+				WaitingFor: refStrings(j.Waiting), Command: command})
+			continue
+		}
+		release := holdRelease(j, f.UntilMerged, closedAt)
+		follows = append(follows, needsMeItem{Kind: followUpKind, FollowUp: f.ID, Reason: f.Text + "; " + release, Command: command})
+		// A follow-up names no task of its own, so its wake is filed under the first task it waited for.
+		first := f.UntilMerged[0]
+		out.released = append(out.released, releasedHold{Kind: followUpKind, Repository: first.Repository, TaskID: first.ID, Item: f.ID,
+			Release: release, Reason: f.Text, Command: command})
+	}
+	slices.SortStableFunc(out.Held, func(a, b statusHeld) int {
+		order := cmp.Or(strings.Compare(a.Kind, b.Kind), strings.Compare(a.Repository, b.Repository), strings.Compare(a.TaskID, b.TaskID))
+		if order != 0 || a.Kind == followUpKind {
+			// Follow-ups keep their id order.
+			return order
+		}
+		return strings.Compare(a.Item, b.Item)
+	})
 	others := 0
 	for _, m := range v.Unread {
 		out.Messages.Unread++
@@ -639,7 +739,7 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 	slices.SortStableFunc(stalled, func(a, b needsMeItem) int {
 		return strings.Compare(a.Repository+"/"+a.TaskID, b.Repository+"/"+b.TaskID)
 	})
-	out.NeedsMe = slices.Concat(out.NeedsMe, advance, retry, resume, stalled, decisions)
+	out.NeedsMe = slices.Concat(out.NeedsMe, advance, retry, resume, stalled, decisions, follows)
 	if others > 0 {
 		plural := map[bool]string{true: "s"}[others > 1]
 		out.NeedsMe = append(out.NeedsMe, needsMeItem{Kind: "messages", Count: others, Reason: fmt.Sprintf("%d unread Director message%s", others, plural),

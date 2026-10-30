@@ -19,6 +19,8 @@ const decideUsage = `usage:
   guildhall decide list --store <path> [--repo <id>]
   guildhall decide show --store <path> --repo <id> --task <id> --decision <id>
   guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
+  guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
+  guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
 --copy <dir>, or GUILDHALL_COPY, may stand in for --store: the copy's director.store`
 
 // decide runs a decide subcommand against an existing store and prints its result as one JSON document
@@ -32,6 +34,9 @@ func (a *App) decide(args []string) int {
 		return a.decideUsage("missing decide subcommand")
 	}
 	sub := args[0]
+	if sub == "defer" || sub == "undefer" {
+		return a.decideDefer(sub, args[1:])
+	}
 	flags := flag.NewFlagSet("decide "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	path := flags.String("store", "", "store file")
