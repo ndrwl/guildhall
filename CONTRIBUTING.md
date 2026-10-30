@@ -27,5 +27,15 @@ go test ./...
 golangci-lint run
 ```
 
+CI also runs these two on Linux only:
+
+```sh
+go test -race ./...
+python3 .github/tests/test_release.py
+```
+
+`go test -race` needs cgo and a C compiler; the release test needs PyYAML 6.0.1 ([D7](docs/decisions/0007-release-policy-regression-test.md)).
+
 `gofmt -l .` must print nothing.
 Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in [D4](docs/decisions/0004-ci-matrix-and-lint.md).
+Actions in `.github/workflows` are pinned by commit SHA with the tag as a comment ([CI action pins and race](docs/decisions/ci-action-pins-and-race.md)).
