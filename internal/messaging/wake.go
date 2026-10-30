@@ -36,30 +36,36 @@ type DirectorPane interface {
 }
 
 // EndpointWaker is the seam beside TypeLine that wakes a Director without touching its input box
-// (docs/decisions/director-wake-hook.md): HandWake hands line, counts only, to the waiter session d's runtime armed
-// with its wait-wake hook, through the supervisor's session endpoint. It returns session.ErrNoWaiter, handing
-// nothing, when no waiter is registered or no supervisor listens. A DirectorPane that is not an EndpointWaker wakes
-// only typed sessions; every other session is recorded "no waiter".
+// (docs/decisions/director-wake-hook.md): HandWake hands line, counts only, with due, the handoff reasons due, as
+// its suffix, to the waiter session d's runtime armed with its wait-wake hook, through the supervisor's session
+// endpoint. hold asks the supervisor to hold the wake and release one line for a burst. It returns
+// session.ErrNoWaiter, handing nothing, when no waiter is registered or no supervisor listens. A DirectorPane that
+// is not an EndpointWaker wakes only typed sessions; every other session is recorded "no waiter".
 type EndpointWaker interface {
-	HandWake(ctx context.Context, d store.DirectorSession, line string) error
+	HandWake(ctx context.Context, d store.DirectorSession, line string, hold bool, due []string) error
 }
 
 // ReasonNoWaiter is the queued reason of a wake no waiter took: the session's runtime is not typed into and had no
 // wait-wake hook registered with its supervisor. The supervisor hands the next registered waiter one wake for it.
 const ReasonNoWaiter = "no waiter"
 
-// deliver wakes session d with line and returns why it could not, as a queued wake's reason, or "". Only a session
-// whose runtime has no hooks, the fake, is typed into (store.DirectorSession.TypedWakes); any other is handed the
-// line through pane's EndpointWaker and is never typed into, whatever its input box holds.
-func deliver(ctx context.Context, pane DirectorPane, d store.DirectorSession, line string) string {
+// deliver wakes session d with line and the suffix of dues and returns why it could not, as a queued wake's reason,
+// or "". Only a session whose runtime has no hooks, the fake, is typed into (store.DirectorSession.TypedWakes),
+// never held, with HandoffLine; any other is handed the line, hold and the dues' reasons through pane's
+// EndpointWaker and is never typed into, whatever its input box holds.
+func deliver(ctx context.Context, pane DirectorPane, d store.DirectorSession, line string, hold bool, dues []store.HandoffDue) string {
 	if d.TypedWakes() {
-		return paneReason(pane.TypeLine(ctx, d.Pane, line))
+		return paneReason(pane.TypeLine(ctx, d.Pane, HandoffLine(line, dues)))
 	}
 	w, ok := pane.(EndpointWaker)
 	if !ok {
 		return ReasonNoWaiter
 	}
-	err := w.HandWake(ctx, d, line)
+	var reasons []string
+	for _, due := range dues {
+		reasons = append(reasons, due.Reason)
+	}
+	err := w.HandWake(ctx, d, line, hold, reasons)
 	if errors.Is(err, session.ErrNoWaiter) || errors.Is(err, session.ErrNoSupervisor) {
 		return ReasonNoWaiter
 	}
@@ -149,7 +155,8 @@ func typeWake(ctx context.Context, st WakeStore, pane DirectorPane, idle time.Du
 			return "", nil, err
 		}
 	}
-	if reason := deliver(ctx, pane, d, HandoffLine(WakeLine(unread), dues)); reason != "" {
+	// A message's wake asks to be held, so the supervisor wakes the Director once for a burst; an idle wake is not.
+	if reason := deliver(ctx, pane, d, WakeLine(unread), idle <= 0, dues); reason != "" {
 		return reason, nil, nil
 	}
 	return "", dues, nil
@@ -243,7 +250,7 @@ func WakeResumed(ctx context.Context, st SessionReader, pane DirectorPane, waiti
 		return ResumeWake{}, err
 	}
 	if reason == "" {
-		reason = deliver(ctx, pane, d, ResumeLine(waiting))
+		reason = deliver(ctx, pane, d, ResumeLine(waiting), false, nil)
 	}
 	if reason != "" {
 		return ResumeWake{Decision: store.WakeQueued, Reason: reason}, nil

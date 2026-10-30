@@ -168,6 +168,20 @@ const StallIntervalKey = "stall_interval"
 // DefaultStallInterval is the stall interval of a config that does not set StallIntervalKey.
 const DefaultStallInterval = 15 * time.Minute
 
+// WakeQuietKey is the setting that sets how long the Director session's supervisor holds a burst's message wakes
+// after the newest before it wakes the Director once for them (docs/configuration.md#settings).
+const WakeQuietKey = "wake_quiet"
+
+// DefaultWakeQuiet is the wake quiet period of a config that does not set WakeQuietKey.
+const DefaultWakeQuiet = 3 * time.Second
+
+// WakeMaxDelayKey is the setting that bounds how long after the first held message wake the supervisor wakes the
+// Director, however long the burst goes on (docs/configuration.md#settings).
+const WakeMaxDelayKey = "wake_max_delay"
+
+// DefaultWakeMaxDelay is the wake delay bound of a config that does not set WakeMaxDelayKey.
+const DefaultWakeMaxDelay = 15 * time.Second
+
 // ChecksRefreshKey is the setting that sets how long a waiting validate step waits between reads of the same
 // head's checks (docs/configuration.md#settings).
 const ChecksRefreshKey = "checks_refresh"
@@ -529,6 +543,31 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	if m, ok := c.Managed[WakeQuietKey]; ok {
+		if _, err := parseWakeQuiet(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[WakeQuietKey]; ok {
+		if _, err := parseWakeQuiet(v); err != nil {
+			add("local %v", err)
+		}
+	}
+	if m, ok := c.Managed[WakeMaxDelayKey]; ok {
+		if _, err := parseWakeMaxDelay(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[WakeMaxDelayKey]; ok {
+		if _, err := parseWakeMaxDelay(v); err != nil {
+			add("local %v", err)
+		}
+	}
+	if quiet, err := c.WakeQuiet(); err == nil {
+		if most, err := c.WakeMaxDelay(); err == nil && most < quiet {
+			add("%s %s must be at least %s %s", WakeMaxDelayKey, most, WakeQuietKey, quiet)
+		}
+	}
 	if m, ok := c.Managed[ChecksRefreshKey]; ok {
 		if _, err := parseChecksRefresh(m.Value); err != nil {
 			add("managed %v", err)
@@ -770,6 +809,44 @@ func parseStallInterval(v string) (time.Duration, error) {
 	d, err := time.ParseDuration(v)
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"15m\", or \"0s\" to disable", StallIntervalKey, v)
+	}
+	return d, nil
+}
+
+// WakeQuiet returns the effective WakeQuietKey setting as a duration: DefaultWakeQuiet when it is not set, and
+// zero, which hands every message wake at once, for "0s".
+// A value that is not a nonnegative Go duration is an error; Parse refuses one already.
+func (c *Config) WakeQuiet() (time.Duration, error) {
+	v, ok := c.Setting(WakeQuietKey)
+	if !ok {
+		return DefaultWakeQuiet, nil
+	}
+	return parseWakeQuiet(v)
+}
+
+func parseWakeQuiet(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"3s\", or \"0s\" to wake at once", WakeQuietKey, v)
+	}
+	return d, nil
+}
+
+// WakeMaxDelay returns the effective WakeMaxDelayKey setting as a duration: DefaultWakeMaxDelay when it is not
+// set. A value that is not a positive Go duration is an error; Parse refuses one already, and one less than
+// WakeQuiet.
+func (c *Config) WakeMaxDelay() (time.Duration, error) {
+	v, ok := c.Setting(WakeMaxDelayKey)
+	if !ok {
+		return DefaultWakeMaxDelay, nil
+	}
+	return parseWakeMaxDelay(v)
+}
+
+func parseWakeMaxDelay(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("%s %q must be a positive duration such as \"15s\"", WakeMaxDelayKey, v)
 	}
 	return d, nil
 }
