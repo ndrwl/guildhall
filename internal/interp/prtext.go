@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"strings"
@@ -48,14 +49,7 @@ func pullRequestText(p prText) (title, body string) {
 	spec := strings.ReplaceAll(p.Spec, "\r\n", "\n")
 	parts := parseSpec(spec)
 
-	title = parts.title
-	if title == "" {
-		title = strings.TrimSpace(p.Task.Title)
-	}
-	if title == "" {
-		title = p.Task.ID
-	}
-	title = capRunes(strings.Join(strings.Fields(neutralise(title)), " "), forge.MaxTitle)
+	title = forgeTitle(cmp.Or(parts.title, p.Task.Title), p.Task.ID)
 
 	summary := parts.goal
 	if summary == "" {
@@ -104,6 +98,14 @@ func pullRequestText(p prText) (title, body string) {
 		pieces[i] = cut(pieces[i], len(pieces[i])-over)
 	}
 	return title, strings.Join(pieces, "")
+}
+
+// forgeTitle is the title every forge request Guildhall makes carries for title: trimmed, id when it is empty,
+// neutralised, on one line and cut to forge.MaxTitle characters, so the forge accepts it and it mentions and
+// closes nothing.
+func forgeTitle(title, id string) string {
+	title = cmp.Or(strings.TrimSpace(title), id)
+	return capRunes(strings.Join(strings.Fields(neutralise(title)), " "), forge.MaxTitle)
 }
 
 // specParts are the parts of an accepted spec the text quotes: its title, its goal section, its first paragraph

@@ -19,6 +19,31 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
+// TestValidateRebaseLongTitle: a task whose title is over the forge's 256 characters, with a conflicting pull
+// request at validate, has its rebased head pushed under the title cut to fit, and the result bound to that head.
+func TestValidateRebaseLongTitle(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, f, ws := validateRebaseEnvTasks(t, b, longTitled)
+			tf := &titleForge{readingForge:e.eng.Forge.(*perHead)}
+			e.eng.Forge = tf
+			clean(ws, baseN(1), head, head2)
+			want(t, e.advance(t, reviewed), waitChecks)
+			// The publish step's push and the rebase push.
+			capped(t, tf.published(), 2)
+			if prs := f.PullRequests(repoRemote); len(prs) != 1 || prs[0].Head != head2 {
+				t.Fatalf("pull requests = %+v, want the rebased head pushed", prs)
+			}
+			f.SetChecks(repoRemote, head2, ciPassed...)
+			f.SetMergeability(forge.Mergeability{})
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			if v := e.pullRequestDoc(t, "validate-1-result"); v["head"] != head2 || v["verdict"] != "passed" {
+				t.Fatalf("result = %v", v)
+			}
+		})
+	}
+}
+
 // validationResult is a recorded validation result, guildhall.validation-result/1, in its documented field order.
 type validationResult struct {
 	Schema  string        `json:"schema"`
@@ -66,7 +91,13 @@ func newValidateEnv(t *testing.T, b backend) (*env, *forgetest.Fake) {
 
 func newValidateEnvDefinition(t *testing.T, b backend, def *workflow.Definition) (*env, *forgetest.Fake) {
 	t.Helper()
-	e := newEnvDefinition(t, b, def,
+	return newValidateEnvTasks(t, b, def, nil)
+}
+
+// newValidateEnvTasks is newValidateEnvDefinition with app/t7 changed by edit, as newEnvTasks changes it.
+func newValidateEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*store.Task)) (*env, *forgetest.Fake) {
+	t.Helper()
+	e := newEnvTasks(t, b, def, edit,
 		planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})),
 		buildExp(t, 1, head, ""),
 		reviewExp(t, "review", "reviewer", 1, head, nil, bound(t, workflow.VerdictApproved, head, nil)))

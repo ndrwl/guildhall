@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
@@ -105,7 +106,13 @@ func queueEnv(t *testing.T, b backend) (*env, *forgetest.Fake, *queueWorkspaces)
 // queueEnvDefinition is queueEnv over def, a variant of validate.json.
 func queueEnvDefinition(t *testing.T, b backend, def *workflow.Definition) (*env, *forgetest.Fake, *queueWorkspaces) {
 	t.Helper()
-	e, f := newValidateEnvDefinition(t, b, def)
+	return queueEnvTasks(t, b, def, nil)
+}
+
+// queueEnvTasks is queueEnvDefinition with app/t7 changed by edit, as newEnvTasks changes it.
+func queueEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*store.Task)) (*env, *forgetest.Fake, *queueWorkspaces) {
+	t.Helper()
+	e, f := newValidateEnvTasks(t, b, def, edit)
 	ws := &queueWorkspaces{Workspaces: gittest.NewWorkspaces(), tip: head}
 	for n := 1; n < 10; n++ {
 		f.AddCommit(repoPath, commitN(n))
@@ -522,5 +529,118 @@ func TestQueueRebaseRefusedWhileAnAttemptRuns(t *testing.T) {
 	}
 	if len(ws.Replays()) != 0 {
 		t.Fatal("replayed while an attempt runs")
+	}
+}
+
+// longTitle is a 640-character task title, as long as the one that held d51's merge-queue front.
+var longTitle = strings.Repeat("Long title ", 58) + "ok"
+
+// longTitled gives app/t7 longTitle.
+func longTitled(task *store.Task) { task.Title = longTitle }
+
+// readingForge is a forge that reads mergeability.
+type readingForge interface {
+	interp.Forge
+	interp.MergeabilityReader
+}
+
+// titleForge is a forge that records the title of each change published through it, and refuses each with err
+// when err is set.
+type titleForge struct {
+	readingForge
+	mu     sync.Mutex
+	titles []string
+	err    error
+}
+
+func (f *titleForge) Publish(ctx context.Context, c forge.Change) (forge.PullRequest, error) {
+	f.mu.Lock()
+	f.titles = append(f.titles, c.Title)
+	err := f.err
+	f.mu.Unlock()
+	if err != nil {
+		return forge.PullRequest{}, err
+	}
+	return f.readingForge.Publish(ctx, c)
+}
+
+func (f *titleForge) published() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.titles)
+}
+
+// capped fails t unless titles holds n titles, each a cut of longTitle that fits the forge.
+func capped(t *testing.T, titles []string, n int) {
+	t.Helper()
+	if len(titles) != n {
+		t.Fatalf("published titles = %q, want %d", titles, n)
+	}
+	for _, title := range titles {
+		if c := utf8.RuneCountInString(title); c > forge.MaxTitle || !strings.HasPrefix(title, "Long title Long title") {
+			t.Fatalf("published title %q holds %d characters, want a cut of the task title of at most %d", title, c, forge.MaxTitle)
+		}
+	}
+}
+
+// TestQueueLongTitleRebasePushed: a task whose title is over the forge's 256 characters is rebased at the merge-queue
+// front, and its rebased head is pushed under the title cut to fit, its checks read and the head merged, rather than
+// the push being refused and the task holding the front.
+func TestQueueLongTitleRebasePushed(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, f, ws := queueEnvTasks(t, b, loadWorkflow(t, "validate"), longTitled)
+			tf := &titleForge{readingForge: f}
+			e.eng.Forge = tf
+			base := baseN(1)
+			clean(ws, base, head, head2)
+			f.SetMergeability(forge.Mergeability{Head: head, Base: base, State: "behind", Behind: 1})
+			e.answer(t, "deliver-1", "merge")
+			want(t, e.advance(t, answeredMerge), deliverWait)
+			if publishes, merges := f.Calls(); publishes != 2 || merges != 0 {
+				t.Fatalf("publishes = %d, merges = %d, want the rebased head pushed once", publishes, merges)
+			}
+			capped(t, tf.published(), 1)
+			f.SetChecks(repoRemote, head2, ciPassed...)
+			f.SetMergeability(forge.Mergeability{})
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+			if got := mergedHead(f); got != head2 {
+				t.Fatalf("merged head = %q, want the rebased head", got)
+			}
+		})
+	}
+}
+
+// TestQueueHeldFrontReleasedAfterAFailedPush: a front whose rebase push failed, and would fail again, is released by
+// its next advance once its merge is held, before the push is tried, so a peer can claim the front.
+func TestQueueHeldFrontReleasedAfterAFailedPush(t *testing.T) {
+	e, f, ws := queueEnv(t, backends[1])
+	s := e.h.Records.(*store.Store)
+	tf := &titleForge{readingForge: f, err: fmt.Errorf("%w: refused", forge.ErrInvalid)}
+	e.eng.Forge = tf
+	base := baseN(1)
+	clean(ws, base, head, head2)
+	f.SetMergeability(forge.Mergeability{Head: head, Base: base, State: "behind", Behind: 1})
+	e.answer(t, "deliver-1", "merge")
+	if _, err := e.eng.Advance(context.Background(), interp.Event{Kind: interp.DecisionAnswered, Repository: "app", Task: "t7", Decision: "deliver-1"}); !errors.Is(err, forge.ErrInvalid) {
+		t.Fatalf("advance with the push refused = %v, want ErrInvalid", err)
+	}
+	peer(t, e, "t9")
+	if view, _ := s.MergeQueue("app"); view.Front == nil || view.Front.TaskID != "t7" {
+		t.Fatalf("front after the failed push = %+v", view.Front)
+	}
+	if _, err := s.SetMergeHold("hold-1", "app", "t7", true); err != nil {
+		t.Fatal(err)
+	}
+	pushes := len(tf.published())
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitMergeQueue, Step: "deliver"})
+	if got := len(tf.published()); got != pushes {
+		t.Fatalf("the held front's advance pushed %d more time(s)", got-pushes)
+	}
+	if view, err := s.MergeQueue("app"); err != nil || view.Front != nil {
+		t.Fatalf("front after the held advance = %+v, %v", view.Front, err)
+	}
+	if _, err := s.ClaimMergeFront("front-t9", "app", "t9"); err != nil {
+		t.Fatalf("claim by t9 after the held front's release = %v", err)
 	}
 }

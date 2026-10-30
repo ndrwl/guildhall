@@ -15,6 +15,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
+	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -254,7 +255,13 @@ func (p *perHead) Mergeability(_ context.Context, req forge.Merge) (forge.Mergea
 // build, so validate meets the pull request conflicting with baseN(1).
 func validateRebaseEnv(t *testing.T, b backend) (*env, *forgetest.Fake, *queueWorkspaces) {
 	t.Helper()
-	e, f := newValidateEnv(t, b)
+	return validateRebaseEnvTasks(t, b, nil)
+}
+
+// validateRebaseEnvTasks is validateRebaseEnv with app/t7 changed by edit, as newEnvTasks changes it.
+func validateRebaseEnvTasks(t *testing.T, b backend, edit func(*store.Task)) (*env, *forgetest.Fake, *queueWorkspaces) {
+	t.Helper()
+	e, f := newValidateEnvTasks(t, b, loadWorkflow(t, "validate"), edit)
 	for n := 1; n < 10; n++ {
 		f.AddCommit(repoPath, commitN(n))
 	}

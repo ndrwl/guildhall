@@ -303,7 +303,7 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 	if err := r.adopt(repo, l.doc.From, l.head); err != nil {
 		return nil, err
 	}
-	title := cmp.Or(strings.TrimSpace(r.task.Title), r.task.ID)
+	title := forgeTitle(r.task.Title, r.task.ID)
 	body := fmt.Sprintf("Guildhall task %s/%s, rebased by step %s onto %s at %s (%s).\n", r.task.Repository, r.task.ID, s.ID, l.doc.Onto, l.head, l.doc.Kind)
 	if f := r.task.Fixes; f != nil {
 		body += fmt.Sprintf("\nFixes a defect introduced by task `%s/%s`.\n", f.Repository, f.ID)

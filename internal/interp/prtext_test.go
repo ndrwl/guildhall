@@ -91,6 +91,30 @@ func TestPullRequestTitle(t *testing.T) {
 	}
 }
 
+// TestForgeTitle: the title of every forge request is the given title on one line, neutralised as pullRequestText
+// neutralises it and cut to the forge's 256 characters, or the id when the title is empty.
+func TestForgeTitle(t *testing.T) {
+	for name, c := range map[string]struct{ title, want string }{
+		"empty":             {"", "t7"},
+		"blank":             {" \n\t ", "t7"},
+		"whitespace":        {"  Sort\tthe \n\n task   list \r\n", "Sort the task list"},
+		"mention":           {"Ping @x now", "Ping @" + wordJoiner + "x now"},
+		"closing keyword":   {"Fixes #12 at last", "F" + wordJoiner + "ixes #12 at last"},
+		"exactly 256 runes": {strings.Repeat("é", 256), strings.Repeat("é", 256)},
+		"640 runes":         {strings.Repeat("Long title ", 58) + "ok", strings.Repeat("Long title ", 23) + "Lo…"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := forgeTitle(c.title, "t7")
+			if got != c.want {
+				t.Errorf("forgeTitle(%q) = %q, want %q", c.title, got, c.want)
+			}
+			if n := utf8.RuneCountInString(got); n > 256 {
+				t.Errorf("title holds %d characters", n)
+			}
+		})
+	}
+}
+
 func TestPullRequestBodySections(t *testing.T) {
 	t.Run("all sections in order", func(t *testing.T) {
 		_, body := pullRequestText(prBase())
