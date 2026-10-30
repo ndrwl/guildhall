@@ -23,36 +23,35 @@ func (a *App) directorMaintenance(args []string) int {
 	return a.usageError("director maintenance: the commands are record and list")
 }
 
-// directorMaintenanceRecord runs `guildhall director maintenance record (--notes | --hallmark --repo <r> --task
-// <id>) --summary <text> [--copy <dir> | --store <file>]`: it records the run as the newest session and prints
-// "run <k> recorded".
+// directorMaintenanceRecord runs `guildhall director maintenance record --notes --summary <text> [--copy <dir> |
+// --store <file>]`: it records the note audit as the newest session's and prints "run <k> recorded". --hallmark,
+// with the --repo and --task it took, is refused: a hallmark is recorded when its task finishes
+// (docs/decisions/engine-owned-hallmark-cadence.md).
 func (a *App) directorMaintenanceRecord(args []string) int {
 	const name = "director maintenance record"
 	var notes, hallmark bool
 	var repo, task, summary string
 	path, _, code := a.sessionArgs(name, args, false, func(fl *flag.FlagSet) {
 		fl.BoolVar(&notes, "notes", false, "record a note audit")
-		fl.BoolVar(&hallmark, "hallmark", false, "record a launched hallmark task")
-		fl.StringVar(&repo, "repo", "", "the hallmark's repository")
-		fl.StringVar(&task, "task", "", "the hallmark task's id")
+		fl.BoolVar(&hallmark, "hallmark", false, "refused: "+store.HallmarkRecordRetired)
+		fl.StringVar(&repo, "repo", "", "refused, with --hallmark")
+		fl.StringVar(&task, "task", "", "refused, with --hallmark")
 		fl.StringVar(&summary, "summary", "", "one line: what was removed and what was proposed")
 	})
 	if code >= 0 {
 		return code
 	}
-	run := store.MaintenanceRun{Kind: store.MaintenanceNotes, Summary: summary}
 	switch {
-	case notes == hallmark:
-		return a.usageError(name + ": give one of --notes and --hallmark")
-	case notes && (repo != "" || task != ""):
-		return a.usageError(name + ": --repo and --task go with --hallmark")
-	case hallmark && (repo == "" || task == ""):
-		return a.usageError(name + ": --hallmark needs --repo and --task")
+	case hallmark:
+		return a.usageError(name + ": " + store.HallmarkRecordRetired)
+	case !notes:
+		return a.usageError(name + ": give --notes")
+	case repo != "" || task != "":
+		return a.usageError(name + ": a note audit takes no --repo or --task")
 	case summary == "":
 		return a.usageError(name + ": --summary is required")
-	case hallmark:
-		run = store.MaintenanceRun{Kind: store.MaintenanceHallmark, Repository: repo, Task: task, Summary: summary}
 	}
+	run := store.MaintenanceRun{Kind: store.MaintenanceNotes, Summary: summary}
 	got, err := withStoreClock(path, false, a.Now, func(s *store.Store) (store.MaintenanceRun, error) {
 		d, err := s.LatestDirectorSession()
 		if errors.Is(err, store.ErrNotFound) {

@@ -245,7 +245,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		prunes.tick(time.Now())
 		defer prunes.wait()
 	}
-	status, err := readDirectorStatus(context.Background(), storePath, state, a.Now)
+	status, err := readDirectorStatusConfig(context.Background(), storePath, state, p.cfgPath, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: in-flight snapshot: %w", err)), false
 	}

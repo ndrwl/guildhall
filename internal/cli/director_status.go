@@ -296,7 +296,7 @@ type statusNoteAudit struct {
 }
 
 // statusHallmark is one repository's last hallmark and the merges since; MergesUntilDue is absent when hallmarks
-// are off.
+// are off, and RunningTask names the repository's open hallmark task, absent when none is open.
 type statusHallmark struct {
 	Repository     string    `json:"repository"`
 	AfterMerges    int       `json:"after_merges"`
@@ -304,6 +304,7 @@ type statusHallmark struct {
 	LastAt         time.Time `json:"last_at,omitzero"`
 	MergedSince    int       `json:"merged_since"`
 	MergesUntilDue *int      `json:"merges_until_due,omitempty"`
+	RunningTask    string    `json:"running_task,omitempty"`
 }
 
 type statusLive struct {
@@ -420,7 +421,7 @@ func (a *App) directorStatusCmd(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return a.fail(fmt.Errorf("director status: %w", noStore(*path)))
 	}
-	out, err := readDirectorStatus(context.Background(), *path, *state, a.Now)
+	out, err := readDirectorStatusConfig(context.Background(), *path, *state, *cfg, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director status: %w", err))
 	}
@@ -469,21 +470,32 @@ func statusConfig(path string, named bool) (*config.GuardRails, *config.Quality,
 	return &g, &q, ""
 }
 
-// readDirectorStatus builds the status feed: one read-only store transaction, by the clock now (nil is wall time),
-// then each task's next.json and the live classification of every running attempt under the state directory.
+// readDirectorStatus is readDirectorStatusConfig with no config, so hallmark tasks resolve against the shipped
+// workflows only.
 func readDirectorStatus(ctx context.Context, path, stateDir string, now func() time.Time) (directorStatus, error) {
+	return readDirectorStatusConfig(ctx, path, stateDir, "", now)
+}
+
+// readDirectorStatusConfig builds the status feed: one read-only store transaction, by the clock now (nil is wall
+// time), then each task's next.json and the live classification of every running attempt under the state directory.
+// Each repository's hallmark tasks resolve their workflows under the config at cfgPath (statusWorkflows).
+func readDirectorStatusConfig(ctx context.Context, path, stateDir, cfgPath string, now func() time.Time) (directorStatus, error) {
 	stateDir, err := filepath.Abs(stateDir)
 	if err != nil {
 		return directorStatus{}, err
 	}
 	var queues []mergeQueue
 	var starts []store.QueuedStart
+	var hallmarks map[string]repoHallmarks
 	v, err := withStoreClock(path, true, now, func(s *store.Store) (store.DirectorView, error) {
 		v, err := s.DirectorView()
 		if err != nil {
 			return v, err
 		}
 		if starts, err = s.StartQueue(); err != nil {
+			return v, err
+		}
+		if hallmarks, err = readRepoHallmarks(s, v, statusWorkflows(cfgPath)); err != nil {
 			return v, err
 		}
 		var repos []string
@@ -891,17 +903,115 @@ func readDirectorStatus(ctx context.Context, path, stateDir string, now func() t
 			Command: "guildhall messages list director"})
 	}
 	var due []needsMeItem
-	out.Maintenance, due = maintenanceStatus(v)
+	out.Maintenance, due = maintenanceStatus(v, hallmarks)
 	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued, due); out.NeedsMe == nil {
 		out.NeedsMe = []needsMeItem{}
 	}
 	return out, nil
 }
 
+// repoHallmarks is a repository's last hallmark and its running one, each nil when there is none.
+type repoHallmarks struct {
+	last    *interp.Hallmark
+	running *store.Task
+}
+
+// readRepoHallmarks reads, in s, the last and running hallmark of each repository v counts maintenance for, with
+// the workflow resolver workflows gives for the repository; none before a session started with a policy.
+func readRepoHallmarks(s *store.Store, v store.DirectorView, workflows func(repo string) func(workflow.Revision) (*workflow.Definition, error)) (map[string]repoHallmarks, error) {
+	if v.Maintenance.Baseline == 0 || v.Session == nil {
+		return nil, nil
+	}
+	closes, err := s.TaskCloses()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]repoHallmarks{}
+	for _, r := range v.Maintenance.Repositories {
+		var tasks []store.Task
+		for _, t := range v.Tasks {
+			if t.Repository == r.Repository {
+				tasks = append(tasks, t)
+			}
+		}
+		resolve := workflows(r.Repository)
+		last, err := interp.LastHallmark(tasks, closes, s.Documents, resolve, "")
+		if err != nil {
+			return nil, err
+		}
+		out[r.Repository] = repoHallmarks{last: last, running: interp.OpenHallmark(tasks, closes, resolve)}
+	}
+	return out, nil
+}
+
+// statusWorkflows returns, for a repository, the resolver of the workflows its tasks bound, which remembers each
+// revision it resolved: boundWorkflow with the repository's settings in the config at cfgPath when that reads and
+// names it, and otherwise shippedWorkflow (docs/decisions/engine-owned-hallmark-cadence.md).
+func statusWorkflows(cfgPath string) func(repo string) func(workflow.Revision) (*workflow.Definition, error) {
+	var cfg *config.Config
+	if cfgPath != "" {
+		if c, err := config.Load(cfgPath); err == nil {
+			cfg = c
+		}
+	}
+	return func(repo string) func(workflow.Revision) (*workflow.Definition, error) {
+		resolve := shippedWorkflow
+		if cfg != nil {
+			if r, ok := cfg.Repository(repo); ok {
+				dir := filepath.Join(filepath.Dir(cfgPath), "workflows")
+				resolve = func(rev workflow.Revision) (*workflow.Definition, error) { return boundWorkflow(dir, cfg, r, rev) }
+			}
+		}
+		type resolved struct {
+			def *workflow.Definition
+			err error
+		}
+		seen := map[workflow.Revision]resolved{}
+		return func(rev workflow.Revision) (*workflow.Definition, error) {
+			if r, ok := seen[rev]; ok {
+				return r.def, r.err
+			}
+			def, err := resolve(rev)
+			seen[rev] = resolved{def, err}
+			return def, err
+		}
+	}
+}
+
+// shippedWorkflow resolves rev, with no config, to the definition this or an earlier release shipped whose digest,
+// or legacy defaulted digest, is rev's; a revision of a Director-local workflow, or of a shipped one with workflow
+// overrides, does not resolve.
+func shippedWorkflow(rev workflow.Revision) (*workflow.Definition, error) {
+	shipped, err := shippedDefinitions()
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range shipped {
+		if d.Name != rev.Name {
+			continue
+		}
+		if def := matchBound(d, rev); def != nil {
+			return def, nil
+		}
+		retired, err := workflow.Retired(d.Name)
+		if err != nil {
+			return nil, err
+		}
+		for _, old := range retired {
+			if def := matchBound(old, rev); def != nil {
+				return def, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("%w: workflow %q %s is not a shipped revision", interp.ErrRevision, rev.Name, rev.Digest)
+}
+
 // maintenanceStatus is the feed's maintenance object and its due maintenance items under the newest session's
 // policy, counted from the baseline session: none before a session started with a policy
-// (docs/decisions/director-maintenance.md).
-func maintenanceStatus(v store.DirectorView) (*statusMaintenance, []needsMeItem) {
+// (docs/decisions/director-maintenance.md). A repository's hallmark counts from its last hallmark task in hallmarks,
+// or from its newest recorded hallmark run when it has none, and is not due while a hallmark task of it is open
+// (docs/decisions/engine-owned-hallmark-cadence.md).
+func maintenanceStatus(v store.DirectorView, hallmarks map[string]repoHallmarks) (*statusMaintenance, []needsMeItem) {
 	m := v.Maintenance
 	if m.Baseline == 0 || v.Session == nil {
 		return nil, nil
@@ -927,16 +1037,30 @@ func maintenanceStatus(v store.DirectorView) (*statusMaintenance, []needsMeItem)
 	for _, r := range m.Repositories {
 		h := statusHallmark{Repository: r.Repository, AfterMerges: p.HallmarkAfterMerges, MergedSince: r.Merged}
 		last := "the upgrade"
-		if l := r.LastHallmark; l != nil {
+		found := hallmarks[r.Repository]
+		switch l := r.LastHallmark; {
+		case found.last != nil:
+			// Merges sent while the hallmark ran count toward the next one, so counting starts at its creation.
+			h.MergedSince = 0
+			for _, seq := range r.MergedSequences {
+				if seq > found.last.Close.Created {
+					h.MergedSince++
+				}
+			}
+			h.LastTask, h.LastAt, last = found.last.Task.ID, found.last.Close.At, "the last"
+		case l != nil:
 			h.LastTask, h.LastAt, last = l.Task, l.Time, "the last"
 		}
+		if found.running != nil {
+			h.RunningTask = found.running.ID
+		}
 		if n := p.HallmarkAfterMerges; n > 0 {
-			until := max(0, n-r.Merged)
+			until := max(0, n-h.MergedSince)
 			h.MergesUntilDue = &until
-			if until == 0 {
-				items = append(items, needsMeItem{Kind: maintenanceKind, Repository: r.Repository, Count: r.Merged,
-					Reason:  fmt.Sprintf("hallmark due: %d merged since %s", r.Merged, last),
-					Command: fmt.Sprintf("guildhall director maintenance record --hallmark --repo %s --task <id> --summary <text>", r.Repository)})
+			if until == 0 && h.RunningTask == "" {
+				items = append(items, needsMeItem{Kind: maintenanceKind, Repository: r.Repository, Count: h.MergedSince,
+					Reason:  fmt.Sprintf("hallmark due: %d merged since %s", h.MergedSince, last),
+					Command: fmt.Sprintf("guildhall task new --repo %s --kind hallmark --title <text> <id>", r.Repository)})
 			}
 		}
 		out.Hallmarks = append(out.Hallmarks, h)

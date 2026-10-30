@@ -700,8 +700,8 @@ func (p storeRecords) Tasks(repo string) ([]store.Task, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.Task, error) { return s.Tasks(repo) })
 }
 
-func (p storeRecords) CloseTimes() (map[store.TaskRef]time.Time, error) {
-	return withRecords(p, true, nil, func(s *store.Store) (map[store.TaskRef]time.Time, error) { return s.CloseTimes() })
+func (p storeRecords) TaskCloses() (map[store.TaskRef]store.TaskClose, error) {
+	return withRecords(p, true, nil, func(s *store.Store) (map[store.TaskRef]store.TaskClose, error) { return s.TaskCloses() })
 }
 
 func (p storeRecords) TaskContexts(repo, id string) ([]store.TaskContext, error) {

@@ -2,8 +2,11 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 func policySession(n int) DirectorSession {
@@ -17,6 +20,32 @@ func sendMerged(t *testing.T, s *Store, repo, task, id string) {
 	if _, err := s.SendMessage(Message{ID: id, Recipient: RecipientDirector, Repository: repo, TaskID: task, Type: MessageMerged, Text: "Merged."}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// recordOldHallmark writes hallmark run m as the next maintenance run, with its receipt, as RecordMaintenance did
+// before hallmarks were recorded when their task finishes; runs like it still read as the fallback.
+func recordOldHallmark(t *testing.T, s *Store, m MaintenanceRun) MaintenanceRun {
+	t.Helper()
+	runs, err := s.MaintenanceRuns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Kind, m.Sequence = MaintenanceHallmark, uint64(len(runs)+1)
+	if _, err := s.mutate("director-maintenance:"+itoa(m.Sequence), opRecordMaintenance, m, func(tx *bolt.Tx, r *Receipt) error {
+		r.Record = maintenanceRecord(m.Sequence)
+		b, err := createDirectorBucket(tx, bucketMaintenance)
+		if err != nil {
+			return err
+		}
+		m.Receipt, m.Time = r.Sequence, s.now().UTC()
+		return putJSON(b, seqKey(m.Sequence), m)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if runs, err = s.MaintenanceRuns(); err != nil {
+		t.Fatal(err)
+	}
+	return runs[len(runs)-1]
 }
 
 func readMaintenance(t *testing.T, s *Store) MaintenanceView {
@@ -45,9 +74,9 @@ func TestMaintenanceRecordAndList(t *testing.T) {
 	if again, ar, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceNotes, Session: 1, Summary: notes.Summary}); err != nil || ar != r || again != notes {
 		t.Fatalf("replayed run = %+v, %+v, %v; want the first", again, ar, err)
 	}
-	hall, hr, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceHallmark, Repository: "app", Task: "t-1", Session: 1, Summary: "hallmark launched"})
-	if err != nil || hall.Sequence != 2 || hr.MutationID != "director-maintenance:2" {
-		t.Fatalf("hallmark run = %+v, %+v, %v", hall, hr, err)
+	hall := recordOldHallmark(t, s, MaintenanceRun{Repository: "app", Task: "t-1", Session: 1, Summary: "hallmark launched"})
+	if hall.Sequence != 2 {
+		t.Fatalf("old hallmark run = %+v", hall)
 	}
 	// The same note audit again, after another run, is a new run.
 	if again, _, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceNotes, Session: 1, Summary: notes.Summary}); err != nil || again.Sequence != 3 {
@@ -86,8 +115,8 @@ func TestMaintenanceRefusals(t *testing.T) {
 		"zero session":      {Kind: MaintenanceNotes, Summary: "x"},
 		"bad kind":          {Kind: "audit", Session: 2, Summary: "x"},
 		"notes with a repo": {Kind: MaintenanceNotes, Repository: "app", Session: 2, Summary: "x"},
+		"hallmark":          {Kind: MaintenanceHallmark, Repository: "app", Task: "t-1", Session: 2, Summary: "x"},
 		"hallmark no task":  {Kind: MaintenanceHallmark, Repository: "app", Session: 2, Summary: "x"},
-		"hallmark bad id":   {Kind: MaintenanceHallmark, Repository: "app", Task: "t 1", Session: 2, Summary: "x"},
 		"blank summary":     {Kind: MaintenanceNotes, Session: 2, Summary: "  "},
 		"newline":           {Kind: MaintenanceNotes, Session: 2, Summary: "a\nb"},
 		"over 1024":         {Kind: MaintenanceNotes, Session: 2, Summary: strings.Repeat("x", MaxMaintenanceSummaryBytes+1)},
@@ -97,8 +126,9 @@ func TestMaintenanceRefusals(t *testing.T) {
 			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
 		}
 	}
-	if _, _, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceHallmark, Repository: "app", Task: "t-9", Session: 2, Summary: "x"}); !errors.Is(err, ErrNotFound) {
-		t.Errorf("unknown task: err = %v, want ErrNotFound", err)
+	if _, _, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceHallmark, Repository: "app", Task: "t-1", Session: 2, Summary: "x"}); err == nil ||
+		!strings.Contains(err.Error(), "hallmarks are recorded when the task finishes") {
+		t.Errorf("hallmark: err = %v, want the reason it is no longer recorded", err)
 	}
 	if _, _, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceNotes, Session: 3, Summary: "x"}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown session: err = %v, want ErrNotFound", err)
@@ -150,10 +180,7 @@ func TestMaintenanceViewCountsFromTheBaseline(t *testing.T) {
 	if v.Repositories[0].Repository != "app" || v.Repositories[0].Merged != 2 || v.Repositories[1].Repository != "web" || v.Repositories[1].Merged != 1 {
 		t.Fatalf("after merges = %+v", v.Repositories)
 	}
-	hall, _, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceHallmark, Repository: "app", Task: "t-1", Session: 4, Summary: "launched"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	hall := recordOldHallmark(t, s, MaintenanceRun{Repository: "app", Task: "t-1", Session: 4, Summary: "launched"})
 	sendMerged(t, s, "app", "t-1", "new-4")
 	notes, _, err := s.RecordMaintenance(MaintenanceRun{Kind: MaintenanceNotes, Session: 4, Summary: "removed 1"})
 	if err != nil {
@@ -165,6 +192,10 @@ func TestMaintenanceViewCountsFromTheBaseline(t *testing.T) {
 	}
 	if web := v.Repositories[1]; web.LastHallmark != nil || web.Merged != 1 {
 		t.Fatalf("web = %+v; want its own count untouched", web)
+	}
+	// Every merge after the baseline is listed, so the status feed can count from a done hallmark task instead.
+	if got := slices.Sorted(slices.Values(v.Repositories[0].MergedSequences)); len(got) != 3 || got[1] >= hall.Receipt || got[2] <= hall.Receipt {
+		t.Fatalf("app merged sequences = %v; want the 3 after the baseline, the last after the run's receipt %d", got, hall.Receipt)
 	}
 	if v.LastNotes == nil || *v.LastNotes != notes {
 		t.Fatalf("last notes = %+v, want %+v", v.LastNotes, notes)

@@ -1,6 +1,6 @@
 ---
 name: guildhall-maintenance
-description: Use as the Director when guildhall director status lists a maintenance item, and at every handoff, to audit your notes against the store, launch a due hallmark, and record each run with guildhall director maintenance record.
+description: Use as the Director when guildhall director status lists a maintenance item, and at every handoff, to audit your notes against the store and record the audit with guildhall director maintenance record, and to launch a due hallmark.
 ---
 
 # Director maintenance
@@ -48,26 +48,29 @@ guildhall director maintenance record --notes --summary "removed 4 (held by d47,
 ## The hallmark
 
 For each repository with a `hallmark due` item, launch a hallmark: a `hallmark` task of that repository, created with `--kind hallmark` and started (`guildhall-director-tasks`).
-Record the run with the task's id as soon as it is started, so merges made while it runs count toward the next one:
+There is nothing to record: Guildhall reads the hallmark from its task.
 
 ```sh
 guildhall task new --repo <repo> --kind hallmark --title "Hallmark after 4 merges" <id>
 guildhall task start --repo <repo> <id>
-guildhall director maintenance record --hallmark --repo <repo> --task <id> --summary "hallmark launched after 4 merges"
 ```
+
+While the task is open the item stays out of `needs_me` and status shows the task as the repository's `running_task`, so never launch a second one.
+Once it finishes done it is the repository's last hallmark, and the count of merges toward the next one starts from its launch, so merges made while it ran count.
+A hallmark that fails and is cancelled never resets the count; the item comes back, and you launch a new one.
 
 The task runs one read-only stage that uses `guildhall-hallmark` and is given the repository's previous hallmark report; Guildhall fails the stage if it changes the project.
 Its test evidence needs the repository's `[repository.profiles.researcher]` grant for the test commands; without one the report lists that evidence as missing.
 When it finishes, the task is done with no pull request and you get a `finished` message naming the report.
 Read the report and bring its ranked follow-ups to the Guildmaster as a short numbered list; create tasks only for the ones they pick.
 Then read the self-review ledger, as `guildhall-self-review` asks at hallmark time, and give its lowest criteria to the hallmark's findings.
-A hallmark the Guildmaster asks for out of turn is launched and recorded the same way.
+A hallmark the Guildmaster asks for out of turn is launched the same way.
 
 ## Checking
 
-The item leaves `needs_me` once the run is recorded.
-`guildhall director status --json` shows in `maintenance` the last note audit, sessions until the next, and, per repository, the last hallmark and merges until the next.
-`guildhall director maintenance list` shows every recorded run with its summary.
+A note audit item leaves `needs_me` once the run is recorded, and a hallmark item once its task is created.
+`guildhall director status --json` shows in `maintenance` the last note audit, sessions until the next, and, per repository, the last hallmark, merges until the next and the `running_task` while a hallmark runs.
+`guildhall director maintenance list` shows every recorded run with its summary, hallmark runs recorded before hallmarks were read from their tasks among them.
 
 ## Rules
 

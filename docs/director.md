@@ -110,7 +110,7 @@ The release ships the Director's own skills beside the stage skills, each render
 - `guildhall-director-tasks`: turn what the Guildmaster says into commands, from giving work and answering decisions to merging, retrying, stopping, rulings and pausing.
 - `guildhall-director-stage`: run a [Director stage](interpreter.md#director-stages) from its brief and finish it with `step finish`.
 - `guildhall-handoff`: run and record the note audit, then reload; the Guildmaster can type `/guildhall-handoff`.
-- `guildhall-maintenance`: when a [maintenance](#maintenance) item is due and at every handoff, audit the notes against the store, launch a due hallmark, and record each run.
+- `guildhall-maintenance`: when a [maintenance](#maintenance) item is due and at every handoff, audit the notes against the store and record the audit, and launch a due hallmark.
 - `guildhall-self-review`: after a task merges, when the [quality settings](configuration.md#quality-settings) turn it on, record the task against the [quality rubric](quality.md) without changing it.
 
 Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
@@ -324,7 +324,7 @@ The Director reviews every note regularly in the [note audit](#maintenance), rem
 ## Maintenance
 
 ```sh
-guildhall director maintenance record (--notes | --hallmark --repo <r> --task <id>) --summary <text> [--copy <dir> | --store <file>]
+guildhall director maintenance record --notes --summary <text> [--copy <dir> | --store <file>]
 guildhall director maintenance list [--json] [--copy <dir> | --store <file>]
 ```
 
@@ -333,7 +333,7 @@ Director maintenance has two parts, which the [`guildhall-maintenance`](#skills)
 - The note audit: for each live [note](#notes), is it still true, does the store already hold it (a task, decision, message, document or config), and is it a recurring kind of note that should become standard procedure or a follow-up task?
   The Director removes, edits and compacts notes on its own, each removal with a reason naming the record that holds it, and brings proposed tasks and procedure changes to the Guildmaster as a short numbered list, creating nothing from it before they approve.
   Every [handoff](#handoff) runs it too.
-- The hallmark: for each repository whose hallmark is due, the Director launches a [`hallmark` task](tasks.md#task-kinds) with `guildhall task new --kind hallmark` and `guildhall task start`, then records it at once with `guildhall director maintenance record --hallmark`, so merges made while it runs count toward the next, and reads the self-review ledger.
+- The hallmark: for each repository whose hallmark is due, the Director launches a [`hallmark` task](tasks.md#task-kinds) with `guildhall task new --kind hallmark` and `guildhall task start`, and reads the self-review ledger; there is nothing to record, since Guildhall reads the hallmark from its task ([decision](decisions/engine-owned-hallmark-cadence.md)).
   The task runs one read-only stage that uses `guildhall-hallmark`, is given the repository's previous hallmark report, and finishes as done with a `finished` message naming its report and no pull request, so it sends no `merged` message; the Director reads the report and brings its ranked follow-ups to the Guildmaster, creating tasks only for the ones they pick.
   It needs `task new`, so maintenance waits until the session is no longer `recovering`.
 
@@ -342,22 +342,29 @@ Two [`[director]` settings](configuration.md#the-director-table) set when each p
 | Setting | Default | Due when |
 |---|---|---|
 | `note_audit_every_sessions` | 3 | the newest session's number less the session of the last recorded note audit, or the baseline session if none, is at least the setting |
-| `hallmark_after_merges` | 4 | per repository, the `merged` messages sent after the last recorded hallmark of that repository, or after the baseline if none, are at least the setting |
+| `hallmark_after_merges` | 4 | per repository, the `merged` messages sent after the launch of the repository's last hallmark, or after the baseline if none or if that is later, are at least the setting, and no hallmark task of the repository is open |
 
 The settings are recorded on each session when it starts, so a change takes effect at the next session; the feed reads the newest session's.
 Counting starts at the baseline: the start of the earliest session recorded with a maintenance policy, which in an upgraded copy is the first session started by a release with maintenance, and in a fresh store session 1.
 Sessions and merges before it count for nothing, so an upgrade shows no item at once: the first hallmark is due after `hallmark_after_merges` merges made after it, and the first note audit `note_audit_every_sessions` sessions after it.
 A session started with both parts off records no policy, so it is not a baseline.
-A merge counts after a run or the baseline when its message's send receipt is newer than the run's receipt or the baseline session's start receipt.
+A merge counts after a note audit, a hallmark or the baseline when its message's send receipt is newer than the run's receipt, the hallmark task's create receipt or the baseline session's start receipt.
 
-A due part is a `maintenance` item in [`needs_me`](#status), computed on each status read with nothing recorded: `note audit due: <n> sessions since the last (session <s>)`, `since the upgrade` before any audit, with the command `guildhall director maintenance record --notes --summary <text>`, and one per repository `hallmark due: <n> merged since the last`, with that `repository`, the `count` of merges and `guildhall director maintenance record --hallmark --repo <r> --task <id> --summary <text>`.
+A repository's last hallmark is its newest done task, by when it closed, whose bound workflow has a `hallmark` step and that recorded its `finished` document and a report: the same task whose report the next hallmark is given as `previous` (`interp.LastHallmark`).
+A cancelled or failed hallmark is never the last hallmark, so it never resets the count.
+The count starts at the hallmark's launch, its task's create receipt, so merges made while it runs count toward the next one.
+While a hallmark task of the repository is open the hallmark is not due, and status names that task as `running_task`; once it is cancelled the item comes back.
+A repository with no done hallmark task counts instead from its newest hallmark run, recorded by `maintenance record --hallmark` before that was retired.
+Status resolves each task's workflow with the repository's settings in the config; with no config, or one that cannot be read, it matches the task's workflow revision against the shipped workflows only, so a hallmark of a Director-local workflow or of one with workflow overrides is passed over and the repository counts from its runs.
+
+A due part is a `maintenance` item in [`needs_me`](#status), computed on each status read with nothing recorded: `note audit due: <n> sessions since the last (session <s>)`, `since the upgrade` before any audit, with the command `guildhall director maintenance record --notes --summary <text>`, and one per repository `hallmark due: <n> merged since the last`, with that `repository`, the `count` of merges and `guildhall task new --repo <r> --kind hallmark --title <text> <id>`.
 It is not urgent: it adds nothing to the wake line, does not wake the Director on [resume](#pause-and-resume) and does not hold back [`director ready`](#ready); the Director works it after recovery, and `startup.md`'s in-flight list shows it like any other item.
 
-`maintenance record` records one run as the newest session, which must not be `stopped`, as notes are: a note audit with `--notes`, or a launched hallmark with `--hallmark`, its repository and its task, which must exist; `--summary` is one line of at most 1024 bytes, what was removed and what was proposed, such as `removed 4 (held by d47, D94, config); proposed 2: d58, skill change`.
+`maintenance record --notes` records a note audit as the newest session, which must not be `stopped`, as notes are; `--summary` is one line of at most 1024 bytes, what was removed and what was proposed, such as `removed 4 (held by d47, D94, config); proposed 2: d58, skill change`.
 It prints `run <k> recorded`; recording the newest run again prints the same receipt and records nothing.
-A missing part, both parts, `--repo` or `--task` with `--notes`, or a missing summary is a usage error; an unknown task, a summary that is blank, multi-line or too long, no session or a session that cannot write is exit 1 and records nothing ([store](store.md#director-maintenance)).
-The item leaves `needs_me` once its run is recorded.
-`maintenance list` prints every recorded run, oldest first, one line each, `<k> s<session> <time> notes: <summary>` or `<k> s<session> <time> hallmark <repo>/<task>: <summary>`, or `No maintenance runs.`; `--json` prints the runs as a JSON array.
+`--hallmark` is a usage error, `hallmarks are recorded when the task finishes`, as are a missing `--notes`, `--repo` or `--task` with `--notes`, and a missing summary; a summary that is blank, multi-line or too long, no session or a session that cannot write is exit 1 and records nothing ([store](store.md#director-maintenance)).
+The note audit item leaves `needs_me` once its run is recorded, and a hallmark item once its hallmark task is created.
+`maintenance list` prints every recorded run, oldest first, one line each, `<k> s<session> <time> notes: <summary>`, or `<k> s<session> <time> hallmark <repo>/<task>: <summary>` for a hallmark run recorded before that was retired, or `No maintenance runs.`; `--json` prints the runs as a JSON array.
 
 ## Holds
 
@@ -657,7 +664,7 @@ The document has these sections:
   An `absent` attempt, the moment between an advance and its launcher taking ownership, is listed but not flagged, and attempts of done or cancelled tasks are listed while their store outcome is empty.
 - `grants`: every active [task grant](tasks.md#task-grants), in repository, task and grant order, each with its `repository`, `task_id`, `grant` id, `step`, `rules`, `reason`, `until`, the attempts `bound` with it so far and `approved_at`, the commit time of its decision's answer.
   A grant leaves the list once it expires, its task closing or its one bound attempt having an outcome, or is revoked, with no write ([decision](decisions/task-grants.md)); a pending grant is in `needs_me` as its open `grant-<id>` decision instead.
-- `maintenance`: when [maintenance](#maintenance) was last run and is next due under the newest session's settings, absent until a session was started with a maintenance policy: `baseline_session`; `note_audit` with `every_sessions`, the last audit's `last_session` and `last_at` once one is recorded, `sessions_since` and `sessions_until_due`, absent when the audit is off; and `hallmarks`, one per repository in id order, with its `repository`, `after_merges`, the last hallmark's `last_task` and `last_at` once one is recorded, `merged_since` and `merges_until_due`, absent when hallmarks are off.
+- `maintenance`: when [maintenance](#maintenance) was last run and is next due under the newest session's settings, absent until a session was started with a maintenance policy: `baseline_session`; `note_audit` with `every_sessions`, the last audit's `last_session` and `last_at` once one is recorded, `sessions_since` and `sessions_until_due`, absent when the audit is off; and `hallmarks`, one per repository in id order, with its `repository`, `after_merges`, the last hallmark's `last_task` and `last_at`, the time its task closed, once there is one, `merged_since`, `merges_until_due`, absent when hallmarks are off, and `running_task`, the open hallmark task, absent when none is open.
   It carries counts and times only, never a note's text, so notes stay out of the feed ([decision](decisions/director-maintenance.md)); `director maintenance list` shows the history.
 - `repository_policies`: each configured repository's [policies](configuration.md#repository-policies), read from its default branch as last fetched into `refs/guildhall/policies` with no fetch, in config order: `{"repository", "commit", "policies": [...]}`, `policies` empty for a repository without a policy file; `{"repository", "error"}` when its file is refused or cannot be read; or `{"repository", "not_read_yet": true}` before the first fetch.
   The field is absent when no repository has a policy file and none has an error, and the session supervisor's own snapshot leaves it out.

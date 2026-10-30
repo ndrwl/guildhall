@@ -22,8 +22,13 @@ func TestPruneTaskRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if times, err := s.CloseTimes(); err != nil || len(times) != 1 || !times[TaskRef{Repository: "app", ID: "t-1"}].Equal(closed.CommittedAt) {
-		t.Fatalf("CloseTimes = %v, %v; want t-1 at %v", times, err, closed.CommittedAt)
+	created, err := s.Receipt("m-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closes, err := s.TaskCloses()
+	if c := closes[TaskRef{Repository: "app", ID: "t-1"}]; err != nil || len(closes) != 1 || c.Created != created.Sequence || c.Closed != closed.Sequence || !c.At.Equal(closed.CommittedAt) {
+		t.Fatalf("TaskCloses = %v, %v; want t-1 created at %d, closed at %d (%v)", closes, err, created.Sequence, closed.Sequence, closed.CommittedAt)
 	}
 	partial := TaskPrune{Repository: "app", TaskID: "t-1", BytesFreed: 2048, Worktree: WorktreeKept, Kept: "untracked notes.md"}
 	r, err := s.PruneTask("prune:app:t-1", partial)
@@ -112,9 +117,9 @@ func TestPruneCancelledTaskRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	closed, err := s.CloseTimes()
-	if err != nil || !closed[TaskRef{Repository: "app", ID: "t-1"}].Equal(rc.CommittedAt) {
-		t.Fatalf("close times = %v, %v; want the cancel's %v", closed, err, rc.CommittedAt)
+	closes, err := s.TaskCloses()
+	if c := closes[TaskRef{Repository: "app", ID: "t-1"}]; err != nil || c.Closed != rc.Sequence || !c.At.Equal(rc.CommittedAt) {
+		t.Fatalf("task closes = %v, %v; want the cancel's %d at %v", closes, err, rc.Sequence, rc.CommittedAt)
 	}
 	if _, err := s.PruneTask("prune:app:t-1", TaskPrune{Repository: "app", TaskID: "t-1", Worktree: WorktreeKept, Kept: "cancelled"}); err != nil {
 		t.Fatal(err)

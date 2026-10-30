@@ -100,29 +100,42 @@ func (s *Store) PruneTask(mutationID string, p TaskPrune) (Receipt, error) {
 	})
 }
 
-// CloseTimes returns, for each task moved to done or cancelled, the commit time of its task-state or cancel-task
-// receipt. It reads in one transaction without writing and scans every receipt in the store, so its cost grows with
-// the store's mutation count; read it once and reuse it.
-func (s *Store) CloseTimes() (map[TaskRef]time.Time, error) {
-	out := map[TaskRef]time.Time{}
+// TaskClose is a task's lifecycle receipts: Created is the sequence of its create-task receipt, and Closed and At the
+// sequence and commit time of its first set-task-state or cancel-task receipt, zero while it is open.
+type TaskClose struct {
+	Created, Closed uint64
+	At              time.Time
+}
+
+// TaskCloses returns the lifecycle receipts of every task with one. It reads in one transaction without writing and
+// scans every receipt in the store, so its cost grows with the store's mutation count; read it once and reuse it.
+func (s *Store) TaskCloses() (map[TaskRef]TaskClose, error) {
+	out := map[TaskRef]TaskClose{}
 	err := s.view(func(tx *bolt.Tx) error {
 		return tx.Bucket(bucketReceipts).ForEach(func(k, v []byte) error {
 			var r Receipt
 			if err := json.Unmarshal(v, &r); err != nil {
 				return fmt.Errorf("receipt %q: %w", k, err)
 			}
-			if r.Operation != opSetTaskState && r.Operation != opCancelTask {
+			ref := TaskRef{Repository: r.Repository, ID: r.TaskID}
+			c := out[ref]
+			switch r.Operation {
+			case opCreateTask:
+				c.Created = r.Sequence
+			case opSetTaskState, opCancelTask:
+				if c.Closed != 0 && c.Closed < r.Sequence {
+					return nil
+				}
+				c.Closed, c.At = r.Sequence, r.CommittedAt
+			default:
 				return nil
 			}
-			ref := TaskRef{Repository: r.Repository, ID: r.TaskID}
-			if at, seen := out[ref]; !seen || r.CommittedAt.Before(at) {
-				out[ref] = r.CommittedAt
-			}
+			out[ref] = c
 			return nil
 		})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("store: close times: %w", err)
+		return nil, fmt.Errorf("store: task closes: %w", err)
 	}
 	return out, nil
 }

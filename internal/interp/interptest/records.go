@@ -368,20 +368,27 @@ func (r *Records) Tasks(repository string) ([]store.Task, error) {
 	return out, nil
 }
 
-// CloseTimes implements interp.Records, as store.CloseTimes does: the commit time of each task's first set-task-state
-// or cancel-task receipt.
-func (r *Records) CloseTimes() (map[store.TaskRef]time.Time, error) {
+// TaskCloses implements interp.Records, as store.TaskCloses does: the sequence of each task's create-task receipt,
+// and the sequence and commit time of its first set-task-state or cancel-task receipt.
+func (r *Records) TaskCloses() (map[store.TaskRef]store.TaskClose, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := map[store.TaskRef]time.Time{}
+	out := map[store.TaskRef]store.TaskClose{}
 	for _, rc := range r.receipts {
-		if rc.op != "set-task-state" && rc.op != "cancel-task" {
+		ref := store.TaskRef{Repository: rc.r.Repository, ID: rc.r.TaskID}
+		c := out[ref]
+		switch rc.op {
+		case "create-task":
+			c.Created = rc.r.Sequence
+		case "set-task-state", "cancel-task":
+			if c.Closed != 0 && c.Closed < rc.r.Sequence {
+				continue
+			}
+			c.Closed, c.At = rc.r.Sequence, rc.r.CommittedAt
+		default:
 			continue
 		}
-		ref := store.TaskRef{Repository: rc.r.Repository, ID: rc.r.TaskID}
-		if at, seen := out[ref]; !seen || rc.r.CommittedAt.Before(at) {
-			out[ref] = rc.r.CommittedAt
-		}
+		out[ref] = c
 	}
 	return out, nil
 }
@@ -1616,13 +1623,22 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 
 	t.Run("closes a task once", func(t *testing.T) {
 		h := setup(t)
-		_, err := h.Records.SetTaskState("close-x", "app", "t8", store.TaskDone)
+		ref := store.TaskRef{Repository: "app", ID: "t7"}
+		open, err := h.Records.TaskCloses()
+		if c := open[ref]; err != nil || c.Created == 0 || c.Closed != 0 || !c.At.IsZero() {
+			t.Fatalf("TaskCloses of the open task = %+v, %v; want its create receipt only", c, err)
+		}
+		_, err = h.Records.SetTaskState("close-x", "app", "t8", store.TaskDone)
 		want(t, "SetTaskState of an unknown task", err, store.ErrNotFound)
 		_, err = h.Records.SetTaskState("close-open", "app", "t7", store.TaskOpen)
 		want(t, "SetTaskState to open", err, store.ErrInvalid)
 		rc, err := h.Records.SetTaskState("close-1", "app", "t7", store.TaskDone)
 		if err != nil || rc.Record != "task" || rc.Repository != "app" || rc.TaskID != "t7" {
 			t.Fatalf("SetTaskState = %+v, %v", rc, err)
+		}
+		closes, err := h.Records.TaskCloses()
+		if c := closes[ref]; err != nil || c.Created != open[ref].Created || c.Closed != rc.Sequence || !c.At.Equal(rc.CommittedAt) {
+			t.Fatalf("TaskCloses of the done task = %+v, %v; want created at %d, closed by %+v", c, err, open[ref].Created, rc)
 		}
 		if replay, err := h.Records.SetTaskState("close-1", "app", "t7", store.TaskDone); err != nil || replay != rc {
 			t.Fatalf("replay = %+v, %v", replay, err)

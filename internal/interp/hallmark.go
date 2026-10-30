@@ -90,9 +90,8 @@ func (r *run) checkReadOnly(s workflow.Step, n int) error {
 func previousName(step string) string { return "previous-" + step }
 
 // previousReport returns the previous input of attempt n of hallmark step s, nil when s is no hallmark step, wires
-// previous itself, or has no previous report. The first attempt looks for the newest done task of the repository
-// whose bound workflow has a hallmark step and that recorded a report, and copies that report into the task's
-// documents once, as previous-<step>; later attempts reuse that copy, so the report an attempt is given never moves
+// previous itself, or has no previous report. The first attempt copies the report of the repository's last hallmark
+// (LastHallmark) into the task's documents once, as previous-<step>; later attempts reuse that copy, so the report an attempt is given never moves
 // with a hallmark that finishes later (docs/decisions/report-only-workflows.md).
 func (r *run) previousReport(s workflow.Step, n int) (*render.Input, error) {
 	if s.Type != hallmarkKindType || len(s.Inputs[PreviousPort]) > 0 {
@@ -125,57 +124,103 @@ func (r *run) previousReport(s workflow.Step, n int) (*render.Input, error) {
 	return &render.Input{Port: PreviousPort, Name: d.Path, SHA256: d.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(d.Path))}, nil
 }
 
-// newestHallmarkReport returns the latest report of the newest done task of the repository, other than this one,
-// whose bound workflow has a hallmark step, with that task's id; nil when there is none. Tasks are newest by the time
-// they closed, then by id. A task whose bound workflow no longer resolves is passed over.
+// newestHallmarkReport returns the report of the repository's last hallmark other than this task (LastHallmark),
+// with that task's id; nil when there is none.
 func (r *run) newestHallmarkReport() (*store.DocumentRef, string, error) {
 	tasks, err := r.e.Records.Tasks(r.task.Repository)
 	if err != nil {
 		return nil, "", err
 	}
-	closed, err := r.e.Records.CloseTimes()
+	closes, err := r.e.Records.TaskCloses()
 	if err != nil {
 		return nil, "", err
 	}
-	tasks = slices.DeleteFunc(tasks, func(t store.Task) bool { return t.State != store.TaskDone || t.ID == r.task.ID })
+	h, err := LastHallmark(tasks, closes, r.e.Records.Documents, r.e.Workflow, r.task.ID)
+	if err != nil || h == nil {
+		return nil, "", err
+	}
+	return &h.Report, h.Task.ID, nil
+}
+
+// Hallmark is a repository's last hallmark: its task, the task's create and close receipts, and the report of its
+// hallmark step's newest round.
+type Hallmark struct {
+	Task   store.Task
+	Close  store.TaskClose
+	Report store.DocumentRef
+}
+
+// hallmarkSteps returns the ids of the hallmark steps of the workflow task binds, none when it does not resolve.
+func hallmarkSteps(t store.Task, resolve func(workflow.Revision) (*workflow.Definition, error)) []string {
+	def, err := resolve(t.Workflow)
+	if err != nil {
+		return nil
+	}
+	var steps []string
+	for _, s := range def.Steps {
+		if s.Type == hallmarkKindType {
+			steps = append(steps, s.ID)
+		}
+	}
+	return steps
+}
+
+// LastHallmark is the one rule for a repository's last hallmark, which both the hallmark step's previous report and
+// the Director's hallmark cadence read (docs/decisions/engine-owned-hallmark-cadence.md): the newest done task of
+// tasks, one repository's, other than except, whose bound workflow resolves by resolve and has a hallmark step, that
+// recorded the finished document and a report of a hallmark step. Tasks are newest by close receipt, then by id; a
+// cancelled task, an open one and one whose workflow does not resolve are passed over. closes holds each task's
+// receipts (store.TaskCloses) and docs reads a task's documents. It is nil when no task qualifies.
+func LastHallmark(tasks []store.Task, closes map[store.TaskRef]store.TaskClose, docs func(repository, taskID string) ([]store.DocumentRef, error),
+	resolve func(workflow.Revision) (*workflow.Definition, error), except string) (*Hallmark, error) {
+	tasks = slices.DeleteFunc(slices.Clone(tasks), func(t store.Task) bool { return t.State != store.TaskDone || t.ID == except })
+	ref := func(t store.Task) store.TaskRef { return store.TaskRef{Repository: t.Repository, ID: t.ID} }
 	slices.SortFunc(tasks, func(a, b store.Task) int {
-		ra, rb := store.TaskRef{Repository: a.Repository, ID: a.ID}, store.TaskRef{Repository: b.Repository, ID: b.ID}
-		if c := closed[rb].Compare(closed[ra]); c != 0 {
+		if c := cmp.Compare(closes[ref(b)].Closed, closes[ref(a)].Closed); c != 0 {
 			return c
 		}
 		return cmp.Compare(b.ID, a.ID)
 	})
 	for _, t := range tasks {
-		def, err := r.e.Workflow(t.Workflow)
-		if err != nil {
-			continue
-		}
-		var steps []string
-		for _, s := range def.Steps {
-			if s.Type == hallmarkKindType {
-				steps = append(steps, s.ID)
-			}
-		}
+		steps := hallmarkSteps(t, resolve)
 		if len(steps) == 0 {
 			continue
 		}
-		docs, err := r.e.Records.Documents(t.Repository, t.ID)
+		list, err := docs(t.Repository, t.ID)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		var best *store.DocumentRef
-		round := 0
-		for i, d := range docs {
+		round, finished := 0, false
+		for i, d := range list {
+			finished = finished || d.Name == FinishedDocument
 			p, ok := parseDocument(d.Name)
 			if ok && !p.exit && p.index == 0 && p.part == "report" && slices.Contains(steps, p.step) && p.round > round {
-				best, round = &docs[i], p.round
+				best, round = &list[i], p.round
 			}
 		}
-		if best != nil {
-			return best, t.ID, nil
+		if best != nil && finished {
+			return &Hallmark{Task: t, Close: closes[ref(t)], Report: *best}, nil
 		}
 	}
-	return nil, "", nil
+	return nil, nil
+}
+
+// OpenHallmark returns the newest open task of tasks, one repository's, by create receipt, then by id, whose bound
+// workflow resolves by resolve and has a hallmark step: a hallmark that is still running. It is nil when there is none.
+func OpenHallmark(tasks []store.Task, closes map[store.TaskRef]store.TaskClose, resolve func(workflow.Revision) (*workflow.Definition, error)) *store.Task {
+	var out *store.Task
+	var created uint64
+	for i, t := range tasks {
+		if t.State != store.TaskOpen || len(hallmarkSteps(t, resolve)) == 0 {
+			continue
+		}
+		c := closes[store.TaskRef{Repository: t.Repository, ID: t.ID}].Created
+		if out == nil || c > created || c == created && t.ID > out.ID {
+			out, created = &tasks[i], c
+		}
+	}
+	return out
 }
 
 // FinishedDocument is the document a task whose workflow has no deliver step records as it finishes; prune retires
