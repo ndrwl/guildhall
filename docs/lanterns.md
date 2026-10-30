@@ -42,7 +42,8 @@ This changes presentation, not transcript text, tool execution or model context.
 
 The workspace's one native status line runs `guildhall director context-report --lanterns`.
 Its first segment is the overall light, then open tasks, running attempts, open decisions, attention items and the context percentage.
-Stalled, retry, resume and recovery items are red; otherwise open decisions are yellow; a known healthy snapshot is green.
+Stalled, retry, resume, recovery and released follow-up items are red; otherwise open decisions are yellow; a known healthy snapshot is green.
+A decision [deferred](director.md#holds) until tasks merge is not counted while it waits.
 A status-read failure is explicitly neutral (`status unavailable`), while the context figure still displays.
 These counts come from Guildhall's read-only Director status, not Firstmate's counts.
 Reading them does not acknowledge messages or answer decisions.

@@ -143,7 +143,7 @@ func parkCopy(t *testing.T) string {
 		}
 		if id != "t-2" {
 			steps = append(steps, func() (store.Receipt, error) {
-				return s.ParkAttempt("park-"+id, "app", id, "build", 1, "Held for "+id+".", 0)
+				return s.ParkAttempt("park-"+id, "app", id, "build", 1, "Held for "+id+".", 0, nil)
 			})
 		}
 		switch id {
@@ -192,7 +192,7 @@ func TestDirectorStartStartupListsParkedAttempts(t *testing.T) {
 		if _, err := s.FinishAttempt("fail", "app", "t-2", "build", 1, store.AttemptFailed); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.ParkAttempt("park", "app", "t-2", "build", 1, "Held until\napp/t-1 merges.", 0)
+		return s.ParkAttempt("park", "app", "t-2", "build", 1, "Held until\napp/t-1 merges.", 0, nil)
 	})
 	writeNext(t, filepath.Join(dir, "state"), "t-2", `{"wait":"director","step":"build","attempt":1}`+"\n")
 	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--copy", dir); code != 0 {

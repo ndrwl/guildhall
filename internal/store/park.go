@@ -15,7 +15,8 @@ var bucketAttemptParks = []byte("attempt-parks")
 // AttemptPark is the Director's record that a failed or stopped attempt is deliberately not retried yet
 // (docs/decisions/0092-park-attempt.md). Parking never changes the attempt; status leaves a counting park's attempt
 // out of needs_me. Unparking keeps the record with Parked false, so Cycle, the number of unparks so far, survives
-// and the next park's mutation id differs from the last one's.
+// and the next park's mutation id differs from the last one's. A park with UntilMerged is a hold
+// (docs/decisions/0096-hold-until-merged.md): it stops counting once JudgeHold releases it.
 type AttemptPark struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
@@ -24,6 +25,8 @@ type AttemptPark struct {
 	Reason     string `json:"reason"`
 	Parked     bool   `json:"parked"`
 	Cycle      int    `json:"cycle"`
+	// UntilMerged are the tasks the park waits to merge, none for a park held until it is lifted.
+	UntilMerged []TaskRef `json:"until_merged,omitempty"`
 }
 
 // AttemptParkRecord and attemptUnparkRecord are the receipt record names of a park and an unpark of attempt number
@@ -36,12 +39,13 @@ func attemptUnparkRecord(step string, number int) string {
 	return fmt.Sprintf("attempt-unpark/%s/%d", step, number)
 }
 
-// ParkAttempt parks attempt number of step, receipt record attempt-park/<step>/<number>, with the Director's reason.
+// ParkAttempt parks attempt number of step, receipt record attempt-park/<step>/<number>, with the Director's reason,
+// until the tasks untilMerged names merge, or until it is lifted when it names none.
 // cycle is the park record's cycle the caller read, 0 when there was none. In the same transaction it refuses with
-// ErrInvalid a blank or oversized reason, a closed task, the judge step, an attempt that is not the step's latest
-// and one whose outcome is not failed or stopped; an unknown task or attempt is ErrNotFound. A stored cycle other
-// than cycle, or an attempt already parked under another mutation id, is ErrExists.
-func (s *Store) ParkAttempt(mutationID, repository, taskID, step string, number int, reason string, cycle int) (Receipt, error) {
+// ErrInvalid a blank or oversized reason, a closed task, the judge step, an attempt that is not the step's latest,
+// one whose outcome is not failed or stopped and a hold checkUntilMerged refuses; an unknown task or attempt is
+// ErrNotFound. A stored cycle other than cycle, or an attempt already parked under another mutation id, is ErrExists.
+func (s *Store) ParkAttempt(mutationID, repository, taskID, step string, number int, reason string, cycle int, untilMerged []TaskRef) (Receipt, error) {
 	if err := validateIDs(repository, taskID, step); err != nil {
 		return Receipt{}, err
 	}
@@ -56,11 +60,22 @@ func (s *Store) ParkAttempt(mutationID, repository, taskID, step string, number 
 	if err := validateText("reason", reason, MaxTextBytes); err != nil {
 		return Receipt{}, err
 	}
-	p := AttemptPark{Repository: repository, TaskID: taskID, Step: step, Attempt: number, Reason: reason, Parked: true, Cycle: cycle}
+	if len(untilMerged) > 0 {
+		if err := validateUntilMerged(untilMerged); err != nil {
+			return Receipt{}, err
+		}
+	}
+	p := AttemptPark{Repository: repository, TaskID: taskID, Step: step, Attempt: number, Reason: reason, Parked: true, Cycle: cycle,
+		UntilMerged: untilMerged}
 	return s.mutate(mutationID, "park-attempt", p, func(tx *bolt.Tx, rc *Receipt) error {
 		rc.Repository, rc.TaskID, rc.Attempt, rc.Record = repository, taskID, number, AttemptParkRecord(step, number)
 		if _, err := openTask(tx, repository, taskID); err != nil {
 			return err
+		}
+		if len(untilMerged) > 0 {
+			if err := checkUntilMerged(tx, untilMerged, TaskRef{Repository: repository, ID: taskID}); err != nil {
+				return err
+			}
 		}
 		latest, err := latestAttempt(tx, repository, taskID, step)
 		if err != nil {

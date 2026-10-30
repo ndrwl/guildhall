@@ -2,7 +2,7 @@
 
 The Director is the agent that runs a Director copy: it gives Artisans work, answers their messages and asks the Guildmaster for decisions ([architecture](architecture.md)).
 This page describes the commands that serve the Director itself rather than one task.
-`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop`, `director note`, `director reload`, `director turn-started`, `director turn-ended`, the [automatic handoff](#automatic-handoff) triggers with `director context-report`, and the standalone [guard rails](#guard-rails) are built.
+`director status`, the [session record](store.md#director-sessions), the session supervisor `director start` that writes it, the session's [Herdr tab](#the-directors-tab), `director ready`, `director pause`, `director resume`, `director stop`, `director note`, `director follow-up`, `director reload`, `director turn-started`, `director turn-ended`, the [automatic handoff](#automatic-handoff) triggers with `director context-report`, and the standalone [guard rails](#guard-rails) are built.
 A message to the Director [wakes it](messaging.md#waking-the-director) when its session is running in a pane Guildhall created.
 
 ## Start
@@ -60,7 +60,7 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - every release skill, byte for byte, in the runtime's skills directory, `.claude/skills/` for Claude Code;
 - the runtime's own files: for Claude Code, `.claude/settings.json`, which lets Bash run `guildhall` and read-only `git` commands without asking, but denies the internal launch commands `guildhall claude-artisan`, `guildhall fake-artisan`, `guildhall fake-director` and `guildhall artisan start`, with or without arguments (deny takes precedence over the broad `guildhall` allow); task orchestration and `artisan stop/status/resume` remain allowed.
   It denies any `git` command with `--output` (which writes a file), denies edits to the copy's `config.toml` and `managed.toml`, and registers a `UserPromptSubmit` hook that runs [`guildhall director turn-started`](#the-end-of-a-turn) at the start of every turn and `Stop` and `StopFailure` hooks that run `guildhall director turn-ended` at the end of every turn;
-- `startup.md`: the startup instructions, saying the session is starting up and recovering, then, when there are any, every live [note](#notes) under `## Notes`, grouped by kind as `director note list` prints them and opening with `Notes total <N> KB, over 8 KB: compact them (merge, shorten or remove).` when their text totals more than 8 KB, then the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command, except a `checks` item, which says the session supervisor advances it ([checks](#checks)), and then, when there are any, the feed's `parked` attempts in a section of their own, as information rather than work, one line each: `parked: attempt <n> of <step> of <repo>/<task> <outcome>; reason: <reason>; retry with <command>`;
+- `startup.md`: the startup instructions, saying the session is starting up and recovering, then, when there are any, every live [note](#notes) under `## Notes`, grouped by kind as `director note list` prints them and opening with `Notes total <N> KB, over 8 KB: compact them (merge, shorten or remove).` when their text totals more than 8 KB, then the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command, except a `checks` item, which says the session supervisor advances it ([checks](#checks)), and then, when there are any, the feed's `parked` attempts in a section of their own, as information rather than work, one line each: `parked: attempt <n> of <step> of <repo>/<task> <outcome>; reason: <reason>; retry with <command>`, ending ` until <repo>/<task>, …` for a park held until tasks merge, and then the feed's `held` items under `## Held`, one line each: `held: <decision <id> of <repo>/<task> | follow-up <id>> until <tasks> (waiting for <tasks>): <reason or text>; lift with <command>` ([holds](#holds));
 - `manifest.json`: the digest of every file above.
 
 It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory (for Claude, in the stable workspace described below), inside a containment unit of its own ([runtime containment](decisions/0084-director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with `GUILDHALL_COPY` set to the copy, the terminal's input and output, and the first message naming `startup.md`.
@@ -307,6 +307,36 @@ With no live notes it prints `No notes.`
 Every new session's `startup.md` lists the live notes in the same form before the in-flight snapshot, so the Director writes a note in the same turn something arises that no record holds, rather than at the end of a session.
 When their text totals more than 8 KB the list opens with a line asking the Director to compact them; it is a warning only, and no note is ever refused for the total.
 Notes are not in the [status feed](#status), which `note list` covers.
+A note saying "once X merges, do Y" is better kept as a [hold](#holds), which comes back by itself.
+
+## Holds
+
+A hold is an item the Director keeps out of the way until named tasks merge, so "once X merges, do Y" needs no note ([decision](decisions/0096-hold-until-merged.md)).
+There are three kinds: a parked attempt with [`step park --until-merged`](running.md#step-park-and-step-unpark), an open decision deferred with [`decide defer`](decisions-cli.md#deferring-a-decision), and a follow-up with no attempt or decision yet:
+
+```sh
+guildhall director follow-up add --until-merged <repo>/<task>... <text> [--copy <dir> | --store <file>]
+guildhall director follow-up list [--copy <dir> | --store <file>]
+guildhall director follow-up done <id> [--copy <dir> | --store <file>]
+```
+
+Every hold names one or more tasks of this store with `--until-merged <repo>/<task>`, repeated for several.
+Each must be open when the hold is recorded and must not be the held item's own task; a task already done is refused with `<repo>/<task> already merged; act now instead`, as is one already cancelled.
+A hold is released once every task it names is `done`, or at once when any of them is `cancelled`, marked `dependency cancelled`.
+Release is derived: [`director status`](#status) judges each hold from the task states it reads, so it shows with no supervisor running and needs no write; what released it is named from the task's state receipt, as `released: <repo>/<task> merged <time>` or `dependency cancelled: <repo>/<task>`.
+Nothing is retried, answered or created on release: the item comes back in `needs_me` with its reason and what released it, and the Director acts.
+
+A follow-up's text is one line of at most 1024 bytes, as a note's is.
+Only the newest session that is not `stopped` writes follow-ups; `add` prints `f<k> added` and `done` `f<k> done`, and repeating either prints the same receipt.
+`follow-up list` prints the follow-ups not done, one line each, such as `- f3 until guildhall/d45 (waiting for guildhall/d45): rebase d20`, with `[released: …]` in place of the wait once released, or `No follow-ups.`
+A follow-up stays, released, until `follow-up done`.
+
+While the session is `recovering` or `running`, the session supervisor runs a fifth watcher of the same kind as the [checks watcher](#checks), on the same interval and minimum, which reads status each round and, for each released hold that still matters, sends one Director message of type `hold-released` from `supervisor` and wakes the Director for it.
+A hold still matters while its park would otherwise count (task open, attempt the step's latest and failed or stopped), its decision is open, or its follow-up is not done.
+The message id is `hold-released.<kind>.<repo>.<task>.<item>.<cycle>`, the item being a park's `<step>.<n>` or the decision id, and `hold-released.follow-up.<id>` for a follow-up, which is filed under the first task it named; a release seen again by a later round is not sent again, so each release wakes the Director once.
+The dependency's own `merged` message already wakes the Director when it merges, so the watcher's delay of up to one `checks_refresh` only adds the reminder; its failures go to `holds.log` in the session's directory.
+
+Every new session's `startup.md` lists a held park's `## Parked` line with ` until <repo>/<task>, …` at its end, and a `## Held` section with one line per deferred decision and follow-up still waiting, with the tasks it waits for and the command that lifts it.
 
 ## Reload
 
@@ -499,6 +529,7 @@ The document has these sections:
   Each entry has its `task`, `priority`, `ready_at` (the commit time of the receipt that first authorized its merge), `pr` (the pull request URL), `held` (a [`task hold-merge`](tasks.md#holding-a-merge)), `front`, and `waiting_on`: `rebase` while the front's head is being rebased or resolved, `ci` while the front waits for the checks of its rebased head, `decision` while a new merge decision for it is open, and `queue` for a task behind the front.
   `task list --json` gives each queued task the same entry as `merge_queue`.
 - `decisions`: every open decision in repository, task and id order, with its `kind`, `subject`, `options`, `question` and `opened_at`, the commit time of its opening.
+  A decision [deferred](decisions-cli.md#deferring-a-decision) whose tasks have not all merged has `"deferred": true`; the Lanterns band does not count it.
 - `messages`: the Director's `unread` count, the count `by_type`, and the `headers` of at most the 20 oldest unread messages (`id`, `type`, `sender`, `repository`, `task_id`, `step` and `attempt` when given, `sequence`); `sender` is the message's [sender](messaging.md#senders), `unknown` for a message stored without one.
 - `recent`: the last 20 receipts of any task across repositories, in commit order, each with its operation, mutation id, sequence, commit time and record name, so records such as delivery's `publish-<k>-pr` documents and its `merged`, `merge-refused` and `workspace-kept` messages appear without a change to the feed.
 - `needs_me`: what is waiting on the Director or the Guildmaster, each item with its `kind`, the task and attempt or decision it concerns, a `reason`, and the `command` the Director would run next, written without `--copy` because a Director session sets `GUILDHALL_COPY`.
@@ -513,15 +544,19 @@ The document has these sections:
      An unfinished judge without ownership or a launch marker is also a `retry` item, even on a done task: `guildhall quality judge --repo <r> --review <n> <t>` uses the published preparation's review number.
      Without a readable published review number, the command omits `--review` and the reason explicitly requests that the Director supply it; partial preparation is not used.
      A [parked](running.md#step-park-and-step-unpark) attempt is left out and listed under `parked` instead.
+     A park held `--until-merged` whose [hold](#holds) is released no longer counts, so its attempt is a `retry` item again, its `reason` ending with what released it and `; park reason: <reason>`.
   3. `resume`, `resume: true`: an unfinished attempt of an open task, or a judge attempt even on a done task, classified `stuck`, `exited` or `unknown` (also a judge with terminal files not yet settled in the store); `guildhall artisan resume --repo <r> --task <t> --step <s> --attempt <n>`.
   4. `stalled`: an unread `worker-stalled` message; `guildhall messages read <id>`.
   5. `decision`: an open decision; `guildhall decide show --repo <r> --task <t> --decision <id>`.
-  6. `messages`: one item counting the other unread messages; `guildhall messages list director`.
-  7. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
+     A decision deferred until tasks merge is left out while its [hold](#holds) waits and listed under `held`; once released its `reason` ends with what released it and `; deferral reason: <reason>`.
+  6. `follow-up`: a released [follow-up](#holds), with its `follow_up` id and its text and what released it as the `reason`; `guildhall director follow-up done <id>`.
+     It stays until done, wakes [`director resume`](#pause-and-resume) and counts as Lanterns attention.
+  7. `messages`: one item counting the other unread messages; `guildhall messages list director`.
+  8. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
      A task whose `next.json` waits for the Director on a parked attempt, with no decision, is left out; a wait for a decision or another attempt stays.
-  8. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>` when that step's latest attempt failed or stopped, or `guildhall task start --repo <r> <t>` otherwise, including recovery of a recorded-but-unlaunched attempt.
-  9. `checks`: an open task whose `next.json` says `"wait":"checks"`, with its `step`, which the session supervisor's [checks watcher](#checks) advances; `guildhall task start --repo <r> <t>`.
-  10. `dependencies`: an open task whose `next.json` says `"wait":"dependencies"`, with its held `step`, which the [dependency gate](interpreter.md#the-dependency-gate) holds until its dependencies merge and the supervisor's [dependency watcher](#dependencies) advances; `guildhall task start --repo <r> <t>`, or `--ignore-deps --reason <text>` added to start it anyway.
+  9. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>` when that step's latest attempt failed or stopped, or `guildhall task start --repo <r> <t>` otherwise, including recovery of a recorded-but-unlaunched attempt.
+  10. `checks`: an open task whose `next.json` says `"wait":"checks"`, with its `step`, which the session supervisor's [checks watcher](#checks) advances; `guildhall task start --repo <r> <t>`.
+  11. `dependencies`: an open task whose `next.json` says `"wait":"dependencies"`, with its held `step`, which the [dependency gate](interpreter.md#the-dependency-gate) holds until its dependencies merge and the supervisor's [dependency watcher](#dependencies) advances; `guildhall task start --repo <r> <t>`, or `--ignore-deps --reason <text>` added to start it anyway.
 
   The newest Director session, while it is `recovering`, comes before all of them as a `recovering` item; `guildhall director ready`.
   While it is `recovering` or `running` with no bound Herdr pane, a `no_pane` item follows, since no wake can reach it and messages wait until its next turn; `guildhall director start --tab`, once this session is stopped ([start](#start)).
@@ -529,6 +564,8 @@ The document has these sections:
   A park leaves an `advance` or `paused` item in place: a failure never taken still needs taking, and a retry asked for while paused wins over a park.
 - `parked`: the attempts the Director [parked](running.md#step-park-and-step-unpark), held on purpose and so not in `needs_me`, in repository, task, step and attempt order, each with its `repository`, `task_id`, `step`, `attempt`, `outcome`, `reason`, `parked_at`, the commit time of its newest park, and the `command` to run when the hold ends, `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`.
   A park counts only while it is parked, its task is open and its attempt is still the step's latest, finished `failed` or `stopped`; a park whose attempt was retried, whose task closed or that was unparked is ignored ([decision](decisions/0092-park-attempt.md)).
+  A park held `--until-merged` also has `until_merged`, the tasks it names, and `waiting_for`, those not merged yet, and stops counting once its [hold](#holds) is released.
+- `held`: the deferred decisions and follow-ups whose [holds](#holds) still wait, in kind, repository, task and item order (follow-ups by id), each with its `kind` (`decision` or `follow-up`), `repository` and `task_id` for a decision, `item` (the decision or follow-up id), `reason` (the deferral's reason or the follow-up's text), `until_merged`, `waiting_for` and the `command` that lifts it: `guildhall decide undefer --repo <r> --task <t> --decision <id>` or `guildhall director follow-up done <id>`.
 - `grants`: every active [task grant](tasks.md#task-grants), in repository, task and grant order, each with its `repository`, `task_id`, `grant` id, `step`, `rules`, `reason`, `until`, the attempts `bound` with it so far and `approved_at`, the commit time of its decision's answer.
   A grant leaves the list once it expires, its task closing or its one bound attempt having an outcome, or is revoked, with no write ([decision](decisions/task-grants.md)); a pending grant is in `needs_me` as its open `grant-<id>` decision instead.
 - `version`: the binary printing the feed, the object `guildhall version --json` prints ([version](contracts/cli.md#version)): its `revision`, `time`, `modified`, `go_version`, `platform`, the `pr` and `task` of its latest merge and `behind_main`, read from the repository's last fetched default branch with no fetch, its `as_of` naming when that fetch was.

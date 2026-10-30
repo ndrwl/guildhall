@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -62,7 +63,7 @@ func TestParkAttemptRefusals(t *testing.T) {
 		"unknown attempt":    {"t-1", "build", 3, "Hold.", ErrNotFound},
 		"step with no tries": {"t-1", "deliver", 1, "Hold.", ErrNotFound},
 	} {
-		if _, err := s.ParkAttempt("bad-"+strings.ReplaceAll(name, " ", "-"), "app", tc.task, tc.step, tc.n, tc.reason, 0); !errors.Is(err, tc.want) {
+		if _, err := s.ParkAttempt("bad-"+strings.ReplaceAll(name, " ", "-"), "app", tc.task, tc.step, tc.n, tc.reason, 0, nil); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
 		}
 	}
@@ -85,22 +86,22 @@ func TestParkAndUnparkAttempt(t *testing.T) {
 	if _, err := s.UnparkAttempt("unpark-0", "app", "t-1", "build", 2, 0); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unpark of an attempt never parked = %v, want ErrInvalid", err)
 	}
-	rc, err := s.ParkAttempt("park.0", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0)
+	rc, err := s.ParkAttempt("park.0", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0, nil)
 	if err != nil || rc.Operation != "park-attempt" || rc.Record != "attempt-park/build/2" || rc.TaskID != "t-1" || rc.Attempt != 2 {
 		t.Fatalf("ParkAttempt = %+v, %v", rc, err)
 	}
-	if replay, err := s.ParkAttempt("park.0", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0); err != nil || replay != rc {
+	if replay, err := s.ParkAttempt("park.0", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0, nil); err != nil || replay != rc {
 		t.Fatalf("replay = %+v, %v; want %+v", replay, err, rc)
 	}
-	if _, err := s.ParkAttempt("park.0", "app", "t-1", "build", 2, "Another reason.", 0); !errors.Is(err, ErrMutationConflict) {
+	if _, err := s.ParkAttempt("park.0", "app", "t-1", "build", 2, "Another reason.", 0, nil); !errors.Is(err, ErrMutationConflict) {
 		t.Fatalf("another reason under the same id = %v, want ErrMutationConflict", err)
 	}
-	if _, err := s.ParkAttempt("other", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0); !errors.Is(err, ErrExists) {
+	if _, err := s.ParkAttempt("other", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0, nil); !errors.Is(err, ErrExists) {
 		t.Fatalf("a second park under another id = %v, want ErrExists", err)
 	}
 	want := AttemptPark{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 2, Reason: "Hold until t-9 merges.", Parked: true}
-	if got, err := s.AttemptPark("app", "t-1", "build", 2); err != nil || got != want {
-		t.Fatalf("AttemptPark = %+v, %v; want %+v", got, err, want)
+	if got, err := s.AttemptPark("app", "t-1", "build", 2); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("AttemptPark =%+v, %v; want %+v", got, err, want)
 	}
 
 	if _, err := s.UnparkAttempt("unpark-stale", "app", "t-1", "build", 2, 1); !errors.Is(err, ErrExists) {
@@ -114,21 +115,21 @@ func TestParkAndUnparkAttempt(t *testing.T) {
 		t.Fatalf("unpark replay = %+v, %v; want %+v", replay, err, un)
 	}
 	want.Parked, want.Cycle = false, 1
-	if got, err := s.AttemptPark("app", "t-1", "build", 2); err != nil || got != want {
+	if got, err := s.AttemptPark("app", "t-1", "build", 2); err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("AttemptPark after unpark = %+v, %v; want %+v", got, err, want)
 	}
 	if _, err := s.UnparkAttempt("unpark.1", "app", "t-1", "build", 2, 1); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unpark of an unparked attempt = %v, want ErrInvalid", err)
 	}
-	if _, err := s.ParkAttempt("park.stale", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0); !errors.Is(err, ErrExists) {
+	if _, err := s.ParkAttempt("park.stale", "app", "t-1", "build", 2, "Hold until t-9 merges.", 0, nil); !errors.Is(err, ErrExists) {
 		t.Fatalf("park at a stale cycle = %v, want ErrExists", err)
 	}
-	again, err := s.ParkAttempt("park.1", "app", "t-1", "build", 2, "Hold until t-9 merges.", 1)
+	again, err := s.ParkAttempt("park.1", "app", "t-1", "build", 2, "Hold until t-9 merges.", 1, nil)
 	if err != nil || again.Sequence <= un.Sequence {
 		t.Fatalf("park at cycle 1 = %+v, %v; want a new receipt after %d", again, err, un.Sequence)
 	}
 	want.Parked = true
-	if got, err := s.AttemptPark("app", "t-1", "build", 2); err != nil || got != want {
+	if got, err := s.AttemptPark("app", "t-1", "build", 2); err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("AttemptPark after the second park = %+v, %v; want %+v", got, err, want)
 	}
 
@@ -136,7 +137,7 @@ func TestParkAndUnparkAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(v.Parks) != 1 || v.Parks[0] != want {
+	if len(v.Parks) != 1 || !reflect.DeepEqual(v.Parks[0], want) {
 		t.Errorf("DirectorView.Parks = %+v, want [%+v]", v.Parks, want)
 	}
 	h, err := s.TaskHistory("app", "t-1")
@@ -157,7 +158,7 @@ func TestParkAndUnparkAttempt(t *testing.T) {
 // TestUnparkAStalePark: unpark reads only the park record, so a park whose task closed can still be cleared.
 func TestUnparkAStalePark(t *testing.T) {
 	s := parkFixture(t)
-	if _, err := s.ParkAttempt("park", "app", "t-1", "build", 2, "Hold.", 0); err != nil {
+	if _, err := s.ParkAttempt("park", "app", "t-1", "build", 2, "Hold.", 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.SetTaskState("close", "app", "t-1", TaskCancelled); err != nil {

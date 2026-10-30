@@ -35,4 +35,5 @@ The readers of `needs_me`, the resume wake, the Lanterns band and the startup in
 ## Deferred
 
 `--until <repo>/<task>`, unparking automatically when another task merges, is a follow-up task: status could judge it expired with a store read, but putting the attempt back in `needs_me` without waking the Director would hide the end of the hold, and a wake at merge time needs a supervisor watcher or a merge-time message.
+It is now built as `--until-merged`, with a supervisor watcher's wake ([0096](0096-hold-until-merged.md)).
 Whether the Lanterns band should count long holds separately is left open.

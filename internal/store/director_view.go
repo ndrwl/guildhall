@@ -26,6 +26,10 @@ type DirectorView struct {
 	OpenDecisions []Decision
 	// Parks are every attempt's park record, parked or unparked, in repository, task, step and attempt order.
 	Parks []AttemptPark
+	// Deferrals are every decision's deferral record, deferred or undeferred, in repository, task and decision order.
+	Deferrals []DecisionDeferral
+	// FollowUps are the follow-ups not yet done, in id order.
+	FollowUps []FollowUp
 	// Grants are the task grants whose derived state is active, with their approval times, in repository, task and
 	// grant order (docs/decisions/task-grants.md).
 	Grants []TaskGrantStatus
@@ -46,7 +50,7 @@ type DirectorView struct {
 // DirectorView reads the Director's view of the whole store without writing.
 // Like TaskHistory it scans every receipt, so its cost grows with the store's mutation count.
 func (s *Store) DirectorView() (DirectorView, error) {
-	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Grants: []TaskGrantStatus{},
+	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Deferrals: []DecisionDeferral{}, Grants: []TaskGrantStatus{},
 		Unread: []Message{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var repos []string
@@ -60,6 +64,7 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				scan(repoBucket(tx, repo, bucketOwners), nil, &owners),
 				scan(repoBucket(tx, repo, bucketDecisions), nil, &decisions),
 				scan(repoBucket(tx, repo, bucketAttemptParks), nil, &v.Parks),
+				scan(repoBucket(tx, repo, bucketDecisionDeferrals), nil, &v.Deferrals),
 			} {
 				if err != nil {
 					return err
@@ -111,6 +116,11 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				}
 			}
 		}
+		follows, err := followUps(tx, false)
+		if err != nil {
+			return err
+		}
+		v.FollowUps = follows
 		u, err := attemptUsage(tx, s.now())
 		if err != nil {
 			return err

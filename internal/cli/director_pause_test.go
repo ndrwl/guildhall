@@ -31,6 +31,12 @@ import (
 // it through states.
 func recordSession(t *testing.T, path string, gone bool, states ...store.DirectorState) {
 	t.Helper()
+	recordPanedSession(t, path, store.DirectorPane{}, gone, states...)
+}
+
+// recordPanedSession is recordSession with the session bound to pane.
+func recordPanedSession(t *testing.T, path string, pane store.DirectorPane, gone bool, states ...store.DirectorState) {
+	t.Helper()
 	self, err := artisan.Self()
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +50,7 @@ func recordSession(t *testing.T, path string, gone bool, states ...store.Directo
 	}
 	defer func() { _ = s.Close() }()
 	d := store.DirectorSession{Number: 1, State: store.DirectorRecovering, Identity: store.ProcessIdentity(self), Release: "test",
-		ConfigDigest: "sha256:" + strings.Repeat("c", 64)}
+		ConfigDigest: "sha256:" + strings.Repeat("c", 64), Pane: pane}
 	if _, err := s.StartDirectorSession(d); err != nil {
 		t.Fatal(err)
 	}

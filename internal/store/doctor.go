@@ -88,6 +88,7 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketHandoffs, nil, func() any { return new(HandoffNote) }},
 			{bucketNotes, nil, func() any { return new(Note) }},
 			{bucketNoteVersions, nil, func() any { return new(NoteVersion) }},
+			{bucketFollowUps, nil, func() any { return new(FollowUp) }},
 			{bucketReloads, nil, func() any { return new(DirectorReload) }},
 			{bucketHandoffDues, nil, func() any { return new(HandoffDue) }},
 		} {

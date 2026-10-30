@@ -10,6 +10,8 @@ The record is described in [the store](store.md#records); this page is the comma
 guildhall decide list --store <path> [--repo <id>]
 guildhall decide show --store <path> --repo <id> --task <id> --decision <id>
 guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
+guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
+guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
 ```
 
 Every command needs an existing store and never creates one; `list` and `show` open it read-only.
@@ -20,6 +22,7 @@ Each prints one JSON document on standard output and exits 0, exits 1 when the a
   An empty inbox prints `[]`.
 - `show` prints one decision, answered or not, including the answer, choice and note when non-empty.
 - `answer` records the Guildmaster's words and prints the store receipt.
+- `defer` and `undefer` are the Director's: see [deferring a decision](#deferring-a-decision).
 
 ## Answers
 
@@ -40,3 +43,14 @@ records the whole text as the answer, `approve` as the choice and `Keep the migr
 The answer is recorded with mutation id `decision-answer:<repo>:<task>:<decision>`, or `decision-answer:sha256:<hex>` of that text when it is longer than 128 bytes.
 Repeating the same answer prints the original receipt; a different answer to an answered decision is refused, so a decision is answered once.
 Answering records the answer only: it never advances, resumes or launches a task.
+
+## Deferring a decision
+
+`decide defer` is the Director's: it holds an open decision out of [`needs_me`](director.md#status) until every task named by `--until-merged <repo>/<task>`, which may be repeated, has merged, with the Director's `--reason` ([holds](director.md#holds), [decision](decisions/0096-hold-until-merged.md)).
+The decision itself is not changed: it stays open, `decide list` still lists it, and other tasks' dependency states do not shift.
+While the hold waits, `director status` lists the decision under `held` and marks it `"deferred": true` in `decisions`, and the Lanterns band does not count it; once every named task is `done`, or any is `cancelled`, it is an ordinary `decision` item again with the release appended to its reason, and the session supervisor wakes the Director once with a `hold-released` message.
+Answering a deferred decision closes it as usual, and the deferral is then ignored.
+
+Each named task must be an open task of this store other than the decision's own; one already merged is refused with `<repo>/<task> already merged; act now instead`, as is one cancelled, and an answered or unknown decision is refused too.
+`defer` and `undefer` each print the deferral record as one JSON line, `{"repository":...,"task_id":...,"decision":...,"reason":...,"until_merged":[{"repository":...,"id":...}],"deferred":<bool>,"cycle":<n>}`.
+As with [`step park`](running.md#step-park-and-step-unpark), the mutation id carries the record's cycle, `decision-defer:<repo>:<task>:<decision>:<cycle>`, so an identical deferral replays, one with another reason or set while deferred is refused quoting the prior one, and `undefer` keeps the record with `deferred` false and the cycle one higher; `undefer` of a decision that is not deferred is exit 1.

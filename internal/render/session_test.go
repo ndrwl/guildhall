@@ -174,6 +174,41 @@ func TestSessionStartupListsParkedAttempts(t *testing.T) {
 	}
 }
 
+// TestSessionStartupListsHeldItems: a park held until tasks merge keeps its parked line with its until suffix, and
+// deferred decisions and follow-ups follow in their own held section, one line each.
+func TestSessionStartupListsHeldItems(t *testing.T) {
+	in := sessionInput(t)
+	in.Parked = []string{
+		"parked: attempt 1 of build of app/t-4 failed; reason: Rebase first.; retry with `guildhall step retry --repo app --task t-4 --step build --attempt 1` until app/d45",
+	}
+	in.Held = []string{
+		"held: decision accept-plan of app/t-5 until app/d45, app/d51 (waiting for app/d51): After the store change.; lift with `guildhall decide undefer --repo app --task t-5 --decision accept-plan`",
+		"held: follow-up f2 until app/d45 (waiting for app/d45): Tell the Guildmaster.; lift with `guildhall director follow-up done f2`",
+	}
+	r, err := Session(in, roots())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(r.StartupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "\n## Parked\n\n" +
+		"These attempts are held on purpose and are not work: nothing here needs you until its hold ends.\n\n" +
+		"- " + in.Parked[0] + "\n" +
+		"\n## Held\n\n" +
+		"These decisions and follow-ups wait for other tasks to merge and are not work yet: each comes back in needs_me, with a wake, once its tasks merge.\n\n" +
+		"- " + in.Held[0] + "\n" +
+		"- " + in.Held[1] + "\n"
+	if !strings.HasSuffix(string(b), want) {
+		t.Errorf("startup.md does not end with the parked and held sections %q:\n%s", want, b)
+	}
+	in.Held = []string{"one\ntwo"}
+	if _, err := Session(in, roots()); err == nil || !strings.Contains(err.Error(), "held item") {
+		t.Errorf("a multi-line held item = %v, want it refused", err)
+	}
+}
+
 // TestSessionSkillsMatchTheRelease renders the embedded release skills and compares each tree digest with the
 // release's recorded one (skills/testdata/digests.txt), so a session's skills are the release's byte for byte.
 func TestSessionSkillsMatchTheRelease(t *testing.T) {

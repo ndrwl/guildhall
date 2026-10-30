@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
@@ -183,6 +184,16 @@ func recordNextSession(storePath string, self artisan.Identity, cfg any, base st
 	return n, sp, err
 }
 
+// heldLine is a held item's startup.md line: what it is, the tasks it waits for and the command that lifts it.
+func heldLine(h statusHeld) string {
+	what := "follow-up " + h.Item
+	if h.Kind == decisionKind {
+		what = fmt.Sprintf("decision %s of %s/%s", h.Item, h.Repository, h.TaskID)
+	}
+	return fmt.Sprintf("held: %s until %s (waiting for %s): %s; lift with `%s`",
+		what, strings.Join(h.UntilMerged, ", "), strings.Join(h.WaitingFor, ", "), oneLine(h.Reason), h.Command)
+}
+
 // runSession renders session n and runs its runtime to the end, returning the supervisor's exit status and
 // whether the session ended for a reload. A signal received before the runtime starts ends the session with no
 // runtime started.
@@ -222,10 +233,17 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		inFlight = append(inFlight, fmt.Sprintf("%s: %s; run `%s`", it.Kind, oneLine(it.Reason), it.Command))
 	}
 	// Parked attempts come from the same status read, so what a session is told cannot drift from the feed (D71).
-	var parked []string
+	var parked, held []string
 	for _, p := range status.Parked {
-		parked = append(parked, fmt.Sprintf("parked: attempt %d of %s of %s/%s %s; reason: %s; retry with `%s`",
-			p.Attempt, p.Step, p.Repository, p.TaskID, p.Outcome, oneLine(p.Reason), p.Command))
+		line := fmt.Sprintf("parked: attempt %d of %s of %s/%s %s; reason: %s; retry with `%s`",
+			p.Attempt, p.Step, p.Repository, p.TaskID, p.Outcome, oneLine(p.Reason), p.Command)
+		if len(p.UntilMerged) > 0 {
+			line += " until " + strings.Join(p.UntilMerged, ", ")
+		}
+		parked = append(parked, line)
+	}
+	for _, h := range status.Held {
+		held = append(held, heldLine(h))
 	}
 	// Every live note goes to the new session; the old handoff note is not shown (D94).
 	type startupNotes struct {
@@ -250,7 +268,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	dir := sessionDir(copyDir, n)
 	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
-		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Parked: parked, Notes: notes.lines, NotesBytes: notes.bytes}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
+		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Parked: parked, Held: held, Notes: notes.lines, NotesBytes: notes.bytes}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
@@ -302,6 +320,10 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
+	holds, err := a.watchHolds(p, dir, copyDir, storePath, state)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
 	u, err := startRuntime(c, n, storePath)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
@@ -323,7 +345,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return a.fail(fmt.Errorf("director start: %w", err)), false
 	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, starts: starts, closes: closes,
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, starts: starts, holds: holds, closes: closes,
 		prunes: prunes, quiet: quiet, maxDelay: maxDelay}
 	if ep != nil {
 		w.turns = ep.Turns()
@@ -343,6 +365,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	deps.wait()
 	queue.wait()
 	starts.wait()
+	holds.wait()
 	var exit *exec.ExitError
 	switch {
 	case errors.Is(err, errRuntimeOutlived):
@@ -458,6 +481,9 @@ type sessionWatch struct {
 	// starts is the session's start-queue watcher, a fourth checks watcher, which drains the start queue, ticked
 	// with checks; nil without one.
 	starts *checksWatch
+	// holds is the session's holds watcher, a fifth checks watcher, which wakes the Director once for each released
+	// hold, ticked with checks; nil without one.
+	holds *checksWatch
 	// closes is the session's workspace close sweep, ticked at every poll; nil without one.
 	closes *workspaceCloseWatch
 	// prunes is the session's daily prune, ticked at every poll; nil while prune_daily is off.
@@ -552,6 +578,9 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 			}
 			if w.starts != nil {
 				w.starts.tick(time.Now())
+			}
+			if w.holds != nil {
+				w.holds.tick(time.Now())
 			}
 			w.closes.tick(time.Now())
 			w.prunes.tick(time.Now())
