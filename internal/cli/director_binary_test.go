@@ -37,7 +37,8 @@ func TestVersionStartupComparesTheSupervisorBySHA256(t *testing.T) {
 		{"same binary", "dev", ownSHA256(t), ""},
 		{"another binary", "dev", other, "warning: this binary is not the one running this session's supervisor (dev sha256:eeeeeeeeeeee)\n"},
 		{"no sha, same release", "dev", "", ""},
-		{"no sha, another release", "v1.2.2", "", "warning: this binary is not the one running this session's supervisor (v1.2.2)\n"},
+		{"no sha, another release", "v1.2.2", "", "warning: this binary is not the one running this session's supervisor (v1.2.2), " +
+			"which predates moving binaries at a reload; run guildhall director stop, then guildhall director start\n"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := versionCopy(t, "git@github.com:example/app.git")
@@ -78,7 +79,8 @@ func TestDirectorStatusComparesTheSupervisorBinary(t *testing.T) {
 	}{
 		{"same", onPath, false, "session 1's supervisor runs the guildhall on PATH"},
 		{"another", strings.Repeat("e", 64), true, "session 1's supervisor runs guildhall sha256:eeeeeeeeeeee, not the guildhall on PATH " + path},
-		{"none recorded", "", false, "recorded no binary sha256"},
+		{"none recorded", "", true, "session 1's supervisor predates moving binaries at a reload, so a director reload keeps it on its own binary; " +
+			"run director stop, then director start, to move it onto the guildhall on PATH"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := versionCopy(t, "git@github.com:example/app.git")

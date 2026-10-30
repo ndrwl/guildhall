@@ -159,7 +159,8 @@ A positional argument, an unknown flag, and `--startup` with `--json` are usage 
 
 **Build fields** come from the binary's build information through the `App.BuildInfo` seam, `debug.ReadBuildInfo` when nil: `vcs.revision` in full, `vcs.time`, `vcs.modified`, the Go version and `GOOS/GOARCH`, falling back to the running toolchain's for the last two.
 `Version()` and its precedence (the release tag injected by the linker, then the module version, then `dev`) are unchanged, so `doctor` and the session record's `release` are unchanged.
-A build with no `vcs.*` settings, such as a module-proxy install, `-buildvcs=false` or a tree without `.git`, has empty revision fields and shows the release only.
+A build with no `vcs.*` settings whose module version is a Go pseudo-version, such as `go install …@v0.0.0-20261030170552-650231703145`, takes `revision` (its 12 hex digits) and `time` (RFC 3339 UTC) from that version, with `modified` false, as the module proxy builds from a clean tree.
+Any other build with no `vcs.*` settings, such as a tagged module-proxy install, `-buildvcs=false` or a tree without `.git`, has empty revision fields and shows the release only.
 
 **Repository fields** are read only when a copy resolves and the build has a revision, from the copy's one repository whose `remote` names the binary's module path (`github.com/ndrwl/guildhall`), compared after dropping a URL scheme, a user, the colon of `git@host:path` and a trailing `.git` or `/`, in lower case.
 No match, or more than one, gives no repository fields; there is no config key for it.

@@ -43,6 +43,20 @@ func putOnPath(t *testing.T, content []byte) (string, string) {
 	return path, sum
 }
 
+// putOnPathWithRelease is putOnPath that also labels the installed binary with release, in the sidecar file the
+// test binary reads as its release when it runs as guildhall (TestMain).
+func putOnPathWithRelease(t *testing.T, content []byte, release string) (string, string) {
+	t.Helper()
+	path, err := exec.LookPath("guildhall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+releaseSidecar, []byte(release+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return putOnPath(t, content)
+}
+
 // differentBinary is the test binary with another sha256 that runs the same: with bytes appended, or on macOS,
 // which kills a binary whose code signature does not cover the end of its file, signed again ad hoc under another
 // identifier.
@@ -389,6 +403,76 @@ func TestReloadReexecsInPlace(t *testing.T) {
 	r := readReload(t, filepath.Join(dir, "director.store"))
 	if r.State != store.ReloadApplied || r.OldSession != 1 || r.NewSession != 2 || r.OldSHA256 != oldSHA || r.NewSHA256 != newSHA || r.RefusedReason != "" {
 		t.Errorf("reload = %+v; want it applied from %s to %s; pane:\n%s", r, oldSHA, newSHA, pane.String())
+	}
+	copyRun(t, dir, "director", "stop", "--now")
+	select {
+	case err := <-exited:
+		if err != nil {
+			t.Errorf("supervisor: %v; pane:\n%s", err, pane.String())
+		}
+	case <-time.After(testenv.Ceiling(2 * time.Minute)):
+		t.Fatalf("the supervisor did not end after director stop; pane:\n%s", pane.String())
+	}
+}
+
+// TestReloadRecordsTheInstalledRelease: a supervisor running as its own process moves, at a reload, onto a newly
+// installed guildhall of another release, and session 2 and the reload record that binary's release and sha256.
+func TestReloadRecordsTheInstalledRelease(t *testing.T) {
+	const newRelease = "v0.0.0-20990101000000-aaaaaaaaaaaa"
+	dir, _ := supervisedCopy(t)
+	old, err := exec.LookPath("guildhall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdin, typing, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdin.Close(); _ = typing.Close() })
+	var pane lockedBuffer
+	cmd := exec.Command(old, "director", "start", "--copy", dir)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, &pane, &pane
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			t.Logf("killed the supervisor: %v", <-exited)
+		}
+	})
+	got := waitSessions(t, dir, 1)
+	oldRelease, oldSHA := got[0].Release, testBinarySHA256(t)
+	if oldRelease == "" || oldRelease == newRelease {
+		t.Fatalf("session 1 release = %q; want the test binary's own", oldRelease)
+	}
+	_, newSHA := putOnPathWithRelease(t, differentBinary(t), newRelease)
+	reloadAtTurnEnd(t, dir)
+	for end := time.Now().Add(testenv.Ceiling(2 * time.Minute)); ; time.Sleep(50 * time.Millisecond) {
+		if got = sessions(t, dir); len(got) == 2 && got[1].State == store.DirectorRunning {
+			break
+		}
+		select {
+		case err := <-exited:
+			t.Fatalf("the supervisor ended (%v) before session 2 ran; sessions = %+v; pane:\n%s", err, got, pane.String())
+		default:
+		}
+		if len(got) > 2 || time.Now().After(end) {
+			t.Fatalf("sessions = %+v; want session 2 running; pane:\n%s", got, pane.String())
+		}
+	}
+	if got[1].Identity.PID != cmd.Process.Pid {
+		t.Errorf("session 2 pid = %d; want the supervisor process %d", got[1].Identity.PID, cmd.Process.Pid)
+	}
+	if got[0].Release != oldRelease || got[1].Release != newRelease || got[1].BinarySHA256 != newSHA {
+		t.Errorf("sessions = %+v; want session 2 on the installed release %s, sha256 %s; pane:\n%s", got, newRelease, newSHA, pane.String())
+	}
+	r := readReload(t, filepath.Join(dir, "director.store"))
+	if r.State != store.ReloadApplied || r.OldSession != 1 || r.NewSession != 2 || r.OldRelease != oldRelease || r.NewRelease != newRelease ||
+		r.OldSHA256 != oldSHA || r.NewSHA256 != newSHA || r.RefusedReason != "" {
+		t.Errorf("reload = %+v; want it applied from %s %s to %s %s; pane:\n%s", r, oldRelease, oldSHA, newRelease, newSHA, pane.String())
 	}
 	copyRun(t, dir, "director", "stop", "--now")
 	select {

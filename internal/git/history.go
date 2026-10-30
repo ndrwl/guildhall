@@ -10,11 +10,31 @@ import (
 	"github.com/ndrwl/guildhall/internal/digest"
 )
 
-// Subject returns the subject line of commit rev, a full commit id, in the repository at repo. A commit the
-// repository lacks, an invalid id and any git failure are errors.
+// minAbbrevCommit is the shortest abbreviated commit id Subject and Behind take: a Go pseudo-version's.
+const minAbbrevCommit = 12
+
+// validCommit reports whether rev is a full commit id or one abbreviated to at least minAbbrevCommit lowercase hex
+// characters, which git resolves in the repository or refuses as missing or ambiguous.
+func validCommit(rev string) bool {
+	if digest.ValidHead(rev) {
+		return true
+	}
+	if len(rev) < minAbbrevCommit || len(rev) > 64 {
+		return false
+	}
+	for _, c := range []byte(rev) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// Subject returns the subject line of commit rev, a full or abbreviated commit id (validCommit), in the repository
+// at repo. A commit the repository lacks, an ambiguous or invalid id and any git failure are errors.
 func (p Program) Subject(ctx context.Context, repo, rev string) (string, error) {
-	if !digest.ValidHead(rev) {
-		return "", fmt.Errorf("%q is not a full commit id", rev)
+	if !validCommit(rev) {
+		return "", fmt.Errorf("%q is not a commit id", rev)
 	}
 	out, err := p.git(ctx, repo, "log", "-1", "--no-show-signature", "--format=%s", rev+"^{commit}", "--")
 	if err != nil {
@@ -37,12 +57,13 @@ func (p Program) FetchDefault(ctx context.Context, repo, remote, ref string) err
 	return err
 }
 
-// Behind returns how many first-parent commits ref has after rev, a full commit id, in the repository at repo, and
-// their subjects, newest first: `git rev-list --count --first-parent` and `git log --first-parent --format=%s` of
-// rev..ref, read with no network call. A missing ref, a commit the repository lacks and any git failure are errors.
+// Behind returns how many first-parent commits ref has after rev, a full or abbreviated commit id (validCommit), in
+// the repository at repo, and their subjects, newest first: `git rev-list --count --first-parent` and `git log
+// --first-parent --format=%s` of rev..ref, read with no network call. A missing ref, a commit the repository lacks
+// and any git failure are errors.
 func (p Program) Behind(ctx context.Context, repo, rev, ref string) (int, []string, error) {
-	if !digest.ValidHead(rev) {
-		return 0, nil, fmt.Errorf("%q is not a full commit id", rev)
+	if !validCommit(rev) {
+		return 0, nil, fmt.Errorf("%q is not a commit id", rev)
 	}
 	if !strings.HasPrefix(ref, "refs/") {
 		return 0, nil, fmt.Errorf("ref %q is not a full ref name", ref)

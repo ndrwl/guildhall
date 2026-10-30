@@ -29,7 +29,14 @@ func TestVersionReads(t *testing.T) {
 		t.Error("Subject of a commit the repository lacks succeeded")
 	}
 	if _, err := p.Subject(ctx, repository, "HEAD"); err == nil {
-		t.Error("Subject of a name, not a full commit id, succeeded")
+		t.Error("Subject of a name, not a commit id, succeeded")
+	}
+	// A pseudo-version's 12-digit abbreviation resolves; a shorter one is refused.
+	if got, err := p.Subject(ctx, repository, start[:12]); err != nil || got != "a.txt" {
+		t.Errorf("Subject(start[:12]) = %q, %v; want a.txt", got, err)
+	}
+	if _, err := p.Subject(ctx, repository, start[:7]); err == nil {
+		t.Error("Subject of a 7-digit abbreviation succeeded")
 	}
 	if _, _, err := p.Behind(ctx, repository, start, ref); err == nil {
 		t.Error("Behind with no fetched ref succeeded")
@@ -47,6 +54,9 @@ func TestVersionReads(t *testing.T) {
 	count, subjects, err := p.Behind(ctx, repository, start, ref)
 	if want := []string{"Direct push without a pull request", "Fix the login redirect (#159)", "b.txt"}; err != nil || count != 3 || !slices.Equal(subjects, want) {
 		t.Errorf("Behind = %d, %q, %v; want 3, %q", count, subjects, err, want)
+	}
+	if count, _, err := p.Behind(ctx, repository, start[:12], ref); err != nil || count != 3 {
+		t.Errorf("Behind(start[:12]) = %d, %v; want 3", count, err)
 	}
 	tip := r.run("rev-parse", ref)
 	if count, subjects, err := p.Behind(ctx, repository, tip, ref); err != nil || count != 0 || len(subjects) != 0 {

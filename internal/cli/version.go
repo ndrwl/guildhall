@@ -27,7 +27,8 @@ import (
 // VersionGit is the git a version report reads Guildhall's own repository with (docs/contracts/cli.md#version);
 // git.Program is the real one.
 type VersionGit interface {
-	// Subject returns the subject line of the full commit id rev in the repository at repo.
+	// Subject returns the subject line of the commit id rev, full or a pseudo-version's abbreviation, in the
+	// repository at repo.
 	Subject(ctx context.Context, repo, rev string) (string, error)
 	// FetchDefault records the commit remote's default branch is at as ref in the repository at repo.
 	FetchDefault(ctx context.Context, repo, remote, ref string) error
@@ -138,6 +139,11 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 		}
 	}
 	v.Platform = goos + "/" + goarch
+	if v.Revision == "" {
+		// A module-mode build, `go install …@<pseudo-version>`, stamps no vcs.* but names its commit and time in
+		// its version; the module proxy builds from a clean tree, so it is not modified.
+		v.Revision, v.Time = pseudoVersionCommit(info.Main.Version)
+	}
 	if v.Revision == "" || cfgPath == "" {
 		return v
 	}
@@ -168,6 +174,24 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 		}
 	}
 	return v
+}
+
+// pseudoVersion matches a Go pseudo-version in its three forms, vX.0.0-yyyymmddhhmmss-abcdef123456,
+// vX.Y.Z-pre.0.yyyymmddhhmmss-abcdef123456 and vX.Y.(Z+1)-0.yyyymmddhhmmss-abcdef123456, with any build suffix.
+var pseudoVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+-(?:(?:[0-9A-Za-z-]+\.)*0\.)?([0-9]{14})-([0-9a-f]{12})(?:\+[0-9A-Za-z.-]+)?$`)
+
+// pseudoVersionCommit returns the abbreviated commit and, in RFC 3339 UTC, the commit time a Go pseudo-version
+// names; "" for both when version is not one.
+func pseudoVersionCommit(version string) (revision, at string) {
+	m := pseudoVersion.FindStringSubmatch(version)
+	if m == nil {
+		return "", ""
+	}
+	t, err := time.Parse("20060102150405", m[1])
+	if err != nil {
+		return "", ""
+	}
+	return m[2], t.UTC().Format(time.RFC3339)
 }
 
 // buildInfo is the running binary's build information, from the App's BuildInfo, nil being debug.ReadBuildInfo.
@@ -458,7 +482,8 @@ func (v versionInfo) startup(sup startupSupervisor) string {
 	case sup.SHA256 != "" && sup.SHA256 != sup.OwnSHA256:
 		warnings = append(warnings, fmt.Sprintf("this binary is not the one running this session's supervisor (%s %s)", sup.Release, shortSHA(sup.SHA256)))
 	case sup.SHA256 == "" && sup.Release != "" && sup.Release != v.Version:
-		warnings = append(warnings, fmt.Sprintf("this binary is not the one running this session's supervisor (%s)", sup.Release))
+		warnings = append(warnings, fmt.Sprintf("this binary is not the one running this session's supervisor (%s), which predates moving binaries at a reload; "+
+			"run guildhall director stop, then guildhall director start", sup.Release))
 	}
 	if sup.Refused.Reason != "" {
 		warnings = append(warnings, fmt.Sprintf("this session's supervisor refused to move onto guildhall %s at its reload, so it still runs its old binary: %s",
