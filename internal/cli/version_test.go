@@ -170,6 +170,19 @@ func TestVersionForms(t *testing.T) {
 			plain:   first,
 			startup: "guildhall v1.2.3\n",
 			json:    `{"version":"v1.2.3","revision":"","time":"","modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null}`},
+		{name: "tagged module build, no vcs info", git: &fakeVersionGit{}, edit: func(i *debug.BuildInfo) { i.Settings, i.Main.Version = i.Settings[:2], "v1.2.3" },
+			plain:   first,
+			startup: "guildhall v1.2.3\n",
+			json:    `{"version":"v1.2.3","revision":"","time":"","modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null}`},
+		{name: "pseudo-version module build, no vcs info", copy: "git@github.com:ndrwl/guildhall.git",
+			edit: func(i *debug.BuildInfo) {
+				i.Settings, i.Main.Version = i.Settings[:2], "v0.0.0-20261030170552-650231703145"
+			},
+			git:     &fakeVersionGit{subjects: map[string]string{"650231703145": "Move onto a new binary at a reload (#184)"}, behind: []string{"Name the old supervisor (#214)"}},
+			plain:   first + "revision: 650231703145 (2026-10-30T17:05:52Z)\nlatest merge: #184\nbehind main: 1 merge (#214)\n",
+			startup: "guildhall 65023170 #184 2026-10-30, 1 behind main (#214)\nwarning: this binary is 1 merge behind main\n",
+			json: `{"version":"v1.2.3","revision":"650231703145","time":"2026-10-30T17:05:52Z","modified":false,"go_version":"go1.27.2","platform":"linux/amd64",` +
+				`"pr":184,"task":null,"behind_main":{"count":1,"missing_prs":[214],"as_of":"2026-10-28T09:00:00Z"}}`, fetchCalls: 2},
 		{name: "modified build", git: &fakeVersionGit{}, edit: func(i *debug.BuildInfo) { i.Settings[5].Value = "true" },
 			plain:   first + "revision: " + testRevision + " (2026-10-27T21:00:24Z, modified)\n",
 			startup: "guildhall abd97485 2026-10-27, modified\nwarning: this binary was built with uncommitted or untracked files\n",
@@ -252,6 +265,26 @@ func TestVersionForms(t *testing.T) {
 	}
 }
 
+// TestPseudoVersionCommit reads the commit and time from each form of Go pseudo-version, and none from a release.
+func TestPseudoVersionCommit(t *testing.T) {
+	for _, tt := range []struct{ version, revision, time string }{
+		{"v0.0.0-20261030170552-650231703145", "650231703145", "2026-10-30T17:05:52Z"},
+		{"v1.2.3-pre.0.20261030170552-650231703145", "650231703145", "2026-10-30T17:05:52Z"},
+		{"v1.2.4-0.20261030170552-650231703145", "650231703145", "2026-10-30T17:05:52Z"},
+		{"v2.0.0-20261030170552-650231703145+incompatible", "650231703145", "2026-10-30T17:05:52Z"},
+		{"v1.2.3", "", ""},
+		{"v1.2.3-rc.1", "", ""},
+		{"(devel)", "", ""},
+		{"", "", ""},
+		{"v0.0.0-20261330170552-650231703145", "", ""},
+		{"v0.0.0-20261030170552-65023170314", "", ""},
+	} {
+		if rev, at := pseudoVersionCommit(tt.version); rev != tt.revision || at != tt.time {
+			t.Errorf("pseudoVersionCommit(%q) = %q, %q; want %q, %q", tt.version, rev, at, tt.revision, tt.time)
+		}
+	}
+}
+
 // TestVersionCopyFlag reads the copy --copy names, over the copy discovery would find.
 func TestVersionCopyFlag(t *testing.T) {
 	setVersion(t, "v1.2.3")
@@ -268,7 +301,8 @@ func TestVersionSupervisorRelease(t *testing.T) {
 	setVersion(t, "v1.2.3")
 	for _, tt := range []struct{ release, want string }{
 		{"v1.2.3", "guildhall abd97485 2026-10-27\n"},
-		{"v1.2.2", "guildhall abd97485 2026-10-27\nwarning: this binary is not the one running this session's supervisor (v1.2.2)\n"},
+		{"v1.2.2", "guildhall abd97485 2026-10-27\nwarning: this binary is not the one running this session's supervisor (v1.2.2), " +
+			"which predates moving binaries at a reload; run guildhall director stop, then guildhall director start\n"},
 	} {
 		t.Run(tt.release, func(t *testing.T) {
 			dir := versionCopy(t, "git@github.com:example/app.git")

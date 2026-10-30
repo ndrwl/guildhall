@@ -25,6 +25,10 @@ import (
 // "guildhall" runs the CLI, "herdr" answers like a Herdr client.
 const roleEnv = "GUILDHALL_CLI_TEST_ROLE"
 
+// releaseSidecar is the suffix of the file beside a copy of the test binary whose contents are that copy's release
+// when it runs as guildhall. It is keyed to the binary's own path, not to the environment, which survives an exec.
+const releaseSidecar = ".release"
+
 func TestMain(m *testing.M) {
 	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
@@ -34,6 +38,11 @@ func TestMain(m *testing.M) {
 	case "guildhall":
 		if len(os.Args) > 1 && os.Args[1] == runtimeTreeCommand {
 			os.Exit(runRuntimeTree())
+		}
+		if exe, err := os.Executable(); err == nil {
+			if b, err := os.ReadFile(exe + releaseSidecar); err == nil {
+				version = strings.TrimSpace(string(b))
+			}
 		}
 		// As cmd/guildhall assembles it, with an empty release skills root and the release baseline: a launcher's advance installs them.
 		app := New()

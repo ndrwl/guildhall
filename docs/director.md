@@ -417,6 +417,10 @@ Running Artisans are never touched by a reload; they and their resume commands r
 A new binary that passes its pre-flight and then fails after the `exec`, or a signal that arrives between the `exec` and the new image's handling of it, ends the supervisor and gives the pane back to its shell with session `<n>` `stopped` and the reload still requested; the next `director start` applies it.
 On Windows there is no `exec`: a reload always stays on the supervisor's binary.
 
+A session with no `binary_sha256` was recorded by a supervisor from a release before reloads moved binaries (#184), which only ever reloads in its own process and never looks at `PATH`.
+Such a supervisor never moves at a reload, so the first upgrade onto #184 or later takes a `director stop`, then a `director start` from the new binary; a reload alone starts the next session on the old binary, recorded with the old release.
+The status feed's `supervisor_binary` reports such a session with `differs` true and a `summary` saying so, and the new session's `guildhall version --startup` warns of it when the release differs.
+
 `guildhall version --startup` compares its own binary's sha256 with the one the session's supervisor recorded and warns when they differ, even for two `dev` builds; for a supervisor that recorded none it compares releases.
 The status feed's `supervisor_binary` compares the newest session's `binary_sha256` with the `guildhall` on `PATH`: `sha256`, `path`, `path_sha256`, `differs` and a one-line `summary` saying whether a reload would move the supervisor onto another binary.
 

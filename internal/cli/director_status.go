@@ -77,7 +77,8 @@ type directorStatus struct {
 }
 
 // supervisorBinaryStatus is the newest session's supervisor binary beside the guildhall binary on PATH: their
-// sha256 ("" when not recorded or not hashed), whether both are known and differ, and a line saying so.
+// sha256 ("" when not recorded or not hashed), whether a reload would leave the supervisor on another binary than
+// the one on PATH, and a line saying so.
 type supervisorBinaryStatus struct {
 	SHA256     string `json:"sha256"`
 	Path       string `json:"path"`
@@ -98,7 +99,10 @@ func (a *App) supervisorBinaryStatus(d statusSession) *supervisorBinaryStatus {
 	case err != nil:
 		out.Summary = fmt.Sprintf("cannot compare session %d's supervisor binary with the guildhall on PATH: %s", d.Number, oneLine(err.Error()))
 	case d.BinarySHA256 == "":
-		out.Summary = fmt.Sprintf("session %d's supervisor recorded no binary sha256 to compare with the guildhall on PATH", d.Number)
+		// A supervisor from before reloads moved binaries records no sha256, and a reload never moves it.
+		out.Differs = true
+		out.Summary = fmt.Sprintf("session %d's supervisor predates moving binaries at a reload, so a director reload keeps it on its own binary; "+
+			"run director stop, then director start, to move it onto the guildhall on PATH", d.Number)
 	case d.BinarySHA256 != bin.SHA256:
 		out.Differs = true
 		out.Summary = fmt.Sprintf("session %d's supervisor runs guildhall %s, not the guildhall on PATH %s %s; a director reload moves it onto that one",

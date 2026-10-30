@@ -7,7 +7,9 @@ The Guildmaster installs and restarts after batches of merges and wanted to see,
 
 The revision, its commit time and the modified flag come from the `vcs.*` settings Go stamps into every `go build` or `go install` from a git checkout, read with `debug.ReadBuildInfo`.
 No build script, Makefile or linker flag is needed, so a plain `go install ./cmd/guildhall` keeps working, and the release workflow's injected tag still wins in `Version()`, so `doctor` and the session record's `release` do not change.
-A build without `vcs.*`, from the module proxy, with `-buildvcs=false` or from a tree without `.git`, shows the release only.
+A build without `vcs.*` from the module proxy at a pseudo-version, `go install …@v0.0.0-<yyyymmddhhmmss>-<12 hex>`, takes the abbreviated revision and its commit time from that version, so its latest merge and how far it is behind main are still shown: git resolves the 12-digit abbreviation in Guildhall's own repository, and leaves the repository fields empty when it cannot.
+It is never modified, as the module proxy builds from a clean tree; the Go module tooling's own parser, `golang.org/x/mod`, is not a dependency, so a small local pattern reads the three pseudo-version forms.
+Any other build without `vcs.*`, a tagged release from the module proxy, with `-buildvcs=false` or from a tree without `.git`, shows the release only.
 
 `vcs.modified` is what Go reports: on Go 1.27 a checkout whose only changes are untracked files builds as modified, so the flag reads as "modified (uncommitted or untracked files)" and `--startup` words its warning that way.
 

@@ -115,7 +115,7 @@ A run past its bound is ended and is a plain error naming git's command and the 
 
 [`guildhall version`](cli.md#version) reads Guildhall's own repository through three operations:
 
-- `Program.Subject(ctx, repo, rev)` is the subject line of the full commit id `rev` (`git log -1 --format=%s <rev>^{commit}`); an invalid id, a commit the repository lacks and any git failure are errors.
+- `Program.Subject(ctx, repo, rev)` is the subject line of the commit `rev` (`git log -1 --format=%s <rev>^{commit}`), a full commit id or one abbreviated to at least 12 lowercase hex digits, as a Go pseudo-version names it; an invalid or ambiguous id, a commit the repository lacks and any git failure are errors. `Behind` takes `rev` in the same forms.
 - `Program.FetchDefault(ctx, repo, remote, ref)` records the commit `remote`'s default branch is at as `ref` with `git fetch --no-tags --no-write-fetch-head --no-recurse-submodules <remote> +HEAD:<ref>`; `ref` must be under `refs/guildhall/` and `remote` must not be empty or start with `-`, and an unreachable remote, a run past the bound and any git failure are errors that leave `ref` as it was.
 - `Program.Behind(ctx, repo, rev, ref)` is how many first-parent commits `ref` has after `rev` and their subjects, newest first (`git rev-list --count --first-parent` and `git log --first-parent --format=%s` of `rev..ref`), read with no network call; a missing ref, an unknown commit and any git failure are errors.
 
