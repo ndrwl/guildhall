@@ -536,7 +536,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err := a.InstallBaseline(releaseBaseline); err != nil {
 		return interp.Next{}, err
 	}
-	standards, _ := cfg.Setting("standards_revision")
+	standards, _ := cfg.Setting(config.StandardsRevisionKey)
 	var fg interp.Forge = forge.GitHub{}
 	if a.Forge != nil {
 		fg = a.Forge
