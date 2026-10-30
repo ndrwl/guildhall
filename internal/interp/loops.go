@@ -24,6 +24,9 @@ const (
 	// RulingsPort carries the Director's rulings on findings of the previous outcome, as a JSON array of
 	// store.Ruling; a finding the new outcome keeps open (unresolved or disputed) contests its ruling.
 	RulingsPort = "rulings"
+	// ReviewedPort carries, to a Director stage a loop went back to, the document each blocking result it is given
+	// was bound to, such as the document the Guildmaster asked changes to.
+	ReviewedPort = "reviewed"
 )
 
 // changesRequested is the outcome whose loop rules every looping kind but validate follows (loopOutcome).
@@ -105,7 +108,9 @@ func (r *run) boundInputs(b binding) []render.Input {
 }
 
 // extras returns the inputs the engine adds to attempt n of s: for a review step its previous outcome and
-// the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served.
+// the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served; and for a
+// Director stage a loop went back to, its own latest outputs as previous and the document each loop's blocking result
+// was bound to as reviewed, so the stage resumes from them rather than starting over.
 func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 	var out []render.Input
 	if isReview(s) {
@@ -128,8 +133,21 @@ func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 			}
 		}
 	}
-	pending, err := r.pending(s)
-	return append(out, pending...), err
+	pending, reviewed, err := r.unserved(s)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, pending...)
+	if s.Actor() != workflow.DirectorActor || len(pending) == 0 {
+		return out, nil
+	}
+	kind, _ := workflow.LookupKind(s.Type, s.Version)
+	for _, port := range kind.Outputs {
+		if doc, _, err := r.output(s.ID, port.Name); err == nil {
+			out = append(out, render.Input{Port: PreviousPort, Name: doc.Path, SHA256: doc.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path))})
+		}
+	}
+	return append(out, reviewed...), nil
 }
 
 // want is what an outcome of review step s must be bound to, given its current inputs.
@@ -171,7 +189,7 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	}
 	var given []render.Input
 	for _, in := range r.boundInputs(b) {
-		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ResolutionPort {
+		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ReviewedPort && in.Port != ResolutionPort {
 			given = append(given, in)
 		}
 	}
@@ -193,9 +211,16 @@ func (r *run) allowed(s workflow.Step) int {
 // pending returns, as feedback inputs, every allowed firing of a loop back to step t that no attempt of t
 // has served yet, recording a Guildmaster's answer as a document first.
 func (r *run) pending(t workflow.Step) ([]render.Input, error) {
+	out, _, err := r.unserved(t)
+	return out, err
+}
+
+// unserved returns pending's feedback inputs and, when t is a Director stage, the document each loop's blocking
+// result among them was bound to, as reviewed inputs, once per document.
+func (r *run) unserved(t workflow.Step) (feedback, reviewed []render.Input, err error) {
 	out, err := r.sentBackFeedback(t)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, s := range r.def.Steps {
 		if rule, ok := s.On[loopOutcome(s)]; !ok || rule.Goto != t.ID {
@@ -203,31 +228,80 @@ func (r *run) pending(t workflow.Step) ([]render.Input, error) {
 		}
 		fs, err := r.firings(s)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for i, f := range fs[:min(len(fs), r.allowed(s))] {
 			if dispute, err := r.held(s, i+1, f); err != nil || dispute != "" {
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				continue
 			}
 			if done, err := r.served(t.ID, f); err != nil || done {
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				continue
 			}
 			if f.answer != nil && r.document(f.answer.ID+"-answer") == nil {
 				doc := store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: f.answer.ID + "-answer", Path: f.path, SHA256: f.sha256}
 				if err := r.put(doc, []byte(f.answer.Answer)); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			out = append(out, render.Input{Port: FeedbackPort, Name: f.path, SHA256: f.sha256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(f.path))})
+			if t.Actor() != workflow.DirectorActor {
+				continue
+			}
+			in, ok, err := r.reviewedInput(s, f)
+			if err != nil {
+				return nil, nil, err
+			}
+			if ok && !slices.Contains(reviewed, in) {
+				reviewed = append(reviewed, in)
+			}
 		}
 	}
-	return out, nil
+	return out, reviewed, nil
+}
+
+// reviewedInput returns, as a reviewed input, the document firing f of step s was bound to: the subject of a
+// Guildmaster's decision or of an Artisan's review outcome. ok is false when it was bound to no document, as a code
+// review is bound to a head.
+func (r *run) reviewedInput(s workflow.Step, f firing) (render.Input, bool, error) {
+	var want string
+	if f.answer != nil {
+		if f.answer.Subject == nil || f.answer.Subject.Kind != store.SubjectDocument {
+			return render.Input{}, false, nil
+		}
+		want = f.answer.Subject.Digest
+	} else {
+		o, err := r.outcome(s.ID, f.round)
+		if err != nil || o == nil {
+			return render.Input{}, false, err
+		}
+		want = o.Revisions.Subject.DocumentDigest
+	}
+	if want == "" {
+		return render.Input{}, false, nil
+	}
+	is := func(sha256 string) bool {
+		d, err := digest.ParseHex(sha256)
+		return err == nil && string(d) == want
+	}
+	// The step's subject input is the document it was asked about, unless that has moved on since.
+	if sp, ok := subjectPorts[s.Type]; ok {
+		if in, err := r.input(s, sp.port); err == nil && is(in.SHA256) {
+			in.Port = ReviewedPort
+			return in, true, nil
+		}
+	}
+	for _, d := range r.documents {
+		if is(d.SHA256) {
+			return render.Input{Port: ReviewedPort, Name: d.Path, SHA256: d.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(d.Path))}, true, nil
+		}
+	}
+	return render.Input{}, false, fmt.Errorf("round %d of step %s was bound to document %s, which is not recorded", f.round, s.ID, want)
 }
 
 // reviewed completes an Artisan review step whose latest attempt n succeeded, unless its outcome blocks.
@@ -281,8 +355,9 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 	if k > r.allowed(s) {
 		return r.exit(s, k, subject, "")
 	}
+	// The target runs again as an attempt: an Artisan step, or a Director stage handed to the Director.
 	i := slices.IndexFunc(r.def.Steps, func(t workflow.Step) bool { return t.ID == rule.Goto })
-	if actor := r.def.Steps[i].Actor(); actor != workflow.ArtisanActor {
+	if actor := r.def.Steps[i].Actor(); actor != workflow.ArtisanActor && actor != workflow.DirectorActor {
 		return false, Next{}, fmt.Errorf("%w: loops back to steps run by the %s", ErrUnsupported, actor)
 	}
 	done, err := r.served(rule.Goto, fs[k-1])
