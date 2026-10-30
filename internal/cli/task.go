@@ -36,14 +36,9 @@ var taskUsage = `usage:
   guildhall task reconcile --store <path> --config <director.toml> --state <dir> --repo <id> <task>
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
   guildhall task context add|list ... (guildhall task context for its usage)
-<<<<<<< a6992388274f2c14859a9aadb17e92d3380013e6
+  guildhall task design --repo <id> --task <id> --brief <file|-> ... (guildhall task design --help for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
 the copy's director.store, config.toml and state
-=======
-  guildhall task design --repo <id> --task <id> --brief <file|-> ... (guildhall task design --help for its usage)
---copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
-config.toml and state
->>>>>>> 8226164995d9379a68abe2f2db0469ea22e5c0e1
 --title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
 from a file or - for standard input
 --kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
