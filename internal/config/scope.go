@@ -27,6 +27,47 @@ const StandardsRevisionKey = "standards_revision"
 // than a setting; WithTaskOverrides leaves step keys to the workflow.
 const StepKeyPrefix = "step."
 
+// MergeRequiresKeyPrefix starts a task override of one merge requirement, such as merge.requires.ci_green, which may
+// only turn that [repository.merge.requires] key on (docs/configuration.md#setting-scopes); repository. before it is
+// an alias. MergeRequires.WithTaskOverrides applies these; WithTaskOverrides leaves them out of Local.
+const MergeRequiresKeyPrefix = "merge.requires."
+
+// mergeRequirements names each [repository.merge.requires] key, in its documented order, with its field.
+var mergeRequirements = []struct {
+	name  string
+	field func(*MergeRequires) **bool
+}{
+	{"guildmaster_approval", func(m *MergeRequires) **bool { return &m.GuildmasterApproval }},
+	{"artisan_approval", func(m *MergeRequires) **bool { return &m.ArtisanApproval }},
+	{"ci_green", func(m *MergeRequires) **bool { return &m.CIGreen }},
+	{"nothing_open", func(m *MergeRequires) **bool { return &m.NothingOpen }},
+}
+
+// mergeRequiresOverride returns the requirement name a merge-requires override key names, under either spelling, and
+// whether key is one; the name may be one no requirement has.
+func mergeRequiresOverride(key string) (string, bool) {
+	return strings.CutPrefix(strings.TrimPrefix(key, "repository."), MergeRequiresKeyPrefix)
+}
+
+// mergeRequiresRefusal reports why the merge-requires override name = value cannot apply, or nil: only true, for a
+// requirement that exists, may be set, so a task can make its merge requirements stricter and never looser.
+func mergeRequiresRefusal(name, value string) error {
+	known := make([]string, len(mergeRequirements))
+	for i, r := range mergeRequirements {
+		known[i] = r.name
+	}
+	key := MergeRequiresKeyPrefix + name
+	switch {
+	case !slices.Contains(known, name):
+		return fmt.Errorf("`%s`: unknown merge requirement %q; want one of %s", key, name, strings.Join(known, ", "))
+	case value == "false":
+		return fmt.Errorf("`%s`: a task override may only make merge requirements stricter; it cannot turn one off", key)
+	case value != "true":
+		return fmt.Errorf("`%s` = %q is not a boolean; a task override may only set it to true", key, value)
+	}
+	return nil
+}
+
 // ErrNotTaskOverridable reports a key a task override may not name: a machine-wide setting, a key kept out on
 // purpose, or one pinned by a managed setting that is not overridable.
 var ErrNotTaskOverridable = errors.New("not overridable per task")
@@ -130,7 +171,11 @@ func SettingScope(key string) (Scope, bool) {
 
 // taskOverrideRefusal reports why key = value cannot override a setting for one task under c, judged on its own:
 // an excluded, unknown, machine-wide or pinned key, or a value its check refuses. It is nil if the override applies.
+// A merge-requires key is judged by mergeRequiresRefusal, before the rest of [repository.merge] is kept out.
 func (c *Config) taskOverrideRefusal(key, value string) error {
+	if name, ok := mergeRequiresOverride(key); ok {
+		return mergeRequiresRefusal(name, value)
+	}
 	for _, e := range excludedRegistry {
 		if slices.Contains(e.keys, key) || slices.ContainsFunc(e.prefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
 			return fmt.Errorf("%s is %w", e.name, ErrNotTaskOverridable)
@@ -181,7 +226,8 @@ type Skipped struct {
 // WithTaskOverrides returns a copy of c whose effective settings take the task's overrides, key to value, first:
 // each goes into the copy's Local, so precedence is task override, then local, then managed, and a managed key that
 // is not overridable still wins. It never mutates c; the copy shares c's other maps, which callers must not change.
-// Step keys are left to the workflow. An override that does not apply now, because its key is unknown, machine-wide,
+// Step keys are left to the workflow, and merge-requires keys to MergeRequires.WithTaskOverrides, which reports their
+// skips. An override that does not apply now, because its key is unknown, machine-wide,
 // excluded or pinned, its value fails its check, or it leaves the config invalid beside the others, is skipped with
 // its reason rather than failing, so a later change to the copy's config cannot wedge a task. The error is for an
 // invalid c.
@@ -192,7 +238,7 @@ func (c *Config) WithTaskOverrides(overrides map[string]string) (*Config, []Skip
 	var skipped []Skipped
 	var apply []string
 	for _, key := range slices.Sorted(maps.Keys(overrides)) {
-		if strings.HasPrefix(key, StepKeyPrefix) {
+		if _, merge := mergeRequiresOverride(key); merge || strings.HasPrefix(key, StepKeyPrefix) {
 			continue
 		}
 		if err := c.taskOverrideRefusal(key, overrides[key]); err != nil {
@@ -226,6 +272,40 @@ func (c *Config) WithTaskOverrides(overrides map[string]string) (*Config, []Skip
 		kept = append(kept, key)
 	}
 	return with(kept), sortSkipped(skipped), nil
+}
+
+// WithTaskOverrides returns a copy of m with a task's merge-requires overrides applied, the requirements they added,
+// those that were off in m, in documented order, and each override that does not apply, in key order. It reads all of
+// a task's overrides, ignoring keys that are not merge-requires keys. Only true applies, so the copy is never looser
+// than m: a recorded false or other value is skipped with its reason whatever the CLI checked, and true on a
+// requirement m already has is a silent no-op. It never mutates m.
+func (m MergeRequires) WithTaskOverrides(overrides map[string]string) (MergeRequires, []string, []Skipped) {
+	set := map[string]bool{}
+	var skipped []Skipped
+	for _, key := range slices.Sorted(maps.Keys(overrides)) {
+		name, ok := mergeRequiresOverride(key)
+		if !ok {
+			continue
+		}
+		if err := mergeRequiresRefusal(name, overrides[key]); err != nil {
+			skipped = append(skipped, Skipped{Key: key, Value: overrides[key], Reason: err.Error()})
+			continue
+		}
+		set[name] = true
+	}
+	out := m
+	var added []string
+	for _, r := range mergeRequirements {
+		if !set[r.name] {
+			continue
+		}
+		on := true
+		*r.field(&out) = &on
+		if was := *r.field(&m); was != nil && !*was {
+			added = append(added, r.name)
+		}
+	}
+	return out, added, skipped
 }
 
 func sortSkipped(s []Skipped) []Skipped {

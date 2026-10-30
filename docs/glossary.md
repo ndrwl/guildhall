@@ -99,6 +99,7 @@ A finished outcome without a readable result is refused, not guessed.
 - A **machine-wide setting** is read for the whole copy, outside any one task, such as `lock_wait` or `max_running_attempts`; no task can override it.
   Avoid "global setting", which reads as a managed one.
 - A setting's **effective value** for a task is its task override, if one applies, else its local value, else its managed value, a managed key that is not overridable always winning.
+- A **merge-requires override**, `merge.requires.<key> = true`, is the one task override of `[repository.merge]`: it turns a [merge requirement](configuration.md#merge-requirements) on for one task and can never turn one off, so it makes a task's merge requirements only stricter.
 
 ## Merge queue
 

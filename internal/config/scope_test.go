@@ -233,7 +233,7 @@ func TestCheckTaskOverride(t *testing.T) {
 		{LockWaitKey, "5m", "`lock_wait` is machine-wide; it cannot be overridden per task"},
 		{StandardsRevisionKey, "standards-2", "machine-wide"},
 		{"claude_skills_profile_builder", `{"preset":"builder-v1"}`, "machine-wide"},
-		{"repository.merge.requires.guildmaster_approval", "false", "`[repository.merge]` is not overridable per task"},
+		{"repository.merge.requires.guildmaster_approval", "false", "may only make merge requirements stricter"},
 		{"merge.reapprove_after_rebase", "never", "`[repository.merge]` is not overridable per task"},
 		{"director.idle_after", "1m", "`[director]` is not overridable per task"},
 		{"owner_machine", "other", "repository identity is not overridable per task"},

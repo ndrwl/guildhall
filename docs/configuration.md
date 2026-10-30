@@ -66,6 +66,10 @@ Every setting Guildhall reads is declared once, in `config`'s setting registry, 
 A **task-scoped** setting is one Guildhall reads while running a particular task, so a task override may replace it for that task.
 A **machine-wide** setting is read for the whole copy, outside any one task, so no task can override it: the Director session's supervisor, guard rails, locks, Herdr, prune, wakes, the Claude skill policies, which the Claude wrapper re-reads at launch, and `standards_revision`, which binds reviews.
 `[repository.merge]` and all its keys, including the rebase settings, `[director]` and a repository's identity (`id`, `path`, `remote`, `owner_machine`) are not settings and are never overridable per task either.
+The one exception is a [merge requirement](#merge-requirements): a task override `merge.requires.<key> = true`, for `guildmaster_approval`, `artisan_approval`, `ci_green` or `nothing_open`, turns that requirement on for the task, and `repository.merge.requires.<key>` is the same key.
+Only `true` is accepted, so a task can make its merge requirements stricter and never looser: `false` is refused even where the repository already has the requirement off, as are any other value and an unknown requirement, and the rest of `[repository.merge]` stays kept out.
+No managed setting is a merge requirement, so a task cannot loosen a managed one either.
+`config.MergeRequires.WithTaskOverrides` applies a task's merge-requires overrides to a repository's requirements and returns those it added, ones the repository had off; `true` on a requirement already on changes nothing, and a recorded `false` or other value is skipped with its reason, never applied.
 
 `config.WithTaskOverrides` gives a copy of a config whose task-scoped settings take a task's overrides first: task override, then local, then managed, where a managed key that is not `overridable = true` still wins.
 It never changes the config it is given.
@@ -196,7 +200,7 @@ A string such as `"true"`, an unknown key and the removed merge policy key are r
   `artisan_approval`, `ci_green` and `nothing_open` keep their own settings.
 
 Turning a requirement off changes only what deliver demands, not which steps a workflow must have.
-No workflow can change a repository's merge requirements.
+No workflow can change a repository's merge requirements, and a [task override](#setting-scopes) can only add requirements.
 
 #### Rebase settings
 
