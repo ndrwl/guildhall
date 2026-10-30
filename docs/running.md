@@ -200,7 +200,7 @@ A task is prunable only when all of these hold, and is otherwise listed as skipp
 
 - it is `done` or `cancelled` and its close is at least `prune_after` ago (`too recent`);
 - no `open` task names it in `depends_on` (`open dependant`);
-- it has no open `audit` decision, one neither answered nor void (`audit ... open`);
+- it has no open `audit` decision, one neither answered nor void (`audit ... open`); no close opens one any more, but one an earlier release opened still holds its task until answered ([decision](decisions/retire-quality-audit.md));
 - no `self-review-<n>.json` under `<copy>/quality/<repo>/<task>/` has a criterion still pending its judge, or cannot be read (`self-review ... pending`);
 - it has no unfinished attempt, judge attempts included, and no unreleased ownership record;
 - its repository is in the config, whose `path` the worktree belongs to;

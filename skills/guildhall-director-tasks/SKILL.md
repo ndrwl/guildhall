@@ -95,10 +95,8 @@ Merging is answering the merge decision, `deliver-<round>`, whose question names
 When the Guildmaster says to merge, answer `merge`; when they want to wait or change something, answer `hold` with their words, then give the change as work.
 The repository's merge requirements and the forge's protection always apply, and a required review approval or CI pass is never merged over: a refused merge comes back as a `merge-refused` message with the forge's reason, and `guildhall-director-inbox` handles it.
 
-## Audits
+## The judge
 
-An `audit` decision is the Guildmaster's three-question audit of a task that has already merged, opened for a sample of delivered tasks independently of self-review: `quality_audit_sample` defaults to 5, 0 disables audits, and 1 audits every task.
-Put its three questions to them as asked, record `yes` or `no` to the first as the answer's first line and their words on the other two as the note, and do not run `task start` afterwards: the task is done and the answer only records their view.
 When they ask for a merged task to be judged, run `guildhall-self-review` for it, which ends by starting the judge with `guildhall quality judge`; never judge a task yourself.
 When they ask how far the judge can be trusted, run `guildhall quality agreement` and tell them how many audited tasks the judge also judged and how often it agreed, overall and when its family was separate.
 

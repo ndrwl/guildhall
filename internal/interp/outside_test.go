@@ -36,7 +36,7 @@ func (r *retireRecorder) Retire(_ context.Context, rt git.Retirement) ([]string,
 }
 
 // wantMergedOutside checks the records of task t7 closed by the outside-merge rule for pull request 1 merged at
-// forgeHead after Guildhall recorded recorded, and that no decision but an audit is left open.
+// forgeHead after Guildhall recorded recorded, and that no decision is left open and none is an audit.
 func (e *env) wantMergedOutside(t *testing.T, f *forgetest.Fake, forgeHead, recorded string) {
 	t.Helper()
 	url := f.PullRequests(repoRemote)[0].URL
@@ -56,8 +56,11 @@ func (e *env) wantMergedOutside(t *testing.T, f *forgetest.Fake, forgeHead, reco
 		t.Fatal(err)
 	}
 	for _, d := range ds {
-		if d.Open() && d.ID != "audit" {
+		if d.Open() {
 			t.Errorf("decision %s is still open", d.ID)
+		}
+		if d.Kind == store.DecisionAudit {
+			t.Errorf("decision %s is an audit", d.ID)
 		}
 		if d.Void && d.VoidReason != "Task done: pull request "+url+" merged outside Guildhall" {
 			t.Errorf("decision %s void reason = %q", d.ID, d.VoidReason)
@@ -328,10 +331,10 @@ func (c *crashAfter) Send(to store.Recipient, m messaging.Envelope) (store.Recei
 }
 
 // TestMergedOutsideReplay: a crash just after each write of the rule replays, at the next advance, to the same records:
-// one outside-1-merge, one merged message, the merge decision voided and the sampled audit left open.
+// one outside-1-merge, one merged message and the merge decision voided, with no audit even at quality_audit_sample 1.
 func TestMergedOutsideReplay(t *testing.T) {
 	for _, b := range backends {
-		for _, op := range []string{"document:outside-1-merge", "void:deliver-1", "message:app.t7.merged.outside.1", "decision:audit", "state"} {
+		for _, op := range []string{"document:outside-1-merge", "void:deliver-1", "message:app.t7.merged.outside.1", "state"} {
 			t.Run(b.name+"/"+op, func(t *testing.T) {
 				e, f := newPublishEnv(t, b)
 				e.eng.Config.Local = auditEveryTask
@@ -361,9 +364,7 @@ func TestMergedOutsideReplay(t *testing.T) {
 				if !slices.Equal(merged, []string{"app.t7.merged.outside.1"}) {
 					t.Errorf("merged messages = %q, want one", merged)
 				}
-				if d := e.decision(t, "audit"); !d.Open() {
-					t.Errorf("audit = %+v, want it open", d)
-				}
+				e.wantNoAudit(t)
 				if d := e.decision(t, "deliver-1"); !d.Void {
 					t.Errorf("deliver-1 = %+v, want it voided", d)
 				}

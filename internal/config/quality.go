@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,8 +15,9 @@ import (
 // docs/quality.md on or off and size them. They are settings read through Setting, so a Steward's managed value is
 // read-only to the Director and a standalone copy sets them under [local]. Every practice is optional.
 // The self-review switch and the size budget are read by the guildhall-self-review skill through director status,
-// the audit sample by deliver through Audits, and the judge settings by the judge session through Judge
-// (docs/decisions/quality-judge.md); the reference-run and skill-edit settings are parsed and validated for later work.
+// and the judge settings by the judge session through Judge (docs/decisions/quality-judge.md); the reference-run and
+// skill-edit settings are parsed and validated for later work, and the deprecated audit sample is parsed and validated
+// but read by nothing.
 const (
 	// QualitySelfReviewKey switches the guildhall-self-review skill after each delivered task: "on" or "off".
 	QualitySelfReviewKey = "quality_self_review"
@@ -26,8 +25,8 @@ const (
 	// flagged, never blocked; "0" turns that half of the flag off.
 	QualitySizeBudgetLinesKey = "quality_size_budget_lines"
 	QualitySizeBudgetFilesKey = "quality_size_budget_files"
-	// QualityAuditSampleKey queues one in this many delivered tasks for the Guildmaster's audit;
-	// "0" turns it off.
+	// QualityAuditSampleKey is deprecated and has no effect (Deprecations): it once queued one in this many delivered
+	// tasks for the Guildmaster's audit. It is still parsed, so a config that sets it loads with its digest unchanged.
 	QualityAuditSampleKey = "quality_audit_sample"
 	// QualityReferenceRunsKey chooses when the reference set runs on a real model: "off" or "on-change-and-release".
 	QualityReferenceRunsKey = "quality_reference_runs"
@@ -55,8 +54,8 @@ const (
 	ReferenceRunsOnChangeAndRelease ReferenceRuns = "on-change-and-release"
 )
 
-// The defaults of a config that sets no quality setting: self-review off, the 400-line or 15-file budget, one in
-// five tasks audited, reference runs off at three per task, a judge of a separate family when quota allows, and
+// The defaults of a config that sets no quality setting: self-review off, the 400-line or 15-file budget, an audit
+// sample of five that has no effect, reference runs off at three per task, a judge of a separate family when quota allows, and
 // skill edits needing approval.
 const (
 	DefaultQualitySelfReview             = false
@@ -74,7 +73,8 @@ type Quality struct {
 	SelfReview      bool `json:"self_review"`
 	SizeBudgetLines int  `json:"size_budget_lines"`
 	SizeBudgetFiles int  `json:"size_budget_files"`
-	// AuditSample is N in "one in N delivered tasks"; 0 is off.
+	// AuditSample is the deprecated quality_audit_sample as parsed; it has no effect, and stays in the status feed so
+	// its shape does not change.
 	AuditSample          int           `json:"audit_sample"`
 	ReferenceRuns        ReferenceRuns `json:"reference_runs"`
 	ReferenceRunsPerTask int           `json:"reference_runs_per_task"`
@@ -112,16 +112,21 @@ func (c *Config) Quality() (Quality, error) {
 	return q, nil
 }
 
-// Audits reports whether the delivered task repository/task is sampled for the Guildmaster's audit.
-// Sampling depends only on task identity so retries need no counter and choose the same task;
-// docs/contracts/config.md owns the sampling contract.
-func (q Quality) Audits(repository, task string) bool {
-	if q.AuditSample == 0 {
-		return false
+// Deprecations returns one warning for each deprecated setting the managed or local section sets, which Parse
+// still accepts: today only quality_audit_sample, which has no effect since the Guildmaster's audit was retired.
+func (c *Config) Deprecations() []string {
+	var warnings []string
+	if _, ok := c.Managed[QualityAuditSampleKey]; ok {
+		warnings = append(warnings, "managed "+auditSampleDeprecated)
 	}
-	sum := sha256.Sum256([]byte(repository + "/" + task))
-	return binary.BigEndian.Uint64(sum[:8])%uint64(q.AuditSample) == 0
+	if _, ok := c.Local[QualityAuditSampleKey]; ok {
+		warnings = append(warnings, "local "+auditSampleDeprecated)
+	}
+	return warnings
 }
+
+// auditSampleDeprecated is the deprecation warning for quality_audit_sample.
+const auditSampleDeprecated = QualityAuditSampleKey + " is deprecated and has no effect: no task is audited any more; the Director's periodic retrospective, [director] retrospective_after_merges, replaces it"
 
 // qualitySettings parses each quality setting's value into its field of Quality.
 var qualitySettings = []struct {

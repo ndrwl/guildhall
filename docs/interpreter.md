@@ -97,7 +97,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | `review` | `review` | The code head on the `head` input |
 | `deliver` | `merge` | The code head on the `head` input |
 | loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
-| `audit`, after a sampled merge | `audit` | The head that merged |
+| `audit`, after a sampled merge, opened only by releases before the audit was retired | `audit` | The head that merged |
 
 Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
 Every Artisan attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails), and a Director stage's through `Records.StartDirectorAttempt`, held but never capped or queued.
@@ -263,7 +263,8 @@ A `hold` answer merges nothing: the task waits for the Director (`director`, nam
 A `merge` answer, or a merge Guildhall authorized, once the task holds the front of the merge queue and its pull request is clear, calls `Forge.Merge` for the recorded remote and pull request number at the head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
 A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
 When the forge merges, the engine records `<merge>-merge` (`tasks/<repo>/<task>/<merge>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<merge>`, type `merged`, saying "(decision <merge>)" or "(merged by Guildhall, <merge>-authorized)", [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
-Before marking it `done`, when `quality_audit_sample` (default 5, 0 off, 1 every task), independently of self-review, [samples](configuration.md#quality-settings) the task for the Guildmaster's audit ([G4](quality.md#honesty-and-evidence-g)), it opens decision `audit`, kind `audit`, bound to the head that merged and naming the pull request, with options `yes` and `no` for its first question, and sends it to the Director like every decision; the wait is still `done`, and answering it records the answer only.
+It opens no decision as it closes the task: the Guildmaster's `audit` ([G4](quality.md#honesty-and-evidence-g)) is retired, and the deprecated `quality_audit_sample` has no effect ([decision](decisions/retire-quality-audit.md)).
+An `audit` decision an earlier release opened stays open and answerable after the task is done, and answering it records the answer only.
 A later advance of a done task is refused with `ErrTaskClosed`.
 
 When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is merged.

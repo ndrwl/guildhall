@@ -17,9 +17,9 @@ Every criterion names who judges it:
 
 - `script`: deterministic, with no model call, runnable in CI or by the [`guildhall-self-review`](../skills/guildhall-self-review/SKILL.md) skill.
 - `model`: a fresh [judge session](#running-it), neither the builder nor the Director, quoting its evidence.
-- `Guildmaster`: a sampled human audit.
+- `Guildmaster`: a human judgement; the sampled per-task audit that calibrated the judge has ended ([decision](decisions/retire-quality-audit.md)).
 
-Script facts outrank executed tests and CI, which outrank the model judge, which the Guildmaster audit calibrates.
+Script facts outrank executed tests and CI, which outrank the model judge, whose human calibration by the Guildmaster's audit has ended (G4).
 A model score contradicted by a script fact is wrong.
 
 ## Strength
@@ -39,7 +39,7 @@ Code review finds fewer defects than people expect; its main products are unders
 Small changes are reviewed better: defects found per line fall as a change grows past a few hundred lines (SmartBear and Cisco 2006; Google's small-changes guidance).
 Studies of AI-written code in 2025 found more duplication, less refactoring, more review findings and insecure choices in about 45% of tasks, so this rubric weights duplication, scope, insecure defaults and stability after merge above what a human-team rubric would.
 Model judges agree with humans about 80% of the time but favour the first answer, longer answers and possibly their own, and miss real bugs when they judge code without running it (Zheng and colleagues 2023; Wang and colleagues 2025).
-So scripts and executed tests decide facts, a model grades only what needs judgement and quotes its evidence, the Director never grades its own task, and a Guildmaster audit measures the judge's drift.
+So scripts and executed tests decide facts, a model grades only what needs judgement and quotes its evidence, the Director never grades its own task, and a Guildmaster audit measured the judge's drift until it was retired (G4).
 Every delivery metric can be gamed once it becomes a target, so trends are paired with a counter-metric and never become per-task targets (DORA 2023; SPACE 2021).
 
 ## Records
@@ -85,7 +85,7 @@ The criteria read these records:
 - Source: Google's small-changes guidance (Practitioner); GitClear's measured decline in refactoring (Moderate).
 - Guildhall today: S6 and the contract-TDD rule that refactoring belongs to review.
 
-**A4 Right questions to the Guildmaster** (score; model, Guildmaster audit).
+**A4 Right questions to the Guildmaster** (score; model, and the Guildmaster audit until it was retired: that source gets no new data, G4).
 
 - Decisions opened for the Guildmaster are ones the repository, the docs and the task could not settle, each carries a recommended answer, nothing is asked that a file answers, and no product choice is settled silently.
 - Look at: the grill notes' settled points and questions, the timeline's `decisions` with `wait_seconds`, and whether the Guildmaster took the recommendation or corrected the premise.
@@ -321,7 +321,7 @@ The criteria read these records:
 
 ### Honesty and evidence (G)
 
-**G1 Claims match evidence** (gate; model, Guildmaster audit).
+**G1 Claims match evidence** (gate; model, and the Guildmaster audit until it was retired: that source gets no new data, G4).
 
 - Nothing is described as supported, tested or verified beyond what the recorded runs show, a check that could not run is missing evidence rather than a pass, and platform claims follow R1.27 and R1.30.
 - Look at: the pull request body and result files against the checks listed.
@@ -349,9 +349,9 @@ The criteria read these records:
 
 - For a sample of delivered tasks the Guildmaster answers three questions in under two minutes: would you have merged this as is, was anything asked that should not have been, and was anything decided that should have been asked.
 - Agreement between the model judge's scores and these answers is tracked, with the judge's consistency when the order of a pair is swapped.
-- The sample is one in `quality_audit_sample` delivered tasks, five by default, plus every reference run.
+- The sample was one in `quality_audit_sample` delivered tasks, five by default; the setting is now deprecated and has no effect.
 - Source: Zheng and colleagues 2023 (Strong); Wang and colleagues 2025 on code judges (Moderate).
-- Guildhall today: independently of `quality_self_review`, deliver opens the `audit` decision, bound to the head that merged, for each sampled task as it closes ([interpreter](interpreter.md#publish-and-deliver)); the answer's first line is `yes` or `no` to the first question and the note holds the other two; `guildhall quality agreement` counts how often the judge's yes or no to the same question matches it, overall and by whether the judge's family was separate; position-swap consistency is not yet computed, because only reference evaluations compare pairs, and reference runs are not yet sampled because they do not exist yet; it is the only criterion that needs the Guildmaster on a schedule.
+- Guildhall today: the human calibration of the judge has ended. Asked as each task closed, the audit wanted a memory of how the work went that the Guildmaster no longer had, so no close opens an `audit` decision any more and G4 gets no new data ([decision](decisions/retire-quality-audit.md)). An audit already recorded stays answerable, its answer's first line `yes` or `no` to the first question and its note the other two, and `guildhall quality agreement` still counts how often the judge's yes or no to the same question matches those answers, overall and by whether the judge's family was separate; position-swap consistency was never computed.
 
 ### Process efficiency and Director judgement (H)
 
@@ -367,7 +367,7 @@ The criteria read these records:
 
 - Decisions per task are recorded, with the share answered with the recommendation, the share the Guildmaster marked unnecessary in the G4 audit, and the wait per decision.
 - Source: SPACE's collaboration dimension (Moderate); keeping the Guildmaster in charge without babysitting (project).
-- Guildhall today: the timeline's `wait_seconds`.
+- Guildhall today: the timeline's `wait_seconds`; the share marked unnecessary gets no new data since the G4 audit was retired, and the Director's periodic retrospective does not feed it.
 
 **H3 Recovery handled** (gate; script).
 
@@ -420,7 +420,7 @@ For interrupted judges, unlaunched preparations and attempts awaiting intake, fo
 When the judge's attempt ends, its launcher runs `guildhall quality judged`, which records an accepted `judgement.json` as the task document `quality-judge-<n>-judgement` and tells the Director with a `judgement` message, or tells it `judge-failed` or `judgement-refused` and records nothing; the task stays done.
 The skill then copies the judge's scores into the self-review with `judge: model`.
 The self-review is for learning and for evaluating workflow changes; it never re-gates a merged task.
-Independently of self-review, deliver opens the Guildmaster's `audit` decision for one in `quality_audit_sample` delivered tasks, chosen by the task's identity; the default is 5, 0 disables audits, and 1 audits every task ([decision](decisions/0087-quality-audit.md)).
+No task is audited any more: deliver opened the Guildmaster's `audit` decision for one in `quality_audit_sample` delivered tasks until the audit was retired, and that setting is now deprecated and has no effect ([decision](decisions/retire-quality-audit.md)).
 A task created with `guildhall task new --fixes <repository>/<task>` carries "Fixes a defect introduced by task `<repository>/<task>`." in its pull request body, the line rework (C5) and change failure (E2) count from.
 The lesson-proposal shape that applies `quality_skill_edits_need_approval`, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
 

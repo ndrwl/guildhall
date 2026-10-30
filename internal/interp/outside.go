@@ -89,7 +89,7 @@ func (r *run) outsideMerge() (*pullRequestDoc, error) {
 // mergedOutside is the outside-merge rule (docs/tasks.md#merged-outside-guildhall). A task deliver has not merged, with
 // no -merge document, one of whose recorded pull requests the forge now reports merged, at any head, landed outside
 // Guildhall: the rule records that pull request as outside-<number>-merge, voids the task's open decisions, sends the
-// Director a merged message, retires the worktree at the forge's head, opens the sampled audit, takes the task out of
+// Director a merged message, retires the worktree at the forge's head, takes the task out of
 // the merge queue, releasing its front and clearing its merge hold, and closes it done. A pull request only closed
 // never counts. Every write's id is keyed on the pull request, so a run that fails part-way is finished by the next,
 // from the recorded pull request alone. Without a reader on the forge, or with no pull request merged, it does nothing.
@@ -216,7 +216,7 @@ func (r *run) closeMergedOutside(pr *pullRequestDoc) (Next, error) {
 	if err != nil {
 		return Next{}, err
 	}
-	// The audit is opened below, and a replay after it must not void it.
+	// An audit an earlier release opened before a close that failed stays answerable, so it is not voided.
 	for _, d := range r.decisions {
 		if !d.Open() || d.ID == auditDecision {
 			continue
@@ -243,9 +243,6 @@ func (r *run) closeMergedOutside(pr *pullRequestDoc) (Next, error) {
 		return Next{}, err
 	}
 	s := r.closingStep()
-	if err := r.audit(s, pr.Head, pr); err != nil {
-		return Next{}, err
-	}
 	if err := r.leave("merged:"+id, false); err != nil {
 		return Next{}, err
 	}

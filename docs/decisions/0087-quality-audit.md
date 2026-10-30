@@ -1,5 +1,7 @@
 # D87. Deliver opens the Guildmaster's audit of a sampled task
 
+Superseded by [retiring the Guildmaster's audit](retire-quality-audit.md): no close opens an audit any more, `quality_audit_sample` is deprecated and has no effect, and audits already recorded stay answerable and are still counted by `quality agreement`.
+
 The Guildmaster accepted a three-question audit of one in five delivered tasks, behind configuration, so the model judge's drift is measured rather than assumed ([G4](../quality.md#honesty-and-evidence-g)).
 This change gives it a decision kind and opens it.
 
