@@ -196,6 +196,19 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	closes := &workspaceCloseWatch{every: workspaceCloseEvery, round: sweep.run}
 	closes.tick(time.Now())
 	defer closes.wait()
+	// With prune_daily on, the session prunes at its start when the copy's last prune was a day ago or more, and
+	// then once a day, off the decision path; the session's end waits for a running prune.
+	daily, err := a.dailyPrune(p.cfg, copyDir)
+	if err != nil {
+		return a.fail(fmt.Errorf("director start: %w", err)), false
+	}
+	var prunes *workspaceCloseWatch
+	if daily != nil {
+		daily.p.storePath, daily.p.state = storePath, state
+		prunes = &workspaceCloseWatch{every: pruneDailyEvery, round: daily.run}
+		prunes.tick(time.Now())
+		defer prunes.wait()
+	}
 	status, err := readDirectorStatus(context.Background(), storePath, state, a.Now)
 	if err != nil {
 		return a.fail(fmt.Errorf("director start: in-flight snapshot: %w", err)), false
@@ -311,7 +324,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, state: state, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
 		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, starts: starts, closes: closes,
-		quiet: quiet, maxDelay: maxDelay}
+		prunes: prunes, quiet: quiet, maxDelay: maxDelay}
 	if ep != nil {
 		w.turns = ep.Turns()
 		// A session that is not typed into is woken through its waiter, with the notice in its pane while none is
@@ -447,6 +460,8 @@ type sessionWatch struct {
 	starts *checksWatch
 	// closes is the session's workspace close sweep, ticked at every poll; nil without one.
 	closes *workspaceCloseWatch
+	// prunes is the session's daily prune, ticked at every poll; nil while prune_daily is off.
+	prunes *workspaceCloseWatch
 
 	// wanted is when an end now wanted was first seen, zero while none is, and signalled when the newest turn
 	// signal or wake arrived, or the first decision was made.
@@ -539,6 +554,7 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 				w.starts.tick(time.Now())
 			}
 			w.closes.tick(time.Now())
+			w.prunes.tick(time.Now())
 			decide("")
 		case <-u.Exited():
 			err := errors.Join(empty(u, poll), u.Close())

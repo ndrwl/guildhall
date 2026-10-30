@@ -126,6 +126,15 @@ type timedMerge struct {
 type taskFiles struct {
 	AsOf      inspectLabel    `json:"as_of"`
 	Documents []timedDocument `json:"documents"`
+	// Pruned is the task's prune, absent until `guildhall prune` reclaims its working and attempt files.
+	Pruned *prunedFiles `json:"pruned,omitempty"`
+}
+
+// prunedFiles is a task's prune record, with Summary saying "pruned on <date>" and, for a worktree the prune left,
+// why: "; worktree kept: <reason>".
+type prunedFiles struct {
+	Summary string `json:"summary"`
+	store.TaskPrune
 }
 
 // recordReceipts maps each receipt record name to its receipts, in sequence order.
@@ -254,6 +263,19 @@ func files(h store.TaskHistory) taskFiles {
 		t := timedDocument{DocumentRef: d}
 		t.RecordedAt, _, _, _ = span(byRecord["document/"+d.Name], "put-document", "")
 		out.Documents = append(out.Documents, t)
+	}
+	if p := h.Pruned; p != nil {
+		summary := "pruned on " + p.PrunedAt.UTC().Format(time.DateOnly)
+		switch p.Worktree {
+		case store.WorktreeKept:
+			summary += "; worktree kept: " + p.Kept
+		case store.WorktreeNotWorkspace:
+			summary += "; not a worktree: " + p.Kept
+		}
+		if !p.Complete && p.Worktree == store.WorktreeRemoved {
+			summary += "; partial: some attempt files remain"
+		}
+		out.Pruned = &prunedFiles{Summary: summary, TaskPrune: *p}
 	}
 	return out
 }

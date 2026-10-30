@@ -21,6 +21,7 @@ Retries count independently, with no double counting of the store and file sourc
 Attempts without an identifiable start receipt are excluded by `--since` and counted separately as `excluded_unknown_start`.
 
 The rendered attempt manifest supplies profile and role (the recorded role source path).
+A [prune](running.md#pruning) leaves spend unaffected: it keeps each attempt's `result.json`, `usage.json` and `prompt/manifest.json`.
 Absent metadata is labelled `unavailable`; current configuration is never substituted for historical attribution.
 Adapter and model are unavailable because neither the store spend nor the usage schema records them.
 Prompt-only, tool-schema and file-read token attribution is also unavailable: input tokens are not a prompt-only counter, and file sizes are not token counts.

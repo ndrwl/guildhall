@@ -39,6 +39,8 @@ type TaskHistory struct {
 	Priority *TaskPriority
 	// MergeHold is the task's hold-merge record, nil when its merge was never held.
 	MergeHold *MergeHold
+	// Pruned is the task's prune record, nil when it was never pruned.
+	Pruned *TaskPrune
 	// Receipts are the receipts whose repository and task are this task's, in sequence order:
 	// its records' mutations and the messages sent to or acknowledged for it.
 	Receipts []Receipt
@@ -87,6 +89,13 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 		switch err := getJSON(repoBucket(tx, repository, bucketMergeHolds), []byte(taskID), &mh); {
 		case err == nil:
 			h.MergeHold = &mh
+		case !errors.Is(err, ErrNotFound):
+			return err
+		}
+		var pr TaskPrune
+		switch err := getJSON(repoBucket(tx, repository, bucketPruned), []byte(taskID), &pr); {
+		case err == nil:
+			h.Pruned = &pr
 		case !errors.Is(err, ErrNotFound):
 			return err
 		}

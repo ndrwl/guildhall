@@ -531,6 +531,9 @@ const (
 	MessageStall            = "stall"
 	MessageWorkerStalled    = "worker-stalled"
 	MessageWorkspaceKept    = "workspace-kept"
+	// MessagePruneKept: the session supervisor's daily prune left a done task's worktree, because retiring it would
+	// lose something or it is not a worktree.
+	MessagePruneKept = "prune-workspace-kept"
 	// The merge queue's messages (docs/interpreter.md#the-merge-queue): a task's place in the queue, a rebase of
 	// its head onto the base tip, a rebase that became a build send-back, a front that rebased three times in one
 	// stay, and a merge approval carried over to a rebased head.
@@ -559,7 +562,7 @@ var MessageTypes = map[string]string{
 	MessageApprovalCarried: "engine",
 	MessageQuestion:        "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
-	MessageHerdrLeftOpen: "supervisor",
+	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor",
 }
 
 // UnreadFrom is DirectorUnread's key for unread messages of type t from sender: "<t> from <sender>".

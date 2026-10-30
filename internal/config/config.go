@@ -204,6 +204,17 @@ const ArtisanWorkspaceCloseAfterKey = "artisan_workspace_close_after"
 // ArtisanWorkspaceCloseAfterKey.
 const DefaultArtisanWorkspaceCloseAfter = 5 * time.Minute
 
+// PruneAfterKey is the setting that sets how long after a task closes `guildhall prune` may reclaim its working
+// directory and attempt directories (docs/configuration.md#settings).
+const PruneAfterKey = "prune_after"
+
+// DefaultPruneAfter is the prune delay of a config that does not set PruneAfterKey: 14 days.
+const DefaultPruneAfter = 14 * 24 * time.Hour
+
+// PruneDailyKey is the setting that makes the session supervisor run a prune once a day
+// (docs/configuration.md#settings).
+const PruneDailyKey = "prune_daily"
+
 // LockWaitKey is the setting that bounds each advance's waits for its task lock and for the store's lock
 // (docs/configuration.md#settings).
 const LockWaitKey = "lock_wait"
@@ -598,6 +609,26 @@ func (c *Config) validate() []string {
 			add("local %v", err)
 		}
 	}
+	if m, ok := c.Managed[PruneAfterKey]; ok {
+		if _, err := parsePruneAfter(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[PruneAfterKey]; ok {
+		if _, err := parsePruneAfter(v); err != nil {
+			add("local %v", err)
+		}
+	}
+	if m, ok := c.Managed[PruneDailyKey]; ok {
+		if _, err := parsePruneDaily(m.Value); err != nil {
+			add("managed %v", err)
+		}
+	}
+	if v, ok := c.Local[PruneDailyKey]; ok {
+		if _, err := parsePruneDaily(v); err != nil {
+			add("local %v", err)
+		}
+	}
 	if m, ok := c.Managed[LockWaitKey]; ok {
 		if _, err := parseLockWait(m.Value); err != nil {
 			add("managed %v", err)
@@ -932,6 +963,45 @@ func parseArtisanWorkspaceCloseAfter(v string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"5m\", or \"0\" never to close automatically", ArtisanWorkspaceCloseAfterKey, v)
 	}
 	return d, nil
+}
+
+// PruneAfter returns the effective PruneAfterKey setting as a duration: DefaultPruneAfter when it is not set, and
+// zero, which makes a task prunable as soon as it closes, for "0" or "0s". A value that is not a nonnegative Go
+// duration is an error; Parse refuses one already.
+func (c *Config) PruneAfter() (time.Duration, error) {
+	v, ok := c.Setting(PruneAfterKey)
+	if !ok {
+		return DefaultPruneAfter, nil
+	}
+	return parsePruneAfter(v)
+}
+
+func parsePruneAfter(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"336h\" (14 days), or \"0\" to prune as soon as a task closes", PruneAfterKey, v)
+	}
+	return d, nil
+}
+
+// PruneDaily returns the effective PruneDailyKey setting: false when it is not set.
+// A value other than "true" or "false" is an error; Parse refuses one already.
+func (c *Config) PruneDaily() (bool, error) {
+	v, ok := c.Setting(PruneDailyKey)
+	if !ok {
+		return false, nil
+	}
+	return parsePruneDaily(v)
+}
+
+func parsePruneDaily(v string) (bool, error) {
+	switch v {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return false, fmt.Errorf("%s %q must be \"true\" or \"false\"", PruneDailyKey, v)
 }
 
 // LockWait returns the effective LockWaitKey setting as a duration: DefaultLockWait when it is not set.
