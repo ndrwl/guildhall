@@ -693,6 +693,10 @@ func (p storeRecords) Rulings(repo, id string) ([]store.Ruling, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.Ruling, error) { return s.Rulings(repo, id) })
 }
 
+func (p storeRecords) TaskContexts(repo, id string) ([]store.TaskContext, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskContext, error) { return s.TaskContexts(repo, id) })
+}
+
 func (p storeRecords) FullReviews(repo, id string) ([]store.FullReview, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.FullReview, error) { return s.FullReviews(repo, id) })
 }

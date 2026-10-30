@@ -27,6 +27,10 @@ const (
 	// ReviewedPort carries, to a Director stage a loop went back to, the document each blocking result it is given
 	// was bound to, such as the document the Guildmaster asked changes to.
 	ReviewedPort = "reviewed"
+	// ContextPort carries the Guildmaster context the Director added to the task, every entry recorded when the
+	// attempt was bound, as one Markdown document context-<k> (docs/tasks.md#task-context). Workflows may wire
+	// step outputs to a port of the same name, such as plan's context; only the engine's document is engine-added.
+	ContextPort = "context"
 )
 
 // changesRequested is the outcome whose loop rules every looping kind but validate follows (loopOutcome).
@@ -108,9 +112,10 @@ func (r *run) boundInputs(b binding) []render.Input {
 }
 
 // extras returns the inputs the engine adds to attempt n of s: for a review step its previous outcome and
-// the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served; and for a
+// the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served; for a
 // Director stage a loop went back to, its own latest outputs as previous and the document each loop's blocking result
-// was bound to as reviewed, so the stage resumes from them rather than starting over.
+// was bound to as reviewed, so the stage resumes from them rather than starting over; then the task's context, when it
+// has any.
 func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 	var out []render.Input
 	if isReview(s) {
@@ -138,16 +143,20 @@ func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 		return nil, err
 	}
 	out = append(out, pending...)
-	if s.Actor() != workflow.DirectorActor || len(pending) == 0 {
-		return out, nil
-	}
-	kind, _ := workflow.LookupKind(s.Type, s.Version)
-	for _, port := range kind.Outputs {
-		if doc, _, err := r.output(s.ID, port.Name); err == nil {
-			out = append(out, render.Input{Port: PreviousPort, Name: doc.Path, SHA256: doc.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path))})
+	if s.Actor() == workflow.DirectorActor && len(pending) > 0 {
+		kind, _ := workflow.LookupKind(s.Type, s.Version)
+		for _, port := range kind.Outputs {
+			if doc, _, err := r.output(s.ID, port.Name); err == nil {
+				out = append(out, render.Input{Port: PreviousPort, Name: doc.Path, SHA256: doc.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path))})
+			}
 		}
+		out = append(out, reviewed...)
 	}
-	return append(out, reviewed...), nil
+	c, err := r.contextInput()
+	if err != nil || c == nil {
+		return out, err
+	}
+	return append(out, *c), nil
 }
 
 // want is what an outcome of review step s must be bound to, given its current inputs.
@@ -177,7 +186,8 @@ func (r *run) want(s workflow.Step, inputs []render.Input) (workflow.Revisions, 
 }
 
 // stale reports whether a finished attempt of s was given other inputs, or for a review other
-// revisions, than s would be given now.
+// revisions, than s would be given now. The engine-added inputs are left out: a new loop's feedback, rulings or
+// task context never makes a finished attempt stale.
 func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	b, err := r.binding(s.ID, n)
 	if err != nil {
@@ -189,7 +199,7 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	}
 	var given []render.Input
 	for _, in := range r.boundInputs(b) {
-		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ReviewedPort && in.Port != ResolutionPort {
+		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ReviewedPort && in.Port != ResolutionPort && !r.isTaskContext(in) {
 			given = append(given, in)
 		}
 	}

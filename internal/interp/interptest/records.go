@@ -31,6 +31,7 @@ type Records struct {
 	decisions []store.Decision
 	rulings   []store.Ruling
 	full      []store.FullReview
+	contexts  []store.TaskContext
 	overrides map[[2]string]store.DependencyOverride
 	grants    []store.TaskGrant
 	// priorities are the tasks' priorities SetTaskPriority sets, and queue the start queue's entries by
@@ -255,6 +256,39 @@ func (r *Records) RequestFullReview(mutationID, repository, taskID string) (stor
 		r.full = append(r.full, req)
 		return nil
 	})
+}
+
+// AddTaskContext records the task's next context entry on an open task, as store.AddTaskContext does, without its
+// checks of the text.
+func (r *Records) AddTaskContext(mutationID, repository, taskID, text string) (store.Receipt, error) {
+	req := store.TaskContext{Repository: repository, TaskID: taskID, Text: text, Author: store.TaskContextAuthor}
+	return r.mutate(mutationID, "add-task-context", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID = repository, taskID
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		}
+		for _, c := range r.contexts {
+			if c.Repository == repository && c.TaskID == taskID {
+				req.Number = c.Number
+			}
+		}
+		req.Number++
+		rc.CommittedAt = r.now()
+		req.AddedAt, rc.Record = rc.CommittedAt, store.TaskContextRecord(req.Number)
+		r.contexts = append(r.contexts, req)
+		return nil
+	})
+}
+
+// TaskContexts implements interp.Records.
+func (r *Records) TaskContexts(repository, taskID string) ([]store.TaskContext, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return list(r, repository, taskID, r.contexts, func(c store.TaskContext) (string, string) { return c.Repository, c.TaskID })
 }
 
 // FullReviews implements interp.Records.
@@ -788,7 +822,10 @@ func (r *Records) mutate(mutationID, op string, req any, apply func(rc *store.Re
 		return store.Receipt{}, fmt.Errorf("records: %s %s: %w", op, mutationID, err)
 	}
 	r.seq++
-	rc.CommittedAt = r.now()
+	// An apply that records its commit time in what it writes sets it first, as the store's does.
+	if rc.CommittedAt.IsZero() {
+		rc.CommittedAt = r.now()
+	}
 	r.receipts[mutationID] = receipt{op, string(body), rc}
 	return rc, nil
 }
@@ -807,6 +844,8 @@ type RecordsHarness struct {
 	AnswerDecision    func(mutationID, repository, taskID, id, answer string) (store.Receipt, error)
 	RuleFinding       func(mutationID string, r store.Ruling) (store.Receipt, error)
 	RequestFullReview func(mutationID, repository, taskID string) (store.Receipt, error)
+	// AddTaskContext records the Director's next context entry on a task, as store.AddTaskContext does.
+	AddTaskContext func(mutationID, repository, taskID, text string) (store.Receipt, error)
 	// OverrideDependencies records the Director's dependency override, as store.OverrideDependencies does.
 	OverrideDependencies func(mutationID, repository, taskID, reason string) (store.Receipt, error)
 	// SetTaskPriority records a task's priority, as store.SetTaskPriority does, which orders the start queue.
@@ -829,8 +868,8 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r, clock := NewRecords(), NewClock()
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, OverrideDependencies: r.OverrideDependencies, SetTaskPriority: r.SetTaskPriority,
-		PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
+		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, OverrideDependencies: r.OverrideDependencies,
+		SetTaskPriority: r.SetTaskPriority, PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
 }
 
 // Clock is a settable clock for a RecordsHarness; until Set it reads wall time.
@@ -1364,6 +1403,40 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if got, err := h.Records.FullReviews("app", "t7"); err != nil || !slices.Equal(got, wantList) {
 			t.Errorf("FullReviews = %+v, %v", got, err)
 		}
+	})
+	t.Run("lists context entries in order and refuses them on an unknown or closed task", func(t *testing.T) {
+		h := setup(t)
+		_, err := h.AddTaskContext("context-x", "app", "t8", "Keep it quiet.")
+		want(t, "AddTaskContext of an unknown task", err, store.ErrNotFound)
+		var receipts []store.Receipt
+		for i, text := range []string{"Keep it quiet.", "Supersedes 1: keep it loud."} {
+			rc, err := h.AddTaskContext(fmt.Sprintf("context-%d", i+1), "app", "t7", text)
+			if err != nil || rc.Record != store.TaskContextRecord(i+1) {
+				t.Fatalf("AddTaskContext %d = %+v, %v", i+1, rc, err)
+			}
+			receipts = append(receipts, rc)
+		}
+		if replay, err := h.AddTaskContext("context-1", "app", "t7", "Keep it quiet."); err != nil || replay != receipts[0] {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		got, err := h.Records.TaskContexts("app", "t7")
+		if err != nil || len(got) != 2 {
+			t.Fatalf("TaskContexts = %+v, %v", got, err)
+		}
+		for i, c := range got {
+			w := store.TaskContext{Repository: "app", TaskID: "t7", Number: i + 1, Text: c.Text, Author: store.TaskContextAuthor, AddedAt: receipts[i].CommittedAt}
+			if c != w || c.Text != []string{"Keep it quiet.", "Supersedes 1: keep it loud."}[i] {
+				t.Errorf("TaskContexts[%d] = %+v, want %+v", i, c, w)
+			}
+		}
+		if got, err := h.Records.TaskContexts("app", "t8"); err != nil || len(got) != 0 {
+			t.Errorf("TaskContexts of an unknown task = %+v, %v", got, err)
+		}
+		if _, err := h.Records.SetTaskState("done", "app", "t7", store.TaskDone); err != nil {
+			t.Fatal(err)
+		}
+		_, err = h.AddTaskContext("context-3", "app", "t7", "Too late.")
+		want(t, "AddTaskContext of a done task", err, store.ErrInvalid)
 	})
 
 	t.Run("reads a dependency override", func(t *testing.T) {

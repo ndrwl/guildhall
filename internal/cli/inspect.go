@@ -68,6 +68,12 @@ type timedRuling struct {
 	seq         uint64
 }
 
+// timedContext is one entry of task context, its added_at the commit time of its receipt.
+type timedContext struct {
+	store.TaskContext
+	seq uint64
+}
+
 type timedFullReview struct {
 	store.FullReview
 	RequestedAt *time.Time `json:"requested_at,omitempty"`
@@ -95,6 +101,8 @@ type taskTimeline struct {
 	Findings    []timedFindings   `json:"findings"`
 	Rulings     []timedRuling     `json:"rulings"`
 	FullReviews []timedFullReview `json:"full_reviews"`
+	// Context is the Guildmaster context the Director added to the task, in the order it was added.
+	Context []timedContext `json:"context"`
 	// DependencyOverride is the Director's dependency override, with its reason; absent when there is none.
 	DependencyOverride *timedOverride `json:"dependency_override,omitempty"`
 	// Priority is the task's priority now, and PriorityChanges every level set, in order.
@@ -173,7 +181,7 @@ func span(rs []store.Receipt, startOp, endOp string) (start, end *time.Time, sec
 func timeline(h store.TaskHistory) taskTimeline {
 	byRecord := recordReceipts(h.Receipts)
 	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Findings: []timedFindings{},
-		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
+		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Context: []timedContext{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
 	for _, a := range h.Attempts {
 		t := timedAttempt{StageAttempt: a}
 		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)], "start-attempt", "finish-attempt")
@@ -202,6 +210,13 @@ func timeline(h store.TaskHistory) taskTimeline {
 		t := timedFullReview{FullReview: f}
 		t.RequestedAt, t.ConsumedAt, _, _ = span(byRecord["full-review/"+strconv.Itoa(f.Number)], "request-full-review", "consume-full-review")
 		out.FullReviews = append(out.FullReviews, t)
+	}
+	for _, c := range h.Contexts {
+		t := timedContext{TaskContext: c}
+		if at, _, _, seq := span(byRecord[store.TaskContextRecord(c.Number)], "add-task-context", ""); at != nil {
+			t.AddedAt, t.seq = *at, seq
+		}
+		out.Context = append(out.Context, t)
 	}
 	if o := h.DependencyOverride; o != nil {
 		out.DependencyOverride = &timedOverride{DependencyOverride: *o}
@@ -234,6 +249,7 @@ func timeline(h store.TaskHistory) taskTimeline {
 	slices.SortStableFunc(out.Decisions, func(a, b timedDecision) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Findings, func(a, b timedFindings) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Rulings, func(a, b timedRuling) int { return byStart(a.seq, b.seq) })
+	slices.SortStableFunc(out.Context, func(a, b timedContext) int { return byStart(a.seq, b.seq) })
 	return out
 }
 

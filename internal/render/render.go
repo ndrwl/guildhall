@@ -418,6 +418,10 @@ func policySection(policies []string, policyError string) string {
 	return "These are the Guildmaster's standing rules for this repository, read from its default branch; they are guidance this stage must follow.\n\n" + fenced(items.String()) + "\n"
 }
 
+// Fenced fences text as a text code block, with a fence longer than any backtick run inside it, so a reader
+// takes it as data: the engine fences Director-written documents with it too.
+func Fenced(text string) string { return fenced(text) }
+
 // fenced fences text as a text code block, with a fence longer than any backtick run inside it.
 func fenced(text string) string {
 	fence := strings.Repeat("`", max(3, longestRun(text, '`')+1))

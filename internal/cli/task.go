@@ -34,6 +34,7 @@ var taskUsage = `usage:
   guildhall task start --store <path> --config <director.toml> --state <dir> --repo <id> [--decision <id>] [--ignore-deps --reason <text>] <task>
   guildhall task cancel --store <path> --config <director.toml> --state <dir> --repo <id> --reason <text> <task>
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
+  guildhall task context add|list ... (guildhall task context for its usage)
 --copy <dir>, or GUILDHALL_COPY, may stand in for --store, --config and --state: the copy's director.store,
 config.toml and state
 --title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
@@ -122,6 +123,8 @@ type taskDetail struct {
 	Attempts  []store.StageAttempt `json:"attempts"`
 	Documents []store.DocumentRef  `json:"documents"`
 	Decisions []store.Decision     `json:"decisions"`
+	// Context is the Guildmaster context the Director added to the task, by number.
+	Context []store.TaskContext `json:"context"`
 }
 
 // task runs a task subcommand against an existing store and prints its result as one JSON document (docs/tasks.md).
@@ -142,6 +145,9 @@ func (a *App) task(args []string) int {
 	sub := args[0]
 	if sub == "grant" {
 		return a.taskGrant(args[1:])
+	}
+	if sub == "context" {
+		return a.taskContext(args[1:])
 	}
 	if sub == "finding" {
 		if len(args) < 2 || args[1] != "rule" {
@@ -566,7 +572,7 @@ func resolveWorkflow(dir, name string, cfg *config.Config, r config.Repository) 
 }
 
 func showTask(s *store.Store, repo, id string) (taskDetail, error) {
-	d := taskDetail{Attempts: []store.StageAttempt{}, Documents: []store.DocumentRef{}, Decisions: []store.Decision{}}
+	d := taskDetail{Attempts: []store.StageAttempt{}, Documents: []store.DocumentRef{}, Decisions: []store.Decision{}, Context: []store.TaskContext{}}
 	var err error
 	t, err := s.Task(repo, id)
 	if err != nil {
@@ -589,9 +595,14 @@ func showTask(s *store.Store, repo, id string) (taskDetail, error) {
 	if err != nil {
 		return taskDetail{}, err
 	}
+	contexts, err := s.TaskContexts(repo, id)
+	if err != nil {
+		return taskDetail{}, err
+	}
 	d.Attempts = append(d.Attempts, attempts...)
 	d.Documents = append(d.Documents, documents...)
 	d.Decisions = append(d.Decisions, decisions...)
+	d.Context = append(d.Context, contexts...)
 	return d, nil
 }
 

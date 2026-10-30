@@ -369,11 +369,15 @@ func (r *run) load() error {
 	if err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
+	contexts, err := r.e.Records.TaskContexts(repo, id)
+	if err != nil {
+		return fmt.Errorf("interp: %w", err)
+	}
 	if r.queue, err = r.e.Records.StartQueue(); err != nil {
 		return fmt.Errorf("interp: %w", err)
 	}
 	r.history = newHistory(repo, id, r.def, r.read, attempts, documents, decisions)
-	r.rulings, r.fullReviews, r.grants = rulings, full, grants
+	r.rulings, r.fullReviews, r.grants, r.contexts = rulings, full, grants, contexts
 	return nil
 }
 

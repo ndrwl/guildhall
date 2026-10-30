@@ -108,6 +108,8 @@ type history struct {
 	fullReviews []store.FullReview
 	// grants are the task's grants, as recorded when the advance began.
 	grants []store.TaskGrant
+	// contexts are the task's context entries, by number, as recorded when the advance began.
+	contexts []store.TaskContext
 	// docPlaces and decisionPlaces parallel documents and decisions; ok is false for a name of another form.
 	docPlaces      []parsed
 	decisionPlaces []parsed

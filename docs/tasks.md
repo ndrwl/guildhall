@@ -15,7 +15,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
   A title over 100 characters is refused with exit 1 before the configuration is read, naming `--detail` and `--detail-file`.
 - `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
-- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...]}` for one task.
+- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...], "context": [...]}` for one task; `context` is its [task context](#task-context) entries, in number order.
 - `guildhall task list --store <path> [--repo <id>] [--workflow <name>] [--open] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
   `--workflow` keeps only the tasks bound to that workflow name, and `--open` only open tasks; before deleting `workflows/<name>.json` the Director checks that `task list --workflow <name> --open --json` prints `[]`, since an open task bound to it would strand, and nothing else refuses the deletion.
   A task in its repository's [merge queue](interpreter.md#the-merge-queue) also has a `merge_queue` object, the entry `director status` lists ([status](director.md#status)); it is absent for a task that is not queued.
@@ -24,10 +24,11 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task review --full --store <path> --repo <id> <task>` records a [full-review request](#full-review) and prints its receipt.
 - `guildhall task cancel --store <path> --config <director.toml> --state <dir> --repo <id> --reason <text> <task>` [cancels](#task-cancel) an open task for good and prints one line per effect.
 - `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
+- `guildhall task context add --store <path> --repo <id> (--text <text> | --file <path>) <task>` adds an entry of [task context](#task-context) and prints its receipt; `guildhall task context list --store <path> --repo <id> <task> --json` prints the task's entries.
 
 For every command but `list`, the positional task id may appear before or after flags.
-`show`, `list`, `timeline` and `files` open the store read-only and change nothing.
-`--json` is required on all four, so a later human-readable format is not a breaking change.
+`show`, `list`, `timeline`, `files` and `context list` open the store read-only and change nothing.
+`--json` is required on all five, so a later human-readable format is not a breaking change.
 
 Repository and task ids are lowercase letters, digits and hyphens, starting with a letter.
 A title is non-blank UTF-8 of at most 100 characters (runes); a detail, when given, is UTF-8 of at most 64 KiB.
@@ -195,6 +196,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
   A projection recorded from a /1 outcome before /2 keeps its rule-less findings in `findings` and the /1 state names `still-open` and `withdrawn`.
 - `rulings`: every [Director ruling](#director-rulings) with its document, finding, `move` and `reason`, `contested` and `contested_by`, and `ruled_at` and `contested_at`, ordered by when they were made.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
+- `context`: every entry of [task context](#task-context) with its `number`, `text`, `author` and `added_at`, ordered by when it was added.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
 - `priority` and `priority_changes`: the task's [priority](#priority) now and every level set, each with `set_at`.
 - `merge_holds`: every [hold-merge](#holding-a-merge) value set, `held` true or false, each with `set_at`.
@@ -242,6 +244,28 @@ A new request for an unknown task or one that is not open is refused with exit 1
 The command does not launch a review, invalidate a completed review or change an already recorded attempt binding.
 The request applies to the next Artisan code review attempt whose binding has not yet been recorded, not to a human review decision or a document review.
 See the [interpreter's rebase-aware review contract](interpreter.md#rebase-aware-review) for consumption, replay and scope recording.
+
+## Task context
+
+Task context is what the Guildmaster wants a task's Artisans to know that its title does not say: requirements, constraints or clarifications about that one task.
+The Director records it on the task, quoting the Guildmaster where the words are theirs, rather than in a `guildmaster` [Director note](director.md#notes), which no Artisan reads.
+
+```
+guildhall task context add  --store <path> --repo <id> (--text <text> | --file <path>) <task>
+guildhall task context list --store <path> --repo <id> <task> --json
+```
+
+`--copy <dir>`, or `GUILDHALL_COPY`, stands in for `--store`.
+
+- `add` records the task's next entry, numbered from 1, with author `director` and the time it was added, and prints its receipt, record `task-context/<n>`, mutation `task-context:<repo>:<task>:<sha256 of the text>`, hashed as for `task new` when longer than 128 bytes; running the same command again prints the original receipt and records nothing. The text comes from exactly one of `--text` and `--file`, which names a file (`--file -` is not supported); it must be non-blank UTF-8 of at most 64 KiB. A task that is unknown or not open is refused with exit 1 and nothing is written.
+- `list` prints the task's entries as a JSON array in number order; it opens the store read-only.
+
+Entries are append-only: none is edited or removed, and a later entry supersedes an earlier one only by saying so in its text.
+Adding context launches, re-runs and invalidates nothing.
+Every Artisan attempt of the task bound after an entry is added is given every entry recorded by then as its `context` input, one Markdown document `context-<k>` (`tasks/<repo>/<task>/context-<k>.md`) for a task with `k` entries, each entry under `## Context <n>` with its time and author and its text fenced, so it is read as data ([engine-added inputs](interpreter.md#rounds-and-loops)).
+An attempt already bound, running or recorded but not yet launched, keeps the inputs it was given, and a finished stage is not stale because of new context.
+To get context into a finished stage, send it back with [`step send-back`](step-send-back.md) or retry it with `step retry`; either way its next attempt is bound with the context.
+A task with no entries is given no `context` document.
 
 ## Task grants
 

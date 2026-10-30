@@ -11,7 +11,7 @@ The engine consumes eight narrow interfaces, declared in `internal/interp` besid
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents, decisions, rulings and dependency override; start and finish attempts, record documents, open decisions and contest rulings; optionally, as `MergeQueue`, read and change its repository's [merge queue](#the-merge-queue) | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
+| `Records`: read a task, its attempts, documents, decisions, rulings, task context and dependency override; start and finish attempts, record documents, open decisions and contest rulings; optionally, as `MergeQueue`, read and change its repository's [merge queue](#the-merge-queue) | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
@@ -427,14 +427,17 @@ Besides its wired inputs, an attempt may be given:
 - `resolution`: see [rebase-aware review](#rebase-aware-review);
 - `previous`: a review step's own latest outcome, whose findings the new outcome must disposition;
 - `rulings`: the Director's [rulings](#director-rulings) on findings of a review step's previous outcome, recorded first as document `<step>-<n>-rulings` (`tasks/<repo>/<task>/<step>-<n>.rulings.json`), a JSON array of rulings;
-- `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`).
+- `feedback`: each blocking result that sent the task back to this step and that no earlier attempt of it was given: an Artisan's outcome document, or the Guildmaster's exact answer recorded as `<decision>-answer` (`tasks/<repo>/<task>/<decision>/answer.md`);
+- `context`: the [task context](tasks.md#task-context) the Director added, when the task has any: with `k` entries recorded as the attempt is bound, document `context-<k>` (`tasks/<repo>/<task>/context-<k>.md`), written once when absent and shared by every attempt bound while the task has `k` entries, holding every entry in number order, each under `## Context <n>` with its time and author and its text fenced. A workflow may also wire step outputs to a port named `context`, as the shipped plan step does; those stay wired inputs.
 - For a [Director stage](#director-stages) a loop sent back, besides that `feedback`: `previous`, the stage's own latest document on each output port, and `reviewed`, each document a blocking result among the feedback was bound to (a Guildmaster decision's or a document review outcome's subject), once each; a result bound to a head has none.
   The grill resumes from them rather than starting over (`baseline/stages/grill.md`).
 
-`previous`, `rulings`, `reviewed`, `resolution` and `feedback` play no part in staleness: only the wired inputs do.
+`previous`, `rulings`, `reviewed`, `resolution`, `feedback` and the engine's `context` document play no part in staleness: only the wired inputs do.
 
 Feedback a failed or stopped attempt was given is still pending, so the attempt that retries it is given it again.
 A succeeded attempt stays current while its wired inputs, and for a review its revisions, equal what the step would be given now and no feedback is pending; otherwise the next attempt starts.
+The engine-added inputs play no part in this, so new rulings or new task context never make a finished attempt stale; the engine's `context-<k>` document is told from a wired `context` input by its path.
+An attempt's binding is recorded once, so task context added after it, while it runs or before a recorded attempt is launched, never reaches it.
 So when a looped build lands a new head, every review after it runs again on that head.
 
 A result is **blocking** when it is a `changes_requested` outcome, whatever its findings cite, or a Guildmaster's `changes_requested` answer ([decision](decisions/review-verdict-routes.md)).
