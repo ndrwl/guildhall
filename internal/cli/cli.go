@@ -37,6 +37,14 @@ Commands:
                  create and initialize an empty store file
   store doctor <path>
                  check a store file read-only and count its records
+  store export <path> --out <dir>
+                 write a store's deterministic text export into a new directory
+  store import <path> --from <dir>
+                 create a new store from a text export
+  backup now|status [--copy <dir>]
+                 back the copy up to its branch of the [backup] repository now, or report its last backup
+  backup restore --copy <dir> [--repo <remote>] <branch|commit>
+                 restore a copy, with its store, from a backup branch or commit
   steward start|ready|pause|resume|stop|reload|handoff [--copy <dir>]
                  run the Steward session, which owns the roster and rollouts
   steward status [--copy <dir>]
@@ -309,6 +317,8 @@ func (a *App) Run(args []string) int {
 		return a.prune(rest)
 	case "store":
 		return a.storeCmd(rest)
+	case "backup":
+		return a.backupCmd(rest)
 	case "messages":
 		return a.messages(rest)
 	case "workflow":

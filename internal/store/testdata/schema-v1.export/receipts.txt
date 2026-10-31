@@ -1,0 +1,10 @@
+guildhall-store-export	1
+root
+bucket	1	receipts	7
+record	1	fixture-1	{"mutation_id":"fixture-1","operation":"create-task","request_digest":"sha256:3fe7e73df542bbb1c6796f6fe7f7a0c9e5ffcd249a6369ec53cea81da291f1bc","repository":"app","task_id":"t-1","sequence":1,"committed_at":"2026-01-02T03:04:05Z"}
+record	1	fixture-2	{"mutation_id":"fixture-2","operation":"start-attempt","request_digest":"sha256:346033970ceb7ff80a5d6cabd2afd314552051cbdaf40d15d4758d5d464ce43c","repository":"app","task_id":"t-1","attempt":1,"sequence":2,"committed_at":"2026-01-02T03:04:05Z"}
+record	1	fixture-3	{"mutation_id":"fixture-3","operation":"finish-attempt","request_digest":"sha256:5a4a463cb4b6a6bccde9ac68d92bfff9379f35cbcc0f29eb350692d329562494","repository":"app","task_id":"t-1","attempt":1,"sequence":3,"committed_at":"2026-01-02T03:04:05Z"}
+record	1	fixture-4	{"mutation_id":"fixture-4","operation":"put-document","request_digest":"sha256:1f23feeca97cf24ca40f104789d57494d90968867d25329d5f1ecf9355d9e5fa","repository":"app","task_id":"t-1","sequence":4,"committed_at":"2026-01-02T03:04:05Z"}
+record	1	fixture-5	{"mutation_id":"fixture-5","operation":"bind-pane","request_digest":"sha256:0bb6efe2a2adb40c461554847580053eddf2a5dcb3f1566bc1f525a9c5321622","repository":"app","task_id":"t-1","sequence":5,"committed_at":"2026-01-02T03:04:05Z"}
+record	1	fixture-6	{"mutation_id":"fixture-6","operation":"open-decision","request_digest":"sha256:07e316ae332fef443cb71357b9ab0b94ac08c7ba66f4588378cb32b52151fff5","repository":"app","task_id":"t-1","sequence":6,"committed_at":"2026-01-02T03:04:05Z"}
+record	1	fixture-7	{"mutation_id":"fixture-7","operation":"answer-decision","request_digest":"sha256:b8422af93c5b782ca25722fe930329d904d634a85b12da00827259f8fad31378","repository":"app","task_id":"t-1","sequence":7,"committed_at":"2026-01-02T03:04:05Z"}

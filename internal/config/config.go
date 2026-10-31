@@ -310,6 +310,9 @@ type Config struct {
 	// Web serves the Guildmaster's task pages on the tailnet (docs/web.md); Director mode only. It is omitted from JSON
 	// when unset, so the config digest of a config without it is unchanged.
 	Web *Web `toml:"web" json:",omitempty"`
+	// Backup backs the copy up to its own branch of a private repository (docs/running.md#backups); Director mode
+	// only. It is never in JSON, so adding or editing it changes no config digest.
+	Backup *Backup `toml:"backup" json:"-"`
 }
 
 // Web is the [web] table: where a Director's session supervisor, or a hand-run `guildhall web`, serves the task pages,
@@ -629,6 +632,9 @@ func (c *Config) validate() []string {
 		if c.Web != nil {
 			add("the web table belongs to a director, not the steward")
 		}
+		if c.Backup != nil {
+			add("the backup table belongs to a director, not the steward")
+		}
 	default:
 		add(`mode must be "steward" or "director", not %q`, c.Mode)
 	}
@@ -699,6 +705,9 @@ func (c *Config) validate() []string {
 	}
 	if w := c.Web; w != nil {
 		problems = append(problems, checkWeb(*w)...)
+	}
+	if b := c.Backup; b != nil && c.Mode == ModeDirector {
+		problems = append(problems, checkBackup(*b, c.Name)...)
 	}
 	if d := c.Director; d != nil {
 		if d.Adapter != "" && !workflow.ValidID(d.Adapter) {

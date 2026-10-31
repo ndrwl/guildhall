@@ -17,6 +17,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/backup"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/launch"
@@ -982,10 +983,39 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	}
 	var due []needsMeItem
 	out.Maintenance, due = maintenanceStatus(v, hallmarks)
-	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued, due); out.NeedsMe == nil {
+	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued, due, backupNeeds(stateDir)); out.NeedsMe == nil {
 		out.NeedsMe = []needsMeItem{}
 	}
 	return out, nil
+}
+
+// backupKind is the needs_me kind of the copy's last backup, when it failed or left a file out (docs/running.md#backups).
+const backupKind = "backup"
+
+// backupNeeds is the needs_me item of the copy's last backup, read from its stamp in stateDir: one when the last run
+// failed, naming its error, or when its size guard left files out, naming them; none for a copy that never backed up
+// or whose last backup was whole. A store message names a task, and a backup belongs to no task, so the copy's
+// status carries it instead.
+func backupNeeds(stateDir string) []needsMeItem {
+	stamp, err := backup.ReadStamp(stateDir)
+	if err != nil || stamp.RanAt.IsZero() {
+		return nil
+	}
+	var reasons []string
+	if !stamp.OK {
+		reasons = append(reasons, fmt.Sprintf("the backup to %s at %s failed: %s", stamp.Branch, stamp.RanAt.Format(time.RFC3339), oneLine(stamp.Error)))
+	}
+	if len(stamp.LeftOut) > 0 {
+		var names []string
+		for _, l := range stamp.LeftOut {
+			names = append(names, l.Path)
+		}
+		reasons = append(reasons, fmt.Sprintf("the backup left out %s, over the size limit", strings.Join(names, ", ")))
+	}
+	if len(reasons) == 0 {
+		return nil
+	}
+	return []needsMeItem{{Kind: backupKind, Reason: strings.Join(reasons, "; "), Command: "guildhall backup status"}}
 }
 
 // repoHallmarks is a repository's last hallmark and its running one, each nil when there is none; followUpsAnswered
