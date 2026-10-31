@@ -399,6 +399,11 @@ func (r *run) byGuildmaster(id string) (bool, error) {
 func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcomes []reviewOutcome, x deliverHead, links []rebaseLink) ([]condition, error) {
 	added := r.addedRequires()
 	review := r.gate(s, x.reviewed)
+	if review == nil && requires.Artisan() && !r.reviewBefore(s) {
+		// A Guildmaster-approved workflow is admitted without the floor, so the floor's check is made here; rebase
+		// coverage cannot stand in for a review that never existed.
+		review = fmt.Errorf("%w: deliver step %q takes no review outcome", ErrReviewGate, s.ID)
+	}
 	if review == nil {
 		review = covered(append(slices.Clone(x.links), links...), x.head)
 	}
@@ -451,6 +456,19 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 		}
 	}
 	return out, nil
+}
+
+// reviewBefore reports whether a review or document-review step comes before until in definition order.
+func (r *run) reviewBefore(until workflow.Step) bool {
+	for _, s := range r.def.Steps {
+		if s.ID == until.ID {
+			return false
+		}
+		if isReview(s) {
+			return true
+		}
+	}
+	return false
 }
 
 // byOverride returns the failing gate err of requirement, naming the task's override when it is among the
