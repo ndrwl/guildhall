@@ -47,6 +47,12 @@ func TestLocate(t *testing.T) {
 		}
 		return a
 	}
+	// The platform default, for cases run on the test's own platform: Windows reads LOCALAPPDATA, others XDG_DATA_HOME.
+	defaults := map[string]string{"XDG_DATA_HOME": filepath.Join(root, "data"), "LOCALAPPDATA": filepath.Join(root, "local")}
+	platformDefault := filepath.Join(root, "data", "guildhall")
+	if runtime.GOOS == "windows" {
+		platformDefault = filepath.Join(root, "local", "Guildhall")
+	}
 	cases := []struct {
 		name    string
 		vars    map[string]string
@@ -58,7 +64,7 @@ func TestLocate(t *testing.T) {
 		{"GUILDHALL_HOME wins", map[string]string{HomeEnv: filepath.Join(root, "set"), "HOME": root}, release, "v1.4.0", runtime.GOOS, filepath.Join(root, "set")},
 		{"a relative GUILDHALL_HOME is made absolute", map[string]string{HomeEnv: "rel"}, "", "", runtime.GOOS, abs("rel")},
 		{"an installed release finds its home", map[string]string{"HOME": root}, release, "v1.4.0", runtime.GOOS, filepath.Join(root, "home")},
-		{"a release under another version's directory does not", map[string]string{"XDG_DATA_HOME": filepath.Join(root, "data")}, release, "v1.5.0", runtime.GOOS, filepath.Join(root, "data", "guildhall")},
+		{"a release under another version's directory does not", defaults, release, "v1.5.0", runtime.GOOS, platformDefault},
 		{"a binary elsewhere takes the default", map[string]string{"XDG_DATA_HOME": filepath.Join(root, "data")}, elsewhere, "v1.4.0", "linux", filepath.Join(root, "data", "guildhall")},
 		{"XDG_DATA_HOME", map[string]string{"XDG_DATA_HOME": filepath.Join(root, "data"), "HOME": root}, "", "", "linux", filepath.Join(root, "data", "guildhall")},
 		{"a relative XDG_DATA_HOME is ignored", map[string]string{"XDG_DATA_HOME": "data", "HOME": root}, "", "", "linux", filepath.Join(root, ".local", "share", "guildhall")},
