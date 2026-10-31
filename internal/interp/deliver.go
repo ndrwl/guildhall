@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
@@ -615,14 +614,14 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 	}
 	if q.view.Holds[r.task.ID] {
 		if q.front {
-			if _, err := q.q.ReleaseMergeFront(r.mutation("merge-release", strconv.Itoa(q.stay)), r.task.Repository, r.task.ID); err != nil {
+			if _, err := q.q.ReleaseMergeFront(r.frontMutation("merge-release", s, q.stay), r.task.Repository, r.task.ID); err != nil {
 				return false, Next{}, err
 			}
 		}
 		next, err := r.queued(s, q, true)
 		return false, next, err
 	}
-	if err := r.claim(&q); err != nil {
+	if err := r.claim(s, &q); err != nil {
 		return false, Next{}, err
 	}
 	if !q.front {
