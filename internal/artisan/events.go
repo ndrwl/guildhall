@@ -123,13 +123,15 @@ func LogAdvance(dir, command string, exit int, err error) error {
 
 // LogPaneClaimRecovered appends a "pane-claim-recovered" event to EventsFile
 // in the attempt directory dir: a pane launch holding the task lock found the
-// attempt's stale launching claim, with no owner, and launched over it; an
-// earlier Herdr workspace labelled workspace may have been left behind by a
-// lost create response. It is appended like LogPresentationReport and returns
-// the error of the write.
-func LogPaneClaimRecovered(dir, workspace string) error {
+// attempt's stale launching claim, with no owner, and launched over it.
+// workspace is the label of the attempt's Herdr workspace. abandoned is the id
+// of the workspace the claim recorded the failed launch creating, or empty
+// when it recorded none, and closed reports whether that workspace is now
+// closed, or was already gone; reason says why it was left open, or is empty.
+// It is appended like LogPresentationReport and returns the error of the write.
+func LogPaneClaimRecovered(dir, workspace, abandoned string, closed bool, reason string) error {
 	l := &Launcher{c: LauncherConfig{Dir: dir}}
-	l.event(eventPaneClaimRecovered, map[string]any{"workspace": workspace})
+	l.event(eventPaneClaimRecovered, map[string]any{"workspace": workspace, "abandoned_workspace": abandoned, "closed": closed, "reason": reason})
 	return l.logErr
 }
 

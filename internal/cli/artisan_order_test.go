@@ -185,3 +185,29 @@ func TestPresentationJournalOnlySuppliesExactCreatedSiblings(t *testing.T) {
 		}
 	}
 }
+
+// closingProbe records the abandoned workspace close it is asked for.
+type closingProbe struct {
+	adapter.TabHost
+	workspace string
+}
+
+func (p *closingProbe) CloseAbandonedWorkspace(_ context.Context, workspaceID string, _ []adapter.TabRef, _ []string, _ string) error {
+	p.workspace = workspaceID
+	return nil
+}
+
+// TestArtisanWorkspacesForwardsAbandonedWorkspaceClose: the production
+// presentation host reaches the wrapped host's close of a workspace a failed
+// launch abandoned, so a recovered launch can close it (d91).
+func TestArtisanWorkspacesForwardsAbandonedWorkspaceClose(t *testing.T) {
+	probe := &closingProbe{}
+	h := &artisanWorkspaces{TabHost: probe}
+	if err := h.CloseAbandonedWorkspace(context.Background(), "w2", nil, []string{"└ t · build #1"}, "artisan t"); err != nil || probe.workspace != "w2" {
+		t.Fatalf("close = %v, forwarded %q", err, probe.workspace)
+	}
+	h = &artisanWorkspaces{TabHost: &creationProbe{}}
+	if err := h.CloseAbandonedWorkspace(context.Background(), "w2", nil, []string{"└ t · build #1"}, "artisan t"); err == nil {
+		t.Fatal("a host that cannot close accepted the close")
+	}
+}

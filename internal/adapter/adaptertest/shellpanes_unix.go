@@ -45,9 +45,11 @@ type ShellPanes struct {
 type shellTerminal struct {
 	mu         sync.Mutex
 	workspaces []herdr.Workspace
-	next       int
-	panes      map[adapter.TabRef]*shellPane
-	sent       []string
+	// made counts the workspaces ever created, so a closed one's id is never reused.
+	made  int
+	next  int
+	panes map[adapter.TabRef]*shellPane
+	sent  []string
 }
 
 // shellPane is one tab and the line running in it, if any.
@@ -65,7 +67,7 @@ const interruptWait = 10 * time.Second
 // t ends.
 func NewShellPanes(t *testing.T, session, workspace string) *ShellPanes {
 	p := &ShellPanes{session: session, workspace: workspace, owned: map[adapter.TabRef]bool{},
-		shellTerminal: &shellTerminal{workspaces: []herdr.Workspace{{ID: workspace, Label: workspace}}, panes: map[adapter.TabRef]*shellPane{}}}
+		shellTerminal: &shellTerminal{workspaces: []herdr.Workspace{{ID: workspace, Label: workspace}}, made: 1, panes: map[adapter.TabRef]*shellPane{}}}
 	t.Cleanup(func() {
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -97,7 +99,8 @@ func (p *ShellPanes) CreateWorkspace(ctx context.Context, label, cwd string) (he
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	w := herdr.Workspace{ID: fmt.Sprintf("%s-%d", p.workspace, len(p.workspaces)+1), Label: label}
+	p.made++
+	w := herdr.Workspace{ID: fmt.Sprintf("%s-%d", p.workspace, p.made), Label: label}
 	p.workspaces = append(p.workspaces, w)
 	return w, nil
 }
@@ -233,6 +236,64 @@ func (p *ShellPanes) InterruptTab(ctx context.Context, ref adapter.TabRef) error
 		case <-time.After(100 * time.Millisecond): // timing:allow retry cadence; interruptWait is the completion ceiling.
 		}
 	}
+}
+
+var _ adapter.AbandonedWorkspaceCloser = (*ShellPanes)(nil)
+
+// CloseAbandonedWorkspace closes a workspace a failed launch recorded, as
+// adapter.AbandonedWorkspaceCloser describes. Its workspaces hold no starting
+// tab, so every recorded tab must be labelled tabLabel. It adopts the recorded
+// tabs still held and closes the workspace with them; a workspace holding no
+// tab, as a launch that failed before creating one leaves, closes by its
+// recorded id.
+func (p *ShellPanes) CloseAbandonedWorkspace(ctx context.Context, workspaceID string, tabs []adapter.TabRef, workspaceLabels []string, tabLabel string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(workspaceLabels) == 0 || tabLabel == "" {
+		return errors.New("close abandoned workspace: no labels to match")
+	}
+	for _, ref := range tabs {
+		if ref.Session != p.session || ref.WorkspaceID != workspaceID {
+			return &adapter.LeftOpenError{Reason: fmt.Sprintf("recorded tab %s is in session %q workspace %s, not %q %s", ref.TabID, ref.Session, ref.WorkspaceID, p.session, workspaceID)}
+		}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	i := slices.IndexFunc(p.workspaces, func(w herdr.Workspace) bool { return w.ID == workspaceID })
+	if i < 0 {
+		return nil
+	}
+	if label := p.workspaces[i].Label; !slices.Contains(workspaceLabels, label) {
+		return &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s is labelled %q, not an attempt's workspace label", workspaceID, label)}
+	}
+	var held []adapter.TabRef
+	for ref, sp := range p.panes {
+		if ref.WorkspaceID != workspaceID {
+			continue
+		}
+		switch {
+		case !slices.Contains(tabs, ref):
+			return &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s holds tab %s, which the launch did not record", workspaceID, ref.TabID)}
+		case sp.spec.Label != tabLabel:
+			return &adapter.LeftOpenError{Reason: fmt.Sprintf("tab %s is labelled %q, not %q", ref.TabID, sp.spec.Label, tabLabel)}
+		}
+		held = append(held, ref)
+	}
+	for _, ref := range held {
+		p.owned[ref] = true
+		if sp, err := p.pane(ctx, ref); err != nil {
+			return err
+		} else if sp.cmd != nil {
+			return &adapter.LeftOpenError{Reason: fmt.Sprintf("pane %s is not an idle shell", ref.PaneID)}
+		}
+	}
+	for _, ref := range held {
+		delete(p.panes, ref)
+		delete(p.owned, ref)
+	}
+	p.workspaces = slices.Delete(p.workspaces, i, i+1)
+	return nil
 }
 
 // Sent returns the lines and keys that reached the host's panes, in order.

@@ -380,9 +380,35 @@ func healthyPresentation(host adapter.TabHost, warnings *strings.Builder) *launc
 	}}
 }
 
+// claimRecoveredEvent returns p's attempt's one pane-claim-recovered event.
+func claimRecoveredEvent(t *testing.T, p *launch.Process) map[string]any {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), artisan.EventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.SplitSeq(string(b), "\n") {
+		var e map[string]any
+		if json.Unmarshal([]byte(line), &e) == nil && e["event"] == "pane-claim-recovered" {
+			return e
+		}
+	}
+	t.Fatalf("no pane-claim-recovered event in %s", b)
+	return nil
+}
+
+// recovery is what recoversClaim expects of the workspace the stale claim
+// records: abandoned is its id, or empty when the claim records none, and
+// leftOpen says the recovery refuses to close it.
+type recovery struct {
+	abandoned string
+	leftOpen  bool
+}
+
 // recoversClaim launches p's attempt over its existing launching claim through
-// a healthy presentation on panes and checks it runs once to success.
-func recoversClaim(t *testing.T, p *launch.Process, spec interp.Spec, panes *adaptertest.ShellPanes) {
+// a healthy presentation on panes and checks it runs once to success, closing
+// the workspace the claim records unless want.leftOpen, and recording that.
+func recoversClaim(t *testing.T, p *launch.Process, spec interp.Spec, panes *adaptertest.ShellPanes, want recovery) {
 	t.Helper()
 	var warnings strings.Builder
 	p.Presentation = healthyPresentation(panes, &warnings)
@@ -404,14 +430,48 @@ func recoversClaim(t *testing.T, p *launch.Process, spec interp.Spec, panes *ada
 	if n := claimRecoveredEvents(t, p); n != 1 {
 		t.Fatalf("pane-claim-recovered events = %d, want 1", n)
 	}
-	if w := warnings.String(); !strings.Contains(w, "stale launching claim") || !strings.Contains(w, "close it by hand") {
+	// d91: the workspace the failed launch abandoned is closed, so only the
+	// bound replacement is still listed, unless the close was refused.
+	list, err := panes.Workspaces(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var labelled []string
+	for _, w := range list {
+		if w.Label == launch.WorkspaceLabel(staleClaimKey) {
+			labelled = append(labelled, w.ID)
+		}
+	}
+	wantOpen := []string{tab.WorkspaceID}
+	if want.leftOpen {
+		wantOpen = []string{want.abandoned, tab.WorkspaceID}
+	}
+	if !reflect.DeepEqual(labelled, wantOpen) {
+		t.Fatalf("attempt workspaces %q, want %q", labelled, wantOpen)
+	}
+	e := claimRecoveredEvent(t, p)
+	closed := want.abandoned != "" && !want.leftOpen
+	if e["abandoned_workspace"] != want.abandoned || e["closed"] != closed || (e["reason"] != "") != want.leftOpen {
+		t.Fatalf("pane-claim-recovered event %v, want %+v", e, want)
+	}
+	w := warnings.String()
+	switch {
+	case !strings.Contains(w, "stale launching claim"):
 		t.Fatalf("warnings = %q", w)
+	case want.abandoned == "" && !strings.Contains(w, "lost create response, so close it by hand"):
+		t.Fatalf("legacy claim warnings = %q", w)
+	case want.leftOpen && (!strings.Contains(w, want.abandoned) || !strings.Contains(w, e["reason"].(string)) || !strings.Contains(w, "close it by hand")):
+		t.Fatalf("refused close warnings = %q", w)
+	case closed && (!strings.Contains(w, "closed the Herdr workspace "+want.abandoned) || strings.Contains(w, "by hand")):
+		t.Fatalf("closed warnings = %q", w)
 	}
 }
 
 // TestTaskLockedLaunchRecoversLaunchingClaim: a pane launch that failed before
 // recording its tab binding leaves a launching claim, and a caller holding the
-// task lock launches the same attempt again over it, typing once (d48).
+// task lock launches the same attempt again over it, typing once (d48). The
+// claim records the workspace and tab the failed launch created, and the
+// recovery closes that workspace before creating its replacement (d91).
 func TestTaskLockedLaunchRecoversLaunchingClaim(t *testing.T) {
 	for _, phase := range []string{"workspace", "create", "shell"} {
 		t.Run(phase, func(t *testing.T) {
@@ -428,11 +488,74 @@ func TestTaskLockedLaunchRecoversLaunchingClaim(t *testing.T) {
 				t.Fatalf("Launch = %v", err)
 			}
 			b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim))
-			if err != nil || string(b) != launchingClaim {
-				t.Fatalf("claim = %q, %v", b, err)
+			if err != nil {
+				t.Fatal(err)
 			}
-			recoversClaim(t, p, spec, panes)
+			// ShellPanes' workspaces hold no starting tab, so only the
+			// attempt's tab, once created, is recorded.
+			want := `{"state":"launching","workspace":"director-2"}` + "\n"
+			if phase != "workspace" {
+				want = `{"state":"launching","workspace":"director-2","tabs":[{"Session":"lab","WorkspaceID":"director-2","TabID":"director-2:t1","PaneID":"director-2:p1"}]}` + "\n"
+			}
+			if string(b) != want {
+				t.Fatalf("claim = %s, want %s", b, want)
+			}
+			recoversClaim(t, p, spec, panes, recovery{abandoned: "director-2"})
 		})
+	}
+}
+
+// abandonedClaim creates, on panes, the workspace and attempt tab a launch of
+// p's attempt that died before its binding would have left, and writes the
+// launching claim recording them. It returns the workspace id.
+func abandonedClaim(t *testing.T, p *launch.Process, panes *adaptertest.ShellPanes) string {
+	t.Helper()
+	ctx := context.Background()
+	w, err := panes.CreateWorkspace(ctx, launch.WorkspaceLabel(staleClaimKey), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tab, err := panes.CreateTab(ctx, herdr.TabSpec{WorkspaceID: w.ID, Label: launch.TabLabel(staleClaimKey)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(map[string]any{"state": "launching", "workspace": w.ID, "tabs": []adapter.TabRef{tab}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return w.ID
+}
+
+// TestTaskLockedLaunchClosesAbandonedWorkspaceAfterProcessDeath: a later
+// process, owning none of the dead launch's tabs, adopts and closes the
+// workspace its launching claim records (d91).
+func TestTaskLockedLaunchClosesAbandonedWorkspaceAfterProcessDeath(t *testing.T) {
+	p := newProcess(t)
+	p.TaskLocked = true
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	panes := adaptertest.NewShellPanes(t, "lab", "director")
+	ws := abandonedClaim(t, p, panes)
+	recoversClaim(t, p, spec, panes.Reopen(), recovery{abandoned: ws})
+}
+
+// TestTaskLockedLaunchLeavesAbandonedWorkspaceWithForeignTabOpen: a tab the
+// claim does not record makes the recovery refuse the close; the replacement
+// still launches, and the event and warning say why the workspace stayed open.
+func TestTaskLockedLaunchLeavesAbandonedWorkspaceWithForeignTabOpen(t *testing.T) {
+	p := newProcess(t)
+	p.TaskLocked = true
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	panes := adaptertest.NewShellPanes(t, "lab", "director")
+	ws := abandonedClaim(t, p, panes)
+	if _, err := panes.Reopen().CreateTab(context.Background(), herdr.TabSpec{WorkspaceID: ws, Label: launch.TabLabel(staleClaimKey)}); err != nil {
+		t.Fatal(err)
+	}
+	recoversClaim(t, p, spec, panes.Reopen(), recovery{abandoned: ws, leftOpen: true})
+	if r := claimRecoveredEvent(t, p)["reason"].(string); !strings.Contains(r, "did not record") {
+		t.Fatalf("reason = %q", r)
 	}
 }
 
@@ -486,17 +609,20 @@ func TestTaskLockedLaunchRecoversOnlyAnUnownedLaunchingClaim(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim), []byte(launchingClaim), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		recoversClaim(t, p, spec, adaptertest.NewShellPanes(t, "lab", "director"))
+		recoversClaim(t, p, spec, adaptertest.NewShellPanes(t, "lab", "director"), recovery{})
 	})
 	for name, c := range map[string]struct {
 		claim  string
 		locked bool
 	}{
-		"unlocked":    {launchingClaim, false},
-		"unparseable": {"{\"state\":\"launch", true},
-		"empty":       {"", true},
-		"other state": {"{\"state\":\"typed\"}\n", true},
-		"binding":     {"{\"state\":\"launching\",\"PaneID\":\"p1\"}\n", true},
+		"unlocked":                 {launchingClaim, false},
+		"unparseable":              {"{\"state\":\"launch", true},
+		"empty":                    {"", true},
+		"other state":              {"{\"state\":\"typed\"}\n", true},
+		"binding":                  {"{\"state\":\"launching\",\"PaneID\":\"p1\"}\n", true},
+		"unknown field":            {"{\"state\":\"launching\",\"workspace\":\"w1\",\"extra\":1}\n", true},
+		"tab in another workspace": {"{\"state\":\"launching\",\"workspace\":\"w1\",\"tabs\":[{\"Session\":\"lab\",\"WorkspaceID\":\"w2\",\"TabID\":\"t1\",\"PaneID\":\"p1\"}]}\n", true},
+		"tabs without workspace":   {"{\"state\":\"launching\",\"tabs\":[{\"Session\":\"lab\",\"WorkspaceID\":\"\",\"TabID\":\"t1\",\"PaneID\":\"p1\"}]}\n", true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := newProcess(t)

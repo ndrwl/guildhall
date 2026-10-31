@@ -70,6 +70,18 @@ func (h *artisanWorkspaces) CreateWorkspace(ctx context.Context, label, cwd stri
 	return child, nil
 }
 
+var _ adapter.AbandonedWorkspaceCloser = (*artisanWorkspaces)(nil)
+
+// CloseAbandonedWorkspace closes a failed launch's workspace through the
+// wrapped host, which must implement adapter.AbandonedWorkspaceCloser.
+func (h *artisanWorkspaces) CloseAbandonedWorkspace(ctx context.Context, workspaceID string, tabs []adapter.TabRef, workspaceLabels []string, tabLabel string) error {
+	closer, ok := h.TabHost.(adapter.AbandonedWorkspaceCloser)
+	if !ok {
+		return errors.New("the terminal host cannot close an abandoned workspace")
+	}
+	return closer.CloseAbandonedWorkspace(ctx, workspaceID, tabs, workspaceLabels, tabLabel)
+}
+
 // lockWorkspaceOrder never reclaims crash residue or another process's lock.
 func lockWorkspaceOrder(session string) (func(), error) {
 	cache, err := os.UserCacheDir()

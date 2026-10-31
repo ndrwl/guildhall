@@ -421,6 +421,128 @@ func (h *HerdrTabs) CloseWorkspace(ctx context.Context, ref TabRef, workspaceLab
 	return nil
 }
 
+// AbandonedWorkspaceCloser closes the Herdr workspace a failed Artisan launch
+// created and abandoned before it typed anything, as the launch's launching
+// claim records it: workspaceID and tabs, the tabs it created there in
+// creation order. On a host whose new workspaces hold a starting tab of their
+// own, tabs[0] is that starting tab, whose label the terminal chooses; every
+// other recorded tab must be labelled tabLabel.
+//
+// CloseAbandonedWorkspace does nothing and succeeds when the workspace is no
+// longer listed. Otherwise it refuses, with a LeftOpenError, a recorded tab in
+// another session or workspace, a workspace not labelled one of
+// workspaceLabels, any listed tab that is not a recorded tab, a recorded tab
+// other than the starting tab not labelled tabLabel, a tab holding anything
+// but one pane, a pane no longer the recorded tab's, and a pane whose shell is
+// not idle. It adopts each recorded tab still listed, revalidates, and closes
+// the workspace through one of them; it never closes by label alone. Callers
+// must separately prove that nothing was typed into the workspace. Closing
+// never updates a task, attempt or session record.
+type AbandonedWorkspaceCloser interface {
+	CloseAbandonedWorkspace(ctx context.Context, workspaceID string, tabs []TabRef, workspaceLabels []string, tabLabel string) error
+}
+
+var _ AbandonedWorkspaceCloser = (*HerdrTabs)(nil)
+
+// CloseAbandonedWorkspace closes a failed launch's workspace once it holds
+// nothing but that launch's recorded idle tabs; see AbandonedWorkspaceCloser.
+func (h *HerdrTabs) CloseAbandonedWorkspace(ctx context.Context, workspaceID string, tabs []TabRef, workspaceLabels []string, tabLabel string) error {
+	if len(workspaceLabels) == 0 || tabLabel == "" {
+		return errors.New("close abandoned workspace: no labels to match")
+	}
+	recorded := map[string]TabRef{}
+	for _, ref := range tabs {
+		if ref.Session != h.client.Session() {
+			return leftOpen("workspace %s is recorded in session %q, not %q", workspaceID, ref.Session, h.client.Session())
+		}
+		if ref.WorkspaceID != workspaceID {
+			return leftOpen("recorded tab %s is in workspace %s, not %s", ref.TabID, ref.WorkspaceID, workspaceID)
+		}
+		recorded[ref.TabID] = ref
+	}
+	list, err := h.client.WorkspaceList(ctx)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(list, func(w herdr.Workspace) bool { return w.ID == workspaceID })
+	if i < 0 {
+		return nil
+	}
+	if label := list[i].Label; !slices.Contains(workspaceLabels, label) {
+		return leftOpen("workspace %s is labelled %q, not an attempt's workspace label", workspaceID, label)
+	}
+	listed, err := h.abandonedTabs(ctx, workspaceID, tabs, recorded, tabLabel)
+	if err != nil {
+		return err
+	}
+	owned := make([]herdr.OwnedTab, 0, len(listed))
+	for _, ref := range listed {
+		if err := h.AdoptTab(ctx, ref); err != nil {
+			return err
+		}
+		t, err := h.lookup(ref)
+		if err != nil {
+			return err
+		}
+		if err := h.client.CheckOwnedPane(ctx, t); err != nil {
+			return err
+		}
+		info, err := h.client.PaneProcessInfo(ctx, ref.PaneID)
+		if err != nil {
+			return err
+		}
+		if !info.ShellIdle() {
+			return leftOpen("pane %s is not an idle shell", ref.PaneID)
+		}
+		owned = append(owned, t)
+	}
+	// Revalidate the workspace's tabs: nothing may have joined them meanwhile.
+	again, err := h.abandonedTabs(ctx, workspaceID, tabs, recorded, tabLabel)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(again, listed) {
+		return leftOpen("workspace %s changed its tabs while it was checked", workspaceID)
+	}
+	if err := h.client.CloseOwnedWorkspace(ctx, owned[0], workspaceID); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	for _, ref := range tabs {
+		delete(h.owned, ref)
+	}
+	delete(h.starting, workspaceID)
+	h.mu.Unlock()
+	return nil
+}
+
+// abandonedTabs lists workspaceID's tabs and returns their recorded refs, in
+// listed order, once each is a recorded tab with one pane, labelled tabLabel
+// unless it is the starting tab, tabs[0]; it refuses a workspace with no tab.
+func (h *HerdrTabs) abandonedTabs(ctx context.Context, workspaceID string, tabs []TabRef, recorded map[string]TabRef, tabLabel string) ([]TabRef, error) {
+	list, err := h.client.TabList(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if len(list) == 0 {
+		return nil, leftOpen("workspace %s holds no recorded tab to close it through", workspaceID)
+	}
+	refs := make([]TabRef, 0, len(list))
+	for _, tab := range list {
+		ref, ok := recorded[tab.ID]
+		switch {
+		case !ok:
+			return nil, leftOpen("workspace %s holds tab %s, which the launch did not record", workspaceID, tab.ID)
+		case tab.PaneCount != 1:
+			return nil, leftOpen("tab %s holds %d panes, not one", tab.ID, tab.PaneCount)
+		case ref != tabs[0] && tab.Label != tabLabel:
+			return nil, leftOpen("tab %s is labelled %q, not %q", tab.ID, tab.Label, tabLabel)
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
 // TabLauncher starts an Artisan in a new, visible Herdr tab (R1.38).
 type TabLauncher struct {
 	Host        TabHost
@@ -459,15 +581,19 @@ func (l TabLauncher) Start(ctx context.Context, label string, cmd Command) (*Tab
 // Open creates a tab labelled label in the launcher's workspace, with working
 // directory dir and env added to its shell's environment, and waits until its
 // shell is the only foreground process, returning the tab and the shell's
-// process name. A tab whose shell never becomes idle is left open.
+// process name. A tab whose shell never becomes idle is left open. An error
+// that follows the tab's creation, such as the host's report that it created
+// the tab but left the workspace's starting shell open, or the shell not
+// becoming idle, comes with the created tab, so the caller can record it; any
+// other error comes with the zero TabRef.
 func (l TabLauncher) Open(ctx context.Context, label, dir string, env []string) (TabRef, string, error) {
 	tab, err := l.Host.CreateTab(ctx, herdr.TabSpec{WorkspaceID: l.WorkspaceID, Label: label, Cwd: dir, Env: env})
 	if err != nil {
-		return TabRef{}, "", err
+		return tab, "", err
 	}
 	shell, err := l.waitShell(ctx, tab)
 	if err != nil {
-		return TabRef{}, "", fmt.Errorf("tab %s: %w", tab.TabID, err)
+		return tab, "", fmt.Errorf("tab %s: %w", tab.TabID, err)
 	}
 	return tab, shell, nil
 }
