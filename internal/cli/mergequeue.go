@@ -72,8 +72,7 @@ func frontWait(s *store.Store, repo, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// A Director's question decision holds nothing.
-	if slices.ContainsFunc(decisions, func(d store.Decision) bool { return d.Open() && d.Kind != store.DecisionQuestion }) {
+	if slices.ContainsFunc(decisions, store.Decision.Holds) {
 		return "decision", nil
 	}
 	return "ci", nil

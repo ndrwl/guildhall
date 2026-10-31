@@ -6,7 +6,8 @@ import "github.com/ndrwl/guildhall/internal/store"
 // done. It is the one path every engine close takes, the last Guildhall merge, a merge outside Guildhall and a
 // report-only finish, so a closed task never has an open decision; the store refuses the close otherwise
 // (docs/decisions/closed-tasks-have-no-open-decisions.md). Each void is keyed on the decision alone and a close
-// passes one fixed reason, so a close that failed part-way replays to the same writes.
+// passes one fixed reason, so a close that failed part-way replays to the same writes. It reads Decision.Open, not
+// Decision.Holds: a question holds nothing but is voided on close too.
 func (r *run) closeTask(reason string) error {
 	decisions, err := r.e.Records.Decisions(r.task.Repository, r.task.ID)
 	if err != nil {

@@ -72,7 +72,7 @@ func (r *Records) CreateTask(mutationID string, t store.Task) (store.Receipt, er
 	})
 }
 
-// AnswerDecision records an answer, as store.AnswerDecision does.
+// AnswerDecision records an answer, as store.AnswerDecision does, by the one answer rule, store.Decision.Answering.
 func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer string) (store.Receipt, error) {
 	req := store.Decision{Repository: repository, TaskID: taskID, ID: id, Answered: true, Answer: answer}
 	return r.mutate(mutationID, "answer-decision", req, func(rc *store.Receipt) error {
@@ -83,24 +83,11 @@ func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer stri
 		if i < 0 {
 			return fmt.Errorf("decision %q: %w", id, store.ErrNotFound)
 		}
-		d := &r.decisions[i]
-		if d.Answered {
-			return fmt.Errorf("%w: decision %q is already answered", store.ErrInvalid, id)
+		d, err := r.decisions[i].Answering(answer)
+		if err != nil {
+			return err
 		}
-		if d.Void {
-			return fmt.Errorf("%w: decision %q is void", store.ErrInvalid, id)
-		}
-		if len(d.Options) > 0 {
-			first, rest, _ := strings.Cut(answer, "\n")
-			first = strings.TrimSuffix(first, "\r")
-			switch {
-			case slices.Contains(d.Options, first):
-				d.Choice, d.Note = first, strings.TrimSpace(rest)
-			case d.Kind != store.DecisionQuestion:
-				return fmt.Errorf("%w: answer %q is not one of %q", store.ErrInvalid, first, d.Options)
-			}
-		}
-		d.Answered, d.Answer = true, answer
+		r.decisions[i] = d
 		return nil
 	})
 }
@@ -1626,6 +1613,53 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		got, err := h.Records.Decisions("app", "t7")
 		if err != nil || len(got) != 1 || !got[0].Answered || got[0].Choice != "approved" || got[0].Note != "ship it" || *got[0].Subject != *d.Subject {
 			t.Errorf("Decisions = %+v, %v", got, err)
+		}
+	})
+	t.Run("answers a decision by the one answer rule", func(t *testing.T) {
+		// store.Decision.Answering is the rule; this case pins the double's AnswerDecision to the store's.
+		h := setup(t)
+		approval := store.Decision{
+			Repository: "app", TaskID: "t7", ID: "accept-1", Kind: store.DecisionApproval,
+			Subject:  &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("b", 64)},
+			Options:  []string{"approved", "changes_requested"},
+			Question: "Approve the plan?",
+		}
+		question := store.Decision{Repository: "app", TaskID: "t7", ID: "q-1", Kind: store.DecisionQuestion, Options: []string{"a", "b"}, Question: "Which?"}
+		approval2 := approval
+		approval2.ID = "accept-2"
+		for i, d := range []store.Decision{approval, question, approval2} {
+			if _, err := h.Records.OpenDecision(fmt.Sprintf("open-%d", i), d); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := h.AnswerDecision("answer-1", "app", "t7", "accept-1", "approved\nship it"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.AnswerDecision("answer-2", "app", "t7", "q-1", "neither, try c"); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.AnswerDecision("answer-3", "app", "t7", "accept-2", "looks fine to me")
+		want(t, "AnswerDecision of free text on an approval", err, store.ErrInvalid)
+		got, err := h.Records.Decisions("app", "t7")
+		if err != nil || len(got) != 3 {
+			t.Fatalf("Decisions = %+v, %v", got, err)
+		}
+		byID := map[string]store.Decision{}
+		for _, d := range got {
+			byID[d.ID] = d
+		}
+		if d := byID["accept-1"]; !d.Answered || d.Answer != "approved\nship it" || d.Choice != "approved" || d.Note != "ship it" {
+			t.Errorf("option with a note = %+v", d)
+		}
+		if d := byID["q-1"]; !d.Answered || d.Answer != "neither, try c" || d.Choice != "" || d.Note != "" {
+			t.Errorf("free text on a question = %+v", d)
+		}
+		if d := byID["accept-2"]; !d.Open() || d.Answer != "" || d.Choice != "" || d.Note != "" {
+			t.Errorf("refused free text changed the decision: %+v", d)
+		}
+		// The refusal wrote nothing, so its mutation id is still free for a valid answer.
+		if _, err := h.AnswerDecision("answer-3", "app", "t7", "accept-2", "changes_requested"); err != nil {
+			t.Errorf("valid answer under the refused mutation id: %v", err)
 		}
 	})
 	t.Run("lists rulings and contests one once", func(t *testing.T) {
