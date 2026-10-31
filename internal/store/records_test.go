@@ -447,6 +447,7 @@ func TestOpenDecisionValidates(t *testing.T) {
 		{"unknown kind", func(d *Decision) { d.Kind = "vote" }},
 		{"missing subject", func(d *Decision) { d.Subject = nil }},
 		{"audit without a subject", func(d *Decision) { d.Kind, d.Subject = DecisionAudit, nil }},
+		{"follow-ups without a subject", func(d *Decision) { d.Kind, d.Subject = DecisionFollowUps, nil }},
 		{"unknown subject kind", func(d *Decision) { d.Subject.Kind = "branch" }},
 		{"document digest without prefix", func(d *Decision) { d.Subject.Digest = strings.Repeat("c", 64) }},
 		{"short head", func(d *Decision) { d.Subject = &Subject{Kind: SubjectHead, Digest: strings.Repeat("e", 39)} }},
@@ -481,7 +482,8 @@ func TestOpenDecisionValidates(t *testing.T) {
 			}
 		})
 	}
-	// A question may omit its subject, a head subject takes a SHA-1 or SHA-256 object id, and an audit binds to the head that merged.
+	// A question may omit its subject, a head subject takes a SHA-1 or SHA-256 object id, an audit binds to the head
+	// that merged and a follow-ups decision to its hallmark's report.
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
 	for i, d := range []Decision{
@@ -490,6 +492,8 @@ func TestOpenDecisionValidates(t *testing.T) {
 		{Repository: "app", TaskID: "t-1", ID: "merge-sha256", Kind: DecisionMerge, Subject: &Subject{Kind: SubjectHead, Digest: strings.Repeat("f", 64)}, Question: "Merge?"},
 		{Repository: "app", TaskID: "t-1", ID: "audit", Kind: DecisionAudit, Subject: &Subject{Kind: SubjectHead, Digest: strings.Repeat("e", 40)},
 			Options: []string{"yes", "no"}, Question: "Would you have merged this as is?"},
+		{Repository: "app", TaskID: "t-1", ID: "follow-ups", Kind: DecisionFollowUps, Subject: &Subject{Kind: SubjectDocument, Digest: "sha256:" + strings.Repeat("c", 64)},
+			Options: []string{"pick", "none"}, Question: "Which follow-ups?"},
 	} {
 		if _, err := s.OpenDecision(fmt.Sprint("m-open-", i), d); err != nil {
 			t.Errorf("%s: %v", d.ID, err)
@@ -537,6 +541,25 @@ func TestAnswerDecisionWithOptions(t *testing.T) {
 	}
 	if _, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", "reject"); !errors.Is(err, ErrMutationConflict) {
 		t.Fatalf("different answer under the same mutation id: err = %v, want ErrMutationConflict", err)
+	}
+}
+
+// TestAnswerFollowUps: a follow-ups decision is answered pick with the picked ids in the note, which is recorded
+// as the answer's choice and note.
+func TestAnswerFollowUps(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	d := Decision{Repository: "app", TaskID: "t-1", ID: "follow-ups", Kind: DecisionFollowUps,
+		Subject: &Subject{Kind: SubjectDocument, Digest: "sha256:" + strings.Repeat("c", 64)}, Options: []string{"pick", "none"}, Question: "Which follow-ups?"}
+	if _, err := s.OpenDecision("m-2", d); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerDecision("m-3", "app", "t-1", "follow-ups", "pick\nH1, H3\n"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Decisions("app", "t-1")
+	if err != nil || len(got) != 1 || got[0].Choice != "pick" || got[0].Note != "H1, H3" {
+		t.Fatalf("Decisions = %+v, %v; want choice pick with note H1, H3", got, err)
 	}
 }
 

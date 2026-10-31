@@ -11,6 +11,7 @@ A `research` step could not carry the skill, and widening `research` for every w
 Until now the engine refused a workflow that ran every step without waiting, and only deliver, or a merge outside Guildhall, closed a task.
 When every step is done and the bound definition has no `deliver` step, the advance now records the `finished` document, sends the Director a `finished` message naming the last step's output, marks the task `done` and waits `done`.
 It sends no `merged` message, so a hallmark never counts toward the next hallmark's cadence, and it opens no Guildmaster audit, which is bound to a merged head.
+When the last step is a hallmark step that recorded a report, the close opens the Guildmaster's `follow-ups` decision first (see below), so a close that fails replays to the same decision.
 A definition that has a deliver step keeps the old refusal if it ever runs past it, so no existing workflow changes behaviour.
 The `finished` document names, for a workflow whose every attempted step is a hallmark step, the commit the last attempt was prepared at; prune retires such a task's worktree at that head as it does at a merge record's, and keeps any other deliver-less task's worktree.
 
@@ -35,7 +36,16 @@ The `hallmark` workflow ships release-approved beside `default` and `bug`.
 Because it has no guarded step, the workflow-edit authority could have admitted any revision that meets the floor as a non-weakening change of it, so a `publish` or `deliver` step a baseline has none of now counts as weakening.
 A repository's `workflow_overrides` are keyed by step id across every workflow its kinds run, so a workflow other than the feature workflow takes only the overrides of the steps it has; the feature workflow still refuses an override naming a step it lacks.
 
+## The Guildmaster picks the follow-ups
+
+A finished hallmark's close opens one decision, id and kind `follow-ups`, bound to the report its latest attempt recorded as a document subject, so an answer applies to that exact report.
+Its question names the repository, the task and the report's absolute path, lists the report's `### H<n>. <title>` headings in report order, and gives the answer format.
+The headings are best effort: a report with none is named by its path only, a list too long for the question is cut and ends with `… see the report`, and parsing never fails the close.
+It offers `pick` and `none`; a `pick` answer gives the picked ids on the following lines, one per line or comma-separated, so the answer's choice stays countable while the ids stay free text.
+The decision is announced as `decision.follow-ups` and the `finished` message says it is open; `director status` shows it as a `decision` item of the done task.
+Answering it records the answer only: Guildhall creates no task, and the Director runs `guildhall task new` for each picked id and nothing else.
+A refused or failed hallmark attempt opens no decision, and prune does not wait for an open `follow-ups` decision, since the decision and its report are store records that outlive the worktree.
+
 ## Not decided here
 
-The Guildmaster's "pick follow-ups" decision is follow-up work: the Director reads the report and brings its follow-ups to the Guildmaster.
-Recording the maintenance run when a hallmark task starts was deferred here too; that part is superseded by [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md): the cadence reads the repository's last done hallmark task, and `director maintenance record --hallmark` is refused.
+How the last hallmark run is recorded is not decided here: [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md) decides it, reading the repository's last done hallmark task, so creating or starting a hallmark task records nothing and `director maintenance record --hallmark` is refused.

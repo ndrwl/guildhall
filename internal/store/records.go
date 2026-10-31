@@ -149,6 +149,10 @@ const (
 	// DecisionGrant approves or rejects a task grant (CreateTaskGrant); like a question it has no subject, and
 	// answering it records the answer only.
 	DecisionGrant DecisionKind = "grant"
+	// DecisionFollowUps presents the ranked follow-ups of a finished hallmark's report, bound to that report; the
+	// Guildmaster picks some or none, and answering it records the answer only: the Director creates a task for each
+	// pick (docs/decisions/report-only-workflows.md).
+	DecisionFollowUps DecisionKind = "follow-ups"
 )
 
 // SubjectKind names what a decision's answer binds to.
@@ -799,13 +803,13 @@ func validateDecision(d Decision) error {
 		return err
 	}
 	switch d.Kind {
-	case DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge, DecisionAudit:
+	case DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge, DecisionAudit, DecisionFollowUps:
 		if d.Subject == nil {
 			return invalid("a %s decision needs a subject", d.Kind)
 		}
 	case DecisionQuestion, DecisionGrant:
 	default:
-		return invalid("decision kind %q must be one of approval, review, loop-exit, merge, question, audit or grant", d.Kind)
+		return invalid("decision kind %q must be one of approval, review, loop-exit, merge, question, audit, follow-ups or grant", d.Kind)
 	}
 	if sub := d.Subject; sub != nil {
 		_, err := digest.Parse(sub.Digest)
