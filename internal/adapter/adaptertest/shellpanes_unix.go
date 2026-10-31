@@ -50,13 +50,22 @@ type shellTerminal struct {
 	next  int
 	panes map[adapter.TabRef]*shellPane
 	sent  []string
+	// closes counts the workspaces CloseAbandonedWorkspace closed.
+	closes int
+	// duringClose, when set, runs once in CloseAbandonedWorkspace's next close
+	// between its check and its close, without the lock.
+	duringClose func()
 }
 
 // shellPane is one tab and the line running in it, if any.
 type shellPane struct {
 	spec herdr.TabSpec
-	cmd  *exec.Cmd
-	done chan struct{}
+	// n orders the terminal's tabs by creation.
+	n int
+	// paneCount is the number of panes the tab holds, 1 unless SplitPane.
+	paneCount int
+	cmd       *exec.Cmd
+	done      chan struct{}
 }
 
 // interruptWait bounds Ctrl+C's wait for the line to exit.
@@ -118,7 +127,7 @@ func (p *ShellPanes) CreateTab(ctx context.Context, spec herdr.TabSpec) (adapter
 	p.next++
 	ref := adapter.TabRef{Session: p.session, WorkspaceID: spec.WorkspaceID,
 		TabID: fmt.Sprintf("%s:t%d", spec.WorkspaceID, p.next), PaneID: fmt.Sprintf("%s:p%d", spec.WorkspaceID, p.next)}
-	p.panes[ref] = &shellPane{spec: spec}
+	p.panes[ref] = &shellPane{spec: spec, n: p.next, paneCount: 1}
 	p.owned[ref] = true
 	return ref, nil
 }
@@ -243,9 +252,10 @@ var _ adapter.AbandonedWorkspaceCloser = (*ShellPanes)(nil)
 // CloseAbandonedWorkspace closes a workspace a failed launch recorded, as
 // adapter.AbandonedWorkspaceCloser describes. Its workspaces hold no starting
 // tab, so every recorded tab must be labelled tabLabel. It adopts the recorded
-// tabs still held and closes the workspace with them; a workspace holding no
-// tab, as a launch that failed before creating one leaves, closes by its
-// recorded id.
+// tabs still held, then, without the lock, lets the workspace change as a real
+// terminal's could, lists its tabs again and closes it only if they are the
+// same. A workspace holding no tab, as a launch that failed before creating
+// one leaves, holds no recorded tab to close it through and is left open.
 func (p *ShellPanes) CloseAbandonedWorkspace(ctx context.Context, workspaceID string, tabs []adapter.TabRef, workspaceLabels []string, tabLabel string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -258,42 +268,146 @@ func (p *ShellPanes) CloseAbandonedWorkspace(ctx context.Context, workspaceID st
 			return &adapter.LeftOpenError{Reason: fmt.Sprintf("recorded tab %s is in session %q workspace %s, not %q %s", ref.TabID, ref.Session, ref.WorkspaceID, p.session, workspaceID)}
 		}
 	}
+	held, gone, err := p.checkAbandoned(ctx, workspaceID, tabs, workspaceLabels, tabLabel)
+	if gone || err != nil {
+		return err
+	}
+	if f := p.takeDuringClose(); f != nil {
+		f()
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	again, err := p.abandonedTabs(workspaceID, tabs, tabLabel)
 	i := slices.IndexFunc(p.workspaces, func(w herdr.Workspace) bool { return w.ID == workspaceID })
-	if i < 0 {
-		return nil
-	}
-	if label := p.workspaces[i].Label; !slices.Contains(workspaceLabels, label) {
-		return &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s is labelled %q, not an attempt's workspace label", workspaceID, label)}
-	}
-	var held []adapter.TabRef
-	for ref, sp := range p.panes {
-		if ref.WorkspaceID != workspaceID {
-			continue
-		}
-		switch {
-		case !slices.Contains(tabs, ref):
-			return &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s holds tab %s, which the launch did not record", workspaceID, ref.TabID)}
-		case sp.spec.Label != tabLabel:
-			return &adapter.LeftOpenError{Reason: fmt.Sprintf("tab %s is labelled %q, not %q", ref.TabID, sp.spec.Label, tabLabel)}
-		}
-		held = append(held, ref)
-	}
-	for _, ref := range held {
-		p.owned[ref] = true
-		if sp, err := p.pane(ctx, ref); err != nil {
-			return err
-		} else if sp.cmd != nil {
-			return &adapter.LeftOpenError{Reason: fmt.Sprintf("pane %s is not an idle shell", ref.PaneID)}
-		}
+	if err != nil || i < 0 || !slices.Equal(again, held) {
+		return &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s changed its tabs while it was checked", workspaceID)}
 	}
 	for _, ref := range held {
 		delete(p.panes, ref)
 		delete(p.owned, ref)
 	}
 	p.workspaces = slices.Delete(p.workspaces, i, i+1)
+	p.closes++
 	return nil
+}
+
+// checkAbandoned checks, under the lock, that workspaceID is an attempt's
+// workspace holding nothing but recorded idle tabs, adopts them and returns
+// them; gone reports that the workspace is no longer listed.
+func (p *ShellPanes) checkAbandoned(ctx context.Context, workspaceID string, tabs []adapter.TabRef, workspaceLabels []string, tabLabel string) (held []adapter.TabRef, gone bool, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	i := slices.IndexFunc(p.workspaces, func(w herdr.Workspace) bool { return w.ID == workspaceID })
+	if i < 0 {
+		return nil, true, nil
+	}
+	if label := p.workspaces[i].Label; !slices.Contains(workspaceLabels, label) {
+		return nil, false, &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s is labelled %q, not an attempt's workspace label", workspaceID, label)}
+	}
+	held, err = p.abandonedTabs(workspaceID, tabs, tabLabel)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, ref := range held {
+		p.owned[ref] = true
+		if sp, err := p.pane(ctx, ref); err != nil {
+			return nil, false, err
+		} else if sp.cmd != nil {
+			return nil, false, &adapter.LeftOpenError{Reason: fmt.Sprintf("pane %s is not an idle shell", ref.PaneID)}
+		}
+	}
+	return held, false, nil
+}
+
+// abandonedTabs returns workspaceID's tabs, under the lock and in creation
+// order, once each is a recorded tab with one pane labelled tabLabel; it
+// refuses a workspace with no tab.
+func (p *ShellPanes) abandonedTabs(workspaceID string, tabs []adapter.TabRef, tabLabel string) ([]adapter.TabRef, error) {
+	var held []adapter.TabRef
+	for ref := range p.panes {
+		if ref.WorkspaceID == workspaceID {
+			held = append(held, ref)
+		}
+	}
+	if len(held) == 0 {
+		return nil, &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s holds no recorded tab to close it through", workspaceID)}
+	}
+	slices.SortFunc(held, func(a, b adapter.TabRef) int { return p.panes[a].n - p.panes[b].n })
+	for _, ref := range held {
+		sp := p.panes[ref]
+		switch {
+		case !slices.Contains(tabs, ref):
+			return nil, &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s holds tab %s, which the launch did not record", workspaceID, ref.TabID)}
+		case sp.paneCount != 1:
+			return nil, &adapter.LeftOpenError{Reason: fmt.Sprintf("tab %s holds %d panes, not one", ref.TabID, sp.paneCount)}
+		case sp.spec.Label != tabLabel:
+			return nil, &adapter.LeftOpenError{Reason: fmt.Sprintf("tab %s is labelled %q, not %q", ref.TabID, sp.spec.Label, tabLabel)}
+		}
+	}
+	return held, nil
+}
+
+// takeDuringClose returns and clears the hook DuringClose set.
+func (p *ShellPanes) takeDuringClose() func() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	f := p.duringClose
+	p.duringClose = nil
+	return f
+}
+
+// SplitPane gives ref's tab a second pane.
+func (p *ShellPanes) SplitPane(ref adapter.TabRef) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if sp, ok := p.panes[ref]; ok {
+		sp.paneCount = 2
+	}
+}
+
+// DuringClose makes the next CloseAbandonedWorkspace run f once, after it has
+// checked the workspace's tabs and before it closes the workspace.
+func (p *ShellPanes) DuringClose(f func()) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.duringClose = f
+}
+
+// RemoveTabs leaves workspace ws listed but holding no tab.
+func (p *ShellPanes) RemoveTabs(ws string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.removeTabs(ws)
+}
+
+// Gone closes workspace ws, and its tabs, other than through its hosts.
+func (p *ShellPanes) Gone(ws string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.removeTabs(ws)
+	p.workspaces = slices.DeleteFunc(p.workspaces, func(w herdr.Workspace) bool { return w.ID == ws })
+}
+
+// removeTabs deletes ws's tabs, under the lock, killing any line still running.
+func (p *ShellPanes) removeTabs(ws string) {
+	for ref, sp := range p.panes {
+		if ref.WorkspaceID != ws {
+			continue
+		}
+		if sp.cmd != nil {
+			_ = syscall.Kill(-sp.cmd.Process.Pid, syscall.SIGKILL)
+			<-sp.done
+		}
+		delete(p.panes, ref)
+		delete(p.owned, ref)
+	}
+}
+
+// Closes returns the number of workspaces CloseAbandonedWorkspace closed.
+func (p *ShellPanes) Closes() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.closes
 }
 
 // Sent returns the lines and keys that reached the host's panes, in order.
