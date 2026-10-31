@@ -29,7 +29,8 @@ func IsBaselineDocument(d store.DocumentRef) bool {
 	return strings.HasPrefix(d.Name, "baseline-") && d.Path == path.Join("tasks", d.Repository, d.TaskID, d.Name+".md")
 }
 
-// baselineLimit is how many merged tasks a baseline lists; it says how many more in the range it dropped.
+// baselineLimit is how many merges a baseline lists, the newest by landing; it says how many more in the range it
+// dropped.
 const baselineLimit = 20
 
 // BaselineJobsSchema identifies the failed-jobs block of a baseline.
@@ -99,12 +100,16 @@ func (r *run) baselineInput(s workflow.Step, n int) (*render.Input, error) {
 	return &render.Input{Port: BaselinePort, Name: d.Path, SHA256: d.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(d.Path))}, nil
 }
 
-// baselineMerge is a merged task a baseline may list: its merge record and the commit it landed.
+// baselineMerge is a merge record a baseline may list: the task that recorded it, its slice (DocumentSlice), the
+// label its row, checks heading and failed jobs name it by (<task>, or <task> · slice <k>/<n> for a slice of a
+// multi-PR task), the record and the commit it landed.
 type baselineMerge struct {
 	task   string
+	slice  int
+	label  string
 	pr     RecordedMerge
 	commit string
-	// unreadable is why the task's merge record could not be read (MergeRecord); such a task has no commit.
+	// unreadable is why the merge record could not be read (MergeRecord); such a record has no commit.
 	unreadable string
 }
 
@@ -152,15 +157,16 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 	if current == "" {
 		fmt.Fprintf(&b, "\n## Merged tasks\n\nmerged tasks unavailable: %s\n", cell(unavailable))
 	} else {
-		merges, err := r.mergedTasks()
+		merges, err := r.baselineMerges()
 		if err != nil {
 			return nil, fmt.Errorf("baseline: merged tasks: %w", err)
 		}
 		var placeless []string
-		dropped := 0
+		var placed, unreadable []baselineMerge
 		for _, m := range merges {
 			if m.unreadable != "" {
-				placeless = append(placeless, fmt.Sprintf("%s: merge record unreadable: %s", m.task, cell(m.unreadable)))
+				unreadable = append(unreadable, m)
+				placeless = append(placeless, fmt.Sprintf("%s: merge record unreadable: %s", m.label, cell(m.unreadable)))
 				continue
 			}
 			in, err := r.between(repo.Path, m.commit, previous, current)
@@ -168,24 +174,31 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 				if r.ctx.Err() != nil {
 					return nil, r.ctx.Err()
 				}
-				placeless = append(placeless, fmt.Sprintf("%s (`%s`): %s", m.task, m.commit, cell(err.Error())))
+				placeless = append(placeless, fmt.Sprintf("%s (`%s`): %s", m.label, m.commit, cell(err.Error())))
 				continue
 			}
-			switch {
-			case !in:
-			case len(listed) < baselineLimit:
-				listed = append(listed, m)
-			default:
-				dropped++
+			if in {
+				placed = append(placed, m)
 			}
 		}
-		fmt.Fprintf(&b, "\n## Merged tasks (%d, newest first)\n\n", len(listed))
-		if len(listed) == 0 {
+		if placed, err = r.byLanding(repo.Path, placed); err != nil {
+			if r.ctx.Err() != nil {
+				return nil, r.ctx.Err()
+			}
+			return nil, fmt.Errorf("baseline: order merges: %w", err)
+		}
+		dropped := max(0, len(placed)-baselineLimit)
+		listed = placed[:len(placed)-dropped]
+		fmt.Fprintf(&b, "\n## Merged tasks (%d, newest first)\n\n", len(listed)+len(unreadable))
+		if len(listed)+len(unreadable) == 0 {
 			b.WriteString("No merged task is between the two heads.\n")
 		} else {
 			b.WriteString("| Task | Pull request | Merge commit | Head |\n|---|---|---|---|\n")
 			for _, m := range listed {
-				fmt.Fprintf(&b, "| %s | [#%d](%s) | `%s` | `%s` |\n", m.task, m.pr.Number, cell(m.pr.URL), m.pr.MergeCommit, m.pr.Head)
+				fmt.Fprintf(&b, "| %s | [#%d](%s) | `%s` | `%s` |\n", m.label, m.pr.Number, cell(m.pr.URL), m.pr.MergeCommit, m.pr.Head)
+			}
+			for _, m := range unreadable {
+				fmt.Fprintf(&b, "| %s | unreadable: %s | — | — |\n", m.label, cell(m.unreadable))
 			}
 		}
 		if dropped > 0 {
@@ -204,7 +217,7 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 	}
 	jobs := baselineJobs{Schema: BaselineJobsSchema, Jobs: []BaselineJob{}}
 	for _, m := range listed {
-		fmt.Fprintf(&b, "\n### %s `%s`\n\n", m.task, m.commit)
+		fmt.Fprintf(&b, "\n### %s `%s`\n\n", m.label, m.commit)
 		checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: m.pr.Remote, Head: m.commit})
 		if err != nil {
 			if r.ctx.Err() != nil {
@@ -222,7 +235,7 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 			command := ""
 			if c.State == forge.CheckFailed && c.Job != "" {
 				command = "`" + ciLogCommand(r.e.Copy, r.task.Repository, r.task.ID, c.Job) + "`"
-				jobs.Jobs = append(jobs.Jobs, BaselineJob{Task: m.task, Remote: m.pr.Remote, Head: m.commit, Check: c.Name, Job: c.Job})
+				jobs.Jobs = append(jobs.Jobs, BaselineJob{Task: m.label, Remote: m.pr.Remote, Head: m.commit, Check: c.Name, Job: c.Job})
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", cell(c.Name), c.State, cell(c.URL), command)
 		}
@@ -273,27 +286,145 @@ func (r *run) hallmarkHead(h *hallmarkTask) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// mergedTasks returns the repository's done tasks, other than this one, that recorded a merge, by deliver or
-// outside Guildhall, newest first by close time then id, each with the commit it landed: its merge commit, or its
-// pull request's head when the forge gave none.
-func (r *run) mergedTasks() ([]baselineMerge, error) {
-	tasks, _, err := r.doneTasks()
+// baselineMerges returns every merge record, by deliver or outside Guildhall, of every task in the repository other
+// than this one, open, done or cancelled, each read on its own as SliceHeads reads them, with the commit it landed:
+// its merge commit, or its pull request's head when the forge gave none. A record that cannot be read is returned
+// with why. Two readable records of one task that landed the same commit are one, the higher slice's or else the
+// later name's. They are in candidate order: open tasks first by id descending, then done and cancelled tasks
+// together by close time descending and then id descending, and within a task by slice descending and then name
+// descending.
+func (r *run) baselineMerges() ([]baselineMerge, error) {
+	tasks, err := r.e.Records.Tasks(r.task.Repository)
 	if err != nil {
 		return nil, err
 	}
+	closes, err := r.e.Records.TaskCloses()
+	if err != nil {
+		return nil, err
+	}
+	tasks = slices.DeleteFunc(tasks, func(t store.Task) bool { return t.ID == r.task.ID })
+	ref := func(t store.Task) store.TaskRef { return store.TaskRef{Repository: t.Repository, ID: t.ID} }
+	closed := func(t store.Task) bool { return t.State == store.TaskDone || t.State == store.TaskCancelled }
+	slices.SortFunc(tasks, func(a, b store.Task) int {
+		ca, cb := closed(a), closed(b)
+		if ca != cb {
+			if ca {
+				return 1
+			}
+			return -1
+		}
+		if ca {
+			if c := cmp.Compare(closes[ref(b)].Closed, closes[ref(a)].Closed); c != 0 {
+				return c
+			}
+		}
+		return cmp.Compare(b.ID, a.ID)
+	})
 	var out []baselineMerge
 	for _, t := range tasks {
 		docs, err := r.e.Records.Documents(t.Repository, t.ID)
 		if err != nil {
 			return nil, err
 		}
-		m, err := MergeRecord(docs, r.read)
-		switch {
-		case err != nil:
-			out = append(out, baselineMerge{task: t.ID, unreadable: err.Error()})
-		case m != nil:
-			out = append(out, baselineMerge{task: t.ID, pr: *m, commit: cmp.Or(m.MergeCommit, m.Head)})
+		var records []int
+		for k := range docs {
+			if IsMergeRecord(docs[k].Name) {
+				records = append(records, k)
+			}
 		}
+		if len(records) == 0 {
+			continue
+		}
+		slices.SortFunc(records, func(a, b int) int {
+			if c := cmp.Compare(DocumentSlice(docs[b].Name), DocumentSlice(docs[a].Name)); c != 0 {
+				return c
+			}
+			return cmp.Compare(docs[b].Name, docs[a].Name)
+		})
+		total, err := r.sliceTotal(t, docs)
+		if err != nil {
+			return nil, err
+		}
+		landed := map[string]bool{}
+		for _, k := range records {
+			slice := DocumentSlice(docs[k].Name)
+			bm := baselineMerge{task: t.ID, slice: slice, label: sliceLabel(t.ID, slice, total)}
+			m, err := MergeRecord(docs[k:k+1], r.read)
+			if err != nil {
+				bm.unreadable = err.Error()
+				out = append(out, bm)
+				continue
+			}
+			bm.pr, bm.commit = *m, cmp.Or(m.MergeCommit, m.Head)
+			// Records come highest slice, then latest name, first: the first to land a commit is its row.
+			if landed[bm.commit] {
+				continue
+			}
+			landed[bm.commit] = true
+			out = append(out, bm)
+		}
+	}
+	return out, nil
+}
+
+// sliceTotal is the number of slices task t's accepted spec lists, read as TaskSlices reads it, from its documents
+// docs and its bound definition: 1 for a one-slice task, and 0 when it cannot be read (no definition, or an
+// unreadable spec). Only the store failing to give the task's decisions is an error.
+func (r *run) sliceTotal(t store.Task, docs []store.DocumentRef) (int, error) {
+	def, err := r.e.Workflow(t.Workflow)
+	if err != nil || def == nil {
+		return 0, nil
+	}
+	if def.Slices == nil {
+		return 1, nil
+	}
+	decisions, err := r.e.Records.Decisions(t.Repository, t.ID)
+	if err != nil {
+		return 0, err
+	}
+	st, err := slicesOf(def, newHistory(t.Repository, t.ID, def, r.read, nil, docs, decisions))
+	if err != nil {
+		return 0, nil
+	}
+	return st.total, nil
+}
+
+// sliceLabel names slice k of task, whose spec lists total slices (0 when unknown): "<task> · slice <k>/<total>" for
+// a multi-PR task, "<task> · slice <k>" for a later slice of a task whose total is unknown, and the task alone
+// otherwise.
+func sliceLabel(task string, k, total int) string {
+	switch {
+	case total > 1:
+		return fmt.Sprintf("%s · slice %d/%d", task, k, total)
+	case k >= 2:
+		return fmt.Sprintf("%s · slice %d", task, k)
+	}
+	return task
+}
+
+// byLanding sorts merges, each with a commit on the current head, newest first by landing: a commit that is an
+// ancestor of another merge's commit sorts after it. It is a stable binary insertion by Workspaces.IsAncestor, so
+// merges whose commits are equal or neither of which is an ancestor of the other keep their order.
+func (r *run) byLanding(repository string, merges []baselineMerge) ([]baselineMerge, error) {
+	out := make([]baselineMerge, 0, len(merges))
+	for _, m := range merges {
+		lo, hi := 0, len(out)
+		for lo < hi {
+			mid := (lo + hi) / 2
+			newer := false
+			if m.commit != out[mid].commit {
+				var err error
+				if newer, err = r.e.Workspaces.IsAncestor(r.ctx, repository, out[mid].commit, m.commit); err != nil {
+					return nil, err
+				}
+			}
+			if newer {
+				hi = mid
+			} else {
+				lo = mid + 1
+			}
+		}
+		out = slices.Insert(out, lo, m)
 	}
 	return out, nil
 }
