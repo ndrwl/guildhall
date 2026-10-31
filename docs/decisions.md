@@ -120,6 +120,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 ## Dependencies
 
 - [The store uses bbolt, with JSON records and no generic storage interface](decisions/bbolt-for-the-store.md)
+- [The task pages render Markdown documents with goldmark and its tables extension at safe defaults](decisions/goldmark-for-documents.md)
 - [The foundation uses only the standard library, and dependencies arrive with the feature that needs them](decisions/standard-library-only-for-the-foundation.md)
 - [Copy configuration is parsed with BurntSushi/toml](decisions/toml-parsing-for-copy-configuration.md)
 
@@ -268,6 +269,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [The Director addresses the user as "Guildmaster" in chat replies, and nowhere else](decisions/guildmaster-address.md)
 - [Lanterns is a visuals-only plugin in every Claude Director workspace, with the S2 smithy and Calm on by default](decisions/lanterns-visuals.md)
 - [The status feed and startup list every running attempt as information, without a new probe or `needs_me` kind](decisions/running-attempts-in-status.md)
+- [The Guildmaster's task pages are served by the Director's session supervisor, on the tailnet only, from Clerk's readers](decisions/task-page.md)
 
 ## Messaging
 

@@ -292,6 +292,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	if err != nil {
 		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
+	defer watchers.close()
 	u, err := startRuntime(c, n, storePath)
 	if err != nil {
 		return a.fail(fmt.Errorf("%srun the runtime: %w", start, err)), false

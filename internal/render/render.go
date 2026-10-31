@@ -539,3 +539,15 @@ var questionOptions = map[string][]string{
 	"document-review":      {string(workflow.VerdictApproved), string(workflow.VerdictChangesRequested), string(workflow.VerdictRejected)},
 	"handoff-wait":         {"received"},
 }
+
+// DecisionOptions returns the option sets of the decisions render's questions open, keyed by the step kind that opens
+// each ("guildmaster-approval", "review", "document-review", "handoff-wait") and "design" for a design round's, so
+// a reader such as the task page's option-meanings table can check it covers every one (docs/contracts/web.md).
+// Each slice is a copy.
+func DecisionOptions() map[string][]string {
+	out := map[string][]string{"design": slices.Clone(DesignOptions)}
+	for kind, opts := range questionOptions {
+		out[kind] = slices.Clone(opts)
+	}
+	return out
+}

@@ -307,6 +307,21 @@ type Config struct {
 	// Steward chooses who runs the Steward session (docs/steward.md#the-steward-session); Steward mode only.
 	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
 	Steward *Steward `toml:"steward" json:",omitempty"`
+	// Web serves the Guildmaster's task pages on the tailnet (docs/web.md); Director mode only. It is omitted from JSON
+	// when unset, so the config digest of a config without it is unchanged.
+	Web *Web `toml:"web" json:",omitempty"`
+}
+
+// Web is the [web] table: where a Director's session supervisor, or a hand-run `guildhall web`, serves the task pages,
+// and the Guildmaster's Tailscale login (docs/web.md).
+type Web struct {
+	// Address is the host and port to listen on, such as "andrew-lap-wsl.tail5da40a.ts.net:4388"; required, with no
+	// default port, so each copy on a machine names its own. Its host must resolve only to Tailscale addresses when
+	// the server binds, or nothing is served; page links are built from it.
+	Address string `toml:"address"`
+	// Guildmaster is the Guildmaster's Tailscale login, such as "andrew@example.com"; optional until answering on the
+	// page arrives, which will accept only requests Tailscale identifies as this login.
+	Guildmaster string `toml:"guildmaster" json:",omitempty"`
 }
 
 // Steward names the Steward session's Herdr workspace and chooses its runtime adapter, model, effort and role
@@ -611,6 +626,9 @@ func (c *Config) validate() []string {
 		if c.Director != nil {
 			add("the director table belongs to a director, not the steward")
 		}
+		if c.Web != nil {
+			add("the web table belongs to a director, not the steward")
+		}
 	default:
 		add(`mode must be "steward" or "director", not %q`, c.Mode)
 	}
@@ -678,6 +696,9 @@ func (c *Config) validate() []string {
 		if st.Role != "" && !configRelative(st.Role) {
 			add("steward: role must be a relative slash-separated path inside the config directory")
 		}
+	}
+	if w := c.Web; w != nil {
+		problems = append(problems, checkWeb(*w)...)
 	}
 	if d := c.Director; d != nil {
 		if d.Adapter != "" && !workflow.ValidID(d.Adapter) {

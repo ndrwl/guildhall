@@ -516,3 +516,10 @@ func grantApprovals(tx *bolt.Tx) (map[string]time.Time, error) {
 	})
 	return out, err
 }
+
+// DecisionOptions returns the option sets of the decisions the store opens itself, by decision kind: a grant's,
+// GrantApprove and GrantReject, so a reader such as the task page's option-meanings table can check it covers every
+// one (docs/contracts/web.md).
+func DecisionOptions() map[DecisionKind][][]string {
+	return map[DecisionKind][][]string{DecisionGrant: {{GrantApprove, GrantReject}}}
+}

@@ -65,7 +65,7 @@ A requirement describes intended behaviour, not shipped behaviour: see the READM
 | R1.26 | An optional Claude plugin shows a read-only status band and reply visuals by calling `guildhall`; it is never state or lifecycle authority |
 | R1.27 | A runtime or platform is described as supported only after its adapter passes acceptance there |
 | R1.28 | Each machine signs into the Guildmaster's own Claude account; Guildhall stores nothing |
-| R1.29 | There is no always-on Guildhall service: the tool runs a small deterministic watcher per running task (to be proven in acceptance). The Herdr server on each Director machine is the terminal host, not Guildhall state |
+| R1.29 | There is no always-on Guildhall service: the tool runs a small deterministic watcher per running task (to be proven in acceptance). The Herdr server on each Director machine is the terminal host, not Guildhall state. The Guildmaster's [task pages](web.md) are served only by a running Director session's supervisor or a hand-run `guildhall web` |
 
 ## Platforms, rollout and delivery
 

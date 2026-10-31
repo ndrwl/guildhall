@@ -10,6 +10,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
@@ -133,6 +134,8 @@ Commands:
   clerk guild|decisions|task|inspect|queue [--all] [<id>] [--copy <dir>]
                  print the Guildmaster's read-only answers behind the Clerk plugin's slash commands;
                  guild takes --all, task and inspect take a task id
+  web [--copy <dir>]
+                 serve the copy's read-only task pages at its [web] address on the tailnet until interrupted
   spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]
                  report recorded attempt tokens and cost without changing state
   ci log [--copy <dir>] [--tail <lines>] [--out <file>] <repo>/<task> <job|check>
@@ -235,6 +238,13 @@ type App struct {
 	// workspaces in, for the named Herdr session, after checking the session's server; nil means Herdr, found on
 	// PATH as herdr.
 	ArtisanWorkspaces func(ctx context.Context, session string) (WorkspaceCloseHost, error)
+	// WebListen binds the [web] address the task pages are served on, for a Director session and guildhall web; nil
+	// means web.Listen, which refuses an address outside Tailscale's ranges (docs/web.md).
+	WebListen func(address string) (net.Listener, error)
+	// webSignals, when set, is the channel guildhall web stops on in place of the process's signals, and webServing
+	// is told the address it bound, so a test can request a page and then stop it.
+	webSignals chan os.Signal
+	webServing func(addr string)
 	// endedForReload, when set, is called once the runtime of session n has ended for a reload, before the
 	// supervisor records the session reloaded, so a test can record a stop in that window.
 	endedForReload func(n int)
@@ -336,6 +346,8 @@ func (a *App) Run(args []string) int {
 		return a.ciCmd(rest)
 	case "clerk":
 		return a.clerk(rest)
+	case "web":
+		return a.web(rest)
 	default:
 		return a.usageError(fmt.Sprintf("unknown command %q", cmd))
 	}

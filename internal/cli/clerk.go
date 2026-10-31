@@ -222,7 +222,13 @@ type clerkTask struct {
 }
 
 func (a *App) clerkRead(ctx context.Context, c clerkPaths) (clerkData, error) {
-	records := storeRecords{path: c.store, wait: clerkLockWait}
+	return a.clerkReadWait(ctx, c, clerkLockWait)
+}
+
+// clerkReadWait is clerkRead waiting up to wait for a writer's store lock, as the task pages read with their own
+// bounded wait.
+func (a *App) clerkReadWait(ctx context.Context, c clerkPaths, wait time.Duration) (clerkData, error) {
+	records := storeRecords{path: c.store, wait: wait}
 	st, err := readDirectorStatusRecords(ctx, records, c.state, c.config, a.Now)
 	if err != nil {
 		return clerkData{}, err

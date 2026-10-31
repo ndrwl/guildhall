@@ -98,5 +98,6 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/store`](contracts/store.md)
 - [`internal/strictjson`](contracts/strictjson.md)
 - [`internal/testenv`](contracts/testenv.md)
+- [`internal/web`](contracts/web.md)
 - [`internal/workflow`](contracts/workflow.md)
 - [`skills`](contracts/skills.md)

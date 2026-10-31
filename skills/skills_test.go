@@ -893,6 +893,7 @@ var notAskedOfTheDirector = map[string]string{
 	"clerk task":               "the Clerk plugin's /task runs it for the Guildmaster",
 	"clerk inspect":            "the Clerk plugin's /inspect runs it for the Guildmaster",
 	"clerk queue":              "the Clerk plugin's /queue runs it for the Guildmaster",
+	"web":                      "the Director's session serves the task pages itself; the Guildmaster runs it by hand when none runs",
 }
 
 // readmeCommand finds each `guildhall <command>` in the README's command list.

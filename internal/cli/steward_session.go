@@ -597,3 +597,10 @@ func (a *App) stewardApprovalCmd(args []string) int {
 		Answer   string         `json:"answer"`
 	}{out, fmt.Sprintf("guildhall decide answer --copy %s --repo %s --task %s --decision %s --answer-file -", shellQuote([]string{copyDir}), stewardRepository, stewardRolloutsTask, id)})
 }
+
+// StewardDecisionOptions returns the option sets of the decisions the Steward opens, by decision kind: a rollout
+// plan's approval, approve or decline, so a reader such as the task page's option-meanings table can check it covers
+// every one (docs/contracts/web.md). The Steward opens them in its own store, which a Director's page never reads.
+func StewardDecisionOptions() map[store.DecisionKind][][]string {
+	return map[store.DecisionKind][][]string{store.DecisionApproval: {{stewardApprove, stewardDecline}}}
+}

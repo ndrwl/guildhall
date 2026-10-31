@@ -322,6 +322,19 @@ Like a profile it names no credential.
 A config without the table has the same config digest as before the table existed.
 The handoff and maintenance settings are recorded on each session when it starts, so a change takes effect at the next session.
 
+### The web table
+
+The optional `[web]` table says where the Guildmaster's [task pages](web.md) are served, privately on the tailnet, by each Director session and by a hand-run `guildhall web`.
+It belongs to a Director config; a Steward config with one is refused.
+
+| Key | Meaning |
+|---|---|
+| `address` | The host and port to listen on, such as `andrew-lap-wsl.tail5da40a.ts.net:4388`; required, with no default port, so each copy on a machine names its own. When the server binds, every address the host resolves to must lie in Tailscale's ranges (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`), or nothing is served. Page links are built from it. |
+| `guildmaster` | The Guildmaster's Tailscale login, such as `andrew@example.com`: printable, with no spaces. Optional for now; answering on the page will accept only requests Tailscale identifies as this login. |
+
+A config without the table serves nothing and has the same config digest as before the table existed.
+Config decoding refuses unknown keys, so add `[web]` only after installing a `guildhall` that knows it; an older binary refuses the whole config.
+
 ## Lanterns presentation preference
 
 The automatically installed [Lanterns plugin](lanterns.md) keeps its per-Director `/calm` preference in `<copy>/director/lanterns-calm`, not in `config.toml`.

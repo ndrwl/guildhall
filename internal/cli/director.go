@@ -274,6 +274,13 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 		return refuse("artisans", err)
 	}
 	line("artisans", "%s", perms)
+	// The task pages are served by each session, so their address is named here and a bind failure is a warning
+	// when the session starts, never a refusal.
+	if w := cfg.Web; w != nil {
+		line("web", "task pages at %s/<repo>/<task>, served by each session on the tailnet", webBaseURL(w.Address))
+	} else {
+		line("web", "not configured: no [web] table, so no task pages are served")
+	}
 	if err := a.preflightSkillPolicies(&p); err != nil {
 		return refuse("skills", err)
 	}

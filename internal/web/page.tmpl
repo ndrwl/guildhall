@@ -1,0 +1,99 @@
+{{define "head"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{.}}</title>
+{{end}}
+
+{{define "chips"}}<ul class="chips">{{if .Open}}<li class="c-you">? {{if .Status.Step}}{{.Status.Step}} · {{end}}waiting on you</li>{{else if .Status.Step}}<li>{{.Status.Step}}</li>{{end}}{{with .Status.PR}}<li>{{if $.Status.PRHref}}<a href="{{$.Status.PRHref}}">PR #{{.Number}}</a>{{else}}PR #{{.Number}}{{end}} {{if .Merged}}merged{{else}}open{{end}}</li>{{end}}{{if .Status.CI}}<li>CI <span class="c-{{.Status.CIClass}}">{{.Status.CI}}</span></li>{{end}}</ul>{{end}}
+
+{{define "status"}}<dl class="kv"><dt>State</dt><dd>{{if .Open}}<span class="tag you">? Waiting on you</span> · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}{{.Status.Stands}}{{end}}</dd>
+{{- if .Status.Step}}<dt>Step</dt><dd><b>{{.Status.Step}}</b>{{if .SliceOf}} · {{.SliceOf}}{{end}}</dd>{{end}}
+{{- if .Status.Attempt}}<dt>Attempt</dt><dd>{{.Status.Attempt}}</dd>{{end}}
+<dt>PR</dt><dd>{{with .Status.PR}}{{if $.Status.PRHref}}<a href="{{$.Status.PRHref}}">#{{.Number}}</a>{{else}}#{{.Number}}{{end}} · {{if .Merged}}merged{{else}}open{{end}}{{else}}none{{end}}</dd>
+<dt>CI</dt><dd>{{if .Status.CI}}<span class="tag {{.Status.CIClass}}">{{.Status.CI}}</span>{{else}}no checks recorded{{end}}</dd>
+{{- if .Status.Slices}}<dt>Slices</dt><dd><ul class="sl">{{range .Status.Slices}}<li{{if .Current}} class="cur"{{end}}>{{.Index}}. {{.Title}} · {{.State}}{{if .PR}} · {{if .PRHref}}<a href="{{.PRHref}}">#{{.PR.Number}}</a>{{else}}#{{.PR.Number}}{{end}}{{end}}</li>{{end}}</ul></dd>{{end}}
+{{- range .Crumbs}}<dt>{{.Label}}</dt><dd><a href="{{.Href}}">{{.Name}}</a></dd>{{end}}
+</dl>
+{{- if .Status.Waits}}<p class="asof">Waiting on the Director:</p><ul class="waits">{{range .Status.Waits}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<p class="asof">Read from the store at {{.ReadAt}} · reload for newer</p>{{end}}
+
+{{define "ask"}}<div class="ask{{if .Deferred}} def{{end}}" id="{{.ID}}">
+<div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
+<p class="q">{{.First}}</p>
+{{- if or .Subject .SubjectName}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .SubjectName}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}</p>{{end}}
+{{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
+{{- if .Findings}}<details class="ctx"><summary>{{.FindingsSummary}}</summary><div><ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span></li>{{end}}</ul></div></details>{{end}}
+{{- if .Tiles}}<p class="pick">Answer</p>
+<div class="opts">{{range .Tiles}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}" type="button" disabled><b>{{.Word}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
+<p class="who">{{if .Deferred}}Deferred: still yours, for later. {{end}}Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+</div>{{end}}
+
+{{define "node"}}<li class="node {{.Class}}"><div class="nh"><span class="t">{{.Title}}</span>{{if .Word}}<span class="st">{{.Word}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div>
+{{- if .Body}}<div class="nb">{{.Body}}</div>{{end}}
+{{- if .Findings}}<ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span>{{if .Fixed}}<span class="fx">fixed</span>{{end}}</li>{{end}}</ul>{{end}}
+{{- range .Said}}<div class="said{{if .Back}} back{{end}}">“{{.Text}}”{{if .Where}}<small>{{.Where}}</small>{{end}}</div>{{end}}
+{{- if or .Docs .Ask}}<div class="links">{{range .Docs}}<a class="att" href="{{.Href}}">{{.Name}}</a>{{end}}{{if .Ask}}<a class="flag" href="#{{.Ask}}">Answer #{{.Ask}} above ↑</a>{{end}}</div>{{end}}</li>{{end}}
+
+{{define "task"}}{{template "head" (printf "%s · %s" .T.ID .T.Title)}}<style>{{.Style}}</style></head>
+<body>
+<header class="band">
+<div class="crumb"><span>{{.T.Repository}}</span><span class="sep">/</span><b>{{.T.ID}}</b><span class="sep">·</span><span>{{.T.State}}</span>{{range .Crumbs}}<span class="sep">·</span><span>{{.Label}} <a href="{{.Href}}">{{.Name}}</a></span>{{end}}</div>
+<h1>{{.T.Title}}</h1>
+{{template "chips" .}}
+{{if .SliceOf}}<span class="sliceof">{{.SliceOf}}</span>{{end}}
+<ol class="steps">{{range .Steps}}<li class="{{.State}}"><b>{{.Name}}</b>{{.Note}}</li>{{end}}</ol>
+</header>
+<div class="c2-body">
+<aside class="c2-rail">
+<section class="r-status"><h2>Status</h2>
+{{template "status" .}}
+</section>
+<section class="r-need"><h2>Needs you <span class="n{{if .Open}} you{{end}}">{{.Open}}</span></h2>{{if .Asks}}<ul class="nix">{{range .Asks}}{{if not .Deferred}}<li><a href="#{{.ID}}"><b>{{.KindName}}</b> {{if .SubjectName}}{{.SubjectName}}{{else if .Subject}}{{.Subject}}{{else}}{{range $i, $t := .Tiles}}{{if $i}}, {{end}}{{$t.Option}}{{end}}{{end}}<span>#{{.ID}}</span></a></li>{{end}}{{end}}</ul>{{end}}{{if not .Open}}<p class="empty">Nothing needs you on this task.</p>{{end}}</section>
+<section class="r-task"><h2>The task · in your words</h2>
+{{range .Context}}<blockquote class="w">“{{.Text}}”<cite>{{.Cite}}</cite></blockquote>{{else}}<p class="empty">No words of yours are recorded on this task.</p>{{end}}
+{{with .Grill}}{{if .HTML}}<details class="fold"><summary>What the grill decided · {{.Count}} {{plural .Count "decision" "decisions"}}</summary><div class="grill md">{{.HTML}}</div><a class="flink" href="{{.Href}}">Read {{.Name}}</a></details>{{else}}<a class="flink" href="{{.Href}}">What the grill decided · read {{.Name}}</a>{{end}}{{end}}
+</section>
+<section class="r-docs"><h2>Documents <span class="n">{{.DocCount}}</span></h2>{{if .Docs}}<ul class="dix">{{range .Docs}}{{$k := .Kind}}{{range $i, $d := .Docs}}<li{{if $d.Old}} class="old"{{end}}><span class="k">{{if not $i}}{{$k}}{{end}}</span><a href="{{$d.Href}}">{{$d.Name}}</a><span class="d">{{$d.Day}}</span></li>{{end}}{{end}}</ul>{{else}}<p class="empty">No documents yet.</p>{{end}}</section>
+</aside>
+<section class="c2-now"><ol class="spine"><li class="node {{if .Open}}you{{else}}ok{{end}}"><div class="nh"><span class="t">Now</span><span class="st">{{if .Open}}waiting on you · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}nothing waits on you{{end}}</span>{{if .Since}}<time>{{.Since}}</time>{{end}}</div>
+{{if .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
+{{range .Asks}}{{template "ask" .}}{{end}}
+{{if not .Asks}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}.</p>{{end}}{{end}}
+</li></ol></section>
+<section class="c2-story"><h2>The story · newest first</h2>
+<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
+<ol class="spine">
+{{range .Story}}{{template "node" .}}{{end}}
+{{if .Older}}<li><details class="older"><summary>{{len .Older}} earlier {{plural (len .Older) "entry" "entries"}}{{if .OlderDay}} · from {{.OlderDay}}{{end}}</summary><ol class="spine">{{range .Older}}{{template "node" .}}{{end}}</ol></details></li>{{end}}
+</ol>
+</section>
+</div>
+</body></html>
+{{end}}
+
+{{define "reader"}}{{template "head" (printf "%s · %s" .Doc.Name .T.ID)}}<style>{{.Style}}</style></head>
+<body>
+<header class="band slim">
+<div class="rtop"><a class="backto" href="{{.Base}}">← Back to the task</a><div><p class="dname">{{.Doc.Name}}</p><div class="crumb">{{.T.Repository}} / {{.T.ID}} · {{.T.Title}}</div></div></div>
+<div class="dmeta">{{if .Doc.Kind}}<span>{{.Doc.Kind}}{{if .Doc.Step}} · {{.Doc.Step}}{{end}}</span><span>·</span>{{end}}{{if .Doc.Recorded}}<span>recorded {{.Doc.Recorded}}</span><span>·</span>{{end}}<span class="okk">✓ sha256 matches the record</span><span>·</span><a href="{{.Doc.RawHref}}">Raw</a></div>
+</header>
+<nav class="jump"><a class="jb" href="{{.Base}}">← {{.T.ID}}</a><a class="jn" href="#needs">? Needs you · {{.Open}} · below ↓</a></nav>
+<div class="r-body">
+<div class="r-doc">{{if .Frame}}<iframe sandbox src="{{.Doc.FrameHref}}" title="{{.Doc.Name}}"></iframe>{{else if .HTML}}<article class="md">{{.HTML}}</article>{{else}}<pre class="txt">{{.Text}}</pre>{{end}}</div>
+<aside class="r-side">
+<section id="needs"><h2>Needs you <span class="n{{if .Open}} you{{end}}">{{.Open}}</span></h2>
+{{if .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
+{{range .Asks}}{{template "ask" .}}{{else}}<p class="empty">Nothing needs you on this task.</p>{{end}}
+</section>
+<section><h2>Status</h2>
+{{template "status" .}}
+</section>
+<div class="endback"><a class="backto" href="{{.Base}}">← Back to the task</a></div>
+</aside>
+</div>
+</body></html>
+{{end}}
+
+{{define "refusal"}}{{template "head" .Title}}<style>{{.Style}}</style></head>
+<body><main class="refusal"><h1>{{.Title}}</h1><p>{{.Words}}</p></main></body></html>
+{{end}}

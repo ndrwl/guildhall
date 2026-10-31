@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>d122 · Guildmaster task page: one web page per task with context, status and answerable decisions</title>
+<style>/* d105 design-3, "C2, refined": one set of colour variables, the dark theme chosen by prefers-color-scheme. */
+:root{--bg:#fff;--bg2:#f5f6f8;--card:#fff;--fg:#1b1d22;--mut:#5b6270;--faint:#868d99;--line:#e2e5ea;--line2:#cfd4db;--link:#1d5bd0;
+ --band:#15171c;--bandfg:#f1f2f5;--bandmut:#a1a7b3;--chip:#262a32;
+ --ok:#15803d;--okbg:#e9f6ee;--back:#7c3aed;--backbg:#f3eefe;--run:#1d6fe0;--runbg:#e8f0fd;
+ --you:#b45f00;--youbg:#fff7e8;--youline:#f2c46d;--youdot:#e08a00;--bad:#c42b2b;--badbg:#fdeeee;--on:#fff;
+ --code:#f1f3f6;--shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08)}
+@media (prefers-color-scheme:dark){:root{--bg:#121418;--bg2:#181b20;--card:#1c1f25;--fg:#e8eaee;--mut:#a5acb8;--faint:#7c8390;--line:#2a2e36;--line2:#3a3f49;--link:#86b4ff;
+ --band:#0b0c0f;--bandfg:#eef0f3;--bandmut:#8e95a1;--chip:#20242b;
+ --ok:#4ade80;--okbg:#10251a;--back:#b597ff;--backbg:#211a35;--run:#6ea8ff;--runbg:#132038;
+ --you:#fbbf24;--youbg:#2a2009;--youline:#7a5a12;--youdot:#f5b31c;--bad:#ff8080;--badbg:#2f1515;--on:#0f1114;
+ --code:#0d0f12;--shadow:none}}
+html{color-scheme:light dark}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+a{color:var(--link);text-underline-offset:2px}
+code{font:.86em/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:1px 4px;border-radius:4px}
+h2{font:650 12px/1.3 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+h2 .n{font-size:11px;letter-spacing:0;background:var(--line);color:var(--fg);border-radius:999px;padding:1px 7px}
+h2 .n.you{background:var(--youdot);color:var(--on)}
+summary{cursor:pointer}
+summary::-webkit-details-marker{display:none}
+button{font:inherit;color:inherit}
+/* band */
+.band{background:var(--band);color:var(--bandfg);padding:18px 32px 0}
+.crumb{font-size:13px;color:var(--bandmut);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.crumb a{color:#9cc2ff}
+.crumb .sep{opacity:.5}
+.band h1{font:650 22px/1.3 system-ui,sans-serif;margin:6px 0 14px;letter-spacing:-.01em;max-width:62ch}
+.chips{display:none}
+.steps{display:flex;margin:0;padding:0;list-style:none;gap:3px}
+.steps li{flex:1 1 0;padding:9px 12px 13px;border-top:4px solid #3a3f49;font-size:12.5px;color:var(--bandmut);min-width:0;overflow:hidden;text-overflow:ellipsis}
+.steps b{display:block;color:var(--bandfg);font-size:13.5px;font-weight:600;white-space:nowrap}
+.steps .ok{border-color:#3fbf73}.steps .ok b::before{content:"✓ ";color:#5fd394}
+.steps .back{border-color:#a78bfa}.steps .back b::before{content:"↩\FE0E  ";color:#c4b5fd}
+.steps .run{border-color:#5b9cff}.steps .run b::before{content:"▸ ";color:#8fbcff}
+.steps .bad{border-color:#ff6b6b}.steps .bad b::before{content:"✗ ";color:#ff9b9b}
+.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"? "}
+.steps .later b{color:var(--bandmut);font-weight:500}
+.sliceof{display:inline-block;margin:0 0 10px;font-size:13px;color:var(--bandmut)}
+/* quiet text and status */
+.mut{color:var(--mut)}.faint{color:var(--faint)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;font-size:14px}
+.kv dt{color:var(--mut)}.kv dd{margin:0;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
+.tag.ok{color:var(--ok)}.tag.bad{color:var(--bad)}.tag.you{color:var(--you)}.tag.run{color:var(--run)}
+.sl{list-style:none;margin:4px 0 0;padding:0;font-size:13.5px}.sl li{margin:2px 0}.sl .cur{font-weight:650}
+.waits{margin:6px 0 0;padding-left:18px;font-size:13.5px;color:var(--mut)}
+/* one ask */
+.ask{background:var(--card);border:1px solid var(--youline);border-left:5px solid var(--youdot);border-radius:12px;padding:16px 18px 14px;box-shadow:var(--shadow)}
+.ask+.ask{margin-top:14px}
+.ask.def{border-left-style:dashed}
+.ah{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
+.kind{font:700 11px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.07em;background:var(--youbg);color:var(--you);border:1px solid var(--youline);padding:4px 8px;border-radius:5px}
+.aid{font:13px ui-monospace,Menlo,Consolas,monospace;color:var(--mut);text-decoration:none}
+.since{color:var(--faint);margin-left:auto}
+.q{font:650 17px/1.4 system-ui,sans-serif;margin:10px 0 4px;letter-spacing:-.005em;overflow-wrap:anywhere}
+.subj{font-size:13.5px;color:var(--mut);margin:0 0 10px}
+.ctx{margin:0 0 12px;font-size:14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line)}
+.ctx>summary{padding:8px 12px;font-weight:600;color:var(--fg);min-height:44px;display:flex;align-items:center}
+.ctx>summary,.fold>summary{list-style:none}
+.ctx>summary::before,.fold>summary::before{content:"▸";display:inline-block;width:1.2em;color:var(--mut)}
+.ctx[open]>summary::before,.fold[open]>summary::before{content:"▾"}
+.ctx>div{padding:0 12px 10px}.ctx p{margin:0}
+.ctx pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:0}
+.pick{font-size:13px;color:var(--mut);margin:12px 0 6px;font-weight:600}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.opt{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;min-height:56px;padding:8px 12px;border-radius:10px;border:1px solid var(--line2);border-left:4px solid var(--line2);background:var(--card)}
+.opt b{font-size:15px;font-weight:650}
+.opt span{font-size:12.5px;color:var(--mut);line-height:1.35}
+.opt.carry{border-left-color:var(--run)}.opt.carry b{color:var(--run)}
+.opt.pos{border-left-color:var(--ok)}.opt.pos b{color:var(--ok)}
+.opt.neg{border-left-color:var(--bad)}.opt.neg b{color:var(--bad)}
+.opt[disabled]{opacity:.55;cursor:not-allowed}
+.who{font-size:12.5px;color:var(--faint);margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--line2)}
+.who b{color:var(--mut);font-weight:600}
+.find{margin:8px 0 0;padding:0;list-style:none;font-size:14px}
+.find li{margin:3px 0;display:flex;gap:8px;align-items:baseline}
+.sev{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid var(--line2);color:var(--mut);white-space:nowrap}
+.find .fx{color:var(--ok);font-size:12.5px;font-weight:600;white-space:nowrap}
+/* the task in your words */
+.w{margin:0 0 10px;font-size:14px;line-height:1.5;border-left:3px solid var(--line2);padding:2px 0 2px 12px;white-space:pre-line;overflow-wrap:anywhere}
+.w cite{display:block;font-size:12px;color:var(--faint);font-style:normal;margin-top:2px;white-space:normal}
+.fold{font-size:14px}
+.fold>summary{color:var(--link);padding:6px 0;font-weight:600;min-height:44px;display:flex;align-items:center}
+.grill{margin:4px 0 0}.grill ul,.grill ol{padding-left:18px;margin:4px 0}.grill li{margin:4px 0}
+.flink{display:flex;align-items:center;min-height:44px;font-weight:600;font-size:14px}
+/* documents index */
+.dix{list-style:none;margin:0;padding:0;font-size:14px}
+.dix li{display:flex;gap:8px;align-items:center;min-height:44px}
+.dix .k{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);width:62px;flex:none;overflow:hidden;text-overflow:ellipsis}
+.dix a{flex:1;min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;min-height:44px}
+.dix .d{font-size:12px;color:var(--faint);white-space:nowrap}
+.dix .old a{color:var(--mut)}
+.dix .grp{font-size:12px;font-weight:700;color:var(--mut);min-height:28px;margin-top:6px}
+/* the spine, newest first */
+.key{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--mut);margin:0 0 16px;padding:0;list-style:none}
+.key li{display:flex;align-items:center;gap:6px}
+.dot{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;font:700 11px/1 system-ui,sans-serif;color:var(--on);background:var(--ok)}
+.dot.back{background:var(--back)}.dot.run{background:var(--run)}.dot.you{background:var(--youdot)}.dot.later{background:transparent;box-shadow:inset 0 0 0 2px var(--line2)}
+.spine{list-style:none;margin:0;padding:0;position:relative}
+.spine::before{content:"";position:absolute;left:12px;top:8px;bottom:8px;width:2px;background:var(--line)}
+.node{position:relative;padding:0 0 22px 42px}
+.node::before{content:"✓";position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 14px/1 system-ui,sans-serif;color:var(--on);background:var(--ok);box-shadow:0 0 0 4px var(--bg)}
+.node.back::before{content:"↩\FE0E";background:var(--back)}
+.node.run::before{content:"▸";background:var(--run)}
+.node.bad::before{content:"✗";background:var(--bad)}
+.node.void::before{content:"⊘";background:var(--faint)}
+.node.later::before{content:"";background:var(--bg);box-shadow:0 0 0 4px var(--bg),inset 0 0 0 2px var(--line2)}
+.node.you::before{content:"?";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
+.nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;min-height:26px}
+.nh .t{font-weight:650;font-size:15px}
+.st{font-size:12px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;background:var(--okbg);color:var(--ok)}
+.back .st{background:var(--backbg);color:var(--back)}.run .st{background:var(--runbg);color:var(--run)}.you .st{background:var(--youbg);color:var(--you)}
+.bad .st{background:var(--badbg);color:var(--bad)}.void .st,.later .st{background:var(--bg2);color:var(--mut)}
+.nh time{margin-left:auto;font-size:13px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.nb{color:var(--mut);margin-top:3px;font-size:14px;overflow-wrap:anywhere}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.att,.flag{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:4px 12px;border-radius:8px;font-size:13.5px;text-decoration:none;font-weight:600}
+.att{border:1px solid var(--line2);background:var(--card);color:var(--fg)}
+.att::before{content:"";width:10px;height:13px;border:1.5px solid var(--mut);border-radius:2px;flex:none}
+.flag{background:var(--youbg);color:var(--you);border:1px solid var(--youline)}
+.said{margin-top:10px;padding:8px 12px;border-radius:8px;font-size:14px;background:var(--okbg);border-left:3px solid var(--ok);white-space:pre-line;overflow-wrap:anywhere}
+.said.back{background:var(--backbg);border-left-color:var(--back)}
+.said small{display:block;font-size:12.5px;color:var(--mut);margin-top:2px;white-space:normal}
+.older>summary{display:inline-flex;align-items:center;min-height:44px;margin:0 0 18px 42px;padding:0 14px;border:1px solid var(--line2);border-radius:999px;color:var(--link);font-size:13.5px;font-weight:600;list-style:none}
+.older>summary::before{content:"▸";margin-right:8px}
+.older[open]>summary::before{content:"▾"}
+.asof{font-size:12px;color:var(--faint);margin-top:18px}
+.empty{color:var(--mut);font-size:14px;margin:0}
+.stage{background:var(--youbg);border:1px solid var(--youline);border-radius:12px;padding:14px 16px;margin:0 0 14px;font-size:14.5px}
+/* task page: sticky left rail; the asks on "Now"; the story below */
+.c2-body{display:grid;grid-template-columns:320px minmax(0,1fr);grid-template-areas:"rail now" "rail story";align-items:start}
+.c2-rail{grid-area:rail;position:sticky;top:0;max-height:100vh;overflow-y:auto;background:var(--bg2);border-right:1px solid var(--line);padding:22px 22px 28px}
+.c2-rail>section+section{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.c2-now{grid-area:now;padding:26px 36px 4px;max-width:880px}
+.c2-now .spine::before{display:none}
+.c2-now .node{padding-bottom:8px}
+.c2-now .nh{margin-bottom:12px}
+.c2-story{grid-area:story;padding:18px 36px 64px;max-width:880px}
+.c2-story>h2{margin-bottom:12px}
+.nix{list-style:none;margin:0;padding:0}
+.nix a{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 12px;border-radius:9px;background:var(--youbg);border:1px solid var(--youline);color:var(--fg);text-decoration:none;font-size:14px;margin-bottom:6px}
+.nix a b{font-weight:650}
+.nix a span{margin-left:auto;font:12.5px ui-monospace,Menlo,Consolas,monospace;color:var(--you)}
+/* reader page: one document, the asks and status pinned beside it */
+.band.slim{padding:14px 32px 18px}
+.rtop{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.backto{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px 0 12px;border-radius:10px;background:var(--chip);color:var(--bandfg)!important;text-decoration:none;font-weight:650;font-size:14.5px;border:1px solid #3a3f49}
+.dname{font:650 18px/1.3 system-ui,sans-serif;margin:0;overflow-wrap:anywhere}
+.dmeta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px;color:var(--bandmut);margin-top:8px}
+.dmeta .okk{color:#5fd394}
+.dmeta a{color:#9cc2ff;font-weight:600;display:inline-flex;align-items:center;min-height:44px}
+.jump{display:none}
+.r-body{display:grid;grid-template-columns:minmax(0,1fr) 410px;align-items:start}
+.r-doc{padding:28px 48px 64px;min-width:0}
+.r-doc>.md,.r-doc>.txt{max-width:720px}
+.r-doc iframe{width:100%;height:80vh;border:1px solid var(--line);border-radius:10px;background:#fff}
+.txt{white-space:pre-wrap;overflow-wrap:anywhere;font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0}
+.r-side{position:sticky;top:0;max-height:100vh;overflow-y:auto;background:var(--bg2);border-left:1px solid var(--line);padding:22px 20px 28px}
+.r-side>section+section{margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
+.r-side .ask{padding:14px 14px 12px}
+.r-side .q{font-size:15.5px}
+.r-side .opts{grid-template-columns:1fr}
+.r-side .since{margin-left:0;flex-basis:100%}
+.endback{margin-top:20px}
+.endback .backto{background:var(--card);color:var(--fg)!important;border-color:var(--line2)}
+/* goldmark's output: headings, lists, tables, fenced code, quotes */
+.md{font-size:16px;line-height:1.65;overflow-wrap:anywhere}
+.md h1{font:700 26px/1.25 system-ui,sans-serif;margin:0 0 14px;letter-spacing:-.015em}
+.md h2{font:650 19px/1.3 system-ui,sans-serif;text-transform:none;letter-spacing:-.005em;color:var(--fg);margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);display:block}
+.md h3{font:650 16px/1.35 system-ui,sans-serif;margin:22px 0 6px}
+.md p{margin:0 0 12px}
+.md ul,.md ol{margin:0 0 12px;padding-left:24px}.md li{margin:4px 0}
+.md blockquote{margin:0 0 14px;padding:4px 14px;border-left:4px solid var(--line2);color:var(--mut)}
+.md pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;margin:0 0 16px;font-size:13.5px;line-height:1.55}
+.md pre code{background:none;padding:0;font-size:inherit}
+.md table{display:block;overflow-x:auto;max-width:100%;border-collapse:collapse;margin:0 0 16px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;line-height:1.45}
+.md th{text-align:left;font-weight:650;background:var(--bg2);border-bottom:1px solid var(--line2)}
+.md th,.md td{padding:9px 14px;vertical-align:top}
+.md tr+tr td{border-top:1px solid var(--line)}
+/* refusal page */
+.refusal{max-width:640px;margin:48px auto;padding:0 20px}
+.refusal h1{font:650 22px/1.3 system-ui,sans-serif;margin:0 0 10px}
+/* phone: band with status chips, then the asks, then the story, then the rest */
+@media (max-width:760px){
+ .band{padding:12px 16px 12px}
+ .crumb{font-size:12.5px}
+ .band h1{font-size:18px;margin:4px 0 10px}
+ .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:0;list-style:none}
+ .chips li{display:flex;align-items:center;gap:6px;min-height:32px;padding:0 11px;border-radius:999px;background:var(--chip);font-size:13.5px;color:var(--bandfg)}
+ .chips a{color:#9cc2ff;font-weight:600}
+ .chips .c-you{background:#3a2c0c;color:#ffd166;font-weight:650}
+ .chips .c-ok{color:#5fd394;font-weight:650}.chips .c-bad{color:#ff9b9b;font-weight:650}
+ .steps{gap:3px}
+ .steps li{padding:0;height:0;border-top-width:5px;font-size:0;border-radius:3px}
+ .steps b{display:none}
+ .c2-body{display:flex;flex-direction:column}
+ .c2-rail{display:contents}
+ .c2-now{order:1;padding:16px 12px 0}
+ .c2-now .node{padding-left:0}.c2-now .node::before{display:none}
+ .c2-story{order:2;padding:12px 16px 20px}
+ .r-need{display:none}
+ .r-task{order:3}.r-docs{order:4}.r-status{order:5}
+ .r-task,.r-docs,.r-status{padding:20px 16px;background:var(--bg2);border-top:1px solid var(--line)}
+ .r-status{padding-bottom:48px}
+ .c2-rail>section+section{margin-top:0}
+ .ask{padding:14px 14px 12px}
+ .since{margin-left:0;flex-basis:100%}
+ .q{font-size:16.5px}
+ .opts{grid-template-columns:1fr}
+ .older>summary{margin-left:0}
+ .nh time{margin-left:0;flex-basis:100%;order:-1;font-size:12.5px}
+ .node{padding-left:38px}
+ .band.slim{padding:10px 14px 14px}
+ .dname{font-size:16px}
+ .dmeta{font-size:12.5px}
+ .jump{display:flex;position:sticky;top:0;z-index:3;gap:8px;padding:8px 10px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+ .jump a{display:flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border-radius:10px;font-weight:650;font-size:14.5px;text-decoration:none}
+ .jump .jb{border:1px solid var(--line2);color:var(--fg)}
+ .jump .jn{flex:1;background:var(--youbg);color:var(--you);border:1px solid var(--youline)}
+ .band.slim .backto{display:none}
+ .r-body{display:block}
+ .r-doc{padding:18px 16px 24px}
+ .md{font-size:15.5px}
+ .md h1{font-size:22px}
+ .md h2{font-size:17.5px}
+ .md pre{font-size:12.5px;padding:12px}
+ .md th,.md td{padding:8px 10px}
+ .r-side{position:static;max-height:none;border-left:0;border-top:1px solid var(--line);padding:18px 12px 48px}
+ .r-side .q{font-size:16.5px}
+ .endback .backto{width:100%;justify-content:center}
+}
+</style></head>
+<body>
+<header class="band">
+<div class="crumb"><span>guildhall</span><span class="sep">/</span><b>d122</b><span class="sep">·</span><span>open</span><span class="sep">·</span><span>linked from <a href="/guildhall/d105">d105</a></span><span class="sep">·</span><span>depends on <a href="/other/d7">other/d7</a></span></div>
+<h1>Guildmaster task page: one web page per task with context, status and answerable decisions</h1>
+<ul class="chips"><li class="c-you">? Review · round 2 · waiting on you</li><li><a href="https://github.com/ndrwl/guildhall/pull/251">PR #251</a> open</li><li>CI <span class="c-ok">✓ passed</span></li></ul>
+<span class="sliceof">slice 2 of 2</span>
+<ol class="steps"><li class="ok"><b>Grill</b>3 rounds</li><li class="ok"><b>Research</b>1 round</li><li class="ok"><b>Plan</b>1 round</li><li class="ok"><b>Accept</b>accept-2 approved</li><li class="ok"><b>Build</b>2 rounds</li><li class="you"><b>Review</b>waiting on you</li><li class="later"><b>Publish</b>later</li><li class="later"><b>Deliver</b>later</li></ol>
+</header>
+<div class="c2-body">
+<aside class="c2-rail">
+<section class="r-status"><h2>Status</h2>
+<dl class="kv"><dt>State</dt><dd><span class="tag you">? Waiting on you</span> · 2 asks</dd><dt>Step</dt><dd><b>Review · round 2</b> · slice 2 of 2</dd><dt>Attempt</dt><dd>review--s2-2 · succeeded 4 Nov 14:20</dd>
+<dt>PR</dt><dd><a href="https://github.com/ndrwl/guildhall/pull/251">#251</a> · open</dd>
+<dt>CI</dt><dd><span class="tag ok">✓ passed</span></dd><dt>Slices</dt><dd><ul class="sl"><li>1. Serve read-only task and reader pages on the tailnet · merged · <a href="https://github.com/ndrwl/guildhall/pull/247">#247</a></li><li class="cur">2. Answer decisions on the task page · current · <a href="https://github.com/ndrwl/guildhall/pull/251">#251</a></li></ul></dd><dt>linked from</dt><dd><a href="/guildhall/d105">d105</a></dd><dt>depends on</dt><dd><a href="/other/d7">other/d7</a></dd>
+</dl><p class="asof">Waiting on the Director:</p><ul class="waits"><li>checks of PR #251 are pending</li></ul>
+<p class="asof">Read from the store at 14:52 · reload for newer</p>
+</section>
+<section class="r-need"><h2>Needs you <span class="n you">2</span></h2><ul class="nix"><li><a href="#review--s2-x2"><b>Loop exit</b> 3f9c2ab<span>#review--s2-x2</span></a></li><li><a href="#grant-1"><b>Grant</b> approve, reject<span>#grant-1</span></a></li></ul></section>
+<section class="r-task"><h2>The task · in your words</h2>
+<blockquote class="w">“Perhaps its better if we move things like grills and decisions for me into a web interface”<cite>31 Oct 09:12 · task context · recorded by director</cite></blockquote><blockquote class="w">“Ideally a page might have a full summary of the task”<cite>31 Oct 09:12 · task context</cite></blockquote>
+<details class="fold"><summary>What the grill decided · 3 decisions</summary><div class="grill md"><ul>
+<li><strong>Server:</strong> the Director session's supervisor serves the page.</li>
+<li><strong>Access:</strong> tailnet only.</li>
+<li><strong>Rendering:</strong> goldmark with <code>tables</code>.</li>
+</ul>
+</div><a class="flink" href="/guildhall/d122/doc/grill-3-notes">Read grill-3-notes</a></details>
+</section>
+<section class="r-docs"><h2>Documents <span class="n">8</span></h2><ul class="dix"><li><span class="k">Review</span><a href="/guildhall/d122/doc/review--s2-2-outcome">review--s2-2-outcome</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/review-1-outcome">review-1-outcome</a><span class="d">4 Nov</span></li><li><span class="k">Design</span><a href="/guildhall/d122/doc/design-1-design">design-1-design</a><span class="d">31 Oct</span></li><li><span class="k">Spec</span><a href="/guildhall/d122/doc/plan-1-spec">plan-1-spec</a><span class="d">31 Oct</span></li><li><span class="k">Grill</span><a href="/guildhall/d122/doc/grill-3-notes">grill-3-notes</a><span class="d">31 Oct</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/grill-2-notes">grill-2-notes</a><span class="d">31 Oct</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/grill-1-notes">grill-1-notes</a><span class="d">31 Oct</span></li><li><span class="k">d105</span><a href="/guildhall/d105/doc/design-3-design">design-3-design</a><span class="d">31 Oct</span></li></ul></section>
+</aside>
+<section class="c2-now"><ol class="spine"><li class="node you"><div class="nh"><span class="t">Now</span><span class="st">waiting on you · 2 asks</span><time>since 4 Nov 14:20</time></div>
+<p class="stage">? The Director runs grill with you in its session; answer it there.</p>
+<div class="ask" id="review--s2-x2">
+<div class="ah"><span class="kind">Loop exit</span><a class="aid" href="#review--s2-x2">#review--s2-x2</a><span class="since">open since 4 Nov 14:20</span></div>
+<p class="q">Review round 2 still asks for changes. Continue, accept or reject?</p><p class="subj">About <code>3f9c2ab</code></p><details class="ctx"><summary>The rest of the question</summary><div><pre>The review is review--s2-2-outcome.</pre></div></details><details class="ctx"><summary>The open findings · 1</summary><div><ul class="find"><li><span class="sev">medium</span><span><b>F4</b> a sha256 mismatch returns a 500 with the state path</span></li></ul></div></details><p class="pick">Answer</p>
+<div class="opts"><button class="opt carry" type="button" disabled><b>Continue</b><span>another round of the loop</span></button><button class="opt pos" type="button" disabled><b>Accept</b><span>take the work as it is and go on</span></button><button class="opt neg" type="button" disabled><b>Reject</b><span>stop here; nothing more is delivered</span></button></div>
+<p class="who">Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+</div><div class="ask" id="grant-1">
+<div class="ah"><span class="kind">Grant</span><a class="aid" href="#grant-1">#grant-1</a><span class="since">open since 4 Nov 14:31</span></div>
+<p class="q">Grant network to build-3, so it can run the real tailscale whois contract test?</p><p class="pick">Answer</p>
+<div class="opts"><button class="opt pos" type="button" disabled><b>Approve</b><span>the grant takes effect for its attempt</span></button><button class="opt neg" type="button" disabled><b>Reject</b><span>the attempt runs without it</span></button></div>
+<p class="who">Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+</div><div class="ask def" id="deliver-1">
+<div class="ah"><span class="kind">Merge</span><a class="aid" href="#deliver-1">#deliver-1</a><span class="tag you">deferred</span><span class="since">open since 4 Nov 14:35</span></div>
+<p class="q">Merge d122?</p><p class="pick">Answer</p>
+<div class="opts"><button class="opt pos" type="button" disabled><b>Merge</b><span>merge the pull request</span></button><button class="opt carry" type="button" disabled><b>Hold</b><span>keep it open for now; nothing merges</span></button><button class="opt" type="button" disabled><b>Later</b></button></div>
+<p class="who">Deferred: still yours, for later. Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+</div>
+
+</li></ol></section>
+<section class="c2-story"><h2>The story · newest first</h2>
+<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
+<ol class="spine">
+<li class="node later"><div class="nh"><span class="t">Later</span><span class="st">not started</span></div><div class="nb">Publish · Deliver</div></li><li class="node you"><div class="nh"><span class="t">Grant · grant-1</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div></li><li class="node you"><div class="nh"><span class="t">Review · round 2 · slice 2</span><span class="st">changes requested · waiting on you</span><time>4 Nov 13:58–14:20</time></div><div class="links"><a class="att" href="/guildhall/d122/doc/review--s2-2-outcome">review--s2-2-outcome</a><a class="flag" href="#review--s2-x2">Answer #review--s2-x2 above ↑</a></div></li><li class="node ok"><div class="nh"><span class="t">Build · round 1 · slice 2</span><span class="st">finished</span><time>4 Nov 12:10–13:52</time></div></li><li class="node ok"><div class="nh"><span class="t">Slice 1 merged</span><span class="st">merged</span><time>4 Nov 12:00</time></div></li><li class="node back"><div class="nh"><span class="t">Review · round 1</span><span class="st">changes requested · sent back to build</span><time>4 Nov 10:02–11:40</time></div><ul class="find"><li><span class="sev">high</span><span><b>F1</b> an answer with no Origin is accepted</span><span class="fx">fixed</span></li></ul><div class="links"><a class="att" href="/guildhall/d122/doc/review-1-outcome">review-1-outcome</a></div></li><li class="node ok"><div class="nh"><span class="t">Approval · accept-2</span><span class="st">Approved</span><time>31 Oct 17:00–17:05</time></div><div class="said">“approve all”<small>answered via the Director or decide answer</small></div><div class="links"><a class="att" href="/guildhall/d122/doc/plan-1-spec">plan-1-spec</a></div></li>
+<li><details class="older"><summary>5 earlier entries · from 31 Oct</summary><ol class="spine"><li class="node void"><div class="nh"><span class="t">Approval · accept-1</span><span class="st">void</span><time>31 Oct 16:15</time></div><div class="nb">void: superseded: the spec changed</div></li><li class="node ok"><div class="nh"><span class="t">Grill · round 3</span><span class="st">finished</span><time>31 Oct 15:00–15:40</time></div><div class="links"><a class="att" href="/guildhall/d122/doc/grill-3-notes">grill-3-notes</a></div></li><li class="node ok"><div class="nh"><span class="t">Grill · round 2</span><span class="st">finished</span><time>31 Oct 11:00–11:50</time></div><div class="links"><a class="att" href="/guildhall/d122/doc/grill-2-notes">grill-2-notes</a></div></li><li class="node ok"><div class="nh"><span class="t">Grill · round 1</span><span class="st">finished</span><time>31 Oct 09:20–09:40</time></div><div class="links"><a class="att" href="/guildhall/d122/doc/grill-1-notes">grill-1-notes</a></div></li><li class="node ok"><div class="nh"><span class="t">Task added</span><span class="st">finished</span><time>31 Oct 09:12</time></div><div class="nb">with your words, shown under “The task”</div></li></ol></details></li>
+</ol>
+</section>
+</div>
+</body></html>

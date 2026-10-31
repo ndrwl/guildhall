@@ -718,3 +718,15 @@ func (r *run) approved(step string, want workflow.Revisions) (bool, error) {
 	}
 	return o.BoundTo(want) == nil && !o.Blocking() && o.Verdict != workflow.VerdictRejected, nil
 }
+
+// DecisionOptions returns the option sets of the decisions the engine opens itself, by decision kind: a loop exit's
+// two (an ordinary loop's and a validate step's), the merge decision's and the follow-ups decision's, so a reader
+// such as the task page's option-meanings table can check it covers every one (docs/contracts/web.md). Each slice
+// is a copy. The Guildmaster questions the engine opens through render.Question are render.DecisionOptions'.
+func DecisionOptions() map[store.DecisionKind][][]string {
+	return map[store.DecisionKind][][]string{
+		store.DecisionLoopExit:  {slices.Clone(exitOptions), slices.Clone(validationExitOptions)},
+		store.DecisionMerge:     {slices.Clone(mergeOptions)},
+		store.DecisionFollowUps: {slices.Clone(followUpsOptions)},
+	}
+}

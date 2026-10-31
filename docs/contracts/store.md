@@ -38,6 +38,7 @@ The merge queue ([interpreter](../interpreter.md#the-merge-queue), [decision](..
 `SetMergeHold` records a task's hold-merge with its history, receipt record `merge-hold`; the queue's own receipts name `merge-queue`.
 The message types `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried` are registered in `MessageTypes` as the engine's.
 
+`DecisionOptions()` returns the option sets of the decisions the store opens itself, a grant's `GrantApprove` and `GrantReject`, for the task page's option-meanings table ([`internal/web`](web.md)).
 The engine-origin `pr-blocked` message type is registered for Director inbox counting and wake delivery.
 Its head/state replay identity and observation document are owned by the interpreter; no new store mutation or schema is introduced.
 `SendMessage` keeps its semantics: the same request replays its receipt and a different request under the same id is `ErrMutationConflict`. The interpreter treats that conflict, or `ErrExists`, on a Director message as already reported, so a re-sent message whose text changed never fails an advance ([interpreter](../interpreter.md)).
