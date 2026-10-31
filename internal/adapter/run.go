@@ -344,7 +344,9 @@ func IsLeftOpen(err error) bool {
 // workspace immediately before closing: ref's session is the host's, the
 // workspace exists and is labelled one of workspaceLabels, it holds exactly
 // one tab, ref's, labelled tabLabel with one pane, the pane is still ref's and
-// its shell is idle. A mismatch is a LeftOpenError; a workspace, tab or pane
+// its shell is idle, and a second listing of the workspace's tabs, just before
+// closing, still finds only ref's tab. A mismatch is a LeftOpenError; a
+// workspace, tab or pane
 // already gone is an error for which herdr.IsNotFound is true.
 // CloseLabelledTab closes only ref's tab, as IdleTabCloser does, once its
 // label is tabLabel. Callers must separately prove that the attempt finished
@@ -373,52 +375,11 @@ func (h *HerdrTabs) CloseWorkspace(ctx context.Context, ref TabRef, workspaceLab
 	if len(workspaceLabels) == 0 || tabLabel == "" {
 		return errors.New("close workspace: no labels to match")
 	}
-	list, err := h.client.WorkspaceList(ctx)
-	if err != nil {
-		return err
-	}
-	i := slices.IndexFunc(list, func(w herdr.Workspace) bool { return w.ID == ref.WorkspaceID })
-	if i < 0 {
+	gone, err := h.closeIfOurs(ctx, ref.WorkspaceID, []TabRef{ref}, false, workspaceLabels, tabLabel)
+	if gone {
 		return workspaceNotFound(ref.WorkspaceID)
 	}
-	if label := list[i].Label; !slices.Contains(workspaceLabels, label) {
-		return leftOpen("workspace %s is labelled %q, not an attempt's workspace label", ref.WorkspaceID, label)
-	}
-	tabs, err := h.client.TabList(ctx, ref.WorkspaceID)
-	if err != nil {
-		return err
-	}
-	switch {
-	case len(tabs) != 1:
-		return leftOpen("workspace %s holds %d tabs, not only the recorded tab %s", ref.WorkspaceID, len(tabs), ref.TabID)
-	case tabs[0].ID != ref.TabID:
-		return leftOpen("workspace %s holds tab %s, not the recorded tab %s", ref.WorkspaceID, tabs[0].ID, ref.TabID)
-	case tabs[0].Label != tabLabel:
-		return leftOpen("tab %s is labelled %q, not %q", ref.TabID, tabs[0].Label, tabLabel)
-	case tabs[0].PaneCount != 1:
-		return leftOpen("tab %s holds %d panes, not one", ref.TabID, tabs[0].PaneCount)
-	}
-	t, err := h.client.RecordedTab(ctx, ref.WorkspaceID, ref.TabID, ref.PaneID)
-	if err != nil {
-		return err
-	}
-	if err := h.client.CheckOwnedPane(ctx, t); err != nil {
-		return err
-	}
-	info, err := h.client.PaneProcessInfo(ctx, ref.PaneID)
-	if err != nil {
-		return err
-	}
-	if !info.ShellIdle() {
-		return leftOpen("pane %s is not an idle shell", ref.PaneID)
-	}
-	if err := h.client.CloseOwnedWorkspace(ctx, t, ref.WorkspaceID); err != nil {
-		return err
-	}
-	h.mu.Lock()
-	delete(h.owned, ref)
-	h.mu.Unlock()
-	return nil
+	return err
 }
 
 // AbandonedWorkspaceCloser closes the Herdr workspace a failed Artisan launch
@@ -450,62 +411,77 @@ func (h *HerdrTabs) CloseAbandonedWorkspace(ctx context.Context, workspaceID str
 	if len(workspaceLabels) == 0 || tabLabel == "" {
 		return errors.New("close abandoned workspace: no labels to match")
 	}
+	_, err := h.closeIfOurs(ctx, workspaceID, tabs, true, workspaceLabels, tabLabel)
+	return err
+}
+
+// closeIfOurs closes workspaceID through tabs, the tabs recorded there in
+// creation order, once it holds nothing else: every recorded tab is in the
+// host's session and in workspaceID, the workspace is labelled one of
+// workspaceLabels, every listed tab is a recorded tab with one pane, labelled
+// tabLabel unless starting and it is tabs[0], each adopts with its pane still
+// the tab's and its shell idle, and a second listing of the workspace's tabs
+// matches the first. A mismatch is a LeftOpenError. It reports true, with a
+// nil error, for a workspace its first workspace listing no longer lists, and
+// only then; a tab, pane or workspace that disappears later is the error
+// Herdr reports.
+func (h *HerdrTabs) closeIfOurs(ctx context.Context, workspaceID string, tabs []TabRef, starting bool, workspaceLabels []string, tabLabel string) (bool, error) {
 	recorded := map[string]TabRef{}
 	for _, ref := range tabs {
 		if ref.Session != h.client.Session() {
-			return leftOpen("workspace %s is recorded in session %q, not %q", workspaceID, ref.Session, h.client.Session())
+			return false, leftOpen("workspace %s is recorded in session %q, not %q", workspaceID, ref.Session, h.client.Session())
 		}
 		if ref.WorkspaceID != workspaceID {
-			return leftOpen("recorded tab %s is in workspace %s, not %s", ref.TabID, ref.WorkspaceID, workspaceID)
+			return false, leftOpen("recorded tab %s is in workspace %s, not %s", ref.TabID, ref.WorkspaceID, workspaceID)
 		}
 		recorded[ref.TabID] = ref
 	}
 	list, err := h.client.WorkspaceList(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	i := slices.IndexFunc(list, func(w herdr.Workspace) bool { return w.ID == workspaceID })
 	if i < 0 {
-		return nil
+		return true, nil
 	}
 	if label := list[i].Label; !slices.Contains(workspaceLabels, label) {
-		return leftOpen("workspace %s is labelled %q, not an attempt's workspace label", workspaceID, label)
+		return false, leftOpen("workspace %s is labelled %q, not an attempt's workspace label", workspaceID, label)
 	}
-	listed, err := h.abandonedTabs(ctx, workspaceID, tabs, recorded, tabLabel)
+	listed, err := h.abandonedTabs(ctx, workspaceID, tabs, starting, recorded, tabLabel)
 	if err != nil {
-		return err
+		return false, err
 	}
 	owned := make([]herdr.OwnedTab, 0, len(listed))
 	for _, ref := range listed {
 		if err := h.AdoptTab(ctx, ref); err != nil {
-			return err
+			return false, err
 		}
 		t, err := h.lookup(ref)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if err := h.client.CheckOwnedPane(ctx, t); err != nil {
-			return err
+			return false, err
 		}
 		info, err := h.client.PaneProcessInfo(ctx, ref.PaneID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !info.ShellIdle() {
-			return leftOpen("pane %s is not an idle shell", ref.PaneID)
+			return false, leftOpen("pane %s is not an idle shell", ref.PaneID)
 		}
 		owned = append(owned, t)
 	}
 	// Revalidate the workspace's tabs: nothing may have joined them meanwhile.
-	again, err := h.abandonedTabs(ctx, workspaceID, tabs, recorded, tabLabel)
+	again, err := h.abandonedTabs(ctx, workspaceID, tabs, starting, recorded, tabLabel)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !slices.Equal(again, listed) {
-		return leftOpen("workspace %s changed its tabs while it was checked", workspaceID)
+		return false, leftOpen("workspace %s changed its tabs while it was checked", workspaceID)
 	}
 	if err := h.client.CloseOwnedWorkspace(ctx, owned[0], workspaceID); err != nil {
-		return err
+		return false, err
 	}
 	h.mu.Lock()
 	for _, ref := range tabs {
@@ -513,13 +489,14 @@ func (h *HerdrTabs) CloseAbandonedWorkspace(ctx context.Context, workspaceID str
 	}
 	delete(h.starting, workspaceID)
 	h.mu.Unlock()
-	return nil
+	return false, nil
 }
 
 // abandonedTabs lists workspaceID's tabs and returns their recorded refs, in
 // listed order, once each is a recorded tab with one pane, labelled tabLabel
-// unless it is the starting tab, tabs[0]; it refuses a workspace with no tab.
-func (h *HerdrTabs) abandonedTabs(ctx context.Context, workspaceID string, tabs []TabRef, recorded map[string]TabRef, tabLabel string) ([]TabRef, error) {
+// unless starting and it is the starting tab, tabs[0]; it refuses a workspace
+// with no tab.
+func (h *HerdrTabs) abandonedTabs(ctx context.Context, workspaceID string, tabs []TabRef, starting bool, recorded map[string]TabRef, tabLabel string) ([]TabRef, error) {
 	list, err := h.client.TabList(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -535,7 +512,7 @@ func (h *HerdrTabs) abandonedTabs(ctx context.Context, workspaceID string, tabs 
 			return nil, leftOpen("workspace %s holds tab %s, which the launch did not record", workspaceID, tab.ID)
 		case tab.PaneCount != 1:
 			return nil, leftOpen("tab %s holds %d panes, not one", tab.ID, tab.PaneCount)
-		case ref != tabs[0] && tab.Label != tabLabel:
+		case (!starting || ref != tabs[0]) && tab.Label != tabLabel:
 			return nil, leftOpen("tab %s is labelled %q, not %q", tab.ID, tab.Label, tabLabel)
 		}
 		refs = append(refs, ref)

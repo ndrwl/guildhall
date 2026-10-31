@@ -148,6 +148,32 @@ func TestCloseWorkspaceLeavesAMismatchOpen(t *testing.T) {
 	}
 }
 
+// growDuringCheck makes the stub Herdr add an idle tab labelled label to f's
+// workspace the next time a close reads a pane's processes there.
+func (f closeFixture) growDuringCheck(t *testing.T, label string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(f.dir, "lab-grow-"+f.ref.WorkspaceID), []byte(label), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCloseWorkspaceRefusesAWorkspaceThatGainsATabWhileChecked(t *testing.T) {
+	f := newCloseFixture(t, closeTestWorkspace, closeTestTab)
+	f.growDuringCheck(t, closeTestTab)
+	err := f.close()
+	if !IsLeftOpen(err) {
+		t.Fatalf("close = %v, want a left-open reason", err)
+	}
+	if !f.listed(t) {
+		t.Error("refused close removed the workspace")
+	}
+	for _, line := range readLines(t, filepath.Join(f.dir, "sent-lab")) {
+		if strings.HasPrefix(line, "close-workspace ") {
+			t.Errorf("refused close reached Herdr: %q", line)
+		}
+	}
+}
+
 func TestCloseWorkspaceNeedsAnOwnedRecord(t *testing.T) {
 	f := newCloseFixture(t, closeTestWorkspace, closeTestTab)
 	f.host = NewHerdrTabs(f.host.client)
