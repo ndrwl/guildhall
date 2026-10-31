@@ -26,7 +26,7 @@ Under an account-private named-session lock, the new workspace is recorded in a 
 The whole returned order is verified and only the new workspace moves; a missing capability, held lock, ambiguity or failed check warns and skips ordering, with no retry, no rollback and no failed launch.
 The Director session supervisor runs a **workspace close sweep**, driven by durable records, at each session start, a reload's included, and every 5 minutes.
 It closes a finished attempt's Herdr workspace once its outcome is `succeeded`, `failed` or `stopped`, its owner is proven gone by `reconcile.ProbeOwner(...).Gone()`, and `artisan_workspace_close_after` (default 5 minutes, `"0"` never) has passed since its `finish-attempt` receipt.
-It closes only what `pane-launch.json` records and the live Herdr state still matches; anything else stays open and is reported once as an unread, non-waking `herdr-workspace-left-open` message from `supervisor`, and a later sweep closes it once it matches.
+It closes only what `pane-launch.json` records and the live Herdr state still matches, the workspace a launching claim records included, through the same abandoned-workspace checks recovery applies; a legacy launching claim records no workspace, and it and anything else stays open and is reported once as an unread, non-waking `herdr-workspace-left-open` message from `supervisor`, and a later sweep closes it once it matches.
 [Workflow Artisan workspaces](../artisan.md#workflow-artisan-workspaces) holds the full rules, the [Claude adapter](../adapters.md#claude-adapter) the stream's contents, and the [Herdr contract](../contracts/herdr.md) the ordering checks.
 
 ## Alternatives rejected

@@ -472,7 +472,7 @@ func TestPruneRemovesAMergedWorktreeAndAttemptFiles(t *testing.T) {
 	f.task("app", "t-1")
 	f.attempt("app", "t-1", "plan", store.AttemptSucceeded, nil)
 	f.attempt("app", "t-1", "build", store.AttemptFailed, nil)
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, map[string]string{launch.PaneClaim: "{}\n", paneClosed: "{}\n"})
+	f.attempt("app", "t-1", "build", store.AttemptSucceeded, map[string]string{launch.PaneClaimFile: "{}\n", paneClosed: "{}\n"})
 	f.worktree("t-1")
 	f.close("app", "t-1")
 	writeTree(t, filepath.Join(f.state, "app", "t-1", artisan.LockFile), "")
@@ -1049,7 +1049,7 @@ func TestPruneKeepsPaneFilesTheSweepStillCloses(t *testing.T) {
 	if err := p.pruneAttempt(&r, open, false); err != nil || !slices.Equal(r.Panes, []string{"build-1"}) {
 		t.Fatalf("prune of the open attempt = %+v, %v", r, err)
 	}
-	if _, err := os.Lstat(filepath.Join(open.Dir(sf.state), launch.PaneClaim)); err != nil {
+	if _, err := os.Lstat(filepath.Join(open.Dir(sf.state), launch.PaneClaimFile)); err != nil {
 		t.Fatalf("pane record: %v, want it kept", err)
 	}
 	r = pruneResult{Task: store.TaskRef{Repository: "app", ID: "t-2"}}

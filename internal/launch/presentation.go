@@ -86,13 +86,97 @@ func FinishLine(closeAfter time.Duration) string {
 	return fmt.Sprintf("%s This Herdr workspace closes automatically in about %s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open.", done, closeAfter)
 }
 
-// PaneClaim is the attempt-local presentation launch intent, single-use once it
-// holds a tab binding: an ambiguous API call after that leaves it in place, and
-// neither a caller restart nor a missing pane is permission to launch this
-// attempt again. A launching claim, written before the binding, proves nothing
-// was typed: a caller holding the task lock (Process.TaskLocked) that finds one
-// with no owner recovers it and launches again.
-const PaneClaim = "pane-launch.json"
+// PaneClaimFile is the file name of the attempt-local presentation launch
+// intent, single-use once it holds a tab binding: an ambiguous API call after
+// that leaves it in place, and neither a caller restart nor a missing pane is
+// permission to launch this attempt again. A launching claim, written before
+// the binding, proves nothing was typed: a caller holding the task lock
+// (Process.TaskLocked) that finds one with no owner recovers it and launches
+// again. ReadPaneClaim is its only reader.
+const PaneClaimFile = "pane-launch.json"
+
+// Launching is a launching claim: the Herdr workspace a launch created and the
+// tabs it created there, in creation order, the workspace's starting tab
+// first. A Workspace of "" is a legacy claim, which records nothing.
+type Launching struct {
+	Workspace string
+	Tabs      []adapter.TabRef
+}
+
+// PaneClaim is a parsed PaneClaimFile: exactly one of Launching, a claim
+// written before the launch had a tab binding, and Bound, the tab the launch
+// bound, is non-nil whenever ReadPaneClaim returns a nil error.
+type PaneClaim struct {
+	Launching *Launching
+	Bound     *adapter.TabRef
+}
+
+// ErrMalformedPaneClaim is wrapped by every ReadPaneClaim error for a file that
+// is neither a launching nor a bound pane claim.
+var ErrMalformedPaneClaim = errors.New("not a launching or bound pane claim")
+
+// ReadPaneClaim reads the PaneClaimFile at path strictly: one JSON object, no
+// unknown field and no trailing data. A launching claim holds state
+// "launching", optionally a workspace and the tabs in it, each a complete
+// reference into that workspace, and no tab binding. A bound claim holds a
+// complete tab reference and nothing else. A read error is returned wrapped;
+// any other failure wraps ErrMalformedPaneClaim and names path.
+func ReadPaneClaim(path string) (PaneClaim, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return PaneClaim{}, fmt.Errorf("read pane claim: %w", err)
+	}
+	malformed := func(detail string) (PaneClaim, error) {
+		return PaneClaim{}, fmt.Errorf("%s: %w: %s", path, ErrMalformedPaneClaim, detail)
+	}
+	var raw struct {
+		State       json.RawMessage  `json:"state"`
+		Workspace   *string          `json:"workspace"`
+		Tabs        []adapter.TabRef `json:"tabs"`
+		Session     string
+		WorkspaceID string
+		TabID       string
+		PaneID      string
+	}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&raw); err != nil {
+		return malformed(err.Error())
+	}
+	if err := d.Decode(&struct{}{}); err != io.EOF {
+		return malformed("trailing data after the claim")
+	}
+	ref := adapter.TabRef{Session: raw.Session, WorkspaceID: raw.WorkspaceID, TabID: raw.TabID, PaneID: raw.PaneID}
+	if raw.State == nil {
+		if raw.Workspace != nil || raw.Tabs != nil {
+			return malformed("a workspace or tabs without state \"launching\"")
+		}
+		if ref.Session == "" || ref.WorkspaceID == "" || ref.TabID == "" || ref.PaneID == "" {
+			return malformed("an incomplete tab reference")
+		}
+		return PaneClaim{Bound: &ref}, nil
+	}
+	var state string
+	if err := json.Unmarshal(raw.State, &state); err != nil || state != "launching" {
+		return malformed(fmt.Sprintf("state %s", raw.State))
+	}
+	if ref != (adapter.TabRef{}) {
+		return malformed("a launching claim with a tab binding")
+	}
+	c := Launching{Tabs: raw.Tabs}
+	if raw.Workspace != nil {
+		c.Workspace = *raw.Workspace
+	}
+	if len(c.Tabs) > 0 && c.Workspace == "" {
+		return malformed("tabs without a workspace")
+	}
+	for _, t := range c.Tabs {
+		if t.WorkspaceID != c.Workspace || t.Session == "" || t.TabID == "" || t.PaneID == "" {
+			return malformed(fmt.Sprintf("tab %q is not a complete reference into workspace %q", t.TabID, c.Workspace))
+		}
+	}
+	return PaneClaim{Launching: &c}, nil
+}
 
 // WorkspaceLabel is the label of the Herdr workspace an attempt of a one-slice
 // task is presented in: "└ <task> · <step> #<n>".
@@ -154,7 +238,7 @@ func (a Attempt) workspaceLabels() []string {
 	return labels
 }
 
-// launchingClaim is the PaneClaim a launch writes before it has a tab binding.
+// launchingClaim is the legacy launching claim a launch writes before it has a tab binding.
 const launchingClaim = "{\"state\":\"launching\"}\n"
 
 // abandonedCloseTimeout bounds a recovering launch's close of the workspace
@@ -179,37 +263,21 @@ func (c launching) write(path string) error {
 	return os.WriteFile(path, append(b, '\n'), 0o600)
 }
 
-// staleLaunchingClaim reads the claim at path and reports whether it is
-// exactly a launching claim: one JSON object holding only state "launching",
-// and optionally the workspace and tabs a launch created, with no tab binding.
-// Each recorded tab must be a complete reference into the recorded workspace.
-// A legacy {"state":"launching"} claim records nothing.
-func staleLaunchingClaim(path string) (launching, bool) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return launching{}, false
+// staleLaunchingClaim reads the claim at path and reports whether it is a
+// launching claim as ReadPaneClaim reads it. Any error, or a bound claim, is
+// not recoverable. A legacy {"state":"launching"} claim records nothing.
+func staleLaunchingClaim(path string) (Launching, bool) {
+	c, err := ReadPaneClaim(path)
+	if err != nil || c.Launching == nil {
+		return Launching{}, false
 	}
-	var c launching
-	d := json.NewDecoder(bytes.NewReader(b))
-	d.DisallowUnknownFields()
-	if d.Decode(&c) != nil || d.Decode(&struct{}{}) != io.EOF || c.State != "launching" {
-		return launching{}, false
-	}
-	if len(c.Tabs) > 0 && c.Workspace == "" {
-		return launching{}, false
-	}
-	for _, t := range c.Tabs {
-		if t.WorkspaceID != c.Workspace || t.Session == "" || t.TabID == "" || t.PaneID == "" {
-			return launching{}, false
-		}
-	}
-	return c, true
+	return *c.Launching, true
 }
 
 // closeAbandoned closes the workspace stale records a failed launch of at
 // creating, best effort and bounded by abandonedCloseTimeout. It reports
 // whether the workspace is closed or already gone, and otherwise why not.
-func (pr *Presentation) closeAbandoned(ctx context.Context, at Attempt, stale launching) (bool, string) {
+func (pr *Presentation) closeAbandoned(ctx context.Context, at Attempt, stale Launching) (bool, string) {
 	closer, ok := pr.Host.(adapter.AbandonedWorkspaceCloser)
 	if !ok {
 		return false, "the terminal host cannot close an abandoned workspace"
@@ -232,9 +300,9 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		classification, statusErr := Status(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: %s already owned (%+v): %w", at.Key, classification, errors.Join(err, statusErr, errors.New("reconcile with artisan status/resume before retrying")))
 	}
-	claimPath := filepath.Join(at.Dir(), PaneClaim)
+	claimPath := filepath.Join(at.Dir(), PaneClaimFile)
 	claim, err := os.OpenFile(claimPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	var stale launching
+	var stale Launching
 	recoverable := false
 	if errors.Is(err, fs.ErrExist) && p.TaskLocked {
 		stale, recoverable = staleLaunchingClaim(claimPath)
@@ -298,7 +366,7 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	if err != nil {
 		return interp.Handle{}, err
 	}
-	if err := os.WriteFile(filepath.Join(at.Dir(), PaneClaim), b, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(at.Dir(), PaneClaimFile), b, 0o600); err != nil {
 		return interp.Handle{}, err
 	}
 	agent := herdr.AgentReport{Source: "guildhall", Agent: "artisan", State: "working", Resume: ResumeArgv(at)}

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 type WorkspaceCloseHost interface {
 	adapter.TabHost
 	adapter.IdleWorkspaceCloser
+	adapter.AbandonedWorkspaceCloser
 }
 
 // paneClosed is the presentation-only marker the workspace close sweep writes in an attempt directory once the
@@ -100,11 +102,13 @@ func openArtisanWorkspaces(ctx context.Context, session string) (WorkspaceCloseH
 	return adapter.NewHerdrTabs(c), nil
 }
 
-// closeCandidate is one attempt with a pane record and no paneClosed marker.
+// closeCandidate is one attempt with a pane record and no paneClosed marker: its claim as launch.ReadPaneClaim
+// reads it, or claimErr, wrapping launch.ErrMalformedPaneClaim, when the record is neither claim shape.
 type closeCandidate struct {
-	key     artisan.AttemptKey
-	attempt store.StageAttempt
-	record  []byte
+	key      artisan.AttemptKey
+	attempt  store.StageAttempt
+	claim    launch.PaneClaim
+	claimErr error
 }
 
 // dueAttempts lists the candidates due now: finished, their launcher proven gone and their finish at least after
@@ -126,18 +130,18 @@ func (sw *workspaceCloseSweep) dueAttempts(now time.Time) ([]closeCandidate, err
 				for _, at := range attempts {
 					k := artisan.AttemptKey{Repository: repo, TaskID: at.TaskID, Step: at.Step, Attempt: at.Number}
 					dir := k.Dir(sw.state)
-					record, err := os.ReadFile(filepath.Join(dir, launch.PaneClaim))
-					if errors.Is(err, fs.ErrNotExist) {
+					claim, claimErr := launch.ReadPaneClaim(filepath.Join(dir, launch.PaneClaimFile))
+					if errors.Is(claimErr, fs.ErrNotExist) {
 						continue
-					} else if err != nil {
-						return nil, err
+					} else if claimErr != nil && !errors.Is(claimErr, launch.ErrMalformedPaneClaim) {
+						return nil, claimErr
 					}
 					if _, err := os.Lstat(filepath.Join(dir, paneClosed)); err == nil {
 						continue
 					} else if !errors.Is(err, fs.ErrNotExist) {
 						return nil, err
 					}
-					candidates = append(candidates, closeCandidate{key: k, attempt: at, record: record})
+					candidates = append(candidates, closeCandidate{key: k, attempt: at, claim: claim, claimErr: claimErr})
 				}
 			}
 			if len(candidates) == 0 {
@@ -227,16 +231,14 @@ func (sw *workspaceCloseSweep) run() {
 // close closes what c's pane record names when the live terminal still matches it, returning the reason it left
 // it open, empty once it is closed or gone, or an error when Herdr could not be asked.
 func (sw *workspaceCloseSweep) close(ctx context.Context, host WorkspaceCloseHost, c closeCandidate) (string, error) {
-	var claim struct {
-		State string `json:"state"`
+	if c.claimErr != nil {
+		// A reason, never close's error, which would abandon the round for every later candidate.
+		return fmt.Sprintf("its pane-launch.json does not name a Herdr session, workspace, tab and pane: %v", c.claimErr), nil
 	}
-	var ref adapter.TabRef
-	if json.Unmarshal(c.record, &claim) == nil && claim.State != "" {
-		return fmt.Sprintf("its pane-launch.json is the %q launch claim, which names no Herdr workspace", claim.State), nil
+	if l := c.claim.Launching; l != nil {
+		return sw.closeLaunching(ctx, host, c.key, *l)
 	}
-	if err := json.Unmarshal(c.record, &ref); err != nil || ref.Session == "" || ref.WorkspaceID == "" || ref.TabID == "" || ref.PaneID == "" {
-		return "its pane-launch.json does not name a Herdr session, workspace, tab and pane", nil
-	}
+	ref := *c.claim.Bound
 	if ref.Session != sw.session {
 		return fmt.Sprintf("its Herdr workspace %s is in session %q, not the configured %q", ref.WorkspaceID, ref.Session, sw.session), nil
 	}
@@ -252,18 +254,57 @@ func (sw *workspaceCloseSweep) close(ctx context.Context, host WorkspaceCloseHos
 	err = host.AdoptTab(ctx, ref)
 	if err == nil {
 		if launch.IsAttemptWorkspaceLabel(c.key, list[i].Label) {
-			// A multi-PR task's label names its slice count, which the key does not hold, so the label matched is passed.
-			labels := launch.AttemptWorkspaceLabels(c.key)
-			if !slices.Contains(labels, list[i].Label) {
-				labels = append(labels, list[i].Label)
-			}
-			err = host.CloseWorkspace(ctx, ref, labels, tabLabel)
+			err = host.CloseWorkspace(ctx, ref, attemptLabels(c.key, list[i].Label), tabLabel)
 		} else {
 			// A release before #140 presented the attempt as a tab in a shared workspace, the Director's own among
 			// them: close only that tab, never the workspace.
 			err = host.CloseLabelledTab(ctx, ref, tabLabel)
 		}
 	}
+	return closeOutcome(err)
+}
+
+// closeLaunching closes the workspace a launching claim records through the abandoned-workspace closer, which
+// refuses it unless it holds only the claim's recorded idle tabs. A legacy claim records no workspace to close.
+func (sw *workspaceCloseSweep) closeLaunching(ctx context.Context, host WorkspaceCloseHost, k artisan.AttemptKey, l launch.Launching) (string, error) {
+	if l.Workspace == "" {
+		return `its pane-launch.json is the "launching" launch claim, which records no Herdr workspace`, nil
+	}
+	for _, t := range l.Tabs {
+		if t.Session != sw.session {
+			return fmt.Sprintf("its Herdr workspace %s is in session %q, not the configured %q", l.Workspace, t.Session, sw.session), nil
+		}
+	}
+	list, err := host.Workspaces(ctx)
+	if err != nil {
+		return "", err
+	}
+	i := slices.IndexFunc(list, func(w herdr.Workspace) bool { return w.ID == l.Workspace })
+	if i < 0 {
+		return "", nil
+	}
+	var labels []string
+	if launch.IsAttemptWorkspaceLabel(k, list[i].Label) {
+		labels = attemptLabels(k, list[i].Label)
+	} else {
+		labels = launch.AttemptWorkspaceLabels(k)
+	}
+	return closeOutcome(host.CloseAbandonedWorkspace(ctx, l.Workspace, l.Tabs, labels, launch.TabLabel(k)))
+}
+
+// attemptLabels are the workspace labels closing k's workspace, now labelled label, accepts: a multi-PR task's label
+// names its slice count, which the key does not hold, so the label matched is added.
+func attemptLabels(k artisan.AttemptKey, label string) []string {
+	labels := launch.AttemptWorkspaceLabels(k)
+	if !slices.Contains(labels, label) {
+		labels = append(labels, label)
+	}
+	return labels
+}
+
+// closeOutcome maps a close's error to close's result: closed or gone is no reason, a refusal is its reason, and
+// anything else is an error.
+func closeOutcome(err error) (string, error) {
 	switch {
 	case err == nil, herdr.IsNotFound(err):
 		return "", nil
@@ -293,29 +334,40 @@ func (sw *workspaceCloseSweep) clock() time.Time {
 
 // leftOpenMessage is the Director message reporting that the sweep left c's Herdr presentation open for reason. Its
 // id depends only on the attempt, so sending it again is a replay, or, with another reason, refused as already sent.
-func leftOpenMessage(c closeCandidate, record []byte, reason string) store.Message {
+func leftOpenMessage(c closeCandidate, reason string) store.Message {
 	id := fmt.Sprintf("%s.%s.%s.%s", c.key.Repository, c.key.TaskID, store.MessageHerdrLeftOpen, c.key.AttemptID())
 	if len(id) > 100 {
 		id = "herdr-left-open." + digest.Of([]byte(id)).Hex()
 	}
 	text := fmt.Sprintf("Guildhall left the Herdr presentation of attempt %s open: %s. It records %s. Inspect it and close it by hand if it is no longer needed; the attempt's records and work are unaffected.",
-		c.key, reason, recordedIDs(record))
+		c.key, reason, recordedIDs(c.claim))
 	return store.Message{ID: id, Recipient: store.RecipientDirector, Repository: c.key.Repository, TaskID: c.key.TaskID,
 		Step: c.key.Step, Attempt: c.key.Attempt, Type: store.MessageHerdrLeftOpen, Text: text, Sender: store.SenderGuildhall}
 }
 
-// recordedIDs names the Herdr ids a pane record holds, for a report.
-func recordedIDs(record []byte) string {
-	var ref adapter.TabRef
-	if json.Unmarshal(record, &ref) != nil || ref == (adapter.TabRef{}) {
-		return "no Herdr ids"
+// recordedIDs names the Herdr ids a pane claim holds, for a report; a legacy or malformed claim holds none.
+func recordedIDs(c launch.PaneClaim) string {
+	switch {
+	case c.Bound != nil:
+		ref := *c.Bound
+		return fmt.Sprintf("session %s, workspace %s, tab %s, pane %s", strconv.Quote(ref.Session), ref.WorkspaceID, ref.TabID, ref.PaneID)
+	case c.Launching != nil && c.Launching.Workspace != "":
+		l := c.Launching
+		if len(l.Tabs) == 0 {
+			return fmt.Sprintf("workspace %s with no recorded tabs", l.Workspace)
+		}
+		tabs := make([]string, len(l.Tabs))
+		for i, t := range l.Tabs {
+			tabs[i] = t.TabID
+		}
+		return fmt.Sprintf("workspace %s with tabs %s in session %s", l.Workspace, strings.Join(tabs, ", "), strconv.Quote(l.Tabs[0].Session))
 	}
-	return fmt.Sprintf("session %s, workspace %s, tab %s, pane %s", strconv.Quote(ref.Session), ref.WorkspaceID, ref.TabID, ref.PaneID)
+	return "no Herdr ids"
 }
 
 // report sends the left-open message for c, once: a message already sent under its id is not sent again.
 func (sw *workspaceCloseSweep) report(c closeCandidate, reason string) error {
-	m := leftOpenMessage(c, c.record, reason)
+	m := leftOpenMessage(c, reason)
 	_, err := withStore(sw.storePath, false, func(s *store.Store) (store.Receipt, error) {
 		if _, err := s.Message(m.ID); err == nil {
 			return store.Receipt{}, nil

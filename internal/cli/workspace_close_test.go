@@ -148,6 +148,51 @@ func (h *closeHost) CloseLabelledTab(_ context.Context, ref adapter.TabRef, labe
 	return nil
 }
 
+// CloseAbandonedWorkspace applies the rules adapter.HerdrTabs applies to a launching claim's workspace: a gone
+// workspace is nil; otherwise every recorded tab must be in the session and workspace, the workspace labelled one of
+// labels, and each tab a recorded one with one pane and an idle shell, labelled tabLabel unless it is the first.
+func (h *closeHost) CloseAbandonedWorkspace(_ context.Context, workspaceID string, tabs []adapter.TabRef, labels []string, tabLabel string) error {
+	if err := h.record("close abandoned workspace " + workspaceID); err != nil {
+		return err
+	}
+	recorded := map[string]adapter.TabRef{}
+	for _, ref := range tabs {
+		if ref.Session != h.session || ref.WorkspaceID != workspaceID {
+			return &adapter.LeftOpenError{Reason: "recorded tab " + ref.TabID + " is elsewhere"}
+		}
+		recorded[ref.TabID] = ref
+	}
+	i := slices.IndexFunc(h.workspaces, func(w *fakeWorkspace) bool { return w.id == workspaceID })
+	if i < 0 {
+		return nil
+	}
+	w := h.workspaces[i]
+	if !slices.Contains(labels, w.label) {
+		return &adapter.LeftOpenError{Reason: "workspace labelled " + w.label}
+	}
+	if len(w.tabs) == 0 {
+		return &adapter.LeftOpenError{Reason: "workspace " + workspaceID + " holds no recorded tab to close it through"}
+	}
+	for _, t := range w.tabs {
+		ref, ok := recorded[t.id]
+		switch {
+		case !ok:
+			return &adapter.LeftOpenError{Reason: fmt.Sprintf("workspace %s holds tab %s, which the launch did not record", workspaceID, t.id)}
+		case t.panes != 1:
+			return &adapter.LeftOpenError{Reason: "tab holds panes"}
+		case ref != tabs[0] && t.label != tabLabel:
+			return &adapter.LeftOpenError{Reason: "tab labelled " + t.label}
+		case t.pane != ref.PaneID:
+			return herdr.ErrMoved
+		case t.busy:
+			return &adapter.LeftOpenError{Reason: "pane is not an idle shell"}
+		}
+	}
+	h.workspaces = slices.Delete(h.workspaces, i, i+1)
+	h.closed = append(h.closed, "workspace "+workspaceID)
+	return nil
+}
+
 func (h *closeHost) CreateWorkspace(context.Context, string, string) (herdr.Workspace, error) {
 	return herdr.Workspace{}, errors.New("the sweep creates no workspace")
 }
@@ -264,7 +309,7 @@ func (f *sweepFixture) attempt(task, step string, outcome store.AttemptOutcome, 
 		if err := os.MkdirAll(k.Dir(f.state), 0o755); err != nil {
 			f.t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(k.Dir(f.state), launch.PaneClaim), b, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(k.Dir(f.state), launch.PaneClaimFile), b, 0o600); err != nil {
 			f.t.Fatal(err)
 		}
 	}
@@ -538,10 +583,58 @@ func (f *sweepFixture) writeRecord(k artisan.AttemptKey, ref adapter.TabRef) art
 	if err := os.MkdirAll(k.Dir(f.state), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(k.Dir(f.state), launch.PaneClaim), b, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(k.Dir(f.state), launch.PaneClaimFile), b, 0o600); err != nil {
 		f.t.Fatal(err)
 	}
 	return k
+}
+
+// TestWorkspaceCloseSweepClosesALaunchingClaimsWorkspace pins that the sweep closes the workspace a finished
+// attempt's launching claim records, through the abandoned-workspace closer, and leaves one holding a tab the
+// launch did not record open, with a report naming the recorded workspace (d117).
+func TestWorkspaceCloseSweepClosesALaunchingClaimsWorkspace(t *testing.T) {
+	const after = 5 * time.Minute
+	for _, tc := range []struct {
+		name    string
+		foreign bool
+	}{{name: "idle"}, {name: "a foreign tab", foreign: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSweepFixture(t)
+			k := f.attempt("t-1", "build", store.AttemptFailed, nil)
+			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
+			if tc.foreign {
+				w := f.workspace("w2")
+				w.tabs = append(w.tabs, &fakeTab{id: "w2:t3", label: "mine", pane: "w2:p3", panes: 1})
+			}
+			b, err := json.Marshal(map[string]any{"state": "launching", "workspace": "w2", "tabs": []adapter.TabRef{ref}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(k.Dir(f.state), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(k.Dir(f.state), launch.PaneClaimFile), append(b, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			f.sweep(after, after).run()
+			reports := f.leftOpen()
+			if !tc.foreign {
+				if !slices.Equal(f.host.closed, []string{"workspace w2"}) || !f.marked(k) || len(reports) != 0 {
+					t.Fatalf("closed %q, marked %v, reports %+v; want w2 closed, marked, no report", f.host.closed, f.marked(k), reports)
+				}
+				if f.stderr.Len() != 0 {
+					t.Errorf("stderr %q", f.stderr.String())
+				}
+				return
+			}
+			if len(f.host.closed) != 0 || f.marked(k) || len(reports) != 1 {
+				t.Fatalf("closed %q, marked %v, reports %+v; want nothing closed and one report", f.host.closed, f.marked(k), reports)
+			}
+			if text := reports[0].Text; !strings.Contains(text, "workspace w2") || !strings.Contains(text, "did not record") {
+				t.Errorf("report text %q, want it to name workspace w2 and say the launch did not record a tab", text)
+			}
+		})
+	}
 }
 
 func TestWorkspaceCloseSweepWithoutASessionCallsNoHerdr(t *testing.T) {

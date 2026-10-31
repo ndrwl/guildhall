@@ -586,7 +586,7 @@ func (p *pruner) pruneAttempt(r *pruneResult, k artisan.AttemptKey, dry bool) er
 		name := e.Name()
 		switch {
 		case pruneKept[name]:
-		case name == launch.PaneClaim && closedErr != nil:
+		case name == launch.PaneClaimFile && closedErr != nil:
 			r.Panes = append(r.Panes, k.AttemptID())
 		case name == "prompt" && e.IsDir():
 			inner, err := os.ReadDir(filepath.Join(dir, name))

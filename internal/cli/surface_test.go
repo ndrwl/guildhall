@@ -99,7 +99,7 @@ func TestGuildhallSendsRecordGuildhall(t *testing.T) {
 			t.Errorf("%s sender = %q, want guildhall", id, m.Sender)
 		}
 	}
-	if m := leftOpenMessage(closeCandidate{key: artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}}, nil, "busy"); m.Sender != store.SenderGuildhall {
+	if m := leftOpenMessage(closeCandidate{key: artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}}, "busy"); m.Sender != store.SenderGuildhall {
 		t.Errorf("left-open sender = %q, want guildhall", m.Sender)
 	}
 }
