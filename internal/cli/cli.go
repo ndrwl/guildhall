@@ -139,6 +139,8 @@ Commands:
                  record that a Steward manages the copy, with the digest of its managed.toml
   director leave --copy <dir>
                  return a managed copy to standalone, keeping its managed values in [local]
+  config reload --copy <dir>
+                 authorize a managed copy's published managed.toml, as a Steward rollout runs it over SSH
   clerk guild|decisions|task|inspect|queue [--all] [<id>] [--copy <dir>]
                  print the Guildmaster's read-only answers behind the Clerk plugin's slash commands;
                  guild takes --all, task and inspect take a task id
@@ -192,6 +194,9 @@ type App struct {
 	Exec func(argv0 string, argv, envv []string) error
 	// Copier reaches enrolled machines for steward rollouts; nil means scp, found with LookPath.
 	Copier steward.Copier
+	// Runner runs the fixed remote commands on enrolled machines, such as config reload after a rollout writes a
+	// copy; nil means ssh, found with LookPath.
+	Runner steward.Runner
 	// Forge publishes and merges task branches for task start and step done; nil means forge.GitHub over git
 	// and gh found on PATH.
 	Forge interp.Forge
@@ -346,6 +351,8 @@ func (a *App) Run(args []string) int {
 		return a.decide(rest)
 	case "director":
 		return a.director(rest)
+	case "config":
+		return a.configCmd(rest)
 	case "quality":
 		return a.qualityCmd(rest)
 	case "review":

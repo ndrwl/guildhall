@@ -3,7 +3,8 @@
 // The roster and the managed settings live in the private config directory and are never written here:
 // enrolment, accounts and sign-in happen before a machine appears in the roster.
 // A dry run fetches copies without remote writes; applying requires its saved plan,
-// copying files with scp so the user's own SSH aliases, agent, keys and host-key checks apply.
+// copying files with scp so the user's own SSH aliases, agent, keys and host-key checks apply,
+// then running the fixed config reload over ssh on each copy it wrote.
 package steward
 
 import (
@@ -50,10 +51,21 @@ type Roster struct {
 type Machine struct {
 	Label string `toml:"label"`
 	// SSHAlias is a Host entry in the Steward user's SSH config, which holds the address, user and key.
-	SSHAlias  string     `toml:"ssh_alias"`
-	OS        OS         `toml:"os"`
-	Roles     []Role     `toml:"roles"`
-	Directors []Director `toml:"director"`
+	SSHAlias string `toml:"ssh_alias"`
+	OS       OS     `toml:"os"`
+	Roles    []Role `toml:"roles"`
+	// GuildhallPath is the absolute path of the guildhall program the Steward's remote commands run on the machine;
+	// empty means guildhall on the PATH of the machine's Guildhall account. Windows paths use forward slashes.
+	GuildhallPath string     `toml:"guildhall_path"`
+	Directors     []Director `toml:"director"`
+}
+
+// Guildhall is the program the Steward's remote commands run on the machine: its guildhall_path, else guildhall.
+func (m Machine) Guildhall() string {
+	if m.GuildhallPath != "" {
+		return m.GuildhallPath
+	}
+	return DefaultGuildhall
 }
 
 // Director is one Director copy on its machine.
@@ -143,6 +155,9 @@ func (r *Roster) validate() []string {
 			dirPattern = windowsDirPattern
 		default:
 			add(`%s: os must be "linux", "windows" or "darwin", not %q`, name, m.OS)
+		}
+		if m.GuildhallPath != "" && !validDir(dirPattern, m.GuildhallPath) {
+			add("%s: guildhall_path %q must be an absolute %s file path of letters, digits, '.', '_', '-' and '/' with no '.' or '..' segments", name, m.GuildhallPath, m.OS)
 		}
 		if len(m.Roles) == 0 {
 			add("%s: needs at least one role", name)

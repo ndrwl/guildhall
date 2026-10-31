@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-20
 topic: steward
-amended-by: optional-steward.md, release-upgrades.md
+amended-by: optional-steward.md, release-upgrades.md, steward-fixed-remote-commands.md
 formerly: D12, 0012-steward-rollouts-copy-files-with-scp.md
 ---
 

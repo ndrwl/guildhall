@@ -81,7 +81,7 @@ func TestApplyWriterLockExcludesASecondWriter(t *testing.T) {
 		t.Fatal("running Apply holds no lock")
 	}
 
-	second, err := LoadRollout(r.privateDir, transport)
+	second, err := LoadRollout(r.privateDir, transport, r.Runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func (sleepCopier) Put(context.Context, string, Remote) error { time.Sleep(time.
 
 // lockOwner is the owner process's main: Apply the plan for workstation, blocking in transport.
 func lockOwner(private, plan string) int {
-	r, err := LoadRollout(private, sleepCopier{})
+	r, err := LoadRollout(private, sleepCopier{}, nil)
 	if err == nil {
 		_, err = r.Apply(context.Background(), plan, "", "workstation")
 	}
