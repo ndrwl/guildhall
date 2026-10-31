@@ -357,15 +357,17 @@ type statusNoteAudit struct {
 }
 
 // statusHallmark is one repository's last hallmark and the merges since; MergesUntilDue is absent when hallmarks
-// are off, and RunningTask names the repository's open hallmark task, absent when none is open.
+// are off, RunningTask names the repository's open hallmark task, absent when none is open, and AwaitingFollowUps
+// names the last hallmark task while its follow-ups decision is unanswered, absent otherwise.
 type statusHallmark struct {
-	Repository     string    `json:"repository"`
-	AfterMerges    int       `json:"after_merges"`
-	LastTask       string    `json:"last_task,omitempty"`
-	LastAt         time.Time `json:"last_at,omitzero"`
-	MergedSince    int       `json:"merged_since"`
-	MergesUntilDue *int      `json:"merges_until_due,omitempty"`
-	RunningTask    string    `json:"running_task,omitempty"`
+	Repository        string    `json:"repository"`
+	AfterMerges       int       `json:"after_merges"`
+	LastTask          string    `json:"last_task,omitempty"`
+	LastAt            time.Time `json:"last_at,omitzero"`
+	MergedSince       int       `json:"merged_since"`
+	MergesUntilDue    *int      `json:"merges_until_due,omitempty"`
+	RunningTask       string    `json:"running_task,omitempty"`
+	AwaitingFollowUps string    `json:"awaiting_follow_ups,omitempty"`
 }
 
 type statusLive struct {
@@ -982,10 +984,14 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	return out, nil
 }
 
-// repoHallmarks is a repository's last hallmark and its running one, each nil when there is none.
+// repoHallmarks is a repository's last hallmark and its running one, each nil when there is none; followUpsOpen says
+// the last hallmark's follow-ups decision is unanswered, deferred or not, and followUpsAnswered is the sequence of
+// that decision's answer receipt, 0 when it was not answered.
 type repoHallmarks struct {
-	last    *interp.Hallmark
-	running *store.Task
+	last              *interp.Hallmark
+	running           *store.Task
+	followUpsOpen     bool
+	followUpsAnswered uint64
 }
 
 // readRepoHallmarks reads, in s, the last and running hallmark of each repository v counts maintenance for, with
@@ -997,6 +1003,19 @@ func readRepoHallmarks(s *store.Store, v store.DirectorView, workflows func(repo
 	closes, err := s.TaskCloses()
 	if err != nil {
 		return nil, err
+	}
+	type taskKey struct{ repo, task string }
+	open := map[taskKey]bool{}
+	for _, d := range v.OpenDecisions {
+		if d.ID == interp.FollowUpsDecision {
+			open[taskKey{d.Repository, d.TaskID}] = true
+		}
+	}
+	answered := map[taskKey]uint64{}
+	for _, rc := range v.Receipts {
+		if rc.Operation == "answer-decision" && rc.Record == "decision/"+interp.FollowUpsDecision {
+			answered[taskKey{rc.Repository, rc.TaskID}] = rc.Sequence
+		}
 	}
 	out := map[string]repoHallmarks{}
 	for _, r := range v.Maintenance.Repositories {
@@ -1011,7 +1030,12 @@ func readRepoHallmarks(s *store.Store, v store.DirectorView, workflows func(repo
 		if err != nil {
 			return nil, err
 		}
-		out[r.Repository] = repoHallmarks{last: last, running: interp.OpenHallmark(tasks, closes, resolve)}
+		h := repoHallmarks{last: last, running: interp.OpenHallmark(tasks, closes, resolve)}
+		if last != nil {
+			k := taskKey{last.Task.Repository, last.Task.ID}
+			h.followUpsOpen, h.followUpsAnswered = open[k], answered[k]
+		}
+		out[r.Repository] = h
 	}
 	return out, nil
 }
@@ -1081,8 +1105,9 @@ func shippedWorkflow(rev workflow.Revision) (*workflow.Definition, error) {
 // maintenanceStatus is the feed's maintenance object and its due maintenance items under the newest session's
 // policy, counted from the baseline session: none before a session started with a policy
 // (docs/decisions/director-maintenance.md). A repository's hallmark counts from its last hallmark task in hallmarks,
-// or from its newest recorded hallmark run when it has none, and is not due while a hallmark task of it is open
-// (docs/decisions/engine-owned-hallmark-cadence.md).
+// or from its newest recorded hallmark run when it has none, and is not due while a hallmark task of it is open or
+// while its last hallmark task's follow-ups decision is unanswered. Merges count after that decision's answer, or
+// after the task's creation when it has none (docs/decisions/engine-owned-hallmark-cadence.md).
 func maintenanceStatus(v store.DirectorView, hallmarks map[string]repoHallmarks) (*statusMaintenance, []needsMeItem) {
 	m := v.Maintenance
 	if m.Baseline == 0 || v.Session == nil {
@@ -1112,14 +1137,23 @@ func maintenanceStatus(v store.DirectorView, hallmarks map[string]repoHallmarks)
 		found := hallmarks[r.Repository]
 		switch l := r.LastHallmark; {
 		case found.last != nil:
-			// Merges sent while the hallmark ran count toward the next one, so counting starts at its creation.
+			// Merges count after the follow-ups answer, so the cadence is paced by the Guildmaster's feedback. With no
+			// answer they count after the task's creation: for display only while the decision is open, and as the
+			// cadence for a hallmark with no follow-ups decision.
+			after := found.last.Close.Created
+			if found.followUpsAnswered != 0 {
+				after = found.followUpsAnswered
+			}
 			h.MergedSince = 0
 			for _, seq := range r.MergedSequences {
-				if seq > found.last.Close.Created {
+				if seq > after {
 					h.MergedSince++
 				}
 			}
 			h.LastTask, h.LastAt, last = found.last.Task.ID, found.last.Close.At, "the last"
+			if found.followUpsOpen {
+				h.AwaitingFollowUps = found.last.Task.ID
+			}
 		case l != nil:
 			h.LastTask, h.LastAt, last = l.Task, l.Time, "the last"
 		}
@@ -1129,7 +1163,7 @@ func maintenanceStatus(v store.DirectorView, hallmarks map[string]repoHallmarks)
 		if n := p.HallmarkAfterMerges; n > 0 {
 			until := max(0, n-h.MergedSince)
 			h.MergesUntilDue = &until
-			if until == 0 && h.RunningTask == "" {
+			if until == 0 && h.RunningTask == "" && h.AwaitingFollowUps == "" {
 				items = append(items, needsMeItem{Kind: maintenanceKind, Repository: r.Repository, Count: h.MergedSince,
 					Reason:  fmt.Sprintf("hallmark due: %d merged since %s", h.MergedSince, last),
 					Command: fmt.Sprintf("guildhall task new --repo %s --kind hallmark --title <text> <id>", r.Repository)})

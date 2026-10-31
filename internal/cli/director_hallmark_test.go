@@ -123,7 +123,104 @@ func TestDirectorStatusHallmarkCadenceFollowsTheDoneTask(t *testing.T) {
 	}
 }
 
-// TestMaintenanceStatusFallsBackToRuns: a repository with no done hallmark task counts from its newest recorded
+// openFollowUps opens repo/id's follow-ups decision, as the engine's finish does before it closes the task.
+func openFollowUps(t *testing.T, path, repo, id string) {
+	t.Helper()
+	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		return s.OpenDecision("follow-ups:"+repo+":"+id, store.Decision{Repository: repo, TaskID: id, ID: interp.FollowUpsDecision,
+			Kind: store.DecisionFollowUps, Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + digest.Of([]byte("hallmark-1-report")).Hex()},
+			Options: []string{"pick", "none"}, Question: "Pick the report's follow-ups."})
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDirectorStatusHallmarkWaitsForFollowUps: a done hallmark whose follow-ups decision is unanswered, deferred or
+// not, holds the hallmark due item back however many merges land; once it is answered, pick or none, merges count
+// only after the answer and the item returns at the threshold (d119).
+func TestDirectorStatusHallmarkWaitsForFollowUps(t *testing.T) {
+	for _, answer := range []string{"pick\nf-1", "none"} {
+		t.Run(strings.Fields(answer)[0], func(t *testing.T) {
+			d := newRunDirector(t)
+			startMaintenanceSession(t, d.store, 1, store.MaintenancePolicy{HallmarkAfterMerges: 2})
+			createHallmarkTask(t, d.store, "app", "h-1")
+			sendMergedMessages(t, d.store, "app", "t-1", "during", 1)
+			openFollowUps(t, d.store, "app", "h-1")
+			finishHallmarkTask(t, d.store, "app", "h-1")
+			sendMergedMessages(t, d.store, "app", "t-1", "before", 2)
+
+			// Open: the merges reach the threshold, counted from the launch, but the item is held.
+			st := readStatus(t, d.store, d.state)
+			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.AwaitingFollowUps != "h-1" || h.RunningTask != "" ||
+				h.LastTask != "h-1" || h.MergedSince != 3 || *h.MergesUntilDue != 0 {
+				t.Fatalf("while the follow-ups are open: %+v, items %q; want held awaiting h-1", h, maintenanceItems(st))
+			}
+
+			// Deferred: a deferral does not answer the decision, so it still holds.
+			createHallmarkTask(t, d.store, "other", "o-1")
+			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+				return s.DeferDecision("defer-follow-ups", "app", "h-1", interp.FollowUpsDecision, "After o-1.",
+					[]store.TaskRef{{Repository: "other", ID: "o-1"}}, 0)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			st = readStatus(t, d.store, d.state)
+			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.AwaitingFollowUps != "h-1" || h.RunningTask != "" {
+				t.Fatalf("while the follow-ups are deferred: %+v, items %q; want still held awaiting h-1", h, maintenanceItems(st))
+			}
+
+			// Answered: the merges before the answer stop counting, and the item returns after 2 more.
+			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+				return s.AnswerDecision("answer-follow-ups", "app", "h-1", interp.FollowUpsDecision, answer)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			st = readStatus(t, d.store, d.state)
+			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.AwaitingFollowUps != "" || h.MergedSince != 0 || *h.MergesUntilDue != 2 {
+				t.Fatalf("after the answer: %+v, items %q; want the count restarted at 0", h, maintenanceItems(st))
+			}
+			sendMergedMessages(t, d.store, "app", "t-1", "after", 1)
+			st = readStatus(t, d.store, d.state)
+			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.MergedSince != 1 {
+				t.Fatalf("1 merged after the answer: %+v, items %q; want 1 counted and not due", h, maintenanceItems(st))
+			}
+			sendMergedMessages(t, d.store, "app", "t-1", "later", 1)
+			st = readStatus(t, d.store, d.state)
+			want := "app: hallmark due: 2 merged since the last | guildhall task new --repo app --kind hallmark --title <text> <id>"
+			if got := maintenanceItems(st); len(got) != 1 || got[0] != want {
+				t.Fatalf("items = %q\nwant %q", got, want)
+			}
+		})
+	}
+}
+
+// TestMaintenanceStatusFollowUps: an open follow-ups decision holds the item back while merges count from the
+// launch, and an answered one counts merges only after its answer receipt (d119).
+func TestMaintenanceStatusFollowUps(t *testing.T) {
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	v := store.DirectorView{Session: &store.DirectorSession{Number: 2, Maintenance: store.MaintenancePolicy{HallmarkAfterMerges: 2}},
+		Maintenance: store.MaintenanceView{Baseline: 1, BaselineReceipt: 10, Repositories: []store.RepositoryMaintenance{
+			{Repository: "app", Merged: 3, MergedSequences: []uint64{12, 21, 22}},
+			{Repository: "web", Merged: 3, MergedSequences: []uint64{12, 21, 31}},
+		}}}
+	app := &interp.Hallmark{Task: store.Task{Repository: "app", ID: "a-0"}, Close: store.TaskClose{Created: 11, Closed: 20, At: at}}
+	web := &interp.Hallmark{Task: store.Task{Repository: "web", ID: "w-0"}, Close: store.TaskClose{Created: 11, Closed: 20, At: at}}
+	m, items := maintenanceStatus(v, map[string]repoHallmarks{
+		"app": {last: app, followUpsOpen: true},
+		"web": {last: web, followUpsAnswered: 25},
+	})
+	if h := m.Hallmarks[0]; h.AwaitingFollowUps != "a-0" || h.MergedSince != 3 || *h.MergesUntilDue != 0 {
+		t.Fatalf("app = %+v; want held awaiting a-0, counting the 3 merges since the launch", h)
+	}
+	if h := m.Hallmarks[1]; h.AwaitingFollowUps != "" || h.MergedSince != 1 || *h.MergesUntilDue != 1 {
+		t.Fatalf("web = %+v; want the 1 merge after the answer counted", h)
+	}
+	if got := maintenanceItems(directorStatus{NeedsMe: items}); len(got) != 0 {
+		t.Fatalf("items = %q; want none", got)
+	}
+}
+
+// TestMaintenanceStatusFallsBackToRuns:a repository with no done hallmark task counts from its newest recorded
 // hallmark run, as before; one with a done hallmark task counts from that task's creation, even when a run is newer.
 func TestMaintenanceStatusFallsBackToRuns(t *testing.T) {
 	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)

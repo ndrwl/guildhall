@@ -325,7 +325,7 @@ func (r *run) finish() (Next, error) {
 		}
 	}
 	if followUps {
-		text += fmt.Sprintf("\nDecision %s is open for the Guildmaster to pick the report's follow-ups.", followUpsDecision)
+		text += fmt.Sprintf("\nDecision %s is open for the Guildmaster to pick the report's follow-ups.", FollowUpsDecision)
 	}
 	if err := r.notify(store.MessageFinished, store.MessageFinished, text); err != nil {
 		return Next{}, err
@@ -336,10 +336,10 @@ func (r *run) finish() (Next, error) {
 	return Next{Wait: WaitDone, Step: last.ID}, nil
 }
 
-// followUpsDecision is the id of a finished hallmark task's follow-ups decision; a step's decisions are always
+// FollowUpsDecision is the id of a finished hallmark task's follow-ups decision; a step's decisions are always
 // <step>-<round>, so it is never one of them. followUpsOptions are its answers: pick, with the picked ids on the
 // following lines, or none.
-const followUpsDecision = "follow-ups"
+const FollowUpsDecision = "follow-ups"
 
 var followUpsOptions = []string{"pick", "none"}
 
@@ -357,7 +357,7 @@ func (r *run) openFollowUps(last workflow.Step) (bool, error) {
 	if !slices.Contains(definitionHallmarkSteps(r.def), last.ID) {
 		return false, nil
 	}
-	d := r.decision(followUpsDecision)
+	d := r.decision(FollowUpsDecision)
 	if d == nil {
 		doc, _, err := r.output(last.ID, "report")
 		if err != nil {
@@ -365,10 +365,10 @@ func (r *run) openFollowUps(last workflow.Step) (bool, error) {
 		}
 		// The headings are best effort: a report that cannot be read here is named by its path only.
 		data, _ := r.read(doc)
-		nd := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: followUpsDecision, Kind: store.DecisionFollowUps,
+		nd := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: FollowUpsDecision, Kind: store.DecisionFollowUps,
 			Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + doc.SHA256}, Options: followUpsOptions,
 			Question: followUpsQuestion(r.task.Repository, r.task.ID, filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path)), data)}
-		if _, err := r.e.Records.OpenDecision(r.mutation("decision", followUpsDecision), nd); err != nil {
+		if _, err := r.e.Records.OpenDecision(r.mutation("decision", FollowUpsDecision), nd); err != nil {
 			return false, err
 		}
 		d = r.addDecision(nd)
