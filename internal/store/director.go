@@ -563,12 +563,15 @@ const (
 	// MessageHoldReleased is the session supervisor's report that a hold was released: a park, decision deferral or
 	// follow-up whose named tasks merged or one of which was cancelled (docs/decisions/hold-until-merged.md).
 	MessageHoldReleased = "hold-released"
+	// MessageDecisionAnswered tells the Director the Guildmaster answered a decision on the task page
+	// (docs/web.md#answering); it names the decision, never their words, which the Director reads with decide show.
+	MessageDecisionAnswered = "decision-answered"
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
 // sender: "engine" for an advance (internal/interp), "launcher" for an attempt's launcher, "quality" for a judge,
-// "supervisor" for a Director session's supervisor, "cancel" for `guildhall task cancel` and "local" for the
-// documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
+// "supervisor" for a Director session's supervisor, "cancel" for `guildhall task cancel`, "page" for the task
+// page (docs/web.md) and "local" for the documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
 // wake line carries no sender-chosen text. A type is added here by the change that sends it, never by a sender.
 var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
@@ -584,6 +587,7 @@ var MessageTypes = map[string]string{
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
 	MessageDependencyCancelled: "cancel",
+	MessageDecisionAnswered:    "page",
 }
 
 // UnreadFrom is DirectorUnread's key for unread messages of type t from sender: "<t> from <sender>".

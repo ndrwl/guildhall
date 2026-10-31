@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -586,6 +587,52 @@ func TestAnswerDecisionWithOptions(t *testing.T) {
 	}
 	if _, err := s.AnswerDecision("m-wrong", "app", "t-1", "approve-plan", "reject"); !errors.Is(err, ErrMutationConflict) {
 		t.Fatalf("different answer under the same mutation id: err = %v, want ErrMutationConflict", err)
+	}
+}
+
+// TestAnswerDecisionVia: an answer given on the task page records where and by which login, and round-trips; a
+// place with no login, a login with no place, an unknown place and a login with spaces are refused, writing nothing;
+// a retry from the page replays, while the same words from decide answer under the same mutation id conflict; and a
+// decision recorded before the fields existed still decodes, with neither.
+func TestAnswerDecisionVia(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	if _, err := s.OpenDecision("m-2", sampleDecision("approve-plan")); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range [][2]string{{AnsweredViaPage, ""}, {"", "gm@example.com"}, {"chat", "gm@example.com"}, {AnsweredViaPage, "gm @example.com"},
+		{AnsweredViaPage, strings.Repeat("g", MaxAnsweredByBytes+1)}, {AnsweredViaPage, "gm\x00"}} {
+		if _, err := s.AnswerDecisionVia("m-via", "app", "t-1", "approve-plan", "approve", c[0], c[1]); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("via %q by %q: err = %v, want ErrInvalid", c[0], c[1], err)
+		}
+	}
+	if got, _ := s.Decisions("app", "t-1"); got[0].Answered {
+		t.Fatalf("a refused answer was recorded: %+v", got[0])
+	}
+	first, err := s.AnswerDecisionVia("m-via", "app", "t-1", "approve-plan", "approve\n\nGo.", AnsweredViaPage, "gm@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sampleDecision("approve-plan")
+	want.Answered, want.Answer, want.Choice, want.Note, want.AnsweredVia, want.AnsweredBy = true, "approve\n\nGo.", "approve", "Go.", AnsweredViaPage, "gm@example.com"
+	if got, err := s.Decisions("app", "t-1"); err != nil || !reflect.DeepEqual(got, []Decision{want}) {
+		t.Fatalf("Decisions = %+v, %v; want %+v", got, err, want)
+	}
+	if replay, err := s.AnswerDecisionVia("m-via", "app", "t-1", "approve-plan", "approve\n\nGo.", AnsweredViaPage, "gm@example.com"); err != nil || replay != first {
+		t.Fatalf("replay = %+v, %v", replay, err)
+	}
+	if _, err := s.AnswerDecision("m-via", "app", "t-1", "approve-plan", "approve\n\nGo."); !errors.Is(err, ErrMutationConflict) {
+		t.Fatalf("the same words from decide answer: err = %v, want ErrMutationConflict", err)
+	}
+
+	var old Decision
+	if err := json.Unmarshal([]byte(`{"repository":"app","task_id":"t-1","id":"d","question":"Q?","answered":true,"answer":"yes"}`), &old); err != nil ||
+		old.AnsweredVia != "" || old.AnsweredBy != "" || !old.Answered {
+		t.Fatalf("old decision = %+v, %v", old, err)
+	}
+	b, err := json.Marshal(sampleDecision("approve-plan"))
+	if err != nil || strings.Contains(string(b), "answered_") {
+		t.Fatalf("an answer with no place writes the new fields: %s", b)
 	}
 }
 

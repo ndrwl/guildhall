@@ -22,6 +22,9 @@ const (
 	// firstmate or an Artisan. It is asserted, not authenticated. The message's own sender (store.MessageSenders)
 	// is the finer field that tells them apart.
 	SenderLocal = "local"
+	// SenderPage is the task page (docs/web.md#answering): an answer or words the Guildmaster gave on it, from the
+	// Tailscale login the page checked.
+	SenderPage = "page"
 )
 
 // ErrNotRunning reports a Director pane whose runtime is not running, so a typed line would reach a shell.

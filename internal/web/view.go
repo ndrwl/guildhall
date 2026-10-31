@@ -37,6 +37,9 @@ type taskView struct {
 	OlderDay string
 	ReadAt   string
 	Since    string
+	// Gone is a refusal about a decision that is no longer an ask, such as one answered meanwhile, shown at the top
+	// of Now with the words kept; nil when there is none.
+	Gone *askView
 }
 
 type relatedView struct {
@@ -69,6 +72,16 @@ type askView struct {
 	Deferred                  bool
 	Findings                  []Finding
 	FindingsSummary           string
+	// Digest is the full subject digest the form carries back, "" for none.
+	Digest string
+	// Form says the request is from the Guildmaster's login, which answers on the page as Login; Answering says the
+	// page answers at all, so anyone else is told only the Guildmaster's login can.
+	Form, Answering bool
+	Login           string
+	Action, Token   string
+	// Refused is why the last answer to this ask wrote nothing, Words the words it kept, and Sent the id of the
+	// note words only just sent.
+	Refused, Words, Sent string
 }
 
 type tileView struct {
@@ -129,7 +142,7 @@ func taskHref(repo, id string) string { return "/" + pathEscape(repo) + "/" + pa
 // docHref is the reader page's path of a document of task repo/id.
 func docHref(repo, id, name string) string { return taskHref(repo, id) + "/doc/" + pathEscape(name) }
 
-func (s *Server) taskView(t Task) taskView {
+func (s *Server) taskView(t Task, st pageState) taskView {
 	v := taskView{Style: style, T: t, Base: taskHref(t.Repository, t.ID), Steps: t.Steps, ReadAt: s.clock(t.ReadAt)}
 	for _, r := range t.Related {
 		v.Crumbs = append(v.Crumbs, relatedView{Label: r.Label, Name: relatedName(t.Repository, r), Href: taskHref(r.Repository, r.ID)})
@@ -138,8 +151,11 @@ func (s *Server) taskView(t Task) taskView {
 		v.SliceOf = fmt.Sprintf("slice %d of %d", sl.Current, sl.Total)
 	}
 	var since *time.Time
+	found := false
 	for _, a := range t.Asks {
 		av := s.askView(t, a)
+		s.askState(&av, v.Base, st)
+		found = found || a.ID == st.Decision
 		if !a.Deferred {
 			v.Open++
 			if a.OpenedAt != nil && (since == nil || a.OpenedAt.Before(*since)) {
@@ -150,6 +166,12 @@ func (s *Server) taskView(t Task) taskView {
 	}
 	if since != nil {
 		v.Since = "since " + s.when(*since)
+	}
+	if !found && st.Refused != "" {
+		v.Gone = &askView{ID: st.Decision, KindName: "Not recorded", First: "Your answer was not recorded", Refused: st.Refused, Words: st.Words}
+		if st.Decision != "" {
+			v.Gone.First = "#" + st.Decision + " is not waiting on you"
+		}
 	}
 	v.Status = s.statusView(t, v.Open)
 	for _, q := range t.Context {
@@ -275,7 +297,20 @@ func (s *Server) askView(t Task, a Ask) askView {
 	if n := len(a.Findings); n > 0 {
 		v.FindingsSummary = fmt.Sprintf("The open findings · %d", n)
 	}
+	v.Digest = a.Subject
 	return v
+}
+
+// askState adds what the request brings to an ask: the form when it is from the Guildmaster's login, and the
+// refusal and words, or the sent note, of the ask st is about.
+func (s *Server) askState(v *askView, base string, st pageState) {
+	v.Answering, v.Form, v.Login = s.answering(), st.Answer, st.Login
+	if v.Form {
+		v.Action, v.Token = base+"/answer", st.Token
+	}
+	if v.ID == st.Decision {
+		v.Refused, v.Words, v.Sent = st.Refused, st.Words, st.Sent
+	}
 }
 
 // shortDigest is a digest as the page shows it: a head's first 7 characters, a document digest's first 12 hex.

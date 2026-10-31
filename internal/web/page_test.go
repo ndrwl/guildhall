@@ -38,8 +38,8 @@ func get(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder
 var externalURL = regexp.MustCompile(`(?:src|href|action)="(?:https?:)?//`)
 
 // TestTaskPageFixture renders design-3's mock-up content and checks every section, the anchors, the step and ask
-// states, the slices, the void node, the Director-run grill, and the page's safety: a viewport, no script, no form,
-// no external fetch and the CSP header.
+// states, the slices, the void node, the Director-run grill, and the page's safety: a viewport, no script, no
+// external fetch and the CSP header. With no Guildmaster identity every ask is read-only, with no form.
 func TestTaskPageFixture(t *testing.T) {
 	s, _, _, _ := fixtureServer(t)
 	w := get(t, s, "/guildhall/d122")
@@ -92,7 +92,7 @@ func TestTaskPageFixture(t *testing.T) {
 		`<div class="ask def" id="deliver-1">`, `<span class="tag you">deferred</span>`,
 		// an option the table does not describe shows its word alone, neutral
 		`<button class="opt" type="button" disabled><b>Later</b></button>`,
-		`Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.`,
+		`<p class="who">Only the Guildmaster's Tailscale login can answer here. Answer in chat or with <code>guildhall decide answer</code>.</p>`,
 		// the story: the key, newest first, states, findings fixed, the void acceptance, slice merge, the fold
 		`<li><span class="dot back">↩&#xFE0E;</span>sent back</li>`, `<li><span class="dot later"></span>later</li>`,
 		`<li class="node later"><div class="nh"><span class="t">Later</span><span class="st">not started</span></div><div class="nb">Publish · Deliver</div></li>`,
@@ -112,7 +112,7 @@ func TestTaskPageFixture(t *testing.T) {
 	}
 	for _, bad := range []string{"<script", "<form", "<iframe", "<textarea", "Send words only", "Answering as"} {
 		if strings.Contains(body, bad) {
-			t.Errorf("task page holds %q; slice 1 pages are read-only and script-free", bad)
+			t.Errorf("task page holds %q; a page with no Guildmaster identity is read-only, and every page script-free", bad)
 		}
 	}
 	if m := externalURL.FindAllString(body, -1); len(m) != 4 {
@@ -212,7 +212,12 @@ func TestRoutes(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, request(http.MethodPost, "/guildhall/d122", strings.NewReader("x=1")))
 	if w.Code != http.StatusNotFound {
-		t.Errorf("POST: status %d, want 404; answering comes in the next slice", w.Code)
+		t.Errorf("POST to the task page: status %d, want 404; answers go to /answer", w.Code)
+	}
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, request(http.MethodGet, "/guildhall/d122/answer", nil))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("GET /answer: status %d, want 404", w.Code)
 	}
 	src.err = ErrBusy
 	if w := get(t, s, "/guildhall/d122"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "The store is busy") {
