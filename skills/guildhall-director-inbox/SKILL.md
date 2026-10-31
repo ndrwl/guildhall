@@ -49,6 +49,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `rebase-escalated` | A rebase had major conflicts, a behaviour change, red checks or review findings, and the build was sent back with them as feedback: no action unless the Guildmaster asks, and no reply; it goes in the next Routine box. |
 | `rebase-stuck` | The front rebased three times in one stay and still is not clear: decide whether to hold its merge, send it back or wait. |
 | `approval-carried` | An earlier merge approval carried over to a rebased head under `reapprove_after_rebase`: no reply; it goes in the next Routine box. |
+| `flake` | A failed check passed on the one rerun Guildhall gave it on the same head, and its first line is the repository's policy, which says what to do: under `policy: rerun-and-file`, add the message's evidence with `guildhall task context add` to an open bug task naming the same test (the same check when the message found no test name), found with `guildhall task list --json`, or, when there is none, file a p3 bug with `guildhall task new --kind bug`, its title naming the test and check and its `--detail` the evidence, and start it with `guildhall task start`, with no Guildmaster step and no reply; it goes in the next Routine box. |
 | `merge-refused` | The forge refused the merge, with its reason: decide how to handle it; `guildhall-director-tasks` describes sending finished work back, holding it and rechecking. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |
 

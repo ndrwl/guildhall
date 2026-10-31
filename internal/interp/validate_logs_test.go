@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/cilog"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -22,6 +23,10 @@ const jobLog = "2026-10-29T10:00:00.0000000Z ##[group]Run go build ./...\n2026-1
 func actionsCheck(name, job string, state forge.CheckState) forge.Check {
 	return forge.Check{Name: name, State: state, URL: "https://ci.invalid/" + job, ID: "CR_" + job, Job: job}
 }
+
+// noReruns sets flaky_checks = "off" for the env's repository, so a failed Actions check is a failed round at once,
+// as before flaky_checks existed.
+func noReruns(e *env) { e.eng.Config.Repositories[0].FlakyChecks = config.FlakyChecksOff }
 
 func command(job string) string { return "guildhall ci log app/t7 " + job }
 
@@ -78,6 +83,7 @@ func TestValidateLogs(t *testing.T) {
 // shell, since the Artisan runs it under the copy's state/, where copy discovery finds no copy.
 func TestValidateLogsCommandNamesTheCopy(t *testing.T) {
 	e, f := newValidateEnv(t, backends[0])
+	noReruns(e)
 	e.eng.CILogLimit = 5 << 20
 	e.eng.Copy = "/copies/o'neil copy"
 	checks := []forge.Check{actionsCheck("test (ubuntu)", "123", forge.CheckFailed)}
@@ -121,6 +127,7 @@ func TestValidateLogsCapped(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			def := editValidate(t, func(s *workflow.Step) { s.On = nil })
 			e, f := newValidateEnvDefinition(t, backends[0], def)
+			noReruns(e)
 			e.eng.CILogLimit = tc.limit
 			if tc.plain {
 				e.eng.Forge = plainForge{f}
@@ -156,6 +163,7 @@ type plainForge struct{ interp.Forge }
 func TestValidateLogsOnlyForRecordedRounds(t *testing.T) {
 	def := editValidate(t, func(s *workflow.Step) { s.On = nil })
 	e, f := newValidateEnvDefinition(t, backends[0], def)
+	noReruns(e)
 	e.eng.CILogLimit = 1 << 20
 	f.SetLog("123", jobLog)
 	f.SetChecks(repoRemote, head, actionsCheck("test", "123", forge.CheckPending))
@@ -186,6 +194,7 @@ func TestValidateLogsReplay(t *testing.T) {
 		t.Run(map[bool]string{false: "cached", true: "pruned"}[pruned], func(t *testing.T) {
 			def := editValidate(t, func(s *workflow.Step) { s.On = nil })
 			e, f := newValidateEnvDefinition(t, backends[0], def)
+			noReruns(e)
 			e.eng.CILogLimit = 1 << 20
 			checks := []forge.Check{actionsCheck("test", "123", forge.CheckFailed)}
 			f.SetChecks(repoRemote, head, checks...)

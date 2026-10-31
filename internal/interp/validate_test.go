@@ -56,6 +56,16 @@ type validationResult struct {
 	Failing []string      `json:"failing,omitempty"`
 	NoCI    bool          `json:"no_ci,omitempty"`
 	Logs    []logEntry    `json:"logs,omitempty"`
+	Reruns  []rerunResult `json:"reruns,omitempty"`
+	Policy  string        `json:"flaky_checks,omitempty"`
+}
+
+// rerunResult is one entry of a validation result's reruns.
+type rerunResult struct {
+	Check     string `json:"check"`
+	Record    string `json:"record"`
+	FailedRun string `json:"failed_run"`
+	PassedRun string `json:"passed_run,omitempty"`
 }
 
 // logEntry is one failed check's entry in a failed result's logs.

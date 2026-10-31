@@ -517,8 +517,11 @@ const (
 	MessageChecksFailed     = "checks-failed"
 	MessageChecksPassed     = "checks-passed"
 	MessageChecksPending    = "checks-pending"
-	MessagePRBlocked        = "pr-blocked"
-	MessageDecision         = "decision"
+	// MessageFlake: a failed GitHub Actions check passed on the one rerun validate gave it under flaky_checks =
+	// "rerun-and-file"; its text carries the policy and the evidence, and the Director files or updates a bug.
+	MessageFlake     = "flake"
+	MessagePRBlocked = "pr-blocked"
+	MessageDecision  = "decision"
 	// MessageDependencyHeld: the dependency gate holds a task until its dependencies merge; it is not the
 	// between-Directors dependency-notice.
 	MessageDependencyHeld = "dependency-held"
@@ -570,7 +573,7 @@ const (
 var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
 	MessageBudgetRefused: "engine", MessageChangesRequested: "engine", MessageChecksFailed: "engine",
-	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
+	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessageFlake: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
 	MessageDependencyHeld: "engine", MessageBranchKept: "engine",
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessageFinished: "engine", MessagePublished: "engine", MessageStall: "engine",

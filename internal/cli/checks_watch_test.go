@@ -321,7 +321,8 @@ func validateCopy(t *testing.T, f *forgetest.Fake) (string, runDirector) {
 		t.Fatal(err)
 	}
 	conf := strings.Replace(string(b), `workflow = "fake-straight"`, `workflow = "fake-validate"`, 1)
-	writeFile(t, cfg, strings.Replace(conf, `path = "/srv/app"`, "path = '"+appRepo+"'", 1))
+	// flaky_checks = "off" keeps a failed Actions job a failed round at once, which these tests read.
+	writeFile(t, cfg, strings.Replace(conf, `path = "/srv/app"`, "path = '"+appRepo+"'\nflaky_checks = \"off\"", 1))
 	const remote, head = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
 	f.SetBranch(remote, "main", strings.Repeat("a", 40))
 	f.AddCommit(appRepo, head)

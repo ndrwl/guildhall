@@ -26,6 +26,11 @@ type PullRequestReader interface {
 	PullRequest(ctx context.Context, v forge.View) (forge.PullRequest, error)
 }
 
+// CheckRerunner is the optional rerun of a failed Actions job under the contract: forge.GitHub's and Fake's.
+type CheckRerunner interface {
+	RerunJob(ctx context.Context, c forge.Commit, job string) error
+}
+
 // Harness is one forge under the contract suite, over a repository whose remote's default branch is Base, at
 // BaseHead.
 type Harness struct {
@@ -320,6 +325,71 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			if _, err := h.Forge.Checks(ctx, c); !errors.Is(err, forge.ErrInvalid) {
 				t.Errorf("Checks(%+v) = %v, want ErrInvalid", c, err)
 			}
+		}
+	})
+
+	rerunner := func(t *testing.T, h Harness) CheckRerunner {
+		t.Helper()
+		r, ok := h.Forge.(CheckRerunner)
+		if !ok || h.SetChecks == nil {
+			t.Skip("this forge cannot re-run jobs or be given checks")
+		}
+		return r
+	}
+	failedJob := []forge.Check{
+		{Name: "lint", State: forge.CheckPassed, ID: "run-2", Job: "102"},
+		{Name: "test (macos-latest)", State: forge.CheckFailed, URL: "https://ci.invalid/test", ID: "run-1", Job: "101"},
+	}
+
+	t.Run("re-runs a failed job as a pending new run of the check", func(t *testing.T) {
+		h := newHarness(t)
+		r := rerunner(t, h)
+		publish(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], failedJob)
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, failedJob) {
+			t.Fatalf("Checks = %+v, want %+v", got, failedJob)
+		}
+		if err := r.RerunJob(ctx, commit(h, h.Heads[0]), "101"); err != nil {
+			t.Fatalf("RerunJob = %v", err)
+		}
+		got := checks(t, h, h.Heads[0])
+		if len(got) != 2 || got[0] != failedJob[0] {
+			t.Fatalf("Checks after the rerun = %+v, want lint unchanged", got)
+		}
+		if c := got[1]; c.Name != "test (macos-latest)" || c.State != forge.CheckPending || c.ID == "" || c.ID == "run-1" || c.Job == "" || c.Job == "101" {
+			t.Errorf("rerun check = %+v, want a pending new run with a new run id and job id", c)
+		}
+	})
+
+	t.Run("refuses to re-run a job the head does not run and changes nothing", func(t *testing.T) {
+		h := newHarness(t)
+		r := rerunner(t, h)
+		publish(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], failedJob)
+		err := r.RerunJob(ctx, commit(h, h.Heads[0]), "999")
+		if err == nil || errors.Is(err, forge.ErrInvalid) || !strings.Contains(err.Error(), "999") {
+			t.Errorf("RerunJob of an unknown job = %v, want the forge's refusal naming the job", err)
+		}
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, failedJob) {
+			t.Errorf("Checks after a refused rerun = %+v, want %+v", got, failedJob)
+		}
+	})
+
+	t.Run("refuses an invalid job or commit", func(t *testing.T) {
+		h := newHarness(t)
+		r := rerunner(t, h)
+		publish(t, h, h.Heads[0])
+		h.SetChecks(t, h.Heads[0], failedJob)
+		for _, job := range []string{"", "abc", "101/../102", "-1"} {
+			if err := r.RerunJob(ctx, commit(h, h.Heads[0]), job); !errors.Is(err, forge.ErrInvalid) {
+				t.Errorf("RerunJob(%q) = %v, want ErrInvalid", job, err)
+			}
+		}
+		if err := r.RerunJob(ctx, commit(h, "HEAD"), "101"); !errors.Is(err, forge.ErrInvalid) {
+			t.Errorf("RerunJob of an invalid commit = %v, want ErrInvalid", err)
+		}
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, failedJob) {
+			t.Errorf("Checks after refused reruns = %+v, want %+v", got, failedJob)
 		}
 	})
 

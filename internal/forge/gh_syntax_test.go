@@ -31,6 +31,8 @@ func validateGHArgs(args []string) error {
 		"api graphql": {values: []string{"--hostname", "-f"}},
 		// gh api <endpoint> is a REST GET; the only endpoint read is a job's logs.
 		"api jobs-logs": {values: []string{"--hostname"}, bools: []string{"--allow-escape-sequences"}},
+		// gh api <endpoint> --method POST: the only endpoint written is a job's rerun.
+		"api jobs-rerun": {values: []string{"--hostname", "--method"}},
 	}
 	cmd := ghCommand(args)
 	s, ok := shapes[cmd]
@@ -62,10 +64,17 @@ func validateGHArgs(args []string) error {
 // jobLogsEndpoint is the REST endpoint of one Actions job's log, the one gh api endpoint besides graphql.
 var jobLogsEndpoint = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/jobs/([0-9]+)/logs$`)
 
-// ghCommand names the command of args: its first two words, with a job logs endpoint named api jobs-logs.
+// jobRerunEndpoint is the REST endpoint that re-runs one Actions job.
+var jobRerunEndpoint = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/jobs/([0-9]+)/rerun$`)
+
+// ghCommand names the command of args: its first two words, with a job logs endpoint named api jobs-logs and a
+// job rerun endpoint api jobs-rerun.
 func ghCommand(args []string) string {
-	if args[0] == "api" && jobLogsEndpoint.MatchString(args[1]) {
+	switch {
+	case args[0] == "api" && jobLogsEndpoint.MatchString(args[1]):
 		return "api jobs-logs"
+	case args[0] == "api" && jobRerunEndpoint.MatchString(args[1]):
+		return "api jobs-rerun"
 	}
 	return strings.Join(args[:2], " ")
 }
@@ -82,6 +91,7 @@ func ghCallShapes() [][]string {
 		{"pr", "edit", "1", "--repo", "github.com/acme/widgets", "--title", "Task t7", "--body", "Body text"},
 		{"api", "repos/acme/widgets/actions/jobs/123/logs", "--hostname", "github.com", "--allow-escape-sequences"},
 		{"pr", "close", "1", "--repo", "github.com/acme/widgets", "--comment", "Cancelled by Guildhall: duplicate"},
+		{"api", "repos/acme/widgets/actions/jobs/123/rerun", "--method", "POST", "--hostname", "github.com"},
 	}
 }
 

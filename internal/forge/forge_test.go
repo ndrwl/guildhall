@@ -98,6 +98,13 @@ func newGitHub(t *testing.T) *gh {
 			var nodes []map[string]any
 			for _, c := range checks {
 				node := map[string]any{"__typename": "CheckRun", "id": c.ID, "name": c.Name, "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": c.URL}
+				if c.Job != "" {
+					job, err := strconv.ParseInt(c.Job, 10, 64)
+					if err != nil {
+						t.Fatalf("check %q: job %q is not an Actions job id", c.Name, c.Job)
+					}
+					node["databaseId"], node["checkSuite"] = job, map[string]any{"app": map[string]any{"slug": "github-actions"}}
+				}
 				switch c.State {
 				case forge.CheckPending:
 					node["status"], node["conclusion"] = "IN_PROGRESS", nil
@@ -640,11 +647,13 @@ type ghState struct {
 	MoreChecks bool `json:"more_checks"`
 	// Logs are each Actions job's plain-text log; LogStatus is an HTTP error a job's log read answers with, and
 	// HangLogs makes every log read hang.
-	Logs             map[string]string `json:"logs,omitempty"`
-	LogStatus        map[string]int    `json:"log_status,omitempty"`
-	HangLogs         bool              `json:"hang_logs,omitempty"`
-	Mergeable        string            `json:"mergeable"`
-	MergeStateStatus string            `json:"merge_state_status"`
+	Logs      map[string]string `json:"logs,omitempty"`
+	LogStatus map[string]int    `json:"log_status,omitempty"`
+	HangLogs  bool              `json:"hang_logs,omitempty"`
+	// RerunStatus is an HTTP error every job rerun answers with.
+	RerunStatus      int    `json:"rerun_status,omitempty"`
+	Mergeable        string `json:"mergeable"`
+	MergeStateStatus string `json:"merge_state_status"`
 }
 
 type ghPR struct {
@@ -718,6 +727,8 @@ func runGH(s *ghState, bare string, args []string) int {
 		return graphQL(s, bare, rest)
 	case "api jobs-logs":
 		return jobLogs(s, args[1], rest)
+	case "api jobs-rerun":
+		return jobRerun(s, args[1], rest)
 	}
 	flags := map[string]string{}
 	var positional []string
@@ -915,6 +926,47 @@ func jobLogs(s *ghState, endpoint string, args []string) int {
 	}
 	fmt.Print(text)
 	return 0
+}
+
+// jobRerun answers gh api repos/<owner>/<repo>/actions/jobs/<job>/rerun --method POST as GitHub does: the check
+// run of that job becomes a new, in-progress run of the same name with a new node id and job id, and the answer is
+// an empty object; a job no head's checks run is gh's message for an HTTP 404, exit 1. RerunStatus is an HTTP error
+// the rerun answers with instead, as GitHub's 403 for a run still in progress or too old.
+func jobRerun(s *ghState, endpoint string, args []string) int {
+	fail := func(code int, format string, a ...any) int {
+		fmt.Fprintf(os.Stderr, format+"\n", a...)
+		return code
+	}
+	m := jobRerunEndpoint.FindStringSubmatch(endpoint)
+	switch {
+	case !slices.Equal(args, []string{"--method", "POST", "--hostname", "github.com"}):
+		return fail(2, "fake gh: api %s %q", endpoint, args)
+	case s.SignedOut:
+		return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
+	case s.Offline:
+		return fail(1, "error connecting to api.github.com")
+	case m[1] != "acme" || m[2] != "widgets":
+		return fail(1, "gh: Not Found (HTTP 404)")
+	case s.RerunStatus != 0:
+		return fail(1, "gh: This workflow is already running (HTTP %d)", s.RerunStatus)
+	}
+	job, err := strconv.ParseInt(m[3], 10, 64)
+	if err != nil {
+		return fail(1, "gh: Not Found (HTTP 404)")
+	}
+	for head, nodes := range s.Checks {
+		for i, n := range nodes {
+			if id, ok := n["databaseId"].(float64); ok && int64(id) == job {
+				n = maps.Clone(n)
+				n["id"], n["databaseId"] = fmt.Sprintf("%v-rerun", n["id"]), job*10+1
+				n["status"], n["conclusion"] = "QUEUED", nil
+				s.Checks[head][i] = n
+				fmt.Println("{}")
+				return 0
+			}
+		}
+	}
+	return fail(1, "gh: Not Found (HTTP 404)")
 }
 
 // graphQL answers the statusCheckRollup query the GitHub forge reads checks with, and refuses any other.
