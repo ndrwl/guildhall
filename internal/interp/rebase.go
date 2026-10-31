@@ -38,7 +38,7 @@ func (r *run) rebase(s workflow.Step, n int, head string, b *binding) ([]render.
 	if err != nil || r.e.Base == nil {
 		return nil, err
 	}
-	base, err := r.e.Base(r.task.Repository)
+	base, err := r.e.Base(r.task.Repository, r.branch())
 	if err != nil || !digest.ValidHead(base) {
 		return nil, nil
 	}

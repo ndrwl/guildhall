@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/forge"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -39,6 +40,17 @@ type prText struct {
 	Task    store.Task
 	// Step is the publish step's id and Head the head it publishes.
 	Step, Head string
+	// Slice is the slice a multi-PR task publishes, from 1, and Slices the accepted spec's slice list with the pull
+	// request of each merged slice; 0 and nil for a one-slice task, whose text is unchanged.
+	Slice  int
+	Slices []prSlice
+}
+
+// prSlice is one slice of a multi-PR task as its pull request text lists it.
+type prSlice struct {
+	spec.Slice
+	// Merged is the merged pull request's URL, or "".
+	Merged string
 }
 
 // pullRequestText returns the title and body of the pull request for p. It is deterministic: the same p gives
@@ -60,6 +72,10 @@ func pullRequestText(p prText) (title, body string) {
 		if p.SpecName != "" {
 			summary = "The accepted spec has no goal to quote."
 		}
+	}
+	if p.Slice >= 1 && p.Slice <= len(p.Slices) {
+		title = forgeTitle(fmt.Sprintf("%s (slice %d of %d)", p.Slices[p.Slice-1].Title, p.Slice, len(p.Slices)), p.Task.ID)
+		summary += "\n\n" + sliceSection(p)
 	}
 	changed := strings.TrimSpace(p.Summary)
 	if changed == "" {
@@ -179,6 +195,25 @@ func parseSpec(spec string) specParts {
 		}
 	}
 	return out
+}
+
+// sliceSection is a multi-PR task's slice text, after the goal: this slice's entry, then every slice with the pull
+// request of each merged one.
+func sliceSection(p prText) string {
+	var b strings.Builder
+	this := p.Slices[p.Slice-1]
+	fmt.Fprintf(&b, "### Slice %d of %d: %s\n\n%s\n\n### Slices\n\n", p.Slice, len(p.Slices), this.Title, this.Body)
+	for _, s := range p.Slices {
+		state := "to come"
+		switch {
+		case s.Merged != "":
+			state = "merged in " + s.Merged
+		case s.Index == p.Slice:
+			state = "this pull request"
+		}
+		fmt.Fprintf(&b, "%d. %s: %s\n", s.Index, s.Title, state)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // review is the Review section's text: each outcome given that is bound to the head, with its findings and

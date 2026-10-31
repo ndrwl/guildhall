@@ -174,6 +174,32 @@ func clerkFixture(t *testing.T) string {
 	queue("lib", "l-front", 41)
 	must(s.ClaimMergeFront(mutation(), "lib", "l-front"))
 
+	// a-sliced is a multi-PR task whose accepted spec lists three slices: slice 1 merged as PR #401 and slice 2's PR
+	// #402 waits on its checks.
+	doc := func(repo, id, name, rel string, data []byte) {
+		t.Helper()
+		path := filepath.Join(state, "documents", filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, path, string(data))
+		must(s.PutDocument(mutation(), store.DocumentRef{Repository: repo, TaskID: id, Name: name, Path: rel, SHA256: digest.Of(data).Hex()}))
+	}
+	prDoc := func(id string, number, slice int, state string) []byte {
+		branch := "guildhall/" + id
+		if slice > 1 {
+			branch += ".s" + strconv.Itoa(slice)
+		}
+		data, _ := json.Marshal(map[string]any{"schema": "guildhall.pull-request/1", "remote": "origin", "number": number,
+			"url": "https://forge.invalid/app/pull/" + strconv.Itoa(number), "branch": branch, "head": strings.Repeat(strconv.Itoa(slice), 40), "state": state})
+		return data
+	}
+	task("app", "a-sliced", "Large work in three", store.PriorityNormal)
+	doc("app", "a-sliced", "accept-1-spec", "tasks/app/a-sliced/plan-1/spec.md", []byte(slicedSpec))
+	doc("app", "a-sliced", "deliver-1-merge", "tasks/app/a-sliced/deliver-1/merge.json", prDoc("a-sliced", 401, 1, "merged"))
+	doc("app", "a-sliced", "publish--s2-1-pr", "tasks/app/a-sliced/publish--s2-1/pull-request.json", prDoc("a-sliced", 402, 2, "open"))
+	next("app", "a-sliced", `{"wait":"checks","step":"validate--s2"}`)
+
 	next("app", "a-queued", `{"wait":"queued","step":"build","attempt":1,"position":2}`)
 	next("app", "a-deps", `{"wait":"dependencies","step":"research"}`)
 	next("app", "a-grill", `{"wait":"director-stage","step":"grill"}`)
@@ -183,6 +209,20 @@ func clerkFixture(t *testing.T) string {
 	}
 	return dir
 }
+
+// slicedSpec is a-sliced's accepted spec, listing three slices.
+const slicedSpec = `# Large work in three
+
+## Goal
+
+Land the large work as three pull requests.
+
+## Slices
+
+1. **Parser**: the parser; about 100 lines in 2 files.
+2. **Engine**: the engine; about 200 lines in 4 files.
+3. **Views**: the views; about 100 lines in 3 files.
+`
 
 // clerkAnswering is a running attempt's endpoint handler.
 type clerkAnswering struct{}
@@ -215,6 +255,8 @@ func TestClerkGolden(t *testing.T) {
 		{"clerk-queue.txt", []string{"queue"}},
 		{"clerk-task.txt", []string{"task", "a-checks"}},
 		{"clerk-inspect.txt", []string{"inspect", "app/a-approve"}},
+		{"clerk-task-sliced.txt", []string{"task", "a-sliced"}},
+		{"clerk-inspect-sliced.txt", []string{"inspect", "app/a-sliced"}},
 	} {
 		t.Run(tc.golden, func(t *testing.T) {
 			code, out, stderr := runClerk(t, filepath.Join(dir, "director"), tc.args...)
@@ -253,6 +295,7 @@ func TestClerkWhereItStands(t *testing.T) {
 		"app/a-odd":     "waiting (mystery)",
 		"app/a-merged2": "merged",
 		"lib/l-front":   "in merge queue 1/1, CI pending",
+		"app/a-sliced":  "slice 2 of 3, CI pending, PR #402",
 	} {
 		line := clerkLine(tasks, id)
 		if !strings.HasSuffix(line, "  "+want) {
@@ -277,7 +320,7 @@ func TestClerkWhereItStands(t *testing.T) {
 		}
 	}
 	want := []string{"app/a-bug", "app/a-q1", "app/a-build", "app/a-q2", "app/a-approve", "app/a-checks", "app/a-merged2",
-		"app/a-deps", "app/a-grill", "app/a-long", "app/a-new", "app/a-odd", "app/a-q3", "lib/l-front", "lib/a-new", "app/a-queued"}
+		"app/a-deps", "app/a-grill", "app/a-long", "app/a-new", "app/a-odd", "app/a-q3", "app/a-sliced", "lib/l-front", "lib/a-new", "app/a-queued"}
 	if !slices.Equal(order, want) {
 		t.Errorf("order %v, want %v", order, want)
 	}
@@ -531,5 +574,36 @@ func TestClerkErrors(t *testing.T) {
 	if code, out, stderr := runClerk(t, dir, "guild"); code != 1 || out != "" ||
 		stderr != "guildhall: clerk guild: the store is busy (the Director is writing); try again in a moment\n" {
 		t.Errorf("locked store: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+}
+
+// TestDirectorStatusSlices: director status gives a multi-PR task a slices object, the current slice, the total and
+// each slice's title, state and pull request, and gives a one-slice task none, so its JSON is unchanged.
+func TestDirectorStatusSlices(t *testing.T) {
+	dir := clerkFixture(t)
+	st, err := readDirectorStatusConfig(t.Context(), filepath.Join(dir, "director.store"), filepath.Join(dir, "state"), "", func() time.Time { return clerkNow })
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, task := range st.Tasks {
+		data, err := json.Marshal(task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case task.ID == "a-sliced":
+			seen = true
+			out, err := json.Marshal(task.Slices)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkIndentedGolden(t, "director-status-slices.json", string(out))
+		case strings.Contains(string(data), `"slices"`):
+			t.Errorf("one-slice task %s/%s has slices: %s", task.Repository, task.ID, data)
+		}
+	}
+	if !seen {
+		t.Error("a-sliced is not in the status")
 	}
 }

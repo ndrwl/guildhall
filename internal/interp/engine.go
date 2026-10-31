@@ -234,9 +234,10 @@ type Engine struct {
 	CILogLimit int64
 	// Now is the clock the observations and ChecksRefresh read; nil is wall time.
 	Now func() time.Time
-	// Base returns the commit a repository's tasks are based on now; nil or an error means every code review
-	// is full. Rebases classifies a new head against the last reviewed range (docs/interpreter.md#rebase-aware-review).
-	Base    func(repository string) (string, error)
+	// Base returns the commit the task branch, the current slice's, of a repository is based on now; nil or an error
+	// means every code review is full. Rebases classifies a new head against the last reviewed range
+	// (docs/interpreter.md#rebase-aware-review).
+	Base    func(repository, branch string) (string, error)
 	Rebases Rebases
 	// Forge publishes, reads the checks of and merges a repository's task branches; nil refuses publish,
 	// validate and merging with ErrUnsupported.
@@ -270,17 +271,23 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 	if err != nil {
 		return Next{}, err
 	}
-	t, def := r.task, r.def
+	t := r.task
 	if err := r.intake(ev); err != nil {
 		return Next{}, err
 	}
+	// The slice merged last finishes closing before the next one starts, after a crash between the two.
+	if err := r.settleSlice(); err != nil {
+		return Next{}, fmt.Errorf("interp: %s/%s slice %d: %w", t.Repository, t.ID, r.slice.merged, err)
+	}
 	// A pull request merged outside Guildhall closes the task before any step reads the forge: publish would open a
 	// new pull request for the landed branch, and validate's and the front's mergeability reads refuse a moved head.
+	// A slice before a multi-PR task's last closes only that slice, and the advance goes on with the next.
 	if !r.running() {
 		if merged, next, err := r.mergedOutside(); err != nil || merged {
 			return next, err
 		}
 	}
+	def := r.def
 	if err := r.replayMergeBlocked(); err != nil {
 		return Next{}, err
 	}
@@ -308,38 +315,62 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 	} else if !done {
 		return next, nil
 	}
-	gated := false
-	for _, step := range def.Steps {
-		// The dependency gate stands before the first step not run by the Director, whatever its kind, and before
-		// anything of it is recorded or held.
-		if !gated && step.Actor() != workflow.DirectorActor {
-			gated = true
-			held, next, err := r.dependencyGate(step)
-			if err != nil {
-				return Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)
-			}
-			if held {
-				return next, nil
-			}
-		}
-		done, next, err := r.step(step)
+	for {
+		waits, next, err := r.walk()
 		if err != nil {
-			return Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)
+			return Next{}, err
 		}
-		if !done {
+		if waits {
 			return next, nil
 		}
+		if !r.sliceMerged {
+			break
+		}
+		// A slice before the last merged: the walk starts again for the next slice, whose range has no records.
+		r.nextSlice()
 	}
 	// A workflow with no deliver step, such as the hallmark workflow, is done once every step is; one with deliver
 	// never runs past it (docs/decisions/report-only-workflows.md).
-	if !slices.ContainsFunc(def.Steps, func(s workflow.Step) bool { return s.Type == "deliver" }) {
+	if !slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.Type == "deliver" }) {
 		next, err := r.finish()
 		if err != nil {
 			return Next{}, fmt.Errorf("interp: %s/%s finish: %w", t.Repository, t.ID, err)
 		}
 		return next, nil
 	}
-	return Next{}, fmt.Errorf("interp: %w: workflow %s ends without a step to wait for", ErrUnsupported, def.Name)
+	return Next{}, fmt.Errorf("interp: %w: workflow %s ends without a step to wait for", ErrUnsupported, r.def.Name)
+}
+
+// walk moves the task through the current view's steps in order and reports whether one must be waited for, with
+// what; it stops early, waiting for nothing, when a slice before the last merged (run.sliceMerged).
+func (r *run) walk() (bool, Next, error) {
+	t := r.task
+	gated := false
+	for _, step := range r.def.Steps {
+		// The dependency gate stands before the first step not run by the Director, whatever its kind, and before
+		// anything of it is recorded or held.
+		if !gated && step.Actor() != workflow.DirectorActor {
+			gated = true
+			held, next, err := r.dependencyGate(step)
+			if err != nil {
+				return false, Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)
+			}
+			if held {
+				return true, next, nil
+			}
+		}
+		done, next, err := r.step(step)
+		if err != nil {
+			return false, Next{}, fmt.Errorf("interp: %s/%s step %s: %w", t.Repository, t.ID, step.ID, err)
+		}
+		if r.sliceMerged {
+			return false, Next{}, nil
+		}
+		if !done {
+			return true, next, nil
+		}
+	}
+	return false, Next{}, nil
 }
 
 // begin reads ev's task, which must be open, and its bound workflow revision, and loads the run over its records.
@@ -368,6 +399,9 @@ func (e *Engine) begin(ctx context.Context, ev Event) (*run, error) {
 	if err := r.load(); err != nil {
 		return nil, err
 	}
+	if err := r.loadSlices(); err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
@@ -383,6 +417,12 @@ type run struct {
 	event Event
 	// queue is the start queue, in queue order, as the advance began.
 	queue []store.QueuedStart
+	// base is the bound definition; def is its view for the current slice (workflow.SliceView), the same for slice 1.
+	base *workflow.Definition
+	// slice is where the task stands in its slices, and sliceMerged reports that the walk just closed a slice before
+	// the last, so the advance goes on with the next.
+	slice       sliceState
+	sliceMerged bool
 	*history
 }
 
@@ -928,6 +968,7 @@ func (r *run) launch(s workflow.Step, n int, rt artisanRuntime, inputs []render.
 		Manifest:   p.manifest,
 		Copy:       r.e.Copy, Profile: rt.profile,
 		Settings: rt.settings,
+		Slices:   r.sliceCount(),
 	})
 	if err != nil {
 		return fmt.Errorf("launch attempt %d: %w", n, err)
@@ -1086,6 +1127,13 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 			}
 		}
 		contents[i] = data
+	}
+	// A plan's spec is checked for the slice list Guildhall would deliver before it is recorded; one already recorded
+	// stands on replay.
+	if s.Type == "plan" && port.Name == "spec" && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
+		if err := r.checkSlices(contents[0]); err != nil {
+			return err
+		}
 	}
 	for i, o := range outputs {
 		data := contents[i]

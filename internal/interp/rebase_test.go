@@ -28,7 +28,7 @@ func TestRebaseAwareReview(t *testing.T) {
 	o2 := bound(t, workflow.VerdictApproved, head2, nil, workflow.Disposition{Finding: "f1", State: workflow.Resolved})
 	for _, tc := range []struct {
 		name     string
-		base     func(n *int) func(string) (string, error)
+		base     func(n *int) func(string, string) (string, error)
 		classify git.Classification
 		scope    git.Scope
 		calls    int
@@ -38,8 +38,8 @@ func TestRebaseAwareReview(t *testing.T) {
 		{"requested full", bases(base1, base2), git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
 		{"full", bases(base1, base2), git.Classification{Scope: git.ScopeFull, Reason: "range-diff shows a changed commit"}, git.ScopeFull, 1},
 		{"no base", nil, git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
-		{"base error", func(*int) func(string) (string, error) {
-			return func(string) (string, error) { return "", errors.New("no remote") }
+		{"base error", func(*int) func(string, string) (string, error) {
+			return func(string, string) (string, error) { return "", errors.New("no remote") }
 		}, git.Classification{Scope: git.ScopeRebase, Diff: resolution}, git.ScopeFull, 0},
 	} {
 		for _, b := range backends {
@@ -122,9 +122,9 @@ func TestRebaseAwareReview(t *testing.T) {
 }
 
 // bases answers base 1 to the first review and base 2 to later ones, counting calls in n.
-func bases(base1, base2 string) func(n *int) func(string) (string, error) {
-	return func(n *int) func(string) (string, error) {
-		return func(repo string) (string, error) {
+func bases(base1, base2 string) func(n *int) func(string, string) (string, error) {
+	return func(n *int) func(string, string) (string, error) {
+		return func(string, string) (string, error) {
 			*n++
 			if *n == 1 {
 				return base1, nil

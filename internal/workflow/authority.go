@@ -46,7 +46,8 @@ var actorStrength = map[Actor]int{ArtisanActor: 1, GuildmasterActor: 2}
 //   - removes a loop rule, sends it to another step, or lowers its max (raising max or adding a rule is not weakening).
 //
 // A step whose type or version changed is reported once, for that change alone.
-// Steps present in both that change relative order are weakening, whatever their kind, and are reported first.
+// Steps present in both that change relative order are weakening, whatever their kind, and are reported first; then
+// removing or changing base's slice range, which next may only add or keep.
 // A publish or deliver step of next is weakening, after them, when base has no step of its type: a baseline that
 // publishes or delivers nothing, such as the shipped hallmark workflow, has no guarded steps to compare a delivering
 // revision with, so it cannot prove one harmless (docs/decisions/report-only-workflows.md).
@@ -67,6 +68,10 @@ func Weakenings(base, next *Definition) []Weakening {
 	}
 	if !slices.Equal(was, now) {
 		out = append(out, Weakening{Reason: fmt.Sprintf("step order changed from %s to %s", strings.Join(was, ", "), strings.Join(now, ", "))})
+	}
+	// The slice range is what keeps a multi-PR task open until its last slice merges (docs/decisions/multi-pr-tasks.md).
+	if b := base.Slices; b != nil && (next.Slices == nil || *next.Slices != *b) {
+		out = append(out, Weakening{Reason: fmt.Sprintf("removed or changed the slice range %s..%s", b.From, b.To)})
 	}
 	for _, n := range next.Steps {
 		if (n.Type == "publish" || n.Type == "deliver") && !slices.ContainsFunc(base.Steps, func(b Step) bool { return b.Type == n.Type }) {

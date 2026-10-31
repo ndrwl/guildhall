@@ -150,13 +150,16 @@ It takes the `--store`, `--config` and `--state` of `task start`, or a copy, and
 In order, it:
 
 1. refuses a `done` task, and prints that a `cancelled` task is already cancelled, with its reason, and exits 0;
-2. refuses a task whose deliver recorded its merge, a `<decision>-merge` document: its work merged or is merging;
+2. refuses a task whose deliver recorded its merge, a `<decision>-merge` document: its work merged or is merging; a [multi-PR task](#multi-pr-tasks) is refused only while its current slice is merging, that is, the current slice has a merge record or the slice merged last has not finished closing, since the next one has recorded nothing yet, and advancing the task finishes it;
 3. stops each running attempt: an Artisan attempt through its owner, as [`artisan stop`](artisan.md#commands) does, and a Director stage's attempt, which has no owner, by recording it `stopped`; when an Artisan's stop cannot be proven the cancel is refused and the task stays open, so a cancelled task never has a live Artisan;
 4. closes each pull request the task's `-pr` documents record with the comment `Cancelled by Guildhall: <reason>`, keeping its branch; a closed one is left as it is, and one merged on the forge refuses the cancel, after only the stops above: its work landed, so the [outside-merge rule](#merged-outside-guildhall) records the task `done`, and the cancel exits 1 with `pull request <url> of task <repo>/<task> is merged; its work landed, so the task is recorded done, not cancelled`;
 5. voids each open decision with the reason `Task cancelled: <reason>`: a void decision leaves `decide list`, `director status` and the dependency gate's states, `decide show` prints it with `"void":true`, and it can no longer be answered;
 6. takes the task out of the [start queue](interpreter.md#the-start-queue) and the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
 7. sends the Director one `dependency-cancelled` message for each open task, in any listed repository, that [depends](#dependencies) on it; the dependents are not cancelled, and one already held by the dependency gate gets its `dependency-held` message too at its next advance;
 8. records the task `cancelled`, with its `cancel_reason` and `cancelled_at`.
+
+A multi-PR task with slices merged is cancelled too: step 4 closes only the unmerged slices' pull requests, a merged slice's stays merged and stands, and the cancel prints a line naming each merged slice and its pull request after recording the task `cancelled`, never `done`.
+The reason still comes from the Guildmaster's own words, as for every cancel.
 
 Each step's write has a mutation id derived from the task, and the state change comes last, so a cancel that fails part-way leaves the task open and running the same command again finishes it: nothing is stopped, closed, voided or sent twice.
 The task's branch and working directory are kept, so its work can be recovered.
@@ -189,6 +192,10 @@ Like a merge by deliver, it opens no [audit](quality.md#honesty-and-evidence-g):
 Every write's mutation id is keyed on the pull request's remote and number, so a run that fails part-way is finished by the next from the recorded `outside-<number>-merge`, sending nothing twice.
 The forge must read pull requests (GitHub does); a forge that cannot never applies the rule.
 
+A [multi-PR task](#multi-pr-tasks) applies the rule to its current slice alone: the rule reads only that slice's recorded pull requests, while the slice has no merge record.
+A merge of a slice before the last is recorded as that slice's merge, `outside-<number>-merge` for slice 1 and `outside--s<k>-<number>-merge` after, voids the open decisions, sends a `merged` message naming the slice, retires the slice's working directory and takes the task out of the merge queue, but leaves the task open: the advance goes on with the next slice.
+Only the last slice's merge records the task `done`.
+
 Every advance applies the rule first, after taking its event's result and before any step runs, to a task with `-pr` documents and no `-merge` document, at the cost of one `gh pr view` per recorded pull request; that advance prints `{"wait":"done",...}`.
 So publish never opens a new pull request for a branch whose pull request merged, and validate and the merge-queue front never read a pull request that moved when it was merged.
 While one of the task's attempts runs the rule waits, and applies at the advance its result brings.
@@ -198,7 +205,32 @@ A pull request read that fails fails the advance.
 
 `task reconcile <task>` applies the rule now, for drift the Director finds: it takes the flags of `task cancel` but `--reason`, the repository must be listed in the config, and it holds the task's lock.
 It stops the task's running attempts as `task cancel` does, then reads the forge and prints `done: pull request <url> merged outside Guildhall` or `no change: no recorded pull request is merged`, exiting 0 either way.
+For a multi-PR task whose slice before the last merged it prints `slice <k> merged: pull request <url> merged outside Guildhall; the task stays open for its next slice`, which the task's next advance starts; it never closes a multi-PR task before its last slice.
 A `done` or `cancelled` task prints its state and changes nothing.
+
+## Multi-PR tasks
+
+Work larger than one pull request is one task whose accepted spec lists its slices under `## Slices`: a numbered list, each entry a bold title, what that pull request delivers and its expected size ([decision](decisions/multi-pr-tasks.md)).
+The plan writes the list into the spec, Guildhall parses it strictly when it records the plan's result, and the Guildmaster accepts the spec, slices included, once.
+A malformed list, more than one slice under a workflow revision that declares no slice range, such as a retired default or the bug workflow, and a revised spec that changes or drops a merged slice's entry fail the plan attempt with the reason, and no spec is recorded.
+A spec with no `## Slices`, or with one entry, is a one-slice task, and runs exactly as before.
+
+The shipped default workflow declares `"slices": {"from": "build", "to": "deliver"}`: build, review, publish, validate and deliver run once per slice, in order.
+The current slice is the slices with a merge record plus one, worked out from the records at every advance, so nothing stores a cursor.
+Slice 1 records everything under today's names and publishes `guildhall/<task>`; slice k from 2 on records its steps as `<step>--s<k>`, such as `build--s2-1` and `deliver--s2-1-merge`, and publishes `guildhall/<task>.s<k>` from a fresh worktree, `<state>/<repo>/<task>/work.s<k>`, cut from main after the slice before it merged.
+`step retry`, `step send-back` and `step done` name such a step by that id.
+Every slice reads the same `accept.spec`, so no slice asks for a new acceptance, and every slice pull request meets the repository's merge requirements and goes through the merge queue as any pull request does.
+Its title is `<slice title> (slice k of n)`, and its body quotes the spec's goal, the slice's entry and every slice with the pull request of each merged one.
+
+A slice's merge before the last records the merge, sends a `merged` message naming `slice k of n`, retires that slice's branch and working directory and takes the task out of the merge queue, so the next slice joins it afresh, with its stays and hold reset; then the same advance starts the next slice's build.
+The task stays `open`, and only the last slice's merge records it `done`.
+A crash between a slice's merge record and the next slice's first attempt resumes at the next slice, finishing the merged slice's close first.
+Each slice merge sends a `merged` message, so it counts toward `hallmark_after_merges`; `handoff_after_tasks`, `--depends-on` and `--until-merged` count or release only when the task closes.
+
+A spec that turns out wrong part-way goes back to plan with `step send-back`; the revised spec keeps every merged slice's entry byte for byte and may rewrite, add or drop the slices still to come, the Guildmaster accepts it, and the current slice's steps, bound to the old spec, run again under the new one.
+Merged slices' records are never read again.
+`director status` gives such a task a `slices` object, `{current, total, items: [{index, title, state, pull_request}]}`; Clerk's `/guild` shows `slice k of n` beside where it stands, `/task` and `/inspect` show the current slice and list every slice with its title, state and pull request, and the Artisan's Herdr workspace is labelled `└ <task> · slice k/n · <step> #<n>`.
+GitHub stacked pull requests are not used: each slice starts after the one before merged.
 
 ## Retries
 

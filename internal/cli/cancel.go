@@ -88,11 +88,29 @@ func (a *App) cancelTask(f advanceFlags, task, reason string) error {
 	if err != nil {
 		return err
 	}
-	prs, merging, err := interp.TaskPullRequests(docs, filepath.Join(state, "documents"))
+	prs, merged, err := interp.TaskPullRequests(docs, filepath.Join(state, "documents"))
 	if err != nil {
 		return err
 	}
-	if merging {
+	// Only the current slice merging refuses the cancel: a multi-PR task's earlier slices that merged stand, and its
+	// unmerged ones are cancelled. A bound revision that no longer resolves reads as one slice, which refuses any merge.
+	progress := interp.SliceProgress{Current: 1, Total: 1}
+	if def, err := boundWorkflow(filepath.Join(filepath.Dir(f.config), "workflows"), cfg, repo, t.Workflow); err == nil {
+		decisions, err := records.Decisions(f.repo, task)
+		if err != nil {
+			return err
+		}
+		if progress, err = interp.TaskSlices(def, f.repo, task, docs, decisions, filepath.Join(state, "documents")); err != nil {
+			return err
+		}
+	}
+	if merged[progress.Current] || progress.Merging {
+		if k := progress.Current; progress.Total > 1 {
+			if !merged[k] {
+				k--
+			}
+			return fmt.Errorf("task %s/%s is merging slice %d of %d: deliver recorded its merge, so it is not cancelled; advance it with guildhall task start", f.repo, task, k, progress.Total)
+		}
 		return fmt.Errorf("task %s/%s is merging: deliver recorded its merge, so it is not cancelled; advance it with guildhall task start", f.repo, task)
 	}
 
@@ -117,6 +135,10 @@ func (a *App) cancelTask(f advanceFlags, task, reason string) error {
 	// records the task done instead (docs/tasks.md#merged-outside-guildhall).
 	fg := a.forge()
 	for _, pr := range prs {
+		if merged[pr.Slice] {
+			// A merged slice's pull request is landed work, never closed.
+			continue
+		}
 		closed, err := fg.Close(context.Background(), forge.Close{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Comment: "Cancelled by Guildhall: " + reason})
 		if errors.Is(err, forge.ErrRefused) {
 			got, rerr := a.reconcileEngine(f, cfg, repo, state).Reconcile(context.Background(), f.repo, task)
@@ -125,6 +147,9 @@ func (a *App) cancelTask(f advanceFlags, task, reason string) error {
 			}
 			if got.Done {
 				return fmt.Errorf("pull request %s of task %s/%s is merged; its work landed, so the task is recorded done, not cancelled", got.URL, f.repo, task)
+			}
+			if got.Slice > 0 {
+				return fmt.Errorf("pull request %s of task %s/%s is merged; it is recorded as slice %d's merge and the task is not cancelled; run the cancel again to cancel its later slices", got.URL, f.repo, task, got.Slice)
 			}
 			return fmt.Errorf("pull request %s of task %s/%s: %w; its work landed, so the task is not cancelled", pr.URL, f.repo, task, err)
 		}
@@ -164,6 +189,16 @@ func (a *App) cancelTask(f advanceFlags, task, reason string) error {
 		return err
 	}
 	say("task %s/%s cancelled: %s", f.repo, task, reason)
+	for _, it := range progress.Items {
+		if it.State != interp.SliceMerged {
+			continue
+		}
+		url := "no pull request recorded"
+		if it.PullRequest != nil {
+			url = it.PullRequest.URL
+		}
+		say("slice %d of %d (%s) merged before the cancel and stands: %s", it.Index, progress.Total, it.Title, url)
+	}
 	return nil
 }
 

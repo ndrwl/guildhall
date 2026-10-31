@@ -317,7 +317,7 @@ func (r *run) adopt(repo config.Repository, from, to string) error {
 	if err := r.refuseRunning(); err != nil {
 		return err
 	}
-	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: TaskBranch(r.task.ID), Dir: r.workPath()}
+	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: r.branch(), Dir: r.workPath()}
 	if err := r.e.Workspaces.Adopt(r.ctx, w, from, to); err != nil {
 		return fmt.Errorf("move %s from %s to %s: %w", w.Branch, from, to, err)
 	}

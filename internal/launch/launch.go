@@ -86,6 +86,9 @@ type Attempt struct {
 	StateDir string
 	Key      artisan.AttemptKey
 	LockWait time.Duration
+	// Slices is the slice count of a multi-PR task, which its workspace label names (SliceWorkspaceLabel); 0 for a
+	// one-slice task and for every use but a launch.
+	Slices int
 }
 
 // Dir is the attempt directory, artisan.AttemptKey.Dir of StateDir.

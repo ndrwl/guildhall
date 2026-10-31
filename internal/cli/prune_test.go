@@ -598,6 +598,38 @@ func TestPruneRetiresAtTheNewestMergeRecord(t *testing.T) {
 	}
 }
 
+// TestPruneRetiresEachSlicesWorktree: a done multi-PR task whose slice worktrees were kept at their merges has one
+// per slice, work on guildhall/<task> and work.s2 on guildhall/<task>.s2, and prune retires each at the head its own
+// slice merged at; slice 1's head is not behind slice 2's, so one head for both would keep slice 1's.
+func TestPruneRetiresEachSlicesWorktree(t *testing.T) {
+	f := newPruneFixture(t)
+	f.task("app", "t-1")
+	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
+	f.worktree("t-1")
+	w := git.Workspace{Repository: f.repository, Remote: f.remote, Branch: "guildhall/t-1.s2", Dir: filepath.Join(f.state, "app", "t-1", "work.s2")}
+	if err := (git.Program{}).Ensure(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	writeTree(t, filepath.Join(w.Dir, "second.txt"), "second slice\n")
+	f.git(w.Dir, "add", "second.txt")
+	f.git(w.Dir, "commit", "-q", "-m", "second slice")
+	second := f.git(w.Dir, "rev-parse", "HEAD")
+	f.document("t-1", "deliver--s2-1-merge", "deliver--s2-1/merge.json", `{"schema":"guildhall.pull-request/1","remote":"origin","number":2,"head":"`+second+`","state":"merged"}`)
+	f.close("app", "t-1")
+	got := f.run(false)
+	if len(got) != 1 || got[0].Worktree != store.WorktreeRemoved || !got[0].complete() {
+		t.Fatalf("prune = %+v, want both slices' worktrees retired", got)
+	}
+	for _, dir := range []string{f.workspace("t-1").Dir, w.Dir} {
+		if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("worktree %s: %v, want it removed", dir, err)
+		}
+	}
+	if branches := f.git(f.repository, "branch", "--list", "guildhall/t-1*"); branches != "" {
+		t.Errorf("branches left: %q", branches)
+	}
+}
+
 // TestPruneFailsOnABadMergeRecord: a merge record that names no valid head, does not decode, or has no file fails
 // the task's prune with an error naming the record, and its worktree is not removed.
 func TestPruneFailsOnABadMergeRecord(t *testing.T) {

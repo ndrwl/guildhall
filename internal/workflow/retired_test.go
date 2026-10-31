@@ -11,6 +11,7 @@ import (
 var retiredDigests = map[string]string{
 	"default-873af971.json": "sha256:51082f93ca86e72e3b937dad60cec7b13d8bbf73181f2d1b08ff4089ade9d7a7",
 	"default-a10f8e3a.json": "sha256:30e722b79c1f796b1a64d743117298455e31ea53fde9ee078a8c838aa2d2706d",
+	"default-48f5f5f3.json": "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea",
 	"bug-8b2ac870.json":     "sha256:645353ff072051a490689e5e89cebc7a8e8af7ac7c25afdddcab6d26f3b6a3b8",
 }
 
@@ -81,7 +82,7 @@ func TestShippedDigestsArePinned(t *testing.T) {
 		file, digest string
 		load         func() (*Definition, error)
 	}{
-		{"default.json", "sha256:749fc78122944fc6212c7c648f59375028e7e228c1a71448e0aee70ab037aaea", Default},
+		{"default.json", "sha256:3731dac936e4413444c9544c7efecea9ef002a1c44ca2b04059520773bf3d0a2", Default},
 		{"bug.json", "sha256:f8e77aaf16708bbadf33703d19e2968582082f52f6efc273885f91b1813f3ff3", Bug},
 	} {
 		def, err := c.load()

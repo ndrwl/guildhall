@@ -31,6 +31,12 @@ Review outcomes carry a one-paragraph `summary` (required in /2), blocking `find
 `DispositionState.Valid` is the one disposition-state rule, used by `ReviewOutcome.Validate` and, through `Normalized` for the /1 names of old projections, the store's review projection; `DispositionState.Open` (unresolved or disputed) is the test for a finding that still stands.
 Their `unknown state` refusal tests (`review_test.go`, `internal/store/rulings_test.go`) pin it, and `TestParseReviewOutcomeV1` and `TestBlockingAcrossVersions` pin the /1 reading.
 
+`Definition.Slices`, an optional `SliceRange{From, To}`, is the range a [multi-PR task](../tasks.md#multi-pr-tasks) runs once per slice ([decision](../decisions/multi-pr-tasks.md)): `Validate` refuses an end that is not a step, `From` after `To`, a range that does not end at a deliver step or does not start after the `guildmaster-approval` step, and, in a workflow with a range, a step id containing `--`.
+`SliceStep(id, k)` is `id` for slice 1 and `id--s<k>` after, `ParseSliceStep` its inverse, and `SliceView(def, k)` the definition with the range's steps, and the references and loop rules naming them, renamed for slice k; it leaves `def` unchanged and returns it for k = 1 or no range.
+Only the shipped default declares a range; its previous bytes are retired as `default-48f5f5f3.json`.
+`Weakenings` reports removing or changing a baseline's range, so a retired default without one is never admitted for a new task.
+`slices_test.go` covers the ids' round trip, the shipped and retired ranges, every validation refusal, the view and the weakening.
+
 `Weakenings`, `FloorProblems` and `Authority.Admit` are the workflow-edit authority policy at task creation ([configuration](../configuration.md#enforcement-at-task-creation)): a conservative classifier of a revision against a baseline, the review floor, and the admission decision over the shipped definitions, the caller's approved digests and candidate baselines; they read and record nothing.
 
 ## Refutation contract

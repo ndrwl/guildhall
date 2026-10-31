@@ -45,6 +45,8 @@ Failed-start cleanup follows the same identity boundary: a refused duplicate nev
 ## Artisan workspace presentation
 
 [Workflow Artisan workspaces](../artisan.md#workflow-artisan-workspaces) owns user-facing labels, session selection and cleanup policy; the launch boundary above owns claim ordering and process independence.
+A [multi-PR task](../tasks.md#multi-pr-tasks)'s attempt, launched with `interp.Spec.Slices` above 1, is presented in a workspace labelled `SliceWorkspaceLabel`, `└ <task> · slice k/n · <step> #<n>` with the step's slice mark dropped; a one-slice task keeps `WorkspaceLabel`.
+`IsAttemptWorkspaceLabel` recognises both forms, so the sweep and an abandoned launch's close find either; `TestSliceWorkspaceLabels` pins them.
 The workspace assertion in `TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt` was added before implementation and failed on reuse of the Director workspace, then passed ([evidence](../evidence/artisan-workspaces-2026-10-25.txt)).
 The additional workspace-create timeout case passed on first run and pins, for a caller without the task lock, the retained-claim/no-retry rule after an ambiguous workspace response: retained-claim/no-retry after a tab binding; recovery of a launching claim under the task lock.
 

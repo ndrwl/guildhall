@@ -1,23 +1,24 @@
 Guild, as of 2026-10-30 12:00 UTC, local state
 
 Tasks (open, and closed in the last 7 days)
-TASK           PRI  KIND     TITLE                                  WHERE IT STANDS
-app/a-bug      p0   bug      Fix the crash                          not started
-app/a-q1       p0   feature  Front of the queue                     in merge queue 1/3, rebasing
-app/a-build    p1   feature  Running build                          build running
-app/a-q2       p1   feature  Held in the queue                      in merge queue 2/3
-app/a-approve  p2   feature  Approve the plan                       waiting for your approval
-app/a-checks   p2   feature  Checks pending                         CI pending, PR #212
-app/a-merged2  p2   feature  Merged this week                       merged
-app/a-deps     p3   feature  Depends on a-new                       waiting on app/a-new
-app/a-grill    p3   feature  Grill the Guildmaster                  waiting for the Director
-app/a-long     p3   feature  A title far too long to show whole i…  not started
-app/a-new      p3   feature  Never started                          not started
-app/a-odd      p3   feature  Unknown wait                           waiting (mystery)
-app/a-q3       p3   feature  Last in the queue                      in merge queue 3/3
-lib/l-front    p3   feature  Lib front                              in merge queue 1/1, CI pending
-lib/a-new      p4   feature  Same id in lib                         not started
-app/a-queued   p4   feature  Queued start                           queued 2
+TASK           PRI  KIND     TITLE                               WHERE IT STANDS
+app/a-bug      p0   bug      Fix the crash                       not started
+app/a-q1       p0   feature  Front of the queue                  in merge queue 1/3, rebasing
+app/a-build    p1   feature  Running build                       build running
+app/a-q2       p1   feature  Held in the queue                   in merge queue 2/3
+app/a-approve  p2   feature  Approve the plan                    waiting for your approval
+app/a-checks   p2   feature  Checks pending                      CI pending, PR #212
+app/a-merged2  p2   feature  Merged this week                    merged
+app/a-deps     p3   feature  Depends on a-new                    waiting on app/a-new
+app/a-grill    p3   feature  Grill the Guildmaster               waiting for the Director
+app/a-long     p3   feature  A title far too long to show whol…  not started
+app/a-new      p3   feature  Never started                       not started
+app/a-odd      p3   feature  Unknown wait                        waiting (mystery)
+app/a-q3       p3   feature  Last in the queue                   in merge queue 3/3
+app/a-sliced   p3   feature  Large work in three                 slice 2 of 3, CI pending, PR #402
+lib/l-front    p3   feature  Lib front                           in merge queue 1/1, CI pending
+lib/a-new      p4   feature  Same id in lib                      not started
+app/a-queued   p4   feature  Queued start                        queued 2
 
 Needs you
 - decision app/a-approve accept-plan: Accept the plan?
@@ -30,6 +31,9 @@ Waiting on the Director
 - checks app/a-checks validate: step validate waits for the checks of its published head; the
   session supervisor reads them again every checks_refresh, never more often than every 30 seconds,
   and wakes you when they finish
+- checks app/a-sliced validate--s2: step validate--s2 waits for the checks of its published head;
+  the session supervisor reads them again every checks_refresh, never more often than every 30
+  seconds, and wakes you when they finish
 - dependencies app/a-deps research: step research is held until the task's dependencies merge; the
   session supervisor advances it again every checks_refresh, or start it anyway with --ignore-deps
   --reason
@@ -51,6 +55,7 @@ PR    TASK          CHECKS
 #212  app/a-checks  CI pending
 #301  app/a-q1      no checks recorded
 #302  app/a-q2      CI passed
+#402  app/a-sliced  CI pending
 
 Merge queue
 app: 3 queued, front a-q1 rebasing

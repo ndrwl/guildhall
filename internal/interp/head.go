@@ -60,12 +60,12 @@ func (r *run) recordBase(s workflow.Step, n int) error {
 	if err != nil {
 		return err
 	}
-	base, err := r.e.Workspaces.Base(r.ctx, repo.Path, TaskBranch(r.task.ID))
+	base, err := r.e.Workspaces.Base(r.ctx, repo.Path, r.branch())
 	if err != nil {
-		return fmt.Errorf("base of %s: %w", TaskBranch(r.task.ID), err)
+		return fmt.Errorf("base of %s: %w", r.branch(), err)
 	}
 	if !digest.ValidHead(base) {
-		return fmt.Errorf("base of %s is not a full commit id: %q", TaskBranch(r.task.ID), base)
+		return fmt.Errorf("base of %s is not a full commit id: %q", r.branch(), base)
 	}
 	data := []byte(base + "\n")
 	return r.put(store.DocumentRef{
@@ -96,7 +96,7 @@ func (r *run) checkHead(s workflow.Step, n int, head string) error {
 	if err != nil {
 		return err
 	}
-	branch := TaskBranch(r.task.ID)
+	branch := r.branch()
 	tip, err := r.e.Workspaces.Tip(r.ctx, repo.Path, branch)
 	if err != nil {
 		return fmt.Errorf("tip of %s: %w", branch, err)

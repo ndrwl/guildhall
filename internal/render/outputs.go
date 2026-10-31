@@ -15,7 +15,10 @@ const RebaseReportFile = "rebase.json"
 // outputInstructions is part of the generated agent-facing protocol. It lives
 // outside baseline prose so even an old copy's overridden guide gets the current
 // port formats and the same result template in every runtime.
-func outputInstructions(id Identity, revisions *workflow.Revisions) string {
+func outputInstructions(id Identity, revisions *workflow.Revisions, branch string) string {
+	if branch == "" {
+		branch = "guildhall/" + id.Task
+	}
 	kind, _ := workflow.LookupKind(id.Kind, id.KindVersion)
 	var b strings.Builder
 	b.WriteString("\n## Required outputs\n\nA succeeded result must provide every required output below. A verdict in the result summary is not an output file. Paths are relative to your current working directory, not the directory containing this prompt.\n")
@@ -23,7 +26,7 @@ func outputInstructions(id Identity, revisions *workflow.Revisions) string {
 	for _, port := range kind.Outputs {
 		fmt.Fprintf(&b, "\n### Output port `%s`\n\n", port.Name)
 		if port.Type == workflow.CodeHead {
-			fmt.Fprintf(&b, "Commit on the task branch `guildhall/%s` in your working directory; Guildhall refuses a HEAD that is not that branch's tip or does not descend from the attempt's base. ", id.Task)
+			fmt.Fprintf(&b, "Commit on the task branch `%s` in your working directory; Guildhall refuses a HEAD that is not that branch's tip or does not descend from the attempt's base. ", branch)
 			b.WriteString("Commit all tracked work. Guildhall takes the final Git HEAD automatically; no file is needed. Leave no uncommitted tracked changes (untracked notes alone are allowed). Do not list source files as outputs. The recorded format is a full 40- or 64-character lowercase hexadecimal commit id, for example:\n\n```text\n" + strings.Repeat("0", 40) + "\n```\n")
 			if id.Kind == "rebase" {
 				outputs = append(outputs, adapter.Output{Path: RebaseReportFile})

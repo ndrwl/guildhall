@@ -205,6 +205,65 @@ type statusTask struct {
 	Spend store.SpendTotal `json:"spend"`
 	// Overrides marks a task with a task override in effect; task show lists them (docs/tasks.md#task-overrides).
 	Overrides bool `json:"overrides,omitempty"`
+	// Slices is a multi-PR task's progress through its accepted spec's slices; omitted for a one-slice task
+	// (docs/decisions/multi-pr-tasks.md).
+	Slices *statusSlices `json:"slices,omitempty"`
+}
+
+// statusSlices is where a multi-PR task stands: the slice being delivered, the total and each slice.
+type statusSlices struct {
+	Current int           `json:"current"`
+	Total   int           `json:"total"`
+	Items   []statusSlice `json:"items"`
+}
+
+// statusSlice is one slice: its title, whether it merged, is current or is still to come, and its pull request.
+type statusSlice struct {
+	Index       int                `json:"index"`
+	Title       string             `json:"title"`
+	State       string             `json:"state"`
+	PullRequest *statusPullRequest `json:"pull_request,omitempty"`
+}
+
+// statusPullRequest is a slice's pull request as Guildhall last recorded it.
+type statusPullRequest struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+}
+
+// readTaskSlices reads the slice progress of each task of v whose bound workflow declares a slice range and whose
+// accepted spec lists more than one slice, by "<repo>/<task>"; a task whose workflow, records or documents do not read
+// is left out, as a one-slice task is.
+func readTaskSlices(s *store.Store, v store.DirectorView, documents string, workflows func(repo string) func(workflow.Revision) (*workflow.Definition, error)) map[string]*statusSlices {
+	out := map[string]*statusSlices{}
+	for _, t := range v.Tasks {
+		def, err := workflows(t.Repository)(t.Workflow)
+		if err != nil || def.Slices == nil {
+			continue
+		}
+		docs, err := s.Documents(t.Repository, t.ID)
+		if err != nil {
+			continue
+		}
+		decisions, err := s.Decisions(t.Repository, t.ID)
+		if err != nil {
+			continue
+		}
+		p, err := interp.TaskSlices(def, t.Repository, t.ID, docs, decisions, documents)
+		if err != nil || p.Total < 2 {
+			continue
+		}
+		sl := &statusSlices{Current: p.Current, Total: p.Total, Items: []statusSlice{}}
+		for _, it := range p.Items {
+			item := statusSlice{Index: it.Index, Title: it.Title, State: it.State}
+			if pr := it.PullRequest; pr != nil {
+				item.PullRequest = &statusPullRequest{Number: pr.Number, URL: pr.URL}
+			}
+			sl.Items = append(sl.Items, item)
+		}
+		out[t.Repository+"/"+t.ID] = sl
+	}
+	return out
 }
 
 // statusStep is a step's latest attempt: its outcome, or while it runs its live classification.
@@ -495,6 +554,7 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	var queues []mergeQueue
 	var starts []store.QueuedStart
 	var hallmarks map[string]repoHallmarks
+	var taskSlices map[string]*statusSlices
 	v, err := withRecords(p, true, now, func(s *store.Store) (store.DirectorView, error) {
 		v, err := s.DirectorView()
 		if err != nil {
@@ -503,9 +563,11 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 		if starts, err = s.StartQueue(); err != nil {
 			return v, err
 		}
-		if hallmarks, err = readRepoHallmarks(s, v, statusWorkflows(cfgPath)); err != nil {
+		workflows := statusWorkflows(cfgPath)
+		if hallmarks, err = readRepoHallmarks(s, v, workflows); err != nil {
 			return v, err
 		}
+		taskSlices = readTaskSlices(s, v, filepath.Join(stateDir, "documents"), workflows)
 		var repos []string
 		for _, t := range v.Tasks {
 			if !slices.Contains(repos, t.Repository) {
@@ -621,7 +683,8 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	}
 	var advance, retry, resume, wait, held, checks, deps, queued []needsMeItem
 	for _, t := range v.Tasks {
-		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}, Spend: store.NoSpend}
+		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}, Spend: store.NoSpend,
+			Slices: taskSlices[t.Repository+"/"+t.ID]}
 		if total, ok := spend[t.Repository+"/"+t.ID]; ok {
 			st.Spend = total
 		}

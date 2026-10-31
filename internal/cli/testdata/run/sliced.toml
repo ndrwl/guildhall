@@ -1,0 +1,23 @@
+# The Director the multi-PR cancel test runs: publish.toml's repository on
+# fake-sliced, which runs build through deliver once per slice.
+schema_version = 1
+mode = "director"
+name = "alpha"
+
+[local]
+standards_revision = "standards-1"
+
+[profile.demo]
+adapter = "fake"
+
+[[repository]]
+id = "app"
+path = "/srv/app"
+remote = "git@github.com:example/app.git"
+owner_machine = "workstation"
+workflow = "fake-sliced"
+
+# fake-sliced's deliver step takes no validation input: the repository runs
+# no CI, so ci_green is off.
+[repository.merge.requires]
+ci_green = false

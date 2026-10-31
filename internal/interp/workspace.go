@@ -40,9 +40,12 @@ type Workspaces interface {
 
 var _ Workspaces = git.Program{}
 
-// workPath is the task's working directory, <state>/<repo>/<task>/work.
-func (r *run) workPath() string {
-	return filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, "work")
+// workPath is the current slice's working directory, <state>/<repo>/<task>/work, or work.s<k> for slice k >= 2.
+func (r *run) workPath() string { return r.slicePath(r.slice.current) }
+
+// slicePath is slice k's working directory.
+func (r *run) slicePath(k int) string {
+	return filepath.Join(r.e.StateDir, r.task.Repository, r.task.ID, SliceWorkDir(k))
 }
 
 // workDir makes the task's working directory ready for an attempt and returns it: with Workspaces, a worktree of
@@ -57,7 +60,7 @@ func (r *run) workDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return work, r.e.Workspaces.Ensure(r.ctx, git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: branchPrefix + r.task.ID, Dir: work})
+	return work, r.e.Workspaces.Ensure(r.ctx, git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: r.branch(), Dir: work})
 }
 
 // behindMain is where a code-head attempt's task branch stands against the default branch after its fast-forward:
@@ -82,7 +85,7 @@ func (r *run) fastForward(s workflow.Step, n int) (*behindMain, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: TaskBranch(r.task.ID), Dir: r.workPath()}
+	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: r.branch(), Dir: r.workPath()}
 	kept, err := r.e.Workspaces.FastForward(r.ctx, w)
 	if err != nil {
 		return nil, fmt.Errorf("fast-forward the task branch: %w", err)
@@ -124,15 +127,16 @@ func (r *run) branchKept(s workflow.Step, n int, branch, reason string) error {
 	return r.notify(fmt.Sprintf("%s.%s-%d", store.MessageBranchKept, s.ID, n), store.MessageBranchKept, text)
 }
 
-// retire removes the merged task's workspace when nothing in it would be lost, before the task closes, so a replay
-// after a crash retires it again. A kept or unremovable workspace never fails the merge: the Director is told, by a
-// workspace-kept message, what it holds or why it could not be removed. Only a failed message or the advance's
-// context ending is an error, so an interrupted retirement leaves the task open and a replay retires it again.
-func (r *run) retire(id string, repo config.Repository, head string) error {
+// retire removes merged slice k's workspace, its branch and working directory, when nothing in it would be lost, before
+// the task or the slice closes, so a replay after a crash retires it again. A kept or unremovable workspace never fails
+// the merge: the Director is told, by a workspace-kept message, what it holds or why it could not be removed. Only a
+// failed message or the advance's context ending is an error, so an interrupted retirement leaves the task open and a
+// replay retires it again. Only slice k's workspace is touched; the next slice's is created from the updated main.
+func (r *run) retire(id string, repo config.Repository, head string, k int) error {
 	if r.e.Workspaces == nil {
 		return nil
 	}
-	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: branchPrefix + r.task.ID, Dir: r.workPath()}
+	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: SliceBranch(r.task.ID, k), Dir: r.slicePath(k)}
 	kept, err := r.e.Workspaces.Retire(r.ctx, git.Retirement{Workspace: w, Head: head, Outputs: r.outputs()})
 	if err != nil {
 		if r.ctx.Err() != nil {

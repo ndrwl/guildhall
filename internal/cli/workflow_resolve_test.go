@@ -147,6 +147,8 @@ func TestExplicitProfileChangesTheDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	profiled := profiledDefault(t)
+	// The legacy definition predates the slice range; with today's range it differs from the default in profiles alone.
+	profiled.Slices = def.Slices
 	if profiled.Digest() == def.Digest() {
 		t.Fatal("explicit profiles left the digest unchanged")
 	}

@@ -83,6 +83,7 @@ func (v *validator) check() {
 		v.checkInputs(i, s, kind)
 		v.checkRules(i, s, kind)
 	}
+	v.checkSlices()
 }
 
 func (v *validator) checkSettings(s Step, kind Kind) {

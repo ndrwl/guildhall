@@ -21,8 +21,11 @@ The Guildmaster accepts a spec that states its scope, contracts, tests and size.
    Fewer contracts are better, and the ideal number is one.
    A contract with one implementation is a hypothetical one, so add an interface only where two implementations exist or a test double must replace a real boundary.
 4. Write the spec in the order and shape of `template.md`, keeping every section.
-5. Check the size: the spec is one coherent pull request, or it says how the work splits into tasks the Director opens in order.
-   A wide refactor that cannot land in one pull request says so and splits as expand then contract: add the new form beside the old, move callers across, then remove the old form.
+5. Check the size: the spec is one coherent pull request, or it lists the work's slices under `## Slices`, one pull request each, delivered in order under this one accepted spec.
+   A wide refactor that cannot land in one pull request says so and slices as expand then contract: add the new form beside the old, move callers across, then remove the old form.
+   Guildhall parses `## Slices` strictly: a numbered list `1.`, `2.`, … with no gaps, each entry one item that starts with a bold title, then says what the slice delivers and its expected size in lines and files, and no two titles alike.
+   Leave the section out for one pull request.
+   When the plan runs again after slices have merged, keep every merged slice's entry byte for byte and rewrite only the slices still to come.
 6. Write every decision you could not settle from the inputs or the repository as a numbered open question with your recommended answer, and proceed on that recommendation.
 
 ## Rules
@@ -33,4 +36,4 @@ The Guildmaster accepts a spec that states its scope, contracts, tests and size.
 - State what is out of scope, so build neither gold-plates nor guesses at adjacent work.
 - Keep the spec short enough to review: a short list of acceptance criteria, not a list of user stories.
 
-The spec is complete when every section of `template.md` is filled, every contract names its errors, ownership, concurrency, idempotency, identity and recovery or says why one does not apply, every acceptance criterion can be checked on its own, and the size is one pull request or a stated split.
+The spec is complete when every section of `template.md` is filled, every contract names its errors, ownership, concurrency, idempotency, identity and recovery or says why one does not apply, every acceptance criterion can be checked on its own, and the size is one pull request or an ordered `## Slices` list.

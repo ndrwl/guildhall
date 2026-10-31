@@ -27,14 +27,16 @@ func IsMergeRecord(name string) bool { return strings.HasSuffix(name, "-merge") 
 //
 // Newest is the last merge record in docs' order, which for store.Store.Documents is name order (the byte order of
 // the store's keys), not time: deliver-10-merge sorts before deliver-2-merge and every outside-* after every
-// deliver-*. A task normally has at most one merge record, as deliver closes the task and the outside-merge rule
-// stops once one is recorded, so the order only settles a defensive case. Only the newest record is read; one that
+// deliver-*. A one-slice task normally has at most one merge record, as deliver closes the task and the outside-merge
+// rule stops once one is recorded, so the order only settles a defensive case. A multi-PR task has one per slice, and
+// the newest is its highest slice's (DocumentSlice), the one that closed it. Only the newest record is read; one that
 // cannot be read, does not decode, is not a pull-request document or names no valid head is an error naming it,
 // never skipped.
 func MergeRecord(docs []store.DocumentRef, read func(store.DocumentRef) ([]byte, error)) (*RecordedMerge, error) {
 	var last *store.DocumentRef
 	for i := range docs {
-		if IsMergeRecord(docs[i].Name) {
+		// A multi-PR task's later slice is newer, whatever the names' order.
+		if IsMergeRecord(docs[i].Name) && (last == nil || DocumentSlice(docs[i].Name) >= DocumentSlice(last.Name)) {
 			last = &docs[i]
 		}
 	}
@@ -56,6 +58,24 @@ func MergeRecord(docs []store.DocumentRef, read func(store.DocumentRef) ([]byte,
 		return nil, fmt.Errorf("merge record %s names no valid head", last.Name)
 	}
 	return &RecordedMerge{Document: last.Name, Remote: pr.Remote, PullRequest: pr.PullRequest}, nil
+}
+
+// SliceHeads returns the head each slice of a task merged at, by slice (DocumentSlice), from its merge records: the
+// heads a multi-PR task's slice worktrees are safe at. A one-slice task has at most slice 1. A merge record that cannot
+// be read or names no valid head is an error, as for MergeRecord.
+func SliceHeads(docs []store.DocumentRef, read func(store.DocumentRef) ([]byte, error)) (map[int]string, error) {
+	out := map[int]string{}
+	for k := range docs {
+		if !IsMergeRecord(docs[k].Name) {
+			continue
+		}
+		m, err := MergeRecord(docs[k:k+1], read)
+		if err != nil {
+			return nil, err
+		}
+		out[DocumentSlice(docs[k].Name)] = m.Head
+	}
+	return out, nil
 }
 
 // SafeHead returns the head the task's work is safe at: its newest merge record's head (MergeRecord), else the head

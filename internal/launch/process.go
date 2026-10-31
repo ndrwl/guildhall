@@ -108,7 +108,7 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	if as.Identity != at.Identity() || filepath.Clean(as.ResultFile) != at.Files().ResultFile {
 		return interp.Handle{}, fmt.Errorf("launch: spec for %s, result %s, is not attempt %s laid out under %s", as.Identity, as.ResultFile, at.Key, p.StateDir)
 	}
-	return p.launchFiles(ctx, at.Key, spec.Adapter, as.PromptFile, as.WorkDir, as.Copy, as.Profile, as.Model, as.Effort)
+	return p.launchFiles(ctx, at.Key, spec.Slices, spec.Adapter, as.PromptFile, as.WorkDir, as.Copy, as.Profile, as.Model, as.Effort)
 }
 
 // LaunchFiles is Launch for attempt k given as its adapter name, absolute prompt file and absolute working directory
@@ -116,10 +116,10 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 // (docs/contracts/quality.md); it refuses an adapter interp.CheckAdapter refuses, a relative path and an ended
 // context, starting nothing, and is otherwise Launch.
 func (p *Process) LaunchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, promptFile, workDir string) (interp.Handle, error) {
-	return p.launchFiles(ctx, k, adapterName, promptFile, workDir, p.Copy, "", "", "")
+	return p.launchFiles(ctx, k, 0, adapterName, promptFile, workDir, p.Copy, "", "", "")
 }
 
-func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, promptFile, workDir, copyDir, profile, model, effort string) (interp.Handle, error) {
+func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices int, adapterName, promptFile, workDir, copyDir, profile, model, effort string) (interp.Handle, error) {
 	if err := interp.CheckAdapter(adapterName); err != nil {
 		return interp.Handle{}, fmt.Errorf("launch: %w", err)
 	}
@@ -130,7 +130,7 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, adapter
 	if err != nil {
 		return interp.Handle{}, fmt.Errorf("launch: store path: %w", err)
 	}
-	at := Attempt{Store: storePath, StateDir: p.StateDir, LockWait: p.LockWait, Key: k}
+	at := Attempt{Store: storePath, StateDir: p.StateDir, LockWait: p.LockWait, Key: k, Slices: slices}
 	if err := ctx.Err(); err != nil {
 		return interp.Handle{}, err
 	}

@@ -578,7 +578,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Forge: fg, Workspaces: ws,
 		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the
 		// classifier runs over the same repository.
-		Base:    func(string) (string, error) { return git.Program{}.Base(ctx, r.Path, interp.TaskBranch(ev.Task)) },
+		Base:    func(_, branch string) (string, error) { return git.Program{}.Base(ctx, r.Path, branch) },
 		Rebases: git.Program{},
 		Hold:    func() (bool, error) { return withRecords(records, true, nil, held) },
 		Caps:    store.AttemptCaps{MaxRunning: rails.MaxRunningAttempts, MaxPerDay: rails.MaxAttemptsPerDay, Hold: true},

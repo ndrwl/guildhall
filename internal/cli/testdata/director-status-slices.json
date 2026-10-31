@@ -1,0 +1,29 @@
+{
+  "current": 2,
+  "total": 3,
+  "items": [
+    {
+      "index": 1,
+      "title": "Parser",
+      "state": "merged",
+      "pull_request": {
+        "number": 401,
+        "url": "https://forge.invalid/app/pull/401"
+      }
+    },
+    {
+      "index": 2,
+      "title": "Engine",
+      "state": "current",
+      "pull_request": {
+        "number": 402,
+        "url": "https://forge.invalid/app/pull/402"
+      }
+    },
+    {
+      "index": 3,
+      "title": "Views",
+      "state": "pending"
+    }
+  ]
+}
