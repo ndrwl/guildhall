@@ -224,14 +224,17 @@ func (w *webStub) bound() []string {
 	return append([]string{}, w.addrs...)
 }
 
-// getPage fetches a page from a test server, sent for the configured [web] address host.tail.ts.net:4388.
+// testWebHost is the [web] address the tests configure, which the server requires as each request's Host.
+const testWebHost = "host.tail.ts.net:4388"
+
+// getPage fetches a page from a test server, its listener at url's host, as the configured address testWebHost.
 func getPage(t *testing.T, url string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Host = "host.tail.ts.net:4388"
+	req.Host = testWebHost
 	resp, err := http.DefaultClient.Do(req) //nolint:gosec // a loopback test server
 	if err != nil {
 		t.Fatal(err)

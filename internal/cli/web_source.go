@@ -513,9 +513,9 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 				words = strings.TrimSpace(dec.Answer)
 			}
 			if words != "" {
-				n.Said = append(n.Said, web.Said{Text: words, Where: webAnswerWhere, Back: n.State == web.StateBack})
+				n.Said = append(n.Said, web.Said{Text: words, Where: webAnswerWhere(dec.Decision), Back: n.State == web.StateBack})
 			} else if dec.Choice != "" {
-				n.Body = "answered " + dec.Choice + " · " + webAnswerWhere
+				n.Body = "answered " + dec.Choice + " · " + webAnswerWhere(dec.Decision)
 			}
 		}
 		if s := dec.Subject; s != nil {
@@ -552,9 +552,14 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 	return nodes
 }
 
-// webAnswerWhere says where a decision was answered: until answering on the page, every answer is given in chat,
-// through the Director, or with decide answer.
-const webAnswerWhere = "answered via the Director or decide answer"
+// webAnswerWhere says where a decision was answered: on the task page by its login, or otherwise in chat, through
+// the Director, or with decide answer, which record no place.
+func webAnswerWhere(d store.Decision) string {
+	if d.AnsweredVia == store.AnsweredViaPage {
+		return "answered on the task page by " + d.AnsweredBy
+	}
+	return "answered via the Director or decide answer"
+}
 
 // webNodeTime is when a node began, the zero time when it is not known, so such nodes sort first.
 func webNodeTime(n web.Node) time.Time {

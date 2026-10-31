@@ -334,7 +334,7 @@ It belongs to a Director config; a Steward config with one is refused.
 | Key | Meaning |
 |---|---|
 | `address` | The host and port to listen on, such as `andrew-lap-wsl.tail5da40a.ts.net:4388`; required, with no default port, so each copy on a machine names its own. When the server binds, every address the host resolves to must lie in Tailscale's ranges (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`), or nothing is served. Page links are built from it. |
-| `guildmaster` | The Guildmaster's Tailscale login, such as `andrew@example.com`: printable, with no spaces. Optional for now; answering on the page will accept only requests Tailscale identifies as this login. |
+| `guildmaster` | The Guildmaster's Tailscale login, such as `andrew@example.com`: printable, with no spaces. Only requests `tailscale whois` identifies as this login can answer on the page; with none, every page is read-only ([answering](web.md#answering)). |
 
 A config without the table serves nothing and has the same config digest as before the table existed.
 Config decoding refuses unknown keys, so add `[web]` only after installing a `guildhall` that knows it; an older binary refuses the whole config.

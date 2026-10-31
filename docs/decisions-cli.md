@@ -21,8 +21,8 @@ Each prints one JSON document on standard output and exits 0, exits 1 when the a
 - `list` prints a JSON array of the unanswered decisions, of one repository with `--repo` or of every repository, ordered by repository, task and decision id.
   Each entry is a [decision record](store.md#records); optional fields are omitted when absent, including a question's subject and any empty options.
   An empty inbox prints `[]`.
-- `show` prints one decision, answered or not, including the answer, choice and note when non-empty.
-- `answer` records the Guildmaster's words and prints the store receipt.
+- `show` prints one decision, answered or not, including the answer, choice and note when non-empty, and, for an answer given on the [task page](web.md#answering), `answered_via` (`page`) and `answered_by` (the Tailscale login).
+- `answer` records the Guildmaster's words and prints the store receipt; it records no `answered_via` or `answered_by`. The task page answers through the same function under the same mutation id, so a decision is answered once whichever way.
 - `defer` and `undefer` are the Director's: see [deferring a decision](#deferring-a-decision).
 - `open` is the Director's: it opens a question decision on a task and prints it as `show` does; see [decide open](#decide-open).
 
