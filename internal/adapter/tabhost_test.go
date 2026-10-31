@@ -574,6 +574,22 @@ func stubHerdr(dir string, args []string) int {
 				return 2
 			}
 		}
+		// A one-shot grow trigger adds an idle tab, labelled as the trigger
+		// file says, to the pane's workspace, as another client could while a
+		// close checks the workspace's tabs.
+		grow := filepath.Join(dir, session+"-grow-"+ws)
+		if label, err := os.ReadFile(grow); err == nil && os.Remove(grow) == nil {
+			counter := filepath.Join(dir, session+"-tabs")
+			b, _ := os.ReadFile(counter)
+			k, _ := strconv.Atoi(string(b))
+			k++
+			tab, paneID := fmt.Sprintf("%s:t%d", ws, k+1), fmt.Sprintf("%s:p%d", ws, k+1)
+			np, _ := pane(paneID)
+			if os.WriteFile(counter, []byte(strconv.Itoa(k)), 0o600) != nil || os.WriteFile(np, []byte("idle"), 0o600) != nil ||
+				os.WriteFile(tabFile(tab), []byte(ws), 0o600) != nil || os.WriteFile(tabFile(tab)+"-label", label, 0o600) != nil {
+				return 2
+			}
+		}
 		state, _ := os.ReadFile(p)
 		fg := `{"pid":10,"name":"bash","argv":["bash"]}`
 		if string(state) == "busy" || string(state) == "startup" {
