@@ -46,24 +46,15 @@ from a file or - for standard input
 --kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
 ` + taskKindHelp
 
-// taskKindDescriptions describe each task kind for task new's help and the Director's tasks skill, which copies them.
-// They live here rather than in a workflow's description so that rewording them never changes a digest.
-var taskKindDescriptions = map[string]string{
-	config.TaskKindFeature: "New or changed behaviour, and the default: it runs the repository's workflow setting, the " +
-		"shipped default when it names none, with grill, research, plan, the Guildmaster's acceptance, build, review, " +
-		"publish, validate and deliver.",
-	config.TaskKindBug: "A fix for a defect in behaviour that should already work: it runs the repository's " +
-		"[repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps " +
-		"without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and " +
-		"deliver, and merges under the repository's merge requirements: research reproduces the defect from the title " +
-		"and detail and finds its cause, plan's spec goes straight to build, build writes a regression test that fails " +
-		"before the fix and passes after it, and review checks that test.",
-	config.TaskKindHallmark: "A report-only review of the whole repository, launched when guildhall director status " +
-		"lists a hallmark due: it runs the repository's [repository.kinds] hallmark workflow, the shipped hallmark " +
-		"workflow when it names none, whose one read-only hallmark stage uses the guildhall-hallmark skill, starts from " +
-		"the repository's previous hallmark report and writes ranked, PR-sized follow-ups; Guildhall fails the stage if " +
-		"it changes the project, and the task finishes as done with no pull request.",
-}
+// taskKindDescriptions describe each task kind for task new's help and the Director's tasks skill, which copies them,
+// keyed by kind and read from config.TaskKindTable.
+var taskKindDescriptions = func() map[string]string {
+	m := map[string]string{}
+	for _, row := range config.TaskKindTable {
+		m[row.Name] = row.Description
+	}
+	return m
+}()
 
 var taskKindHelp = func() string {
 	var b strings.Builder
