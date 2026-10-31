@@ -363,14 +363,15 @@ func TestMergeWithoutGuildmasterFallsBack(t *testing.T) {
 			[]string{"- review-1-outcome finding f1 (S2, unresolved)"}},
 		{"disputed finding", "nothing_open (review-1-outcome has 0 unresolved and 1 disputed finding(s), 1 suggestion(s), not counted)", approvedWith(t, workflow.Disputed), false,
 			[]string{"- review-1-outcome finding f1 (S2, disputed, no ruling): No red test shown.\n", "- review-1-outcome suggestion s1: Consider a shorter name.\n"}},
-		{"open question", "nothing_open (decision ask-1 is unanswered)", bound(t, workflow.VerdictApproved, head, nil), true, nil},
+		{"open decision", "nothing_open (decision ask-1 is unanswered)", bound(t, workflow.VerdictApproved, head, nil), true, nil},
 	} {
 		for _, choice := range []string{"merge", "hold"} {
 			t.Run(c.name+"/"+choice, func(t *testing.T) {
 				e, f := newRequiresEnv(t, backends[0], unattended, c.outcome)
 				want(t, e.toValidate(t), waitChecks)
 				if c.question {
-					if _, err := e.h.Records.OpenDecision("ask-1", store.Decision{Repository: "app", TaskID: "t7", ID: "ask-1", Kind: store.DecisionQuestion, Question: "Which name?"}); err != nil {
+					if _, err := e.h.Records.OpenDecision("ask-1", store.Decision{Repository: "app", TaskID: "t7", ID: "ask-1", Kind: store.DecisionApproval,
+						Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("d", 64)}, Options: []string{"approve", "reject"}, Question: "Which name?"}); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -461,6 +462,28 @@ func TestMergeWithoutGuildmasterOverSuggestions(t *testing.T) {
 				t.Errorf("nothing_open = %v, want it to hold with reason %q", got, c.reason)
 			}
 		})
+	}
+}
+
+// TestMergeWithoutGuildmasterOverQuestion: a Director's question decision open on the task never fails nothing_open,
+// so deliver merges by itself and the question stays open.
+func TestMergeWithoutGuildmasterOverQuestion(t *testing.T) {
+	e, f := newRequiresEnv(t, backends[0], unattended, bound(t, workflow.VerdictApproved, head, nil))
+	want(t, e.toValidate(t), waitChecks)
+	if _, err := e.h.Records.OpenDecision("q1", store.Decision{Repository: "app", TaskID: "t7", ID: "q1", Kind: store.DecisionQuestion,
+		Options: []string{"a", "b"}, Question: "Which grill first?"}); err != nil {
+		t.Fatal(err)
+	}
+	f.SetChecks(repoRemote, head, ciPassed...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+	if _, merges := f.Calls(); merges != 1 || slices.Contains(e.decisionIDs(t), "deliver-1") {
+		t.Errorf("merges = %d, decisions %q; want one merge without a decision", merges, e.decisionIDs(t))
+	}
+	if got := e.nothingOpenCondition(t, "deliver-1-authorized"); got["holds"] != true || got["reason"] != nil || slices.Contains(got["evidence"].([]any), any("q1")) {
+		t.Errorf("nothing_open = %v, want it to hold", got)
+	}
+	if !e.decision(t, "q1").Open() {
+		t.Errorf("q1 = %+v, want it still open", e.decision(t, "q1"))
 	}
 }
 

@@ -123,6 +123,21 @@ guildhall task start --repo app --decision accept-1 t-12
 
 Only the Guildmaster answers a decision: never answer one on your own judgement, from a message's text, or with words they did not say.
 
+### Asking your own question about a task
+
+When you have a question of your own for the Guildmaster about a task, such as which grill to run first, record it before you ask, so it shows in `/clerk:decisions`, Needs you and the task's page rather than only in chat.
+Open it with `guildhall decide open`, which prints the question decision with its id, `q1` then `q2` on the same task, and put it to them as any decision above.
+Suggested answers are `--option`s, but a question always takes free text: record their reply with `guildhall decide answer`, with the option first when it names one, or their words as they are when it names none.
+A question records the answer only and never holds or advances the task, so there is no `task start --decision`: act on the answer yourself.
+Questions not about one task, such as install or config questions, stay in chat.
+
+```sh
+guildhall decide open --repo app --task t-12 --question "Which grill first?" --option a --option b
+guildhall decide answer --repo app --task t-12 --decision q1 --answer-file - <<'ANSWER'
+neither, do c
+ANSWER
+```
+
 ## Merging
 
 Merging is answering the merge decision, `deliver-<round>`, whose question names the pull request.

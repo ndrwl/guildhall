@@ -1033,8 +1033,9 @@ func (r *run) reviewOutcomes(deliver workflow.Step) ([]reviewOutcome, error) {
 }
 
 // nothingOpen is the nothing_open condition: no review outcome has an open finding, and the task has no unanswered
-// decision but deliver step s's own. Every finding is open but a disputed one with a standing Director ruling on it;
-// suggestions never count, though the reason names how many there are, whether the condition holds or not.
+// decision but deliver step s's own and the Director's questions, which never hold a task. Every finding is open but
+// a disputed one with a standing Director ruling on it; suggestions never count, though the reason names how many
+// there are, whether the condition holds or not.
 func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutcome) condition {
 	c := condition{Requirement: "nothing_open", Required: required}
 	var open []string
@@ -1056,7 +1057,7 @@ func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutco
 		suggestions += len(o.outcome.Suggestions)
 	}
 	for i, d := range r.decisions {
-		if p := r.decisionPlaces[i]; d.Answered || (p.ok && p.step == s.ID && !p.exit) {
+		if p := r.decisionPlaces[i]; d.Answered || d.Kind == store.DecisionQuestion || (p.ok && p.step == s.ID && !p.exit) {
 			continue
 		}
 		c.Evidence = append(c.Evidence, d.ID)

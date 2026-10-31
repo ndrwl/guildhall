@@ -421,8 +421,9 @@ func TestClerkQueueDecisionAndEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.OpenDecision("q-merge", store.Decision{Repository: "lib", TaskID: "l-front", ID: "merge-question", Kind: store.DecisionQuestion,
-		Question: "Merge now?"}); err != nil {
+	if _, err := s.OpenDecision("q-merge", store.Decision{Repository: "lib", TaskID: "l-front", ID: "merge-approval", Kind: store.DecisionApproval,
+		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("b", 64)},
+		Options: []string{"approve", "reject"}, Question: "Merge now?"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

@@ -7,6 +7,7 @@ This page says which is meant where.
 
 - A **decision record** is a repository file, `docs/decisions/<slug>.md`, that records one engineering decision with its context and consequences; [the index](decisions.md) lists them.
 - A store **decision** is a question the Director asks the Guildmaster and the answer recorded for it, with `guildhall decide` ([decisions](decisions-cli.md)); it is never a file in the repository.
+- A **question decision** is a store decision of kind `question` that the Director opens on a task with `guildhall decide open` to put its own question to the Guildmaster ([decide open](decisions-cli.md#decide-open)); it records the answer, free text always allowed, and moves nothing: it never advances, holds or blocks a task.
 - The old numbers of decision records, `D1` to `D96`, are retired, and the index's Former names table resolves them.
   They are unrelated to the quality rubric's criteria D1 to D5 ([rubric](quality.md)) and to task ids such as `d87`.
 
