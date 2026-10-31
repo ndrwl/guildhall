@@ -211,11 +211,32 @@ Any repository failure, such as an unreadable path, an unknown revision or an un
 **Plain** prints `guildhall <version> <os>/<arch> <go version>`, then the lines it has: `revision: <revision> (<time>[, modified])`, `latest merge: #<pr>[ (task <id>)]` and `behind main: <n> merge[s][ (#<pr>, …)][ as of <time>]`.
 **`--startup`** prints one line, `guildhall <first 8 of the revision, else the version>[ #<pr>][ <task>][ <commit date>][, modified]` with `, up to date with main` or `, <n> behind main[ (#<pr>, …)]` and any "as of", then at most one line `warning: ` joining with `; ` each of: behind main by one or more merges; modified, that is built with uncommitted or untracked files; a binary other than the one the current session's supervisor recorded, the session numbered by `GUILDHALL_SESSION` (`session.NumberEnv`) read read-only from the copy's store, compared by the sha256 of this binary's image with the session's `binary_sha256`, or by release for a session with none; and a binary that supervisor refused to move onto at the reload that started the session, naming its sha256 and the reason ([the supervisor's binary](../director.md#the-supervisors-binary)).
 Warnings never change the exit code.
-**`--json`** prints one object with every field present: `version`, `revision`, `time`, `modified`, `go_version`, `platform`, `pr` (number or null), `task` (string or null) and `behind_main` (null, or `count`, `missing_prs` in full and `as_of`, the recorded fetch time or `""`).
+**`--json`** prints one object with every field present: `version`, `revision`, `time`, `modified`, `go_version`, `platform`, `pr` (number or null), `task` (string or null), `behind_main` (null, or `count`, `missing_prs` in full and `as_of`, the recorded fetch time or `""`), `store_schema` (the newest store schema the binary reads and writes, `store.SchemaVersion`) and `release_contract` (the release contract it implements, `release.Contract`, 1), which `release install` checks and records.
 
 `director status --json` adds the same object as `version`, for the binary printing the feed, with no fetch, and, when its `behind_main` count is above 0, an `install` item at the end of `needs_me` ([status](../director.md#status)); the supervisor's in-flight snapshot does not compute either.
 
+### Release
+
+`guildhall release install|status` manages the Guildhall home of [release upgrades](../releases.md) through [`internal/release`](release.md); they select no copy and read no config or store.
+The home is `release.Locate` over `App.Getenv`, the path `App.Executable` returns and `Version()`.
+`release use`, `adopt`, `rollback`, `prune` and `install --launcher` are designed, not built, and are usage errors.
+
+`release install <version> --from <file> --sha256 <hex>` (flags before or after the version) runs `release.Home.Install` with the home lock waited for up to ten seconds.
+Its probe runs the verified `.incoming` copy as `<copy> version --json` through `App.Output`, bounded by two minutes like the supervisor's pre-flight, and takes `version`, `modified`, `store_schema` and `release_contract` from the first JSON value printed; a run that fails or prints no version is refused, naming the error and the last line of output.
+It prints `installed <version> (sha256 <hex>) at <dir>`, or `<version> is already installed (sha256 <hex>) at <dir>; nothing changed`, and exits 0; every refusal, such as `dev`, a modified build, a sha256 mismatch or another binary under an installed version, prints `guildhall: release install: <reason>` and exits 1.
+
+`release status [--json]` reads only and never creates the home.
+Plain prints `home: <dir>`, then `releases:` with one line per release, newest install first, `  <version>  sha256:<first 12>  installed <time>  store schema <n>  release contract <n>`, or `  <version>  damaged, never run: <reason>`, or `releases: none`, then `copies:` with one inventoried copy per line, or `copies: none`.
+`--json` prints `{"home", "releases", "copies"}`, each release with `version`, `sha256`, `store_schema`, `release_contract`, `installed_at` and `damage` (`""` when intact), and both lists `[]` when empty.
+Damage does not change the exit code; a home that cannot be located or read exits 1.
+The copy's pin and which copies and tasks hold each release join the report with the slices that record them.
+
+Both commands exit 2 with the usage text for a missing or unknown subcommand, a missing version, `--from` or `--sha256`, a second version, an unknown flag or an argument to `status`, and 1 when stdout cannot be written.
+
 ## Tests
+
+`release_test.go` was written with the commands and not run red: `TestReleaseInstallAndStatus` installs through an `App.Output` double that answers `version --json`, run only on the `.incoming` copy, installs again with the flags reordered as already installed, and reads the plain status, then damages the binary and reads the damage in plain and `--json`; `TestReleaseStatusOfAnEmptyHome` the empty forms, leaving no home behind; `TestReleaseInstallRefusals` each refusal, exit 1 with nothing installed, and a wrong sha256 refused with nothing run; `TestReleaseUsage` the usage errors and an unwritable stdout.
+`TestVersionForms`, `TestDirectorStatusOfAnEmptyCopy` and the `director-status.json` golden failed when `store_schema` and `release_contract` were added to `version --json`, and gained the two fields.
 
 `version_test.go` was written red first against the one-line `version` ([red run](../evidence/version-from-build-info-2026-10-28-red.txt)).
 `TestVersionForms` pins the plain, `--startup` and `--json` output over the `App.BuildInfo` seam and a recording `VersionGit` double for a full build, no vcs information, a modified build, no copy, a copy with no matching repository, an unreadable repository path, subjects with and without ` (#N)`, a pull request with and without a `pull-request.json`, behind 0, 2 and 12 (ten named), a failed fetch falling back to the recorded ref "as of" its fetch, and no ref at all, and that only plain and `--startup` fetch.
