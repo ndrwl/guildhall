@@ -136,7 +136,7 @@ These are reported, not guaranteed:
 
 ## Control endpoint
 
-Each owned attempt has one control endpoint: an AF_UNIX stream socket under the Guildhall state directory, on Windows 10 and later as on Unix ([decision](decisions/0034-attempt-endpoint-af-unix.md)).
+Each owned attempt has one control endpoint: an AF_UNIX stream socket under the Guildhall state directory, on Windows 10 and later as on Unix ([decision](decisions/attempt-endpoint-af-unix.md)).
 The launcher binds it, records its path in the ownership record with `UpdateOwnership`, and answers `status`, `stop` and `cancel` on it; what `stop` and `cancel` do is the launcher's handler, the [stop ladder](#stop-ladder).
 It is a consumer of Guildhall's one [endpoint](contracts/endpoint.md), which owns binding, the stale-file rule, permissions, strict decoding, the peer check and removal; this section states what the attempt endpoint adds: its path, its ownership check, its owner and its operations.
 
@@ -154,7 +154,7 @@ Binding, leftover files, permissions and `Close` follow the [shared endpoint con
 
 ### Protocol
 
-The protocol is version 1 of `guildhall.attempt-control` ([decision](decisions/0038-endpoint-protocol-v1.md)).
+The protocol is version 1 of `guildhall.attempt-control` ([decision](decisions/endpoint-protocol-v1.md)).
 A request is one JSON line of at most 4 KiB containing `"schema": "guildhall.attempt-control/1"`, `op`, the expected `attempt` string, and the expected `launcher` identity (PID and token):
 
 ```json
@@ -185,7 +185,7 @@ A failed call never proves the owner exited: a silent endpoint is unknown until 
 
 ## Stop ladder
 
-A `Launcher` runs one attempt's worker in its unit, decides the attempt once and stops the worker tree ([decision](decisions/0041-stop-ladder-precedence.md)).
+A `Launcher` runs one attempt's worker in its unit, decides the attempt once and stops the worker tree ([decision](decisions/stop-ladder-precedence.md)).
 It is the endpoint's handler, and its [doc comments](../internal/artisan/launcher.go) own the API contract.
 It reads the attempt's result and writes its cancel marker through `AttemptFiles`, and writes `outcome.json`, `events.jsonl` and `attempt.lock` in the attempt directory.
 The real `AttemptFiles` is `launch.Files`: the adapter's result file parsed with `adapter.ParseResult`, bound to the attempt identity and version-checked, and the adapter's `.cancelled` sidecar as the marker; launcher and `reconcile.Classify` both read through it, so marker and result have one reader each.
@@ -363,7 +363,7 @@ See [Artisan permissions](adapters.md#artisan-permissions) for inherited setting
 ## Commands
 
 `guildhall artisan start`, `stop`, `status` and `resume` name an owned attempt with `--store <file> --state <dir> --repo <id> --task <id> --step <id> --attempt <n>`.
-The repository flag is `--repo`, as on `task start`, `step done` and `decide` ([D53](decisions/0053-cli-role-grammar.md)); the pre-release `--repository` is a usage error, exit code 2, naming `--repo`.
+The repository flag is `--repo`, as on `task start`, `step done` and `decide` ([D53](decisions/cli-role-grammar.md)); the pre-release `--repository` is a usage error, exit code 2, naming `--repo`.
 A [copy](running.md#copies), `--copy <dir>` or the copy found from the current directory, stands in for `--store` and `--state`; it does not apply to the manual fake-only `artisan start --herdr-session` mode.
 The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interpreter prepares it; the result file is `result.json` in it and names the task and `<step>-<n>`.
 `artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`, `ModelDir`) for both.
@@ -485,7 +485,7 @@ Only when Guildhall refused or failed to close it, saying why, or when a claim f
 Any other claim is still refused: a launch without the task lock, an unparseable or empty claim, or an attempt with an ownership record.
 A claim holding a tab binding and no owner may have had its command typed; it still needs operator inspection of the preserved launch intent rather than an automatic retry of the same launch.
 
-The supervisor's **workspace close sweep** closes a finished attempt's Herdr workspace only after its result is recorded and its work is preserved, and only what Guildhall created (R1.54; [decision](decisions/artisan-workspace-close-sweep.md)).
+The supervisor's **workspace close sweep** closes a finished attempt's Herdr workspace only after its result is recorded and its work is preserved, and only what Guildhall created (R1.54; [decision](decisions/artisan-herdr-workspaces.md)).
 It runs when each Director session starts, a reload's included, and every 5 minutes, off the supervisor's decision path, and only when `herdr_session` is set.
 An attempt is due once its outcome is `succeeded`, `failed` or `stopped`, its owner is proven gone, and [`artisan_workspace_close_after`](configuration.md#settings), default 5 minutes, has passed since its `finish-attempt` receipt; `"0"` never closes.
 Immediately before closing it revalidates `pane-launch.json` against the live session: a Herdr workspace labelled `└ <task> · <step> #<n>`, or `artisan <key>` from #140 to #145, closes only while it holds exactly the recorded tab, labelled `artisan <key>`, with its one recorded pane at an idle shell.

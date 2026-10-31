@@ -10,7 +10,7 @@ The same commands serve three callers:
 
 - **The Director**, which calls them through its rendered skills (see [prompt rendering](rendering.md)); every request in the [README conversation](../README.md#how-you-will-use-it) maps to a command in the [README list](../README.md#the-commands).
 - **You, directly**, when no Director is running, when you want to script something, or when you want to inspect a task yourself; see the [walkthrough](walkthrough.md).
-- **An outside monitor**, such as the planned read-only Claude status band (R1.26), which reads status by calling `guildhall` with `--json` and is never state or lifecycle authority.
+- **An outside monitor**, such as the read-only status band (R1.26) that ships in the [Lanterns](lanterns.md) plugin, whose status line reads status by calling `guildhall director context-report --lanterns` and is never state or lifecycle authority.
 
 ## The flow of one task
 

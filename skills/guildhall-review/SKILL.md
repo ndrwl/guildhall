@@ -35,6 +35,7 @@ Quote the spec line each finding rests on in its summary.
 **Standards.**
 Report every place the diff breaks an inlined standard, and cite the rule id, such as `S4` or `R1.27`.
 Skip anything tooling enforces, such as formatting, vet and lint that CI runs.
+When the repository keeps decision records, check that each new decision in the diff has a record that meets the repository's bar for one and uses its template, and that every record it supersedes or amends is marked in the same change.
 Then match the diff against the smell baseline in `smells.md`.
 A smell is always a labelled judgement call ("possible Feature Envy") and a suggestion, never a blocker: a smell never makes the verdict `changes_requested`.
 A written standard overrides the baseline: where one endorses the pattern, drop the smell, and where one forbids it, as S6 and S11 forbid speculative abstractions, report a finding citing that rule instead.

@@ -13,10 +13,10 @@ import (
 var bucketAttemptParks = []byte("attempt-parks")
 
 // AttemptPark is the Director's record that a failed or stopped attempt is deliberately not retried yet
-// (docs/decisions/0092-park-attempt.md). Parking never changes the attempt; status leaves a counting park's attempt
+// (docs/decisions/park-attempt.md). Parking never changes the attempt; status leaves a counting park's attempt
 // out of needs_me. Unparking keeps the record with Parked false, so Cycle, the number of unparks so far, survives
 // and the next park's mutation id differs from the last one's. A park with UntilMerged is a hold
-// (docs/decisions/0096-hold-until-merged.md): it stops counting once JudgeHold releases it.
+// (docs/decisions/hold-until-merged.md): it stops counting once JudgeHold releases it.
 type AttemptPark struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`

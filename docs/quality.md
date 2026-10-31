@@ -92,7 +92,7 @@ The criteria read these records:
 - Good: few decisions, each with a recommendation the Guildmaster accepts or adjusts, and settled points that cite their sources.
 - Poor: a decision asking what `docs/` already says, or a design choice made without one.
 - Source: the grilling format Guildhall adopted (Practitioner); SPACE's collaboration dimension (Moderate).
-- Guildhall today: the grill skills and [D61](decisions/0061-grill-live-interview.md); H2 is its trend.
+- Guildhall today: the grill skills and [D61](decisions/grill-live-interview.md); H2 is its trend.
 
 ### Correctness and tests (B)
 
@@ -225,14 +225,14 @@ The criteria read these records:
 - Good: findings the builder fixed in one round, and few resolved without a fix.
 - Poor: nitpicks without rules, a finding whose `file:line` is not in the diff, or a finding resolved without a fix that was wrong on its face.
 - Source: Bosu, Greiler and Bird 2015 on useful review comments (Strong); Google's review standard (Practitioner).
-- Guildhall today: the review skill and [D47](decisions/0047-review-skill.md).
+- Guildhall today: the review skill and [D47](decisions/review-skill.md).
 
 **D4 Decisions recorded** (gate; script and model).
 
-- Each engineering decision the pull request makes has a record with context, decision and consequences, as does each new dependency, CI action version or config key.
-- Look at: additions under `docs/decisions/` against changes to `go.mod`, `.github/` and the config schema.
-- Good: one record per decision, with consequences including the negative ones.
-- Poor: a new module with no record, or a record that lists only benefits.
+- Each engineering decision the pull request makes has a record with context, decision and consequences, as does each new dependency, CI action version or config key, and each record meets the bar and uses the template in [the decision index](decisions.md#the-bar).
+- Look at: additions under `docs/decisions/` against changes to `go.mod`, `.github/` and the config schema, and the headers of any record the change supersedes or amends.
+- Good: one short record per decision, with consequences including the negative ones, and every superseded or amended record marked in the same change.
+- Poor: a new module with no record, a record that lists only benefits, or a plan, report or test budget written as a record.
 - Source: Nygard 2011 on architecture decision records; the ThoughtWorks Technology Radar's Adopt rating (Practitioner).
 - Guildhall today: S7 and S10.
 
@@ -308,7 +308,7 @@ The criteria read these records:
 
 - The standard library comes first, each new module or tool version has a decision and a reason, and `go mod tidy -diff` and `go mod verify` are clean.
 - Source: the Software Engineering at Google book's chapter on dependency management (Practitioner); OpenSSF (Strong).
-- Guildhall today: S7 and D3.
+- Guildhall today: S7 and the [standard-library decision](decisions/standard-library-only-for-the-foundation.md).
 
 **F4 Insecure defaults in generated code** (score; script and model).
 
@@ -342,8 +342,8 @@ The criteria read these records:
 
 - New skips use `testenv.SkipUnlessRequired` or are justified, and new sleeps and platform-only files are listed in the pull request.
 - Look at: the facts script's `skips_added`, `sleeps_added` and their items.
-- Source: [D46](decisions/0046-ci-required-skips.md) (project); Google's flaky-test data (Strong).
-- Guildhall today: D46 and the hallmark's counts.
+- Source: [D46](decisions/ci-required-skips.md) (project); Google's flaky-test data (Strong).
+- Guildhall today: [CI required skips](decisions/ci-required-skips.md) and the hallmark's counts.
 
 **G4 Judge calibration** (trend; Guildmaster).
 
@@ -408,7 +408,7 @@ The criteria read these records:
 
 The Director runs the [`guildhall-self-review`](../skills/guildhall-self-review/SKILL.md) skill after a task merges, when `quality_self_review` is `on`; it is `off` by default.
 The skill writes one `self-review-<n>.json` document per task under the copy's `quality/<repo>/<task>/` directory, with the facts its script prints, the gates and trends the records show, and each model-judged score left pending for a judge session that is neither the Director nor the builder.
-`guildhall quality judge --repo <id> --review <n> <task>` launches that judge as an owned attempt of the reserved step `quality-judge` on the delivered task, under the guard rails and the pause hold, with the self-review, its brief, diff and facts beside its prompt ([decision](decisions/quality-judge.md)).
+`guildhall quality judge --repo <id> --review <n> <task>` launches that judge as an owned attempt of the reserved step `quality-judge` on the delivered task, under the guard rails and the pause hold, with the self-review, its brief, diff and facts beside its prompt ([decision](decisions/quality-rubric.md)).
 The judge requires a listed profile distinct from the builder's; an unset `quality_judge_profiles` or no eligible profile refuses the judge with `ErrNoJudge` and a reason.
 The builder's profile comes from the latest succeeded build's prompt manifest, ordered by finish receipts.
 The manifest does not record the adapter that executed the build, so the builder's family is unknown rather than inferred from today's profile settings; a judge of an unknown builder family is never counted as separate-family.

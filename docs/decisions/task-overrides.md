@@ -1,10 +1,19 @@
+---
+status: accepted
+date: 2026-10-31
+topic: tasks
+tasks: d69, d86, d76
+---
+
 # A task override gives one task its own value for a task-scoped setting, on the Guildmaster's word
+
+## Context
 
 A task could only change a setting such as `default_effort` by changing it for the whole copy in `config.toml`, so every other task took it too until someone set it back by hand.
 The d69 grill settled how one task may carry its own values, and d69's first PR built the scope registry that says which settings a task may override (`config.CheckTaskOverride`, `config.WithTaskOverrides`).
-This records the grill's decisions 1–5, which d86 builds on that registry: who records an override, when it applies, how it is stored, which layer wins and which keys are refused.
+This records the grill's decisions 1–5, which d86 builds on that registry: who records an override, when it applies, how it is stored, which layer wins and which keys are refused ([task overrides](../tasks.md#task-overrides)).
 
-## Decisions
+## Decision
 
 1. **Only the Guildmaster sets an override, through the Director, with their words recorded.**
    The Director runs `guildhall task override set` only when the Guildmaster asks, quoting them in `--text`; an Artisan cannot, since its settings deny `Bash(guildhall ...)`, and no Director sets one on its own judgement.
@@ -27,4 +36,6 @@ This records the grill's decisions 1–5, which d86 builds on that registry: who
 - Every advance reads the task's overrides once, under its lock, and applies them before it builds the engine (`interp.ApplyTaskOverrides`), so the engine, the launcher's stall and each Artisan's effort read the task's effective config while machine-wide values keep the copy's.
   Each Artisan binding records the overrides applied and skipped; staleness ignores both, so decision 2 holds.
 - An attempt relaunched after a crash runs with the overrides current at the relaunch, not those its binding recorded: the binding is the record of what the stage was first given, and the relaunch is the same stage started again.
-- A merge-requires override (d76) only makes a task's merge requirements stricter. It is applied at one seam, `run.repository()`, to a copy of the task's repository, so every gate agrees and a sibling task advanced in the same process keeps the shared config. Deliver checks for an existing authorization before it evaluates the requirements, so an override added after a head was authorized never retracts that authorization.
+- A merge-requires override (d76) only makes a task's merge requirements stricter.
+  It is applied at one seam, `run.repository()`, to a copy of the task's repository, so every gate agrees and a sibling task advanced in the same process keeps the shared config.
+  Deliver checks for an existing authorization before it evaluates the requirements, so an override added after a head was authorized never retracts that authorization.

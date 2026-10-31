@@ -20,7 +20,7 @@ The engine consumes eight narrow interfaces, declared in `internal/interp` besid
 | `MergeabilityReader`: [mergeability observations](#mergeability-observations), optional on the forge | `forge.GitHub` | `forgetest.Fake` | `forgetest.RunMergeabilityContract` |
 | `Workspaces`: [the working directory](#the-working-directory), `Ensure`, `FastForward`, `Behind` and `Retire`; [the head check](#the-head-check), `Tip`, `IsAncestor` and `Base`; [tiered rebase](#tiered-rebase), `Rebase`, `Squash`, `Adopt` and `Diff` | `git.Program` | `gittest.Workspaces` | `gittest.RunWorkspaceContract` |
 
-`Records` is the first narrow store interface: it lists only the methods the engine calls, as D9 and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
+`Records` is the first narrow store interface: it lists only the methods the engine calls, as [bbolt for the store](decisions/bbolt-for-the-store.md) and the [contract rules](contracts.md#which-boundaries-get-an-interface) allow.
 The engine does not read workflow approvals; `task new` [enforces them at task creation](configuration.md#enforcement-at-task-creation).
 `Engine.Workflow` returns the definition a task's revision names, and the engine refuses one whose name or digest differs (`ErrRevision`); the CLI resolves it by the revision's name, not the repository's current workflow setting ([running](running.md#what-an-advance-runs-over)).
 `Engine.Config` gives each profile's adapter and each repository's path, remote and merge requirements, read at every advance; an Artisan step runs under the profile it names or else its [role profile](configuration.md#profiles) (`workflow.EffectiveProfile`), and one that resolves no declared or shipped profile is refused before admission or advancement, with a remedy to set a profile on that step.
@@ -107,7 +107,7 @@ Publishing, validating and merging send `published`, `pr-blocked`, `checks-pendi
 
 ## The start queue
 
-A new Artisan attempt the running cap does not admit, because `max_running_attempts` attempts run or another start is ahead in the store's start queue, waits `queued` ([decision](decisions/queue-over-cap-starts.md)).
+A new Artisan attempt the running cap does not admit, because `max_running_attempts` attempts run or another start is ahead in the store's start queue, waits `queued` ([decision](decisions/guard-rails.md)).
 The engine passes `AttemptCaps.Queue`, the request the start is made under: `retry` with the retried attempt when the walk follows a retry of the step, and otherwise `start` for `task-created`, `decision` for `decision-answered`, `send-back` for `step-sent-back` and `engine` for an attempt result.
 `Records.StartCappedAttempt` then records the step's queue entry and no attempt and returns a `*store.StartQueued`, and the advance returns `Next{Wait: WaitQueued, Step, Attempt, Position}`: no error, nothing launched and no message.
 The binding is recorded before the capped start, as for any start, so the queued attempt keeps its inputs, a retry's first bound reason among them.
@@ -154,7 +154,7 @@ The session supervisor's [dependency watcher](director.md#dependencies) advances
 
 ## Director stages
 
-A Director stage is a step whose `actor` setting is `director`, such as the default workflow's `grill`: the Director runs it in its own session, in conversation with the Guildmaster, and ends it with a recorded result ([decision](decisions/0072-director-stages.md)).
+A Director stage is a step whose `actor` setting is `director`, such as the default workflow's `grill`: the Director runs it in its own session, in conversation with the Guildmaster, and ends it with a recorded result ([decision](decisions/engine-advance.md)).
 The engine runs it as an attempt, so everything after the attempt's result is the Artisan path unchanged:
 
 1. With no attempt yet, the engine resolves the inputs (no adapter is checked), records the attempt's binding and attempt `n` with `StartAttempt`, makes the [working directory](#the-working-directory) ready and [prepares](#attempt-preparation) `<step>-<n>/prompt` through `Prompter`, which renders the Director's role (`roles/director.md`, or the config's `[director] role`), the step's stage guide, its `skills` and its inputs.
@@ -212,7 +212,7 @@ A crashed round replays from the records: the designer is found by the brief its
 
 ## Publish and deliver
 
-Guildhall prescribes only the edges of delivery: what is pushed where, the pull request, and merging under the repository's merge requirements without bypassing the forge's protection ([decision](decisions/0060-delivery-stage.md)).
+Guildhall prescribes only the edges of delivery: what is pushed where, the pull request, and merging under the repository's merge requirements without bypassing the forge's protection ([decision](decisions/delivery-stage.md)).
 Inside its task copy an Artisan uses git as it likes, and the Director decides how to recover from anything the forge refuses.
 Both steps call the `Forge` seam, whose contract is [`internal/forge`](contracts/forge.md); with no `Engine.Forge`, publishing and merging are refused with `ErrUnsupported`.
 
@@ -237,7 +237,7 @@ The engine then records, in order:
 
 A new head, such as a build round after review findings, publishes the next round and updates the same open pull request.
 
-**Deliver** reads the repository's [merge requirements](configuration.md#merge-requirements) from the current configuration, with any the task's [overrides](tasks.md#task-overrides) turn on (`run.repository`, which every gate reads), and evaluates them in order on every advance that has not yet authorized the delivered head, so an override added later never retracts an authorization ([decision](decisions/merge-requires.md)):
+**Deliver** reads the repository's [merge requirements](configuration.md#merge-requirements) from the current configuration, with any the task's [overrides](tasks.md#task-overrides) turn on (`run.repository`, which every gate reads), and evaluates them in order on every advance that has not yet authorized the delivered head, so an override added later never retracts an authorization ([decision](decisions/delivery-stage.md)):
 
 1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; a required `ci_green` does not hold when deliver takes no `validation` input ([validation gate](#validate)). When one is not required its gate is skipped, but its state is still reported.
 2. The delivered head: the published head, or the head validate [rebased](#tiered-rebase) it to, followed through validate's rebase documents; the review and CI gates of a rebased head are read as below.
@@ -408,7 +408,7 @@ The threshold matters only where `guildmaster_approval` is required; without it,
 
 ## Validate
 
-Validate reads its `head` input, which must be a publish step's output: a head no publish step pushed is refused with `ErrUnsupported`, and so is validating with no `Engine.Forge` ([decision](decisions/0066-validate-stage.md)).
+Validate reads its `head` input, which must be a publish step's output: a head no publish step pushed is refused with `ErrUnsupported`, and so is validating with no `Engine.Forge` ([decision](decisions/delivery-stage.md)).
 When the step's latest result is for that head and `passed`, the step is complete and nothing is called.
 Otherwise each advance first reads the PR's [mergeability](#mergeability-observations).
 A behind PR reads its checks as usual; the merge queue rebases it later, at the front.
@@ -488,7 +488,7 @@ The engine-added inputs play no part in this, so new rulings, new task context o
 An attempt's binding is recorded once, so task context or a task link added after it, while it runs or before a recorded attempt is launched, never reaches it.
 So when a looped build lands a new head, every review after it runs again on that head.
 
-A result is **blocking** when it is a `changes_requested` outcome, whatever its findings cite, or a Guildmaster's `changes_requested` answer ([decision](decisions/review-verdict-routes.md)).
+A result is **blocking** when it is a `changes_requested` outcome, whatever its findings cite, or a Guildmaster's `changes_requested` answer ([decision](decisions/review-outcome-2.md)).
 Comments without a rule are suggestions, listed in `suggestions` in /2: a reviewer with only those records `approved`, which completes the step (`docs/review.md`); a /1 outcome requesting changes with only rule-less findings still blocks.
 A `validate` step's `failed` result is blocking too, and is one round of its `on.failed` rule ([validate](#validate)).
 Each blocking result of a step is one round of its `on.changes_requested` rule (`on.failed` for validate); the step may loop `max` rounds, plus one for every loop exit answered `continue`.
@@ -619,7 +619,7 @@ An input `step.port` resolves to that port's document of the latest round, and i
 
 ## The working directory
 
-Every Artisan attempt of a task runs in one working directory, which a Director stage's outputs are also copied into, `<state>/<repo>/<task>/work`, a git worktree of the repository's configured `path` ([decision](decisions/0068-worktree-custody.md)).
+Every Artisan attempt of a task runs in one working directory, which a Director stage's outputs are also copied into, `<state>/<repo>/<task>/work`, a git worktree of the repository's configured `path` ([decision](decisions/worktree-custody.md)).
 Before each launch the engine calls `Workspaces.Ensure`, whose contract is [`internal/git`](contracts/git.md#workspaces), with that path, the repository's `path` and `remote`, and branch `guildhall/<task>`, the branch publish pushes to:
 
 - the first attempt creates the worktree on a new local branch `guildhall/<task>` at the commit the remote's default branch is at then, or on an existing local branch of that name as it is;
@@ -668,7 +668,7 @@ The view is private: it is not a storage interface and has no double; it runs ov
 ## Spec gate
 
 Every input wired to an accepted-spec output, such as `build`'s and `review`'s `spec` from a `guildmaster-approval` step's `spec`, must come from an approval decision answered `approved` (or a loop exit answered `accept`) whose subject digest equals the accepted spec's digest; otherwise the step is refused with `ErrSpecGate` before anything is recorded.
-The gate follows the source's output type, not the input port's: in a workflow with no acceptance step, such as the shipped `bug`, `build` and `review` take `plan.spec`, a document, which passes through ungated ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
+The gate follows the source's output type, not the input port's: in a workflow with no acceptance step, such as the shipped `bug`, `build` and `review` take `plan.spec`, a document, which passes through ungated ([decision](decisions/task-kinds.md)).
 Review outcomes, the rebaser and deliver's merge authorization bind to the digest of the spec the build was given either way.
 Recording the accepted spec checks the same: the approved document must be the one the decision was opened for.
 
@@ -697,7 +697,7 @@ A Guildmaster's answer is recorded as a document before the attempt it feeds, so
 
 ### Attempt preparation
 
-A missing `launched.json` does not prove that no worker holds the attempt's files, so an attempt's preparation is published once and never replaced ([decision](decisions/0036-immutable-attempt-preparation.md)).
+A missing `launched.json` does not prove that no worker holds the attempt's files, so an attempt's preparation is published once and never replaced ([decision](decisions/immutable-attempt-preparation.md)).
 A fresh attempt is rendered into `<step>-<n>/prompt.partial`, its manifest is written there as `manifest.json`, and the directory is renamed to `<step>-<n>/prompt` before launch.
 Replay validates any published directory rather than relying on rename atomicity or crash durability across platforms.
 No launch is given a path inside `prompt.partial`, so a leftover one from a crash is removed and rendered again.

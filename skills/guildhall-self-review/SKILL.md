@@ -48,6 +48,7 @@ The Guildmaster may also ask for one on a merged task, whatever the setting.
 6. Record every gate `docs/quality.md` lists: A1, B1, C1 for its forbidden cases, D4, D5 for its claims, E1, E4, F1 to F3, G1, G2, H3 and H4.
    E1 comes from the validation result for the exact head; A1, B1, C1, D4, D5, F1 to F3 and G1 from the review outcomes and the facts; E4, H3 and H4 from the timeline, `main` CI after the merge and the Director safety checks.
    G2 is never a script pass, because the facts script cannot see removed table cases, changed `want` values or assertion libraries: it is always `judge: pending` and `pass: null`, with `assertions_removed` and any `assertion-removed` items as its evidence.
+   D4, decisions recorded, passes only when each decision the change makes has a record that meets the repository's bar for one and uses its template, and every record it supersedes or amends is marked.
    A gate the records cannot show is `pass: null` with what is missing as its evidence, never a guess.
 7. Record the script-judged scores, such as G3 from the skip and sleep items, and every trend number: the H1, E3 and E5 numbers come from the timeline.
 8. Leave every model-judged score `pending` with `score: null`, for a judge session that is neither you nor the task's builder; D1 is always one of them, with the facts script's `nontest_lines`, `files` and `size_over` as its evidence, and `size_over: yes` is also a flag.

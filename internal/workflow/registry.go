@@ -29,7 +29,7 @@ func (p Port) Accepts(t ArtifactType) bool {
 }
 
 // specPort is the spec input of build, review and rebase: an accepted spec where the workflow has an acceptance step,
-// or a plan's spec where it has none (docs/decisions/0095-bug-workflow-without-acceptance.md).
+// or a plan's spec where it has none (docs/decisions/task-kinds.md).
 // The engine gates the spec by its source's output type, not by this port's type.
 var specPort = Port{Name: "spec", Type: AcceptedSpec, Also: []ArtifactType{Document}}
 

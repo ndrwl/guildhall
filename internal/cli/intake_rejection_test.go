@@ -13,7 +13,7 @@ import (
 )
 
 // Real CLI/store recovery verifies next.json, the status feed and retry, without
-// starting an external worker. The interpreter's D3 regression uses a review.
+// starting an external worker. The interpreter's TestRejectedLauncherSuccess uses a review.
 func TestCLIRejectedIntakeRecovery(t *testing.T) {
 	for _, command := range []string{"task start", "step done"} {
 		for _, bad := range []string{"missing output", "malformed result"} {

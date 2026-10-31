@@ -8,7 +8,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-// A hold is a Director record kept until named tasks merge (docs/decisions/0096-hold-until-merged.md): a park with
+// A hold is a Director record kept until named tasks merge (docs/decisions/hold-until-merged.md): a park with
 // UntilMerged, a decision deferral or a follow-up. The engine never reads one; status judges each from the task
 // states it already reads, with JudgeHold.
 

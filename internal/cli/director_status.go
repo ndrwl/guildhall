@@ -49,7 +49,7 @@ type directorStatus struct {
 	// Parked are the attempts the Director parked, held on purpose and left out of needs_me (docs/director.md#status).
 	Parked []statusParked `json:"parked"`
 	// Held are the decision deferrals and follow-ups still waiting for the tasks they name to merge, left out of
-	// needs_me until they are released (docs/decisions/0096-hold-until-merged.md).
+	// needs_me until they are released (docs/decisions/hold-until-merged.md).
 	Held []statusHeld `json:"held"`
 	// Running are the attempts with no store outcome yet and how each classifies, for information and not work: one
 	// that is not healthy is also a needs_me item (docs/director.md#status).
@@ -381,7 +381,7 @@ const dependenciesKind = "dependencies"
 // supervisor advances (docs/interpreter.md#the-merge-queue).
 const mergeQueueKind = "merge-queue"
 
-// followUpKind is the needs_me kind and held kind of a follow-up (docs/decisions/0096-hold-until-merged.md).
+// followUpKind is the needs_me kind and held kind of a follow-up (docs/decisions/hold-until-merged.md).
 const followUpKind = "follow-up"
 
 // maintenanceKind is the needs_me kind of a due note audit or hallmark, which the Director works after recovery
@@ -651,9 +651,9 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 			_ = json.Unmarshal(st.Next, &waits)
 		}
 		// A park counts only while its attempt is its open task's step's latest and failed or stopped; a retry clears
-		// it by starting the next attempt (docs/decisions/0092-park-attempt.md).
+		// it by starting the next attempt (docs/decisions/park-attempt.md).
 		// A park held until tasks merge stops counting once they have, so its retry item returns with the release
-		// (docs/decisions/0096-hold-until-merged.md).
+		// (docs/decisions/hold-until-merged.md).
 		counting, releasedPark := map[string]store.AttemptPark{}, map[string]string{}
 		for _, step := range steps {
 			at := latest[prefix+step]

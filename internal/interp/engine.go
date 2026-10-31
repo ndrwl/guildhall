@@ -1397,7 +1397,7 @@ func (r *run) resolve(port workflow.Port, ref string) (render.Input, error) {
 		return render.Input{}, fmt.Errorf("input %s: %w", port.Name, err)
 	}
 	// The gate follows the source: a spec from an acceptance step is gated, a plan's spec passes through
-	// (docs/decisions/0095-bug-workflow-without-acceptance.md). An unknown source falls back to the port's type.
+	// (docs/decisions/task-kinds.md). An unknown source falls back to the port's type.
 	typ := r.outputType(from, out)
 	if typ == "" {
 		typ = port.Type

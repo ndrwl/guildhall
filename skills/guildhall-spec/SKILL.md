@@ -15,7 +15,8 @@ The Guildmaster accepts a spec that states its scope, contracts, tests and size.
 ## Steps
 
 1. Read the task and every input, and treat each recommendation in the grill notes as accepted unless the task says otherwise.
-2. Read the repository where the change lands, use its vocabulary throughout, and follow the decisions it records for that area.
+2. Read the repository where the change lands, use its vocabulary throughout, and follow the live decision records for that area, not the superseded ones.
+   Propose a new decision record only when the change meets the repository's bar for one, such as the bar in Guildhall's `docs/decisions.md`; a plan, slice order or test budget stays in the spec.
 3. Find the contracts the change touches: prefer contracts that already exist, choose the highest one that can show the behaviour, and add a new one only where no existing one can.
    Fewer contracts are better, and the ideal number is one.
    A contract with one implementation is a hypothetical one, so add an interface only where two implementations exist or a test double must replace a real boundary.

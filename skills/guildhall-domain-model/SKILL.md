@@ -60,4 +60,5 @@ Mark a decision as a record for the repository, by starting its entry under Deci
 3. It is the result of a real trade-off: there were genuine alternatives, and one was picked for specific reasons.
 
 When any of the three is missing, the decision stays an ordinary entry under Decisions.
-A decision record is one to three sentences: the context, what was decided and why.
+The `(record)` entry in the notes is one to three sentences: the context, what was decided and why.
+The plan turns it into the repository's record file, in that repository's own template.

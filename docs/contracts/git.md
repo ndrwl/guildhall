@@ -32,7 +32,7 @@ The caller must hold exclusive custody while reading; it does not lock out exter
 
 ### Workspaces
 
-`Program.Ensure(ctx, w)` makes `w.Dir` a git worktree of the repository at `w.Repository`, so that a commit made there is a commit of the repository that `forge.GitHub.Publish` pushes ([the working directory](../interpreter.md#the-working-directory), [decision](../decisions/0068-worktree-custody.md)).
+`Program.Ensure(ctx, w)` makes `w.Dir` a git worktree of the repository at `w.Repository`, so that a commit made there is a commit of the repository that `forge.GitHub.Publish` pushes ([the working directory](../interpreter.md#the-working-directory), [decision](../decisions/worktree-custody.md)).
 
 - **Create.** A missing or empty `w.Dir` becomes a worktree on branch `w.Branch`: an existing local branch of that name as it is, otherwise a new one at the commit `w.Remote`'s HEAD, its default branch, is at now, fetched with `git fetch --no-tags --no-write-fetch-head <remote> HEAD:refs/heads/<branch>`, which writes no shared `FETCH_HEAD`.
 - **Reuse.** A `w.Dir` that is the top of a worktree of the same repository is reused unchanged, on whatever branch or commit it is at and with whatever it holds; only `git worktree repair` runs, which changes nothing unless git's records of the worktree are stale, and the default branch is recorded again.
@@ -104,7 +104,7 @@ The double `gittest.Workspaces` implements all five: `SetRebase(base, head, reba
 - **Errors.** An invalid head or workspace is `ErrInvalidWorkspace`; a `w.Dir` that exists and is not a worktree of the repository is `ErrNotWorkspace`; a head the repository lacks that the fetch fails to get, naming the fetch's failure, and any git failure are errors; nothing is removed on any of them.
 
 Directories are compared by file identity, not by path text, so symbolic links such as macOS's `/var`, letter case and Windows short names do not matter.
-`w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/0011-repository-paths-are-absolute-in-the.md), is `ErrInvalidWorkspace` there.
+`w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/repository-paths-are-absolute.md), is `ErrInvalidWorkspace` there.
 Paths with spaces are passed as single arguments, never through a shell.
 
 Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `Tip`, `IsAncestor`, `FinalHead`, `Retire`, `Subject`, `FetchDefault`, `Behind`, `Show` and `Changes` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.

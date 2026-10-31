@@ -28,7 +28,7 @@ func (a *App) directorReload(args []string) int {
 	r, err := withStore(path, false, func(s *store.Store) (store.DirectorReload, error) {
 		if now {
 			// --now needs no note and, like a plain reload, does not wait for a running Director stage: the next
-			// session restarts an open grill (D94).
+			// session restarts an open grill (docs/decisions/director-reload-and-notes.md).
 			switch d, err := s.LatestDirectorSession(); {
 			case errors.Is(err, store.ErrNotFound):
 				return store.DirectorReload{}, errors.New("no Director session to reload; a plain guildhall director reload is applied by the next director start")

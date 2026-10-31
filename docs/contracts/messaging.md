@@ -2,7 +2,7 @@
 
 ## Contract
 
-`Decode` and the envelope (`docs/messaging.md`), read with [`strictjson`](strictjson.md); `Mailbox`: durable send with receipts, retry and id-reuse conflict, recipient, task and attempt checks, bounded ordered listing and acknowledgement, concurrent use (D15).
+`Decode` and the envelope (`docs/messaging.md`), read with [`strictjson`](strictjson.md); `Mailbox`: durable send with receipts, retry and id-reuse conflict, recipient, task and attempt checks, bounded ordered listing and acknowledgement, concurrent use ([local messaging](../decisions/local-messaging-in-the-store.md)).
 `Mailbox.Send` takes the message's [sender](../messaging.md#senders) from its caller, one of `store.MessageSenders`, never from the envelope, which has no sender field; `Stored` carries it back, empty for a message stored before senders were, and a resend keeps the first sender, since the sender is not part of the request digest.
 `StoreMailbox` implements it on the store.
 `WakeLine` writes a count `DirectorUnread` keys by sender (`store.UnreadFrom`, used for notes) as `<type> <n> from <sender>`; every other count is unchanged.

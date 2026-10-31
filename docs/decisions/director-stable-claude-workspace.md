@@ -1,32 +1,33 @@
-# Stable Claude Director workspace
+---
+status: accepted
+date: 2026-10-24
+topic: director
+---
+
+# Claude Director sessions run in one stable workspace that the Guildmaster approves once in Claude's own trust dialog
+
+## Context
+
+Each Director session ran Claude in its own numbered session directory, so Claude's folder-trust dialog appeared at every start, reload and handoff, and an opt-in trust-gated stub rejected the numbered directory before consuming startup ([red run](../evidence/director-trust-2026-10-23-red.txt)).
+Claude Code 2.1.309 offered no ordinary interactive trust-acceptance option: its [CLI reference](https://code.claude.com/docs/en/cli-reference) has none, `--trust-workspace` exists only for the unrelated `claude ultrareview`, and the [security documentation](https://code.claude.com/docs/en/security) describes interactive folder trust and print-mode prompt skipping.
 
 ## Decision
 
-Use a stable folder identity for Claude Director sessions, with the native approval workflow documented in [Director start](../director.md#start).
-This is the captain's selected route A: one-time manual approval, not an unattended first-ever launch.
-Do not write Claude-owned trust state, change the permission mode, widen the allow rules, or replace the interactive conversation with print/SDK mode.
+Claude runs in a stable folder, `<copy>/director/claude`, reused by starts, reloads and handoffs, and the Guildmaster approves it once in Claude's native dialog: the captain's route A, one-time manual approval rather than an unattended first launch ([start](../director.md#start)).
+Numbered session records stay separate from the workspace, so trust can persist without overwriting session history.
+The [Claude workspace contract](../contracts/adapter-claude.md#stable-director-workspace) owns publication and recovery, through the optional [`runtimes.PersistentSession`](../contracts/adapter-runtimes.md) boundary; other runtimes need no change.
+The supervisor's existing admission and [runtime containment](director-runtime-record.md) serialise it, so there is no second concurrent publisher.
+Folder trust and its persistence are left entirely to Claude: Guildhall does not inspect its undocumented configuration or emit a trust diagnostic.
 
-Keep numbered session records separate from the runtime workspace so trust identity can persist without overwriting session history.
-The [Claude workspace contract](../contracts/adapter-claude.md#stable-director-workspace) owns publication and recovery, through the optional [`runtimes.PersistentSession`](../contracts/adapter-runtimes.md) boundary; other runtimes need no workspace change.
-The supervisor's existing admission and runtime containment own serialization; there is no second concurrent publisher.
-Leave folder-trust approval and persistence entirely to Claude, without inspecting its undocumented configuration or emitting a trust diagnostic.
+## Alternatives rejected
 
-## Investigation
+- Writing Claude-owned trust state: undocumented and Claude's, not Guildhall's.
+- Undocumented sandbox environment switches: not a supported trust API, and they falsely assert sandboxing.
+- Permission-bypass flags, a changed permission mode or wider allow rules: they would violate the safety contract.
+- Print or SDK mode in place of the interactive conversation: the Director is a conversation with the Guildmaster.
 
-The installed Claude Code was 2.1.309.
-Its `--help` and the [official security documentation](https://code.claude.com/docs/en/security) describe interactive folder trust and print-mode prompt skipping.
-The [CLI reference](https://code.claude.com/docs/en/cli-reference) has no ordinary interactive trust-acceptance option.
-`claude --trust-workspace --guildhall-invalid-probe` fails with `unknown option '--trust-workspace'` before any model starts.
-`claude ultrareview --help` documents that flag only for its unrelated cloud-review command.
-Undocumented sandbox environment switches are not a supported trust API and falsely asserting sandboxing is inappropriate.
-Permission-bypass flags would violate the safety contract.
-A stable directory with native one-time approval is therefore the supported interactive choice.
+## Consequences
 
-## Evidence
-
-The opt-in trust-gated Claude stub rejected the old numbered working directory before consuming startup ([red run](../evidence/director-trust-2026-10-23-red.txt)).
-Focused tests cover successive starts, handoff plus live-supervisor reload, workspace refresh without stale skills, and unchanged permission bytes.
-The existing permission golden was not changed.
-The workspace-refresh unit test was added with the implementation, not claimed as a red-first test.
-An isolated named Herdr lab with real Claude confirmed the first 17-rule trust dialog, native approval, then startup after fresh restart and handoff/reload without further dialogs ([live evidence](../evidence/director-trust-2026-10-23-live.txt)).
-CI uses the existing stub and makes zero model calls.
+A Director's very first start needs the Guildmaster at the dialog; moving the copy or clearing Claude's saved trust may need approval again.
+The generated `.claude` tree is refreshed from the numbered record before each launch, so it must not be edited by hand.
+The permission golden is unchanged, and CI uses the stub with no model calls; an isolated named Herdr lab with real Claude confirmed one approval, then fresh restart and handoff with no further dialog ([live evidence](../evidence/director-trust-2026-10-23-live.txt)).

@@ -282,7 +282,7 @@ func commandNames(phrase string) []string {
 	return names
 }
 
-// TestArtisanRoleGrammar pins the role grammar of docs/decisions/0053-cli-role-grammar.md
+// TestArtisanRoleGrammar pins the role grammar of docs/decisions/cli-role-grammar.md
 // for the Artisan: help lists every artisan verb, and the pre-release `artisan
 // run` is refused with a pointer to `artisan start` rather than kept as an alias.
 func TestArtisanRoleGrammar(t *testing.T) {
@@ -318,7 +318,7 @@ func TestArtisanRoleGrammar(t *testing.T) {
 	}
 }
 
-// TestRepositoryFlagSpelling pins one spelling of the flag naming a repository (D53): the attempt
+// TestRepositoryFlagSpelling pins one spelling of the flag naming a repository (docs/decisions/cli-role-grammar.md): the attempt
 // commands take --repo, as task start, step done and decide do, and the pre-release --repository is
 // refused with a pointer to --repo rather than kept as an alias.
 func TestRepositoryFlagSpelling(t *testing.T) {

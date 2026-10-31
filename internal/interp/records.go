@@ -10,7 +10,7 @@ import (
 )
 
 // Records is the part of the Director store the engine reads and writes, declared here by the consumer
-// (D9: the store has no general interface). In production cli.storeRecords implements it, opening the store
+// (docs/decisions/bbolt-for-the-store.md: the store has no general interface). In production cli.storeRecords implements it, opening the store
 // for each operation; *store.Store implements it in process, and interptest.Records is its in-memory double.
 // All three pass interptest.RunRecordsContract.
 //
@@ -40,7 +40,7 @@ import (
 // Implementations are safe for concurrent use.
 // Rulings are recorded by the Director (guildhall task finding rule), never by the engine.
 //
-// Workflow approvals are not read here: they are enforced at task creation (docs/decisions/0056-approval-enforcement-at-task-creation.md).
+// Workflow approvals are not read here: they are enforced at task creation (docs/decisions/workflow-approvals.md).
 type Records interface {
 	Task(repository, taskID string) (store.Task, error)
 	// Tasks lists a repository's tasks in id order, and TaskCloses each task's create and first close receipts; the

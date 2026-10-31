@@ -11,13 +11,12 @@ A message to the Director [wakes it](messaging.md#waking-the-director) when its 
 guildhall director start [runtime] [--check] [--copy <dir>]
 ```
 
-`director start` is the session supervisor: it runs one Director session in the current terminal and records it ([decision](decisions/0071-director-start.md)).
+`director start` is the session supervisor: it runs one Director session in the current terminal and records it ([decision](decisions/director-start.md)).
 With `--tab`, `director start` instead opens the Director's own [Herdr tab](#the-directors-tab) and runs the supervisor there.
-It follows the [role grammar](decisions/0053-cli-role-grammar.md): the runtime is the positional argument, else the config's [`[director] adapter`](configuration.md#the-director-table), and a copy without either is refused with exit 1 listing the adapters.
+It follows the [role grammar](decisions/cli-role-grammar.md): the runtime is the positional argument, else the config's [`[director] adapter`](configuration.md#the-director-table), and a copy without either is refused with exit 1 listing the adapters.
 It needs a [copy](running.md#copies), from `--copy` or found by copy discovery from the current directory, because the session lives in it.
 So the Guildmaster can restart the Director by typing a bare `guildhall director start` in the Director's tab, whose shell is in the copy.
-A bare restart records no pane binding, because Guildhall ignores Herdr's ambient pane variables: wakes then come only through the [`wait-wake` hook](#the-end-of-a-turn), and a later start does not [retire](#the-directors-tab) that tab.
-This is an accepted limitation; `director start --tab` records the binding.
+A bare restart typed in a Herdr pane binds that pane from Herdr's environment, as below, and a later start does not [retire](#the-directors-tab) its tab; one run outside Herdr records no pane and warns, as below.
 
 It first runs a preflight and prints one line per check, as `doctor` prints, stopping at the first that fails:
 
@@ -66,7 +65,7 @@ It renders the session into `<copy>/director/session-<n>/` with [`render.Session
 - `startup.md`: the startup instructions, saying the session is starting up and recovering, then, when there are any, the repositories' [policies](configuration.md#repository-policies) under `## Repository policies`, one line `- <repo>: <policy>` each, or `- <repo>: policies cannot be read (<reason>)` for a refused file, from each default branch as fetched just before the session renders, a snapshot that a merge mid-session changes in `director status` at the next advance and here at the next reload, then, when there are any, every live [note](#notes) under `## Notes`, grouped by kind as `director note list` prints them and opening with `Notes total <N> KB, over 8 KB: compact them (merge, shorten or remove).` when their text totals more than 8 KB, then the in-flight snapshot, each `needs_me` item of the [status feed](#status) with its command, except a `checks` item, which says the session supervisor advances it ([checks](#checks)), then, when there are any, the feed's `running` attempts under `## Running`, which the Director confirms before `director ready`, one line each: `running: attempt <n> of <step> of <repo>/<task>; state <state>; heartbeat <age> ago; last output <age> ago; <reason>; check with <command>`, with `no heartbeat` for an attempt that has none and its ages by the supervisor's clock, and then, when there are any, the feed's `parked` attempts in a section of their own, as information rather than work, one line each: `parked: attempt <n> of <step> of <repo>/<task> <outcome>; reason: <reason>; retry with <command>`, ending ` until <repo>/<task>, …` for a park held until tasks merge, and then the feed's `held` items under `## Held`, one line each: `held: <decision <id> of <repo>/<task> | follow-up <id>> until <tasks> (waiting for <tasks>): <reason or text>; lift with <command>` ([holds](#holds));
 - `manifest.json`: the digest of every file above.
 
-It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory (for Claude, in the stable workspace described below), inside a containment unit of its own ([runtime containment](decisions/0084-director-stop-admission.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with the terminal's input and output and the first message naming `startup.md`.
+It binds the session's [endpoint](#the-end-of-a-turn) and then runs the runtime's session command as its child in that directory (for Claude, in the stable workspace described below), inside a containment unit of its own ([runtime containment](decisions/director-pause-stop.md)), the same backend as an [Artisan's](artisan.md) (a Windows Job Object, a Linux cgroup or a process group with the supervisor as child subreaper, a macOS process group), so every process the runtime starts, such as its shell and tool children, is the session's, except the launchers of the attempts it starts, which leave the unit under their own [ownership](artisan.md) and [stop](#stop), with the terminal's input and output and the first message naming `startup.md`.
 The session directory always lies under the copy, so the session's own `guildhall` commands find the copy by [copy discovery](running.md#copies); no environment variable names it.
 For Claude Code that is `claude --append-system-prompt-file <session-directory>/role.md --add-dir <copy> --settings <copy>/director/claude/.claude/settings.json --plugin-dir <copy>/director/claude/.claude/plugins/lanterns --plugin-dir <copy>/director/claude/.claude/plugins/clerk [--model <model>] [--effort <level>] -- "<first message>"`; see [runtime settings](adapters.md#runtime-settings) for effort resolution and preflight refusals.
 Claude runs in **`<copy>/director/claude`**, a stable workspace reused by starts, reloads and handoffs, with the first message naming the numbered session's `startup.md` by absolute path.
@@ -97,14 +96,14 @@ On Linux the runtime is also killed if the supervisor dies.
 
 ### The runtime's record
 
-Once the unit reports the gated or suspended runtime process created, before its program can execute, the supervisor records the unit on the session, as an Artisan's [ownership](artisan.md) records its worker: its kind, its name (the Job Object's name or the cgroup's directory; a process group has none), the Linux detection reason, and the runtime's process identity ([decision](decisions/0090-director-runtime-record.md)).
+Once the unit reports the gated or suspended runtime process created, before its program can execute, the supervisor records the unit on the session, as an Artisan's [ownership](artisan.md) records its worker: its kind, its name (the Job Object's name or the cgroup's directory; a process group has none), the Linux detection reason, and the runtime's process identity ([decision](decisions/director-runtime-record.md)).
 A record that fails ends the runtime and its unit, and the supervisor exits 1 naming the failure, so no runtime runs that the record does not name.
 The record is what lets the session's processes be found after the supervisor has died, such as when its terminal is closed with `kill -9` or a crash: [`director stop`](#stop) sweeps the recorded unit and `director start` refuses while it holds a process.
-The [record-before-run decision](decisions/0090-director-runtime-record.md) describes the Unix gate and Windows suspension that enforce this guarantee.
+The [record-before-run decision](decisions/director-runtime-record.md) describes the Unix gate and Windows suspension that enforce this guarantee.
 
 ## Skills
 
-The release ships the Director's own skills beside the stage skills, each rendered into every session ([decision](decisions/0075-director-skills.md)):
+The release ships the Director's own skills beside the stage skills, each rendered into every session ([decision](decisions/director-skills.md)):
 
 - `guildhall-director-startup`: handle `startup.md`, work each in-flight item, then `director ready`.
 - `guildhall-director-inbox`: on every wake line and turn start, read `director status` and each unread message, act and acknowledge.
@@ -114,7 +113,7 @@ The release ships the Director's own skills beside the stage skills, each render
 - `guildhall-maintenance`: when a [maintenance](#maintenance) item is due and at every handoff, audit the notes against the store and record the audit, and launch a due hallmark.
 - `guildhall-self-review`: after a task merges, when the [quality settings](configuration.md#quality-settings) turn it on, record the task against the [quality rubric](quality.md) without changing it.
 
-Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/0057-director-conversation-first.md)).
+Between them they name every command of the [README's list](../README.md#the-commands) the Guildmaster would otherwise type ([D57](decisions/director-conversation-first.md)).
 
 ## Chat address
 
@@ -153,7 +152,7 @@ That page owns their child labels, best-effort placement under the Director, lif
 guildhall director start [runtime] --tab [--check] [--copy <dir>]
 ```
 
-With `--tab`, `director start` is the wrapper the Guildmaster runs: it opens the Director's tab in Herdr and runs the session supervisor there, so the Director has its own visible tab (R1.37) that firstmate can reach remotely ([decision](decisions/0078-director-tab.md)).
+With `--tab`, `director start` is the wrapper the Guildmaster runs: it opens the Director's tab in Herdr and runs the session supervisor there, so the Director has its own visible tab (R1.37) that firstmate can reach remotely ([decision](decisions/director-tab.md)).
 
 - It runs the same preflight, then a `herdr` check: the config's [`herdr_session`](configuration.md#settings) setting names the Herdr session, and `herdr status` must report that session's server running, Herdr 0.9.5 or newer ([Herdr access](adapters.md#herdr-access)).
   With no `herdr_session` the check is refused, naming the setting and running without `--tab`; `--check` exits 0 after it.
@@ -163,7 +162,7 @@ With `--tab`, `director start` is the wrapper the Guildmaster runs: it opens the
 - It waits until a new session record carries that pane, prints a `tab:` line naming it and then the session as one JSON line, and exits 0.
   If the typed command ends first, as a refused preflight in the tab would, or no such session appears within two minutes, it exits 1 naming the tab.
 
-Normal operation leaves one Director tab in the workspace ([decision](decisions/director-tab-replacement.md)).
+Normal operation leaves one Director tab in the workspace ([decision](decisions/director-tab.md)).
 When Guildhall creates the workspace, it replaces Herdr's starting shell under the [adapter's starting-shell cleanup contract](contracts/adapter.md#contract); a cleanup failure aborts the launch before typing input and names both tabs.
 After a successful start, it retires earlier Director tabs only when a persisted session binding proves ownership, the session is stopped or superseded, its runtime unit is empty, and the tab contains one idle shell pane.
 A session's [adopted](#start) pane is never retired, since Guildhall did not create its tab.
@@ -204,7 +203,7 @@ guildhall director pause [--copy <dir> | --store <file>]
 guildhall director resume [--copy <dir> | --store <file> --state <dir>]
 ```
 
-`director pause` moves the newest session from `running` to `paused` and prints it as one JSON line ([decision](decisions/0073-director-pause-stop.md)).
+`director pause` moves the newest session from `running` to `paused` and prints it as one JSON line ([decision](decisions/director-pause-stop.md)).
 A paused session starts no new attempt, while attempts already running finish.
 The hold is read in the same store transaction that records a new attempt, so an advance that started before the pause and records its attempt after it is held too:
 
@@ -225,7 +224,7 @@ guildhall: resumed, 2 waiting (messages 1, paused 1)
 
 Otherwise it delivers nothing and prints `"wake":{"decision":"queued","reason":"<reason>"}`, `nothing waiting` or one of the [wake](messaging.md#waking-the-director)'s session, waiter and pane reasons, and the work waits for the Director's next turn.
 If reading the session for the wake fails, resume reports the error on standard error and omits `wake`, without failing or undoing the resume.
-The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/0086-director-checks-watch.md)).
+The resume records no wake: each message keeps the `queued` wake it recorded while the session was paused ([decision](decisions/director-checks-watch.md)).
 A `checks`, `dependencies` or `merge-queue` item is the supervisor's and a `decision` or `install` item the Guildmaster's, so none counts or wakes.
 
 A paused session is printed unchanged by `pause`, and a running one by `resume`, exit 0, with no `wake` and nothing typed.
@@ -233,7 +232,7 @@ Both are exit 1 for no session, a session that is `recovering` (run `director re
 
 ## Checks
 
-A task whose validate step waits for its published head's checks, `next.json` `{"wait":"checks","step":"validate"}`, is moved on by the session supervisor, not by the Director ([decision](decisions/0086-director-checks-watch.md)).
+A task whose validate step waits for its published head's checks, `next.json` `{"wait":"checks","step":"validate"}`, is moved on by the session supervisor, not by the Director ([decision](decisions/director-checks-watch.md)).
 On its first supervisor tick, then on the first tick at least [`checks_refresh`](configuration.md#settings) after the previous round ends, the supervisor's checks watcher lists the open tasks waiting for checks and advances each in turn as `task start` does, in the supervisor process and with no model turn, while the session is `recovering` or `running`.
 The interval has a 30-second minimum, including when `checks_refresh` is `"0s"`.
 The advance reads the checks under the [validate step's pacing](interpreter.md#validate): checks still pending send nothing new, since a head's `checks-pending` message is sent once, and checks that finish send `checks-passed` or `checks-failed` and take the task on, which [wakes](messaging.md#waking-the-director) the Director as any send does.
@@ -251,7 +250,7 @@ See the shipped `guildhall-director-tasks` skill for the commands and their limi
 
 ## Artisan Herdr workspace cleanup
 
-With [`herdr_session`](configuration.md#settings) set, the session supervisor also closes finished Artisans' Herdr workspaces with the [workspace close sweep](artisan.md#workflow-artisan-workspaces) ([decision](decisions/artisan-workspace-close-sweep.md)).
+With [`herdr_session`](configuration.md#settings) set, the session supervisor also closes finished Artisans' Herdr workspaces with the [workspace close sweep](artisan.md#workflow-artisan-workspaces) ([decision](decisions/artisan-herdr-workspaces.md)).
 It runs one sweep when each session starts, a reload's included, so a Herdr workspace that became due while no supervisor ran is closed, then one on the first tick at least 5 minutes after the previous sweep started.
 A sweep runs in the supervisor process, one at a time and off the decision path, so a slow Herdr never delays a stop or reload; the supervisor lets a running sweep end before it records the session stopped.
 Each attempt it leaves open is reported once with an unread `herdr-workspace-left-open` message that does not wake the Director; an unreachable Herdr writes one standard-error line and the next sweep tries again.
@@ -285,7 +284,7 @@ The Director hears of a queued task through `merge-queued`, `rebased`, `rebase-e
 guildhall director stop [--now] [--copy <dir> | --store <file> --state <dir>]
 ```
 
-`director stop` ends the Director session and its Artisan attempts ([decision](decisions/0073-director-pause-stop.md)).
+`director stop` ends the Director session and its Artisan attempts ([decision](decisions/director-pause-stop.md)).
 It records the newest session `stopping` and `sweeping`, then stops every running attempt in the store, records the sweep finished, and prints the session as one JSON line.
 A stopping session starts no new attempt, as a paused one does, and neither does a session whose stop is still `sweeping`, even once its supervisor has recorded it `stopped`, so every attempt recorded before the stop is one the stop sees.
 Once the sweep is finished the hold lifts, and a `task start` by the Guildmaster with no Director running works again; until then [`director start`](#start) is refused, so no new session lifts the hold either.
@@ -308,8 +307,8 @@ The stop does not yet send the Director a `stop-requested` message asking it to 
 
 ## Handoff
 
-A handoff is a fresh session picking up from this one: the Director runs and records the [note audit](#maintenance), then runs [`director reload --now`](#reload) ([decision](decisions/0094-director-notes.md)).
-The single handoff-note document and `director handoff --note-file` that recorded it ([D82](decisions/0082-director-handoff-reload.md)) are retired: stores keep the [handoff notes](store.md#handoff-notes) already recorded and `store doctor` still decodes them, but nothing writes or shows them.
+A handoff is a fresh session picking up from this one: the Director runs and records the [note audit](#maintenance), then runs [`director reload --now`](#reload) ([decision](decisions/director-reload-and-notes.md)).
+The single handoff-note document and `director handoff --note-file` that recorded it ([D82](decisions/director-reload-and-notes.md)) are retired: stores keep the [handoff notes](store.md#handoff-notes) already recorded and `store doctor` still decodes them, but nothing writes or shows them.
 
 ## Notes
 
@@ -387,7 +386,7 @@ The note audit item leaves `needs_me` once its run is recorded, and a hallmark i
 
 ## Holds
 
-A hold is an item the Director keeps out of the way until named tasks merge, so "once X merges, do Y" needs no note ([decision](decisions/0096-hold-until-merged.md)).
+A hold is an item the Director keeps out of the way until named tasks merge, so "once X merges, do Y" needs no note ([decision](decisions/hold-until-merged.md)).
 There are three kinds: a parked attempt with [`step park --until-merged`](running.md#step-park-and-step-unpark), an open decision deferred with [`decide defer`](decisions-cli.md#deferring-a-decision), and a follow-up with no attempt or decision yet:
 
 ```sh
@@ -423,9 +422,9 @@ guildhall director reload [--now] [--copy <dir> | --store <file> --state <dir>]
 `director reload` asks the session supervisor to end the runtime and start a new session, on the copy's current settings, as [release upgrades](releases.md#guildhall-director-reload) design.
 It records a `director-reload` request and prints it as one JSON line; requests made before one is applied collapse into it, and `--now` turns a pending plain request into a `--now` one.
 The supervisor applies a plain reload at a quiet point: a turn has ended since the last turn started and since the newest wake reached the Director, so a reload asked for during a turn the captain started waits for that turn to end, or for the Director to count as [idle](#the-end-of-a-turn) after `idle_after` with no turn signal.
-A Director stage attempt running, such as a grill waiting on the Guildmaster's answers, does not hold a plain reload either, since the next session restarts it ([decision](decisions/plain-reload-ignores-director-stages.md), as [D94](decisions/0094-director-notes.md) ruled for `--now`).
+A Director stage attempt running, such as a grill waiting on the Guildmaster's answers, does not hold a plain reload either, since the next session restarts it ([decision](decisions/director-reload-and-notes.md), as [D94](decisions/director-reload-and-notes.md) ruled for `--now`).
 `--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the [handoff](#handoff): check the notes, then reload.
-`--now` is refused with exit 1 only when there is no session or the newest one is `stopped`; it needs no note, and a Director stage attempt running, such as a grill, does not hold it, since the next session restarts the grill ([D94](decisions/0094-director-notes.md)).
+`--now` is refused with exit 1 only when there is no session or the newest one is `stopped`; it needs no note, and a Director stage attempt running, such as a grill, does not hold it, since the next session restarts the grill ([D94](decisions/director-reload-and-notes.md)).
 The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers, the two sessions' releases and binary sha256 (`old_release`, `old_sha256`, `new_release`, `new_sha256`) and, when the supervisor refused a new binary, `refused_sha256` and `refused_reason`.
 
 ### The supervisor's binary
@@ -484,7 +483,7 @@ A session directory whose socket path would pass the platform's AF_UNIX limit ge
 guildhall director context-report [--lanterns] [--copy <dir>]
 ```
 
-Three triggers tell the Director a handoff is due before its context runs out ([decision](decisions/0085-director-handoff-triggers.md)); each is a [`[director]` setting](configuration.md#the-director-table) and 0 turns it off:
+Three triggers tell the Director a handoff is due before its context runs out ([decision](decisions/director-handoff-triggers.md)); each is a [`[director]` setting](configuration.md#the-director-table) and 0 turns it off:
 
 - `handoff_after_tasks` (off unless set): every that many tasks moved to `done` or `cancelled` since the session started;
 - `handoff_context_percent` (70 unless set): the context the runtime last reported as used reaches the percent;
@@ -517,7 +516,7 @@ The [Lanterns page](lanterns.md) describes its automatic installation, optional 
 
 ## Guard rails
 
-The guard rails are limits the binary enforces on a Director whatever it asks ([decision](decisions/0074-guard-rails.md)); `config.GuardRails` reads all three from the config.
+The guard rails are limits the binary enforces on a Director whatever it asks ([decision](decisions/guard-rails.md)); `config.GuardRails` reads all three from the config.
 In a standalone copy they are the copy's own config, which the Guildmaster edits; managed mode will make them read-only to the Director ([modes](director-modes.md#guard-rails)).
 
 - Allowed repositories: the config's `[[repository]]` entries.
@@ -531,7 +530,7 @@ In a standalone copy they are the copy's own config, which the Guildmaster edits
   A [Director stage](interpreter.md#director-stages), which the Director runs in its own session, never counts against `max_running_attempts` and is never queued; it still counts toward the day's starts.
   The caps count attempts, not tokens or cost: each attempt's [spend](#spend) is recorded and shown beside them, but no budget refuses an attempt by its tokens or cost yet.
 
-An advance whose next attempt the running cap does not admit, from `task start`, `step done`, `step finish`, `step retry`, `step send-back` or a launcher's own advance, is queued instead of refused ([decision](decisions/queue-over-cap-starts.md)): it launches nothing, records the step's place in the [start queue](#the-start-queue), sends no message and exits 0, printing `{"wait":"queued","step":"<step>","attempt":<n>,"position":<p>}`.
+An advance whose next attempt the running cap does not admit, from `task start`, `step done`, `step finish`, `step retry`, `step send-back` or a launcher's own advance, is queued instead of refused ([decision](decisions/guard-rails.md)): it launches nothing, records the step's place in the [start queue](#the-start-queue), sends no message and exits 0, printing `{"wait":"queued","step":"<step>","attempt":<n>,"position":<p>}`.
 The session supervisor starts it when a slot frees and it is the queue's front, with no command from the Director.
 An advance whose next attempt would pass `max_attempts_per_day` records and launches nothing and exits 1 naming the rail, `guard rail max_attempts_per_day: ...`, and sends the Director a `budget-refused` message, once per task and UTC day; once the day turns the Director runs `guildhall task start` for the task again, or `step retry` again for a refused retry.
 The count, the queue and the start are one store write, so two advances never both take the last place or pass the queue's front, and an attempt already recorded is always launched again after a crash.
@@ -555,7 +554,7 @@ Quality-judge starts are not queued: `quality judge` is still refused at the run
 
 ## Spend
 
-Each owned attempt's store record holds what its runtime reported it spent ([decision](decisions/0079-attempt-spend.md)): input, output, cache creation and cache read tokens and a cost in US dollars, each marked `measured`, `estimated` or `unknown`, from the attempt's [usage file](adapters.md#usage-file).
+Each owned attempt's store record holds what its runtime reported it spent ([decision](decisions/attempt-spend.md)): input, output, cache creation and cache read tokens and a cost in US dollars, each marked `measured`, `estimated` or `unknown`, from the attempt's [usage file](adapters.md#usage-file).
 The launcher records it when the attempt ends, and `artisan resume` when it settles an exited launcher's attempt.
 
 What is measured:
@@ -570,7 +569,7 @@ What is measured:
 
 ## Safety checks
 
-Four checks in `cmd/guildhall` drive the built binary through `director start` with a stand-in runtime playing the Director from its role prompt's script, on every CI runner and with no model calls ([decision](decisions/0080-director-safety-checks.md)).
+Four checks in `cmd/guildhall` drive the built binary through `director start` with a stand-in runtime playing the Director from its role prompt's script, on every CI runner and with no model calls ([decision](decisions/director-safety-checks.md)).
 The fake Director and the Claude stub play the same script, so each check runs on both.
 Each check counts the stand-in's turns, one for its first message and one for each line typed to it, and the fake Artisans' recorded processes, before and after, and ends only when every one of those processes is gone.
 
@@ -592,7 +591,7 @@ A managed copy's guard rails, a Director-edited `managed.toml` refused with an a
 guildhall director status --json [--copy <dir> | --store <file> --state <dir> [--config <file>]]
 ```
 
-`director status` is the Director's status feed and the Guildmaster's "what needs me" query in one read-only JSON document ([decision](decisions/0065-director-status-feed.md)).
+`director status` is the Director's status feed and the Guildmaster's "what needs me" query in one read-only JSON document ([decision](decisions/director-status-feed.md)).
 firstmate's external monitor reads it, the Director's skills run it at every turn, and the session supervisor renders its `needs_me` into a new session's [startup instructions](#start).
 
 It reads the store in one read transaction, opened read-only and waiting up to 30 seconds for a writer's lock, the default [`lock_wait`](configuration.md#settings) of an advance, so it never writes, never creates a store and succeeds once a writer lets go.
@@ -610,7 +609,7 @@ The document has these sections:
 - `session`: the newest Director session: its `state`, `number`, supervisor `identity`, `release`, `pane` when bound, `started_at`, `ready_at` and `ended_at` once set, `stop_now` for a `stop --now`, `sweeping` while a [stop](#stop) has not finished stopping its attempts, the `end_reason` of a session [stopped](#stop) as `superseded`, and `context`, the newest [context report](#automatic-handoff) with its `used_percent` and `reported_at`, absent when the runtime reported none.
   `last_wake` is the newest [wake](messaging.md#waking-the-director) of any message to the Director, with its `message_id`, `sender_type`, `decision`, `reason` when queued, `time` and `sequence`, so the feed says whether the last message woke anyone and why not; it is absent before any wake. `sender_type` is `guildhall` or `local`; a message header's `sender` is the finer field.
   A store with no session reports only its `state`, `"no session"`, `last_wake`, `guard_rails` and `start_queue`.
-  Feed change ([D94](decisions/0094-director-notes.md)): the session no longer carries `handoff_note`, the newest retired handoff note, and does not carry the Director's [notes](#notes) either; `director note list` prints them.
+  Feed change ([D94](decisions/director-reload-and-notes.md)): the session no longer carries `handoff_note`, the newest retired handoff note, and does not carry the Director's [notes](#notes) either; `director note list` prints them.
   `guard_rails` are the [guard rails](#guard-rails): the config's `repositories`, `merge_requires` (each repository's effective `guildmaster_approval`, `artisan_approval`, `ci_green` and `nothing_open`), `max_running_attempts` and `max_attempts_per_day` (0 when there is no daily cap), when the copy has a config, and always `running_attempts`, what the running cap counts, the running attempts other than Director stages, `attempts_today` and the UTC `day` they count, and `spend_today`, the [spend total](#spend-totals) of the attempts started that day, read in the same store transaction.
   `start_queue` is the [start queue](#the-start-queue) in queue order, `[{repository, task, step, attempt, request, priority, position, queued_at}]`, `request` being the `start`, `decision`, `retry`, `send-back` or `engine` request that queued it and `priority` the task's current one; it is empty when nothing waits.
   A queued start is the supervisor's to start, so it is not a `needs_me` item and wakes nobody.
@@ -637,6 +636,7 @@ The document has these sections:
 - `messages`: the Director's `unread` count, the count `by_type`, and the `headers` of at most the 20 oldest unread messages (`id`, `type`, `sender`, `repository`, `task_id`, `step` and `attempt` when given, `sequence`); `sender` is the message's [sender](messaging.md#senders), `unknown` for a message stored without one.
 - `recent`: the last 20 receipts of any task across repositories, in commit order, each with its operation, mutation id, sequence, commit time and record name, so records such as delivery's `publish-<k>-pr` documents and its `merged`, `merge-refused` and `workspace-kept` messages appear without a change to the feed.
 - `needs_me`: what is waiting on the Director or the Guildmaster, each item with its `kind`, the task and attempt or decision it concerns, a `reason`, and the `command` the Director would run next, written without `--copy` because a Director session runs inside its copy and finds it by [copy discovery](running.md#copies).
+  The order is fixed, so the same store state always lists the same items in the same order ([decision](decisions/director-status-feed.md)).
   Items come in this order, and within a kind by repository, task, then step or message order:
   1. `advance`: an open task's step whose latest attempt is finished while the task's `next.json` still says `"wait":"attempt"` for that attempt, as a [watcher](running.md#the-watcher) whose advance failed leaves it; `guildhall step done --repo <r> --task <t> --step <s> --attempt <n> --result <file>` for a `succeeded` attempt whose result file exists, otherwise `guildhall task start --repo <r> <t>`.
      A [Director stage](interpreter.md#director-stages) whose attempt is unfinished but has a published result, as a `step finish` that stopped before its advance leaves it, is also an `advance` item, with that `step done` command, whether or not its stage message was read.
@@ -655,7 +655,7 @@ The document has these sections:
      A decision deferred until tasks merge is left out while its [hold](#holds) waits and listed under `held`; once released its `reason` ends with what released it and `; deferral reason: <reason>`.
   6. `follow-up`: a released [follow-up](#holds), with its `follow_up` id and its text and what released it as the `reason`; `guildhall director follow-up done <id>`.
      It stays until done, wakes [`director resume`](#pause-and-resume) and counts as Lanterns attention.
-  7. `messages`: one item counting the other unread messages; `guildhall messages list director`.
+  7. `messages`: one item counting the other unread messages, rather than one item each, because the `retry` and `decision` items already cover the `attempt-failed` and `decision` messages the engine sends; `guildhall messages list director`.
   8. `director`: an open task whose `next.json` says `"wait":"director"`; `guildhall task timeline --repo <r> --json <t>`.
      A task whose `next.json` waits for the Director on a parked attempt, with no decision, is left out; a wait for a decision or another attempt stays.
   9. `paused`: an open task whose `next.json` says `"wait":"paused"`, held while the Director was [paused](#pause-and-resume); `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>` when that step's latest attempt failed or stopped, or `guildhall task start --repo <r> <t>` otherwise, including recovery of a recorded-but-unlaunched attempt.
@@ -674,7 +674,7 @@ The document has these sections:
   A [cancelled](tasks.md#task-cancel) task's decisions are void, so it contributes no `decision` item either: only its unread messages count, in `messages`, until they are read.
   A park leaves an `advance` or `paused` item in place: a failure never taken still needs taking, and a retry asked for while paused wins over a park.
 - `parked`: the attempts the Director [parked](running.md#step-park-and-step-unpark), held on purpose and so not in `needs_me`, in repository, task, step and attempt order, each with its `repository`, `task_id`, `step`, `attempt`, `outcome`, `reason`, `parked_at`, the commit time of its newest park, and the `command` to run when the hold ends, `guildhall step retry --repo <r> --task <t> --step <s> --attempt <n>`.
-  A park counts only while it is parked, its task is open and its attempt is still the step's latest, finished `failed` or `stopped`; a park whose attempt was retried, whose task closed or that was unparked is ignored ([decision](decisions/0092-park-attempt.md)).
+  A park counts only while it is parked, its task is open and its attempt is still the step's latest, finished `failed` or `stopped`; a park whose attempt was retried, whose task closed or that was unparked is ignored ([decision](decisions/park-attempt.md)).
   A park held `--until-merged` also has `until_merged`, the tasks it names, and `waiting_for`, those not merged yet, and stops counting once its [hold](#holds) is released.
 - `held`: the deferred decisions and follow-ups whose [holds](#holds) still wait, in kind, repository, task and item order (follow-ups by id), each with its `kind` (`decision` or `follow-up`), `repository` and `task_id` for a decision, `item` (the decision or follow-up id), `reason` (the deferral's reason or the follow-up's text), `until_merged`, `waiting_for` and the `command` that lifts it: `guildhall decide undefer --repo <r> --task <t> --decision <id>` or `guildhall director follow-up done <id>`.
 - `running`: every attempt with no store outcome that `steps[].live` classifies, the latest of each step and every judge attempt, other than a `handed` [Director stage](interpreter.md#director-stages), in repository, task, step and attempt order, as information rather than work ([decision](decisions/running-attempts-in-status.md)).

@@ -280,7 +280,7 @@ func (d *binDirector) waitDecision(id string) {
 }
 
 // TestTaskRunsEndToEndWithTheWatcher is TestTaskRunsEndToEnd from a Director copy with no step done typed: each
-// attempt's launcher, the per-task watcher (D3), takes its own result and opens the next decision.
+// attempt's launcher, the per-task watcher, takes its own result and opens the next decision.
 func TestTaskRunsEndToEndWithTheWatcher(t *testing.T) {
 	d := newBinCopy(t, filepath.Join("..", "..", "internal", "cli", "testdata", "run"))
 	d.newTask()

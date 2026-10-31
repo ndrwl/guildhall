@@ -26,7 +26,7 @@ Prompts without `Stage.Retry` have no such section.
 
 The task title is quoted after the attempt identity under `Task title:`, in a `text` fence longer than any backtick run inside it, so a Director-written title cannot open a prompt section; an empty title renders nothing.
 The task's detail, its full statement, follows under `Task detail:`, fenced the same way, in every stage's prompt; an empty detail renders nothing.
-The interpreter passes the task's title and detail; it is not part of the manifest's `identity`, so the manifest schema is unchanged ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
+The interpreter passes the task's title and detail; it is not part of the manifest's `identity`, so the manifest schema is unchanged ([decision](decisions/task-kinds.md)).
 
 ### Repository policies
 
@@ -81,7 +81,7 @@ Each adapted skill includes its own `CREDITS.md`, preserving the upstream MIT no
 Release embedding is delivered here; Steward distribution of skill bundles follows in a later slice.
 Every file is copied, scripts included, byte for byte and with the permission bits the platform supports, so a POSIX script stays executable.
 A symbolic link or other non-regular file inside a skill is refused rather than followed.
-Executable content is controlled where skills are distributed, by the Steward's rollout review, not by the renderer ([Rendered prompts, skills and their digests](decisions/0025-rendered-prompts-skills-and-digests.md)).
+Executable content is controlled where skills are distributed, by the Steward's rollout review, not by the renderer ([Rendered prompts, skills and their digests](decisions/rendered-prompts-skills-and-digests.md)).
 
 A skill's tree digest is the sha256 of one `<hex>  <path>` line per file, sorted by path, where `<hex>` is the file's sha256 and `<path>` is relative to the skill directory: the output of `sha256sum` run inside the skill over its sorted files.
 File modes are not part of it, so a skill digests the same on every platform.

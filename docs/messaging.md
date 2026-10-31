@@ -244,7 +244,7 @@ Routine engine messages are never surfaced.
 
 Everything in this section is designed, not built, except the [local wake](#waking-the-director) and its wake record.
 No command, flag, config key or other store record below exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
-The decision is recorded in [Director messaging](decisions/0049-director-messaging.md).
+The decision is recorded in [Director messaging](decisions/director-messaging.md).
 It extends the local inbox above so a Director can hear from the Guildmaster and from other Directors, without giving any message more authority than the local inbox has today.
 
 ### Who may send
@@ -505,5 +505,5 @@ These are flagged rather than chosen silently:
 - **R1.15** says work moves between Directors only by manual handoff with no automatic cross-Director scheduling; a ticket schedules nothing and needs the Guildmaster's answer, but the requirement does not yet mention Director messages.
 - **R1.20** says there is no push service; a wake is a push into a pane by the `receive` command, with no service.
 - **R1.8** sets up SSH from the Steward to Directors only; Director-to-Director transport needs SSH between Director machines.
-- **D15** deferred messaging another Director, transports and notifications; this design is that follow-up and extends D15 rather than replacing it.
-- **D12** says no remote command is run; `messages receive` over SSH is a Director's remote command, not a rollout's, and does not change rollouts.
+- **[Local messaging](decisions/local-messaging-in-the-store.md)** deferred messaging another Director, transports and notifications; this design is that follow-up and extends it rather than replacing it.
+- **[Scp rollouts](decisions/steward-rollouts-copy-with-scp.md)** says no remote command is run; `messages receive` over SSH is a Director's remote command, not a rollout's, and does not change rollouts.

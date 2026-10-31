@@ -558,7 +558,7 @@ const (
 	MessageQuestion        = "question"
 	MessageNote            = "note"
 	// MessageHoldReleased is the session supervisor's report that a hold was released: a park, decision deferral or
-	// follow-up whose named tasks merged or one of which was cancelled (docs/decisions/0096-hold-until-merged.md).
+	// follow-up whose named tasks merged or one of which was cancelled (docs/decisions/hold-until-merged.md).
 	MessageHoldReleased = "hold-released"
 )
 

@@ -58,7 +58,8 @@ Report findings in terms of locality and leverage, never "cleaner".
    Read the log with the `guildhall ci log` command the baseline names, with `--out` into your working directory for a long log; a log that is unavailable or expired is missing evidence.
    Find two suites for one contract and test packages that repeat the same cases, and never propose deleting a case until the retained boundary proves it.
    A check you could not run is missing evidence, not a pass.
-7. Docs and build: check every "not yet", "later" and support claim in the documents against the code, compare the contract inventory with the packages, and count decision files awaiting an index entry.
+7. Docs and build: check every "not yet", "later" and support claim in the documents against the code, and compare the contract inventory with the packages.
+   Run the decision-library step in `decision-library.md` when the repository keeps decision records.
    Check module tidiness and verification, CI steps against the contributing guide, tests defined but never run, the cancellation policy, action pinning, lint settings, and embedded skill credits and digests.
    When a new record or outcome type lands, check that the inspection commands show it.
 8. Streams: name the parallel streams of work and the nouns they share, and find one concept with two types, two fixture trees for one contract, and one word used for several things.

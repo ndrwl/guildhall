@@ -254,7 +254,7 @@ func TestDirectorStartWritesClerk(t *testing.T) {
 // TestDirectorStartStartupNamesWhatIsInFlight starts a second session over a store with an unread question:
 // its startup instructions list the recovering session and the message, and list a task waiting for its checks as the
 // supervisor's, with no command for the Director to run. The store holds a retired handoff note and no notes, so
-// startup shows neither the old note nor a notes section (D94).
+// startup shows neither the old note nor a notes section (docs/decisions/director-reload-and-notes.md).
 func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
 	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {

@@ -860,7 +860,7 @@ func TestInstallRefusesANonEmptyDirectory(t *testing.T) {
 	}
 }
 
-// directorSkills are the skills the Director's session works through (D57: plain English is the primary interface).
+// directorSkills are the skills the Director's session works through (docs/decisions/director-conversation-first.md: plain English is the primary interface).
 var directorSkills = []string{
 	"guildhall-director-inbox",
 	"guildhall-director-stage",
@@ -919,7 +919,7 @@ func commandNames(phrase string) []string {
 	return names
 }
 
-// TestDirectorSkillsNameEveryReadmeCommand is D57's rule, mechanically checked: every command of the README's
+// TestDirectorSkillsNameEveryReadmeCommand is the conversation-first decision's rule (docs/decisions/director-conversation-first.md), mechanically checked: every command of the README's
 // command list that the Guildmaster would otherwise type is named by at least one of the Director's skills.
 func TestDirectorSkillsNameEveryReadmeCommand(t *testing.T) {
 	readme, err := os.ReadFile(filepath.Join("..", "README.md"))

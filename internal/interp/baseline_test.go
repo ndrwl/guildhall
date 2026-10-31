@@ -277,7 +277,10 @@ func TestHallmarkBaseline(t *testing.T) {
 				"### t4 `"+older+"`\n\nNo checks reported.",
 				"## Failed jobs\n\n```json\n",
 			)
-			if strings.Contains(text, "t1") || strings.Contains(text, "1111") {
+			// Look for t1's row, pull request and job by their markers: a bare "t1" or "1111" can also occur in
+			// the remote's temporary path in the failed-jobs block or in a commit id.
+			if strings.Contains(text, "| t1 |") || strings.Contains(text, "#101") || strings.Contains(text, "### t1 ") ||
+				strings.Contains(text, `"task":"t1"`) || strings.Contains(text, `"job":"1111"`) {
 				t.Fatal("the baseline lists a merge from before the previous hallmark's head")
 			}
 			jobs, err := interp.BaselineJobs([]byte(text))
