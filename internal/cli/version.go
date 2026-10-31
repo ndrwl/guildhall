@@ -20,6 +20,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/git"
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -60,6 +61,10 @@ type versionInfo struct {
 	PR         *int        `json:"pr"`
 	Task       *string     `json:"task"`
 	BehindMain *behindMain `json:"behind_main"`
+	// StoreSchema is the newest store schema this binary reads and writes, store.SchemaVersion, and ReleaseContract
+	// the release contract it implements, release.Contract; release install records both (docs/releases.md).
+	StoreSchema     int `json:"store_schema"`
+	ReleaseContract int `json:"release_contract"`
 	// repository is the id of Guildhall's own repository in the copy's config, "" when it lists none.
 	repository string
 }
@@ -115,7 +120,8 @@ func (a *App) versionCmd(args []string) int {
 // default branch: fetched first when fetch is set, else as last fetched. Every repository failure leaves the
 // repository fields empty.
 func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool) versionInfo {
-	v := versionInfo{Version: Version(), GoVersion: runtime.Version(), Platform: runtime.GOOS + "/" + runtime.GOARCH}
+	v := versionInfo{Version: Version(), GoVersion: runtime.Version(), Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		StoreSchema: store.SchemaVersion, ReleaseContract: release.Contract}
 	info, ok := a.buildInfo()
 	if !ok {
 		return v

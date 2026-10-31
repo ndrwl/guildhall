@@ -32,6 +32,10 @@ const usage = `Usage: guildhall <command>
 Commands:
   version [--startup | --json] [--copy <dir>]
                  print the guildhall version, revision, latest merge and how far it is behind main
+  release install <version> --from <file> --sha256 <hex>
+                 verify a release binary and install it side by side under the Guildhall home
+  release status [--json]
+                 print the Guildhall home, its installed releases with any damage, and its copies
   doctor         report the platform and the tools guildhall uses
   store init <path>
                  create and initialize an empty store file
@@ -296,6 +300,8 @@ func (a *App) Run(args []string) int {
 		out = usage
 	case "version":
 		return a.versionCmd(rest)
+	case "release":
+		return a.releaseCmd(rest)
 	case "doctor":
 		if len(rest) > 0 {
 			return a.usageError("doctor takes no arguments")

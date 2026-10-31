@@ -914,7 +914,9 @@
     "platform": "linux/amd64",
     "pr": null,
     "task": null,
-    "behind_main": null
+    "behind_main": null,
+    "store_schema": 1,
+    "release_contract": 1
   },
   "supervisor_binary": {
     "sha256": "",
