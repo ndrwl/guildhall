@@ -589,6 +589,71 @@ func TestAnswerDecisionWithOptions(t *testing.T) {
 	}
 }
 
+// TestDecisionHolds: an open decision holds its task unless it is a question; an answered or void one never holds.
+func TestDecisionHolds(t *testing.T) {
+	kinds := []DecisionKind{"", DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge, DecisionQuestion, DecisionAudit, DecisionGrant, DecisionFollowUps}
+	for _, k := range kinds {
+		open := Decision{ID: "d", Kind: k}
+		if got, want := open.Holds(), k != DecisionQuestion; got != want {
+			t.Errorf("open %q decision: Holds = %v, want %v", k, got, want)
+		}
+		answered := open
+		answered.Answered = true
+		if answered.Holds() {
+			t.Errorf("answered %q decision holds", k)
+		}
+		void := open
+		void.Void, void.VoidReason = true, "closed"
+		if void.Holds() {
+			t.Errorf("void %q decision holds", k)
+		}
+	}
+}
+
+// TestDecisionAnswering: the one answer rule, which both Store.AnswerDecision and the interptest double apply.
+func TestDecisionAnswering(t *testing.T) {
+	approval := sampleDecision("approve-plan")
+	got, err := approval.Answering("approve\r\nKeep it behind a flag.\n")
+	if err != nil || !got.Answered || got.Answer != "approve\r\nKeep it behind a flag.\n" || got.Choice != "approve" || got.Note != "Keep it behind a flag." {
+		t.Fatalf("option with note = %+v, %v", got, err)
+	}
+	if approval.Answered || approval.Choice != "" {
+		t.Fatalf("Answering changed its receiver: %+v", approval)
+	}
+
+	question := Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: DecisionQuestion, Options: []string{"a", "b"}, Question: "Which?"}
+	got, err = question.Answering("neither, try c")
+	if err != nil || !got.Answered || got.Answer != "neither, try c" || got.Choice != "" || got.Note != "" {
+		t.Fatalf("free text on a question = %+v, %v", got, err)
+	}
+	got, err = question.Answering("b\r\nwith a note")
+	if err != nil || got.Choice != "b" || got.Note != "with a note" {
+		t.Fatalf("option on a question = %+v, %v", got, err)
+	}
+
+	grant := Decision{Repository: "app", TaskID: "t-1", ID: "g-1", Kind: DecisionGrant, Options: []string{"approve", "reject"}}
+	for _, d := range []Decision{approval, grant} {
+		if got, err := d.Answering("sure, why not"); !errors.Is(err, ErrInvalid) || got.Answered {
+			t.Errorf("free text on a %q decision = %+v, %v; want ErrInvalid", d.Kind, got, err)
+		}
+	}
+
+	legacy := Decision{Repository: "app", TaskID: "t-1", ID: "old"}
+	if got, err := legacy.Answering("anything"); err != nil || !got.Answered || got.Choice != "" {
+		t.Errorf("legacy answer = %+v, %v", got, err)
+	}
+
+	answered, _ := approval.Answering("approve")
+	if _, err := answered.Answering("reject"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("answering an answered decision: err = %v, want ErrInvalid", err)
+	}
+	void := approval
+	void.Void, void.VoidReason = true, "task cancelled"
+	if _, err := void.Answering("approve"); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "task cancelled") {
+		t.Errorf("answering a void decision: err = %v, want ErrInvalid naming the reason", err)
+	}
+}
+
 // TestAnswerFollowUps: a follow-ups decision is answered pick with the picked ids in the note, which is recorded
 // as the answer's choice and note.
 func TestAnswerFollowUps(t *testing.T) {

@@ -1628,6 +1628,53 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 			t.Errorf("Decisions = %+v, %v", got, err)
 		}
 	})
+	t.Run("answers a decision by the one answer rule", func(t *testing.T) {
+		// store.Decision.Answering is the rule; this case pins the double's AnswerDecision to the store's.
+		h := setup(t)
+		approval := store.Decision{
+			Repository: "app", TaskID: "t7", ID: "accept-1", Kind: store.DecisionApproval,
+			Subject:  &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("b", 64)},
+			Options:  []string{"approved", "changes_requested"},
+			Question: "Approve the plan?",
+		}
+		question := store.Decision{Repository: "app", TaskID: "t7", ID: "q-1", Kind: store.DecisionQuestion, Options: []string{"a", "b"}, Question: "Which?"}
+		approval2 := approval
+		approval2.ID = "accept-2"
+		for i, d := range []store.Decision{approval, question, approval2} {
+			if _, err := h.Records.OpenDecision(fmt.Sprintf("open-%d", i), d); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := h.AnswerDecision("answer-1", "app", "t7", "accept-1", "approved\nship it"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.AnswerDecision("answer-2", "app", "t7", "q-1", "neither, try c"); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.AnswerDecision("answer-3", "app", "t7", "accept-2", "looks fine to me")
+		want(t, "AnswerDecision of free text on an approval", err, store.ErrInvalid)
+		got, err := h.Records.Decisions("app", "t7")
+		if err != nil || len(got) != 3 {
+			t.Fatalf("Decisions = %+v, %v", got, err)
+		}
+		byID := map[string]store.Decision{}
+		for _, d := range got {
+			byID[d.ID] = d
+		}
+		if d := byID["accept-1"]; !d.Answered || d.Answer != "approved\nship it" || d.Choice != "approved" || d.Note != "ship it" {
+			t.Errorf("option with a note = %+v", d)
+		}
+		if d := byID["q-1"]; !d.Answered || d.Answer != "neither, try c" || d.Choice != "" || d.Note != "" {
+			t.Errorf("free text on a question = %+v", d)
+		}
+		if d := byID["accept-2"]; !d.Open() || d.Answer != "" || d.Choice != "" || d.Note != "" {
+			t.Errorf("refused free text changed the decision: %+v", d)
+		}
+		// The refusal wrote nothing, so its mutation id is still free for a valid answer.
+		if _, err := h.AnswerDecision("answer-3", "app", "t7", "accept-2", "changes_requested"); err != nil {
+			t.Errorf("valid answer under the refused mutation id: %v", err)
+		}
+	})
 	t.Run("lists rulings and contests one once", func(t *testing.T) {
 		h := setup(t)
 		d := store.DocumentRef{Repository: "app", TaskID: "t7", Name: "review-1-outcome", Path: "tasks/app/t7/review-1/outcome.json", SHA256: strings.Repeat("b", 64),
