@@ -23,6 +23,15 @@ guildhall task start --repo app t-12
 
 Choose a short task id of lowercase letters, digits and hyphens that is new in the repository, and a title in the Guildmaster's words that is short, at most 100 characters.
 Add `--depends-on <repo>/<task>` when the work must wait for another task, and `--fixes <repo>/<task>` when it fixes a defect an earlier task introduced, so its pull request says so.
+When the task's title or detail depends on another task's recorded document, such as a spec, notes or a report, link it with `guildhall task link add` straight after `task new` and before `task start`, using the exact record name `guildhall task show` lists under `documents`, such as `guildhall/d131/hallmark-1-report`, and quoting the Guildmaster's request in `--text`.
+Never put a path under `state/` in `--detail`: Artisans read only their verified inputs, and the sandbox refuses it.
+
+```sh
+guildhall task new --repo app --title "Cache the report index" --detail "H3 of app/t-20/hallmark-1-report." t-21
+guildhall task link add --repo app --document app/t-20/hallmark-1-report --text 'Guildmaster: "pick H3"' t-21
+guildhall task start --repo app t-21
+```
+
 To change an open task's dependencies later, run `guildhall task depends add|remove --repo <id> --reason <text> <task> <repo>/<dependency>`.
 Do it on the Guildmaster's word, or when you replace a task that has dependents; no decision is needed, but tell the Guildmaster in your reply.
 The change applies at the task's next advance through the dependency gate and never stops running work.

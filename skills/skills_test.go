@@ -979,3 +979,50 @@ func TestDirectorSkillsNameEveryReadmeCommand(t *testing.T) {
 		}
 	}
 }
+
+// TestDirectorLinksCrossTaskDocuments checks that the Director's procedures link another task's document before a task starts, rather than pasting a state path an Artisan's sandbox refuses (d141).
+func TestDirectorLinksCrossTaskDocuments(t *testing.T) {
+	read := func(p string) string {
+		t.Helper()
+		data, err := fs.ReadFile(skills.Release(), p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	section := func(text, start, end string) string {
+		t.Helper()
+		_, s, ok := strings.Cut(text, start)
+		if !ok {
+			t.Fatalf("no %q", start)
+		}
+		s, _, _ = strings.Cut(s, end)
+		return s
+	}
+
+	followUps := section(read("guildhall-maintenance/SKILL.md"), "\n4. ", "\n\n")
+	link := strings.Index(followUps, "guildhall task link add")
+	start := strings.Index(followUps, "guildhall task start")
+	if link < 0 || start < link || !strings.Contains(followUps, "--document <repo>/<hallmark task>/hallmark-<n>-report") {
+		t.Errorf("maintenance step 4 does not link the hallmark report to each follow-up before task start:\n%s", followUps)
+	}
+	if !strings.Contains(followUps, "`state/`") {
+		t.Errorf("maintenance step 4 does not warn that Artisans cannot read paths under state/:\n%s", followUps)
+	}
+
+	giving := section(read("guildhall-director-tasks/SKILL.md"), "\n## Giving work\n", "\n## ")
+	if !strings.Contains(giving, "guildhall task link add") {
+		t.Error("director-tasks Giving work does not link a cross-task document the work names")
+	}
+	if !strings.Contains(giving, "`state/`") || !strings.Contains(giving, "--detail") {
+		t.Error("director-tasks Giving work does not warn against a state/ path in --detail")
+	}
+
+	inbox := read("guildhall-director-inbox/SKILL.md")
+	if !strings.Contains(inbox, "statement depends on") {
+		t.Error("director-inbox still links another task's document only when the Guildmaster asks")
+	}
+	if !strings.Contains(read("guildhall-handoff/SKILL.md"), "or a document a task's statement depends on, that is not yet its `guildhall task link add`") {
+		t.Error("handoff does not carry a document a task's statement depends on that is not yet linked")
+	}
+}
