@@ -221,10 +221,15 @@ func (w *webStub) bound() []string {
 	return append([]string{}, w.addrs...)
 }
 
-// getPage fetches a page from a test server.
+// getPage fetches a page from a test server, sent for the configured [web] address host.tail.ts.net:4388.
 func getPage(t *testing.T, url string) (int, string) {
 	t.Helper()
-	resp, err := http.Get(url) //nolint:gosec // a loopback test server
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "host.tail.ts.net:4388"
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // a loopback test server
 	if err != nil {
 		t.Fatal(err)
 	}

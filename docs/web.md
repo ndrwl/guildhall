@@ -27,6 +27,7 @@ They never advance, send back or start a task, and in this release you answer a 
 The server binds only when every address the host resolves to is a Tailscale address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`).
 Anything else, such as a LAN address or `0.0.0.0`, is refused and logged in the session's pane as a warning; the session runs on without the pages.
 Anyone on your tailnet can read the pages.
+A request for any other host name, including the bound IP or the short MagicDNS name, is refused with 421, so open the pages by the `[web]` address, which is what `director` prints.
 
 With no session running, serve the pages by hand from inside the copy, or with `--copy`, until you press Ctrl-C:
 

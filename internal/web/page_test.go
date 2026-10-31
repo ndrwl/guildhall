@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"flag"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,10 +16,20 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden task page, testdata/task.golden.html")
 
+// testHost is the Host the page tests' servers are visited by, and that get and request send.
+const testHost = "example.com:80"
+
+// request is a test request for target sent to testHost.
+func request(method, target string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, target, body)
+	r.Host = testHost
+	return r
+}
+
 func get(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+	h.ServeHTTP(w, request(http.MethodGet, target, nil))
 	return w
 }
 
@@ -154,7 +165,7 @@ func TestTaskPageEscapes(t *testing.T) {
 	task.Documents[3].Name = `"><script>alert(1)</script>`
 	task.Status.PR.URL = "javascript:alert(1)"
 	task.Slices.Items[1].PR.URL = "javascript:alert(2)"
-	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir, Location: time.UTC})
+	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir, Location: time.UTC, Host: testHost})
 	body := get(t, s, "/guildhall/d122").Body.String()
 	for _, bad := range []string{"<script", "<img", "javascript:"} {
 		if strings.Contains(body, bad) {
@@ -168,7 +179,7 @@ func TestTaskPageEscapes(t *testing.T) {
 
 // TestTaskPageEmpty: a task with nothing recorded yet renders every section with its empty line.
 func TestTaskPageEmpty(t *testing.T) {
-	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"r/t1": {Repository: "r", ID: "t1", Title: "A task", State: "open", Stands: "not started"}}}, Location: time.UTC})
+	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"r/t1": {Repository: "r", ID: "t1", Title: "A task", State: "open", Stands: "not started"}}}, Location: time.UTC, Host: testHost})
 	w := get(t, s, "/r/t1")
 	body := w.Body.String()
 	if w.Code != http.StatusOK {
@@ -199,7 +210,7 @@ func TestRoutes(t *testing.T) {
 		}
 	}
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/guildhall/d122", strings.NewReader("x=1")))
+	s.ServeHTTP(w, request(http.MethodPost, "/guildhall/d122", strings.NewReader("x=1")))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("POST: status %d, want 404; answering comes in the next slice", w.Code)
 	}
@@ -296,7 +307,7 @@ func TestDocumentPathFromRecordOnly(t *testing.T) {
 	dir, sums := writeFixtureFiles(t)
 	task := fixtureTask(sums)
 	task.Documents = append(task.Documents, Document{Repository: "guildhall", TaskID: "d122", Name: "evil", Path: "../outside.md", SHA256: sums["tasks/guildhall/d122/grill-1/notes.md"]})
-	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir})
+	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir, Host: testHost})
 	if w := get(t, s, "/guildhall/d122/doc/evil"); w.Code != http.StatusConflict {
 		t.Errorf("a climbing path: %d, want 409", w.Code)
 	}
@@ -318,7 +329,7 @@ func TestGrillFold(t *testing.T) {
 		t.Fatal(err)
 	}
 	task.Documents[2].SHA256 = "2c0c5e4a3e1cd2f3e2fb2b0a0c0d4f1ad5a3b1c9e5b2a8b5f7c9d0e1f2a3b4c5"
-	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir})
+	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir, Host: testHost})
 	body := get(t, s, "/guildhall/d122").Body.String()
 	if !strings.Contains(body, `<a class="flink" href="/guildhall/d122/doc/grill-3-notes">What the grill decided · read grill-3-notes</a>`) {
 		t.Error("the grill fold is not a link when the document cannot give its decisions")
