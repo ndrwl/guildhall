@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/ndrwl/guildhall/internal/endpoint"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -91,6 +93,20 @@ func (k AttemptKey) Env() string { return AttemptEnv + "=" + k.String() }
 // AttemptID returns "<step>-<n>", the attempt's adapter identity within its
 // task and its directory's name.
 func (k AttemptKey) AttemptID() string { return fmt.Sprintf("%s-%d", k.Step, k.Attempt) }
+
+// ParseAttemptID is the inverse of AttemptKey.AttemptID: it splits id, "<step>-<n>", at its last "-", and ok is
+// false unless step is not empty and n is a positive number without leading zeros.
+func ParseAttemptID(id string) (step string, n int, ok bool) {
+	i := strings.LastIndex(id, "-")
+	if i < 1 {
+		return "", 0, false
+	}
+	n, err := strconv.Atoi(id[i+1:])
+	if err != nil || n < 1 || strconv.Itoa(n) != id[i+1:] {
+		return "", 0, false
+	}
+	return id[:i], n, true
+}
 
 // Dir returns the attempt directory under the absolute state directory
 // stateDir: "<stateDir>/<repository>/<task>/<step>-<n>". Its result file is

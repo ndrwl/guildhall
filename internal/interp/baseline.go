@@ -102,8 +102,10 @@ func (r *run) baselineInput(s workflow.Step, n int) (*render.Input, error) {
 // baselineMerge is a merged task a baseline may list: its merge record and the commit it landed.
 type baselineMerge struct {
 	task   string
-	pr     pullRequestDoc
+	pr     RecordedMerge
 	commit string
+	// unreadable is why the task's merge record could not be read (MergeRecord); such a task has no commit.
+	unreadable string
 }
 
 // renderBaseline renders the baseline of attempt n of hallmark step s (baselineInput).
@@ -157,6 +159,10 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 		var placeless []string
 		dropped := 0
 		for _, m := range merges {
+			if m.unreadable != "" {
+				placeless = append(placeless, fmt.Sprintf("%s: merge record unreadable: %s", m.task, cell(m.unreadable)))
+				continue
+			}
 			in, err := r.between(repo.Path, m.commit, previous, current)
 			if err != nil {
 				if r.ctx.Err() != nil {
@@ -281,20 +287,12 @@ func (r *run) mergedTasks() ([]baselineMerge, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, d := range docs {
-			if !strings.HasSuffix(d.Name, "-merge") {
-				continue
-			}
-			data, err := r.read(d)
-			if err != nil {
-				return nil, fmt.Errorf("%s of %s: %w", d.Name, t.ID, err)
-			}
-			var pr pullRequestDoc
-			if json.Unmarshal(data, &pr) != nil || pr.Schema != pullRequestSchema {
-				continue
-			}
-			out = append(out, baselineMerge{task: t.ID, pr: pr, commit: cmp.Or(pr.MergeCommit, pr.Head)})
-			break
+		m, err := MergeRecord(docs, r.read)
+		switch {
+		case err != nil:
+			out = append(out, baselineMerge{task: t.ID, unreadable: err.Error()})
+		case m != nil:
+			out = append(out, baselineMerge{task: t.ID, pr: *m, commit: cmp.Or(m.MergeCommit, m.Head)})
 		}
 	}
 	return out, nil

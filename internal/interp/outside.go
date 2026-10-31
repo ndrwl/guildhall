@@ -74,7 +74,7 @@ func (r *run) running() bool {
 // outsideMerge returns the pull request an earlier run of the outside-merge rule recorded, or nil.
 func (r *run) outsideMerge() (*pullRequestDoc, error) {
 	for _, d := range r.documents {
-		if !strings.HasPrefix(d.Name, outsidePrefix) || !strings.HasSuffix(d.Name, "-merge") {
+		if !strings.HasPrefix(d.Name, outsidePrefix) || !IsMergeRecord(d.Name) {
 			continue
 		}
 		var pr pullRequestDoc
