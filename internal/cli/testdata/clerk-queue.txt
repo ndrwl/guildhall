@@ -2,10 +2,10 @@ Merge queue, as of 2026-10-30 12:00 UTC, local state
 
 app
 POS  TASK  PRI  TITLE               PR    READY FOR  HELD  WAITING ON
-1    a-q1  p0   Front of the queue  #301  5h 29m           rebasing
-2    a-q2  p1   Held in the queue   #302  3h 57m     held  waiting its turn
-3    a-q3  p3   Last in the queue   #303  3h 55m           waiting its turn
+1    a-q1  p0   Front of the queue  #301  5h 28m           rebasing
+2    a-q2  p1   Held in the queue   #302  3h 56m     held  waiting its turn
+3    a-q3  p3   Last in the queue   #303  3h 54m           waiting its turn
 
 lib
 POS  TASK     PRI  TITLE      PR   READY FOR  HELD  WAITING ON
-1    l-front  p3   Lib front  #41  3h 50m           CI pending
+1    l-front  p3   Lib front  #41  3h 49m           CI pending

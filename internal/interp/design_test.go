@@ -1,6 +1,7 @@
 package interp_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -239,6 +240,63 @@ func TestDesignRoundAfterAnAcceptedPlan(t *testing.T) {
 			if got := slices.Sorted(slices.Values(e.stepsAttempted(t))); !slices.Equal(got, []string{"build", "designer", "grill", "plan", "plan", "research"}) {
 				t.Errorf("attempts = %v, want research and the grill once", got)
 			}
+		})
+	}
+}
+
+// TestDesignRoundWhileAcceptanceOpen: a round requested while accept-1 is still open, then approved, makes plan run
+// again; when the walk next reaches accept, the open accept-1 bound to the old spec is voided as superseded and
+// accept-2 is asked on the new spec's digest. A late answer to accept-1 is refused, and a repeated advance writes
+// nothing again.
+func TestDesignRoundWhileAcceptanceOpen(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e := newEnvDefinition(t, b, loadWorkflow(t, "director-grill"), researchExpectation(researchSort), gplanExpectation(1, nil, specV1(t)),
+				designerExpectation("designer", 1, designBrief, designOne), gplanExpectation(2, designOne, specV2(t)), buildStarts(specV2(t)))
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			finishStage(t, e, "grill", 1, adapter.StatusSucceeded, interptest.File{Path: "notes.md", Data: grillNotes})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "grill", Attempt: 1})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "research", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})
+
+			// accept-1 is left open; the Director asks for a design.
+			want(t, e.advance(t, designRequested(designBrief)), interp.Next{Wait: interp.WaitAttempt, Step: "designer", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "designer", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "design", Decision: "design-1"})
+			e.answer(t, "design-1", "approved")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "design-1"}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 2}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-2"})
+
+			v2 := "sha256:" + sum(specV2(t))
+			if d := e.decision(t, "accept-2"); d.Subject == nil || d.Subject.Digest != v2 || !d.Open() {
+				t.Errorf("accept-2 = %+v bound to %+v, want open on the new spec", d, d.Subject)
+			}
+			stale := e.decision(t, "accept-1")
+			if !stale.Void || stale.Open() || !strings.HasPrefix(stale.VoidReason, "Superseded: the spec changed to "+v2) || !strings.Contains(stale.VoidReason, "accept-2") {
+				t.Errorf("accept-1 = %+v, want void as superseded by accept-2 on %s", stale, v2)
+			}
+			if _, err := e.h.AnswerDecision("answer:late", "app", "t7", "accept-1", "approved"); err == nil {
+				t.Error("answering the superseded accept-1 succeeded")
+			}
+			if _, err := e.eng.Advance(context.Background(), interp.Event{Kind: interp.DecisionAnswered, Repository: "app", Task: "t7", Decision: "accept-1"}); err == nil {
+				t.Error("DecisionAnswered for the superseded accept-1 was accepted")
+			}
+
+			// Replay: advancing again finds the void and accept-2 recorded, and writes nothing.
+			decisions, err := e.h.Records.Decisions("app", "t7")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 2}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-2"})
+			again, err := e.h.Records.Decisions("app", "t7")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(again) != len(decisions) {
+				t.Errorf("decisions after replay = %+v, want %+v", again, decisions)
+			}
+
+			e.answer(t, "accept-2", "approved")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-2"}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 1})
 		})
 	}
 }

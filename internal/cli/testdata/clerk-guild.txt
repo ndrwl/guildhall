@@ -9,6 +9,7 @@ app/a-q2       p1   feature  Held in the queue                      in merge que
 app/a-approve  p2   feature  Approve the plan                       waiting for your approval
 app/a-checks   p2   feature  Checks pending                         CI pending, PR #212
 app/a-deps     p3   feature  Depends on a-new                       waiting on app/a-new
+app/a-grill    p3   feature  Grill the Guildmaster                  waiting for the Director
 app/a-long     p3   feature  A title far too long to show whole i…  not started
 app/a-new      p3   feature  Never started                          not started
 app/a-odd      p3   feature  Unknown wait                           waiting (mystery)
@@ -18,9 +19,12 @@ lib/a-new      p4   feature  Same id in lib                         not started
 app/a-queued   p4   feature  Queued start                           queued 2
 
 Needs you
+- decision app/a-approve accept-plan: Accept the plan?
+- director-stage app/a-grill grill: the Director runs grill with you in its session
+
+Waiting on the Director
 - advance app/a-queued build: the last advance queued attempt 1 of build, which is no longer in the
   start queue; see start-queue.log in the session directory
-- decision app/a-approve accept-plan: Accept the plan?
 - messages: 1 unread Director message
 - checks app/a-checks validate: step validate waits for the checks of its published head; the
   session supervisor reads them again every checks_refresh, never more often than every 30 seconds,
