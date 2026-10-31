@@ -83,7 +83,11 @@ func (w *checksWatch) round() {
 	}
 }
 
-func (w *checksWatch) wait() { w.running.Wait() }
+func (w *checksWatch) wait() {
+	if w != nil {
+		w.running.Wait()
+	}
+}
 
 // checksWaiting lists, for the watcher of the store at path, the open tasks whose next.json under state waits for
 // checks, while the newest session is running or recovering; none while it is paused, stopping or stopped, which

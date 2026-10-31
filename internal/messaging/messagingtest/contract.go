@@ -31,6 +31,9 @@ type Harness interface {
 // Director is the Director's recipient.
 var Director = store.Recipient{Role: store.RecipientDirector}
 
+// Steward is the Steward's recipient.
+var Steward = store.Recipient{Role: store.RecipientSteward}
+
 // BuildArtisan is the Artisan of attempt 1 of step "build" of app/t-1, which every case starts running.
 var BuildArtisan = store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
@@ -69,6 +72,7 @@ func RunMailboxContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		{"ConcurrentSends", contractConcurrentSends},
 		{"ListIsBoundedOrderedAndSeparated", contractList},
 		{"AckConsumesAddressedMessages", contractAck},
+		{"StewardTakesTheGuildmasterOnly", contractSteward},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.run(t, setup(t)) })
 	}
@@ -392,11 +396,53 @@ func contractList(t *testing.T, h Harness) {
 		"limit over maximum":      {Director, store.MaxInboxLimit + 1},
 		"director with task":      {store.Recipient{Role: store.RecipientDirector, Repository: "app", TaskID: "t-1"}, 10},
 		"artisan without attempt": {store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t-1"}, 10},
-		"unknown role":            {store.Recipient{Role: "steward"}, 10},
+		"unknown role":            {store.Recipient{Role: "guildmaster"}, 10},
+		"steward with task":       {store.Recipient{Role: store.RecipientSteward, Repository: "app", TaskID: "t-1"}, 10},
 	} {
 		if _, err := b.List(tc.to, 0, tc.limit); !errors.Is(err, store.ErrInvalid) {
 			t.Errorf("%s: err = %v, want store.ErrInvalid", name, err)
 		}
+	}
+}
+
+// contractSteward: the Steward's inbox is one per store like the Director's, takes a message from the Guildmaster
+// only, and is kept apart from the Director's inbox and acknowledged only by the Steward (d96).
+func contractSteward(t *testing.T, h Harness) {
+	b := h.Mailbox()
+	toSteward := Envelope("g-1", store.RecipientSteward)
+	toSteward.Step, toSteward.Attempt = "", 0
+	for _, sender := range []string{store.SenderOtherDirector, store.SenderArtisan, store.SenderDirector, store.SenderGuildhall, store.SenderUnknown, ""} {
+		if _, err := b.Send(Steward, sender, toSteward); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("steward message from %q: err = %v, want store.ErrInvalid", sender, err)
+		}
+	}
+	if _, err := b.Read("g-1"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a refused steward message was stored: %v", err)
+	}
+	if _, err := b.Send(Director, store.SenderGuildmaster, toSteward); !errors.Is(err, messaging.ErrInvalid) {
+		t.Errorf("steward envelope sent to the Director: err = %v, want messaging.ErrInvalid", err)
+	}
+	r := mustSend(t, b, Steward, toSteward)
+	mustSend(t, b, Director, Envelope("q-1", store.RecipientDirector))
+	h.Restart(t)
+	b = h.Mailbox()
+	if m, err := b.Read("g-1"); err != nil || m.Sender != store.SenderGuildmaster || m.Sequence != r.Sequence {
+		t.Fatalf("Read steward message = %+v, %v", m, err)
+	}
+	if s, _ := ids(t, b, Steward, 0, 10); s != "g-1" {
+		t.Fatalf("steward inbox = %q", s)
+	}
+	if s, _ := ids(t, b, Director, 0, 10); s != "q-1" {
+		t.Fatalf("director inbox = %q", s)
+	}
+	if _, err := b.Ack(Director, "g-1"); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("ack of a steward message by the Director: err = %v, want store.ErrInvalid", err)
+	}
+	if _, err := b.Ack(Steward, "g-1"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := ids(t, b, Steward, 0, 10); s != "" {
+		t.Fatalf("steward inbox after ack = %q", s)
 	}
 }
 

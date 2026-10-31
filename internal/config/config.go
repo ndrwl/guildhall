@@ -246,6 +246,26 @@ type Config struct {
 	// Director chooses who runs the Director's own session (docs/director.md#start); Director mode only.
 	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
 	Director *Director `toml:"director" json:",omitempty"`
+	// Steward chooses who runs the Steward session (docs/steward.md#the-steward-session); Steward mode only.
+	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
+	Steward *Steward `toml:"steward" json:",omitempty"`
+}
+
+// Steward names the Steward session's Herdr workspace and chooses its runtime adapter, model, effort and role
+// prompt, as [director] does for a Director. Like a profile it names no credential. Name and Adapter are required to
+// start a session, not to parse a config, so a config that only runs rollouts needs no [steward] table.
+type Steward struct {
+	// Name labels the Steward's Herdr workspace and tab; an id, like a Director's name.
+	Name string `toml:"name"`
+	// Adapter names the runtime adapter, such as "claude"; a positional runtime overrides it for one command.
+	Adapter string `toml:"adapter"`
+	// Model is passed as given; empty means the adapter's default.
+	// Effort is explicit when set; otherwise EffectiveEffort supplies the config fallback.
+	Model  string `toml:"model"`
+	Effort string `toml:"effort"`
+	// Role is a slash-separated path relative to the config file's directory; empty keeps the copy's
+	// baseline/roles/steward.md, else the release's.
+	Role string `toml:"role"`
 }
 
 // Director chooses the runtime adapter, model and effort of the Director's session and optionally its role
@@ -515,6 +535,9 @@ func (c *Config) validate() []string {
 		if len(c.Repositories) == 0 {
 			add("a director needs at least one repository")
 		}
+		if c.Steward != nil {
+			add("the steward table belongs to the steward, not a director")
+		}
 	case ModeSteward:
 		if c.PrivateConfig == nil || strings.TrimSpace(c.PrivateConfig.Location) == "" {
 			add("the steward needs private_config.location")
@@ -587,6 +610,17 @@ func (c *Config) validate() []string {
 		problems = append(problems, checkAllowedTools(fmt.Sprintf("profile %q", name), p.AllowedToolsList())...)
 	}
 
+	if st := c.Steward; st != nil {
+		if st.Name != "" && !workflow.ValidID(st.Name) {
+			add("steward: invalid name %q", st.Name)
+		}
+		if st.Adapter != "" && !workflow.ValidID(st.Adapter) {
+			add("steward: invalid adapter %q", st.Adapter)
+		}
+		if st.Role != "" && !configRelative(st.Role) {
+			add("steward: role must be a relative slash-separated path inside the config directory")
+		}
+	}
 	if d := c.Director; d != nil {
 		if d.Adapter != "" && !workflow.ValidID(d.Adapter) {
 			add("director: invalid adapter %q", d.Adapter)

@@ -1,7 +1,123 @@
-# Steward rollouts
+# The Steward
 
-The Steward rolls out managed settings to enrolled Director copies over SSH (R1.7, R1.8, R1.31).
-This page describes what `guildhall steward rollout` does today and what is planned.
+The Steward looks after the guild's Director copies across its machines: it owns the roster and rolls out managed settings to enrolled Director copies over SSH (R1.7, R1.8, R1.31).
+It runs as the **Steward session**, a long-running agent session the Guildhall binary starts and supervises the same way it supervises a Director, and only the Guildmaster talks to it.
+This page describes the Steward session, what `guildhall steward rollout` does today and what is planned.
+
+No Director feature requires a Steward.
+A standalone copy, one with no `managed.toml` and no enrolment, starts and behaves exactly as it does without one ([standalone and managed Directors](director-modes.md)).
+
+## The Steward session
+
+The Steward session is not a service or daemon (R1.29): it is an agent session in a Herdr tab, like a [Director session](director.md#start), that runs while the Guildmaster keeps it running.
+It only orchestrates.
+Every change it makes goes through a fixed `guildhall steward` command, and the Guildmaster approves every policy change and rollout digest ([approval in a Steward session](#approval-in-a-steward-session)).
+It never messages a Director, and no Director reaches it: it pushes only by rollout (R1.6, R1.8; [messaging](messaging.md#recipients)).
+
+### The Steward copy
+
+A Steward copy is one self-contained directory:
+
+| Path | What it is |
+|---|---|
+| `config.toml` | The Steward config: `mode = "steward"`, `[private_config]` and `[steward]`. |
+| `steward.store` | The Steward's store: its session records, notes, reloads, handoff triggers, inbox and rollout approvals, kept by the same store code as a `director.store`. Create it with `guildhall store init <dir>/steward.store`. |
+| `rollouts/` | One directory per rollout plan, where [`steward status`](#status) reads each copy's last receipt. |
+| `director/session-<n>/` | Each session's rendered role, startup and runtime files, as for a Director. |
+| the private config checkout | The checkout of the private config repository, such as `ndrwl/guildhall-config`, that `[private_config] location` names, holding [`roster.toml`](#rostertoml) and [`managed.toml`](#managedtoml). |
+
+Copy discovery finds a Steward copy as it finds a Director's, by its copy marker, and a copy that holds `steward.store` and no `director.store` is a Steward copy, whose store every command defaults to ([copies](running.md#copies)).
+The session's own hooks, such as `guildhall director turn-ended` and `guildhall director note add`, therefore work in a Steward copy unchanged and act on its `steward.store`.
+Keep the Steward copy's `config.toml` outside the private checkout, so `config.Load` does not treat the private `managed.toml` as its published sibling.
+
+### Config
+
+```toml
+schema_version = 1
+mode = "steward"
+
+[private_config]
+location = "/home/guild/steward/guildhall-config"
+
+[steward]
+name = "steward"
+adapter = "claude"
+model = "opus"
+effort = "high"
+```
+
+`[steward]` is valid only in a Steward config, and `[director]` only in a Director's.
+`name` labels the Steward's Herdr workspace and tab and is required to start a session; `adapter`, `model`, `effort` and `role` choose the session's runtime and role prompt as `[director]` does for a Director, and `role` is a config-relative path that replaces the release's `roles/steward.md`.
+A config that only runs rollouts needs no `[steward]` table.
+The table is an addition to schema version 1, so an older binary refuses it as an unknown key rather than guessing (R1.11).
+Like every config, it names no credential: each machine's address, user and key stay in the Steward user's SSH config behind its roster `ssh_alias`.
+
+### Start
+
+```sh
+guildhall steward start [runtime] [--tab] [--check] [--copy <dir>]
+```
+
+`steward start` runs the same supervisor as [`director start`](director.md#start), with the Steward's own preflight and steps.
+Its preflight checks, in order: the config is a Steward config with a `[steward] name` and no `managed.toml` beside it, since a Steward copy is never managed; the runtime is known and on `PATH`; `guildhall` is on `PATH`; `steward.store` opens; the private config location is an absolute directory that is a Git work tree; its roster is valid; and `ssh` and `scp` are on `PATH`.
+`--check` runs the preflight only, and `--tab` opens the tab `steward <name>` in the Herdr workspace named by `[steward] name`, as a Director's tab opens in its own.
+Each session renders the release's `roles/steward.md`, or the copy's `baseline/roles/steward.md`, and every release skill, and its `startup.md` lists the live notes and the rollout approvals in flight: each one waiting for the Guildmaster and each one they approved.
+A session starts `recovering` and starts nothing new until `guildhall steward ready`.
+The Steward's session has no task steps: no workspace close sweep, prune, in-flight task snapshot, repository policies or task watchers.
+
+### Lifecycle
+
+```sh
+guildhall steward ready|pause|resume [--copy <dir>]
+guildhall steward stop [--now] [--copy <dir>]
+guildhall steward reload [--now] [--copy <dir>]
+guildhall steward handoff [--copy <dir>]
+```
+
+Each runs the Director's command of the same name, [ready](director.md#ready), [pause and resume](director.md#pause-and-resume), [stop](director.md#stop) and [reload](director.md#reload), on the Steward copy's `steward.store`, and refuses any copy whose store is not a `steward.store`.
+`steward handoff` is `steward reload --now`: a fresh session picks up from this one, with every live note in its `startup.md`.
+The automatic handoff triggers of a Director's session, such as the context trigger, apply to the Steward's too.
+
+### Inbox
+
+The Steward's inbox is the `steward` recipient of its store, and it takes messages from the Guildmaster only: `guildhall messages send steward <envelope>` run outside any Guildhall session or attempt ([senders](messaging.md#senders)).
+A message to it from a Director, another Director or an Artisan is refused, and so is a `director` message to a Steward store or a `steward` message to any other store.
+Its envelope names the reserved task `steward/guildmaster`.
+A message wakes the Steward session as a Director's wakes a Director ([waking the Director](messaging.md#waking-the-director)).
+The sender list is the one place a later Steward-to-Director or Director-to-Steward path would extend; none exists today.
+
+### Status
+
+```sh
+guildhall steward status [--copy <dir>]
+```
+
+`steward status` prints one JSON document: the newest Steward session, every roster machine with its SSH alias, OS and Director copies, each copy's last rollout from the newest receipt under the copy's `rollouts/`, and every rollout approval with its state, `waiting`, `approved`, `declined` or `void`.
+It reads local files only; nothing reaches a Director.
+
+### Approval in a Steward session
+
+A rollout plan that needs approval is applied with `--approve <plan digest>`, given only after the Guildmaster approves that exact plan ([approval](#approval)).
+Inside a Guildhall session or attempt, the Steward's among them, `--approve` is refused unless the Steward store holds the Guildmaster's approval of that exact digest:
+
+```sh
+guildhall steward approval request --plan <dir> [--copy <dir>]
+guildhall decide answer --copy <dir> --repo steward --task rollouts --decision rollout-<12 hex> --answer-file -
+```
+
+`steward approval request` opens, once, the approval decision `rollout-<first 12 hex digits of the digest>` of the reserved task `steward/rollouts`, bound to the plan digest, with the options `approve` and `decline`, and prints it with the command the Guildmaster answers it with.
+Only the Guildmaster answers it, outside any session: `decide answer` refuses it from inside one.
+An answer of `approve` lets the session apply that one plan with `--approve`; `decline`, or a plan with another digest, does not.
+Outside any session, `--approve` stands on the Guildmaster's word as before, and the plan and apply digests, the lock, the receipts, the [managed publication](decisions/managed-publication-separate-from-director-config.md) rule and the refusal of changed copies are unchanged.
+
+### Moving the Steward to another host
+
+The Steward copy is self-contained, so moving it, such as from a laptop to a Linux VDS, needs no code change:
+
+1. Stop the session with `guildhall steward stop` and wait for it to stop.
+2. Confirm no rollout is applying: the private checkout holds no `.rollout.lock`, or its writer has stopped.
+3. Copy the Steward copy, its `steward.store`, `rollouts/` and private config checkout, to the new host, and give the new host's Steward user the SSH config behind every roster `ssh_alias`.
+4. Start the session on the new host with `guildhall steward start --copy <dir>`, and never again on the old one: there is one Steward writer per fleet.
 
 ## Enrolment comes first
 
@@ -167,3 +283,6 @@ Release binding and execution enforcement of R1.31 remain future work.
 - Enrolment through the setup wizard (R1.43-R1.51).
 - The Steward is optional: [standalone and managed Directors](director-modes.md), including `guildhall config reload` and recorded enrolment, are designed, not built.
 - Platform support: tests replace `scp` with a stub on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
+- The Steward session's live acceptance: CI runs it against a stand-in runtime only, so it is not claimed until the Guildmaster has run it once with three Director hosts (R1.27, R1.30).
+- Managed mode for the Steward session ([optional Steward](decisions/optional-steward.md)): enrolment, `config reload` over SSH after an approved rollout, observed-untrusted alerts and the mode fields in the status feeds, follow-up `guildhall/d102`.
+- Collection of lessons and maintenance tickets from Directors, and their triage, follow-up `guildhall/d103`.

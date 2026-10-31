@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/json"
 	"errors"
@@ -99,14 +98,15 @@ func (s *Store) DirectorView() (DirectorView, error) {
 			if inbox == nil {
 				continue
 			}
-			prefix := inboxPrefix(Recipient{Role: RecipientDirector})
-			c := inbox.Cursor()
-			for k, id := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, id = c.Next() {
+			if err := forSessionInbox(inbox, func(id []byte) error {
 				var m Message
 				if err := getJSON(repoBucket(tx, repo, bucketMessages), id, &m); err != nil {
 					return fmt.Errorf("inbox message %q: %w", id, err)
 				}
 				v.Unread = append(v.Unread, m)
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 		for _, t := range v.Tasks {

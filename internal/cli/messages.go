@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -19,8 +20,8 @@ const messagesUsage = `usage:
   guildhall messages list --store <path> [--after <sequence>] [--limit <n>] <recipient>
   guildhall messages read --store <path> <message-id>
   guildhall messages ack --store <path> <recipient> <message-id>
-a recipient is "director" or "artisan:<repository>/<task>/<step>/<attempt>"
---copy <dir>, or the copy found from the current directory, may stand in for --store and --config: the copy's director.store and config.toml`
+a recipient is "director", "steward" (a Steward's store only, from the Guildmaster only) or "artisan:<repository>/<task>/<step>/<attempt>"
+--copy <dir>, or the copy found from the current directory, may stand in for --store and --config: the copy's director.store, or a Steward copy's steward.store, and config.toml`
 
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
 // It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
@@ -74,6 +75,14 @@ func (a *App) messages(args []string) int {
 			return a.messagesUsage(err.Error())
 		}
 	}
+	// A store's session inbox is its session's: the Steward's in a Steward store, the Director's in any other.
+	steward := filepath.Base(*path) == stewardStoreFile
+	switch {
+	case sub == "send" && steward && to.Role == store.RecipientDirector:
+		return a.messagesUsage(fmt.Sprintf("%s is the Steward's store, whose session inbox is %q", *path, store.RecipientSteward))
+	case sub == "send" && !steward && to.Role == store.RecipientSteward:
+		return a.messagesUsage(fmt.Sprintf("only a Steward's store, %s, has the %q inbox; %s is not one", stewardStoreFile, store.RecipientSteward, *path))
+	}
 
 	fail := func(err error) int {
 		_, _ = fmt.Fprintf(a.Stderr, "guildhall: messages %s: %v\n", sub, err)
@@ -85,8 +94,11 @@ func (a *App) messages(args []string) int {
 		if env, err = a.readEnvelope(pos[1]); err != nil {
 			return fail(err)
 		}
-		if err := listedEnvelope(*cfgPath, set["config"], env); err != nil {
-			return fail(err)
+		// The Steward's inbox is about the Steward store's own reserved repository, which no config lists.
+		if to.Role != store.RecipientSteward {
+			if err := listedEnvelope(*cfgPath, set["config"], env); err != nil {
+				return fail(err)
+			}
 		}
 	}
 	// Preserve the CLI's missing-store diagnostic before the existing-store-only open.
@@ -122,7 +134,7 @@ func (a *App) messages(args []string) int {
 		return 1
 	}
 	// The message is stored whatever the surfacing and wake do; a failure of either is reported, not an error.
-	if sub == "send" && to.Role == store.RecipientDirector {
+	if sub == "send" && to.Role.SessionInbox() {
 		if err := a.surface(*path, env.ID); err != nil {
 			_, _ = fmt.Fprintf(a.Stderr, "guildhall: messages send: surface: %v\n", err)
 		}
@@ -142,7 +154,7 @@ type listedMessage struct {
 // withWakes adds to a page of the Director's inbox each message's recorded wake; a page of an Artisan's inbox,
 // which nothing wakes, is returned as it is.
 func withWakes(s *store.Store, to store.Recipient, page messaging.Page) (any, error) {
-	if to.Role != store.RecipientDirector {
+	if !to.Role.SessionInbox() {
 		return page, nil
 	}
 	out := struct {

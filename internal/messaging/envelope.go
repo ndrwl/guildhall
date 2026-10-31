@@ -31,15 +31,15 @@ func Decode(r io.Reader) (Envelope, error) {
 	return e, nil
 }
 
-// ParseRecipient reads "director" or "artisan:<repository>/<task>/<step>/<attempt>".
+// ParseRecipient reads "director", "steward" or "artisan:<repository>/<task>/<step>/<attempt>".
 func ParseRecipient(s string) (store.Recipient, error) {
-	if s == string(store.RecipientDirector) {
-		return store.Recipient{Role: store.RecipientDirector}, nil
+	if role := store.RecipientRole(s); role.SessionInbox() {
+		return store.Recipient{Role: role}, nil
 	}
 	rest, ok := strings.CutPrefix(s, string(store.RecipientArtisan)+":")
 	parts := strings.Split(rest, "/")
 	if !ok || len(parts) != 4 {
-		return store.Recipient{}, invalid(`recipient %q must be "director" or "artisan:<repository>/<task>/<step>/<attempt>"`, s)
+		return store.Recipient{}, invalid(`recipient %q must be "director", "steward" or "artisan:<repository>/<task>/<step>/<attempt>"`, s)
 	}
 	for _, id := range parts[:3] {
 		if !workflow.ValidID(id) {
