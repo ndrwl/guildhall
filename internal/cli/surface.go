@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -33,7 +32,9 @@ func messageSender(getenv func(string) string, getwd func() (string, error), sto
 	switch {
 	case err != nil || !ok:
 		return store.SenderUnknown
-	case samePath(filepath.Join(copyDir, "director.store"), storePath):
+	case samePath(copyStore(copyDir), storePath):
+		// The session of the copy that owns the store: its Director's or, in a Steward copy, its Steward's, which the
+		// Steward's inbox therefore refuses as it refuses a Director.
 		return store.SenderDirector
 	}
 	return store.SenderOtherDirector

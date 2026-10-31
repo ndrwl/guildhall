@@ -19,6 +19,7 @@ With a [copy](#copies), `--copy <dir> --repo <id>` replaces `--store`, `--config
 A Director copy is one directory holding its [copy marker](#the-copy-marker) `.guildhall-copy`, `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)), and, once a session has run, `director/session-<n>/` for each [Director session](director.md#start).
 Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, `director`, `spend`, `quality`, `version`, the owned `artisan` commands and `store init|doctor`) selects its copy with `--copy <dir>`, or, when that flag is absent, by **copy discovery** from the current directory.
 The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/config.toml` and `--state` to `<dir>/state`, for each of those flags the command takes; `workflow approve` takes the copy's config only with `--repo` and no `--file`.
+A [Steward copy](steward.md#the-steward-copy), one that holds `steward.store` and no `director.store`, defaults `--store` to its `steward.store` instead.
 `config.Load` reads the copy's config as it reads any other.
 
 - `--copy` comes first, then copy discovery ([decision](decisions/copy-discovery.md)).

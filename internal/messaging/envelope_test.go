@@ -135,6 +135,7 @@ func TestRecipients(t *testing.T) {
 		want store.Recipient
 	}{
 		{"director", store.Recipient{Role: store.RecipientDirector}},
+		{"steward", store.Recipient{Role: store.RecipientSteward}},
 		{"artisan:app/t-1/build/1", store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}},
 		{"artisan:my-repo/t-22/review/12", store.Recipient{Role: store.RecipientArtisan, Repository: "my-repo", TaskID: "t-22", Step: "review", Attempt: 12}},
 	} {
@@ -147,7 +148,7 @@ func TestRecipients(t *testing.T) {
 		}
 	}
 	for _, text := range []string{
-		"", "Director", "steward", "artisan", "artisan-7", "artisan:", "artisan:app/t-1/build", "artisan:app/t-1/build/0",
+		"", "Director", "Steward", "guildmaster", "steward:app", "artisan", "artisan-7", "artisan:", "artisan:app/t-1/build", "artisan:app/t-1/build/0",
 		"artisan:app/t-1/build/01", "artisan:app/t-1/build/-1", "artisan:app/t-1/build/1/x", "artisan:../t-1/build/1",
 		`artisan:app\t-1\build\1`, "artisan:app/t-1/build/99999999999", "director:app",
 	} {

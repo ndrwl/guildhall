@@ -29,7 +29,8 @@ const (
 )
 
 // copyFlags is the --copy flag every store-taking command shares (docs/running.md#copies). A copy directory holds
-// its copy marker, config.toml, an optional managed.toml, director.store and state/.
+// its copy marker, config.toml, an optional managed.toml, its store, director.store or, for the Steward,
+// steward.store (copyStoreFile), and state/.
 type copyFlags struct {
 	dir string
 	// searched is set when copy discovery ran and found no copy, and from is the directory it started from.
@@ -42,7 +43,7 @@ func (c *copyFlags) register(fl *flag.FlagSet) {
 }
 
 // apply selects the copy, --copy or else copy discovery from a.Getwd, and defaults each empty path it is given to
-// that copy's director.store, config.toml or state; a nil path is a flag the command does not take. With --copy, a
+// that copy's store (copyStoreFile), config.toml or state; a nil path is a flag the command does not take. With --copy, a
 // path already given must name the copy's own file, and a copy with no marker gets one; without it, any path given
 // bypasses copy selection entirely, so discovery does not run. The copy selected, if any, is left in c.dir; with no
 // copy it changes nothing, and missing is the refusal.
@@ -66,7 +67,7 @@ func (c *copyFlags) apply(a *App, store, config, state *string) error {
 		flag, name string
 		value      *string
 	}{
-		{"store", "director.store", store},
+		{"store", copyStoreFile(dir), store},
 		{"config", "config.toml", config},
 		{"state", "state", state},
 	} {
@@ -86,6 +87,20 @@ func (c *copyFlags) apply(a *App, store, config, state *string) error {
 	c.dir = dir
 	return nil
 }
+
+// copyStoreFile is the name of the store of the copy in dir: steward.store for a Steward copy, one that holds a
+// steward.store and no director.store, and director.store for every other copy, so a Director copy, and a new copy
+// with no store yet, is read exactly as before (docs/steward.md#the-steward-session).
+func copyStoreFile(dir string) string {
+	_, director := os.Lstat(filepath.Join(dir, directorRole.storeFile))
+	if _, steward := os.Lstat(filepath.Join(dir, stewardStoreFile)); steward == nil && errors.Is(director, fs.ErrNotExist) {
+		return stewardStoreFile
+	}
+	return directorRole.storeFile
+}
+
+// copyStore is the path of the store of the copy in dir (copyStoreFile).
+func copyStore(dir string) string { return filepath.Join(dir, copyStoreFile(dir)) }
 
 // missing is the one refusal for a command that found no copy (docs/running.md#copies).
 func (c *copyFlags) missing(a *App) error {

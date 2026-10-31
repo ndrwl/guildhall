@@ -150,18 +150,19 @@ func TestMessagesSendRefusals(t *testing.T) {
 		code  int
 		want  string
 	}{
-		"conflicting reuse":   {strings.Replace(envelope("q-1", "director"), "Tests pass", "Tests fail", 1), []string{"--store", path, "director", "-"}, 1, "already used"},
-		"recipient mismatch":  {envelope("q-2", "director"), []string{"--store", path, "artisan:app/t-1/build/1", "-"}, 1, "addressed to"},
-		"wrong attempt":       {strings.Replace(envelope("n-2", "artisan"), `"attempt": 1`, `"attempt": 2`, 1), []string{"--store", path, "artisan:app/t-1/build/2", "-"}, 1, "not found"},
-		"unknown field":       {strings.Replace(envelope("q-3", "director"), `"type"`, `"approve": true, "type"`, 1), []string{"--store", path, "director", "-"}, 1, "unknown field"},
-		"missing body file":   {"", []string{"--store", path, "director", filepath.Join(t.TempDir(), "none.json")}, 1, "body"},
-		"missing store":       {envelope("q-4", "director"), []string{"--store", missing, "director", "-"}, 1, "no store at"},
-		"no store flag":       {envelope("q-5", "director"), []string{"director", "-"}, 2, "--store"},
-		"unknown recipient":   {envelope("q-6", "director"), []string{"--store", path, "steward", "-"}, 2, "recipient"},
-		"too few arguments":   {"", []string{"--store", path, "director"}, 2, "usage"},
-		"too many arguments":  {"", []string{"--store", path, "director", "-", "extra"}, 2, "usage"},
-		"utf-16 body":         {"", []string{"--store", path, "director", utf16}, 1, "UTF-16"},
-		"inline JSON as body": {"", []string{"--store", path, "director", `{"id":"q-7"}`}, 1, "body"},
+		"conflicting reuse":           {strings.Replace(envelope("q-1", "director"), "Tests pass", "Tests fail", 1), []string{"--store", path, "director", "-"}, 1, "already used"},
+		"recipient mismatch":          {envelope("q-2", "director"), []string{"--store", path, "artisan:app/t-1/build/1", "-"}, 1, "addressed to"},
+		"wrong attempt":               {strings.Replace(envelope("n-2", "artisan"), `"attempt": 1`, `"attempt": 2`, 1), []string{"--store", path, "artisan:app/t-1/build/2", "-"}, 1, "not found"},
+		"unknown field":               {strings.Replace(envelope("q-3", "director"), `"type"`, `"approve": true, "type"`, 1), []string{"--store", path, "director", "-"}, 1, "unknown field"},
+		"missing body file":           {"", []string{"--store", path, "director", filepath.Join(t.TempDir(), "none.json")}, 1, "body"},
+		"missing store":               {envelope("q-4", "director"), []string{"--store", missing, "director", "-"}, 1, "no store at"},
+		"no store flag":               {envelope("q-5", "director"), []string{"director", "-"}, 2, "--store"},
+		"unknown recipient":           {envelope("q-6", "director"), []string{"--store", path, "guildmaster", "-"}, 2, "recipient"},
+		"steward in a director store": {envelope("q-8", "steward"), []string{"--store", path, "steward", "-"}, 2, "steward.store"},
+		"too few arguments":           {"", []string{"--store", path, "director"}, 2, "usage"},
+		"too many arguments":          {"", []string{"--store", path, "director", "-", "extra"}, 2, "usage"},
+		"utf-16 body":                 {"", []string{"--store", path, "director", utf16}, 1, "UTF-16"},
+		"inline JSON as body":         {"", []string{"--store", path, "director", `{"id":"q-7"}`}, 1, "body"},
 	} {
 		code, out, stderr := runMessages(t, tc.stdin, append([]string{"send"}, tc.args...)...)
 		if code != tc.code || out != "" || !strings.Contains(stderr, tc.want) {

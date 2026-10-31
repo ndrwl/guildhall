@@ -88,7 +88,9 @@ type reexecDecision struct {
 // ("" when it could not be hashed) and, when it differs, pre-flights it as a child: `version --json` for its
 // version, then `director start --check` over the supervisor's copy and runtime, which runs the full preflight
 // (docs/director.md#reload).
-func (a *App) decideReexec(own, copyDir, positional string) reexecDecision {
+//
+// command is the session's command family, so a Steward supervisor pre-flights with `steward start --check`.
+func (a *App) decideReexec(command, own, copyDir, positional string) reexecDecision {
 	bin, err := a.lookPathBinary()
 	refuse := func(what string, err error, out []byte) reexecDecision {
 		return reexecDecision{Binary: bin, Refused: store.ReloadRefusal{SHA256: bin.SHA256, Reason: refusalReason(what, err, out)}}
@@ -109,12 +111,12 @@ func (a *App) decideReexec(own, copyDir, positional string) reexecDecision {
 	if err := json.NewDecoder(strings.NewReader(string(out))).Decode(&v); err != nil || v.Version == "" {
 		return refuse("version --json", errors.Join(errors.New("no version reported"), err), out)
 	}
-	args := []string{"director", "start", "--check", "--copy", copyDir}
+	args := []string{command, "start", "--check", "--copy", copyDir}
 	if positional != "" {
 		args = append(args, positional)
 	}
 	if out, err := a.Output(ctx, bin.Path, args...); err != nil {
-		return refuse("director start --check", err, out)
+		return refuse(command+" start --check", err, out)
 	}
 	return reexecDecision{Binary: bin, Version: v.Version, Move: true}
 }
@@ -140,7 +142,7 @@ func truncateUTF8(s string, n int) string { return strings.ToValidUTF8(s[:min(n,
 // with no refusal for the same binary, else with the refusal it printed to its pane, having restored what the exec
 // would have dropped; err is a failure to restore it.
 func (a *App) reexec(p startPlan, n int, own, copyDir string, signals chan<- os.Signal, argv []string) (refused store.ReloadRefusal, replaced bool, err error) {
-	d := a.decideReexec(own, copyDir, p.positional)
+	d := a.decideReexec(p.sessionRole().command, own, copyDir, p.positional)
 	if d.Move {
 		_, _ = fmt.Fprintf(a.Stdout, "session: %d moves onto guildhall %s %s (%s)\n", n, d.Version, shortSHA(d.Binary.SHA256), d.Binary.Path)
 		if p.cleanup != nil {

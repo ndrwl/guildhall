@@ -36,6 +36,12 @@ Commands:
                  create and initialize an empty store file
   store doctor <path>
                  check a store file read-only and count its records
+  steward start|ready|pause|resume|stop|reload|handoff [--copy <dir>]
+                 run the Steward session, which owns the roster and rollouts
+  steward status [--copy <dir>]
+                 print the Steward session, the roster and each copy's last rollout
+  steward approval request --plan <dir> [--copy <dir>]
+                 open the decision through which the Guildmaster approves a rollout plan's digest
   steward rollout ...
                  plan and apply rollouts of managed settings to enrolled Director copies
   messages send|list|read|ack --store <path> ...

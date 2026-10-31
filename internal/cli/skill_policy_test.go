@@ -37,7 +37,7 @@ func TestPreflightClaudePolicy(t *testing.T) {
 			if code != 0 || probes != 1 {
 				t.Fatalf("check %d probes=%d %s %s", code, probes, out, stderr)
 			}
-			for _, want := range []string{"Director director-v1", "profile worker artisan-v1", "14 release skills", "account sync disabled", "not live discovery", "not isolated", "cc-plugin-plugin-authoring@builtin", "source=default", "overridable=true", "rendered JSON validated"} {
+			for _, want := range []string{"Director director-v1", "profile worker artisan-v1", "16 release skills", "account sync disabled", "not live discovery", "not isolated", "cc-plugin-plugin-authoring@builtin", "source=default", "overridable=true", "rendered JSON validated"} {
 				if !strings.Contains(out.String(), want) {
 					t.Errorf("missing %q: %s", want, out)
 				}

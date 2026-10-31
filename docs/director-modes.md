@@ -22,6 +22,7 @@ On `main` today:
 - `Config.Setting` gives a local value only where the managed key allows it, and a local value for a non-overridable managed key is refused, so managed keys win.
 - Rollouts write only `managed.toml` and never `config.toml` ([managed publication](decisions/managed-publication-separate-from-director-config.md)), and refuse a copy whose repositories differ from the roster.
 - `guildhall task new` loads the combined config and binds its digest to the task, so a changed managed revision reaches new tasks only (R1.62).
+- The [Steward session](steward.md#the-steward-session) runs, supervised like a Director, with its own copy, store and Guildmaster-only inbox; it rolls out on the Guildmaster's word, and nothing a Director does depends on it.
 
 ## What is missing
 

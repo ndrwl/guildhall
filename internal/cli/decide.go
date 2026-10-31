@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/ndrwl/guildhall/internal/store"
@@ -97,6 +98,11 @@ func (a *App) decide(args []string) int {
 	}
 	var answer string
 	if sub == "answer" {
+		// A rollout approval is the Guildmaster's own: an agent in a session, the Steward's among them, cannot record
+		// it for them (docs/steward.md#approval-in-a-steward-session).
+		if *repo == stewardRepository && *task == stewardRolloutsTask && filepath.Base(*path) == stewardStoreFile && a.inSession() {
+			return fail(fmt.Errorf("decision %s/%s/%s approves a rollout, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
+		}
 		var err error
 		if answer, err = a.readAnswer(*answerFile); err != nil {
 			return fail(err)

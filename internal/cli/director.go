@@ -78,11 +78,18 @@ var errStartRefused = errors.New("director start: preflight failed")
 // supervisor in this terminal (docs/director.md#start), or with --tab the wrapper that opens the Director's
 // Herdr tab and runs the supervisor in it (docs/director.md#the-directors-tab).
 func (a *App) directorStart(args []string) int {
-	fl := flag.NewFlagSet("director start", flag.ContinueOnError)
+	return a.startSession(directorRole, args)
+}
+
+// startSession runs `guildhall <role> start [runtime] [--tab] [--check] [--copy <dir>]` for role: its preflight,
+// then the session supervisor in this terminal or, with --tab, the wrapper that opens the role's Herdr tab.
+func (a *App) startSession(role *sessionRole, args []string) int {
+	name := role.command + " start"
+	fl := flag.NewFlagSet(name, flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
 	cp.register(fl)
-	tab := fl.Bool("tab", false, "open the Director's Herdr tab and run the session there")
+	tab := fl.Bool("tab", false, "open the session's Herdr tab and run the session there")
 	check := fl.Bool("check", false, "run the preflight only")
 	var pane store.DirectorPane
 	fl.StringVar(&pane.Session, "herdr-session", "", "the Herdr session of the tab the session runs in")
@@ -90,26 +97,28 @@ func (a *App) directorStart(args []string) int {
 	fl.StringVar(&pane.Tab, "herdr-tab", "", "the Herdr tab")
 	fl.StringVar(&pane.Pane, "herdr-pane", "", "the Herdr pane")
 	if err := parseInterspersed(fl, args); err != nil {
-		return a.usageError("director start: " + err.Error())
+		return a.usageError(name + ": " + err.Error())
 	}
 	var storePath, cfgPath, state string
 	switch err := cp.apply(a, &storePath, &cfgPath, &state); {
 	case err != nil:
-		return a.usageError("director start: " + err.Error())
+		return a.usageError(name + ": " + err.Error())
 	case fl.NArg() > 1:
-		return a.usageError("director start takes at most one runtime")
+		return a.usageError(name + " takes at most one runtime")
 	case cp.dir == "":
-		return a.usageError("director start: " + cp.missing(a).Error())
+		return a.usageError(name + ": " + cp.missing(a).Error())
 	case pane != (store.DirectorPane{}) && (pane.Session == "" || pane.Workspace == "" || pane.Tab == "" || pane.Pane == ""):
-		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane go together")
+		return a.usageError(name + ": --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane go together")
 	case pane != (store.DirectorPane{}) && *tab:
-		return a.usageError("director start: --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane bind a session in this terminal to its tab, so they do not go with --tab")
+		return a.usageError(name + ": --herdr-session, --herdr-workspace, --herdr-tab and --herdr-pane bind a session in this terminal to its tab, so they do not go with --tab")
 	}
 	copyDir, err := filepath.Abs(cp.dir)
 	if err != nil {
 		return a.fail(err)
 	}
-	p, err := a.preflight(copyDir, cfgPath, storePath, fl.Arg(0))
+	// A role's copy keeps the role's own store, whichever store the copy holds now.
+	storePath = filepath.Join(cp.dir, role.storeFile)
+	p, err := role.preflight(a, copyDir, cfgPath, storePath, fl.Arg(0))
 	if p.cleanup != nil {
 		defer p.cleanup()
 	}
@@ -119,7 +128,7 @@ func (a *App) directorStart(args []string) int {
 	}
 	if err != nil {
 		if !errors.Is(err, errStartRefused) {
-			return a.fail(fmt.Errorf("director start: %w", err))
+			return a.fail(fmt.Errorf("%s: %w", name, err))
 		}
 		return 1
 	}
@@ -132,12 +141,12 @@ func (a *App) directorStart(args []string) int {
 	if pane == (store.DirectorPane{}) {
 		var reason string
 		if pane, reason = ambientPane(a.Getenv); reason != "" {
-			a.notef("director start: warning: this session has no Herdr pane (%s), so messages will not wake the Director; start it with --tab or inside a Herdr pane\n", reason)
+			a.notef("%s: warning: this session has no Herdr pane (%s), so messages will not wake the %s; start it with --tab or inside a Herdr pane\n", name, reason, role.title)
 		} else {
 			a.preflightLine("pane", "%s (tab %s, workspace %s, from HERDR_*)", pane.Pane, pane.Tab, pane.Workspace)
 		}
 	}
-	return a.superviseSession(p, copyDir, storePath, state, pane, append([]string{"director", "start"}, args...))
+	return a.superviseSession(p, copyDir, storePath, state, pane, append([]string{role.command, "start"}, args...))
 }
 
 // ambientPanes are the HERDR_* variables, in the order they are checked, that name the Herdr pane a process runs
@@ -179,6 +188,8 @@ func ambientPane(getenv func(string) string) (store.DirectorPane, string) {
 
 // startPlan is what the preflight resolved for a session.
 type startPlan struct {
+	// role is the role whose session this is; nil is the Director's (sessionRole).
+	role    *sessionRole
 	cfg     *config.Config
 	cfgPath string
 	// positional is the runtime named on the command line, if any; name and runtime are resolved from it or
@@ -378,8 +389,13 @@ func (a *App) preflightLine(name, format string, args ...any) {
 
 // refuseCheck prints the line and the error of a failed preflight check and returns errStartRefused.
 func (a *App) refuseCheck(name string, err error) error {
+	return a.refuseRoleCheck("director", name, err)
+}
+
+// refuseRoleCheck is refuseCheck for the start command of the role whose command family is command.
+func (a *App) refuseRoleCheck(command, name string, err error) error {
 	a.preflightLine(name, "refused: %v", err)
-	_, _ = fmt.Fprintf(a.Stderr, "guildhall: director start: %s: %v\n", name, err)
+	_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s start: %s: %v\n", command, name, err)
 	return errStartRefused
 }
 
@@ -389,12 +405,14 @@ const herdrTimeout = 30 * time.Second
 // herdrPreflight is the wrapper's last preflight check: the config names a Herdr session, its server runs and
 // is new enough, and the terminal host over it is returned.
 func (a *App) herdrPreflight(p startPlan) (adapter.TabHost, error) {
+	role := p.sessionRole()
+	refuse := func(err error) error { return a.refuseRoleCheck(role.command, "herdr", err) }
 	session, err := p.cfg.HerdrSession()
 	switch {
 	case err != nil:
-		return nil, a.refuseCheck("herdr", err)
+		return nil, refuse(err)
 	case session == "":
-		return nil, a.refuseCheck("herdr", fmt.Errorf("no [local] %s names the Herdr session the Director's tab opens in; set it, or run the session in this terminal without --tab", config.HerdrSessionKey))
+		return nil, refuse(fmt.Errorf("no [local] %s names the Herdr session the %s's tab opens in; set it, or run the session in this terminal without --tab", config.HerdrSessionKey, role.title))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), herdrTimeout)
 	defer cancel()
@@ -404,7 +422,7 @@ func (a *App) herdrPreflight(p startPlan) (adapter.TabHost, error) {
 	}
 	host, version, err := open(ctx, session)
 	if err != nil {
-		return nil, a.refuseCheck("herdr", err)
+		return nil, refuse(err)
 	}
 	a.preflightLine("herdr", "session %q (server %s)", session, version)
 	return host, nil
@@ -555,12 +573,17 @@ var directorStartWait, directorStartPoll = 2 * time.Minute, 200 * time.Milliseco
 // with its name, types the supervisor's command into it, waits for the session the supervisor records with
 // that tab's pane and prints it. Once recorded, it retires only older recorded,
 // stopped Director tabs whose runtime is empty and pane is an idle shell.
+//
+// The wrapper is role-neutral: a Steward's tab is labelled "steward <name>" in the workspace named by [steward] name,
+// and runs steward start.
 func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storePath, runtime string) int {
+	role := p.sessionRole()
+	start := role.command + " start: "
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	sp, err := withStore(storePath, true, checkSupersede)
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
+		return a.fail(fmt.Errorf("%s%w", start, err))
 	}
 	a.warnUnremoved(sp)
 	newest := sp.Number
@@ -568,29 +591,29 @@ func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storeP
 	if err != nil {
 		return a.fail(err)
 	}
-	name := p.cfg.Name
+	name := role.name(p.cfg)
 	ws, err := adapter.EnsureWorkspace(ctx, host, name, copyDir)
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: workspace %s: %w", name, err))
+		return a.fail(fmt.Errorf("%sworkspace %s: %w", start, name, err))
 	}
 	l := adapter.TabLauncher{Host: host, WorkspaceID: ws}
-	tab, shell, err := l.Open(ctx, "director "+name, copyDir, nil)
+	tab, shell, err := l.Open(ctx, role.command+" "+name, copyDir, nil)
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
+		return a.fail(fmt.Errorf("%s%w", start, err))
 	}
-	argv := []string{exe, "director", "start"}
+	argv := []string{exe, role.command, "start"}
 	if runtime != "" {
 		argv = append(argv, runtime)
 	}
 	argv = append(argv, "--copy", copyDir,
 		"--herdr-session", tab.Session, "--herdr-workspace", tab.WorkspaceID, "--herdr-tab", tab.TabID, "--herdr-pane", tab.PaneID)
 	if err := l.Type(ctx, tab, shell, argv); err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
+		return a.fail(fmt.Errorf("%s%w", start, err))
 	}
-	a.preflightLine("tab", "director %s (workspace %s, tab %s, pane %s)", name, tab.WorkspaceID, tab.TabID, tab.PaneID)
+	a.preflightLine("tab", "%s %s (workspace %s, tab %s, pane %s)", role.command, name, tab.WorkspaceID, tab.TabID, tab.PaneID)
 	d, err := waitTabSession(ctx, host, tab, exe, storePath, newest)
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
+		return a.fail(fmt.Errorf("%s%w", start, err))
 	}
 	a.retireDirectorTabs(ctx, host, storePath, newest, tab)
 	return a.printJSON(d)
@@ -709,9 +732,11 @@ func runsProgram(info herdr.ProcessInfo, exe string) bool {
 // resolveRuntime resolves p's runtime from p.positional or else p.cfg's [director] adapter, and returns its
 // program, found on PATH, or the guildhall executable for a runtime with none.
 func (a *App) resolveRuntime(p *startPlan) (string, error) {
+	role := p.sessionRole()
+	chosen := role.settings(p.cfg)
 	p.name = p.positional
-	if p.name == "" && p.cfg.Director != nil {
-		p.name = p.cfg.Director.Adapter
+	if p.name == "" {
+		p.name = chosen.Adapter
 	}
 	exe, err := a.Executable()
 	if err != nil {
@@ -719,15 +744,11 @@ func (a *App) resolveRuntime(p *startPlan) (string, error) {
 	}
 	if p.runtime, err = runtimes.LookupSession(p.name, exe); err != nil {
 		if p.name == "" {
-			err = fmt.Errorf("no runtime: name one, or set [director] adapter; the adapters are %s", strings.Join(runtimes.Names(), ", "))
+			err = fmt.Errorf("no runtime: name one, or set [%s] adapter; the adapters are %s", role.command, strings.Join(runtimes.Names(), ", "))
 		}
 		return "", err
 	}
-	settings := adapter.Settings{}
-	if d := p.cfg.Director; d != nil {
-		settings.Model, settings.Effort = d.Model, d.Effort
-	}
-	settings.Effort = p.cfg.EffectiveEffort(settings.Effort)
+	settings := adapter.Settings{Model: chosen.Model, Effort: p.cfg.EffectiveEffort(chosen.Effort)}
 	if err := runtimeSettings(p.name, settings); err != nil {
 		return "", err
 	}

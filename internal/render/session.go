@@ -1,6 +1,7 @@
 package render
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +36,9 @@ type SessionInput struct {
 	Dir string
 	// Number is the session's number, from 1.
 	Number int
+	// Title is the role whose session this is, as startup.md names it, and Command its command family, which
+	// startup.md's ready command runs; empty means "Director" and "director".
+	Title, Command string
 	// Role is the Director's role prompt.
 	Role Source
 	// SkillsDir is the slash path, relative to Dir, the skills are copied into, such as ".claude/skills".
@@ -255,11 +259,12 @@ func (r SessionRendered) write(in SessionInput, m *SessionManifest, found []foun
 
 func composeStartup(in SessionInput) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Guildhall Director session %d\n\n", in.Number)
+	title, command := cmp.Or(in.Title, "Director"), cmp.Or(in.Command, "director")
+	fmt.Fprintf(&b, "# Guildhall %s session %d\n\n", title, in.Number)
 	b.WriteString("You are starting up.\n")
 	b.WriteString("This session is recovering: it starts no new work until you say it is ready.\n")
 	b.WriteString("Read your notes, if there are any, then work through each in-flight item with the command it names.\n")
-	b.WriteString("When nothing in flight needs you, run `guildhall director ready`; only then start new work.\n")
+	fmt.Fprintf(&b, "When nothing in flight needs you, run `guildhall %s ready`; only then start new work.\n", command)
 	if len(in.Policies) > 0 {
 		b.WriteString("\n## Repository policies\n\n")
 		b.WriteString("The Guildmaster's standing rules for each repository, from its default branch as this session started.\n\n")

@@ -93,13 +93,18 @@ func decideEnd(in endInput) endAction {
 // supervisor's own arguments after its name, so the new image records the next session in the same process and
 // pane. A binary refused, or an exec that fails, leaves it reloading on its own binary, the refusal recorded with
 // the reload (docs/director.md#reload).
+//
+// The supervisor is role-neutral: p's sessionRole supplies the config admission, the steps each session runs and
+// its watchers, so a Steward session is supervised the same way (docs/steward.md#the-steward-session).
 func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pane store.DirectorPane, argv []string) int {
+	role := p.sessionRole()
+	start := role.command + " start: "
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, sessionSignals...)
 	defer signal.Stop(signals)
 	self, err := artisan.Self()
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err))
+		return a.fail(fmt.Errorf("%s%w", start, err))
 	}
 	if state, err = filepath.Abs(state); err != nil {
 		return a.fail(err)
@@ -107,26 +112,26 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 	// The image is hashed once: the file it was started from may since hold another binary.
 	own, err := a.imageSHA256()
 	if err != nil {
-		_, _ = fmt.Fprintf(a.Stderr, "director start: warning: cannot hash this binary, so a reload always checks the guildhall on PATH: %v\n", err)
+		_, _ = fmt.Fprintf(a.Stderr, "%swarning: cannot hash this binary, so a reload always checks the guildhall on PATH: %v\n", start, err)
 	}
 	var refused store.ReloadRefusal
 	for {
 		base := store.DirectorSession{Pane: pane, Adapter: p.name, BinarySHA256: own}
-		if base.Maintenance, err = maintenancePolicy(p.cfg); err != nil {
-			return a.fail(fmt.Errorf("director start: record session: %w", err))
+		if base.Maintenance, err = sessionMaintenance(role, p.cfg); err != nil {
+			return a.fail(fmt.Errorf("%srecord session: %w", start, err))
 		}
 		n, sp, err := recordNextSession(storePath, self, p.cfg, base, copyDir, refused, func(n int) (store.HandoffPolicy, error) {
 			return handoffPolicy(p.cfg, p.runtime, sessionDir(copyDir, n))
 		})
 		refused = store.ReloadRefusal{}
 		if err != nil {
-			return a.fail(fmt.Errorf("director start: record session: %w", err))
+			return a.fail(fmt.Errorf("%srecord session: %w", start, err))
 		}
 		a.warnUnremoved(sp)
 		code, reload := a.runSession(p, n, copyDir, storePath, state, signals)
 		if !reload {
 			if err := stopSession(storePath, n); err != nil {
-				return a.fail(fmt.Errorf("director start: record session %d stopped: %w", n, err))
+				return a.fail(fmt.Errorf("%srecord session %d stopped: %w", start, n, err))
 			}
 			return code
 		}
@@ -135,30 +140,24 @@ func (a *App) superviseSession(p startPlan, copyDir, storePath, state string, pa
 		}
 		stopped, err := reloadSession(storePath, n)
 		if err != nil {
-			return a.fail(fmt.Errorf("director start: record session %d reloaded: %w", n, err))
+			return a.fail(fmt.Errorf("%srecord session %d reloaded: %w", start, n, err))
 		}
 		if stopped {
-			_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by director stop\n", n)
+			_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by %s stop\n", n, role.command)
 			return 0
 		}
 		_, _ = fmt.Fprintf(a.Stdout, "session: %d reloaded\n", n)
 		if canReexec {
 			var replaced bool
 			if refused, replaced, err = a.reexec(p, n, own, copyDir, signals, argv); err != nil {
-				return a.fail(fmt.Errorf("director start: reload: %w", err))
+				return a.fail(fmt.Errorf("%sreload: %w", start, err))
 			} else if replaced {
 				return 0
 			}
 		}
 		// A reload takes the copy's current settings, its runtime among them.
-		if p.cfg, err = admitConfig(copyDir, p.cfgPath); err != nil {
-			return a.fail(fmt.Errorf("director start: reload: %w", err))
-		}
-		if _, err := a.resolveRuntime(&p); err != nil {
-			return a.fail(fmt.Errorf("director start: reload: runtime: %w", err))
-		}
-		if err := a.preflightSkillPolicies(&p); err != nil {
-			return a.fail(fmt.Errorf("director start: reload: skills: %w", err))
+		if err := role.readmit(a, &p, copyDir); err != nil {
+			return a.fail(fmt.Errorf("%sreload: %w", start, err))
 		}
 	}
 }
@@ -223,67 +222,15 @@ func heldLine(h statusHeld) string {
 // whether the session ended for a reload. A signal received before the runtime starts ends the session with no
 // runtime started.
 func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, signals <-chan os.Signal) (int, bool) {
-	// Every session, the first and each reload's, starts with a workspace close sweep, so a Herdr workspace that
-	// became due while no supervisor ran is closed; the session's end waits for a running sweep.
-	sweep, err := a.workspaceCloseSweep(p.cfg, storePath, state)
+	sr := p.sessionRole()
+	start := sr.command + " start: "
+	// Every session, the first and each reload's, runs its role's steps first; the session's end waits for the
+	// sweeps they started.
+	begun, err := sr.begin(a, p, copyDir, storePath, state)
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
-	closes := &workspaceCloseWatch{every: workspaceCloseEvery, round: sweep.run}
-	closes.tick(time.Now())
-	defer closes.wait()
-	// With prune_daily on, the session prunes at its start when the copy's last prune was a day ago or more, and
-	// then once a day, off the decision path; the session's end waits for a running prune.
-	daily, err := a.dailyPrune(p.cfg, copyDir)
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
-	}
-	var prunes *workspaceCloseWatch
-	if daily != nil {
-		daily.p.storePath, daily.p.state = storePath, state
-		prunes = &workspaceCloseWatch{every: pruneDailyEvery, round: daily.run}
-		prunes.tick(time.Now())
-		defer prunes.wait()
-	}
-	status, err := readDirectorStatusConfig(context.Background(), storePath, state, p.cfgPath, a.Now)
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: in-flight snapshot: %w", err)), false
-	}
-	var inFlight []string
-	for _, it := range status.NeedsMe {
-		if it.Kind == checksKind {
-			inFlight = append(inFlight, fmt.Sprintf("%s: %s; the session supervisor advances it", it.Kind, oneLine(it.Reason)))
-			continue
-		}
-		inFlight = append(inFlight, fmt.Sprintf("%s: %s; run `%s`", it.Kind, oneLine(it.Reason), it.Command))
-	}
-	// Parked attempts come from the same status read, so what a session is told cannot drift from the feed (docs/decisions/director-start.md).
-	var parked, held []string
-	for _, p := range status.Parked {
-		line := fmt.Sprintf("parked: attempt %d of %s of %s/%s %s; reason: %s; retry with `%s`",
-			p.Attempt, p.Step, p.Repository, p.TaskID, p.Outcome, oneLine(p.Reason), p.Command)
-		if len(p.UntilMerged) > 0 {
-			line += " until " + strings.Join(p.UntilMerged, ", ")
-		}
-		parked = append(parked, line)
-	}
-	for _, h := range status.Held {
-		held = append(held, heldLine(h))
-	}
-	// Running attempts come from the same read too, with their ages by the supervisor's clock.
-	var running []string
-	for _, r := range status.Running {
-		line := fmt.Sprintf("running: attempt %d of %s of %s/%s; state %s", r.Attempt, r.Step, r.Repository, r.TaskID, r.State)
-		if r.HeartbeatAt.IsZero() {
-			line += "; no heartbeat"
-		} else {
-			line += "; heartbeat " + runningAge(a.now().Sub(r.HeartbeatAt)) + " ago"
-		}
-		if !r.LastOutputAt.IsZero() {
-			line += "; last output " + runningAge(a.now().Sub(r.LastOutputAt)) + " ago"
-		}
-		running = append(running, fmt.Sprintf("%s; %s; check with `%s`", line, oneLine(r.Reason), r.Command))
-	}
+	defer begun.wait()
 	// Every live note goes to the new session; the old handoff note is not shown (docs/decisions/director-reload-and-notes.md).
 	type startupNotes struct {
 		lines []string
@@ -294,31 +241,26 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		return startupNotes{lines, size}, err
 	})
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: notes: %w", err)), false
+		return a.fail(fmt.Errorf("%snotes: %w", start, err)), false
 	}
-	// Every session, the first and each reload's, refreshes the repositories' policies and is told them as of then.
-	a.refreshPolicies(context.Background(), p.cfg.Repositories...)
-	policyLines := startupPolicies(a.readPolicies(context.Background(), p.cfg.Repositories...))
 	cfgDir := filepath.Dir(p.cfgPath)
-	role := baselineSource(filepath.Join(cfgDir, "baseline"), p.baseline, "roles/director.md")
-	var model, effort string
-	if d := p.cfg.Director; d != nil {
-		if d.Role != "" {
-			role = render.Source{Name: d.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(d.Role)), Root: "copy"}
-		}
-		model, effort = d.Model, d.Effort
+	role := baselineSource(filepath.Join(cfgDir, "baseline"), p.baseline, sr.roleFile)
+	settings := sr.settings(p.cfg)
+	if settings.Role != "" {
+		role = render.Source{Name: settings.Role, Path: filepath.Join(cfgDir, filepath.FromSlash(settings.Role)), Root: "copy"}
 	}
+	model, effort := settings.Model, settings.Effort
 	dir := sessionDir(copyDir, n)
-	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Role: role, SkillsDir: p.runtime.SkillsDir(),
-		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: inFlight, Running: running, Parked: parked, Held: held, Notes: notes.lines, NotesBytes: notes.bytes, Policies: policyLines}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
+	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Title: sr.title, Command: sr.command, Role: role, SkillsDir: p.runtime.SkillsDir(),
+		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: begun.inFlight, Running: begun.running, Parked: begun.parked, Held: begun.held, Notes: notes.lines, NotesBytes: notes.bytes, Policies: begun.policies}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
 	workDir, firstMessage := dir, render.StartupMessage
 	if persistent, ok := p.runtime.(runtimes.PersistentSession); ok {
 		workDir, err = persistent.PrepareSessionWorkspace(copyDir, dir)
 		if err != nil {
-			return a.fail(fmt.Errorf("director start: prepare workspace: %w", err)), false
+			return a.fail(fmt.Errorf("%sprepare workspace: %w", start, err)), false
 		}
 		// Claude Code, the one persistent runtime, shows the binary's version first with its /version command,
 		// which then reads startup.md by its absolute path.
@@ -327,7 +269,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	cmd, err := p.runtime.Session(adapter.SessionSpec{Dir: workDir, Copy: copyDir, RolePrompt: r.RolePath,
 		FirstMessage: firstMessage, Model: model, Effort: p.cfg.EffectiveEffort(effort), Env: []string{session.NumberEnv + "=" + strconv.Itoa(n)}})
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
 	_, _ = fmt.Fprintf(a.Stdout, "session: %d (%s)\n", n, dir)
 	ep, err := session.Listen(dir, n)
@@ -341,54 +283,38 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	c.Stdin, c.Stdout, c.Stderr = a.Stdin, a.Stdout, a.Stderr
 	select {
 	case s := <-signals:
-		return a.fail(fmt.Errorf("director start: ended by %v before the runtime started", s)), false
+		return a.fail(fmt.Errorf("%sended by %v before the runtime started", start, s)), false
 	default:
 	}
 	// The terminal's interrupt reaches the runtime, which handles it; a termination is passed on to it. Either
 	// way the supervisor outlives the runtime to record the end.
-	checks, err := a.watchChecks(p, n, dir, copyDir, storePath, state)
+	watchers, err := sr.watch(a, p, n, dir, copyDir, storePath, state)
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
-	}
-	deps, err := a.watchDependencies(p, n, dir, copyDir, storePath, state)
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
-	}
-	queue, err := a.watchMergeQueue(p, n, dir, copyDir, storePath, state)
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
-	}
-	starts, err := a.watchStartQueue(p, n, dir, copyDir, storePath, state)
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
-	}
-	holds, err := a.watchHolds(p, dir, copyDir, storePath, state)
-	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
 	u, err := startRuntime(c, n, storePath)
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
+		return a.fail(fmt.Errorf("%srun the runtime: %w", start, err)), false
 	}
 	idleAfter, err := p.cfg.IdleAfter()
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
 	triggers, err := p.cfg.Handoff()
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
 	quiet, err := p.cfg.WakeQuiet()
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
 	maxDelay, err := p.cfg.WakeMaxDelay()
 	if err != nil {
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
-		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: checks, deps: deps, queue: queue, starts: starts, holds: holds, closes: closes,
-		prunes: prunes, quiet: quiet, maxDelay: maxDelay}
+		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: watchers.checks, deps: watchers.deps, queue: watchers.queue,
+		starts: watchers.starts, holds: watchers.holds, closes: begun.closes, prunes: begun.prunes, quiet: quiet, maxDelay: maxDelay}
 	if ep != nil {
 		w.turns = ep.Turns()
 		// A session that is not typed into is woken through its waiter, with the notice in its pane while none is
@@ -403,26 +329,22 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	ended, ending, err := a.waitSession(u, c, signals, &w)
 	w.setNotice("")
-	checks.wait()
-	deps.wait()
-	queue.wait()
-	starts.wait()
-	holds.wait()
+	watchers.wait()
 	var exit *exec.ExitError
 	switch {
 	case errors.Is(err, errRuntimeOutlived):
-		return a.fail(fmt.Errorf("director start: %w", err)), false
+		return a.fail(fmt.Errorf("%s%w", start, err)), false
 	case ending == endForStop:
-		_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by director stop\n", n)
+		_, _ = fmt.Fprintf(a.Stdout, "session: %d stopped by %s stop\n", n, sr.command)
 		return 0, false
 	case ended != nil:
-		return a.fail(fmt.Errorf("director start: ended by %v", ended)), false
+		return a.fail(fmt.Errorf("%sended by %v", start, ended)), false
 	case ending == endForReload:
 		return 0, true
 	case errors.As(err, &exit):
-		return a.fail(fmt.Errorf("director start: the runtime exited with status %d", exit.ExitCode())), false
+		return a.fail(fmt.Errorf("%sthe runtime exited with status %d", start, exit.ExitCode())), false
 	case err != nil:
-		return a.fail(fmt.Errorf("director start: run the runtime: %w", err)), false
+		return a.fail(fmt.Errorf("%srun the runtime: %w", start, err)), false
 	}
 	return 0, false
 }

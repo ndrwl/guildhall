@@ -137,6 +137,7 @@ It needs a small Director config naming your repository; see [configuration and 
 | Advancing a task stage by stage and launching an agent for each stage | Built, with a fake agent for tests and demos and a minimal Claude adapter whose live acceptance is pending |
 | Publishing a task's pull request, waiting for its CI checks and merging it through `gh` | Built, exercised in CI against a stand-in `gh`; live GitHub behaviour is not claimed |
 | Steward rollouts of shared settings over SSH | Built, preview and apply |
+| The Steward session (`guildhall steward start`), owning the roster and rollouts | Built, supervised like a Director and exercised in CI against a stand-in runtime; live acceptance is pending; managed mode and lesson collection are planned |
 | The conversational Director (`guildhall director start`) | Built in its own Herdr tab or the foreground, exercised in CI against a stand-in Claude Code and a stand-in terminal; pause, resume, stop, Director notes, reload and the automatic handoff triggers are built; see [tab acceptance status](docs/director.md#the-directors-tab) |
 | Running stages that the Director itself performs, and background watching of running agents | Built: the Director finishes its own stages with `step finish`, and each attempt's launcher advances its task when the attempt ends and reports a stalled worker |
 | Docker isolation for agents | Planned |
@@ -170,6 +171,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall spend report --copy <dir> [--json]`: read-only recorded token and cost attribution by task, step and recorded role/profile; see [spend reporting](docs/spend.md).
 - `guildhall quality judge|judged|agreement`: judge a delivered task's self-review in a separate session, take its judgement, and measure the judge against your audits; see [the quality rubric](docs/quality.md#running-it).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
+- `guildhall steward start`, `guildhall steward status` and `guildhall steward approval request`: run the Steward session, which owns the roster and rollouts, see its roster and each copy's last rollout, and open the decision through which you approve a rollout plan; see [the Steward session](docs/steward.md#the-steward-session).
 - `guildhall steward rollout`: preview and apply shared settings to enrolled machines; see [Steward rollouts](docs/steward.md).
 - `guildhall render <request.json>`: render an agent prompt with its skills; see [prompt rendering](docs/rendering.md).
 - `guildhall store init <path>` and `guildhall store doctor <path>`: create an empty store file, or check one without changing it; see [the store](docs/store.md).

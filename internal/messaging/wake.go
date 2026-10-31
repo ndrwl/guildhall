@@ -110,7 +110,7 @@ func Wake(ctx context.Context, st WakeStore, pane DirectorPane, messageID, sende
 	if err != nil {
 		return store.Wake{}, err
 	}
-	if m.Recipient != store.RecipientDirector {
+	if !m.Recipient.SessionInbox() {
 		return store.Wake{}, fmt.Errorf("messaging: wake: %w: message %q is addressed to %s", store.ErrInvalid, messageID, FormatRecipient(m.To()))
 	}
 	w := store.Wake{MessageID: messageID, SenderType: senderType, Decision: store.WakeQueued}

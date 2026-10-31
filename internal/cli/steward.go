@@ -17,11 +17,22 @@ import (
 )
 
 const stewardUsage = `Usage:
+  guildhall steward start [runtime] [--tab] [--check] [--copy <dir>]
+  guildhall steward ready|pause|resume [--copy <dir>]
+  guildhall steward stop [--now] [--copy <dir>]
+  guildhall steward reload [--now] [--copy <dir>]
+  guildhall steward handoff [--copy <dir>]
+  guildhall steward status [--copy <dir>]
+  guildhall steward approval request --plan <dir> [--copy <dir>]
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --dry-run
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --apply [--approve <plan digest>]
 
-The dry run fetches each Director copy on the named enrolled machines, writes the plan and file previews to
-a new --plan directory and changes nothing. --apply carries out that plan only if nothing changed since.
+start runs the Steward session supervisor, as director start does for a Director; the other lifecycle commands
+mirror the Director's on the Steward copy's steward.store. status prints the session, the roster and each copy's
+last rollout receipt. The dry run fetches each Director copy on the named enrolled machines, writes the plan and
+file previews to a new --plan directory and changes nothing. --apply carries out that plan only if nothing changed
+since; inside a Guildhall session, --approve needs the Guildmaster's answer "approve" to the plan's approval
+decision, which approval request opens.
 `
 
 // scpTimeout bounds each scp run during a rollout.
@@ -34,8 +45,20 @@ func (l *labels) Set(v string) error { *l = append(*l, v); return nil }
 
 // steward runs the steward subcommands and returns the exit code.
 func (a *App) steward(args []string) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "start":
+			return a.startSession(stewardRole, args[1:])
+		case "ready", "pause", "resume", "stop", "reload", "handoff":
+			return a.stewardLifecycle(args[0], args[1:])
+		case "status":
+			return a.stewardStatusCmd(args[1:])
+		case "approval":
+			return a.stewardApprovalCmd(args[1:])
+		}
+	}
 	if len(args) == 0 || args[0] != "rollout" {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward needs the rollout subcommand\n\n%s", stewardUsage)
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward: the commands are start, ready, pause, resume, stop, reload, handoff, status, approval and rollout\n\n%s", stewardUsage)
 		return 2
 	}
 	fs := flag.NewFlagSet("steward rollout", flag.ContinueOnError)
@@ -88,6 +111,19 @@ func (a *App) steward(args []string) int {
 		return 0
 	}
 
+	// An agent in a session, the Steward's among them, never approves a plan itself: its --approve stands only on
+	// the Guildmaster's recorded answer to the plan's approval decision (docs/steward.md#approval-in-a-steward-session).
+	if *approve != "" && a.inSession() {
+		storePath := filepath.Join(filepath.Dir(*cfgPath), stewardStoreFile)
+		ok, err := stewardApproved(storePath, *approve)
+		if err != nil {
+			return a.fail(fmt.Errorf("steward rollout: %w", err))
+		}
+		if !ok {
+			return a.fail(fmt.Errorf("steward rollout: inside a Guildhall session --approve %s needs the Guildmaster's answer %q to decision %s/%s/%s in %s; open it with guildhall steward approval request --plan %s and ask the Guildmaster to answer it",
+				*approve, stewardApprove, stewardRepository, stewardRolloutsTask, approvalDecisionID(*approve), storePath, shellQuote([]string{*planDir})))
+		}
+	}
 	receipt, err := r.Apply(ctx, *planDir, *approve, machines...)
 	if errors.Is(err, steward.ErrApprovalRequired) {
 		if saved, rerr := steward.ReadPlan(*planDir); rerr == nil {

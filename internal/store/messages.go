@@ -44,7 +44,19 @@ const (
 	RecipientDirector RecipientRole = "director"
 	// RecipientArtisan is the inbox of the Artisan running one stage attempt.
 	RecipientArtisan RecipientRole = "artisan"
+	// RecipientSteward is the inbox of the Steward session that owns the store (docs/steward.md#the-steward-session).
+	// Like the Director's it is one per store, and it takes messages only from StewardSenders.
+	RecipientSteward RecipientRole = "steward"
 )
+
+// SessionInbox reports whether r is the inbox of the session that owns the store, the Director's or the
+// Steward's: one per store, spanning every repository, and the inbox a wake types into.
+func (r RecipientRole) SessionInbox() bool { return r == RecipientDirector || r == RecipientSteward }
+
+// StewardSenders are the senders the Steward's inbox takes. Only the Guildmaster talks to the Steward: no Director,
+// other Director or Artisan reaches it (docs/director-modes.md). This list is where a later path, such as a
+// Steward-to-Director or Director-to-Steward one, would add a sender.
+var StewardSenders = []string{SenderGuildmaster}
 
 // Recipient names one inbox.
 // The Director has one inbox per store, so its other fields are empty.
@@ -123,8 +135,8 @@ func MessageSender(m Message) string {
 
 // To returns the inbox the message is addressed to.
 func (m Message) To() Recipient {
-	if m.Recipient == RecipientDirector {
-		return Recipient{Role: RecipientDirector}
+	if m.Recipient.SessionInbox() {
+		return Recipient{Role: m.Recipient}
 	}
 	return Recipient{Role: m.Recipient, Repository: m.Repository, TaskID: m.TaskID, Step: m.Step, Attempt: m.Attempt}
 }
@@ -265,7 +277,7 @@ func (s *Store) Inbox(to Recipient, after uint64, limit int) ([]Message, bool, e
 	more := false
 	err := s.view(func(tx *bolt.Tx) error {
 		var repos [][]byte
-		if to.Role == RecipientDirector {
+		if to.Role.SessionInbox() {
 			_ = tx.Bucket(bucketRepos).ForEachBucket(func(k []byte) error { repos = append(repos, k); return nil })
 		} else {
 			repos = [][]byte{[]byte(to.Repository)}
@@ -321,10 +333,10 @@ func getMessage(tx *bolt.Tx, id string) (Message, error) {
 	return m, nil
 }
 
-// inboxPrefix is "director/" or "artisan/<task>/<step>/<attempt>/"; ids contain
+// inboxPrefix is "director/", "steward/" or "artisan/<task>/<step>/<attempt>/"; ids contain
 // no "/", so a prefix scan sees only that recipient's entries.
 func inboxPrefix(to Recipient) []byte {
-	if to.Role == RecipientDirector {
+	if to.Role.SessionInbox() {
 		return recordKey(string(to.Role), "")
 	}
 	return recordKey(string(to.Role), to.TaskID, to.Step, fmt.Sprintf("%010d", to.Attempt), "")
@@ -345,9 +357,9 @@ func describeRecipient(to Recipient) string {
 // ValidateRecipient checks a recipient's form without reading the store.
 func ValidateRecipient(to Recipient) error {
 	switch to.Role {
-	case RecipientDirector:
-		if to != (Recipient{Role: RecipientDirector}) {
-			return invalid("the director recipient takes no repository, task, step or attempt")
+	case RecipientDirector, RecipientSteward:
+		if to != (Recipient{Role: to.Role}) {
+			return invalid("the %s recipient takes no repository, task, step or attempt", to.Role)
 		}
 	case RecipientArtisan:
 		if err := validateIDs(to.Repository, to.TaskID, to.Step); err != nil {
@@ -357,7 +369,7 @@ func ValidateRecipient(to Recipient) error {
 			return invalid("an artisan recipient needs a positive attempt number, not %d", to.Attempt)
 		}
 	default:
-		return invalid("recipient %q must be %q or %q", to.Role, RecipientDirector, RecipientArtisan)
+		return invalid("recipient %q must be %q, %q or %q", to.Role, RecipientDirector, RecipientSteward, RecipientArtisan)
 	}
 	return nil
 }
@@ -367,8 +379,11 @@ func ValidateMessage(m Message) error {
 	if err := ValidateMessageID(m.ID); err != nil {
 		return err
 	}
-	if m.Recipient != RecipientDirector && m.Recipient != RecipientArtisan {
-		return invalid("recipient %q must be %q or %q", m.Recipient, RecipientDirector, RecipientArtisan)
+	if !m.Recipient.SessionInbox() && m.Recipient != RecipientArtisan {
+		return invalid("recipient %q must be %q, %q or %q", m.Recipient, RecipientDirector, RecipientSteward, RecipientArtisan)
+	}
+	if m.Recipient == RecipientSteward && !slices.Contains(StewardSenders, m.Sender) {
+		return invalid("the steward's inbox takes messages from %s only, not from %s", strings.Join(StewardSenders, ", "), MessageSender(m))
 	}
 	if err := validateIDs(m.Repository, m.TaskID, m.Type); err != nil {
 		return err

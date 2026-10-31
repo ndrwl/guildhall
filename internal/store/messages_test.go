@@ -299,7 +299,8 @@ func TestInboxIsBoundedOrderedAndSeparated(t *testing.T) {
 		"limit over maximum":      {director, MaxInboxLimit + 1},
 		"director with task":      {Recipient{Role: RecipientDirector, Repository: "app", TaskID: "t-1"}, 10},
 		"artisan without attempt": {Recipient{Role: RecipientArtisan, Repository: "app", TaskID: "t-1"}, 10},
-		"unknown role":            {Recipient{Role: "steward"}, 10},
+		"unknown role":            {Recipient{Role: "guildmaster"}, 10},
+		"steward with task":       {Recipient{Role: RecipientSteward, Repository: "app", TaskID: "t-1"}, 10},
 	} {
 		if _, _, err := s.Inbox(tc.to, 0, tc.limit); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v, want ErrInvalid", name, err)

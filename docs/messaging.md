@@ -34,12 +34,16 @@ The message `type` is a label for the reader; Guildhall does not interpret it.
 
 ## Recipients
 
-There are two recipient forms:
+There are three recipient forms:
 
 | Recipient | Inbox |
 |---|---|
 | `director` | The one Director that owns the store. It spans every repository in the store. |
+| `steward` | The [Steward session](steward.md#inbox) that owns a Steward copy's `steward.store`, and only there. It spans every repository in the store, and takes messages from the `guildmaster` sender only. |
 | `artisan:<repository>/<task>/<step>/<attempt>` | The Artisan running that stage attempt, for example `artisan:app/t-1/build/1`. |
+
+`messages send` refuses `director` to a `steward.store` and `steward` to any other store, and the store refuses a `steward` message from any sender but `guildmaster`, so no Director, other Director or Artisan reaches the Steward, and the Steward session's own sends are `director` sends that its inbox refuses.
+A message to `steward` is woken for as a message to `director` is, and both are the store's session inbox.
 
 There is no Director or Artisan registry yet, so an Artisan is identified by the stage attempt it runs.
 The repository, task, step and attempt must already exist in the store; a message to an Artisan needs that attempt to be running, while a message to the Director may concern a finished attempt or only a task.
@@ -122,7 +126,7 @@ An envelope cannot declare its own sender: `sender` is not an envelope field, so
 |---|---|
 | `guildhall` | Guildhall sends in process: the engine's outbox, an attempt's launcher, a quality judge and the workspace close sweep. |
 | `artisan` | `messages send` runs with `GUILDHALL_ATTEMPT` set, which the launcher sets to `<repository>/<task>/<step>/<n>` for an attempt's launcher and worker. This takes precedence over every row below, since a worker started from a Director session inherits its session variables. |
-| `director` | `GUILDHALL_SESSION` is set and [copy discovery](running.md#copies) from where `messages send` runs finds the copy whose store the message is sent to. A Director session runs inside its copy; `--copy` does not choose the sender's copy. |
+| `director` | `GUILDHALL_SESSION` is set and [copy discovery](running.md#copies) from where `messages send` runs finds the copy whose store the message is sent to. A Director session runs inside its copy; `--copy` does not choose the sender's copy. A Steward session sending to its own `steward.store` is `director` too. |
 | `other-director` | `GUILDHALL_SESSION` is set and copy discovery finds a different copy. |
 | `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set, wherever it runs. |
 | `unknown` | Anything else, such as `GUILDHALL_SESSION` where copy discovery finds no copy. A message stored with no sender also reads as `unknown`. |

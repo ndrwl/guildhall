@@ -443,8 +443,8 @@ func (s *Store) RecordWake(w Wake) (Receipt, error) {
 			return err
 		}
 		r.Repository, r.TaskID, r.Record = m.Repository, m.TaskID, "wake/"+m.ID
-		if m.Recipient != RecipientDirector {
-			return invalid("message %q is addressed to %s, not the director", m.ID, describeRecipient(m.To()))
+		if !m.Recipient.SessionInbox() {
+			return invalid("message %q is addressed to %s, not the session's inbox", m.ID, describeRecipient(m.To()))
 		}
 		wakes, err := createDirectorBucket(tx, bucketWakes)
 		if err != nil {
@@ -590,17 +590,17 @@ func UnreadFrom(t, sender string) string { return t + " from " + sender }
 // MessageTypes and "other", which counts every other type. Notes are counted by sender instead, keyed
 // UnreadFrom(MessageNote, sender) with the sender from MessageSenders, so no key carries free text.
 // Its cost grows with the number of unread messages and repositories, not with the store.
+// The session's inbox is the Director's or, in a Steward store, the Steward's (RecipientRole.SessionInbox); both
+// are counted, since a store has only one session.
 func (s *Store) DirectorUnread() (map[string]int, error) {
 	counts := map[string]int{}
 	err := s.view(func(tx *bolt.Tx) error {
-		prefix := inboxPrefix(Recipient{Role: RecipientDirector})
 		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
 			inbox := repoBucket(tx, string(repo), bucketInbox)
 			if inbox == nil {
 				return nil
 			}
-			c := inbox.Cursor()
-			for k, id := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, id = c.Next() {
+			return forSessionInbox(inbox, func(id []byte) error {
 				var m Message
 				if err := getJSON(repoBucket(tx, string(repo), bucketMessages), id, &m); err != nil {
 					return fmt.Errorf("inbox message %q: %w", id, err)
@@ -612,14 +612,29 @@ func (s *Store) DirectorUnread() (map[string]int, error) {
 				} else {
 					counts["other"]++
 				}
-			}
-			return nil
+				return nil
+			})
 		})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: director unread: %w", err)
 	}
 	return counts, nil
+}
+
+// forSessionInbox calls fn with the message id of every entry of one repository's inbox bucket addressed to the
+// session's inbox, the Director's entries then the Steward's, each in sequence order.
+func forSessionInbox(inbox *bolt.Bucket, fn func(id []byte) error) error {
+	for _, role := range []RecipientRole{RecipientDirector, RecipientSteward} {
+		prefix := inboxPrefix(Recipient{Role: role})
+		c := inbox.Cursor()
+		for k, id := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, id = c.Next() {
+			if err := fn(id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // unreadSender is m's sender as the wake line names it: one of MessageSenders, SenderUnknown for any other.
