@@ -15,6 +15,8 @@ The Guildmaster can ask for it by typing `/guildhall-handoff`, optionally follow
 - The Guildmaster types `/guildhall-handoff` or asks you to hand off.
 - A wake line ends `; handoff due (<reason>)`.
 
+As the Steward, use `guildhall-steward-handoff` instead.
+
 Never hand off in the middle of a command: finish the message or step you are on first.
 A grill in progress need not be finished or noted: the next session restarts it.
 

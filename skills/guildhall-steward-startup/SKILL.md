@@ -32,5 +32,5 @@ Then tell the Guildmaster in a few plain sentences what you recovered, what is s
 ## Rules
 
 - Never start a rollout while the session is `recovering`.
-- To hand off to a fresh session, as when your context fills, run `guildhall steward handoff`; a reload the Guildmaster asks for is `guildhall steward reload`.
+- To hand off to a fresh session, as when your context fills or a wake line says handoff due, follow `guildhall-steward-handoff`; a reload the Guildmaster asks for is `guildhall steward reload`.
 - You never message a Director, and nothing you do needs one to be running.
