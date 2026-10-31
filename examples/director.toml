@@ -49,6 +49,10 @@ remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"
 # No workflow key: feature tasks run the shipped default and bug tasks the shipped bug workflow.
 # No [repository.merge.requires] section: every requirement is on, so the Guildmaster answers every merge.
+# A failed GitHub Actions check is re-run once on the same head before the task goes back to build, and a check that
+# then passes is a flake the Director files a bug for; this is the default. "rerun" re-runs without the flake
+# message, and "off" sends a failed check back to build at once.
+# flaky_checks = "rerun-and-file"
 
 # How the merge queue rebases this repository's pull requests; these are the defaults. A rebase at or above
 # reapprove_after_rebase (no_conflicts | minor_conflicts | major_conflicts | never) asks the Guildmaster again.

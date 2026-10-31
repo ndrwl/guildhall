@@ -402,6 +402,36 @@ func (g GitHub) CheckLog(ctx context.Context, c Commit, job string, limit int64)
 	return CheckLog{}, &LogUnavailableError{Reason: reason, Expired: expiredLog.MatchString(reason)}
 }
 
+// RerunJob asks GitHub Actions to re-run job job of c's repository once, with gh api's POST to the job's rerun
+// endpoint. GitHub answers at once and runs the job as a new check run of the same name, with a new run id and a
+// new job id, which Checks then reports pending; it refuses a job whose workflow run is still in progress or too
+// old to re-run. An empty or non-numeric job is ErrInvalid; any gh failure, including GitHub's refusal and gh not
+// signed in, is an error carrying gh's reason. A cancelled ctx is returned as it is.
+func (g GitHub) RerunJob(ctx context.Context, c Commit, job string) error {
+	if job == "" || strings.Trim(job, "0123456789") != "" {
+		return fmt.Errorf("%w: job %q is not a GitHub Actions job id", ErrInvalid, job)
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	repo, err := GitHubRepository(c.Remote)
+	if err != nil {
+		return err
+	}
+	parts := strings.Split(repo, "/")
+	_, err = g.gh(ctx, c.Repository, "api", "repos/"+parts[1]+"/"+parts[2]+"/actions/jobs/"+job+"/rerun", "--method", "POST", "--hostname", parts[0])
+	switch {
+	case err == nil:
+		return nil
+	case ctx.Err() != nil:
+		return ctx.Err()
+	}
+	if run, ok := errors.AsType[*runError](err); ok {
+		return fmt.Errorf("re-running job %s: %s", job, cmp.Or(run.output, run.err.Error()))
+	}
+	return fmt.Errorf("re-running job %s: %w", job, err)
+}
+
 // GitHubRepository returns the github.com/<owner>/<repo> a remote names, from its https://, ssh:// or
 // scp-like git@ form, with or without .git; any other remote is ErrUnsupportedRemote.
 func GitHubRepository(remote string) (string, error) {

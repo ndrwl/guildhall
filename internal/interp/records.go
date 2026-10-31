@@ -143,3 +143,13 @@ type CheckLogReader interface {
 }
 
 var _ CheckLogReader = forge.GitHub{}
+
+// CheckRerunner re-runs a failed GitHub Actions job once on the same head; it is optional on the forge, and validate
+// re-runs a failed round's checks through it under the repository's flaky_checks policy
+// (docs/interpreter.md#validate). forge.GitHub and forgetest.Fake implement it; a forge without it reruns nothing,
+// as flaky_checks = "off" does.
+type CheckRerunner interface {
+	RerunJob(ctx context.Context, c forge.Commit, job string) error
+}
+
+var _ CheckRerunner = forge.GitHub{}

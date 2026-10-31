@@ -474,10 +474,37 @@ type Repository struct {
 	WorkflowOverrides map[string]workflow.Override `toml:"workflow_overrides"`
 	// NoCI declares that the repository runs no checks, so validate passes a head its forge reports none for.
 	NoCI bool `toml:"no_ci" json:",omitempty"`
+	// FlakyChecks is what validate does with a failed GitHub Actions check: off, rerun or rerun-and-file
+	// (docs/configuration.md#repositories); empty is DefaultFlakyChecks. Read it through FlakyChecksPolicy. It is
+	// omitted from JSON when unset, so the config digest of a config without it is unchanged.
+	FlakyChecks FlakyChecks `toml:"flaky_checks" json:",omitempty"`
 	// Profiles are this repository's grants, keyed by a declared claude profile's name: each adds its rules to that
 	// profile's effective grant for this repository's tasks only (docs/adapters.md#artisan-permissions).
 	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
 	Profiles map[string]RepositoryProfile `toml:"profiles" json:",omitempty"`
+}
+
+// FlakyChecks is a repository's flaky-check policy, flaky_checks.
+type FlakyChecks string
+
+// The flaky-check policies: off records a failed check as a failed round at once; rerun re-runs each failed
+// GitHub Actions job once on the same head first; rerun-and-file also tells the Director of a flake, a failure
+// that passed on its rerun, so the Director files or updates a bug.
+const (
+	FlakyChecksOff          FlakyChecks = "off"
+	FlakyChecksRerun        FlakyChecks = "rerun"
+	FlakyChecksRerunAndFile FlakyChecks = "rerun-and-file"
+	DefaultFlakyChecks                  = FlakyChecksRerunAndFile
+)
+
+// Valid reports whether p is empty or one of the policies.
+func (p FlakyChecks) Valid() bool {
+	return p == "" || p == FlakyChecksOff || p == FlakyChecksRerun || p == FlakyChecksRerunAndFile
+}
+
+// FlakyChecksPolicy is the effective flaky_checks.
+func (r Repository) FlakyChecksPolicy() FlakyChecks {
+	return cmp.Or(r.FlakyChecks, DefaultFlakyChecks)
 }
 
 // RepositoryProfile is a repository grant: the rules one repository adds to one profile.
@@ -774,6 +801,9 @@ func (c *Config) validate() []string {
 			case !workflow.ValidID(r.Kinds[k]):
 				add("%s: kinds.%s: invalid workflow name %q", name, k, r.Kinds[k])
 			}
+		}
+		if !r.FlakyChecks.Valid() {
+			add("%s: flaky_checks %q must be off, rerun or rerun-and-file", name, r.FlakyChecks)
 		}
 		m := r.Merge
 		switch k := m.ReapproveAfterRebase; {

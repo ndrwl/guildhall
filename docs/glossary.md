@@ -71,6 +71,9 @@ A finished outcome without a readable result is refused, not guessed.
 - A **log excerpt** is the bounded tail of the failing step of a failed job log, inlined in a failed validate result's `logs` ([validate](interpreter.md#validate)).
 - The **CI log cache** is `<state>/<repo>/<task>/ci-logs/`, the failed job logs validate and [`ci log`](ci-logs.md) fetched; it is no store document and may be deleted at any time.
 - Avoid "build log" for any of these: a build is the Artisan's build step, not CI.
+- A **rerun** is validate re-running a failed GitHub Actions job once on the same head under the repository's `flaky_checks` policy, before the failed round is recorded ([reruns](interpreter.md#validate-reruns)).
+- A **flake** is a check that failed and then passed on its rerun of the same head; under `rerun-and-file` the Director is told of it as a `flake` message and files or updates a bug.
+- Avoid "retry" for a rerun: a retry is a new Artisan attempt of a failed step (`guildhall step retry`).
 
 ## Copy
 

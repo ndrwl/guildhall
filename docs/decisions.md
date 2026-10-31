@@ -130,6 +130,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [CI builds, vets, tests and lints on Linux, Windows and macOS with a pinned golangci-lint](decisions/ci-matrix-and-lint.md)
 - [A CI runner's required tools turn their skips into failures](decisions/ci-required-skips.md)
 - [Guildhall fetches failed CI job logs for Artisans, who get no `gh`](decisions/failed-job-logs.md)
+- [Validate re-runs a failed CI job once before sending the task back to build](decisions/flaky-check-reruns.md)
 - [Tests skip the store's fsync, scale wait ceilings on CI and share fixtures, to keep Windows CI fast and steady](decisions/windows-ci-speed.md)
 
 ## Releases and the baseline

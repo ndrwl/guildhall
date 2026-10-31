@@ -55,6 +55,10 @@ type validationDoc struct {
 	Escalation *escalationDoc `json:"rebase_escalation,omitempty"`
 	// Logs holds, in a failed result, each failed check's log excerpt, or why it has none, in the order of Checks.
 	Logs []logDoc `json:"logs,omitempty"`
+	// Reruns names the checks validate re-ran once on Head under FlakyChecks, the repository's flaky_checks policy
+	// then: in a passed result each is a flake, and in a failed one a check that failed again after its rerun.
+	Reruns      []rerunEntry       `json:"reruns,omitempty"`
+	FlakyChecks config.FlakyChecks `json:"flaky_checks,omitempty"`
 }
 
 // logDoc is one failed check's entry in a failed validation result's logs.
@@ -309,6 +313,14 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		return false, wait, nil
 	}
 	if v.Verdict == validationFailed {
+		// Under flaky_checks, a round about to be recorded first gives its failed jobs their one rerun on this head.
+		if stop, next, err := r.rerunFailed(s, repo, pr, h, &v); err != nil || stop {
+			return false, next, err
+		}
+	} else if err := r.passedReruns(s, repo, h, &v); err != nil {
+		return false, Next{}, err
+	}
+	if v.Verdict == validationFailed {
 		// Only a round about to be recorded fetches logs; the result, recorded once, is the only write.
 		if v.Logs, err = r.failedLogs(forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h}, checks); err != nil {
 			return false, Next{}, err
@@ -501,14 +513,26 @@ func (r *run) notifyValidation(s workflow.Step, id string, v validationDoc) erro
 		return r.notify("checks-passed."+id, store.MessageChecksPassed, fmt.Sprintf("Head %s on pull request %s has no CI to wait for: repository %s is configured with no_ci (step %s, %s).", v.Head, v.URL, r.task.Repository, s.ID, id))
 	}
 	if v.Verdict == validationPassed {
+		// The flake messages go first: the checks-passed message is the result's, and either may be lost to a crash.
+		if err := r.notifyFlakes(s, id, v); err != nil {
+			return err
+		}
 		return r.notify("checks-passed."+id, store.MessageChecksPassed, fmt.Sprintf("The checks of head %s on pull request %s passed (step %s, %s).", v.Head, v.URL, s.ID, id))
 	}
 	then := "the Director decides what happens next."
 	if rule, ok := s.On[validationFailedOutcome]; ok {
 		then = fmt.Sprintf("the failed loop sends the task back to step %s with the result as feedback, at most %d times.", rule.Goto, rule.Max)
 	}
-	return r.notify("checks-failed."+id, store.MessageChecksFailed, fmt.Sprintf("The checks of head %s on pull request %s failed (step %s, %s): %s; %s",
-		v.Head, v.URL, s.ID, id, strings.Join(v.Failing, ", "), then))
+	again := ""
+	if len(v.Reruns) > 0 {
+		var names []string
+		for _, e := range v.Reruns {
+			names = append(names, e.Check)
+		}
+		again = fmt.Sprintf(" (%s failed again after one rerun)", strings.Join(names, ", "))
+	}
+	return r.notify("checks-failed."+id, store.MessageChecksFailed, fmt.Sprintf("The checks of head %s on pull request %s failed (step %s, %s): %s%s; %s",
+		v.Head, v.URL, s.ID, id, strings.Join(v.Failing, ", "), again, then))
 }
 
 // validationFailed follows the failed result v, recorded as round id of step s: without a loop rule the Director

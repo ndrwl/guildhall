@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -30,6 +31,9 @@ type Fake struct {
 	// logs and logErrs are each job's log and log failure.
 	logs    map[string][]byte
 	logErrs map[string]error
+	// reruns are the jobs RerunJob was called with, in order, and rerunErrs each job's rerun failure.
+	reruns    []string
+	rerunErrs map[string]error
 	// comments are the comments of the closes that closed a pull request.
 	comments []string
 	// publishes, merges, closes, logReads and views count calls, and edits the publishes that changed an open pull
@@ -237,6 +241,56 @@ func (f *Fake) CheckLog(ctx context.Context, c forge.Commit, job string, limit i
 	w := &forge.TailWriter{Limit: limit}
 	_, _ = w.Write(text)
 	return w.Log(), nil
+}
+
+// SetRerunError makes re-running job fail with err; a nil err clears the failure.
+func (f *Fake) SetRerunError(job string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.rerunErrs == nil {
+		f.rerunErrs = map[string]error{}
+	}
+	f.rerunErrs[job] = err
+	if err == nil {
+		delete(f.rerunErrs, job)
+	}
+}
+
+// Reruns returns the jobs RerunJob was called with, in order, failed calls included.
+func (f *Fake) Reruns() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.reruns)
+}
+
+// RerunJob implements forge.GitHub.RerunJob's contract: the check of c.Head whose job is job becomes a pending new
+// run of the same name, with a new run id and job id, or the error SetRerunError set is returned. A job no check of
+// the head runs is GitHub's 404.
+func (f *Fake) RerunJob(ctx context.Context, c forge.Commit, job string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reruns = append(f.reruns, job)
+	switch {
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case job == "" || strings.Trim(job, "0123456789") != "":
+		return fmt.Errorf("%w: job %q is not a GitHub Actions job id", forge.ErrInvalid, job)
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if err := f.rerunErrs[job]; err != nil {
+		return err
+	}
+	checks := f.checks[c.Remote][c.Head]
+	i := slices.IndexFunc(checks, func(ch forge.Check) bool { return ch.Job == job })
+	if i < 0 {
+		return fmt.Errorf("re-running job %s: gh: Not Found (HTTP 404)", job)
+	}
+	n := len(f.reruns)
+	checks[i] = forge.Check{Name: checks[i].Name, State: forge.CheckPending, URL: checks[i].URL,
+		ID: fmt.Sprintf("%s-rerun-%d", checks[i].ID, n), Job: fmt.Sprintf("%s%d", job, n)}
+	return nil
 }
 
 // Merge implements forge.GitHub.Merge's contract.
