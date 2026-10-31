@@ -70,7 +70,7 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		return pr
 	}
 	merge := func(h Harness, pr forge.PullRequest, head string) (forge.PullRequest, error) {
-		return h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: head})
+		return h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: head, Title: "Contract task"})
 	}
 
 	t.Run("opens a pull request for the pushed head and replays it", func(t *testing.T) {
@@ -191,6 +191,17 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		pr := publish(t, h, h.Heads[1])
 		if _, err := merge(h, pr, h.Heads[0]); !errors.Is(err, forge.ErrRefused) {
 			t.Fatalf("Merge at another head = %v, want ErrRefused", err)
+		}
+		// A blank title would leave the subject to the forge's default, so it is refused before the forge merges.
+		for _, title := range []string{"", " \t"} {
+			if _, err := h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: h.Heads[1], Title: title}); !errors.Is(err, forge.ErrInvalid) {
+				t.Fatalf("Merge with title %q = %v, want ErrInvalid", title, err)
+			}
+		}
+		if r, ok := h.Forge.(PullRequestReader); ok {
+			if got, err := r.PullRequest(ctx, forge.View{Repository: h.Repository, Remote: h.Remote, Number: pr.Number}); err != nil || got.State != forge.Open {
+				t.Fatalf("pull request after a blank-title Merge = %+v, %v, want it still open", got, err)
+			}
 		}
 		got, err := merge(h, pr, h.Heads[1])
 		if err != nil {

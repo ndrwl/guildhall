@@ -32,6 +32,8 @@ type Fake struct {
 	logErrs map[string]error
 	// comments are the comments of the closes that closed a pull request.
 	comments []string
+	// subjects are the subjects Merge merged each pull request with, by remote and number.
+	subjects map[string]map[int]string
 	// publishes, merges, closes, logReads and views count calls, and edits the publishes that changed an open pull
 	// request's text.
 	publishes, merges, closes, logReads, views, edits int
@@ -43,7 +45,7 @@ type text struct{ title, body string }
 // NewFake returns a forge with no repositories.
 func NewFake() *Fake {
 	return &Fake{commits: map[string]map[string]bool{}, branches: map[string]map[string]string{}, bases: map[string]string{}, prs: map[string][]forge.PullRequest{},
-		texts: map[string][]text{}, pushed: map[string]map[string]bool{}, checks: map[string]map[string][]forge.Check{}}
+		texts: map[string][]text{}, pushed: map[string]map[string]bool{}, checks: map[string]map[string][]forge.Check{}, subjects: map[string]map[int]string{}}
 }
 
 // AddCommit makes head a commit of repository.
@@ -244,7 +246,7 @@ func (f *Fake) Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, err
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.merges++
-	if err := m.Validate(); err != nil {
+	if err := m.ValidateTitled(); err != nil {
 		return forge.PullRequest{}, err
 	}
 	prs := f.prs[m.Remote]
@@ -265,7 +267,19 @@ func (f *Fake) Merge(ctx context.Context, m forge.Merge) (forge.PullRequest, err
 	sum := sha1.Sum([]byte("merge " + pr.Head))
 	pr.State, pr.MergeCommit = forge.Merged, hex.EncodeToString(sum[:])
 	f.setBranch(m.Remote, f.bases[m.Remote], pr.MergeCommit)
+	if f.subjects[m.Remote] == nil {
+		f.subjects[m.Remote] = map[int]string{}
+	}
+	f.subjects[m.Remote][m.Number] = m.Subject()
 	return *pr, nil
+}
+
+// MergeSubject returns the subject Merge merged pull request number of remote with, or "" when Merge has not
+// merged it.
+func (f *Fake) MergeSubject(remote string, number int) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.subjects[remote][number]
 }
 
 // MergeOutside merges pull request number of remote as someone outside Guildhall would on the forge: at head, which

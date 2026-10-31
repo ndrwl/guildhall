@@ -1,0 +1,21 @@
+# H34: the new merge-subject assertions against GitHub.Merge and Fake.Merge before the change (go test ./internal/forge/), with forge.Merge.Title added as a field only.
+# The gh stand-in refuses a pr merge without --subject, so every GitHub merge fails; the contract suite's blank-title case fails on both forges, since a blank Title merged.
+--- FAIL: TestForgeContract (1.14s)
+    --- FAIL: TestForgeContract/fake (0.00s)
+        --- FAIL: TestForgeContract/fake/merges_only_at_the_approved_head_and_replays_the_merge (0.00s)
+    --- FAIL: TestForgeContract/github (1.13s)
+        --- FAIL: TestForgeContract/github/merges_only_at_the_approved_head_and_replays_the_merge (0.08s)
+        --- FAIL: TestForgeContract/github/opens_a_slice_branch's_own_pull_request_after_the_first_slice_merged (0.06s)
+        --- FAIL: TestForgeContract/github/refuses_to_close_a_merged_pull_request_and_an_invalid_close (0.07s)
+        --- FAIL: TestForgeContract/github/reads_a_pull_request_open,_merged_and_closed_without_changing_it (0.09s)
+        --- FAIL: TestForgeContract/github/reports_a_forge_refusal_with_its_reason (0.06s)
+--- FAIL: TestGitHubArguments (0.08s)
+    forge_test.go:242: the forge refused the merge: fake gh: merge without --subject
+--- FAIL: TestGitHubMergeSignedOut (0.07s)
+    forge_test.go:456: Merge signed out = the forge refused the merge: fake gh: merge without --subject, want a plain error carrying gh's message
+--- FAIL: TestGitHubMergeUnreachable (0.07s)
+    forge_test.go:478: Merge unreachable = the forge refused the merge: fake gh: merge without --subject, want a plain error carrying gh's message
+--- FAIL: TestGitHubMergeTimeout (0.07s)
+    forge_test.go:523: Merge hung = the forge refused the merge: fake gh: merge without --subject, want a plain error naming gh and the 500ms timeout
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/forge

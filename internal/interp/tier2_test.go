@@ -261,7 +261,13 @@ func validateRebaseEnv(t *testing.T, b backend) (*env, *forgetest.Fake, *queueWo
 // validateRebaseEnvTasks is validateRebaseEnv with app/t7 changed by edit, as newEnvTasks changes it.
 func validateRebaseEnvTasks(t *testing.T, b backend, edit func(*store.Task)) (*env, *forgetest.Fake, *queueWorkspaces) {
 	t.Helper()
-	e, f := newValidateEnvTasks(t, b, loadWorkflow(t, "validate"), edit)
+	return validateRebaseEnvDef(t, b, loadWorkflow(t, "validate"), edit)
+}
+
+// validateRebaseEnvDef is validateRebaseEnvTasks over workflow def, a variant of validate.json.
+func validateRebaseEnvDef(t *testing.T, b backend, def *workflow.Definition, edit func(*store.Task)) (*env, *forgetest.Fake, *queueWorkspaces) {
+	t.Helper()
+	e, f := newValidateEnvTasks(t, b, def, edit)
 	for n := 1; n < 10; n++ {
 		f.AddCommit(repoPath, commitN(n))
 	}
