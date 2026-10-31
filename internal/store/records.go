@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	bolt "go.etcd.io/bbolt"
@@ -210,7 +211,18 @@ type Decision struct {
 	// for it, and it can no longer be answered.
 	Void       bool   `json:"void,omitempty"`
 	VoidReason string `json:"void_reason,omitempty"`
+	// AnsweredVia is where an answer was given when Guildhall knows it: AnsweredViaPage for the task page
+	// (docs/web.md#answering), empty for an answer recorded with decide answer, through the Director or before it
+	// was recorded. AnsweredBy is the Tailscale login that answered on the page, set only with AnsweredVia.
+	AnsweredVia string `json:"answered_via,omitempty"`
+	AnsweredBy  string `json:"answered_by,omitempty"`
 }
+
+// AnsweredViaPage is Decision.AnsweredVia for an answer given on the task page.
+const AnsweredViaPage = "page"
+
+// MaxAnsweredByBytes bounds Decision.AnsweredBy.
+const MaxAnsweredByBytes = 256
 
 // Open reports whether the decision still waits for an answer: it is neither answered nor void.
 func (d Decision) Open() bool { return !d.Answered && !d.Void }
@@ -513,13 +525,25 @@ func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
 // is refused with ErrInvalid and nothing is written (see Decision), unless the decision is a question,
 // which takes free text and then leaves Choice and Note empty.
 func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string) (Receipt, error) {
+	return s.AnswerDecisionVia(mutationID, repository, taskID, id, answer, "", "")
+}
+
+// AnswerDecisionVia is AnswerDecision recording where the answer was given and who gave it: via is "" or
+// AnsweredViaPage, and by, the Tailscale login, is set exactly when via is: printable text with no spaces, at most
+// MaxAnsweredByBytes. Both are part of the request, so a retry under the same mutation id with the same answer,
+// place and login replays its receipt, and any other is ErrMutationConflict. With via "" it is AnswerDecision, with
+// the same request digest.
+func (s *Store) AnswerDecisionVia(mutationID, repository, taskID, id, answer, via, by string) (Receipt, error) {
 	if err := validateIDs(repository, taskID, id); err != nil {
 		return Receipt{}, err
 	}
 	if err := validateText("answer", answer, MaxTextBytes); err != nil {
 		return Receipt{}, err
 	}
-	req := Decision{Repository: repository, TaskID: taskID, ID: id, Answered: true, Answer: answer}
+	if err := validateAnsweredBy(via, by); err != nil {
+		return Receipt{}, err
+	}
+	req := Decision{Repository: repository, TaskID: taskID, ID: id, Answered: true, Answer: answer, AnsweredVia: via, AnsweredBy: by}
 	return s.mutate(mutationID, "answer-decision", req, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = repository, taskID, "decision/"+id
 		decisions := repoBucket(tx, repository, bucketDecisions)
@@ -544,7 +568,7 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 				return invalid("the first line of the answer to decision %q of %s/%s is %q; it must be one of %q", id, repository, taskID, first, d.Options)
 			}
 		}
-		d.Answered, d.Answer = true, answer
+		d.Answered, d.Answer, d.AnsweredVia, d.AnsweredBy = true, answer, via, by
 		return putJSON(decisions, key, d)
 	})
 }
@@ -768,6 +792,30 @@ func validateIDs(ids ...string) error {
 	for _, id := range ids {
 		if !workflow.ValidID(id) {
 			return invalid("id %q must be lowercase letters, digits and hyphens, starting with a letter", id)
+		}
+	}
+	return nil
+}
+
+// validateAnsweredBy checks an answer's place and login: neither, or the page with a login of printable characters
+// and no spaces, at most MaxAnsweredByBytes.
+func validateAnsweredBy(via, by string) error {
+	switch via {
+	case "":
+		if by != "" {
+			return invalid("an answer's login is recorded only with where it was given")
+		}
+		return nil
+	case AnsweredViaPage:
+	default:
+		return invalid("an answer is given via %q or with no place recorded, not %q", AnsweredViaPage, via)
+	}
+	if by == "" || len(by) > MaxAnsweredByBytes || !utf8.ValidString(by) {
+		return invalid("an answer given on the page needs the login that gave it, at most %d bytes of UTF-8", MaxAnsweredByBytes)
+	}
+	for _, r := range by {
+		if unicode.IsSpace(r) || !unicode.IsPrint(r) {
+			return invalid("the login %q that answered must be printable with no spaces", by)
 		}
 	}
 	return nil

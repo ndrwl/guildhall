@@ -21,6 +21,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/steward"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/web"
 )
 
 // version is set at release build time with
@@ -249,6 +250,9 @@ type App struct {
 	// WebListen binds the [web] address the task pages are served on, for a Director session and guildhall web; nil
 	// means web.Listen, which refuses an address outside Tailscale's ranges (docs/web.md).
 	WebListen func(address string) (net.Listener, error)
+	// WebIdentity tells the task pages which Tailscale login sent a request; nil means web.Whois, which runs
+	// tailscale whois on PATH.
+	WebIdentity web.Identifier
 	// webSignals, when set, is the channel guildhall web stops on in place of the process's signals, and webServing
 	// is told the address it bound, so a test can request a page and then stop it.
 	webSignals chan os.Signal

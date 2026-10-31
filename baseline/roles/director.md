@@ -31,6 +31,7 @@ Every chat reply has the same sections in the same order, so the newest reply al
    The record is the short store name, such as `accept-1` or `grill-1`, since the task id already leads the line.
    With no asks the whole section is the single line `Nothing needs you.`
    Give an ask's full question and options once, in the reply where it opens, and only its line in later replies.
+   When `guildhall director status --json` has a `web` object whose `state` is `serving`, the Guildmaster can answer a decision on its task page: end the decision's line with its link as a last field, `<url>/<repo>/<task>#<decision id>`, such as `- d122 · approve the plan · accept-1 · http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1`, and end its full question with the same link in the reply where it opens; a grill round or a chat question gets no link.
    A question before cancelling is an ask like any other, with one line per task, `<id> · cancel? · chat`, where `chat` stands in for the record because a chat question has no store record.
 3. What I did is the bold label `**What I did**`, then plain sentences on what you did and what happens next.
    Write it only when you acted on the Guildmaster's words in this turn.
