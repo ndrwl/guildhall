@@ -48,8 +48,15 @@ type Admission struct {
 	// Enrolment is the newest enrolment event, and LastRevision the newest managed-revision event of it.
 	Enrolment    *store.Enrolment       `json:"enrolment,omitempty"`
 	LastRevision *store.ManagedRevision `json:"last_revision,omitempty"`
-	// inline is set when config.toml defines an inline [managed] table.
-	inline bool
+	// Authorization is the revision event that authorizes ManagedDigest, when Authorized: its source and time say
+	// when the digest on disk was applied.
+	Authorization *store.ManagedRevision `json:"authorization,omitempty"`
+	// Untrusted is the observed-untrusted state of the unauthorized ManagedDigest, once the store records it
+	// observed: the alert decision that answers it and whether it waits or was rejected.
+	Untrusted *Alert `json:"untrusted,omitempty"`
+	// inline is set when config.toml defines an inline [managed] table, and approved when the Guildmaster approved
+	// the observed digest's alert decision but its approval is not recorded as a revision yet.
+	inline, approved bool
 }
 
 // RefusalError is a refusal of the boundary, as Admit returns it.
@@ -93,16 +100,34 @@ func (f Files) Load() (*config.Config, error) {
 // ManagedView reads the managed facts of the Director copy whose config is at cfgPath, from the director.store
 // beside it: none when that store does not exist, as for a config that is not in a copy.
 func ManagedView(cfgPath string) (store.ManagedView, error) {
+	v, _, err := managedFacts(cfgPath)
+	return v, err
+}
+
+// managedFacts is ManagedView with the reserved task's alert decisions.
+func managedFacts(cfgPath string) (store.ManagedView, []store.Decision, error) {
 	path := filepath.Join(filepath.Dir(cfgPath), StoreFile)
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return store.ManagedView{Revisions: []store.ManagedRevision{}}, nil
+		return store.ManagedView{Revisions: []store.ManagedRevision{}}, nil, nil
 	}
 	s, err := store.Open(path, store.Options{ReadOnly: true, RequireStore: true, LockTimeout: config.DefaultLockWait})
 	if err != nil {
-		return store.ManagedView{}, err
+		return store.ManagedView{}, nil, err
 	}
 	v, err := s.ManagedView()
-	return v, errors.Join(err, s.Close())
+	var ds []store.Decision
+	if err == nil {
+		ds, err = alertDecisions(s)
+	}
+	return v, ds, errors.Join(err, s.Close())
+}
+
+// JudgeAlerts is Judge with the reserved task's alert decisions, which it uses to say whether an observed-untrusted
+// digest waits for the Guildmaster or was rejected (Admission.Untrusted).
+func JudgeAlerts(f Files, v store.ManagedView, decisions []store.Decision) Admission {
+	a := Judge(f, v)
+	a.alerted(v, decisions)
+	return a
 }
 
 // Judge applies the boundary to files f and the copy's managed facts v: the inline [managed] refusal in every mode,
@@ -128,7 +153,7 @@ func Judge(f Files, v store.ManagedView) Admission {
 	case enrolled && present:
 		a.Mode, a.Steward = ModeManaged, v.Enrolment.Steward
 		if auth := v.Authorization(a.ManagedDigest); auth != nil {
-			a.Authorized = true
+			a.Authorized, a.Authorization = true, auth
 		} else {
 			refuse("%s %s is not authorized: this copy's store records no reload or Guildmaster approval of that digest, so its settings are not applied", ManagedFile, a.ManagedDigest)
 		}
@@ -157,12 +182,12 @@ func Inspect(cfgPath string) (Admission, *config.Config, error) {
 	if err != nil {
 		return Admission{}, nil, err
 	}
-	v, err := ManagedView(cfgPath)
+	v, ds, err := managedFacts(cfgPath)
 	if err != nil {
 		return Admission{}, nil, err
 	}
 	cfg, err := f.Load()
-	return Judge(f, v), cfg, err
+	return JudgeAlerts(f, v, ds), cfg, err
 }
 
 // Reported is the config of the Director copy whose config is at cfgPath, through the boundary's report form, for
@@ -181,22 +206,35 @@ func Reported(cfgPath string) (*config.Config, error) {
 // managed revision the copy's store has not authorized, and otherwise returns the effective config with the
 // admission. A refusal is a RefusalError naming the state and the command that fixes it; a config that does not
 // read or load is its error, as config.Load returns it.
+//
+// On first load of a managed digest the store has not authorized, Admit records it observed-untrusted, once per
+// digest and enrolment, and opens one approve/reject alert decision for the Guildmaster on the reserved task
+// (docs/director-modes.md#guard-rails); the revision is still refused. An alert the Guildmaster answered approve
+// is recorded as a guildmaster-approved revision instead, which admits the digest. A failure to record leaves the
+// refusal standing, saying so.
 func Admit(cfgPath string) (*config.Config, Admission, error) {
 	f, err := ReadFiles(cfgPath)
 	if err != nil {
 		return nil, Admission{}, err
 	}
-	v, err := ManagedView(cfgPath)
+	v, ds, err := managedFacts(cfgPath)
 	if err != nil {
 		return nil, Admission{}, fmt.Errorf("managed mode: %w", err)
 	}
-	a := Judge(f, v)
+	a := JudgeAlerts(f, v, ds)
 	if a.inline || a.Mode == ModeRefused {
 		return nil, a, RefusalError{a.Refusal}
 	}
 	cfg, err := f.Load()
 	if err != nil {
 		return nil, a, err
+	}
+	if a.Mode == ModeManaged && !a.Authorized && (a.Untrusted == nil || a.Untrusted.State == AlertNotOpened || a.approved) {
+		v, ds, err := observe(cfgPath, a)
+		if err != nil {
+			return nil, a, RefusalError{a.Refusal + "; recording the observation failed: " + err.Error()}
+		}
+		a = JudgeAlerts(f, v, ds)
 	}
 	if a.Refusal != "" {
 		return nil, a, RefusalError{a.Refusal}

@@ -41,12 +41,20 @@ func TestConfigReload(t *testing.T) {
 	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
 		t.Fatalf("task new before reload: exit %d, want the unauthorized refusal", code)
 	}
+	// The refusal recorded the digest observed-untrusted (event 1) and opened its alert decision.
+	if got := copyMode(t, dir); got.Untrusted == nil || got.Untrusted.State != "waiting" {
+		t.Fatalf("mode before reload = %+v", got)
+	}
 
 	for range 2 {
 		code, out, stderr := configCmd(t, "reload", "--copy", dir)
-		if code != 0 || out != "managed.toml "+first+" authorized by reload (event 1); new tasks get its settings, and active tasks keep their bound config\n" {
+		if code != 0 || out != "managed.toml "+first+" authorized by reload (event 2); new tasks get its settings, and active tasks keep their bound config\n" {
 			t.Fatalf("reload: exit %d\n%s%s", code, out, stderr)
 		}
+	}
+	// The reload answers the alert: its decision is void, so nothing waits for it.
+	if ds := alertDecisionsIn(t, dir); len(ds) != 1 || !ds[0].Void || !strings.Contains(ds[0].VoidReason, "config reload authorized "+first) {
+		t.Fatalf("alert decisions after reload = %+v", ds)
 	}
 	receipts := receiptCount(t, dir)
 	if code, _, _ := configCmd(t, "reload", "--copy", dir); code != 0 || receiptCount(t, dir) != receipts {
@@ -64,11 +72,11 @@ func TestConfigReload(t *testing.T) {
 
 	second := writeManaged(t, dir, map[string]config.ManagedSetting{"max_running_attempts": {Value: "1"}, config.LockWaitKey: {Value: "40s", Overridable: true}})
 	code, out, stderr := configCmd(t, "reload", "--copy", dir)
-	if code != 0 || !strings.Contains(out, "managed.toml "+second+" authorized by reload (event 2, previous "+first+")") {
+	if code != 0 || !strings.Contains(out, "managed.toml "+second+" authorized by reload (event 3, previous "+first+")") {
 		t.Fatalf("reload of a new revision: exit %d\n%s%s", code, out, stderr)
 	}
 	v := managedView(t, dir)
-	if len(v.Revisions) != 2 || v.Revisions[1].Source != store.SourceReload || v.Revisions[1].Digest != second || v.Revisions[1].Previous != first {
+	if len(v.Revisions) != 3 || v.Revisions[2].Source != store.SourceReload || v.Revisions[2].Digest != second || v.Revisions[2].Previous != first {
 		t.Fatalf("revisions = %+v", v.Revisions)
 	}
 	receipt, err := withStore(filepath.Join(dir, directorStoreFile), true, func(s *store.Store) (store.Receipt, error) {

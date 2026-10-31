@@ -384,12 +384,51 @@ type stewardMachine struct {
 	Directors []stewardDirector `json:"directors"`
 }
 
-// stewardDirector is one roster Director copy in steward status, with its last rollout receipt, if any.
+// stewardDirector is one roster Director copy in steward status, with its last rollout receipt, if any, and its
+// mode as `director mode --json` reports it over SSH, or the problem that kept it from being read.
 type stewardDirector struct {
 	Name         string          `json:"name"`
 	CopyDir      string          `json:"copy_dir"`
 	Repositories []string        `json:"repositories"`
 	LastRollout  *stewardReceipt `json:"last_rollout"`
+	Mode         *stewardMode    `json:"mode,omitempty"`
+	Problem      string          `json:"problem,omitempty"`
+}
+
+// stewardMode is a Director copy's mode as it reports it: its mode name, the Steward it is enrolled with, the
+// managed.toml digest on disk and whether its own store authorizes it, any refusal, and any observed-untrusted digest
+// awaiting the Guildmaster's answer there.
+type stewardMode struct {
+	Mode          string `json:"mode"`
+	Steward       string `json:"steward,omitempty"`
+	ManagedDigest string `json:"managed_digest,omitempty"`
+	Authorized    bool   `json:"authorized"`
+	Refusal       string `json:"refusal,omitempty"`
+	Untrusted     string `json:"untrusted,omitempty"`
+}
+
+// statusSSHTimeout bounds each `director mode --json` that steward status runs over ssh.
+const statusSSHTimeout = 30 * time.Second
+
+// remoteCopyMode reads the mode of Director copy d on machine m with `director mode --json` through run, nil when
+// run is nil, as when ssh is missing, with runErr saying why.
+func remoteCopyMode(ctx context.Context, run steward.Runner, runErr error, m steward.Machine, d steward.Director) (*stewardMode, error) {
+	if run == nil {
+		return nil, runErr
+	}
+	out, err := run.Run(ctx, m.SSHAlias, steward.ModeCommand(m.Guildhall(), d.CopyDir))
+	if err != nil {
+		return nil, err
+	}
+	var a admission
+	if err := json.Unmarshal(out, &a); err != nil || a.Mode == "" {
+		return nil, fmt.Errorf("director mode --json printed no mode: %q", truncateUTF8(strings.TrimSpace(string(out)), 200))
+	}
+	sm := &stewardMode{Mode: a.Mode, Steward: a.Steward, ManagedDigest: a.ManagedDigest, Authorized: a.Authorized, Refusal: a.Refusal}
+	if a.Untrusted != nil {
+		sm.Untrusted = a.Untrusted.Digest
+	}
+	return sm, nil
 }
 
 // stewardReceipt is a copy's part of its newest rollout receipt.
@@ -410,7 +449,9 @@ type stewardApproval struct {
 
 // stewardStatusCmd runs `guildhall steward status [--copy <dir>]`: the newest Steward session, every roster machine
 // and Director copy with its last rollout receipt from the plans under the copy's rollouts/, and the rollout
-// approvals. It reads only local files: nothing reaches a Director.
+// approvals. Each copy's mode and managed digest is read with the fixed, read-only `director mode --json` over SSH;
+// a copy that cannot be read, as on an unreachable machine, is a problem of that copy, and the command still
+// succeeds. Nothing else reaches a Director, and nothing is changed.
 func (a *App) stewardStatusCmd(args []string) int {
 	fl := flag.NewFlagSet("steward status", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
@@ -482,6 +523,7 @@ func (a *App) stewardStatusCmd(args []string) int {
 	if err != nil {
 		out.Problems = append(out.Problems, fmt.Sprintf("roster: %v", err))
 	} else {
+		run, runErr := a.statusRunner()
 		for _, m := range roster.Machines {
 			sm := stewardMachine{Label: m.Label, SSHAlias: m.SSHAlias, OS: m.OS, Directors: []stewardDirector{}}
 			for _, d := range m.Directors {
@@ -489,12 +531,30 @@ func (a *App) stewardStatusCmd(args []string) int {
 				if r, ok := receipts[m.Label+"/"+d.Name]; ok {
 					sd.LastRollout = &r
 				}
+				// An unreachable machine or an older guildhall is this copy's problem, not the command's.
+				if sd.Mode, err = remoteCopyMode(context.Background(), run, runErr, m, d); err != nil {
+					sd.Problem = "mode: " + oneLine(err.Error())
+					out.Problems = append(out.Problems, fmt.Sprintf("%s/%s: %s", m.Label, d.Name, sd.Problem))
+				}
 				sm.Directors = append(sm.Directors, sd)
 			}
 			out.Roster = append(out.Roster, sm)
 		}
 	}
 	return a.printJSON(out)
+}
+
+// statusRunner is the Runner steward status reads each copy's mode with: App.Runner, or ssh on PATH with
+// statusSSHTimeout; nil, with the reason, when there is no ssh.
+func (a *App) statusRunner() (steward.Runner, error) {
+	if a.Runner != nil {
+		return a.Runner, nil
+	}
+	ssh, err := a.LookPath("ssh")
+	if err != nil {
+		return nil, fmt.Errorf("ssh is needed to read each copy's mode: %w", err)
+	}
+	return steward.SSH{Path: ssh, Timeout: statusSSHTimeout}, nil
 }
 
 // latestReceipts reads every rollout receipt in the plan directories under root and returns each copy's newest

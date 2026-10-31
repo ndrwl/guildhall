@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -144,6 +145,8 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 		if err != nil {
 			return nil, err
 		}
+		// The reserved managed-mode task holds no attempt files and is never pruned.
+		repos = slices.DeleteFunc(repos, reservedRepository)
 		closes, err := s.TaskCloses()
 		if err != nil {
 			return nil, err

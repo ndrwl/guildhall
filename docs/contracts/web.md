@@ -58,7 +58,7 @@ The rail's "What the grill decided" fold is the newest grill notes document's `#
 ### Rendering, options and binding
 
 - `RenderMarkdown` is goldmark with its tables extension at its safe defaults: raw HTML omitted and `javascript:`, `vbscript:`, `file:` and `data:` links dropped.
-- `OptionMeaning(kind, option)` reads the option-meanings table: a one-line meaning and a `Tone` (positive, negative, carry on) for every option of every set `interp.DecisionOptions`, `render.DecisionOptions`, `store.DecisionOptions` and `cli.StewardDecisionOptions` export; an option it does not describe shows its word alone, neutral.
+- `OptionMeaning(kind, option)` reads the option-meanings table: a one-line meaning and a `Tone` (positive, negative, carry on) for every option of every set `interp.DecisionOptions`, `render.DecisionOptions`, `store.DecisionOptions`, `cli.StewardDecisionOptions` and `admit.AlertDecisionOptions` export; an option it does not describe shows its word alone, neutral.
 - `BindAddress(ctx, address, lookup)` resolves a `[web]` address and returns its first address with the port, refusing an address with no host or port, a host that does not resolve, and with `ErrNotTailnet` a host any of whose addresses lies outside `100.64.0.0/10` and `fd7a:115c:a1e0::/48`; `Listen` binds what it returns. `URL(address, repo, task)` is a task page's link.
 - `Serve(ln, h)` serves with bounded header, read, write and idle times; `Running.Close` lets requests finish for up to five seconds, then closes them, and returns once stopped.
 

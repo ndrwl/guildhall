@@ -39,6 +39,11 @@ const (
 	ModeDirector Mode = "director"
 )
 
+// ManagedAlertRepository is the repository id reserved for a Director store's own managed-mode records: the task
+// holding the Guildmaster's decisions on observed-untrusted managed.toml digests (docs/director-modes.md#guard-rails).
+// A real repository may not use it.
+const ManagedAlertRepository = "managed-mode"
+
 // MergeOptions are a repository's merge settings, [repository.merge] (docs/configuration.md#merge-requirements).
 type MergeOptions struct {
 	Requires MergeRequires `toml:"requires"`
@@ -773,6 +778,8 @@ func (c *Config) validate() []string {
 		name := fmt.Sprintf("repository %d", i+1)
 		if !workflow.ValidID(r.ID) {
 			add("%s: invalid repository id %q", name, r.ID)
+		} else if r.ID == ManagedAlertRepository {
+			add("repository id %q is reserved for the Director store's managed-mode records; choose another id", r.ID)
 		} else {
 			name = fmt.Sprintf("repository %q", r.ID)
 		}

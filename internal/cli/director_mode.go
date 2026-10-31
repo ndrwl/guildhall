@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -91,8 +92,14 @@ func (a *App) directorMode(args []string) int {
 		}
 		fmt.Fprintf(&b, "enrolment: %s (event %d, %s)\n", what, e.Sequence, e.Time.Format(time.RFC3339))
 	}
+	if r := adm.Authorization; r != nil {
+		fmt.Fprintf(&b, "applied: %s by %s (event %d, %s)\n", r.Digest, r.Source, r.Sequence, r.Time.Format(time.RFC3339))
+	}
 	if r := adm.LastRevision; r != nil {
 		fmt.Fprintf(&b, "last revision: %s %s (event %d, %s)\n", r.Source, r.Digest, r.Sequence, r.Time.Format(time.RFC3339))
+	}
+	if u := adm.Untrusted; u != nil {
+		fmt.Fprintf(&b, "untrusted: %s observed %s; decision %s/%s/%s %s\n", u.Digest, u.ObservedAt.Format(time.RFC3339), admit.AlertRepository, admit.AlertTask, u.Decision, u.State)
 	}
 	if adm.Refusal != "" {
 		fmt.Fprintf(&b, "refused: %s\n", adm.Refusal)
@@ -207,7 +214,11 @@ func (a *App) directorLeave(args []string) int {
 	if !resume {
 		if left, err = withStoreClock(storePath, false, a.Now, func(s *store.Store) (store.Enrolment, error) {
 			got, _, err := s.RecordEnrolment(left)
-			return got, err
+			if err != nil {
+				return got, err
+			}
+			// Leaving ends the enrolment, so no alert decision of it waits any more.
+			return got, admit.VoidAlerts(s, "", fmt.Sprintf("the copy left managed mode (enrolment event %d)", got.Sequence))
 		}); err != nil {
 			return fail(err)
 		}

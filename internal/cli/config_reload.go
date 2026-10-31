@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -70,7 +71,11 @@ func (a *App) configReload(args []string) int {
 	}
 	got, err := withStoreClock(storePath, false, a.Now, func(s *store.Store) (store.ManagedRevision, error) {
 		r, _, err := s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceReload, Digest: adm.ManagedDigest, Previous: previous})
-		return r, err
+		if err != nil {
+			return r, err
+		}
+		// The reload answers any alert still waiting on this digest: nothing waits for it now.
+		return r, admit.VoidAlerts(s, r.Digest, fmt.Sprintf("config reload authorized %s (revision event %d)", r.Digest, r.Sequence))
 	})
 	if err != nil {
 		return fail("%w", err)

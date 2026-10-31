@@ -3,6 +3,7 @@ package web_test
 import (
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/cli"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/render"
@@ -32,7 +33,7 @@ func TestOptionMeaningsCoverEveryOption(t *testing.T) {
 		}
 		sets[kind] = append(sets[kind], opts)
 	}
-	for _, more := range []map[store.DecisionKind][][]string{interp.DecisionOptions(), store.DecisionOptions(), cli.StewardDecisionOptions()} {
+	for _, more := range []map[store.DecisionKind][][]string{interp.DecisionOptions(), store.DecisionOptions(), cli.StewardDecisionOptions(), admit.AlertDecisionOptions()} {
 		for kind, s := range more {
 			sets[kind] = append(sets[kind], s...)
 		}

@@ -601,7 +601,7 @@ Each check counts the stand-in's turns, one for its first message and one for ea
   A Guildmaster note then records exactly one wake, `woke`, which types one line, the [wake line](messaging.md#waking-the-director), into the pane, and the runtime takes exactly one turn from it.
   A stand-in `herdr` on PATH plays the pane, as no Herdr server runs in CI.
 
-A managed copy's guard rails, a Director-edited `managed.toml` refused with an alert, are checked when managed mode lands.
+A managed copy's guard rails, a hand-edited `managed.toml` refused and raised as an [observed-untrusted alert](director-modes.md#observed-untrusted-alerts), are covered by the `internal/cli` tests, not by these checks.
 
 ## Status
 
@@ -633,9 +633,9 @@ The document has these sections:
   A queued start is the supervisor's to start, so it is not a `needs_me` item and wakes nobody.
   A config that exists but cannot be read gives `config_error` in place of the rails.
   The identity's liveness is not probed yet.
-- `mode`: `{"name":"standalone"}` until managed mode lands.
+- `mode`: the copy's [mode](director-modes.md#status-feed), `{"name":"standalone"}` for a standalone copy; a managed or refused one adds its `refusal`, `steward`, the `applied_digest` with `applied_at` and `applied_by`, and any `untrusted` digest with its alert decision.
 - `quality`: the effective [quality settings](configuration.md#quality-settings), `self_review`, `size_budget_lines`, `size_budget_files`, `audit_sample` (the deprecated `quality_audit_sample`, which has no effect since the Guildmaster's audit was [retired](decisions/retire-quality-audit.md)), `reference_runs`, `reference_runs_per_task`, `reference_cost_cap_usd` when set, `judge_separate_family`, `judge_profiles` when set and `skill_edits_need_approval`, when the copy has a config; absent when it has none or its config cannot be read, which `guard_rails` reports as `config_error`.
-- `tasks`: every task in repository then id order, with its `state` (`open`, `done` or `cancelled`), bound `workflow`, and:
+- `tasks`: every task in repository then id order, except the reserved `managed-mode/untrusted` task of [observed-untrusted alerts](director-modes.md#observed-untrusted-alerts), whose open decisions are still `needs_me` items, with its `state` (`open`, `done` or `cancelled`), bound `workflow`, and:
   - `next`: the `next.json` the task's last advance wrote beside its task lock, at `<state>/<repo>/<task>/next.json`, copied as JSON exactly as written; absent when there is none.
     A file that is not JSON is reported as `next_error` instead.
     Every `task start`, `step done`, `step finish` and `step retry`, typed or run by the [watcher](running.md#the-watcher), writes it, so it is absent only for a task never advanced.

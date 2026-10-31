@@ -1,0 +1,20 @@
+{
+  "applied": {
+    "name": "managed",
+    "steward": "hq",
+    "applied_digest": "sha256:163ca7717a1b98bd42979a7fb82c616765129a34af3ecb178a0ec7582986ed26",
+    "applied_at": "$TIME",
+    "applied_by": "reload"
+  },
+  "untrusted": {
+    "name": "managed",
+    "refusal": "managed.toml sha256:163ca7717a1b98bd42979a7fb82c616765129a34af3ecb178a0ec7582986ed26 is not authorized: this copy's store records no reload or Guildmaster approval of that digest, so its settings are not applied; it is recorded as observed-untrusted and waits for the Guildmaster's answer to decision managed-mode/untrusted/untrusted-1-163ca7717a1b: approve authorizes this exact digest, reject keeps the refusal; guildhall config reload also authorizes it",
+    "steward": "hq",
+    "untrusted": {
+      "digest": "sha256:163ca7717a1b98bd42979a7fb82c616765129a34af3ecb178a0ec7582986ed26",
+      "observed_at": "$TIME",
+      "decision": "untrusted-1-163ca7717a1b",
+      "state": "waiting"
+    }
+  }
+}

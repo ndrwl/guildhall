@@ -4,8 +4,8 @@ This page is partly built: [what already holds](#what-already-holds) says what i
 Later slices build the rest red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [optional Steward](decisions/optional-steward.md).
 
-Only `guildhall config reload` authorizes a managed revision yet: the Guildmaster's approval decision is not built, and enrolment never authorizes one.
-So an enrolled copy refuses every command that needs effective settings until a rollout or a hand-run `config reload` authorizes its `managed.toml`, and a hand edit of `managed.toml` is refused without an alert until the next reload.
+A managed revision is authorized only by `guildhall config reload` or by the Guildmaster's approval of its alert decision; enrolment never authorizes one.
+So an enrolled copy refuses every command that needs effective settings until a rollout or a hand-run `config reload` authorizes its `managed.toml`, and a hand edit of `managed.toml` is refused and raised to the Guildmaster as an [observed-untrusted alert](#observed-untrusted-alerts).
 
 A Director runs in one of two modes:
 
@@ -27,20 +27,20 @@ On `main` today:
 - `guildhall task new` loads the combined config and binds its digest to the task, so a changed managed revision reaches new tasks only (R1.62).
 - The [Steward session](steward.md#the-steward-session) runs, supervised like a Director, with its own copy, store and Guildmaster-only inbox; it rolls out on the Guildmaster's word, and nothing a Director does depends on it.
 - The mode is a store fact: the [enrolment and managed-revision events](store.md#managed-mode) are recorded, and the [mode table](#mode) decides the mode.
-- Every Director command, and every Artisan attempt launched from a Director copy, loads its config through the shared configuration-admission boundary below (`internal/admit`), which refuses inline `[managed]` in every mode and refuses an enrolled copy whose `managed.toml` digest its store has not authorized, recording nothing.
+- Every Director command, and every Artisan attempt launched from a Director copy, loads its config through the shared configuration-admission boundary below (`internal/admit`), which refuses inline `[managed]` in every mode and refuses an enrolled copy whose `managed.toml` digest its store has not authorized; the refusing callers record that digest once as [observed-untrusted](#observed-untrusted-alerts) and raise its alert decision.
   These refuse: the session's start and reload, `task new`, `advance` and the commands that run it, `task cancel` and `task reconcile`, `task override set`, `finish`, `quality`, `ci log`, the workflow and grant commands that load a repository, `director leave`, and an attempt's launch, whose profile grant and Claude skill policy come from the admitted config.
   Clerk answers without a refused config and says on standard error that it was refused.
   These only report: `director status`, `director mode`, the messaging commands, `prune` and `version`.
   A manual `prune` acts on settings but never refuses: when the boundary refuses the copy, it applies `config.toml` alone, with no managed settings, and says so, so an unauthorized `prune_after` or `lock_wait` never decides what it removes.
-- `guildhall director enrol`, `director leave` and `director mode` are built ([CLI contract](contracts/cli.md#director-modes)), and `director status` names the mode the boundary finds.
+- `guildhall director enrol`, `director leave` and `director mode` are built ([CLI contract](contracts/cli.md#director-modes)), and `director status` gives the [mode fields](#status-feed) the boundary finds.
 - `guildhall config reload --copy <dir>` is built ([CLI contract](contracts/cli.md#config-reload)): it validates the managed copy's combined config and records a `managed-revision` event with source `reload`, the digest and the previous one, once per digest.
   A rollout's apply runs it over SSH on each copy it wrote, as one of the Steward's fixed [remote commands](steward.md#remote-commands), with the roster's per-machine `guildhall_path`, and records it in the receipt.
+- [Observed-untrusted alerts](#observed-untrusted-alerts) are built: an unauthorized digest is recorded once, raised as an approve/reject decision in `needs_me`, and authorized by the Guildmaster's approval.
+- `steward status` reads each roster copy's mode and managed digest with the fixed, read-only `director mode --json` over SSH ([Steward status](steward.md#status)).
 - The Director suites in `internal/cli` run in both modes: `go test ./internal/cli -director-mode=managed`, or `GUILDHALL_TEST_DIRECTOR_MODE=managed`, makes each copy the shared test helpers return a managed copy with the same effective settings.
 
 ## What is missing
 
-- Observed-untrusted alerts: an unauthorized digest is refused, but not yet recorded or raised to the Guildmaster as a decision, so there is no approval either, and only a reload authorizes.
-- The status feed's other mode fields: refusal, Steward label, applied digest and time, and a pending untrusted digest; and `steward status` reading each copy's mode.
 - Managed settings are flat string keys, so repositories and merge requirements cannot be managed today: they are local in both modes, and a Director copy's own files are the only record of them.
 
 ## Mode
@@ -84,6 +84,22 @@ Observation and enrolment alone never authorize it.
 Commands needing effective settings, including new-task creation and leave, refuse while the on-disk revision is untrusted; reload, approval and enrolment can validate it without applying it.
 Active tasks retain their bound configuration.
 
+### Observed-untrusted alerts
+
+The first command that refuses an unauthorized digest records it: one `observed-untrusted` revision event per digest and enrolment, naming the digest applied before, and one `approval` decision `untrusted-<enrolment>-<first 12 hex digits>` with the options `approve` and `reject`, bound to the exact digest.
+Later refusals of the same digest record nothing more.
+The commands that only report, such as `director status` and `director mode`, record nothing.
+
+The decision lives on the reserved task `managed-mode/untrusted` of the Director's own store, following the Steward store's reserved tasks.
+Config validation refuses `managed-mode` as a real repository id, `task list`, the status feed's tasks and `prune` leave the task out, and its open decision reaches `needs_me` as any decision does.
+
+- Answering `approve` with `guildhall decide answer` records a `guildmaster-approved` revision event naming the decision and the exact digest, which admits it; the Director answers `approve` only with the Guildmaster's own words.
+  If that answer was recorded but its revision event was not, the next refusing command records it.
+- Answering `reject` records no authorization: the refusal stays, naming the rejection, until `config reload` authorizes the digest or `managed.toml` is replaced with an authorized revision.
+- `config reload` of the digest voids its decision if it still waits, and `director leave` voids every waiting decision of the enrolment, so nothing waits for them.
+
+Decisions are per enrolment: enrolling again starts with no answered alert.
+
 ## Enrol and leave
 
 Both are explicit commands run on the Director's machine, by the Guildmaster or by the setup wizard (R1.46), and both are store events with receipts that the task timeline and status feed show.
@@ -120,7 +136,10 @@ Lessons are never broadcast from one Director to others.
 
 ## Status feed
 
-The planned status feed shows each Director's mode (`standalone` or `managed`), any mode refusal, the Steward's label when managed, the applied managed digest and when it was applied, any `observed-untrusted` digest awaiting authorization, and the [mailbox summary](messaging.md#waking-a-director).
+`guildhall director status` shows the copy's mode in its `mode` object: `name` (`standalone`, `managed` or `refused`), any `refusal`, the Steward's label when enrolled (`steward`), the applied managed digest with when and by which source it was authorized (`applied_digest`, `applied_at`, `applied_by`), and any `observed-untrusted` digest awaiting authorization (`untrusted`: its digest, when it was observed, its alert decision and whether that `waiting`, was `rejected`, or was `approved` and not yet recorded).
+Its messages section is the [mailbox summary](messaging.md#waking-a-director).
+
+`guildhall steward status` shows each roster copy's mode, Steward label, managed digest, whether that copy's store authorizes it, any refusal and any untrusted digest, read with `director mode --json` over SSH; a copy it cannot read, such as on an unreachable machine, is that copy's problem ([Steward status](steward.md#status)).
 
 ## Testing both ways
 

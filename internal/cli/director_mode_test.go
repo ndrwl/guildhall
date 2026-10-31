@@ -159,9 +159,10 @@ func TestInlineManagedRefusedInEveryMode(t *testing.T) {
 	}
 }
 
-// TestUnauthorizedDigestRefusesWithoutRecording: an enrolled copy whose managed.toml no reload or approval
-// authorized refuses task new and leave, records nothing, and still reports through director mode and status.
-func TestUnauthorizedDigestRefusesWithoutRecording(t *testing.T) {
+// TestUnauthorizedDigestRefusesRecordingOnce: an enrolled copy whose managed.toml no reload or approval authorized
+// refuses task new and leave; the first refusal records the digest observed-untrusted, with the reserved task and
+// its alert decision, and the second records nothing more; director mode and status still report.
+func TestUnauthorizedDigestRefusesRecordingOnce(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir := newCopy(t)
 	d := writeManaged(t, dir, pinned)
@@ -173,12 +174,17 @@ func TestUnauthorizedDigestRefusesWithoutRecording(t *testing.T) {
 	if code, stderr := newTaskIn(t, dir, "t-1"); code != 1 || !strings.Contains(stderr, want) {
 		t.Fatalf("task new: exit %d, %s", code, stderr)
 	}
+	// The observed-untrusted revision, the reserved task and the alert decision.
+	if after := receiptCount(t, dir); after != before+3 {
+		t.Fatalf("receipts %d after the first refusal, want %d", after, before+3)
+	}
+	before = receiptCount(t, dir)
 	cfgBefore, _ := os.ReadFile(filepath.Join(dir, "config.toml"))
 	if code, _, stderr := modeCmd(t, "leave", "--copy", dir); code != 1 || !strings.Contains(stderr, want) {
 		t.Fatalf("leave: exit %d, %s", code, stderr)
 	}
 	if after := receiptCount(t, dir); after != before {
-		t.Fatalf("receipts %d after the refusals, want %d", after, before)
+		t.Fatalf("receipts %d after the second refusal, want %d", after, before)
 	}
 	if cfgAfter, _ := os.ReadFile(filepath.Join(dir, "config.toml")); string(cfgAfter) != string(cfgBefore) {
 		t.Fatal("a refused leave changed config.toml")
@@ -187,11 +193,11 @@ func TestUnauthorizedDigestRefusesWithoutRecording(t *testing.T) {
 		t.Fatalf("a refused leave moved managed.toml: %v", err)
 	}
 	got := copyMode(t, dir)
-	if got.Mode != modeManaged || got.Authorized || got.ManagedDigest != d || got.Steward != "hq" || got.Refusal != want {
+	if got.Mode != modeManaged || got.Authorized || got.ManagedDigest != d || got.Steward != "hq" || !strings.HasPrefix(got.Refusal, want+"; it is recorded as observed-untrusted") {
 		t.Fatalf("mode = %+v", got)
 	}
 	code, out, stderr := directorCmd(t, nil, "status", "--json", "--copy", dir)
-	if code != 0 || !strings.Contains(out, `"mode":{"name":"managed"}`) {
+	if code != 0 || !strings.Contains(out, `"mode":{"name":"managed","refusal":"`+want) {
 		t.Fatalf("status: exit %d, %s\n%s", code, stderr, out)
 	}
 
@@ -208,8 +214,8 @@ func TestUnauthorizedDigestRefusesWithoutRecording(t *testing.T) {
 	if code, stderr := newTaskIn(t, authorized, "t-2"); code != 1 || !strings.Contains(stderr, want) {
 		t.Fatalf("task new after a hand edit: exit %d, %s", code, stderr)
 	}
-	if after := receiptCount(t, authorized); after != before {
-		t.Fatalf("receipts %d after the hand-edit refusal, want %d", after, before)
+	if after := receiptCount(t, authorized); after != before+3 {
+		t.Fatalf("receipts %d after the hand-edit refusal, want %d", after, before+3)
 	}
 }
 
