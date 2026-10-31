@@ -9,13 +9,13 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or found from the current directory, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; `task new --help` prints the usage with each kind's description, and exits 0.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; each `--override` is a [task override](#task-overrides), checked against the config before the store opens, so a refused one creates no task, and recorded after the task as `task override set` records it, quoting `--override-quote`; `task new --help` prints the usage with each kind's description, and exits 0.
   The title is a short name; the task's full statement, such as a bug's symptom and exact error, goes in its detail, given as text with `--detail` or read with `--detail-file` from a file, or from standard input for `-`, with the same rules as [`decide answer --answer-file`](decisions-cli.md) (a leading byte order mark is dropped, UTF-16 is refused and CRLF becomes LF).
   Both are optional, and giving both is a usage error.
   A title over 100 characters is refused with exit 1 before the configuration is read, naming `--detail` and `--detail-file`.
 - `guildhall task priority --store <path> --repo <id> <task> <level>` sets an open task's [priority](#priority) and prints the receipt.
 - `guildhall task hold-merge --store <path> --repo <id> <task>` [holds or unholds](#holding-a-merge) an open task's place in its repository's merge queue and prints the receipt.
-- `guildhall task show --store <path> --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...], "context": [...], "links": [...]}` for one task; `context` is its [task context](#task-context) entries, in number order, `links` its [task link](#task-links) records, adds and removes, in number order, each with `op`, `source` (`repository`, `task_id`, `name`, `path`, `sha256`), `text`, `author` and `added_at`, and `design_rounds`, present once the task has had a [design round](#design-rounds), the rounds used.
+- `guildhall task show --store <path> [--config <director.toml>] --repo <id> <task> --json` prints `{"task": ..., "attempts": [...], "documents": [...], "decisions": [...], "context": [...], "links": [...], "overrides": [...], "skipped_overrides": ..., "also_requires": ...}` for one task; `context` is its [task context](#task-context) entries, in number order, `links` its [task link](#task-links) records, adds and removes, in number order, each with `op`, `source` (`repository`, `task_id`, `name`, `path`, `sha256`), `text`, `author` and `added_at`, `overrides` its [task overrides](#task-overrides) in effect, the latest `set` record of each key, in key order, each with `number`, `key`, `value`, `text`, `author` and `added_at`, `skipped_overrides` those of them the config would not apply now, each with `key`, `value` and `reason`, judged only when show has a config, from `--config` or the copy's, and otherwise `null`, not judged (a config that does not load leaves it `null` with a warning on stderr), `also_requires` the [merge requirements](configuration.md#merge-requirements) its overrides add to the repository's, ones the repository has off, judged and `null` like `skipped_overrides`, and `design_rounds`, present once the task has had a [design round](#design-rounds), the rounds used.
 - `guildhall task list --store <path> [--repo <id>] [--workflow <name>] [--open] --json` prints a JSON array of tasks, ordered by repository and then task id, for one repository or every repository in the store.
   `--workflow` keeps only the tasks bound to that workflow name, and `--open` only open tasks; before deleting `workflows/<name>.json` the Director checks that `task list --workflow <name> --open --json` prints `[]`, since an open task bound to it would strand, and nothing else refuses the deletion.
   A task in its repository's [merge queue](interpreter.md#the-merge-queue) also has a `merge_queue` object, the entry `director status` lists ([status](director.md#status)); it is absent for a task that is not queued.
@@ -27,6 +27,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
 - `guildhall task context add --store <path> --repo <id> (--text <text> | --file <path>) <task>` adds an entry of [task context](#task-context) and prints its receipt; `guildhall task context list --store <path> --repo <id> <task> --json` prints the task's entries.
 - `guildhall task link add|remove --store <path> --repo <id> --document <repo>/<task>/<name> (--text <text> | --file <path>) <task>` links another task's recorded document to a task, or unlinks it, as a [task link](#task-links) and prints its receipt; `add` also takes `--state <dir>`; `guildhall task link list --store <path> --repo <id> <task> --json` prints the task's link records.
+- `guildhall task override set --store <path> --config <director.toml> --repo <id> --key <key> --value <value> --text <text> <task>` gives a task its own value for a task-scoped setting as a [task override](#task-overrides) and prints its receipt; `unset` removes it and takes no `--config` or `--value`; `guildhall task override list --store <path> --repo <id> <task> --json` prints the task's override records.
 - `guildhall task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]` adds a [design round](#design-rounds) to a feature task and advances it, printing where the task waits as [`task start`](running.md#task-start) does; it takes `--task <id>` rather than a positional task.
 
 For every command but `list`, the positional task id may appear before or after flags.
@@ -235,6 +236,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `full_reviews`: every [full-review request](#full-review) with its `number`, `consumed_by` (absent while pending), `requested_at` and `consumed_at`, in number order.
 - `context`: every entry of [task context](#task-context) with its `number`, `text`, `author` and `added_at`, ordered by when it was added.
 - `links`: every [task link](#task-links) record with its `number`, `op`, `source`, `text`, `author` and `added_at`, ordered by when it was recorded; a removed link stays listed beside its removal.
+- `overrides`: every [task override](#task-overrides) record with its `number`, `op`, `key`, `value` (on a `set`), `text`, `author` and `added_at`, ordered by when it was recorded; an unset override stays listed beside its unset.
 - `design_rounds`: the [design rounds](#design-rounds) used, counted from their briefs; absent when the task has had none. Each round's designer attempts and its decision are among `attempts` and `decisions`.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
 - `priority` and `priority_changes`: the task's [priority](#priority) now and every level set, each with `set_at`.
@@ -332,6 +334,34 @@ Before an attempt is bound, every linked file is checked against the digest its 
 An attempt already bound keeps the inputs it was given, and a finished stage is not stale because of a new or removed link; to reach it, `step send-back` or `step retry` it.
 A task with no linked documents is given no `linked` input.
 Rebaser and conflict-resolution attempts and Guildmaster questions are given neither linked documents nor task context.
+
+## Task overrides
+
+A task override gives one task its own value for a [task-scoped setting](configuration.md#setting-scopes), such as `default_effort`, recorded by the Director with the Guildmaster's words ([decision](decisions/task-overrides.md)).
+The Director records one only when the Guildmaster asks; an Artisan cannot, and no Director sets one on its own.
+
+```
+guildhall task override set   --store <path> --config <director.toml> --repo <id> --key <key> --value <value> --text <text> <task>
+guildhall task override unset --store <path> --repo <id> --key <key> --text <text> <task>
+guildhall task override list  --store <path> --repo <id> <task> --json
+```
+
+`--copy <dir>`, or the copy found from the current directory, stands in for `--store` and, for `set`, `--config`.
+
+- `set` first loads the copy's config and asks it whether `<key>` = `<value>` may override a setting for one task (`CheckTaskOverride`). An unknown key, a step key such as `step.build.effort`, a machine-wide setting, an excluded one (`[repository.merge]`, `[director]` and repository identity), a key a managed setting pins without `overridable = true`, and a value the setting's check refuses are each refused with exit 1, printing the registry's reason unchanged, such as ``guildhall: task override set: `lock_wait` is machine-wide; it cannot be overridden per task: not overridable per task``, and nothing is written.
+- `unset` reads no config, so an override that has since stopped applying, such as one a later managed pin overrules, can still be removed. It refuses a key the task has no override of in effect.
+- Each records the task's next override record, `op` `set` with the `value`, or `op` `unset`, numbered from 1 per task, sets and unsets alike, with the Guildmaster's `text`, author `director` and the time recorded, and prints its receipt, record `task-override/<n>`, mutation `task-override:<repo>:<task>:<op>:<key>:<prior>`, hashed as for `task new` when longer than 128 bytes, `prior` being how many records the task already has for that key. Running the same command again, while its record is still that key's latest, prints the original receipt and records nothing; setting `high`, then `low`, then `high` again records three records.
+- `--text` must be non-blank UTF-8 of at most 64 KiB. A task that is unknown or not open and a record made meanwhile for the same key are refused with exit 1 and nothing is written; a missing `--key`, `--value` on `set` or `--text`, a flag the subcommand does not take, and a missing or extra task are usage errors (exit 2).
+- `list` prints the task's override records as a JSON array in number order; it opens the store read-only.
+
+For each key the latest record wins: the task's overrides in effect are the keys whose latest record is a `set`.
+The store itself refuses an empty key, one with whitespace and a step key (`step.`), but it has no config, so only `set` judges a key against the registry.
+Records are append-only: an `unset` is its own record, so the history stays whole.
+Recording an override launches, re-runs and invalidates nothing.
+Every advance of the task applies its overrides in effect, so each stage it starts afterwards reads the task's effective values ([where they take effect](configuration.md#setting-scopes)); a finished stage is never re-run, and its binding records what it was first given, while an attempt relaunched after a crash reads the overrides current at the relaunch.
+`task new --override <key>=<value> --override-quote <text>` gives a new task its overrides as it is created, each checked first, so a refused one creates no task.
+[`task show`](#commands) lists a task's overrides in effect and, given the copy's config, those it would skip and why; [`task timeline`](#inspection) lists every record; and [`director status`](director.md#status) marks a task that has any.
+An override that no longer applies, such as one a managed pin now overrules, is skipped rather than failing the advance; each Artisan attempt's [binding](interpreter.md#rounds-and-loops) records the overrides applied and those skipped, with why.
 
 ## Design rounds
 

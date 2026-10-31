@@ -57,6 +57,10 @@ type Records interface {
 	// TaskLinks lists a task's link records by number; the Director records them (guildhall task link add|remove),
 	// never the engine.
 	TaskLinks(repository, taskID string) ([]store.TaskLink, error)
+	// TaskOverrides lists a task's override records by number; the Director records them (guildhall task override
+	// set|unset), never the engine. An advance reads them once, under the task lock, for the task's effective config
+	// (ApplyTaskOverrides).
+	TaskOverrides(repository, taskID string) ([]store.TaskOverride, error)
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
 	StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error)
 	StartDirectorAttempt(mutationID, repository, taskID, step string, hold bool) (store.Receipt, error)

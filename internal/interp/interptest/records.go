@@ -33,8 +33,10 @@ type Records struct {
 	full      []store.FullReview
 	contexts  []store.TaskContext
 	links     []store.TaskLink
-	overrides map[[2]string]store.DependencyOverride
-	grants    []store.TaskGrant
+	// taskOverrides are the tasks' override records; overrides their dependency overrides.
+	taskOverrides []store.TaskOverride
+	overrides     map[[2]string]store.DependencyOverride
+	grants        []store.TaskGrant
 	// priorities are the tasks' priorities SetTaskPriority sets, and queue the start queue's entries by
 	// repository, task and step.
 	priorities map[[2]string]store.Priority
@@ -352,6 +354,56 @@ func (r *Records) TaskLinks(repository, taskID string) ([]store.TaskLink, error)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return list(r, repository, taskID, r.links, func(l store.TaskLink) (string, string) { return l.Repository, l.TaskID })
+}
+
+// AddTaskOverride records the task's next override record on an open task, as store.AddTaskOverride does, without
+// its checks of the ids, the key, the value and the text.
+func (r *Records) AddTaskOverride(mutationID, repository, taskID string, op store.TaskOverrideOp, key, value string, prior int, text string) (store.Receipt, error) {
+	req := struct {
+		Repository, TaskID, Key, Value, Text string
+		Op                                   store.TaskOverrideOp
+		Prior                                int
+	}{repository, taskID, key, value, text, op, prior}
+	return r.mutate(mutationID, "add-task-override", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID = repository, taskID
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		case op != store.TaskOverrideSet && op != store.TaskOverrideUnset:
+			return fmt.Errorf("%w: task override op %q", store.ErrInvalid, op)
+		}
+		var mine []store.TaskOverride
+		n := 0
+		for _, o := range r.taskOverrides {
+			if o.Repository == repository && o.TaskID == taskID {
+				n = o.Number
+				if o.Key == key {
+					mine = append(mine, o)
+				}
+			}
+		}
+		switch {
+		case len(mine) != prior:
+			return fmt.Errorf("%w: %d override records for %s, not %d", store.ErrExists, len(mine), key, prior)
+		case op == store.TaskOverrideUnset && (len(mine) == 0 || mine[len(mine)-1].Op != store.TaskOverrideSet):
+			return fmt.Errorf("%w: no override of %s in effect", store.ErrInvalid, key)
+		}
+		o := store.TaskOverride{Repository: repository, TaskID: taskID, Number: n + 1, Op: op, Key: key, Value: value, Text: text, Author: store.TaskOverrideAuthor}
+		rc.CommittedAt = r.now()
+		o.AddedAt, rc.Record = rc.CommittedAt, store.TaskOverrideRecord(o.Number)
+		r.taskOverrides = append(r.taskOverrides, o)
+		return nil
+	})
+}
+
+// TaskOverrides implements interp.Records.
+func (r *Records) TaskOverrides(repository, taskID string) ([]store.TaskOverride, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return list(r, repository, taskID, r.taskOverrides, func(o store.TaskOverride) (string, string) { return o.Repository, o.TaskID })
 }
 
 // Tasks implements interp.Records.
@@ -951,6 +1003,9 @@ type RecordsHarness struct {
 	// AddTaskLink records the Director's next link record on a task, as store.AddTaskLink does; nil skips the link
 	// cases.
 	AddTaskLink func(mutationID, repository, taskID string, op store.TaskLinkOp, source store.DocumentRef, prior int, text string) (store.Receipt, error)
+	// AddTaskOverride records the Director's next override record on a task, as store.AddTaskOverride does; nil
+	// skips the override cases.
+	AddTaskOverride func(mutationID, repository, taskID string, op store.TaskOverrideOp, key, value string, prior int, text string) (store.Receipt, error)
 	// OverrideDependencies records the Director's dependency override, as store.OverrideDependencies does.
 	OverrideDependencies func(mutationID, repository, taskID, reason string) (store.Receipt, error)
 	// SetTaskPriority records a task's priority, as store.SetTaskPriority does, which orders the start queue.
@@ -973,7 +1028,7 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r, clock := NewRecords(), NewClock()
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, OverrideDependencies: r.OverrideDependencies,
+		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, AddTaskOverride: r.AddTaskOverride, OverrideDependencies: r.OverrideDependencies,
 		SetTaskPriority: r.SetTaskPriority, PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
 }
 
@@ -1592,6 +1647,53 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		}
 		if got, err := h.Records.TaskLinks("app", "t8"); err != nil || len(got) != 0 {
 			t.Errorf("TaskLinks of an unknown task = %+v, %v", got, err)
+		}
+	})
+
+	t.Run("lists override records in order and refuses one that is stale or unsets nothing", func(t *testing.T) {
+		h := setup(t)
+		if h.AddTaskOverride == nil {
+			t.Skip("the harness records no task overrides")
+		}
+		_, err := h.AddTaskOverride("override-x", "app", "t8", store.TaskOverrideSet, "default_effort", "high", 0, "Run it high.")
+		want(t, "AddTaskOverride of an unknown task", err, store.ErrNotFound)
+		_, err = h.AddTaskOverride("override-y", "app", "t7", store.TaskOverrideUnset, "default_effort", "", 0, "Drop it.")
+		want(t, "AddTaskOverride unsetting a key not in effect", err, store.ErrInvalid)
+		type rec struct {
+			op         store.TaskOverrideOp
+			key, value string
+			prior      int
+		}
+		recs := []rec{{store.TaskOverrideSet, "default_effort", "high", 0}, {store.TaskOverrideSet, "stall_interval", "5m", 0}, {store.TaskOverrideUnset, "default_effort", "", 1}}
+		var receipts []store.Receipt
+		for i, o := range recs {
+			rc, err := h.AddTaskOverride(fmt.Sprintf("override-%d", i+1), "app", "t7", o.op, o.key, o.value, o.prior, "Guildmaster: "+string(o.op)+".")
+			if err != nil || rc.Record != store.TaskOverrideRecord(i+1) {
+				t.Fatalf("AddTaskOverride %d = %+v, %v", i+1, rc, err)
+			}
+			receipts = append(receipts, rc)
+		}
+		if replay, err := h.AddTaskOverride("override-1", "app", "t7", store.TaskOverrideSet, "default_effort", "high", 0, "Guildmaster: set."); err != nil || replay != receipts[0] {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		_, err = h.AddTaskOverride("override-4", "app", "t7", store.TaskOverrideSet, "default_effort", "low", 1, "Guildmaster: set.")
+		want(t, "AddTaskOverride with a stale prior count", err, store.ErrExists)
+		got, err := h.Records.TaskOverrides("app", "t7")
+		if err != nil || len(got) != len(recs) {
+			t.Fatalf("TaskOverrides = %+v, %v", got, err)
+		}
+		for i, o := range got {
+			w := store.TaskOverride{Repository: "app", TaskID: "t7", Number: i + 1, Op: recs[i].op, Key: recs[i].key, Value: recs[i].value,
+				Text: "Guildmaster: " + string(recs[i].op) + ".", Author: store.TaskOverrideAuthor, AddedAt: receipts[i].CommittedAt}
+			if o != w {
+				t.Errorf("TaskOverrides[%d] = %+v, want %+v", i, o, w)
+			}
+		}
+		if active := store.ActiveTaskOverrides(got); len(active) != 1 || active[0] != got[1] {
+			t.Errorf("ActiveTaskOverrides = %+v, want only %+v", active, got[1])
+		}
+		if got, err := h.Records.TaskOverrides("app", "t8"); err != nil || len(got) != 0 {
+			t.Errorf("TaskOverrides of an unknown task = %+v, %v", got, err)
 		}
 	})
 

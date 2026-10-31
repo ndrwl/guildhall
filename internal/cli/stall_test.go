@@ -203,3 +203,109 @@ func (d runDirector) stalls(t *testing.T) int {
 	}
 	return n
 }
+
+// stallCopy copies the run testdata into a fresh directory with a plan worker that never finishes and the
+// copy's stall_interval set to value, returning its config path.
+func stallCopy(t *testing.T, value string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "run"))); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(dir, "baseline", "stages", "plan.md")
+	guide, err := os.ReadFile(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan, append(guide, "guildhall-fake: result=never\nguildhall-fake: lifetime=1m\n"...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "config.toml")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, bytes.Replace(b, []byte("standards_revision"), []byte("stall_interval = \""+value+"\"\nstandards_revision"), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// TestTaskStallIntervalOverrideReachesTheLauncher: with the copy's stall_interval at 0s, which observes nothing,
+// the task's 2s override is what its plan's launcher is given, so the silent worker gets a worker-stalled message.
+func TestTaskStallIntervalOverrideReachesTheLauncher(t *testing.T) {
+	d := newRunDirectorAt(t, stallCopy(t, "0s"))
+	recordOverrides(t, d.store, "stall_interval", "2s")
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); d.stalls(t) == 0; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("the launcher sent no worker-stalled message within %v; want the overridden 2s observed", testenv.Ceiling(time.Minute))
+		}
+	}
+}
+
+// TestTaskStallIntervalOverrideReachesTheEngine: with the copy's stall_interval at 0s, the task's 15m override is
+// what the advance's engine observes a heartbeat by, so output 20 minutes old sends one worker-stalled message.
+// The launcher is killed after launch so the hand-written heartbeat is the only one.
+func TestTaskStallIntervalOverrideReachesTheEngine(t *testing.T) {
+	d := newRunDirectorAt(t, stallCopy(t, "0s"))
+	recordOverrides(t, d.store, "stall_interval", "15m")
+	start := func() {
+		t.Helper()
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+			t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
+		}
+	}
+	start()
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	var o store.Ownership
+	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
+		s, err := store.Open(d.store, store.Options{ReadOnly: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		o, err = s.Ownership(key.Repository, key.TaskID, key.Step, key.Attempt)
+		_ = s.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.State == store.OwnerRunning && o.Containment.Worker != (store.ProcessIdentity{}) {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("plan-1 worker never ran: ownership %+v", o)
+		}
+	}
+	if err := artisantest.KillVerified(artisan.Identity(o.LauncherIdentity)); err != nil {
+		t.Fatal(err)
+	}
+	waitGone(t, "before observing the orphaned worker", artisan.Identity(o.LauncherIdentity))
+	t.Cleanup(func() {
+		d.sweep(t, "plan", 1)
+		worker := artisan.Identity(o.Containment.Worker)
+		lv, err := artisan.Probe(worker)
+		for end := time.Now().Add(testenv.Ceiling(10 * time.Second)); err == nil && lv != artisan.Gone && time.Now().Before(end); {
+			time.Sleep(50 * time.Millisecond) // timing:allow process-liveness polling within the cleanup ceiling.
+			lv, err = artisan.Probe(worker)
+		}
+		if err != nil || lv != artisan.Gone {
+			t.Errorf("plan-1 worker %d is %v (%v)", worker.PID, lv, err)
+		}
+	})
+	hb, err := artisan.ReadHeartbeat(key.Dir(d.state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	hb.Sequence++
+	hb.Time, hb.LastOutputAt, hb.WorkerState = now, now.Add(-20*time.Minute), "running"
+	if err := artisan.WriteHeartbeat(key.Dir(d.state), hb); err != nil {
+		t.Fatal(err)
+	}
+	start()
+	if got := d.stalls(t); got != 1 {
+		t.Errorf("overridden stall_interval 15m over a copy at 0s: %d worker-stalled messages, want 1", got)
+	}
+}

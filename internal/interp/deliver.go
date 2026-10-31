@@ -72,13 +72,16 @@ var mergeOptions = []string{"merge", "hold"}
 // audit already recorded stays answerable.
 const auditDecision = "audit"
 
-// repository returns the task's repository configuration.
+// repository returns the task's repository configuration, its merge requirements tightened by the task's
+// merge-requires overrides, so every gate that starts here agrees (docs/tasks.md#task-overrides).
 func (r *run) repository() (config.Repository, error) {
 	i := slices.IndexFunc(r.e.Config.Repositories, func(c config.Repository) bool { return c.ID == r.task.Repository })
 	if i < 0 {
 		return config.Repository{}, fmt.Errorf("repository %s is not configured", r.task.Repository)
 	}
-	return r.e.Config.Repositories[i], nil
+	repo := r.e.Config.Repositories[i]
+	repo.Merge.Requires, _ = r.mergeRequires(repo.Merge.Requires)
+	return repo, nil
 }
 
 // publish pushes the step's head to the task branch through the forge and records its pull request, then the
@@ -153,7 +156,7 @@ func (r *run) publishGate(s workflow.Step, id, h string, required bool) error {
 		return err
 	}
 	if required {
-		return err
+		return byOverride(err, "artisan_approval", r.addedRequires())
 	}
 	return nil
 }
@@ -259,7 +262,6 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
-	requires := repo.Merge.Requires
 	// The inputs are resolved for the spec gate on any accepted spec deliver takes.
 	if _, err := r.inputs(s); err != nil {
 		return false, Next{}, err
@@ -292,23 +294,19 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 		}
 	}
 	dl := deliverHead{reviewed: h, head: d, pr: pr, links: vlinks}
-	conditions, err := r.conditions(s, requires, outcomes, dl, nil)
-	if err != nil {
-		return false, Next{}, err
-	}
 	id, record, err := r.authorizedAs(s, d)
 	if err != nil {
 		return false, Next{}, err
 	}
 	if id == "" {
-		// Only a head not yet authorized is checked, so a replay after the merge retired the branch needs no base.
+		// Only a head not yet authorized is checked, so a replay after the merge retired the branch needs no base, and
+		// a gate a task override added after the head was authorized does not retract its authorization.
 		if repo, dl.policies, err = r.guardPolicies(repo, d); err != nil {
 			return false, Next{}, err
 		}
-		if dl.policies {
-			if conditions, err = r.conditions(s, repo.Merge.Requires, outcomes, dl, nil); err != nil {
-				return false, Next{}, err
-			}
+		conditions, err := r.conditions(s, repo.Merge.Requires, outcomes, dl, nil)
+		if err != nil {
+			return false, Next{}, err
 		}
 		var next Next
 		id, record, next, err = r.authorizeHead(s, repo, dl, conditions, outcomes)
@@ -380,14 +378,17 @@ func (r *run) byGuildmaster(id string) (bool, error) {
 
 // conditions are the merge requirements as they stand for x: guildmaster_approval, artisan_approval, ci_green and
 // nothing_open. A head rebased from the reviewed one is approved by the reviewed head's approval and the coverage of
-// its rebases, and is green by the read of its own checks. A required gate that fails is the gate's error.
+// its rebases, and is green by the read of its own checks. A required gate that fails is the gate's error, naming the
+// task's override when the override is what made it required. Each requirement the task's overrides add to the
+// repository's merge_requires is RequiredBy taskOverride.
 func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcomes []reviewOutcome, x deliverHead, links []rebaseLink) ([]condition, error) {
+	added := r.addedRequires()
 	review := r.gate(s, x.reviewed)
 	if review == nil {
 		review = covered(append(slices.Clone(x.links), links...), x.head)
 	}
 	artisan, err := gateCondition("artisan_approval", requires.Artisan(), ErrReviewGate, review)
-	if err != nil {
+	if err = byOverride(err, "artisan_approval", added); err != nil {
 		return nil, err
 	}
 	for _, o := range outcomes {
@@ -405,7 +406,7 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 		green = r.validated(s, x.head)
 	}
 	ci, err := gateCondition("ci_green", requires.CI(), ErrValidationGate, green)
-	if err != nil {
+	if err = byOverride(err, "ci_green", added); err != nil {
 		return nil, err
 	}
 	if x.checks != nil {
@@ -423,7 +424,26 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 	if x.policies {
 		guildmaster.Required, guildmaster.RequiredBy = true, policyGuard
 	}
-	return []condition{guildmaster, artisan, ci, r.nothingOpen(s, requires.Open(), outcomes)}, nil
+	out := []condition{guildmaster, artisan, ci, r.nothingOpen(s, requires.Open(), outcomes)}
+	for i, c := range out {
+		switch {
+		case !slices.Contains(added, c.Requirement):
+		case c.RequiredBy != "":
+			out[i].RequiredBy = c.RequiredBy + "; " + taskOverride
+		default:
+			out[i].RequiredBy = taskOverride
+		}
+	}
+	return out, nil
+}
+
+// byOverride returns the failing gate err of requirement, naming the task's override when it is among the
+// requirements the override added.
+func byOverride(err error, requirement string, added []string) error {
+	if err != nil && slices.Contains(added, requirement) {
+		return fmt.Errorf("%w (%s requires %s)", err, taskOverride, requirement)
+	}
+	return err
 }
 
 // carryRefusals lists every condition after guildmaster_approval that does not hold, required or not: a carried-over

@@ -22,10 +22,10 @@ import (
 )
 
 var taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] <task>
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] <task>
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
-  guildhall task show --store <path> --repo <id> <task> --json
+  guildhall task show --store <path> [--config <director.toml>] --repo <id> <task> --json
   guildhall task list --store <path> [--repo <id>] [--workflow <name>] [--open] --json
   guildhall task timeline --store <path> --repo <id> <task> --json
   guildhall task files --store <path> --repo <id> <task> --json
@@ -37,6 +37,7 @@ var taskUsage = `usage:
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
   guildhall task context add|list ... (guildhall task context for its usage)
   guildhall task link add|remove|list ... (guildhall task link for its usage)
+  guildhall task override set|unset|list ... (guildhall task override for its usage)
   guildhall task design --repo <id> --task <id> --brief <file|-> ... (guildhall task design --help for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
 the copy's director.store, config.toml and state
@@ -138,6 +139,14 @@ type taskDetail struct {
 	Context []store.TaskContext `json:"context"`
 	// Links are the task's link records, adds and removes, by number.
 	Links []store.TaskLink `json:"links"`
+	// Overrides are the task's overrides in effect, the latest set record of each key, in key order.
+	Overrides []store.TaskOverride `json:"overrides"`
+	// SkippedOverrides are those of Overrides the copy's config would not apply now, with why; nil, printed null,
+	// when task show was given no config, so they were not computed.
+	SkippedOverrides []config.Skipped `json:"skipped_overrides"`
+	// AlsoRequires are the merge requirements Overrides add to the repository's merge_requires, in documented order;
+	// null, like SkippedOverrides, without a config.
+	AlsoRequires []string `json:"also_requires"`
 	// DesignRounds is how many design rounds the task has used, counted from their briefs; absent when none.
 	DesignRounds int `json:"design_rounds,omitempty"`
 }
@@ -166,6 +175,9 @@ func (a *App) task(args []string) int {
 	}
 	if sub == "link" {
 		return a.taskLink(args[1:])
+	}
+	if sub == "override" {
+		return a.taskOverride(args[1:])
 	}
 	if sub == "design" {
 		return a.taskDesign(args[1:])
@@ -199,18 +211,24 @@ func (a *App) task(args []string) int {
 	flags.Var(&fixed, "fixes", "earlier task whose defect this one fixes")
 	var kind taskKind
 	flags.Var(&kind, "kind", "task kind: "+taskKindChoice)
+	var overrides taskOverrideFlags
+	flags.Var(&overrides, "override", "task override key=value, repeatable")
+	overrideQuote := flags.String("override-quote", "", "the Guildmaster's words for the task's overrides")
 	var cp copyFlags
 	cp.register(flags)
 	var want int
 	var allowed map[string]bool
 	switch sub {
 	case "new":
-		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "detail": true, "detail-file": true, "kind": true, "depends-on": true, "fixes": true, "priority": true}
+		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "detail": true, "detail-file": true, "kind": true, "depends-on": true, "fixes": true, "priority": true,
+			"override": true, "override-quote": true}
 	case "priority":
 		want, allowed = 2, map[string]bool{"store": true, "repo": true}
 	case "hold-merge":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true}
-	case "show", "timeline", "files":
+	case "show":
+		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "json": true}
+	case "timeline", "files":
 		want, allowed = 1, map[string]bool{"store": true, "repo": true, "json": true}
 	case "list":
 		want, allowed = 0, map[string]bool{"store": true, "repo": true, "workflow": true, "open": true, "json": true}
@@ -256,7 +274,7 @@ func (a *App) task(args []string) int {
 		}
 	})
 	var copyConfig *string
-	if sub == "new" {
+	if sub == "new" || sub == "show" {
 		copyConfig = cfgPath
 	}
 	cerr := cp.apply(a, path, copyConfig, nil)
@@ -273,6 +291,10 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("task new requires --config, --repo and --title")
 	case *detail != "" && *detailFile != "":
 		return a.taskUsage("give --detail or --detail-file, not both")
+	case len(overrides) > 0 && *overrideQuote == "":
+		return a.taskUsage("--override requires --override-quote, the Guildmaster's words")
+	case len(overrides) == 0 && *overrideQuote != "":
+		return a.taskUsage("--override-quote requires --override")
 	case sub != "new" && sub != "list" && *repo == "":
 		return a.taskUsage(fmt.Sprintf("task %s requires --repo", sub))
 	case sub == "finding rule" && (*outcome == "" || *finding == "" || *move == "" || *reason == ""):
@@ -319,6 +341,27 @@ func (a *App) task(args []string) int {
 			return fail(err)
 		}
 		task.ID, task.Title, task.Detail, task.DependsOn, task.Fixes = positional[0], *title, *detail, deps, fixed.ref
+		// Every override is judged before the store opens, as the workflow is, so a refused one creates no task.
+		if len(overrides) > 0 {
+			cfg, err := config.Load(*cfgPath)
+			if err != nil {
+				return fail(fmt.Errorf("config: %w", err))
+			}
+			for _, o := range overrides {
+				if err := cfg.CheckTaskOverride(o[0], o[1]); err != nil {
+					return fail(fmt.Errorf("--override %s: %w", o[0], err))
+				}
+			}
+		}
+	}
+	// task show judges the task's overrides against the copy's config when it has one; one that does not load
+	// leaves them not judged rather than refusing, so show still reads the store.
+	var showConfig *config.Config
+	if sub == "show" && *cfgPath != "" {
+		var err error
+		if showConfig, err = config.Load(*cfgPath); err != nil {
+			_, _ = fmt.Fprintf(a.Stderr, "guildhall: task show: config: %v; skipped_overrides not judged\n", err)
+		}
 	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(noStore(*path))
@@ -341,12 +384,19 @@ func (a *App) task(args []string) int {
 		if err == nil && *priority != "" {
 			_, err = s.SetTaskPriority(mutationID("priority", task.Repository, task.ID, "1"), task.Repository, task.ID, level)
 		}
+		// Each override is its own record with its own mutation, as task override set records it, so a rerun replays it.
+		for _, o := range overrides {
+			if err != nil {
+				break
+			}
+			_, err = addTaskOverride(s, task.Repository, task.ID, store.TaskOverrideSet, o[0], o[1], *overrideQuote)
+		}
 	case "priority":
 		out, err = setPriority(s, *repo, positional[0], level)
 	case "hold-merge":
 		out, err = toggleMergeHold(s, *repo, positional[0])
 	case "show":
-		out, err = showTask(s, *repo, positional[0])
+		out, err = showTask(s, showConfig, *repo, positional[0])
 	case "list":
 		var tasks []store.Task
 		if tasks, err = listTasks(s, *repo); err == nil {
@@ -604,8 +654,10 @@ func overridesFor(def *workflow.Definition, r config.Repository) map[string]work
 	return workflow.OwnOverrides(def, r.WorkflowOverrides)
 }
 
-func showTask(s *store.Store, repo, id string) (taskDetail, error) {
-	d := taskDetail{Attempts: []store.StageAttempt{}, Documents: []store.DocumentRef{}, Decisions: []store.Decision{}, Context: []store.TaskContext{}, Links: []store.TaskLink{}}
+// showTask reads the task and every record it has; with cfg it also judges the task's overrides in effect against it,
+// for SkippedOverrides and AlsoRequires.
+func showTask(s *store.Store, cfg *config.Config, repo, id string) (taskDetail, error) {
+	d := taskDetail{Attempts: []store.StageAttempt{}, Documents: []store.DocumentRef{}, Decisions: []store.Decision{}, Context: []store.TaskContext{}, Links: []store.TaskLink{}, Overrides: []store.TaskOverride{}}
 	var err error
 	t, err := s.Task(repo, id)
 	if err != nil {
@@ -635,6 +687,19 @@ func showTask(s *store.Store, repo, id string) (taskDetail, error) {
 	links, err := s.TaskLinks(repo, id)
 	if err != nil {
 		return taskDetail{}, err
+	}
+	overrides, err := s.TaskOverrides(repo, id)
+	if err != nil {
+		return taskDetail{}, err
+	}
+	d.Overrides = append(d.Overrides, store.ActiveTaskOverrides(overrides)...)
+	if cfg != nil {
+		_, skipped, added, err := interp.EffectiveOverrides(cfg, repo, d.Overrides)
+		if err != nil {
+			return taskDetail{}, fmt.Errorf("config: %w", err)
+		}
+		d.SkippedOverrides = append([]config.Skipped{}, skipped...)
+		d.AlsoRequires = append([]string{}, added...)
 	}
 	d.Attempts = append(d.Attempts, attempts...)
 	d.Documents = append(d.Documents, documents...)

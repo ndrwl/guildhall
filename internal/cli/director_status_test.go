@@ -363,6 +363,42 @@ func TestDirectorStatusShowsSpend(t *testing.T) {
 	}
 }
 
+// TestDirectorStatusMarksOverrides: a task with a task override in effect is marked, and every other task is not.
+func TestDirectorStatusMarksOverrides(t *testing.T) {
+	dir := statusCopy(t)
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddTaskOverride("override", "app", "t-2", store.TaskOverrideSet, "default_effort", "high", 0, "Guildmaster: high."); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := directorCmd(t, nil, "status", "--copy", dir, "--json")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	var st struct {
+		Tasks []struct {
+			Repository, ID string
+			Overrides      bool `json:"overrides"`
+		} `json:"tasks"`
+	}
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range st.Tasks {
+		if want := task.Repository == "app" && task.ID == "t-2"; task.Overrides != want {
+			t.Errorf("%s/%s overrides = %t, want %t", task.Repository, task.ID, task.Overrides, want)
+		}
+	}
+	if len(st.Tasks) < 2 {
+		t.Errorf("status lists %d tasks", len(st.Tasks))
+	}
+}
+
 func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 	dir := t.TempDir()
 	if app, _, stderr := newTestApp(nil, nil); app.Run([]string{"store", "init", filepath.Join(dir, "director.store")}) != 0 {

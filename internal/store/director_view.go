@@ -33,6 +33,8 @@ type DirectorView struct {
 	// Grants are the task grants whose derived state is active, with their approval times, in repository, task and
 	// grant order (docs/decisions/task-grants.md).
 	Grants []TaskGrantStatus
+	// Overrides are the task overrides in effect (ActiveTaskOverrides), in repository, task and key order.
+	Overrides []TaskOverride
 	// Unread are the Director's unacknowledged messages, in send order.
 	Unread []Message
 	// Receipts are the receipts that name a task, in sequence order.
@@ -53,14 +55,16 @@ type DirectorView struct {
 // Like TaskHistory it scans every receipt, so its cost grows with the store's mutation count.
 func (s *Store) DirectorView() (DirectorView, error) {
 	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Deferrals: []DecisionDeferral{}, Grants: []TaskGrantStatus{},
-		Unread: []Message{}, Receipts: []Receipt{}}
+		Overrides: []TaskOverride{}, Unread: []Message{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var repos []string
 		_ = tx.Bucket(bucketRepos).ForEachBucket(func(k []byte) error { repos = append(repos, string(k)); return nil })
 		for _, repo := range repos {
 			var owners []Ownership
 			var decisions []Decision
+			var overrides []TaskOverride
 			for _, err := range []error{
+				scan(repoBucket(tx, repo, bucketTaskOverrides), nil, &overrides),
 				scan(repoBucket(tx, repo, bucketTasks), nil, &v.Tasks),
 				scan(repoBucket(tx, repo, bucketAttempts), nil, &v.Attempts),
 				scan(repoBucket(tx, repo, bucketOwners), nil, &owners),
@@ -81,6 +85,15 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				if d.Open() {
 					v.OpenDecisions = append(v.OpenDecisions, d)
 				}
+			}
+			// The records are keyed by task then number, so each task's are together and in number order.
+			for i := 0; i < len(overrides); {
+				j := i + 1
+				for j < len(overrides) && overrides[j].TaskID == overrides[i].TaskID {
+					j++
+				}
+				v.Overrides = append(v.Overrides, ActiveTaskOverrides(overrides[i:j])...)
+				i = j
 			}
 			inbox := repoBucket(tx, repo, bucketInbox)
 			if inbox == nil {

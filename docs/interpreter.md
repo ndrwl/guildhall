@@ -236,7 +236,7 @@ The engine then records, in order:
 
 A new head, such as a build round after review findings, publishes the next round and updates the same open pull request.
 
-**Deliver** reads the repository's [merge requirements](configuration.md#merge-requirements) from the current configuration and evaluates them in order on every advance ([decision](decisions/merge-requires.md)):
+**Deliver** reads the repository's [merge requirements](configuration.md#merge-requirements) from the current configuration, with any the task's [overrides](tasks.md#task-overrides) turn on (`run.repository`, which every gate reads), and evaluates them in order on every advance that has not yet authorized the delivered head, so an override added later never retracts an authorization ([decision](decisions/merge-requires.md)):
 
 1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; when one is not required its gate is skipped, but its state is still reported.
 2. The delivered head: the published head, or the head validate [rebased](#tiered-rebase) it to, followed through validate's rebase documents; the review and CI gates of a rebased head are read as below.
@@ -458,6 +458,8 @@ When the attempt follows the Director's retry of attempt `n-1`, the binding also
 Only that latest retry is recorded; first attempts and loop or stale re-runs have none, and older bindings without it still read and verify.
 Preparation passes it to `render.Stage.Retry`, so an advance that resumes an attempt recorded but not launched renders it without the event, and a retry repeated after a refusal keeps the bound reason in both the prompt and the `attempt-retried` message.
 It is not an input, so it plays no part in staleness or in checking a published preparation.
+When `Engine.Overrides` names the task, the binding also records its [task overrides](tasks.md#task-overrides) as the advance applied them: `overrides`, each applied one's `key`, `value` and record `number`, and `skipped_overrides`, each one that did not apply with its `key`, `value` and `reason`; a task with none records neither, so its binding is byte-identical to one made before overrides existed.
+They are not inputs either, so setting or unsetting an override never makes a finished attempt stale.
 New review preparations pass that binding's exact revisions to `render.Stage.Revisions` and its range base to `render.Stage.ReviewBase`, leaving the latter empty when no range was recorded.
 The [review outcome contract](configuration.md#review-outcome) owns revision validity and exact matching, including unconfigured standards.
 The base is not resolved again during preparation, including rebase-only and requested-full rounds.

@@ -198,8 +198,12 @@ type Engine struct {
 	Outbox   Outbox
 	// Workflow returns the definition a task's revision names; Advance refuses one with another digest (ErrRevision).
 	Workflow func(workflow.Revision) (*workflow.Definition, error)
-	// Config gives the profile adapters and the repositories' merge requirements.
-	Config            *config.Config
+	// Config gives the profile adapters and the repositories' merge requirements: the advanced task's effective
+	// config, its overrides applied (Overrides.Config), where the caller applied them.
+	Config *config.Config
+	// Overrides, when set, are the advanced task's overrides as applied to Config; each Artisan attempt bound for
+	// that task records them in its binding. nil records none.
+	Overrides         *TaskOverrides
 	StandardsRevision string
 	// CheckSettings, when set, refuses the model and effort of a step's profile that the profile's adapter cannot
 	// honour (adapter.ErrUnsupportedSetting), before anything is recorded, as CheckAdapter refuses an adapter; nil
@@ -791,6 +795,7 @@ func (r *run) start(s workflow.Step) (Next, error) {
 		if b.Grant, err = r.taskGrant(s, n, rt); err != nil {
 			return Next{}, err
 		}
+		r.bindOverrides(&b)
 		if err := r.bind(s, n, inputs, b); err != nil {
 			return Next{}, err
 		}

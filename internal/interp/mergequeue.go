@@ -635,9 +635,21 @@ func (r *run) decisionOn(s workflow.Step, x string) *store.Decision {
 // mergeQuestion is the text of a merge decision for head x, listing the findings and suggestions of outcomes.
 func (r *run) mergeQuestion(s workflow.Step, k int, x string, pr *pullRequestDoc, conditions []condition, outcomes []reviewOutcome, lead string) string {
 	for _, c := range conditions {
-		if c.Requirement == "guildmaster_approval" && c.RequiredBy != "" {
-			lead += fmt.Sprintf("The Guildmaster's answer is required because %s, the repository's policies, whatever merge_requires says.\n", c.RequiredBy)
+		by := strings.Split(c.RequiredBy, "; ")
+		if c.Requirement == "guildmaster_approval" && slices.Contains(by, policyGuard) {
+			lead += fmt.Sprintf("The Guildmaster's answer is required because %s, the repository's policies, whatever merge_requires says.\n", policyGuard)
 		}
+	}
+	// A requirement the task's override adds leads separately from the policy guard's.
+	for _, c := range conditions {
+		if !slices.Contains(strings.Split(c.RequiredBy, "; "), taskOverride) {
+			continue
+		}
+		requirement := c.Requirement
+		if requirement == "guildmaster_approval" {
+			requirement = "your approval"
+		}
+		lead += fmt.Sprintf("This task also requires %s (its override), whatever merge_requires says.\n", requirement)
 	}
 	question := lead + fmt.Sprintf("Merge needed for %s/%s, step %s, attempt %d: head %s.\n", r.task.Repository, r.task.ID, s.ID, k, x)
 	if pr != nil {
