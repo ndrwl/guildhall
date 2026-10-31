@@ -292,11 +292,22 @@ func (r *run) readJSONDoc(name string, v any) (bool, error) {
 	return true, nil
 }
 
+// linkTitle is the title a rebase link's push gives the task's pull request: the task's title, or the slice's
+// for a multi-PR task.
+func (r *run) linkTitle() string {
+	if r.slice.multi() {
+		return forgeTitle(r.sliceTitle(), r.task.ID)
+	}
+	return forgeTitle(r.task.Title, r.task.ID)
+}
+
 // publishLink pushes link l's rebased head to the task's pull request, after moving the worktree to it, and records
 // the pull request as <link>-pr; a link already pushed returns its record. It tells the Director once.
 func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink, pr *pullRequestDoc) (*pullRequestDoc, error) {
 	var out pullRequestDoc
 	if ok, err := r.readJSONDoc(l.name+"-pr", &out); err != nil || ok {
+		// A record from before titles were recorded has the link title it was published with.
+		out.Title = cmp.Or(out.Title, r.linkTitle())
 		return &out, err
 	}
 	if pr == nil {
@@ -305,10 +316,7 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 	if err := r.adopt(repo, l.doc.From, l.head); err != nil {
 		return nil, err
 	}
-	title := forgeTitle(r.task.Title, r.task.ID)
-	if r.slice.multi() {
-		title = forgeTitle(r.sliceTitle(), r.task.ID)
-	}
+	title := r.linkTitle()
 	body := fmt.Sprintf("Guildhall task %s/%s, rebased by step %s onto %s at %s (%s).\n", r.task.Repository, r.task.ID, s.ID, l.doc.Onto, l.head, l.doc.Kind)
 	if f := r.task.Fixes; f != nil {
 		body += fmt.Sprintf("\nFixes a defect introduced by task `%s/%s`.\n", f.Repository, f.ID)
@@ -317,7 +325,7 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 	if err != nil {
 		return nil, err
 	}
-	out = pullRequestDoc{Schema: pullRequestSchema, Remote: pr.Remote, PullRequest: pushed}
+	out = pullRequestDoc{Schema: pullRequestSchema, Remote: pr.Remote, Title: title, PullRequest: pushed}
 	if err := r.putPullRequest(l.name+"-pr", path.Join("tasks", r.task.Repository, r.task.ID, l.name, "pull-request.json"), out); err != nil {
 		return nil, err
 	}

@@ -38,6 +38,10 @@ type pullRequestDoc struct {
 	Schema string `json:"schema"`
 	// Remote is the remote the branch was pushed to; deliver merges there whatever the configuration says later.
 	Remote string `json:"remote"`
+	// Title is the title the pull request was published with, on a <step>-pr or <link>-pr record; the merge's
+	// subject is made from it. A record written before titles were recorded has none, and published and linkPR
+	// recompute it.
+	Title string `json:"title,omitempty"`
 	forge.PullRequest
 }
 
@@ -126,7 +130,7 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
-	if err := r.putPullRequest(id+"-pr", path.Join("tasks", r.task.Repository, r.task.ID, id, "pull-request.json"), pullRequestDoc{Schema: pullRequestSchema, Remote: repo.Remote, PullRequest: pr}); err != nil {
+	if err := r.putPullRequest(id+"-pr", path.Join("tasks", r.task.Repository, r.task.ID, id, "pull-request.json"), pullRequestDoc{Schema: pullRequestSchema, Remote: repo.Remote, Title: title, PullRequest: pr}); err != nil {
 		return false, Next{}, err
 	}
 	if err := r.notify("published."+id, store.MessagePublished, fmt.Sprintf("Step %s pushed head %s to branch %s: pull request %s.", s.ID, h, branch, pr.URL)); err != nil {
@@ -254,6 +258,14 @@ func (r *run) published(s workflow.Step, h string) (*pullRequestDoc, error) {
 	}
 	if pr.Schema != pullRequestSchema || pr.Head != h || pr.Number < 1 {
 		return nil, fmt.Errorf("document %s is not a %s pull request at head %s", ref.Name, pullRequestSchema, h)
+	}
+	if pr.Title == "" {
+		// A record from before titles were recorded: its title is recomputed as the publish made it.
+		text, err := r.prText(r.def.Steps[i], h)
+		if err != nil {
+			return nil, err
+		}
+		pr.Title, _ = pullRequestText(text)
 	}
 	return &pr, nil
 }
@@ -902,6 +914,8 @@ func (r *run) linkPR(links []rebaseLink, x string) (*pullRequestDoc, error) {
 		if err != nil || !ok {
 			return nil, cmp.Or(err, fmt.Errorf("rebase %s to head %s has no recorded pull request", l.name, x))
 		}
+		// A record from before titles were recorded: its title is the link title it was published with.
+		pr.Title = cmp.Or(pr.Title, r.linkTitle())
 		return &pr, nil
 	}
 	return nil, fmt.Errorf("no rebase ends at head %s", x)
@@ -1184,7 +1198,7 @@ func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string
 		case r.e.Forge == nil:
 			return false, Next{}, fmt.Errorf("%w: merging without a forge", ErrUnsupported)
 		}
-		merged, err := r.e.Forge.Merge(r.ctx, forge.Merge{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Head: h})
+		merged, err := r.e.Forge.Merge(r.ctx, forge.Merge{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Head: h, Title: pr.Title})
 		if errors.Is(err, forge.ErrRefused) {
 			reason := err.Error()
 			if err := r.recordRefusal(id, refusalDoc{Schema: refusalSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: h, Reason: reason}); err != nil {

@@ -245,7 +245,7 @@ func TestGitHubArguments(t *testing.T) {
 	if _, err := h.Forge.Checks(ctx, forge.Commit{Repository: h.Repository, Remote: remote, Head: h.Heads[0]}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]}); err != nil {
+	if _, err := h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0], Title: "Task t7 again"}); err != nil {
 		t.Fatal(err)
 	}
 	s := g.readState(t)
@@ -294,8 +294,14 @@ func TestGitHubArguments(t *testing.T) {
 	if edit < 0 || calls[edit][2] != strconv.Itoa(pr.Number) || !slices.Equal(flagValues(calls[edit], "--title", "--body"), []string{"Task t7 again", "Body text again"}) {
 		t.Errorf("pr edit = %v", calls)
 	}
-	if merge < 0 || !slices.Contains(calls[merge], "--squash") || !slices.Equal(flagValues(calls[merge], "--match-head-commit"), []string{h.Heads[0]}) {
+	if merge < 0 || !slices.Contains(calls[merge], "--squash") ||
+		!slices.Equal(flagValues(calls[merge], "--match-head-commit", "--subject", "--body"), []string{h.Heads[0], "Task t7 again (#1)", ""}) {
 		t.Errorf("pr merge = %v", calls)
+	}
+	// The subject is the published title plus (#N) and the body is explicitly empty, so GitHub's default
+	// squash message is never used.
+	if got := g.readState(t).PRs[0]; got.MergeSubject != "Task t7 again (#1)" || got.MergeBody != "" {
+		t.Errorf("merged with subject %q and body %q, want %q and an empty body", got.MergeSubject, got.MergeBody, "Task t7 again (#1)")
 	}
 	if !slices.ContainsFunc(calls, func(c []string) bool { return len(c) > 1 && c[0] == "api" && c[1] == "graphql" }) {
 		t.Errorf("no api graphql call reads the checks: %v", calls)
@@ -452,7 +458,7 @@ func TestGitHubMergeSignedOut(t *testing.T) {
 	s := g.readState(t)
 	s.SignedOut = true
 	g.writeState(t, s)
-	_, err = h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
+	_, err = h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0], Title: "Task t7"})
 	if err == nil || errors.Is(err, forge.ErrRefused) || !strings.Contains(err.Error(), "gh auth login") {
 		t.Errorf("Merge signed out = %v, want a plain error carrying gh's message", err)
 	}
@@ -474,7 +480,7 @@ func TestGitHubMergeUnreachable(t *testing.T) {
 	s := g.readState(t)
 	s.DropMerge = true
 	g.writeState(t, s)
-	_, err = h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
+	_, err = h.Forge.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0], Title: "Task t7"})
 	if err == nil || errors.Is(err, forge.ErrRefused) || !strings.Contains(err.Error(), "error connecting") {
 		t.Errorf("Merge unreachable = %v, want a plain error carrying gh's message", err)
 	}
@@ -507,7 +513,7 @@ func TestGitHubMergeTimeout(t *testing.T) {
 	for _, f.Timeout = range rungs {
 		calls := len(g.readState(t).Calls)
 		began := time.Now()
-		_, err = f.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
+		_, err = f.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0], Title: "Task t7"})
 		if took := time.Since(began); took > f.Timeout+30*time.Second {
 			t.Fatalf("Merge took %v past a %v timeout", took, f.Timeout)
 		}
@@ -669,6 +675,9 @@ type ghPR struct {
 	Body  string `json:"body"`
 	// CloseComment is the comment pr close posted.
 	CloseComment string `json:"close_comment,omitempty"`
+	// MergeSubject and MergeBody are the --subject and --body pr merge was given.
+	MergeSubject string `json:"merge_subject,omitempty"`
+	MergeBody    string `json:"merge_body,omitempty"`
 }
 
 func loadState(file string) (ghState, error) {
@@ -866,6 +875,8 @@ func runGH(s *ghState, bare string, args []string) int {
 		switch head := remoteBranch(bare, p.Branch); {
 		case flags["--squash"] != "true":
 			return fail(2, "fake gh: merge without --squash")
+		case flags["--subject"] == "":
+			return fail(2, "fake gh: merge without --subject")
 		case s.SignedOut:
 			return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
 		case s.HangMerge:
@@ -883,6 +894,7 @@ func runGH(s *ghState, bare string, args []string) int {
 		default:
 			sum := sha1.Sum([]byte("merge " + head))
 			p.State, p.MergedHead, p.MergeCommit = "MERGED", head, hex.EncodeToString(sum[:])
+			p.MergeSubject, p.MergeBody = flags["--subject"], flags["--body"]
 			return 0
 		}
 	}

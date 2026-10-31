@@ -232,7 +232,7 @@ The forge pushes the head to that branch, replacing whatever the task branch hel
 A head that is not a commit of the repository at `path` is refused with `forge.ErrUnknownHead` and records nothing; a commit an Artisan made in the task's [working directory](#the-working-directory) is one, because that directory is a worktree of the repository.
 The engine then records, in order:
 
-1. `publish-<k>-pr` (`tasks/<repo>/<task>/publish-<k>/pull-request.json`), a `guildhall.pull-request/1` document: the remote, number, URL, branch, head and state;
+1. `publish-<k>-pr` (`tasks/<repo>/<task>/publish-<k>/pull-request.json`), a `guildhall.pull-request/1` document: the remote, the title it published (the merge's subject is made from it, [forge contract](contracts/forge.md)), number, URL, branch, head and state;
 2. message `<repo>.<task>.published.publish-<k>`, type `published`, naming the head, branch and pull request URL;
 3. `publish-<k>-head`, the step's output port, the head as a line of text.
 

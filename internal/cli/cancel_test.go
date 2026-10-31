@@ -392,7 +392,7 @@ func TestTaskCancelRefusesMergedWork(t *testing.T) {
 		c.write(t, func(s *store.Store) (store.Receipt, error) {
 			return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
 		})
-		if _, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: pr.Number, Head: pr.Head}); err != nil {
+		if _, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: pr.Number, Head: pr.Head, Title: "Merged on the forge"}); err != nil {
 			t.Fatal(err)
 		}
 		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
@@ -421,7 +421,7 @@ func (c *cancelDirector) slicedTask(t *testing.T) (first, second forge.PullReque
 		return s.PutDocument("doc-accept", store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "accept-1-spec", Path: p, SHA256: digest.Of(spec).Hex()})
 	})
 	first = c.publish(t)
-	merged, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: first.Number, Head: first.Head})
+	merged, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: first.Number, Head: first.Head, Title: "Parser"})
 	if err != nil {
 		t.Fatal(err)
 	}
