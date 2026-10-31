@@ -1,6 +1,6 @@
 ---
 name: guildhall-director-tasks
-description: Use as the Director whenever the Guildmaster asks for work, asks what needs them, answers a decision, or asks to retry, stop, merge, rule on findings or pause, to turn what they say into guildhall commands.
+description: Use as the Director whenever the Guildmaster asks for work, asks what needs them, answers a decision, or asks to retry, stop, cancel, merge, rule on findings or pause, to turn what they say into guildhall commands.
 ---
 
 # Director tasks
@@ -172,6 +172,25 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 - When an attempt finished with a result that no advance has taken, take it:
   `guildhall step done --repo app --task t-12 --step build --attempt 2 --result <attempt dir>/result.json`.
 
+## Cancelling a task
+
+Before cancelling any task, ask the Guildmaster in plain words, naming each task and the reason, such as "Cancel d105 and d102, as duplicates of d120?", and run nothing until they say yes to that question.
+Only an explicit yes to cancel counts: words like "transfer", "move" or "replace" are not one, even when they imply a cancel.
+In one session the Guildmaster said "transfer" without saying "cancel", and Claude Code's auto-mode safety check blocked a combined cancel of d105 and d102; the separate cancels ran only after the Guildmaster said it outright.
+While the question is open, list it in Needs you with one line per task, such as `- d105 · cancel? · chat`.
+When work moves to a new task, create the new task, then ask before cancelling the old one, since the move is not a yes to the cancel.
+
+After the yes, run one `guildhall task cancel` per task, each as its own command, with the reason from the Guildmaster's words; never chain cancels with `&&`, `;` or a loop:
+
+```sh
+guildhall task cancel --repo app --reason "Duplicate of t-9." t-12
+```
+
+It is irreversible: it stops running attempts, closes the open PR with the reason as its comment (the branch is kept), voids open decisions, leaves the start and merge queues, tells you about each open dependent with a `dependency-cancelled` message, and records the task `cancelled`; work wanted again is a new task.
+It refuses a done task and one whose work merged or is merging, and refuses when a running Artisan's stop cannot be proven; if it fails part-way, run the same command again.
+A PR merged on the forge refuses it too, and that task is recorded `done` instead, not cancelled.
+Report one cancel receipt per task to the Guildmaster.
+
 ## Published PR conflicts and sending work back
 
 Guildhall brings a behind or conflicting PR up to date itself: an authorized merge waits in its repository's merge queue, and the front is rebased onto the base tip, by Guildhall with no conflicts, by a `rebaser` Artisan for minor conflicts, and by an automatic build send-back for major ones (`rebased`, `rebase-escalated` and `approval-carried` messages tell you what happened).
@@ -189,10 +208,7 @@ You may choose any appropriate recovery; the available options are not a fixed p
   No attempt in the task may still be running when you make a new request.
   The next review keeps its previous evidence and scopes to the resolution only when the rebase classifier proves it appropriate; other changes receive full review, and republish updates the same open PR.
 - Hold a failed or stopped attempt on purpose with `guildhall step park` and a reason, or put a Guildmaster-requested `hold` on an existing merge decision.
-- Cancel the task, only when the Guildmaster asks for it, with their reason: `guildhall task cancel --repo app --reason "Duplicate of t-9." t-12`.
-  It is irreversible: it stops running attempts, closes the open PR with the reason as its comment (the branch is kept), voids open decisions, leaves the start and merge queues, tells you about each open dependent with a `dependency-cancelled` message, and records the task `cancelled`; work wanted again is a new task.
-  It refuses a done task and one whose work merged or is merging, and refuses when a running Artisan's stop cannot be proven; if it fails part-way, run the same command again.
-  A PR merged on the forge refuses it too, and that task is recorded `done` instead, not cancelled.
+- Cancel the task, following [Cancelling a task](#cancelling-a-task).
 - Record a task done whose PR was merged outside Guildhall, by hand on the forge: `guildhall task reconcile --repo app t-12`.
   Every advance does this by itself, sending a `merged` message that says the PR was merged outside Guildhall and names both heads; reconcile does it now, stopping any running attempt first, and prints `done: ...` or `no change: ...`.
   Existing running-attempt stop (`artisan stop`) and Director-stage abandonment (`step finish --failed`) remain available for those states; neither rewrites a finished build.
@@ -261,4 +277,5 @@ Record an approval with `guildhall workflow approve` only when the Guildmaster h
 
 - You orchestrate; Artisans do the work: never edit the repository, write code or review changes yourself.
 - A request that changes anything ends in a command and its receipt; a conversation is never the record.
+- Never cancel a task without the Guildmaster's yes to a question naming it; one cancel command per task.
 - Tell the Guildmaster about every command that failed, with its reason in plain English, rather than working around it.

@@ -57,7 +57,7 @@ guildhall task start --repo <repo> <id>
 
 While the task is open the item stays out of `needs_me` and status shows the task as the repository's `running_task`, so never launch a second one.
 Once it finishes done it is the repository's last hallmark, and the count of merges toward the next one starts from its launch, so merges made while it ran count.
-A hallmark that fails and is cancelled never resets the count; the item comes back, and you launch a new one.
+A hallmark that fails, and that the Guildmaster agrees to cancel, never resets the count; the item comes back, and you launch a new one.
 
 The task runs one read-only stage that uses `guildhall-hallmark` and is given the repository's previous hallmark report; Guildhall fails the stage if it changes the project.
 Its test evidence needs the repository's `[repository.profiles.researcher]` grant for the test commands; without one the report lists that evidence as missing.
