@@ -26,7 +26,12 @@ func env(vars map[string]string) func(string) string {
 }
 
 func TestLocate(t *testing.T) {
-	root := t.TempDir()
+	// Locate resolves the binary's symbolic links, so the root is resolved too: macOS's temporary directory is under
+	// /var, a link to /private/var.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	release := filepath.Join(root, "home", "releases", "v1.4.0", BinaryName(runtime.GOOS))
 	if err := os.MkdirAll(filepath.Dir(release), 0o755); err != nil {
 		t.Fatal(err)

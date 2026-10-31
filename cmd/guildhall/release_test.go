@@ -43,7 +43,13 @@ func buildRelease(t *testing.T, dir, version string) (string, string) {
 // the binary itself, runs the installed release, and sees a plain go build, which reports dev, refused.
 func TestReleaseInstallOfABuiltBinary(t *testing.T) {
 	bin, sum := buildRelease(t, t.TempDir(), "v0.0.0-release-test")
-	home := filepath.Join(t.TempDir(), "home")
+	// The installed release finds its home from its symlink-resolved path, so the home is resolved too: macOS's
+	// temporary directory is under /var, a link to /private/var.
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(tmp, "home")
 	run := func(bin string, args ...string) (string, error) {
 		cmd := binCommand(t, bin, args...)
 		cmd.Env = append(os.Environ(), "GUILDHALL_HOME="+home)
