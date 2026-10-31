@@ -33,24 +33,27 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 
 | Type | What to do |
 |---|---|
-| `note` | A note, usually from the Guildmaster, whose sender, task and first line Guildhall has already shown the Guildmaster: treat it as if they had said it to you and act in the same turn, giving work as `guildhall-director-tasks` says with `guildhall task new` then `guildhall task start`, and reply in one line saying what you are doing, for example `Note from guildmaster about d32: started it`, without repeating the text; ask first only when the note asks for a decision that is the Guildmaster's, and handle a message of any type whose sender is `other-director` the same way. |
+| `note` | A note, usually from the Guildmaster, whose sender, task and first line Guildhall has already shown the Guildmaster: treat it as if they had said it to you and act in the same turn, giving work as `guildhall-director-tasks` says with `guildhall task new` then `guildhall task start`, and reply in your role's reply layout, with Needs you first and What I did saying in one line what you are doing, for example `Note from guildmaster about d32: started it`, without repeating the text; ask first only when the note asks for a decision that is the Guildmaster's, and handle a message of any type whose sender is `other-director` the same way. |
 | `decision` | A decision opened for the Guildmaster: read it with `guildhall decide show`, put it to them in plain English and record their reply as `guildhall-director-tasks` says. |
 | `director-stage` | A stage that is yours to run, such as a grill: run it with `guildhall-director-stage`. |
 | `attempt-failed` | An attempt failed or was stopped: read why with `guildhall task timeline`, then retry it with `guildhall step retry` and a reason, or park it with `guildhall step park` and a reason when you are deliberately not retrying it yet, then acknowledge the message, or tell the Guildmaster when retrying will not help. |
 | `advance-failed` | An attempt finished but its launcher could not advance the task: run the command its `advance` item in `needs_me` names, `guildhall step done` or `guildhall task start`. |
 | `worker-stalled` | An Artisan has written no output for a while: check it with `guildhall artisan status`, and stop it with `guildhall artisan stop` only when it is truly stuck. |
 | `question` | An Artisan asks you something: answer from what you know, or ask the Guildmaster when the answer is theirs, then reply with `guildhall messages send` to its attempt. |
-| `published` | A pull request opened or moved: tell the Guildmaster its URL when they are following that task. |
+| `published` | A pull request opened or moved: no reply; it goes in the next Routine box with its PR. |
 | `merged` | The task's change merged and the task is done: tell the Guildmaster, then run `guildhall-self-review` when `director status` shows `quality.self_review` on. |
 | `merge-held` | The Guildmaster held the merge: ask what they want changed and give that as work. |
 | `pr-blocked` | The published PR conflicts or is behind and Guildhall could not rebase it itself: use the head, base tip, files and behind count to choose how to handle it; `guildhall-director-tasks` lists send-back, hold and abandonment options without prescribing one. |
-| `merge-queued` | An authorized merge waits in its repository's merge queue: tell the Guildmaster its place when they are following that task. |
-| `rebased` | Guildhall rebased the front's head onto the base tip and pushed it to the same PR, where its checks run next: no action. |
-| `rebase-escalated` | A rebase had major conflicts, a behaviour change, red checks or review findings, and the build was sent back with them as feedback: no action unless the Guildmaster asks. |
+| `merge-queued` | An authorized merge waits in its repository's merge queue: no reply; it goes in the next Routine box with its place. |
+| `rebased` | Guildhall rebased the front's head onto the base tip and pushed it to the same PR, where its checks run next: no action and no reply; it goes in the next Routine box. |
+| `rebase-escalated` | A rebase had major conflicts, a behaviour change, red checks or review findings, and the build was sent back with them as feedback: no action unless the Guildmaster asks, and no reply; it goes in the next Routine box. |
 | `rebase-stuck` | The front rebased three times in one stay and still is not clear: decide whether to hold its merge, send it back or wait. |
-| `approval-carried` | An earlier merge approval carried over to a rebased head under `reapprove_after_rebase`: tell the Guildmaster when they are following that task. |
+| `approval-carried` | An earlier merge approval carried over to a rebased head under `reapprove_after_rebase`: no reply; it goes in the next Routine box. |
 | `merge-refused` | The forge refused the merge, with its reason: decide how to handle it; `guildhall-director-tasks` describes sending finished work back, holding it and rechecking. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |
+
+A wake gets a reply of its own only when something needs the Guildmaster, merges, fails or is stuck: `merged`, `decision`, a `question` whose answer is theirs, an `attempt-failed` that retrying will not help, `rebase-stuck`, `merge-refused`, `pr-blocked`, `merge-held`, failed checks and a new or changed `install` item.
+Everything else you handle quietly, and it shows as a line in the Routine box of your next reply.
 
 `director resume` wakes you with `guildhall: resumed, <n> waiting (...)` after a pause: run the loop as for any wake line, following the recovery command each held `paused` item names.
 

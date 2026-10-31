@@ -38,6 +38,12 @@ Replies open with exactly one urgency marker:
 
 With function hooks enabled, each assistant text drawing keeps Claude's original content inside a rounded frame in the opening marker's color.
 An unmarked reply is neutral gray, never silently green; a marker later in the text does not color the frame.
+
+A reply in the Director's [fixed layout](director.md#chat-address) is drawn in sections inside the same frame.
+Lanterns splits it into the marker line, Needs you, What I did (or a grill round in its place) and the Routine box, and draws the first three with Claude's own drawing, so markdown, bold and links look as they do today.
+A thin rule in the frame's color sets off What I did and the Routine box, and the Routine box gets a single-line border whose top edge reads `routine` and its `as of #<sequence>`.
+Any reply that is not exactly the layout, any doubt in the split and any drawing error give the single frame as before.
+Without function hooks nothing is drawn and the same text reads as plain markdown.
 This changes presentation, not transcript text, tool execution or model context.
 
 The workspace's one native status line runs `guildhall director context-report --lanterns`.
