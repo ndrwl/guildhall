@@ -97,7 +97,7 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 		t.Fatalf("Artisan stole focus: before %s after %s", focusBefore, focusAfter)
 	}
 	at := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
-	b, err = os.ReadFile(filepath.Join(at.Dir(d.state), launch.PaneClaim))
+	b, err = os.ReadFile(filepath.Join(at.Dir(d.state), launch.PaneClaimFile))
 	if err != nil {
 		t.Fatal(err)
 	}

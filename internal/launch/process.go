@@ -77,7 +77,7 @@ type Process struct {
 	LockWait     time.Duration
 	// TaskLocked says the caller holds the task lock (artisan.LockAttempt on the task directory) for the whole
 	// Launch or LaunchFiles call, so no other launch of this task can be in flight. Only then does a pane launch
-	// recover a stale launching PaneClaim; the zero value never does.
+	// recover a stale launching PaneClaimFile claim; the zero value never does.
 	TaskLocked bool
 
 	mu      sync.Mutex

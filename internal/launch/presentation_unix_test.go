@@ -300,7 +300,7 @@ func TestPaneOperationsTimeoutRetainsClaimWithoutRetryOrStop(t *testing.T) {
 				t.Fatalf("Launch = %v", err)
 			}
 			k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
-			if _, err := os.Stat(filepath.Join(k.Dir(p.StateDir), launch.PaneClaim)); err != nil {
+			if _, err := os.Stat(filepath.Join(k.Dir(p.StateDir), launch.PaneClaimFile)); err != nil {
 				t.Fatalf("claim lost: %v", err)
 			}
 			beforeReports := reports
@@ -418,7 +418,7 @@ func recoversClaim(t *testing.T, p *launch.Process, spec interp.Spec, panes *ada
 	if len(panes.Sent()) != 1 {
 		t.Fatalf("commands = %q, want exactly one", panes.Sent())
 	}
-	b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim))
+	b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaimFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -487,7 +487,7 @@ func TestTaskLockedLaunchRecoversLaunchingClaim(t *testing.T) {
 			if _, err := p.Launch(ctx, spec); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("Launch = %v", err)
 			}
-			b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim))
+			b, err := os.ReadFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaimFile))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -523,7 +523,7 @@ func abandonedClaim(t *testing.T, p *launch.Process, panes *adaptertest.ShellPan
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim), b, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaimFile), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return w.ID
@@ -606,7 +606,7 @@ func TestTaskLockedLaunchRecoversOnlyAnUnownedLaunchingClaim(t *testing.T) {
 		p := newProcess(t)
 		p.TaskLocked = true
 		spec := prepared(t, p, fixtureSpec(t, ""))
-		if err := os.WriteFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim), []byte(launchingClaim), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaimFile), []byte(launchingClaim), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		recoversClaim(t, p, spec, adaptertest.NewShellPanes(t, "lab", "director"), recovery{})
@@ -628,7 +628,7 @@ func TestTaskLockedLaunchRecoversOnlyAnUnownedLaunchingClaim(t *testing.T) {
 			p := newProcess(t)
 			p.TaskLocked = c.locked
 			spec := prepared(t, p, fixtureSpec(t, ""))
-			path := filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim)
+			path := filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaimFile)
 			if err := os.WriteFile(path, []byte(c.claim), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -655,7 +655,7 @@ func TestTaskLockedLaunchRecoversOnlyAnUnownedLaunchingClaim(t *testing.T) {
 			t.Fatal(err)
 		}
 		waitSucceeded(t, p)
-		path := filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaim)
+		path := filepath.Join(staleClaimKey.Dir(p.StateDir), launch.PaneClaimFile)
 		if err := os.WriteFile(path, []byte(launchingClaim), 0o600); err != nil {
 			t.Fatal(err)
 		}
