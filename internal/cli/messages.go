@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -184,7 +183,7 @@ func listedEnvelope(path string, named bool, env messaging.Envelope) error {
 	if _, err := os.Stat(path); !named && errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	cfg, err := config.Load(path)
+	cfg, err := reportedConfig(path)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}

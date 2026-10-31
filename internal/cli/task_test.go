@@ -231,6 +231,7 @@ func TestTaskNewConfigDigestCoversManagedSettingsNotFormatting(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(filepath.Dir(managed), "managed.toml"), string(body))
+	enrolManaged(t, filepath.Dir(managed))
 
 	path := emptyStore(t)
 	for id, c := range map[string]string{"t-base": cfg, "t-reformatted": reformatted, "t-managed": managed} {

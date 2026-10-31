@@ -104,7 +104,7 @@ func (a *App) reconcileTask(f advanceFlags, task string) error {
 // lockTask loads f's config and listed repository and takes task's lock in the absolute state directory, as task
 // cancel and task reconcile do before changing a task's records; release frees the lock.
 func lockTask(f advanceFlags, task string) (cfg *config.Config, repo config.Repository, state string, release func(), err error) {
-	if cfg, err = config.Load(f.config); err != nil {
+	if cfg, err = admitDirector(f.config); err != nil {
 		return nil, config.Repository{}, "", nil, err
 	}
 	if repo, err = cfg.ListedRepository(f.repo); err != nil {

@@ -84,7 +84,8 @@ var appRepo = func() string {
 // newRunDirectorAt is newRunDirector over the absolute config file cfg, with its baseline and workflows beside it.
 func newRunDirectorAt(t *testing.T, cfg string) runDirector {
 	t.Helper()
-	if appRepo != "/srv/app" {
+	// A managed run copies the fixture too, since it writes managed.toml and the copy's store beside the config.
+	if appRepo != "/srv/app" || managedRun() {
 		dir := t.TempDir()
 		if err := os.CopyFS(dir, os.DirFS(filepath.Dir(cfg))); err != nil {
 			t.Fatal(err)
@@ -106,6 +107,9 @@ func newRunDirectorAt(t *testing.T, cfg string) runDirector {
 	ws := gittest.NewWorkspaces()
 	ws.SetDefault("git@github.com:example/app.git", strings.Repeat("d", 40))
 	d := runDirector{store: emptyStore(t), config: cfg, state: state, workspaces: ws}
+	if managedRun() && filepath.Base(cfg) == "config.toml" {
+		d.store = filepath.Join(maybeManage(t, filepath.Dir(cfg)), directorStoreFile)
+	}
 	t.Cleanup(func() {
 		d.stopAll(t)
 		_ = os.RemoveAll(state)
@@ -339,6 +343,7 @@ func newRunCopyOn(t *testing.T, workflow, configFile string) (runDirector, strin
 		d.stopAll(t)
 		_ = os.RemoveAll(dir)
 	})
+	maybeManage(t, dir)
 	approveRepo(t, d.store, d.config, "app")
 	newTask(t, d.store, d.config, "app", "Sort the task list", "t-1")
 	return d, dir

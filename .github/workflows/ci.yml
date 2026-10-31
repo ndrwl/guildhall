@@ -58,6 +58,13 @@ jobs:
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
         run: go test ./...
+      # The Director suites again, each copy managed with the same effective
+      # settings (docs/director-modes.md#testing-both-ways).
+      - name: Test Director suites managed
+        env:
+          GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
+          GUILDHALL_TEST_DIRECTOR_MODE: managed
+        run: go test ./internal/cli
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         if: matrix.os == 'ubuntu-latest'
         with:

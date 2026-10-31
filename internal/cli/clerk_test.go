@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -524,6 +525,20 @@ func TestClerkFormatting(t *testing.T) {
 	}
 	if clerkPRNumber("https://forge.invalid/app/pull/12") != "#12" || clerkPRNumber("") != "-" {
 		t.Error("clerkPRNumber")
+	}
+}
+
+// TestClerkSaysTheConfigIsRefused: Clerk still answers from a copy whose config the boundary refuses, without that
+// config, and says on stderr that it was refused and why.
+func TestClerkSaysTheConfigIsRefused(t *testing.T) {
+	dir := clerkFixture(t)
+	if code, _, stderr := runClerk(t, filepath.Join(dir, "director"), "queue"); code != 0 || stderr != "" {
+		t.Fatalf("admitted: exit %d, stderr %q", code, stderr)
+	}
+	writeManaged(t, dir, map[string]config.ManagedSetting{"max_running_attempts": {Value: "1"}})
+	code, out, stderr := runClerk(t, filepath.Join(dir, "director"), "queue")
+	if code != 0 || out == "" || !strings.Contains(stderr, "guildhall: clerk queue: answered without the copy's config, which is refused: ") {
+		t.Fatalf("refused: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
 }
 

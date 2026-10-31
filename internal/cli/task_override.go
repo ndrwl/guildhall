@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -131,7 +130,7 @@ func (a *App) taskOverride(args []string) int {
 	if sub == "set" {
 		// The copy's config judges the override before the store opens, so a refusal writes nothing; its reason is
 		// printed as the registry words it.
-		cfg, err := config.Load(*cfgPath)
+		cfg, err := admitDirector(*cfgPath)
 		if err != nil {
 			return fail(fmt.Errorf("config: %w", err))
 		}

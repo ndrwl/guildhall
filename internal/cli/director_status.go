@@ -191,9 +191,27 @@ type statusGuardRails struct {
 	SpendToday store.SpendTotal `json:"spend_today"`
 }
 
-// statusMode is the copy's mode; standalone until managed mode exists.
+// statusMode is the copy's mode (docs/director-modes.md#mode).
 type statusMode struct {
+	// Name is the mode the configuration-admission boundary finds: standalone, managed or refused.
 	Name string `json:"name"`
+}
+
+// statusModeName is the mode name of the copy whose config is at cfgPath, or whose store is at storePath when no
+// config is named, with managed facts v read from its store. A config that cannot be read leaves the mode to the
+// store and managed.toml alone.
+func statusModeName(cfgPath, storePath string, v store.ManagedView) string {
+	if cfgPath == "" {
+		cfgPath = filepath.Join(filepath.Dir(storePath), "config.toml")
+	}
+	f, err := readCopyFiles(cfgPath)
+	if err != nil {
+		f = copyFiles{CfgPath: cfgPath}
+		if b, err := os.ReadFile(filepath.Join(f.Dir(), managedFile)); err == nil {
+			f.Managed = b
+		}
+	}
+	return judge(f, v).Mode
 }
 
 type statusTask struct {
@@ -499,7 +517,7 @@ func (a *App) directorStatusCmd(args []string) int {
 	out.Session.GuardRails.GuardRails, out.Quality, out.Session.GuardRails.ConfigError = statusConfig(*cfg, named)
 	if *cfg != "" {
 		// A config that cannot be read gives no policies; the guard rails already say why.
-		if c, err := config.Load(*cfg); err == nil {
+		if c, err := reportedConfig(*cfg); err == nil {
 			out.RepositoryPolicies = feedPolicies(a.readPolicies(context.Background(), c.Repositories...))
 		}
 	}
@@ -519,7 +537,7 @@ func statusConfig(path string, named bool) (*config.GuardRails, *config.Quality,
 	if path == "" {
 		return nil, nil, ""
 	}
-	cfg, err := config.Load(path)
+	cfg, err := reportedConfig(path)
 	if errors.Is(err, fs.ErrNotExist) && !named {
 		return nil, nil, ""
 	}
@@ -561,9 +579,13 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	var starts []store.QueuedStart
 	var hallmarks map[string]repoHallmarks
 	var taskSlices map[string]*statusSlices
+	var managed store.ManagedView
 	v, err := withRecords(p, true, now, func(s *store.Store) (store.DirectorView, error) {
 		v, err := s.DirectorView()
 		if err != nil {
+			return v, err
+		}
+		if managed, err = s.ManagedView(); err != nil {
 			return v, err
 		}
 		if starts, err = s.StartQueue(); err != nil {
@@ -589,7 +611,7 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	out := directorStatus{
 		AsOf:        statusLabel{Partial: true, Excluded: []string{"worker files", "transcripts", "forge state"}, Sequence: v.AsOf.Sequence, CommittedAt: v.AsOf.CommittedAt},
 		Session:     statusSession{State: "no session"},
-		Mode:        statusMode{Name: "standalone"},
+		Mode:        statusMode{Name: statusModeName(cfgPath, path, managed)},
 		Tasks:       []statusTask{},
 		MergeQueues: queues,
 		Decisions:   []statusDecision{},
@@ -1041,7 +1063,7 @@ func readRepoHallmarks(s *store.Store, v store.DirectorView, workflows func(repo
 func statusWorkflows(cfgPath string) func(repo string) func(workflow.Revision) (*workflow.Definition, error) {
 	var cfg *config.Config
 	if cfgPath != "" {
-		if c, err := config.Load(cfgPath); err == nil {
+		if c, err := reportedConfig(cfgPath); err == nil {
 			cfg = c
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -213,8 +214,14 @@ func TestRunRefusesAnUnverifiedTaskGrant(t *testing.T) {
 			copyDir, spec, binding := grantCopy(t, []string{"Bash(go:*)"})
 			edit(t, copyDir, binding)
 			err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{})
-			if err == nil || !strings.Contains(err.Error(), "task grant") {
-				t.Fatalf("Run = %v; want a task grant error", err)
+			// The profile's config is admitted through the copy's boundary, which reads the store's managed facts
+			// first, so an unreadable store refuses there.
+			want := "task grant"
+			if name == "unreadable store" {
+				want = "managed mode: store"
+			}
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("Run = %v; want a %q error", err, want)
 			}
 			if _, err := os.Stat(claude.ArtisanSettingsPath(spec.ResultFile)); !os.IsNotExist(err) {
 				t.Errorf("settings written before the refusal: %v", err)
@@ -235,5 +242,42 @@ func TestWithTaskGrant(t *testing.T) {
 	}
 	if len(base) != 2 {
 		t.Errorf("WithTaskGrant changed its input: %+v", base)
+	}
+}
+
+// TestRunAdmitsTheCopysManagedRevision: an attempt launched from an enrolled copy whose managed.toml no reload or
+// approval authorized fails before Claude starts, naming the unauthorized digest, as every Director command does,
+// so its profile grant and skill policy never come from that file; once a reload authorizes it, the attempt runs.
+func TestRunAdmitsTheCopysManagedRevision(t *testing.T) {
+	claudetest.Install(t)
+	_, spec, _ := grantCopy(t, nil)
+	managed, err := config.EncodeManaged(map[string]config.ManagedSetting{"max_running_attempts": {Value: "2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(spec.Copy, "managed.toml"), managed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := string(digest.Of(managed))
+	withStore(t, spec.Copy, func(s *store.Store) error {
+		_, _, err := s.RecordEnrolment(store.Enrolment{Event: store.Enrolled, Steward: "hq", Digest: d})
+		return err
+	})
+	want := "managed.toml " + d + " is not authorized"
+	if _, err := claude.ProfileTools(spec.Copy, spec.Profile, spec.Repository); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("ProfileTools = %v; want %q", err, want)
+	}
+	if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Run = %v; want %q", err, want)
+	}
+	if _, err := os.Stat(claude.ArtisanSettingsPath(spec.ResultFile)); !os.IsNotExist(err) {
+		t.Errorf("settings written before the refusal: %v", err)
+	}
+	withStore(t, spec.Copy, func(s *store.Store) error {
+		_, _, err := s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceReload, Digest: d})
+		return err
+	})
+	if got, _ := runGranted(t, spec); !slices.Equal(got, effectiveRules) {
+		t.Errorf("granted %q; want %q", got, effectiveRules)
 	}
 }

@@ -134,6 +134,11 @@ func (a *App) clerk(args []string) int {
 	if _, err := io.WriteString(a.Stdout, out); err != nil {
 		return 1
 	}
+	if d.refusal != "" {
+		if _, err := fmt.Fprintf(a.Stderr, "guildhall: clerk %s: answered without the copy's config, which is refused: %s\n", sub, d.refusal); err != nil {
+			return 1
+		}
+	}
 	return 0
 }
 
@@ -190,8 +195,10 @@ type clerkData struct {
 	byKey map[string]clerkTask
 	// multi says more than one repository has tasks, so tasks are named <repo>/<task>.
 	multi bool
-	// cfg is the copy's config, nil when it cannot be read.
-	cfg *config.Config
+	// cfg is the copy's config, nil when it cannot be read or the configuration-admission boundary refuses it; refusal
+	// is that refusal.
+	cfg     *config.Config
+	refusal string
 	// resolver returns repository repo's bound-workflow resolver, made once per repository and memoised per
 	// revision, so each revision resolves at most once per Clerk read; nil before clerkRead sets it.
 	resolver func(repo string) func(workflow.Revision) (*workflow.Definition, error)
@@ -241,8 +248,13 @@ func (a *App) clerkReadWait(ctx context.Context, c clerkPaths, wait time.Duratio
 	if a.Now != nil {
 		d.now = a.Now().UTC()
 	}
-	if cfg, err := config.Load(c.config); err == nil {
+	// A config the boundary refuses is not applied: Clerk answers without it, as for one that does not load, and
+	// says so.
+	var refused refusalError
+	if cfg, err := admitDirector(c.config); err == nil {
 		d.cfg = cfg
+	} else if errors.As(err, &refused) {
+		d.refusal = refused.Text
 	}
 	d.resolver = clerkResolvers(statusWorkflows(c.config))
 	documents := filepath.Join(c.state, "documents")

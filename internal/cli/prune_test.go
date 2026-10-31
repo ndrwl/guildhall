@@ -1032,6 +1032,51 @@ func TestPruneCommandOutput(t *testing.T) {
 	}
 }
 
+// TestPruneIgnoresAnUnauthorizedManagedRevision: a manual prune of an enrolled copy whose managed.toml no reload
+// authorized never prunes by that file's prune_after: it says the managed settings were not applied and uses
+// config.toml alone, here the 14-day default, until a reload authorizes the digest.
+func TestPruneIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
+	f := newPruneFixture(t)
+	f.task("app", "t-1")
+	f.at = f.now.Add(-time.Hour)
+	f.close("app", "t-1")
+	d := writeManaged(t, f.copy, map[string]config.ManagedSetting{config.PruneAfterKey: {Value: "0"}})
+	recordEvent(t, f.copy, store.Enrolment{Event: store.Enrolled, Steward: "hq", Digest: d})
+	run := func() (string, string) {
+		t.Helper()
+		f.stdout.Reset()
+		f.stderr.Reset()
+		if code := f.app.Run([]string{"prune", "--dry-run", "--copy", f.copy}); code != 0 {
+			t.Fatalf("prune: exit %d, stderr %s", code, f.stderr)
+		}
+		return f.stdout.String(), f.stderr.String()
+	}
+	out, stderr := run()
+	if !strings.Contains(out, "skipped app/t-1: too recent") {
+		t.Errorf("unauthorized prune_after 0 applied: %q", out)
+	}
+	if !strings.Contains(stderr, "prune: managed settings not applied, using config.toml alone: managed.toml "+d+" is not authorized") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	// Once a reload authorizes the digest, its prune_after applies.
+	f.mutate(func(s *store.Store) error {
+		_, _, err := s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceReload, Digest: d})
+		return err
+	})
+	if out, stderr := run(); strings.Contains(out, "skipped app/t-1") || stderr != "" {
+		t.Errorf("authorized prune_after 0 not applied: %q, stderr %q", out, stderr)
+	}
+	// A hand edit of an inline [managed] is no more applied than an unauthorized managed.toml.
+	if err := os.Remove(filepath.Join(f.copy, managedFile)); err != nil {
+		t.Fatal(err)
+	}
+	recordEvent(t, f.copy, store.Enrolment{Event: store.Left, Digest: d, Revision: store.RevisionName(digest.Digest(d))})
+	appendFile(t, filepath.Join(f.copy, "config.toml"), "\n[managed.prune_after]\nvalue = \"0\"\n")
+	if out, stderr := run(); !strings.Contains(out, "skipped app/t-1: too recent") || !strings.Contains(stderr, "inline [managed]") {
+		t.Errorf("inline [managed] prune: %q, stderr %q", out, stderr)
+	}
+}
+
 // TestPruneKeepsPaneFilesTheSweepStillCloses: an attempt whose Herdr workspace is not closed keeps its pane files
 // through a prune, and the sweep then closes it; an attempt already closed loses them, and the sweep leaves it alone.
 func TestPruneKeepsPaneFilesTheSweepStillCloses(t *testing.T) {

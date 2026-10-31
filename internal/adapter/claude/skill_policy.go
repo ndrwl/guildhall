@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
@@ -64,13 +65,16 @@ func checkProgramPolicy(ctx context.Context, path string, p config.ClaudeSkillPo
 	return CheckPolicyVersion(string(b))
 }
 
+// attemptPolicy is the Claude skill policy for an attempt of profile launched from the Director copy at copyDir,
+// whose config is admitted through the copy's configuration-admission boundary (internal/admit); with no copy or
+// no profile it is the artisan-v1 preset.
 func attemptPolicy(copyDir, profile string) (config.ClaudeSkillPolicy, error) {
 	if copyDir == "" || profile == "" {
 		p, err := config.ParseClaudeSkills(`{"preset":"artisan-v1"}`)
 		p.Key = config.ClaudeSkillsArtisanKey
 		return p, err
 	}
-	cfg, err := config.Load(filepath.Join(copyDir, "config.toml"))
+	cfg, _, err := admit.Admit(filepath.Join(copyDir, "config.toml"))
 	if err != nil {
 		return config.ClaudeSkillPolicy{}, err
 	}

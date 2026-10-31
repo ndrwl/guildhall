@@ -98,6 +98,8 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketReloads, nil, func() any { return new(DirectorReload) }},
 			{bucketHandoffDues, nil, func() any { return new(HandoffDue) }},
 			{bucketMaintenance, nil, func() any { return new(MaintenanceRun) }},
+			{bucketEnrolments, nil, func() any { return new(Enrolment) }},
+			{bucketManagedRevisions, nil, func() any { return new(ManagedRevision) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {
