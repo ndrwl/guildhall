@@ -39,6 +39,10 @@ func artisanPresentation(ctx context.Context, cfg *config.Config, storePath, sta
 	if err != nil {
 		return nil, err
 	}
+	output, err := cfg.ArtisanPaneOutput()
+	if err != nil {
+		return nil, err
+	}
 	host := &artisanWorkspaces{TabHost: adapter.NewHerdrTabs(client), client: client, storePath: storePath, state: state, warnings: warnings}
-	return &launch.Presentation{Host: host, Report: client.ReportAgentOutcome, ReadBack: client.PaneGet, Warnings: warnings, CloseAfter: closeAfter}, nil
+	return &launch.Presentation{Host: host, Report: client.ReportAgentOutcome, ReadBack: client.PaneGet, Warnings: warnings, CloseAfter: closeAfter, Output: output}, nil
 }

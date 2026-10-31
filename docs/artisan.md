@@ -466,13 +466,43 @@ Ordering never fails an Artisan launch or changes task records, lifecycle or rec
 Without that setting, workflow attempts keep the hidden detached-process mode.
 Both modes use the same owned launcher, result recording, spend accounting, guard rails, retry rules and watcher.
 
-The pane runs an internal `artisan start --pane-launch` bridge that starts the owned launcher detached from the terminal, with no terminal input and its output appended to `launcher.log`, and streams that log into the pane.
-The [Claude adapter](adapters.md#claude-adapter) defines the plain live stream's contents and limits; richer formatting is a later stage.
+The pane runs an internal `artisan start --pane-launch` bridge that starts the owned launcher detached from the terminal, with no terminal input and its output appended to `launcher.log`, and shows that log in the pane as the [Workbench](#workbench).
+The [Claude adapter](adapters.md#claude-adapter) defines the plain live stream's contents and limits.
 This is a watchable print-mode Artisan, not an interactive model session.
 Closing the workspace or tab, interrupting its bridge, or losing Herdr cannot signal the owned launcher or change the task record; use `artisan stop` or [`task cancel`](tasks.md#task-cancel) to stop work.
 After the launcher and its watcher finish, the bridge prints a finished line and leaves the Herdr workspace open for inspection until the Director session supervisor's workspace close sweep closes it.
 The launcher passes the bridge the effective `artisan_workspace_close_after` as the internal `--workspace-close-after` flag, so the line states it: `This Herdr workspace closes automatically in about 5m0s (artisan_workspace_close_after); set it to 0 to keep Herdr workspaces open.`, or, when the setting is `0`, that the Herdr workspace stays open.
 A person may close the presentation sooner without losing the attempt's log, result or isolated copy.
+
+#### Workbench
+
+The **Workbench** is what the bridge shows: a formatted, read-only live display of the attempt, so a glance at the pane says what the Artisan is doing now and whether it is healthy.
+It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](lanterns.md), with no Claude plugin, hook or Node.
+`launcher.log` stays the plain and complete record of the attempt: formatting is applied only on the way to the pane, and nothing the Workbench shows is written back to it.
+
+- A header names the attempt: `guildhall <repository> · <task> · <step> · <attempt>`.
+- Assistant text has light Markdown: `**bold**`, `` `code` ``, `#` headings, `-`, `*` and `1.` lists with a hanging indent, and fenced code blocks, dimmed, indented and never wrapped; the rest is word-wrapped to the pane's width.
+  Every control character in agent text is removed before the Workbench adds its own colour codes, so model output cannot send escape sequences to the pane.
+- Each tool call is one line, `HH:MM:SS ▸ <Name> <subject>`, stamped when the wrapper received it, and each result one line, `HH:MM:SS   ✓ <Name> <size>`, or `✗ <Name> error <size>` in the error colour, matched to its call by id, so parallel calls are labelled correctly.
+- Every other `launcher.log` line, such as Claude's error output, `guildhall:` lines and advance output, is dimmed; a `Claude was denied` line and an error-like `guildhall:` line take the error colour.
+- After a minute with no new output reaching the pane, a dimmed `· quiet for 1m` line appears, and again at 2, 4 and 8 minutes and so on, doubling, so a long wait adds only a few lines.
+  It is measured from live arrival in the bridge, never from event timestamps, so a resumed or recovered bridge replaying the files from the start shows no quiet lines; it goes to the pane only, so stall detection, which reads `launcher.log`'s modification time, is unchanged.
+- Once the launcher exits, after any advance output, a closing banner reads the attempt's result file and shows `✓ succeeded` or `✗ failed` with the summary, wrapped, or `no result written` when the file is missing or malformed; the finished line above follows it unchanged.
+
+The bridge tails `launcher.log` and the runtime's event file, [`workbench.jsonl`](adapters.md#claude-adapter), every 100 ms, reading the log first.
+Events render in order.
+An event carrying `log` lines waits until exactly those lines come next from `launcher.log`, which are then shown as the event instead; an event without them, a tool result or the runtime's end, renders as soon as every earlier event has; a line no pending event claims is an other line.
+Because the wrapper writes each event before its lines, nothing is shown twice and nothing is lost.
+An event whose lines never arrive is shown as soon as a later event's lines arrive, so later events are not held behind it, or else at the end.
+With no event file, for another adapter or a wrapper older than the Workbench, or after the file's `truncated` event, the log is shown alone: a `tool:` line as a tool call with no timestamp or result, a `guildhall:` line as an other line, and the rest as text.
+
+Colour is used only when the pane is a terminal, `NO_COLOR` is unset or empty, `TERM` is not `dumb` and, on Windows, virtual terminal processing can be enabled; otherwise the same layout is shown with no escape codes.
+The width is the terminal's, else `COLUMNS`, else 80, and never less than 40.
+The Workbench uses no alternate screen, raw mode, cursor movement or input, and resets colour after each coloured line and at its end, so the pane is left at an ordinary idle shell for the workspace close sweep.
+A pane output error ends only the presentation; the launcher stays owned.
+
+[`artisan_pane_output`](configuration.md#settings) `= "plain"` turns the Workbench off: the pane then shows `launcher.log`'s bytes unchanged, as before it, followed by the banner as plain text and the finished line.
+The launcher passes the setting to the bridge as the internal `--pane-output` flag, which, like `--workspace-close-after`, goes only with `--pane-launch` and is not passed on to the launcher.
 
 An attempt-local `pane-launch.json` claim, `{"state":"launching"}`, is written before opening a pane; as the launch creates its Herdr workspace and then its `artisan <key>` tab, it rewrites the claim, still `launching`, to record them, as `{"state":"launching","workspace":"<id>","tabs":[<the workspace's starting tab>, <the attempt's tab>]}`; then the tab binding replaces it before typing, and once it holds a tab binding it is single-use.
 An ambiguous API response, startup timeout or caller interruption leaves that claim in place and returns an error without stopping an unverified launcher or typing another command.

@@ -29,6 +29,8 @@ var roundTripArgs = []string{
 	";", "&", "|", "a>b", "<in", "héllo", `C:\Program Files\x`, "--flag=value",
 	"%PATH%", "$(echo no)", "#not-a-comment", "@(1)", "{a,b}", "~", "!x",
 	`trailing\`, "guildhall: 3 unread (attempt-failed 1, question 2)",
+	// The pane bridge's own flags (launch.PaneOutputFlag and its values).
+	"--pane-launch", "--workspace-close-after", "5m0s", "--pane-output", "workbench", "plain",
 }
 
 // posixOnlyArgs are passed unchanged by POSIX shells; PowerShell refuses them.

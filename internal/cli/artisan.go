@@ -25,6 +25,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/workbench"
 )
 
 // Exit codes of `artisan start` beyond 0 (succeeded), 1 (error or rejected
@@ -181,15 +182,16 @@ func (a *App) printJSON(v any) int {
 }
 
 // bridgeArgs are the artisan start arguments of a --pane-launch bridge without
-// the bridge's own flags, --pane-launch and launch.WorkspaceCloseAfterFlag, so
-// the launcher it detaches is the ordinary owned start.
+// the bridge's own flags, --pane-launch, launch.WorkspaceCloseAfterFlag and
+// launch.PaneOutputFlag, so the launcher it detaches is the ordinary owned start.
 func bridgeArgs(args []string) []string {
 	var out []string
 	for i := 0; i < len(args); i++ {
 		switch arg := args[i]; {
 		case arg == "--pane-launch" || strings.HasPrefix(arg, "--pane-launch="),
-			strings.HasPrefix(arg, launch.WorkspaceCloseAfterFlag+"="):
-		case arg == launch.WorkspaceCloseAfterFlag:
+			strings.HasPrefix(arg, launch.WorkspaceCloseAfterFlag+"="),
+			strings.HasPrefix(arg, launch.PaneOutputFlag+"="):
+		case arg == launch.WorkspaceCloseAfterFlag, arg == launch.PaneOutputFlag:
 			i++
 		default:
 			out = append(out, arg)
@@ -207,6 +209,7 @@ func (a *App) artisanStart(args []string) int {
 	var (
 		adapterName, prompt, result, workdir string
 		session, workspace, label            string
+		paneOutput                           string
 		herdrExec                            stringList
 		profile                              string
 		settings                             adapter.Settings
@@ -227,6 +230,7 @@ func (a *App) artisanStart(args []string) int {
 	fl.StringVar(&label, "tab-label", "", "tab label")
 	fl.BoolVar(&paneLaunch, "pane-launch", false, "internal pane bridge: detach ownership and stream the launcher log")
 	fl.DurationVar(&closeAfter, strings.TrimPrefix(launch.WorkspaceCloseAfterFlag, "--"), -1, "internal pane bridge: the artisan_workspace_close_after its finish line states; negative is unknown")
+	fl.StringVar(&paneOutput, strings.TrimPrefix(launch.PaneOutputFlag, "--"), workbench.OutputWorkbench, "internal pane bridge: the artisan_pane_output it shows, workbench or plain")
 	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
 	fl.DurationVar(&stall, "stall-interval", 0, "send the Director worker-stalled when the worker is silent this long; zero observes nothing")
 	fl.StringVar(&profile, "profile", "", "profile declared by the Director copy")
@@ -237,11 +241,18 @@ func (a *App) artisanStart(args []string) int {
 		return a.usageError("artisan start: " + err.Error())
 	}
 	id.TaskID, id.AttemptID = owned.task, owned.attempt
-	closeAfterSet := false
-	fl.Visit(func(f *flag.Flag) { closeAfterSet = closeAfterSet || "--"+f.Name == launch.WorkspaceCloseAfterFlag })
+	closeAfterSet, paneOutputSet := false, false
+	fl.Visit(func(f *flag.Flag) {
+		closeAfterSet = closeAfterSet || "--"+f.Name == launch.WorkspaceCloseAfterFlag
+		paneOutputSet = paneOutputSet || "--"+f.Name == launch.PaneOutputFlag
+	})
 	switch {
 	case closeAfterSet && !paneLaunch:
 		return a.usageError("artisan start: " + launch.WorkspaceCloseAfterFlag + " goes with --pane-launch")
+	case paneOutputSet && !paneLaunch:
+		return a.usageError("artisan start: " + launch.PaneOutputFlag + " goes with --pane-launch")
+	case paneOutput != workbench.OutputWorkbench && paneOutput != workbench.OutputPlain:
+		return a.usageError(fmt.Sprintf("artisan start: %s %q: want %s or %s", launch.PaneOutputFlag, paneOutput, workbench.OutputWorkbench, workbench.OutputPlain))
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("artisan start: unexpected argument %q", fl.Arg(0)))
 	case !slices.Contains(runtimes.Names(), adapterName):
@@ -284,7 +295,7 @@ func (a *App) artisanStart(args []string) int {
 				return a.fail(err)
 			}
 			argv := append([]string{exe, "artisan", "start"}, bridgeArgs(args)...)
-			if err := launch.Present(argv, os.Environ(), filepath.Join(at.Dir(), launch.LogFile), closeAfter, a.Stderr); err != nil {
+			if err := launch.Present(launch.Bridge{Argv: argv, Env: os.Environ(), Attempt: at, CloseAfter: closeAfter, Output: paneOutput}, a.Stderr); err != nil {
 				return a.fail(err)
 			}
 			return 0
