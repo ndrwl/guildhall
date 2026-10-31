@@ -91,10 +91,12 @@ func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer stri
 		if len(d.Options) > 0 {
 			first, rest, _ := strings.Cut(answer, "\n")
 			first = strings.TrimSuffix(first, "\r")
-			if !slices.Contains(d.Options, first) {
+			switch {
+			case slices.Contains(d.Options, first):
+				d.Choice, d.Note = first, strings.TrimSpace(rest)
+			case d.Kind != store.DecisionQuestion:
 				return fmt.Errorf("%w: answer %q is not one of %q", store.ErrInvalid, first, d.Options)
 			}
-			d.Choice, d.Note = first, strings.TrimSpace(rest)
 		}
 		d.Answered, d.Answer = true, answer
 		return nil

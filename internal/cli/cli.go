@@ -87,6 +87,8 @@ Commands:
                  lift a park, so the attempt is back in needs_me
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
+  decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]...
+                 open the Director's own question to the Guildmaster on a task, as a question decision
   decide defer|undefer --store <path> --repo <id> --task <id> --decision <id> [--until-merged <repo>/<task>... --reason <text>]
                  hold an open decision out of needs_me until the named tasks merge, or lift that hold
   director status --json --store <path> --state <dir>

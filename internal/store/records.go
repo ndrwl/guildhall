@@ -184,7 +184,8 @@ const (
 // optionally Options. When it offers options, its answer's first line, with
 // only a single trailing CR removed, must equal one option exactly; the answer is
 // still recorded verbatim, the matched option is Choice and the trimmed text after
-// the first line is Note.
+// the first line is Note. A question decision is the exception: it takes any
+// non-blank answer, and sets Choice and Note only when the first line names an option.
 // Decisions recorded before typed decisions have no Kind, Subject or Options and
 // accept any non-blank answer.
 // Answering records the answer only; it never advances a task by itself.
@@ -199,7 +200,8 @@ type Decision struct {
 	Answered   bool         `json:"answered"`
 	// Answer is recorded exactly as given.
 	Answer string `json:"answer,omitempty"`
-	// Choice is the option the answer's first line named; empty when no options were offered.
+	// Choice is the option the answer's first line named; empty when no options were offered, or when a question's
+	// free-text answer named none.
 	Choice string `json:"choice,omitempty"`
 	// Note is the trimmed text after the first line of an answer to a decision with options.
 	Note string `json:"note,omitempty"`
@@ -497,7 +499,8 @@ func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
 
 // AnswerDecision records the Guildmaster's exact answer; a decision is answered once.
 // When the decision offers options, an answer whose first line does not name one
-// is refused with ErrInvalid and nothing is written (see Decision).
+// is refused with ErrInvalid and nothing is written (see Decision), unless the decision is a question,
+// which takes free text and then leaves Choice and Note empty.
 func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string) (Receipt, error) {
 	if err := validateIDs(repository, taskID, id); err != nil {
 		return Receipt{}, err
@@ -523,10 +526,12 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 		if len(d.Options) > 0 {
 			first, rest, _ := strings.Cut(answer, "\n")
 			first = strings.TrimSuffix(first, "\r")
-			if !slices.Contains(d.Options, first) {
+			switch {
+			case slices.Contains(d.Options, first):
+				d.Choice, d.Note = first, strings.TrimSpace(rest)
+			case d.Kind != DecisionQuestion:
 				return invalid("the first line of the answer to decision %q of %s/%s is %q; it must be one of %q", id, repository, taskID, first, d.Options)
 			}
-			d.Choice, d.Note = first, strings.TrimSpace(rest)
 		}
 		d.Answered, d.Answer = true, answer
 		return putJSON(decisions, key, d)

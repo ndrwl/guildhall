@@ -501,6 +501,51 @@ func TestOpenDecisionValidates(t *testing.T) {
 	}
 }
 
+// TestAnswerQuestionTakesFreeText: a question decision with options takes an answer that names none, leaving Choice
+// and Note empty, and sets them when it names one; an approval or grant decision still refuses a non-option answer.
+func TestAnswerQuestionTakesFreeText(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	for _, d := range []Decision{
+		{Repository: "app", TaskID: "t-1", ID: "q1", Kind: DecisionQuestion, Options: []string{"a", "b"}, Question: "Which grill first?"},
+		{Repository: "app", TaskID: "t-1", ID: "q2", Kind: DecisionQuestion, Options: []string{"a", "b"}, Question: "Which grill next?"},
+		{Repository: "app", TaskID: "t-1", ID: "grant-g1", Kind: DecisionGrant, Options: []string{"approve", "reject"}, Question: "Grant?"},
+		sampleDecision("approve-plan"),
+	} {
+		if _, err := s.OpenDecision("open-"+d.ID, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.AnswerDecision("answer-q1", "app", "t-1", "q1", "neither, do c\nsoon"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerDecision("answer-q2", "app", "t-1", "q2", "b\r\n then a "); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"grant-g1", "approve-plan"} {
+		if _, err := s.AnswerDecision("answer-"+id, "app", "t-1", id, "maybe later"); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("free answer to %s: err = %v, want ErrInvalid", id, err)
+		}
+	}
+	got, err := s.Decisions("app", "t-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]Decision{}
+	for _, d := range got {
+		byID[d.ID] = d
+	}
+	if d := byID["q1"]; !d.Answered || d.Answer != "neither, do c\nsoon" || d.Choice != "" || d.Note != "" {
+		t.Fatalf("q1 = %+v", d)
+	}
+	if d := byID["q2"]; !d.Answered || d.Answer != "b\r\n then a " || d.Choice != "b" || d.Note != "then a" {
+		t.Fatalf("q2 = %+v", d)
+	}
+	if !byID["grant-g1"].Open() || !byID["approve-plan"].Open() {
+		t.Fatalf("a refused answer was recorded: %+v", got)
+	}
+}
+
 func TestAnswerDecisionWithOptions(t *testing.T) {
 	s, _ := newStore(t)
 	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))

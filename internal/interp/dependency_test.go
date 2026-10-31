@@ -157,6 +157,35 @@ func TestDependencyGateHoldsResearch(t *testing.T) {
 	}
 }
 
+// TestDependencyQuestionIsNotWaiting: a dependency whose only open decision is a Director's question is not
+// reported as waiting for the Guildmaster.
+func TestDependencyQuestionIsNotWaiting(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			def := loadWorkflow(t, "director-grill")
+			e := newDependentEnv(t, b, def, []store.Task{libTask(def)}, researchExpectation([]byte("# Research\n")))
+			if _, err := e.h.Records.OpenDecision("dep-question", store.Decision{Repository: "lib", TaskID: "l1", ID: "q1", Kind: store.DecisionQuestion,
+				Options: []string{"a", "b"}, Question: "Which grill first?"}); err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.grilled(t), heldAt)
+			msgs := e.held(t)
+			if len(msgs) != 1 {
+				t.Fatalf("messages = %v", msgs)
+			}
+			for _, text := range msgs {
+				if !strings.Contains(text, "lib/l1: ") || strings.Contains(text, "waiting for the Guildmaster") {
+					t.Errorf("message reports the question as a wait:\n%s", text)
+				}
+			}
+			// The question, still open, does not hold the dependent once its dependencies are done.
+			e.closeTask(t, "app", "t3", store.TaskDone)
+			e.closeTask(t, "lib", "l1", store.TaskDone)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
+		})
+	}
+}
+
 // TestDependencyGateStates: an open decision, a cancelled dependency and one in another repository are each
 // named in the message, in repository then id order, and research waits until every one is done.
 func TestDependencyGateStates(t *testing.T) {

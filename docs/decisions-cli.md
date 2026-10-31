@@ -12,6 +12,7 @@ guildhall decide show --store <path> --repo <id> --task <id> --decision <id>
 guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
 guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
 guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
+guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]...
 ```
 
 Every command needs an existing store and never creates one; `list` and `show` open it read-only.
@@ -23,6 +24,7 @@ Each prints one JSON document on standard output and exits 0, exits 1 when the a
 - `show` prints one decision, answered or not, including the answer, choice and note when non-empty.
 - `answer` records the Guildmaster's words and prints the store receipt.
 - `defer` and `undefer` are the Director's: see [deferring a decision](#deferring-a-decision).
+- `open` is the Director's: it opens a question decision on a task and prints it as `show` does; see [decide open](#decide-open).
 
 ## Answers
 
@@ -40,6 +42,9 @@ Keep the migration behind a flag.
 
 records the whole text as the answer, `approve` as the choice and `Keep the migration behind a flag.` as the note.
 
+A `question` decision, such as one [`decide open`](#decide-open) opened, always takes free text: an answer whose first line names an option sets the choice and note as above, and any other non-blank answer, such as `neither, do c`, is recorded as the answer with no choice or note.
+Every other kind refuses an answer whose first line names none of its options.
+
 A finished hallmark's `follow-ups` decision, kind `follow-ups`, offers `pick` and `none` ([decision](decisions/report-only-workflows.md#the-guildmaster-picks-the-follow-ups)); `pick` takes the picked ids on the following lines, so this answer:
 
 ```
@@ -52,6 +57,30 @@ records `pick` as the choice and `H1, H3` as the note, and creates no task: the 
 The answer is recorded with mutation id `decision-answer:<repo>:<task>:<decision>`, or `decision-answer:sha256:<hex>` of that text when it is longer than 128 bytes.
 Repeating the same answer prints the original receipt; a different answer to an answered decision is refused, so a decision is answered once.
 Answering records the answer only: it never advances, resumes or launches a task.
+
+## decide open
+
+`decide open` is the Director's: it records a question the Director puts to the Guildmaster about a task, such as which grill to run first, as a **question decision** on that task, so it is not left in chat alone.
+The question is `--question <text>`, or `--question-file <path|->`, read with the same byte order mark, CRLF and UTF-16 rules as an [answer](#answers); exactly one is given.
+`--option <text>` may be repeated to suggest answers, under the store's rules: at most 16, each one line, unpadded, distinct and at most 256 bytes.
+The Guildmaster's reply is recorded with `decide answer` like any other, and free text is always allowed ([answers](#answers)).
+
+- The task must be open: a `done` or `cancelled` task is refused with exit 1, naming the task and its state, and nothing is written.
+- The decision id is chosen for you: `q<n>`, one more than the highest `q<n>` on the task, starting at `q1`. An id with no `-` is never read as a step round or loop exit, and does not clash with the engine's own decisions.
+- An open question decision on the task with the same question and options is printed instead, and nothing is written, so a retry opens no second question; otherwise the decision is opened with mutation id `decision-open:<repo>:<task>:<id>`.
+- It prints the decision as one JSON document, as `show` does, and sends no `decision` message: the Director asked the question.
+
+A question decision appears wherever open decisions do: `decide list`, Clerk's `/decisions`, `director status` `needs_me` (where `decide defer` can hold it) and `task show`.
+It never blocks or advances its task: the merge requirement `nothing_open` does not count it, a dependent task's dependency state does not report it as waiting for the Guildmaster, and a merge-queue front task is not `waiting_on` it.
+Cancelling the task, closing a slice or a merge outside Guildhall void it with the task's other open decisions.
+Questions not about a task, such as install or config questions, stay in chat.
+
+```sh
+guildhall decide open --repo guildhall --task d105 --question "Which grill first?" --option a --option b
+guildhall decide answer --repo guildhall --task d105 --decision q1 --answer-file - <<'ANSWER'
+neither, do c
+ANSWER
+```
 
 ## Deferring a decision
 

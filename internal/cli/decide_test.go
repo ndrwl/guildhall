@@ -292,9 +292,11 @@ func TestDecideUsageAndStoreErrors(t *testing.T) {
 		"file flag on list":   {"list", "--store", path, "--answer-file", "-"},
 		"task flag on list":   {"list", "--store", path, "--task", "t-1"},
 		"bad repository id":   {"list", "--store", path, "--repo", "App"},
+		"open without task":   {"open", "--store", path, "--repo", "app", "--question", "Which?"},
+		"open unknown flag":   {"open", "--store", path, "--repo", "app", "--task", "t-1", "--question", "Which?", "--answer-file", "-"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if code, _, errOut := runDecide(t, "", args...); code != 2 || !strings.Contains(errOut, "usage:") {
+			if code, _, errOut := runDecide(t, "", args...); code != 2 || !strings.Contains(errOut, "usage:") || !strings.Contains(errOut, "guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]...") {
 				t.Fatalf("exit %d, stderr %q; want usage error", code, errOut)
 			}
 		})
