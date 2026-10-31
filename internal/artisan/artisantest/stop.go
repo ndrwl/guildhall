@@ -124,7 +124,7 @@ func RunStopContract(t *testing.T, h Harness) {
 			t.Errorf("Stop() = %v", err)
 		}
 		c.marked(true)
-		if inv, _ := Inventory(c.dir); len(inv) != 0 {
+		if inv := inventoryOf(t, c.dir); len(inv) != 0 {
 			t.Errorf("a worker started after the stop: %v", inv)
 		}
 	})
@@ -135,7 +135,7 @@ func RunStopContract(t *testing.T, h Harness) {
 		}
 		c.start(nil)
 		c.outcome(nil, artisan.Outcome{State: artisan.Cancelled})
-		if inv, _ := Inventory(c.dir); len(inv) != 0 {
+		if inv := inventoryOf(t, c.dir); len(inv) != 0 {
 			t.Errorf("a worker started after the cancel: %v", inv)
 		}
 	})
@@ -258,7 +258,7 @@ func RunStopContract(t *testing.T, h Harness) {
 			t.Errorf("second Run() = %v, want ErrLauncherRan", err)
 		}
 		close(c.done)
-		if inv, _ := Inventory(c.dir); len(inv) != 0 {
+		if inv := inventoryOf(t, c.dir); len(inv) != 0 {
 			t.Errorf("a decided attempt started a worker: %v", inv)
 		}
 	})
@@ -297,9 +297,10 @@ type launch struct {
 	built   artisan.Ladder
 	l       *artisan.Launcher
 
-	done chan struct{}
-	out  artisan.Outcome
-	err  error
+	started bool // start ran, so Run is going or has returned
+	done    chan struct{}
+	out     artisan.Outcome
+	err     error
 }
 
 func (h Harness) launch(t *testing.T, worker func(StopFiles) Worker) *launch {
@@ -323,6 +324,18 @@ func (h Harness) launch(t *testing.T, worker func(StopFiles) Worker) *launch {
 	}
 	c.l = l
 	t.Cleanup(func() {
+		// A case that fails before its own stop leaves Run going until the
+		// worker's lifetime ends; stop it so the failure is reported in
+		// seconds, not after that lifetime.
+		select {
+		case <-c.done:
+			return
+		default:
+		}
+		if !c.started {
+			return
+		}
+		go func() { _, _ = c.l.Stop() }()
 		select {
 		case <-c.done:
 		case <-time.After(deadline):
@@ -341,6 +354,7 @@ func (c *launch) start(signals <-chan os.Signal) {
 		}
 		c.l = l
 	}
+	c.started = true
 	go func() {
 		defer close(c.done)
 		c.out, c.err = c.l.Run(c.command(), signals)

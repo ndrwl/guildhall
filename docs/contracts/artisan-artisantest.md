@@ -13,7 +13,10 @@ On Windows `RunStopContract` also holds a published result without sharing while
 `Harness.Worker` replaces the test binary as the stop contract's worker with a real Artisan's command, which records its processes in the case's inventory directory; the fake Artisan plays it in `internal/launch`.
 `KillVerified` is `artisan.Kill`.
 A harness may give its own attempt files as `StopFiles`: the paths its workers publish at and honour, the reader the launcher decides by and a result body that reader accepts, which the worker publishes as `ResultBody`.
+The harness's inventory waits treat a read error as "not there yet" and poll again until their deadline, naming the last error if the wait fails: a Windows sharing violation on a record can outlast `atomicfile`'s retry. A malformed record (`artisan.ErrInvalidProcessRecord`) still fails the case at once, and a check that the inventory is empty retries a failed read rather than passing on it.
+If a stop-contract case fails after starting `Run` and before its own stop, the case's cleanup calls `Launcher.Stop` and waits for `Run` within the deadline, so the failure ends after the stop ladder rather than after the worker's lifetime; the sentinel's lifetime outlasts these cleanup waits.
 
 ## Tests
 
-Run by `internal/artisan`
+Run by `internal/artisan`.
+`TestEntriesInPollsThroughReadErrors` and its siblings in `contract_internal_test.go` check the inventory waits' error handling under `testing/synctest`; [evidence](../evidence/artisantest-inventory-poll-2026-10-31.md) records the fault-injected red and green runs.

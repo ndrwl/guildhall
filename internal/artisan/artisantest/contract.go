@@ -277,7 +277,10 @@ func (c *run) sentinel() artisan.Identity {
 	c.t.Helper()
 	dir := c.t.TempDir()
 	c.sentinelRelease = filepath.Join(dir, "release")
-	cmd := Worker{Role: "sentinel", Inventory: dir, Lifetime: 2 * time.Minute, Release: c.sentinelRelease}.command()
+	// The release file ends the sentinel; its lifetime only bounds an orphan
+	// of a dead test binary, and outlasts the launch and begin cleanups'
+	// waits so a slow case cannot make it look killed.
+	cmd := Worker{Role: "sentinel", Inventory: dir, Lifetime: 3 * deadline, Release: c.sentinelRelease}.command()
 	if err := cmd.Start(); err != nil {
 		c.t.Fatal(err)
 	}
@@ -311,8 +314,14 @@ func (c *run) escaped(id artisan.Identity) {
 	c.mu.Unlock()
 }
 
+// owned is every identity the case caused: those seen so far and those in its
+// inventory. A read that still fails at deadline is reported, and the case
+// carries on with the identities already seen.
 func (c *run) owned() []artisan.Identity {
-	inv, _ := Inventory(c.dir)
+	inv, err := pollInventory(c.dir)
+	if err != nil {
+		c.t.Errorf("waited %v to read the inventory %s; checking only the identities already seen: %v", deadline, c.dir, err)
+	}
 	for _, e := range inv {
 		c.own(e.Identity)
 	}
@@ -335,13 +344,50 @@ func (c *run) role(role string, n int) []Entry {
 	return es
 }
 
-func entriesIn(t *testing.T, dir, role string, n int) []Entry {
+// readInventory is how the harness reads a case's inventory; a test swaps
+// it to inject read errors.
+var readInventory = Inventory
+
+// pollInventory reads dir until a read succeeds or deadline passes. A read
+// error other than a malformed record is transient (a Windows sharing
+// violation can outlast atomicfile's retry), so it is retried; a malformed
+// record is returned at once.
+func pollInventory(dir string) ([]Entry, error) {
+	var err error
+	for end := time.Now().Add(deadline); ; time.Sleep(20 * time.Millisecond) {
+		var inv []Entry
+		if inv, err = readInventory(dir); err == nil || errors.Is(err, artisan.ErrInvalidProcessRecord) || !time.Now().Before(end) {
+			return inv, err
+		}
+	}
+}
+
+// inventoryOf reads every entry in dir, retrying a failed read until
+// deadline, and fails the case naming the error if no read succeeds.
+func inventoryOf(t testing.TB, dir string) []Entry {
+	t.Helper()
+	inv, err := pollInventory(dir)
+	if err != nil {
+		t.Fatalf("waited %v to read the inventory %s: %v", deadline, dir, err)
+	}
+	return inv
+}
+
+// entriesIn waits for n inventory entries of role in dir. A read error is not
+// yet an entry: it is retried until deadline and named if the wait fails. A
+// malformed record fails at once.
+func entriesIn(t testing.TB, dir, role string, n int) []Entry {
 	t.Helper()
 	var got []Entry
+	var readErr error
 	for end := time.Now().Add(deadline); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
-		inv, err := Inventory(dir)
-		if err != nil {
+		inv, err := readInventory(dir)
+		if errors.Is(err, artisan.ErrInvalidProcessRecord) {
 			t.Fatal(err)
+		}
+		if err != nil {
+			readErr = err
+			continue
 		}
 		got = got[:0]
 		for _, e := range inv {
@@ -353,7 +399,7 @@ func entriesIn(t *testing.T, dir, role string, n int) []Entry {
 			return got
 		}
 	}
-	t.Fatalf("waited %v for %d %s inventory entries, have %v", deadline, n, role, got)
+	t.Fatalf("waited %v for %d %s inventory entries, have %v, last read error %v", deadline, n, role, got, readErr)
 	return nil
 }
 
