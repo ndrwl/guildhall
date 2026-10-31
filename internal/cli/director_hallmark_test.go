@@ -123,7 +123,28 @@ func TestDirectorStatusHallmarkCadenceFollowsTheDoneTask(t *testing.T) {
 	}
 }
 
-// openFollowUps opens repo/id's follow-ups decision, as the engine's finish does before it closes the task.
+// recordHallmarkReport records repo/id's hallmark report and finished document, as the engine's finish does, and
+// leaves the task open, as a hallmark waiting on its follow-ups decision is.
+func recordHallmarkReport(t *testing.T, path, repo, id string) {
+	t.Helper()
+	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		var rc store.Receipt
+		for _, name := range []string{"hallmark-1-report", "finished"} {
+			r, err := s.PutDocument("doc:"+repo+":"+id+":"+name, store.DocumentRef{Repository: repo, TaskID: id, Name: name,
+				Path: "tasks/" + repo + "/" + id + "/" + name, SHA256: digest.Of([]byte(name)).Hex()})
+			if err != nil {
+				return store.Receipt{}, err
+			}
+			rc = r
+		}
+		return rc, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// openFollowUps opens repo/id's follow-ups decision, as the engine's finish does; the task stays open until it is
+// answered.
 func openFollowUps(t *testing.T, path, repo, id string) {
 	t.Helper()
 	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
@@ -135,9 +156,10 @@ func openFollowUps(t *testing.T, path, repo, id string) {
 	}
 }
 
-// TestDirectorStatusHallmarkWaitsForFollowUps: a done hallmark whose follow-ups decision is unanswered, deferred or
-// not, holds the hallmark due item back however many merges land; once it is answered, pick or none, merges count
-// only after the answer and the item returns at the threshold (d119).
+// TestDirectorStatusHallmarkWaitsForFollowUps: a hallmark that recorded its report stays open while its follow-ups
+// decision is unanswered, deferred or not, so it is the running_task and holds the hallmark due item back however
+// many merges land, with no awaiting_follow_ups field; once it is answered, pick or none, and the task closes, merges
+// count only after the answer and the item returns at the threshold (d119, d121).
 func TestDirectorStatusHallmarkWaitsForFollowUps(t *testing.T) {
 	for _, answer := range []string{"pick\nf-1", "none"} {
 		t.Run(strings.Fields(answer)[0], func(t *testing.T) {
@@ -145,18 +167,21 @@ func TestDirectorStatusHallmarkWaitsForFollowUps(t *testing.T) {
 			startMaintenanceSession(t, d.store, 1, store.MaintenancePolicy{HallmarkAfterMerges: 2})
 			createHallmarkTask(t, d.store, "app", "h-1")
 			sendMergedMessages(t, d.store, "app", "t-1", "during", 1)
+			recordHallmarkReport(t, d.store, "app", "h-1")
 			openFollowUps(t, d.store, "app", "h-1")
-			finishHallmarkTask(t, d.store, "app", "h-1")
 			sendMergedMessages(t, d.store, "app", "t-1", "before", 2)
 
-			// Open: the merges reach the threshold, counted from the launch, but the item is held.
+			// Open: the merges reach the threshold, but the open hallmark is the running task and holds the item.
 			st := readStatus(t, d.store, d.state)
-			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.AwaitingFollowUps != "h-1" || h.RunningTask != "" ||
-				h.LastTask != "h-1" || h.MergedSince != 3 || *h.MergesUntilDue != 0 {
-				t.Fatalf("while the follow-ups are open: %+v, items %q; want held awaiting h-1", h, maintenanceItems(st))
+			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.RunningTask != "h-1" || h.LastTask != "" || h.MergedSince != 3 || *h.MergesUntilDue != 0 {
+				t.Fatalf("while the follow-ups are open: %+v, items %q; want h-1 running and the item held", h, maintenanceItems(st))
+			}
+			code, out, stderr := runCLI(t, "director", "status", "--json", "--store", d.store, "--state", d.state)
+			if code != 0 || !strings.Contains(out, `"running_task":"h-1"`) || strings.Contains(out, "awaiting_follow_ups") {
+				t.Fatalf("status --json: exit %d, stderr %s\n%s\nwant running_task h-1 and no awaiting_follow_ups", code, stderr, out)
 			}
 
-			// Deferred: a deferral does not answer the decision, so it still holds.
+			// Deferred: a deferral does not answer the decision, so the hallmark stays open and still holds.
 			createHallmarkTask(t, d.store, "other", "o-1")
 			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
 				return s.DeferDecision("defer-follow-ups", "app", "h-1", interp.FollowUpsDecision, "After o-1.",
@@ -165,19 +190,20 @@ func TestDirectorStatusHallmarkWaitsForFollowUps(t *testing.T) {
 				t.Fatal(err)
 			}
 			st = readStatus(t, d.store, d.state)
-			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.AwaitingFollowUps != "h-1" || h.RunningTask != "" {
-				t.Fatalf("while the follow-ups are deferred: %+v, items %q; want still held awaiting h-1", h, maintenanceItems(st))
+			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.RunningTask != "h-1" {
+				t.Fatalf("while the follow-ups are deferred: %+v, items %q; want h-1 still running", h, maintenanceItems(st))
 			}
 
-			// Answered: the merges before the answer stop counting, and the item returns after 2 more.
+			// Answered and closed: the merges before the answer stop counting, and the item returns after 2 more.
 			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
 				return s.AnswerDecision("answer-follow-ups", "app", "h-1", interp.FollowUpsDecision, answer)
 			}); err != nil {
 				t.Fatal(err)
 			}
+			finishHallmarkTask(t, d.store, "app", "h-1")
 			st = readStatus(t, d.store, d.state)
-			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.AwaitingFollowUps != "" || h.MergedSince != 0 || *h.MergesUntilDue != 2 {
-				t.Fatalf("after the answer: %+v, items %q; want the count restarted at 0", h, maintenanceItems(st))
+			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.RunningTask != "" || h.LastTask != "h-1" || h.MergedSince != 0 || *h.MergesUntilDue != 2 {
+				t.Fatalf("after the answer: %+v, items %q; want h-1 last and the count restarted at 0", h, maintenanceItems(st))
 			}
 			sendMergedMessages(t, d.store, "app", "t-1", "after", 1)
 			st = readStatus(t, d.store, d.state)
@@ -194,8 +220,8 @@ func TestDirectorStatusHallmarkWaitsForFollowUps(t *testing.T) {
 	}
 }
 
-// TestMaintenanceStatusFollowUps: an open follow-ups decision holds the item back while merges count from the
-// launch, and an answered one counts merges only after its answer receipt (d119).
+// TestMaintenanceStatusFollowUps: merges count only after the last hallmark's follow-ups answer receipt, and a
+// running hallmark, such as one waiting on its own follow-ups, holds the item back at the threshold (d119, d121).
 func TestMaintenanceStatusFollowUps(t *testing.T) {
 	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	v := store.DirectorView{Session: &store.DirectorSession{Number: 2, Maintenance: store.MaintenancePolicy{HallmarkAfterMerges: 2}},
@@ -204,15 +230,15 @@ func TestMaintenanceStatusFollowUps(t *testing.T) {
 			{Repository: "web", Merged: 3, MergedSequences: []uint64{12, 21, 31}},
 		}}}
 	app := &interp.Hallmark{Task: store.Task{Repository: "app", ID: "a-0"}, Close: store.TaskClose{Created: 11, Closed: 20, At: at}}
-	web := &interp.Hallmark{Task: store.Task{Repository: "web", ID: "w-0"}, Close: store.TaskClose{Created: 11, Closed: 20, At: at}}
+	web := &interp.Hallmark{Task: store.Task{Repository: "web", ID: "w-0"}, Close: store.TaskClose{Created: 11, Closed: 26, At: at}}
 	m, items := maintenanceStatus(v, map[string]repoHallmarks{
-		"app": {last: app, followUpsOpen: true},
+		"app": {last: app, running: &store.Task{Repository: "app", ID: "a-1"}, followUpsAnswered: 19},
 		"web": {last: web, followUpsAnswered: 25},
 	})
-	if h := m.Hallmarks[0]; h.AwaitingFollowUps != "a-0" || h.MergedSince != 3 || *h.MergesUntilDue != 0 {
-		t.Fatalf("app = %+v; want held awaiting a-0, counting the 3 merges since the launch", h)
+	if h := m.Hallmarks[0]; h.RunningTask != "a-1" || h.LastTask != "a-0" || h.MergedSince != 2 || *h.MergesUntilDue != 0 {
+		t.Fatalf("app = %+v; want a-1 running, counting the 2 merges after a-0's answer", h)
 	}
-	if h := m.Hallmarks[1]; h.AwaitingFollowUps != "" || h.MergedSince != 1 || *h.MergesUntilDue != 1 {
+	if h := m.Hallmarks[1]; h.RunningTask != "" || h.MergedSince != 1 || *h.MergesUntilDue != 1 {
 		t.Fatalf("web = %+v; want the 1 merge after the answer counted", h)
 	}
 	if got := maintenanceItems(directorStatus{NeedsMe: items}); len(got) != 0 {

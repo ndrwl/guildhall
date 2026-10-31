@@ -56,17 +56,19 @@ guildhall task start --repo <repo> <id>
 ```
 
 While the task is open the item stays out of `needs_me` and status shows the task as the repository's `running_task`, so never launch a second one.
-Once it finishes done it is the repository's last hallmark, and the count of merges toward the next one starts from its launch, so merges made while it ran count.
+The task stays open until its `follow-ups` decision is answered, deferred or not, so the next hallmark waits for the Guildmaster's feedback on this one.
+Once it closes it is the repository's last hallmark, and the count of merges toward the next one starts from the `follow-ups` answer, so merges made before the answer do not count.
 A hallmark that fails, and that the Guildmaster agrees to cancel, never resets the count; the item comes back, and you launch a new one.
 
 The task runs one read-only stage that uses `guildhall-hallmark` and is given the repository's previous hallmark report; Guildhall fails the stage if it changes the project.
 Its test evidence needs the repository's `[repository.profiles.researcher]` grant for the test commands; without one the report lists that evidence as missing.
-When it finishes, the task is done with no pull request, and Guildhall opens its `follow-ups` decision and sends you a `finished` message naming the report.
+When its report is in, Guildhall opens its `follow-ups` decision and sends you a `finished` message naming the report, with no pull request; the task stays open, waiting on the decision.
 Read the report, then:
 
 1. Present the `follow-ups` decision to the Guildmaster: `guildhall decide show` gives the report path and its ranked `H<n>` titles.
 2. Answer it with `guildhall decide answer`, in the Guildmaster's words: `pick` with the ids they chose on the following lines, such as `H1, H3`, or `none`.
-3. Run `guildhall task new` for each picked id only; Guildhall creates no task from the answer.
+3. Run `guildhall task start --decision follow-ups --repo <repo> <id>`; answering never advances a task, and this advance closes the hallmark done.
+4. Run `guildhall task new` for each picked id only; Guildhall creates no task from the answer.
 
 Then read the self-review ledger, as `guildhall-self-review` asks at hallmark time, and give its lowest criteria to the hallmark's findings.
 A hallmark the Guildmaster asks for out of turn is launched the same way.

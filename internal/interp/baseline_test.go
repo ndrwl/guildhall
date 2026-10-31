@@ -291,7 +291,7 @@ func TestHallmarkBaseline(t *testing.T) {
 				t.Fatalf("Checks calls = %d, want one per listed merge", got)
 			}
 
-			want(t, h.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
+			want(t, h.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), waitsOnFollowUps)
 			if got := len(h.attempts(t)); got != 1 {
 				t.Fatalf("attempts = %d, want the finished attempt alone, not stale", got)
 			}

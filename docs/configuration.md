@@ -400,7 +400,7 @@ The authoritative [built-in registry](../internal/workflow/registry.go), exposed
 `plan`, `build`, `document-review`, `review` and `guildmaster-approval` also accept `instructions` ([decision](decisions/task-kinds.md)).
 The `spec` input of `build` and `review` takes an accepted spec or, in a workflow with no acceptance step such as the shipped `bug`, plan's spec; the engine checks a spec against its approval only when it comes from an acceptance ([decision](decisions/task-kinds.md)).
 `hallmark` accepts `profile`, `skills` and `instructions`; it takes an optional `previous` document, which the engine wires to the repository's previous hallmark report, and writes a `report` document, and intake refuses its result when it leaves a tracked change or moves HEAD ([decision](decisions/report-only-workflows.md)).
-A workflow with no `deliver` step finishes as done once every step is.
+A workflow with no `deliver` step finishes as done once every step is, or, when its last step is a hallmark step, once its `follow-ups` decision is answered ([report-only workflows](interpreter.md#report-only-workflows)).
 The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
 For the grill step's skills support and constraints, see the [workflow contract](contracts/workflow.md).
 

@@ -2,8 +2,9 @@
 status: accepted
 date: 2026-10-31
 topic: maintenance
-tasks: d80, d78, d119
+tasks: d80, d78, d119, d121
 amends: director-maintenance.md, report-only-workflows.md
+amended-by: closed-tasks-have-no-open-decisions.md
 ---
 
 # A repository's last hallmark is its last done hallmark task, chosen by one engine selector
@@ -28,13 +29,13 @@ This replaces the rule in [Director maintenance](director-maintenance.md) that a
 - **The count starts at the answer to the hallmark's follow-ups (d119).**
   Merges counted toward the next hallmark are those sent after the receipt answering the chosen task's `follow-ups` decision, `pick` or `none` alike, or after the baseline when that is later, so merges made during the run or before the answer do not count.
   A chosen task with no `follow-ups` decision (finished before it existed, or whose report could not be read back) counts from its create receipt, its launch, as before; so does a void one, so it cannot hold the item forever.
-  While the decision is open `merged_since` counts from the launch for display only, and drops when the answer is recorded.
+  Since d121 a hallmark closes only once its `follow-ups` decision is answered, so the chosen task's answer always precedes its close; while a hallmark waits on it, it is the open hallmark and the previous hallmark is still the chosen one, so `merged_since` counts from that one's answer.
+  The answer receipt comes from the Director view's receipts, with no new record or read.
 - **A running hallmark holds the item back.**
   While a hallmark task of the repository is open (`interp.OpenHallmark`), status names it as `running_task` and lists no `hallmark due` item, so the Director cannot launch a duplicate.
+  A hallmark waiting on its unanswered `follow-ups` decision, deferred or not, is still open ([closed tasks have no open decisions](closed-tasks-have-no-open-decisions.md)), so this hold also keeps a new hallmark from being queued before the Guildmaster has given feedback on the last one.
+  d119's separate `awaiting_follow_ups` status field, which named a done hallmark with its decision open, could no longer be set once the hallmark stays open, and d121 removed it.
   The item's command is now `guildhall task new --repo <r> --kind hallmark --title <text> <id>`.
-- **Unanswered follow-ups hold the item back (d119).**
-  While the chosen task's `follow-ups` decision is open, deferred or not, status names the task as `awaiting_follow_ups` and lists no `hallmark due` item, so a new hallmark is not queued before the Guildmaster has given feedback on the last one.
-  Both facts come from the Director view's open decisions and receipts, with no new record or read.
 - **Old runs are the fallback only for a repository with no selected hallmark.**
   Hallmark runs recorded before still decode, list and count, but only for a repository with no done hallmark task; a run newer than the newest done hallmark task is then ignored.
 - **With no config, status resolves against the shipped workflows by digest.**

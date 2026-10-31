@@ -284,9 +284,11 @@ type finishedDoc struct {
 }
 
 // finish closes a task whose workflow has no deliver step once every step is done: it records the finished document,
-// opens the follow-ups decision when the last step is a hallmark step that recorded a report, tells the Director the
-// task finished with its last step's output, and marks the task done. The decision opens before the task closes, so a
-// close that fails replays to the same decision. It sends no merged message, which would count toward the
+// opens the follow-ups decision when the last step is a hallmark step that recorded a report, and tells the Director
+// the task finished with its last step's output. While the follow-ups decision is open, deferred or not, the task
+// stays open and waits on it; once it is answered, or when there is none, the task closes through closeTask. The
+// close is the advance that follows the answer (task start --decision follow-ups), which runs finish again: the
+// document is already recorded and the notifications are resends, so only the close is new. It sends no merged message, which would count toward the
 // repository's hallmark cadence, and opens no audit, which is bound to a merged head
 // (docs/decisions/report-only-workflows.md). Every write is replay safe.
 func (r *run) finish() (Next, error) {
@@ -317,20 +319,32 @@ func (r *run) finish() (Next, error) {
 	if err != nil {
 		return Next{}, err
 	}
+	waiting := false
+	if followUps {
+		d := r.decision(FollowUpsDecision)
+		waiting = d != nil && d.Open()
+	}
 	text := fmt.Sprintf("Workflow %s has no deliver step and ran every step; the task is done, with no pull request.", r.def.Name)
+	if waiting {
+		text = fmt.Sprintf("Workflow %s has no deliver step and ran every step, with no pull request.", r.def.Name)
+	}
 	kind, _ := workflow.LookupKind(last.Type, last.Version)
 	for _, port := range kind.Outputs {
 		if doc, _, err := r.output(last.ID, port.Name); err == nil {
 			text += fmt.Sprintf("\nStep %s's %s: %s", last.ID, port.Name, filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path)))
 		}
 	}
-	if followUps {
-		text += fmt.Sprintf("\nDecision %s is open for the Guildmaster to pick the report's follow-ups.", FollowUpsDecision)
+	if waiting {
+		text += fmt.Sprintf("\nDecision %s is open for the Guildmaster to pick the report's follow-ups. The task stays open until it is answered; "+
+			"guildhall task start --decision %s --repo %s %s then closes it.", FollowUpsDecision, FollowUpsDecision, r.task.Repository, r.task.ID)
 	}
 	if err := r.notify(store.MessageFinished, store.MessageFinished, text); err != nil {
 		return Next{}, err
 	}
-	if _, err := r.e.Records.SetTaskState(r.mutation("task-state", string(store.TaskDone)), r.task.Repository, r.task.ID, store.TaskDone); err != nil {
+	if waiting {
+		return Next{Wait: WaitDecision, Step: last.ID, Decision: FollowUpsDecision}, nil
+	}
+	if err := r.closeTask("Task done: workflow " + r.def.Name + " finished"); err != nil {
 		return Next{}, err
 	}
 	return Next{Wait: WaitDone, Step: last.ID}, nil

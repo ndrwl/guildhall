@@ -4,6 +4,7 @@ date: 2026-10-30
 topic: quality
 tasks: d40
 amends: quality-rubric.md
+amended-by: closed-tasks-have-no-open-decisions.md
 formerly: D87, 0087-quality-audit.md
 ---
 
@@ -28,6 +29,7 @@ The Guildmaster accepted replacing it with a periodic retrospective, run by an A
 - **Recorded audits stay valid.**
   The `audit` kind stays in the store's accepted kinds; an open audit stays answerable with `decide answer` and prune still waits for it.
   The outside-merge rule still skips an open `audit` when it voids a task's decisions, so an audit opened before a close that failed survives the replayed close.
+  [d121](closed-tasks-have-no-open-decisions.md) amends this: every close now voids every open decision, an audit included, so an audit on a task still open is voided when it closes, while one an earlier release left open on a done task stays answerable.
   `guildhall quality agreement` still reports over the audits recorded.
 - **G4's human calibration ends.**
   G4, A4's and G1's "Guildmaster audit" source and H2's "share the Guildmaster marked unnecessary" get no new data; the retrospective does not feed H2.

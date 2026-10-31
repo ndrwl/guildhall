@@ -121,37 +121,97 @@ func (e *env) openEarlierAudit(t *testing.T) {
 	}
 }
 
-// TestEarlierAuditStaysAnswerable: an audit an earlier release opened before its close failed survives the replayed
-// close, by deliver or by the outside-merge rule, still open; once the task is done it is answered like any decision
-// and the task stays closed.
-func TestEarlierAuditStaysAnswerable(t *testing.T) {
+// failSecondVoid fails the second decision void it is asked for, once, so a close stops part-way through its voids.
+type failSecondVoid struct {
+	interp.Records
+	voids int
+}
+
+func (f *failSecondVoid) VoidDecision(m, repo, task, id, reason string) (store.Receipt, error) {
+	if f.voids++; f.voids == 2 {
+		return store.Receipt{}, errInjected
+	}
+	return f.Records.VoidDecision(m, repo, task, id, reason)
+}
+
+// TestCloseVoidsOpenDecisions: a task closed by the last Guildhall merge, whose merge answer overrode a question
+// still open, or by the outside-merge rule ends done with no open decision: an audit an earlier release opened and the
+// open question are both voided, with the close's reason, and the audit can no longer be answered. A close that fails
+// part-way through its voids replays to the same voids and closes.
+func TestCloseVoidsOpenDecisions(t *testing.T) {
 	for _, outside := range []bool{false, true} {
 		for _, b := range backends {
 			t.Run(map[bool]string{false: "deliver", true: "outside"}[outside]+"/"+b.name, func(t *testing.T) {
 				e, f := newPublishEnv(t, b)
 				e.toSignOff(t)
 				e.openEarlierAudit(t)
+				q := store.Decision{Repository: "app", TaskID: "t7", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"}
+				if _, err := e.h.Records.OpenDecision("question-q-1", q); err != nil {
+					t.Fatal(err)
+				}
+				ev, reason := interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}, "Task done: pull request https://forge.invalid/1 merged"
 				if outside {
 					f.MergeOutside(repoRemote, 1, head, outsideCommit)
-					want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+					ev, reason = interp.Event{Kind: interp.TaskCreated}, reason+" outside Guildhall"
 				} else {
 					e.answer(t, "deliver-1", "merge")
-					want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), done)
 				}
+				records := e.eng.Records
+				e.eng.Records = &failSecondVoid{Records: records}
+				if err := advanceErr(t, e, ev); !errors.Is(err, errInjected) {
+					t.Fatalf("advance = %v, want the injected failure", err)
+				}
+				if got := e.task(t).State; got != store.TaskOpen {
+					t.Fatalf("task state after the failed close = %q, want open", got)
+				}
+				want(t, e.advance(t, ev), done)
+				e.eng.Records = records
 				if got := e.task(t).State; got != store.TaskDone {
 					t.Errorf("task state = %q, want done", got)
 				}
-				if d := e.decision(t, "audit"); !d.Open() {
-					t.Fatalf("audit = %+v, want it open", d)
+				ds, err := e.h.Records.Decisions("app", "t7")
+				if err != nil {
+					t.Fatal(err)
 				}
-				e.answer(t, "audit", "yes\n\nNothing asked needlessly.")
-				if got := e.decision(t, "audit"); got.Choice != "yes" || got.Note != "Nothing asked needlessly." {
-					t.Errorf("answered audit = %+v", got)
+				for _, d := range ds {
+					if d.Open() {
+						t.Errorf("decision %s is open on the done task", d.ID)
+					}
 				}
-				if err := advanceErr(t, e, interp.Event{Kind: interp.DecisionAnswered, Decision: "audit"}); !errors.Is(err, interp.ErrTaskClosed) {
-					t.Errorf("advance after the audit = %v, want ErrTaskClosed", err)
+				for _, id := range []string{"audit", "q-1"} {
+					if d := e.decision(t, id); !d.Void || d.VoidReason != reason {
+						t.Errorf("%s = %+v, want it void with %q", id, d, reason)
+					}
+				}
+				if _, err := e.h.AnswerDecision("answer:audit", "app", "t7", "audit", "yes"); !errors.Is(err, store.ErrInvalid) {
+					t.Errorf("answer of the voided audit = %v, want ErrInvalid", err)
 				}
 			})
 		}
+	}
+}
+
+// TestNothingOpenSkipsASupersededAcceptance: an acceptance voided as superseded, here accept-1, with accept-2 answered
+// in its place, is not unanswered: the merge decision's nothing_open holds and does not name it.
+func TestNothingOpenSkipsASupersededAcceptance(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, _ := newPublishEnv(t, b)
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})
+			if _, err := e.h.Records.VoidDecision("supersede-accept-1", "app", "t7", "accept-1", "Superseded: asked again as accept-2"); err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-2"})
+			e.answer(t, "accept-2", "approved")
+			e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-2"})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build", Attempt: 1})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "review", Attempt: 1})
+			e.answer(t, "sign-off-1", "approved")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "sign-off-1"}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			if q := e.decision(t, "deliver-1").Question; !strings.Contains(q, "- nothing_open: holds\n") || strings.Contains(q, "accept-1") {
+				t.Errorf("merge question = %q, want nothing_open to hold with accept-1 superseded", q)
+			}
+		})
 	}
 }

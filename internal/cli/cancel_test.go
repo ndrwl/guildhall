@@ -162,10 +162,8 @@ func TestTaskCancelRefusals(t *testing.T) {
 	if got := c.task(t, "t-1"); got.State != store.TaskDone || got.CancelReason != "" || c.receipts(t) != before {
 		t.Errorf("a refused cancel of a done task changed it: %+v", got)
 	}
-	// A done task's decisions, such as its audit, are still answered.
-	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
-	})
+	// A decision an earlier release left open on a done task, such as its audit, is still answered.
+	writeLegacyDecision(t, c.store, store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
 	if code, out, stderr := runDecide(t, "This one.\n", "answer", "--store", c.store, "--repo", "app", "--task", "t-1", "--decision", "q-1", "--answer-file", "-"); code != 0 {
 		t.Errorf("decide answer on a done task: exit %d, %s %s", code, out, stderr)
 	}

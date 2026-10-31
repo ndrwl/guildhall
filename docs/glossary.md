@@ -20,7 +20,7 @@ This page says which is meant where.
 
 - A **task kind** is what a task is created as, `feature`, `bug` or `hallmark`, chosen with `task new --kind`; it chooses the task's workflow ([task kinds](tasks.md#task-kinds)).
   In Go it is `taskKind`, `config.TaskKindFeature`, `config.TaskKindBug` and `config.TaskKindHallmark`, never a bare `Kind`.
-- A **hallmark task** is a report-only review of the whole repository: one read-only `hallmark` step writes a ranked report, starting from the repository's previous one, and the task finishes as done with a `finished` message and no pull request ([decision](decisions/report-only-workflows.md)).
+- A **hallmark task** is a report-only review of the whole repository: one read-only `hallmark` step writes a ranked report, starting from the repository's previous one, and the task sends a `finished` message, with no pull request, then stays open until the Guildmaster answers its `follow-ups` decision, when it finishes as done ([decision](decisions/report-only-workflows.md)).
 - A **step kind** is a built-in, versioned step type a workflow names, such as `research` or `review`: `workflow.Kind` in the [registry](configuration.md#built-in-step-kinds).
   A task kind's workflow is made of step kinds.
 

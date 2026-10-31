@@ -306,14 +306,12 @@ func TestPruneSelection(t *testing.T) {
 	f.task("lib", "t-lib")
 	due := f.attempt("app", "t-due", "build", store.AttemptSucceeded, nil)
 	running := f.attempt("app", "t-running", "build", "", nil)
-	f.mutate(func(s *store.Store) error {
-		_, err := s.OpenDecision(f.id(), store.Decision{Repository: "app", TaskID: "t-audit", ID: "audit", Kind: store.DecisionAudit,
-			Subject: &store.Subject{Kind: store.SubjectHead, Digest: strings.Repeat("a", 40)}, Options: []string{"yes", "no"}, Question: "Audit?"})
-		return err
-	})
 	for _, id := range []string{"t-due", "t-dep", "t-later", "t-audit", "t-review", "t-reviewed", "t-running", "t-judge", "t-pruned"} {
 		f.close("app", id)
 	}
+	// An audit an earlier release left open on its done task.
+	writeLegacyDecision(t, f.store, store.Decision{Repository: "app", TaskID: "t-audit", ID: "audit", Kind: store.DecisionAudit,
+		Subject: &store.Subject{Kind: store.SubjectHead, Digest: strings.Repeat("a", 40)}, Options: []string{"yes", "no"}, Question: "Audit?"})
 	// t-open depends on the done t-later only through a dependency added after creation.
 	f.mutate(func(s *store.Store) error {
 		_, err := s.AddTaskDependency(f.id(), "app", "t-open", store.TaskDependencyAdd, store.TaskRef{Repository: "app", ID: "t-later"}, 0, "Builds on it.")

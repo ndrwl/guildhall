@@ -245,6 +245,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 
 ## Tasks and holds
 
+- [A closed task never has an open decision, and a hallmark stays open until its follow-ups are answered](decisions/closed-tasks-have-no-open-decisions.md)
 - [A parked attempt, a deferred decision or a follow-up can be held until named tasks merge](decisions/hold-until-merged.md)
 - [The Director parks a failed or stopped attempt with a reason, so it leaves needs_me](decisions/park-attempt.md)
 - [A task can be cancelled for good, with a reason, voiding its decisions and closing its pull requests](decisions/task-cancel.md)

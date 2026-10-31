@@ -440,7 +440,7 @@ func TestSliceMergeCrashResumesAtTheNextSlice(t *testing.T) {
 func TestSliceMergeVoidsItsOpenDecisions(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
-			e, _, _ := newSliceEnv(t, b, true, toBuildOf(t, 2)...)
+			e, _, _ := newSliceEnv(t, b, true, sliceScript(t, threeSlices, 1, 2)...)
 			e.toAccepted(t)
 			e.toMergeDecision(t, 1)
 			if _, err := e.h.Records.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t7", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"}); err != nil {
@@ -449,6 +449,11 @@ func TestSliceMergeVoidsItsOpenDecisions(t *testing.T) {
 			want(t, e.mergeSlice(t, 1), interp.Next{Wait: interp.WaitAttempt, Step: "build--s2", Attempt: 1})
 			if d := e.decision(t, "q-1"); !d.Void || d.VoidReason != "Slice 1 merged: pull request https://forge.invalid/1" {
 				t.Errorf("q-1 = %+v, want it voided with slice 1's merge", d)
+			}
+			// The voided decision no longer counts as unanswered: slice 2's merge decision reads nothing_open holds.
+			want(t, e.toMergeDecision(t, 2), interp.Next{Wait: interp.WaitDecision, Step: "deliver--s2", Decision: "deliver--s2-1"})
+			if q := e.decision(t, "deliver--s2-1").Question; !strings.Contains(q, "- nothing_open: holds") || strings.Contains(q, "q-1") {
+				t.Errorf("slice 2's merge question = %q, want nothing_open to hold with q-1 void", q)
 			}
 		})
 	}

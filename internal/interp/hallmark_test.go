@@ -90,11 +90,16 @@ func (h *hallmarkEnv) git(t *testing.T, args ...string) string {
 // rankedReport is a hallmark report in the template's shape, with two ranked fixes.
 const rankedReport = "# Hallmark\n\n## Ranked fixes\n\n### H1. Tighten the parser\n\nWhy.\n\n### H2. Drop the stale cache\n\nWhy.\n"
 
+// waitsOnFollowUps is what a finished hallmark waits on while its follow-ups decision is open.
+var waitsOnFollowUps = interp.Next{Wait: interp.WaitDecision, Step: "hallmark", Decision: interp.FollowUpsDecision}
+
 // TestHallmarkFinishesDone: a succeeded hallmark attempt that leaves the tracked tree and HEAD as prepared, with an
 // untracked file besides its report, records the report, opens the follow-ups decision bound to the report and naming
-// its ranked fixes, closes the task done with a finished message naming the report and the decision, sends no merged
-// message and records the prepared head as the head the work is safe at. A close that fails replays to the same
-// decision and messages; advancing the done task is refused, as for any closed task.
+// its ranked fixes, and sends a finished message naming the report and the decision, then waits on the decision with
+// the task still open; it sends no merged message and records the prepared head as the head the work is safe at. An
+// advance before the answer still waits. Answering the decision and advancing with it closes the task done, sending
+// nothing new; a close that fails replays to the same messages, and advancing the done task is refused, as for any
+// closed task.
 func TestHallmarkFinishesDone(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -103,14 +108,34 @@ func TestHallmarkFinishesDone(t *testing.T) {
 				t.Fatalf("worktree HEAD = %s, want the base %s", got, h.base)
 			}
 			ev := interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}
+			want(t, h.advance(t, ev), waitsOnFollowUps)
+			if got := h.task(t).State; got != store.TaskOpen {
+				t.Fatalf("task state after the report = %s, want open until follow-ups is answered", got)
+			}
+			sent := h.inbox(t)
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), waitsOnFollowUps)
+			if got := h.inbox(t); !slices.Equal(got, sent) {
+				t.Errorf("inbox after a second advance = %q, want %q", got, sent)
+			}
+			if got := h.task(t).State; got != store.TaskOpen {
+				t.Fatalf("task state = %s, want open", got)
+			}
+			// The open task's messages and decision, before the answer.
+			if text := h.messages(t)["app.t7.finished"]; !strings.Contains(text, "stays open until it is answered") ||
+				!strings.Contains(text, "guildhall task start --decision follow-ups --repo app t7") || strings.Contains(text, "the task is done") {
+				t.Errorf("finished message = %q, want it to say the task stays open until follow-ups is answered", text)
+			}
+			if d := h.decision(t, "follow-ups"); !d.Open() {
+				t.Fatalf("follow-ups = %+v, want it open", d)
+			}
+			h.answer(t, "follow-ups", "pick\nH1")
+			answered := interp.Event{Kind: interp.DecisionAnswered, Decision: interp.FollowUpsDecision}
 			records := h.eng.Records
 			h.eng.Records = &failClose{Records: records}
-			if err := advanceErr(t, h.env, ev); !errors.Is(err, errInjected) {
+			if err := advanceErr(t, h.env, answered); !errors.Is(err, errInjected) {
 				t.Fatalf("advance = %v, want the injected failure", err)
 			}
-			h.decision(t, "follow-ups")
-			sent := h.inbox(t)
-			want(t, h.advance(t, ev), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
+			want(t, h.advance(t, answered), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
 			h.eng.Records = records
 			if got := h.inbox(t); !slices.Equal(got, sent) {
 				t.Errorf("inbox after the replayed close = %q, want %q", got, sent)
@@ -152,10 +177,10 @@ func TestHallmarkFinishesDone(t *testing.T) {
 			}
 			d := ds[0]
 			path := filepath.Join(h.eng.DocumentDir, filepath.FromSlash(docs["hallmark-1-report"].Path))
-			if d.ID != "follow-ups" || d.Kind != store.DecisionFollowUps || !d.Open() ||
+			if d.ID != "follow-ups" || d.Kind != store.DecisionFollowUps || !d.Answered || d.Choice != "pick" || d.Void ||
 				d.Subject == nil || *d.Subject != (store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + docs["hallmark-1-report"].SHA256}) ||
 				!slices.Equal(d.Options, []string{"pick", "none"}) {
-				t.Fatalf("decision = %+v, want an open follow-ups decision on the report offering pick and none", d)
+				t.Fatalf("decision = %+v, want the answered follow-ups decision on the report offering pick and none", d)
 			}
 			if !strings.Contains(d.Question, "Report: "+path+"\n") || !strings.Contains(d.Question, "\nH1. Tighten the parser\nH2. Drop the stale cache\n") {
 				t.Errorf("question = %q, want the report path and its ranked fixes in order", d.Question)
@@ -167,19 +192,53 @@ func TestHallmarkFinishesDone(t *testing.T) {
 	}
 }
 
-// followUpsOf runs the hallmark of report text to its close and returns its follow-ups decision.
+// followUpsOf runs the hallmark of report text to its wait on the follow-ups decision and returns the decision.
 func followUpsOf(t *testing.T, b backend, text string) (*hallmarkEnv, store.Decision) {
 	t.Helper()
 	h := newHallmarkEnv(t, b, report(text))
-	want(t, h.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
-	if got := h.task(t).State; got != store.TaskDone {
-		t.Fatalf("task state = %s, want done", got)
+	want(t, h.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), waitsOnFollowUps)
+	if got := h.task(t).State; got != store.TaskOpen {
+		t.Fatalf("task state = %s, want open", got)
 	}
 	return h, h.decision(t, "follow-ups")
 }
 
-// TestHallmarkFollowUpsWithoutHeadings: a report with no "### H<n>." headings still closes done, with a follow-ups
-// decision whose question names only the report's path.
+// finishHallmark answers the hallmark's follow-ups decision with answer and advances with it, which closes the task.
+func finishHallmark(t *testing.T, e *env, task, answer string) {
+	t.Helper()
+	if _, err := e.h.AnswerDecision("answer:"+task+":follow-ups", "app", task, interp.FollowUpsDecision, answer); err != nil {
+		t.Fatal(err)
+	}
+	next, err := e.eng.Advance(context.Background(), interp.Event{Kind: interp.DecisionAnswered, Repository: "app", Task: task, Decision: interp.FollowUpsDecision})
+	if err != nil {
+		t.Fatalf("Advance(%s, follow-ups answered) = %v", task, err)
+	}
+	want(t, next, interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
+}
+
+// TestHallmarkFollowUpsDeferred: a deferred follow-ups decision is still open, so the hallmark keeps waiting on it
+// with its task open; answering it then closes the task.
+func TestHallmarkFollowUpsDeferred(t *testing.T) {
+	h, _ := followUpsOf(t, backends[1], rankedReport)
+	s := h.h.Records.(*store.Store)
+	if _, err := h.h.CreateTask("task:app:t9", store.Task{Repository: "app", ID: "t9", Title: "Release", Workflow: h.task(t).Workflow, ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeferDecision("defer:follow-ups", "app", "t7", interp.FollowUpsDecision, "After the release.", []store.TaskRef{{Repository: "app", ID: "t9"}}, 0); err != nil {
+		t.Fatal(err)
+	}
+	want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), waitsOnFollowUps)
+	if got := h.task(t).State; got != store.TaskOpen {
+		t.Fatalf("task state = %s, want open while follow-ups is deferred", got)
+	}
+	finishHallmark(t, h.env, "t7", "none")
+	if got := h.task(t).State; got != store.TaskDone {
+		t.Fatalf("task state = %s, want done", got)
+	}
+}
+
+// TestHallmarkFollowUpsWithoutHeadings: a report with no "### H<n>." headings still opens a follow-ups decision,
+// whose question names only the report's path.
 func TestHallmarkFollowUpsWithoutHeadings(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -193,7 +252,7 @@ func TestHallmarkFollowUpsWithoutHeadings(t *testing.T) {
 }
 
 // TestHallmarkFollowUpsCut: a report whose ranked fixes would not fit the question has the list cut, ending with a
-// pointer to the report, so the decision still opens and the task closes done.
+// pointer to the report, so the decision still opens.
 func TestHallmarkFollowUpsCut(t *testing.T) {
 	var text strings.Builder
 	text.WriteString("# Hallmark\n\n")
@@ -310,7 +369,8 @@ func TestHallmarkPreviousReport(t *testing.T) {
 
 			// t3 is the repository's first hallmark: no previous input.
 			want(t, advance("t3", interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
-			want(t, advance("t3", interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
+			want(t, advance("t3", interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), waitsOnFollowUps)
+			finishHallmark(t, e, "t3", "none")
 			if _, err := e.h.Records.SetTaskState("state:t9", "app", "t9", store.TaskDone); err != nil {
 				t.Fatal(err)
 			}
@@ -349,14 +409,18 @@ func TestHallmarkPreviousReport(t *testing.T) {
 				t.Fatal(err)
 			}
 			want(t, advance("t8", interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
-			want(t, advance("t8", interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
+			want(t, advance("t8", interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), waitsOnFollowUps)
+			if got := last(); got != "t3" {
+				t.Fatalf("last hallmark while t8 waits on its follow-ups = %s, want t3", got)
+			}
+			finishHallmark(t, e, "t8", "pick\nH1")
 			if got := last(); got != "t8" {
 				t.Fatalf("last hallmark after t8 = %s, want t8", got)
 			}
 
 			// t7's retry keeps the report it was first given, not t8's.
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptRetried, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 2})
-			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 2}), interp.Next{Wait: interp.WaitDone, Step: "hallmark"})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 2}), waitsOnFollowUps)
 		})
 	}
 }
