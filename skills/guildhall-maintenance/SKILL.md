@@ -65,10 +65,11 @@ Its test evidence needs the repository's `[repository.profiles.researcher]` gran
 When its report is in, Guildhall opens its `follow-ups` decision and sends you a `finished` message naming the report, with no pull request; the task stays open, waiting on the decision.
 Read the report, then:
 
-1. Present the `follow-ups` decision to the Guildmaster: `guildhall decide show` gives the report path and its ranked `H<n>` titles.
+1. Present the `follow-ups` decision to the Guildmaster: `guildhall decide show` gives the report path and its ranked `H<n>` titles, and the report's record name to link is the one `guildhall task show --repo <repo> <hallmark task>` lists under `documents`, such as `guildhall/d131/hallmark-1-report`.
 2. Answer it with `guildhall decide answer`, in the Guildmaster's words: `pick` with the ids they chose on the following lines, such as `H1, H3`, or `none`.
 3. Run `guildhall task start --decision follow-ups --repo <repo> <id>`; answering never advances a task, and this advance closes the hallmark done.
-4. Run `guildhall task new` for each picked id only; Guildhall creates no task from the answer.
+4. For each picked id only, run `guildhall task new`, then `guildhall task link add --repo <repo> --document <repo>/<hallmark task>/hallmark-<n>-report --text '<the Guildmaster's follow-ups answer, quoted>' <new task>`, then `guildhall task start`; Guildhall creates no task from the answer.
+   The task's detail names the `H<n>` and the report's record name, never the report's path, because Artisans cannot read paths under `state/`; the link gives them a verified copy.
 
 Then read the self-review ledger, as `guildhall-self-review` asks at hallmark time, and give its lowest criteria to the hallmark's findings.
 A hallmark the Guildmaster asks for out of turn is launched the same way.
