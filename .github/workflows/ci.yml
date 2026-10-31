@@ -70,10 +70,6 @@ jobs:
         run: python .github/tests/test_release.py
       - name: Test with race detector
         if: matrix.os == 'ubuntu-latest'
-        # Not blocking yet: the first -race run failed, which is filed as
-        # guildhall/d89 (d84 spec Q1); the change that fixes it removes this
-        # flag.
-        continue-on-error: true
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
         run: go test -race ./...
