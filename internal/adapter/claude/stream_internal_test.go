@@ -5,12 +5,14 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ndrwl/guildhall/internal/workbench"
 )
 
 func TestReadableStreamBoundsAndFinalResult(t *testing.T) {
-	var out bytes.Buffer
+	var out, events bytes.Buffer
 	result := &limitedBuffer{limit: maxOutputBytes}
-	stream := &readableStream{out: &out, result: result}
+	stream := &readableStream{out: &out, events: workbench.NewWriter(&events), result: result}
 	// More than the entire old capture budget precedes the final event.
 	_, _ = stream.Write([]byte(strings.Repeat("x", maxOutputBytes+1) + "\ninvalid\n"))
 	event := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"` + strings.Repeat("a", 180) + `\nrest"}},{"type":"tool_result","content":"not displayed"}]}}` + "\n"
@@ -22,6 +24,10 @@ func TestReadableStreamBoundsAndFinalResult(t *testing.T) {
 	stream.finish()
 	if want := "tool: Bash " + strings.Repeat("a", 160) + "...\n"; out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+	// The tool_result is not displayed on stdout, but it is a Workbench event.
+	if got := workbench.ReadAll(&events); len(got) != 2 || got[0].Kind != workbench.KindToolCall || got[1].Kind != workbench.KindToolResult || *got[1].Bytes != int64(len("not displayed")) {
+		t.Fatalf("events = %+v, want the tool call and its result", got)
 	}
 	usage, err := ParseUsage(result.buf.Bytes())
 	if err != nil || usage.InputTokens != 10 || usage.OutputTokens != 20 || usage.CostUSD != 0.5 {

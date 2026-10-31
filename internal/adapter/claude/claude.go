@@ -43,6 +43,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/workbench"
 )
 
 // Subcommand is the guildhall subcommand that runs the Claude wrapper.
@@ -475,7 +476,9 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	defer stopReady(nil)
 	cmd := exec.CommandContext(ctx, path, ClaudeArgs(a)...)
 	output := &limitedBuffer{limit: maxOutputBytes}
-	stream := &readableStream{out: stdout, result: output}
+	events, closeEvents := openEvents(a.ResultFile)
+	defer closeEvents()
+	stream := &readableStream{out: stdout, events: events, result: output}
 	act := newActivity()
 	errOut := &lockedWriter{w: stderr}
 	cmd.Stdout, cmd.Stderr = act.writer(stream), act.writer(errOut)
@@ -485,6 +488,7 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	runErr := cmd.Run()
 	endWatch()
 	stream.finish()
+	events.Write(workbench.End(exitStatus(runErr)))
 	readyStop := errors.Is(context.Cause(ctx), errResultReady)
 	if ctx.Err() != nil && !readyStop {
 		if errors.Is(context.Cause(ctx), errMarked) {
@@ -508,6 +512,35 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 		return errors.Join(fmt.Errorf("claude adapter: Claude exited after writing its result: %w", runErr), usageErr)
 	}
 	return usageErr
+}
+
+// WorkbenchPath is the Workbench event file the wrapper appends for the attempt whose result file is result:
+// workbench.File beside it, outside the model directory.
+func WorkbenchPath(result string) string {
+	return filepath.Join(filepath.Dir(result), workbench.File)
+}
+
+// openEvents opens the attempt's Workbench event file for append, and returns its writer and a closer. A file
+// that cannot be opened writes no events, and is never an error: the event file is presentation only.
+func openEvents(result string) (*workbench.Writer, func()) {
+	f, err := os.OpenFile(WorkbenchPath(result), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, func() {}
+	}
+	return workbench.NewWriter(f), func() { _ = f.Close() }
+}
+
+// exitStatus is the exit status err reports for Claude's process: 0 for none, the process's status, or -1 when
+// it has none, as for a process killed by a signal or one that never ran.
+func exitStatus(err error) int {
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &exit):
+		return exit.ExitCode()
+	}
+	return -1
 }
 
 // withBoundTaskGrant adds to rules, last, the task grant a's binding records (BoundTaskGrant), unless it is revoked,

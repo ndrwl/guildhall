@@ -22,6 +22,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/ndrwl/guildhall/internal/workbench"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -268,6 +269,10 @@ const ArtisanWorkspaceCloseAfterKey = "artisan_workspace_close_after"
 // DefaultArtisanWorkspaceCloseAfter is the close delay of a config that does not set
 // ArtisanWorkspaceCloseAfterKey.
 const DefaultArtisanWorkspaceCloseAfter = 5 * time.Minute
+
+// ArtisanPaneOutputKey is the setting that chooses what an Artisan's Herdr pane shows: the Workbench, the
+// default, or launcher.log plain (docs/configuration.md#settings).
+const ArtisanPaneOutputKey = "artisan_pane_output"
 
 // PruneAfterKey is the setting that sets how long after a task closes `guildhall prune` may reclaim its working
 // directory and attempt directories (docs/configuration.md#settings).
@@ -1051,6 +1056,23 @@ func parseArtisanWorkspaceCloseAfter(v string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"5m\", or \"0\" never to close automatically", ArtisanWorkspaceCloseAfterKey, v)
 	}
 	return d, nil
+}
+
+// ArtisanPaneOutput returns the effective ArtisanPaneOutputKey setting: workbench.OutputWorkbench when it is not
+// set, or workbench.OutputPlain. Any other value is an error; Parse refuses one already.
+func (c *Config) ArtisanPaneOutput() (string, error) {
+	v, ok := c.Setting(ArtisanPaneOutputKey)
+	if !ok {
+		return workbench.OutputWorkbench, nil
+	}
+	return v, checkArtisanPaneOutput(v)
+}
+
+func checkArtisanPaneOutput(v string) error {
+	if v != workbench.OutputWorkbench && v != workbench.OutputPlain {
+		return fmt.Errorf("%s %q must be %q or %q", ArtisanPaneOutputKey, v, workbench.OutputWorkbench, workbench.OutputPlain)
+	}
+	return nil
 }
 
 // PruneAfter returns the effective PruneAfterKey setting as a duration: DefaultPruneAfter when it is not set, and
