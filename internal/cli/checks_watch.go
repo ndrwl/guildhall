@@ -247,6 +247,19 @@ func (a *App) watcher(p startPlan, dir, copyDir, storePath, state, log string) (
 		if hold, err := withRecords(storeRecords{path: storePath, wait: f.wait}, true, nil, held); err != nil || hold {
 			return interp.Next{}, false, err
 		}
+		// A task that recorded another release than this supervisor's advances on it, through the launcher, as
+		// the Director's own task start does (docs/releases.md#tasks-keep-their-release).
+		if rec, other, err := otherTaskRelease(storePath, f.wait, t); err != nil || other {
+			if err != nil {
+				return interp.Next{}, true, err
+			}
+			var out strings.Builder
+			n, err := a.advanceThroughLauncher(f, t, rec, &out)
+			if s := strings.TrimSpace(out.String()); s != "" {
+				logf("%s/%s: %s", t.repo, t.task, oneLine(s))
+			}
+			return n, true, err
+		}
 		b := *a
 		var out strings.Builder
 		b.Stdout, b.Stderr = io.Discard, &out

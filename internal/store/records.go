@@ -265,10 +265,18 @@ func (s *Store) CreateTask(mutationID string, t Task) (Receipt, error) {
 	if err := validateTask(t); err != nil {
 		return Receipt{}, err
 	}
-	if n := utf8.RuneCountInString(t.Title); n > MaxTitleRunes {
-		return Receipt{}, invalid("title is %d characters; the limit is %d", n, MaxTitleRunes)
+	if err := checkTitle(t); err != nil {
+		return Receipt{}, err
 	}
 	return s.createTask(mutationID, t)
+}
+
+// checkTitle refuses a title over MaxTitleRunes.
+func checkTitle(t Task) error {
+	if n := utf8.RuneCountInString(t.Title); n > MaxTitleRunes {
+		return invalid("title is %d characters; the limit is %d", n, MaxTitleRunes)
+	}
+	return nil
 }
 
 // CreateLegacyTaskForTests records t as CreateTask does but without the MaxTitleRunes limit, as a task created before
@@ -287,8 +295,19 @@ func (s *Store) CreateLegacyTaskForTests(mutationID string, t Task) (Receipt, er
 const opCreateTask = "create-task"
 
 func (s *Store) createTask(mutationID string, t Task) (Receipt, error) {
+	return s.createTaskWith(mutationID, t, nil, nil)
+}
+
+// createTaskWith records t under mutationID with the request req, or t itself when req is nil, and then runs also,
+// when not nil, in the same transaction.
+func (s *Store) createTaskWith(mutationID string, t Task, req *createTaskRequest, also func(tx *bolt.Tx) error) (Receipt, error) {
 	t.State = TaskOpen
-	return s.mutate(mutationID, opCreateTask, t, func(tx *bolt.Tx, r *Receipt) error {
+	var request any = t
+	if req != nil {
+		req.Task.State = TaskOpen
+		request = *req
+	}
+	return s.mutate(mutationID, opCreateTask, request, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = t.Repository, t.ID, "task"
 		for _, dep := range t.DependsOn {
 			if _, err := getTask(tx, dep.Repository, dep.ID); err != nil {
@@ -307,7 +326,13 @@ func (s *Store) createTask(mutationID string, t Task) (Receipt, error) {
 		if tasks.Get([]byte(t.ID)) != nil {
 			return fmt.Errorf("%w: task %s/%s", ErrExists, t.Repository, t.ID)
 		}
-		return putJSON(tasks, []byte(t.ID), t)
+		if err := putJSON(tasks, []byte(t.ID), t); err != nil {
+			return err
+		}
+		if also != nil {
+			return also(tx)
+		}
+		return nil
 	})
 }
 

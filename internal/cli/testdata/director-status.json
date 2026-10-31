@@ -916,7 +916,7 @@
     "task": null,
     "behind_main": null,
     "store_schema": 1,
-    "release_contract": 1
+    "release_contract": 2
   },
   "supervisor_binary": {
     "sha256": "",

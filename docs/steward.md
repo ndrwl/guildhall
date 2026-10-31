@@ -314,7 +314,7 @@ Release binding and execution enforcement of R1.31 remain future work.
 
 ## Not implemented yet
 
-- The release pin and side-by-side release installs (R1.31), designed in [release upgrades](releases.md); the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt` and the PATH launcher are [built so far](releases.md#built-so-far); tasks recording their release, rollback, prune and the managed pin are not.
+- The release pin and side-by-side release installs (R1.31), designed in [release upgrades](releases.md); the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher and tasks recording and running on their release are [built so far](releases.md#built-so-far); rollback, prune and the managed pin are not.
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50), audits and learnings (R1.32).
 - Enrolment through the setup wizard (R1.43-R1.51).

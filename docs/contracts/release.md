@@ -3,7 +3,7 @@
 ## Contract
 
 The package owns the Guildhall home of [release upgrades](../releases.md): the releases installed side by side under it, the inventory of copies that use them and the home lock.
-Slice 1 of task d127 built it; slice 2 adds the pin file and what the [launcher](launcher.md) reads, and task records, rollback and prune build on it in later slices.
+Slice 1 of task d127 built it; slice 2 adds the pin file and what the [launcher](launcher.md) reads, slice 3 task creation under the home lock and release contract 2, and rollback and prune build on it in later slices.
 
 **The home.** `Locate(getenv, exe, version, goos)` finds it, in this order:
 
@@ -38,7 +38,7 @@ An unverified `.incoming` binary is never run; the probe runs only after its sha
 
 **The inventory.** `Copies` reads `copies`, one absolute copy directory per line; a home without one has none.
 `Register(dir, lockWait)` adds `dir`, made absolute and clean, under the home lock, keeping the file sorted and without duplicates and publishing it with [`atomicfile`](atomicfile.md); registering a copy already there changes nothing, and a directory containing a line break is refused.
-`RegisterLocked(dir)` is `Register` for a caller already holding the home lock: `release use` and `release adopt` register their copy and record its pin under one hold; `task new` will in slice 3.
+`RegisterLocked(dir)` is `Register` for a caller already holding the home lock: `release use` and `release adopt` register their copy and record its pin under one hold, and `task new` on a copy with a pin registers it and records the task with its release under one hold.
 
 **The pin.** `PinFile` is `release.pin`, a copy's pinned version on one line, a cache of its newest `release-pin` store event ([the pin](../releases.md#the-pin)).
 `ReadPin(dir)` reads it, `fs.ErrNotExist` for a copy with none, and refuses one that is not a valid release version; `HasPin(dir)` is true for any pin file, readable or not, the mark of a copy that has adopted; `WritePin(dir, version)` writes a valid version with [`atomicfile`](atomicfile.md).
@@ -50,9 +50,9 @@ An unverified `.incoming` binary is never run; the probe runs only after its sha
 **The home lock.** `Lock(wait)` creates the home and its `lock` file when missing and takes an exclusive lock on it, `flock` on Unix and `LockFileEx` on Windows, polling every 20 ms for up to `wait`, then returning `ErrLocked`.
 The operating system releases it when the process ends, however it ends.
 It is per open file, so a second `Lock` in the same process waits like another process's.
-Install's rename and `Register` hold it; later slices serialize pin changes, task creation and pruning with it.
+Install's rename, `Register`, pin changes and task creation hold it; slice 4 serializes pruning with them.
 
-`Contract` is the release contract this build implements, 1, which `guildhall version --json` reports as `release_contract`; slice 3 raises it to 2.
+`Contract` is the release contract this build implements, which `guildhall version --json` reports as `release_contract`: 1 was the home, install and status, and 2, from slice 3, adds tasks recording their release at `task new` and running on it.
 
 ## Tests
 

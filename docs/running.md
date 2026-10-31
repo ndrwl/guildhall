@@ -31,6 +31,7 @@ A [Steward copy](steward.md#the-steward-copy), one that holds `steward.store` an
 - With no `--copy`, no path flags and no copy found, the command refuses with one line, `no Guildhall copy found from <cwd>; pass --copy <dir> or cd into a copy`, after its command name, with the exit status it gave for a missing copy before.
 - A copy, like a `--store`, without a store file is refused with exit 1, naming `guildhall store init <dir>/director.store`; no command but `store init` creates a store.
 - Discovery lives in `internal/copydir`, which the [PATH launcher](releases.md#the-path-launcher) of a copy that has adopted releases shares, so the launcher runs the release of the copy the command then acts on; for a command given `--store` without `--copy` the launcher takes the store's own directory, when it is a copy, as the copy whose release it runs.
+  A command that advances, launches or resumes an existing task runs instead on the release that task recorded at `task new`, read from that store ([tasks keep their release](releases.md#tasks-keep-their-release)).
 
 ### The copy marker
 

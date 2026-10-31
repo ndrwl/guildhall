@@ -361,6 +361,15 @@ func (a *App) task(args []string) int {
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(noStore(*path))
 	}
+	var taskRelease *store.TaskRelease
+	if sub == "new" {
+		rel, unlock, err := a.newTaskRelease(cp.dir, *path)
+		if err != nil {
+			return fail(err)
+		}
+		defer func() { _ = unlock() }()
+		taskRelease = rel
+	}
 	s, err := store.Open(*path, store.Options{ReadOnly: sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority" && sub != "hold-merge", RequireStore: true})
 	if err != nil {
 		return fail(err)
@@ -374,7 +383,11 @@ func (a *App) task(args []string) int {
 		if err = admitWorkflow(s, accepted); err != nil {
 			err = fmt.Errorf("%w; the Guildmaster approves this revision with guildhall workflow approve --config <director.toml> --repo %s", err, *repo)
 		} else {
-			out, err = s.CreateTask(mutationID("task", task.Repository, task.ID), task)
+			if taskRelease != nil {
+				out, err = s.CreateTaskWithRelease(mutationID("task", task.Repository, task.ID), task, *taskRelease)
+			} else {
+				out, err = s.CreateTask(mutationID("task", task.Repository, task.ID), task)
+			}
 		}
 		if err == nil && *priority != "" {
 			_, err = s.SetTaskPriority(mutationID("priority", task.Repository, task.ID, "1"), task.Repository, task.ID, level)

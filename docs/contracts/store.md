@@ -47,9 +47,13 @@ Its head/state replay identity and observation document are owned by the interpr
 
 `RecordReleasePin`, `LatestReleasePin` and `ReleasePins` keep a copy's [release-pin events](../store.md#release-pins) in the `director` bucket's nested `release-pins`, and `ManagedView.ReleasePin` reads the newest for the configuration-admission boundary; the bucket is additive and `SchemaVersion` is unchanged (d127 slice 2).
 
+`CreateTaskWithRelease`, `TaskRelease`, `TaskReleases` and `ReadTaskRelease` keep each task's [release](../store.md#task-releases) in each repository's `task_releases` bucket, written in the task's create transaction and never changed, and `store doctor` counts them as `RepositoryCounts.TaskReleases`; the bucket is additive and `SchemaVersion` is unchanged (d127 slice 3).
+
 ## Tests
 
 `release_pin_test.go` was written with the release-pin events and not run red: `TestReleasePins` records an adopt pin and a use pin, sees the previous version and sha256 set, refuses the newest again, `dev`, a non-version, a path, an upper-case sha256, an unknown source and a store-set time with `ErrInvalid` and a stale previous with `ErrMutationConflict`, lists both, reads the newest through `ManagedView` and gets a clean `store doctor`.
+
+`task_release_test.go` was written with the task releases and not run red: `TestTaskRelease` creates a task with its release, replays it, conflicts on another release, refuses `dev`, a path, an upper-case sha256, another task's release and a store-set time with `ErrInvalid` and no task, finds none for a task created without one, lists them, counts them in `store doctor` and reads them, an unrecorded task, a missing file and a file that is not a store through `ReadTaskRelease`; `TestTaskReleaseSurvivesTaskRewrites` cancels the task, rewrites its record whole as an older release would and moves the schema past this build's, and still reads the release.
 
 `TestRejectionPreservesLauncherHistory` pins the explicit [intake-rejection contract](../store.md#attempts): separate finish and rejection receipts, a failed current outcome with a durable reason, and launcher replay that cannot undo rejection.
 The shared Records suite runs the new rejection cases against the store, its in-memory double and the CLI's per-operation store wrapper: unfinished and succeeded rejection, failed/stopped refusal, mutation replay and conflict, unknown attempts, blank reasons and retry numbering.
