@@ -1,0 +1,9 @@
+=== RUN   TestStopContract
+    unit_linux_test.go:19: detected containment subreaper+pgroup: cgroup v2 at /sys/fs/cgroup, but the launcher cgroup /non-systemd is not writable by this user: not a delegated subtree (WSL)
+=== RUN   TestStopContract/L16_a_result_after_the_marker_is_rejected_as_late
+    stop.go:160: open /tmp/TestStopContractL16_a_result_after_the_marker_is_rejected_as_la1073182701/002\worker.json: The process cannot access the file because it is being used by another process.
+--- FAIL: TestStopContract (30.08s)
+    --- FAIL: TestStopContract/L16_a_result_after_the_marker_is_rejected_as_late (30.08s)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/artisan	30.081s
+FAIL
