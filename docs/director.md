@@ -697,7 +697,7 @@ The document has these sections:
 - `repository_policies`: each configured repository's [policies](configuration.md#repository-policies), read from its default branch as last fetched into `refs/guildhall/policies` with no fetch, in config order: `{"repository", "commit", "policies": [...]}`, `policies` empty for a repository without a policy file; `{"repository", "error"}` when its file is refused or cannot be read; or `{"repository", "not_read_yet": true}` before the first fetch.
   The field is absent when no repository has a policy file and none has an error, and the session supervisor's own snapshot leaves it out.
   Policies are guidance, not [guard rails](#guard-rails), which are limits the binary enforces, so they are not under `guard_rails`.
-- `version`: the binary printing the feed, the object `guildhall version --json` prints ([version](contracts/cli.md#version)): its `revision`, `time`, `modified`, `go_version`, `platform`, the `pr` and `task` of its latest merge and `behind_main`, read from the repository's last fetched default branch with no fetch, its `as_of` naming when that fetch was.
+- `version`: the binary printing the feed, the object `guildhall version --json` prints ([version](contracts/cli.md#version)): its `revision`, `time`, `modified`, `go_version`, `platform`, the `pr` and `task` of its latest merge and `behind_main`, read from the repository's last fetched default branch with no fetch, its `as_of` naming when that fetch was, and its `store_schema` and `release_contract`.
 
 Times are commit times of the store's receipts, in UTC.
 The feed reads every receipt in the store, so its cost grows with the store's mutation count, as `task timeline`'s does.
