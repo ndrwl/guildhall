@@ -1,6 +1,6 @@
 {{define "head"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="same-origin">
 <title>{{.}}</title>
 {{end}}
 
@@ -17,15 +17,30 @@
 {{- if .Status.Waits}}<p class="asof">Waiting on the Director:</p><ul class="waits">{{range .Status.Waits}}<li>{{.}}</li>{{end}}</ul>{{end}}
 <p class="asof">Read from the store at {{.ReadAt}} · reload for newer</p>{{end}}
 
-{{define "ask"}}<div class="ask{{if .Deferred}} def{{end}}" id="{{.ID}}">
+{{define "ask"}}<div class="ask{{if .Deferred}} def{{end}}{{if .Refused}} refused{{end}}{{if .Sent}} sent{{end}}" id="{{.ID}}">
+{{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="decision" value="{{.ID}}"><input type="hidden" name="subject" value="{{.Digest}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
 <div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
 <p class="q">{{.First}}</p>
 {{- if or .Subject .SubjectName}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .SubjectName}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}</p>{{end}}
 {{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
 {{- if .Findings}}<details class="ctx"><summary>{{.FindingsSummary}}</summary><div><ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span></li>{{end}}</ul></div></details>{{end}}
+{{- if .Refused}}<p class="state bad"><b>Refused · nothing written:</b> {{.Refused}}.</p>{{end}}
+{{- if .Sent}}<p class="state ok"><b>Words only sent:</b> your words reached the Director as a message; nothing is answered.</p>{{end}}
+{{- if .Form}}<label class="yw" for="w-{{.ID}}">Your words <span>optional with an answer</span></label><textarea id="w-{{.ID}}" name="text" rows="3">{{.Words}}</textarea>
+{{- else if .Words}}<p class="yw">Your words, kept</p><textarea rows="3" readonly>{{.Words}}</textarea>{{end}}
 {{- if .Tiles}}<p class="pick">Answer</p>
-<div class="opts">{{range .Tiles}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}" type="button" disabled><b>{{.Word}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
-<p class="who">{{if .Deferred}}Deferred: still yours, for later. {{end}}Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+<div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}" type="button" disabled>{{end}}<b>{{.Word}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
+{{- if and .Form (not .Tiles)}}<div class="opts"><button class="opt pos" type="submit" name="send" value="answer"><b>Answer with your words</b><span>your words are the answer</span></button></div>{{end}}
+{{- if .Form}}<div class="wo"><button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button></div>{{end}}
+<p class="who">{{if .Deferred}}Deferred: still yours, for later. {{end}}{{if .Form}}Answering as <b>{{.Login}}</b> · your Tailscale login{{else}}Only the Guildmaster's Tailscale login can answer here{{if .Login}}; you are {{.Login}}{{end}}. Answer in chat or with <code>guildhall decide answer</code>.{{end}}</p>
+{{- if .Form}}</form>{{end}}
+</div>{{end}}
+
+{{define "gone"}}<div class="ask refused" id="{{if .ID}}{{.ID}}{{else}}not-recorded{{end}}">
+<div class="ah"><span class="kind">{{.KindName}}</span>{{if .ID}}<a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{end}}</div>
+<p class="q">{{.First}}</p>
+<p class="state bad"><b>Refused · nothing written:</b> {{.Refused}}.</p>
+{{- if .Words}}<p class="yw">Your words, kept</p><textarea rows="3" readonly>{{.Words}}</textarea>{{end}}
 </div>{{end}}
 
 {{define "node"}}<li class="node {{.Class}}"><div class="nh"><span class="t">{{.Title}}</span>{{if .Word}}<span class="st">{{.Word}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div>
@@ -57,6 +72,7 @@
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node {{if .Open}}you{{else}}ok{{end}}"><div class="nh"><span class="t">Now</span><span class="st">{{if .Open}}waiting on you · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}nothing waits on you{{end}}</span>{{if .Since}}<time>{{.Since}}</time>{{end}}</div>
 {{if .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
+{{with .Gone}}{{template "gone" .}}{{end}}
 {{range .Asks}}{{template "ask" .}}{{end}}
 {{if not .Asks}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}.</p>{{end}}{{end}}
 </li></ol></section>

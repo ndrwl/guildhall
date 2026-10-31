@@ -8,6 +8,7 @@ import (
 	"errors"
 	"html/template"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,6 +50,16 @@ type Options struct {
 	Location *time.Location
 	// Log receives one line for each request that failed for a reason the page does not show; nil discards it.
 	Log func(string)
+	// Address is the configured [web] address, a host and port, that page links are built from. When set, every
+	// request whose Host is not it, ignoring case, is refused before anything is read, and an answer's Origin must
+	// be this address's own, so a page reached under another name, such as a DNS-rebinding site's, sees nothing.
+	Address string
+	// Identity tells which Tailscale login sent each request, Guildmaster is the login that may answer, and
+	// Answerer records what it gives. Without all three, and Address, every page is read-only and every POST
+	// refused.
+	Identity    Identifier
+	Guildmaster string
+	Answerer    Answerer
 }
 
 // Server serves the task pages and reader pages from its Source. Its routes are:
@@ -57,10 +68,14 @@ type Options struct {
 //	GET /<repo>/<task>/doc/<name>       the reader page of one of the task's documents
 //	GET /<repo>/<task>/doc/<name>/raw   the document as text/plain
 //	GET /<repo>/<task>/doc/<name>/frame an HTML document, sandboxed, for the reader page's frame
+//	POST /<repo>/<task>/answer          an answer to one of the task's decisions, or words only
 //
-// Each path segment is path-escaped. Anything else, including any other method, is 404.
+// Each path segment is path-escaped. Anything else, including any other method, is 404. With Options.Address set,
+// a request on any route whose Host is not that address is 421.
 type Server struct {
 	o Options
+	// token is the per-process form token every answer must carry.
+	token string
 }
 
 // New returns a Server with options o.
@@ -68,7 +83,7 @@ func New(o Options) *Server {
 	if o.Location == nil {
 		o.Location = time.Local
 	}
-	return &Server{o: o}
+	return &Server{o: o, token: newToken()}
 }
 
 // ServeHTTP routes one request.
@@ -76,23 +91,44 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Content-Security-Policy", CSP)
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Referrer-Policy", "same-origin")
 	h.Set("Cache-Control", "no-store")
+	if !s.ourHost(r.Host) {
+		s.refuse(w, http.StatusMisdirectedRequest, "Wrong address", "This server answers only at its configured address, "+s.o.Address+".")
+		return
+	}
 	segs, ok := segments(r.URL.EscapedPath())
+	if ok && r.Method == http.MethodPost && len(segs) == 3 && segs[2] == "answer" {
+		s.answer(w, r, segs[0], segs[1])
+		return
+	}
 	if !ok || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		s.refuse(w, http.StatusNotFound, "Not found", "There is no page here. A task page is /<repo>/<task>.")
 		return
 	}
 	switch {
 	case len(segs) == 2:
-		s.taskPage(w, segs[0], segs[1])
+		s.taskPage(w, r, segs[0], segs[1])
 	case len(segs) == 4 && segs[2] == "doc":
-		s.document(w, segs[0], segs[1], segs[3], "")
+		s.document(w, r, segs[0], segs[1], segs[3], "")
 	case len(segs) == 5 && segs[2] == "doc" && (segs[4] == "raw" || segs[4] == "frame"):
-		s.document(w, segs[0], segs[1], segs[3], segs[4])
+		s.document(w, r, segs[0], segs[1], segs[3], segs[4])
 	default:
 		s.refuse(w, http.StatusNotFound, "Not found", "There is no page here. A task page is /<repo>/<task>.")
 	}
+}
+
+// ourHost reports whether host, a request's Host or an Origin's host, names this server: any host when no Address
+// is configured, else the Address, ignoring case, or its host alone when its port is HTTP's default 80.
+func (s *Server) ourHost(host string) bool {
+	if s.o.Address == "" {
+		return true
+	}
+	if strings.EqualFold(host, s.o.Address) {
+		return true
+	}
+	bare, port, err := net.SplitHostPort(s.o.Address)
+	return err == nil && port == "80" && strings.EqualFold(host, bare)
 }
 
 // segments splits an escaped path into its unescaped segments; an empty segment, a trailing slash or a segment
@@ -131,19 +167,24 @@ func (s *Server) read(w http.ResponseWriter, repo, id string) (Task, bool) {
 	return t, true
 }
 
-func (s *Server) taskPage(w http.ResponseWriter, repo, id string) {
+// taskPage serves the task page to whoever r is from: with the forms for the Guildmaster's login, read-only for
+// anyone else. ?sent=<message id>&ask=<decision> after words only shows that ask's words-only-sent state.
+func (s *Server) taskPage(w http.ResponseWriter, r *http.Request, repo, id string) {
 	t, ok := s.read(w, repo, id)
 	if !ok {
 		return
 	}
-	v := s.taskView(t)
-	s.render(w, http.StatusOK, "task", v)
+	st := pageState{identity: s.who(r), Token: s.token}
+	if sent := r.URL.Query().Get("sent"); strings.HasPrefix(sent, NoteIDPrefix) {
+		st.Sent, st.Decision = sent, r.URL.Query().Get("ask")
+	}
+	s.render(w, http.StatusOK, "task", s.taskView(t, st))
 }
 
 // document serves the reader page, or with part "raw" or "frame" the document itself, of the task's document
 // name: only a name recorded on this task resolves, its file is read from its recorded path under the document
 // directory, never from the URL, and served only when its sha256 matches the record.
-func (s *Server) document(w http.ResponseWriter, repo, id, name, part string) {
+func (s *Server) document(w http.ResponseWriter, r *http.Request, repo, id, name, part string) {
 	t, ok := s.read(w, repo, id)
 	if !ok {
 		return
@@ -182,7 +223,7 @@ func (s *Server) document(w http.ResponseWriter, repo, id, name, part string) {
 		_, _ = w.Write(body)
 		return
 	}
-	v := readerView{taskView: s.taskView(t), Doc: s.docView(t, *doc)}
+	v := readerView{taskView: s.taskView(t, pageState{identity: s.who(r), Token: s.token}), Doc: s.docView(t, *doc)}
 	switch {
 	case html:
 		v.Frame = true

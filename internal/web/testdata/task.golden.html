@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="same-origin">
 <title>d122 · Guildmaster task page: one web page per task with context, status and answerable decisions</title>
 <style>/* d105 design-3, "C2, refined": one set of colour variables, the dark theme chosen by prefers-color-scheme. */
 :root{--bg:#fff;--bg2:#f5f6f8;--card:#fff;--fg:#1b1d22;--mut:#5b6270;--faint:#868d99;--line:#e2e5ea;--line2:#cfd4db;--link:#1d5bd0;
@@ -75,6 +75,18 @@ button{font:inherit;color:inherit}
 .opt.pos{border-left-color:var(--ok)}.opt.pos b{color:var(--ok)}
 .opt.neg{border-left-color:var(--bad)}.opt.neg b{color:var(--bad)}
 .opt[disabled]{opacity:.55;cursor:not-allowed}
+.opt:not([disabled]){cursor:pointer;color:inherit;font:inherit}
+.opt:not([disabled]):hover{background:var(--bg2)}
+.ask form{margin:0}
+.yw{display:block;font-size:13px;color:var(--mut);margin:12px 0 6px;font-weight:600}
+.yw span{font-weight:400;color:var(--faint);margin-left:6px}
+.ask textarea{display:block;width:100%;box-sizing:border-box;min-height:88px;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:inherit;font:15px/1.45 system-ui,sans-serif;resize:vertical}
+.wo{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line2);display:grid}
+.wo .opt{min-height:44px}
+.state{margin:12px 0 0;padding:8px 12px;border-radius:8px;font-size:14px}
+.state.bad{background:var(--badbg);border-left:3px solid var(--bad)}
+.state.ok{background:var(--okbg);border-left:3px solid var(--ok)}
+.ask.refused{border-left-color:var(--bad)}
 .who{font-size:12.5px;color:var(--faint);margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--line2)}
 .who b{color:var(--mut);font-weight:600}
 .find{margin:8px 0 0;padding:0;list-style:none;font-size:14px}
@@ -266,21 +278,22 @@ button{font:inherit;color:inherit}
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node you"><div class="nh"><span class="t">Now</span><span class="st">waiting on you · 2 asks</span><time>since 4 Nov 14:20</time></div>
 <p class="stage">? The Director runs grill with you in its session; answer it there.</p>
+
 <div class="ask" id="review--s2-x2">
 <div class="ah"><span class="kind">Loop exit</span><a class="aid" href="#review--s2-x2">#review--s2-x2</a><span class="since">open since 4 Nov 14:20</span></div>
 <p class="q">Review round 2 still asks for changes. Continue, accept or reject?</p><p class="subj">About <code>3f9c2ab</code></p><details class="ctx"><summary>The rest of the question</summary><div><pre>The review is review--s2-2-outcome.</pre></div></details><details class="ctx"><summary>The open findings · 1</summary><div><ul class="find"><li><span class="sev">medium</span><span><b>F4</b> a sha256 mismatch returns a 500 with the state path</span></li></ul></div></details><p class="pick">Answer</p>
 <div class="opts"><button class="opt carry" type="button" disabled><b>Continue</b><span>another round of the loop</span></button><button class="opt pos" type="button" disabled><b>Accept</b><span>take the work as it is and go on</span></button><button class="opt neg" type="button" disabled><b>Reject</b><span>stop here; nothing more is delivered</span></button></div>
-<p class="who">Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+<p class="who">Only the Guildmaster's Tailscale login can answer here. Answer in chat or with <code>guildhall decide answer</code>.</p>
 </div><div class="ask" id="grant-1">
 <div class="ah"><span class="kind">Grant</span><a class="aid" href="#grant-1">#grant-1</a><span class="since">open since 4 Nov 14:31</span></div>
 <p class="q">Grant network to build-3, so it can run the real tailscale whois contract test?</p><p class="pick">Answer</p>
 <div class="opts"><button class="opt pos" type="button" disabled><b>Approve</b><span>the grant takes effect for its attempt</span></button><button class="opt neg" type="button" disabled><b>Reject</b><span>the attempt runs without it</span></button></div>
-<p class="who">Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+<p class="who">Only the Guildmaster's Tailscale login can answer here. Answer in chat or with <code>guildhall decide answer</code>.</p>
 </div><div class="ask def" id="deliver-1">
 <div class="ah"><span class="kind">Merge</span><a class="aid" href="#deliver-1">#deliver-1</a><span class="tag you">deferred</span><span class="since">open since 4 Nov 14:35</span></div>
 <p class="q">Merge d122?</p><p class="pick">Answer</p>
 <div class="opts"><button class="opt pos" type="button" disabled><b>Merge</b><span>merge the pull request</span></button><button class="opt carry" type="button" disabled><b>Hold</b><span>keep it open for now; nothing merges</span></button><button class="opt" type="button" disabled><b>Later</b></button></div>
-<p class="who">Deferred: still yours, for later. Answer in chat or with <code>guildhall decide answer</code> for now; answering on this page comes in the next slice.</p>
+<p class="who">Deferred: still yours, for later. Only the Guildmaster's Tailscale login can answer here. Answer in chat or with <code>guildhall decide answer</code>.</p>
 </div>
 
 </li></ol></section>

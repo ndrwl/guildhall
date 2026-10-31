@@ -126,7 +126,7 @@ func (a *App) decide(args []string) int {
 	case "show":
 		out, err = findDecision(s, *repo, *task, *id)
 	case "answer":
-		out, err = answerDecision(s, *repo, *task, *id, answer)
+		out, err = answerDecision(s, *repo, *task, *id, answer, "", "")
 	}
 	if cerr := s.Close(); err == nil {
 		err = cerr
@@ -166,8 +166,10 @@ func openDecisions(s *store.Store, repo string) ([]store.Decision, error) {
 
 // answerDecision records an answer unless the decision's task is cancelled: a cancelled task's decisions are void
 // and nothing waits for them (docs/tasks.md#task-cancel). A done task's decisions, such as its audit, are answered
-// as any other.
-func answerDecision(s *store.Store, repo, task, id, answer string) (store.Receipt, error) {
+// as any other. via and by are where the answer was given and the login that gave it, both "" for decide answer and
+// store.AnsweredViaPage with the Tailscale login for the task page; the mutation id is the same for both, so an
+// answer is recorded once whichever way it comes, and a retry of the same answer from the same place replays it.
+func answerDecision(s *store.Store, repo, task, id, answer, via, by string) (store.Receipt, error) {
 	t, err := s.Task(repo, task)
 	if err != nil {
 		return store.Receipt{}, err
@@ -175,7 +177,7 @@ func answerDecision(s *store.Store, repo, task, id, answer string) (store.Receip
 	if t.State == store.TaskCancelled {
 		return store.Receipt{}, fmt.Errorf("task %s/%s is cancelled (%s); its decisions are not answered", repo, task, t.CancelReason)
 	}
-	return s.AnswerDecision(mutationID("decision-answer", repo, task, id), repo, task, id, answer)
+	return s.AnswerDecisionVia(mutationID("decision-answer", repo, task, id), repo, task, id, answer, via, by)
 }
 
 func findDecision(s *store.Store, repo, task, id string) (store.Decision, error) {
@@ -211,13 +213,22 @@ func (a *App) readText(what, name string, limit int) (string, error) {
 		defer func() { _ = f.Close() }()
 		r = f
 	}
-	// CRLF endings may double the size the limit allows.
-	most := 2*limit + 3
-	data, err := io.ReadAll(io.LimitReader(r, int64(most)+1))
-	switch {
-	case err != nil:
+	data, err := io.ReadAll(io.LimitReader(r, int64(textReadLimit(limit))+1))
+	if err != nil {
 		return "", fmt.Errorf("%s: %w", what, err)
-	case len(data) > most:
+	}
+	return normaliseText(what, data, limit)
+}
+
+// textReadLimit is the most bytes worth reading for limit bytes of LF text: CRLF endings may double the size.
+func textReadLimit(limit int) int { return 2*limit + 3 }
+
+// normaliseText is readText's rules on bytes already read, which the task page applies to its form's text too:
+// more than textReadLimit bytes and UTF-16 are refused, a leading UTF-8 byte order mark is dropped and CRLF line
+// endings become LF. The caller checks the result's size and encoding.
+func normaliseText(what string, data []byte, limit int) (string, error) {
+	switch {
+	case len(data) > textReadLimit(limit):
 		return "", fmt.Errorf("%s is larger than the limit of %d bytes", what, limit)
 	case bytes.HasPrefix(data, []byte{0xff, 0xfe}) || bytes.HasPrefix(data, []byte{0xfe, 0xff}):
 		return "", fmt.Errorf("%s is UTF-16; write it as UTF-8, for example with Set-Content -Encoding utf8", what)
