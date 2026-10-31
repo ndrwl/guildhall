@@ -167,3 +167,38 @@ func TestTabLauncherRefusesBusyOrUnknownShell(t *testing.T) {
 		t.Errorf("unsupported shell received %q", sent)
 	}
 }
+
+// createdTabs is a TabHost whose CreateTab creates the tab and then fails, as
+// HerdrTabs does when it leaves the workspace's starting shell open.
+type createdTabs struct{ *fakeTabs }
+
+func (h createdTabs) CreateTab(ctx context.Context, spec herdr.TabSpec) (TabRef, error) {
+	ref, err := h.fakeTabs.CreateTab(ctx, spec)
+	if err != nil {
+		return TabRef{}, err
+	}
+	return ref, errors.New("replacement tab created, but starting shell left open")
+}
+
+// TestTabLauncherOpenReturnsTheCreatedTabWithALaterError: a failure after the
+// tab exists, in the host's CreateTab or in waiting for the shell, still names
+// the tab, so a launch can record what it created (d91).
+func TestTabLauncherOpenReturnsTheCreatedTabWithALaterError(t *testing.T) {
+	f := newFakeTabs("lab", "bash")
+	l := TabLauncher{Host: createdTabs{f}, WorkspaceID: "w1", ShellReady: time.Minute, Poll: time.Millisecond}
+	tab, _, err := l.Open(context.Background(), "artisan a", "/work", nil)
+	if err == nil || tab.TabID == "" || len(f.created) != 1 {
+		t.Errorf("Open after a cleanup failure = %+v, %v; created %+v", tab, err, f.created)
+	}
+	busy := newFakeTabs("lab", "bash")
+	busy.busyReads = 1 << 30
+	// timing:allow deliberate timeout of an in-memory pane which never becomes ready; no startup is expected.
+	l = TabLauncher{Host: busy, WorkspaceID: "w1", ShellReady: 20 * time.Millisecond, Poll: time.Millisecond}
+	tab, _, err = l.Open(context.Background(), "artisan a", "/work", nil)
+	if err == nil || tab.TabID == "" || len(busy.created) != 1 {
+		t.Errorf("Open of a never-idle shell = %+v, %v", tab, err)
+	}
+	if sent := busy.sentLines(); len(sent) != 0 {
+		t.Errorf("Open typed %q", sent)
+	}
+}

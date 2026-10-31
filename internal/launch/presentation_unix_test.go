@@ -500,7 +500,19 @@ func TestTaskLockedLaunchRecoversLaunchingClaim(t *testing.T) {
 			if string(b) != want {
 				t.Fatalf("claim = %s, want %s", b, want)
 			}
-			recoversClaim(t, p, spec, panes, recovery{abandoned: "director-2"})
+			rec := recovery{abandoned: "director-2"}
+			if phase == "workspace" {
+				// The workspace holds no tab, so no recorded tab to close it
+				// through, and is left open. Real Herdr's WorkspaceCreate
+				// always returns a starting tab, which the claim records, so a
+				// real recovery closes through that tab; the HerdrTabs run of
+				// adaptertest.AbandonedCloserContract covers that path.
+				rec.leftOpen = true
+			}
+			recoversClaim(t, p, spec, panes, rec)
+			if r, _ := claimRecoveredEvent(t, p)["reason"].(string); rec.leftOpen && !strings.Contains(r, "holds no recorded tab") {
+				t.Fatalf("reason = %q", r)
+			}
 		})
 	}
 }

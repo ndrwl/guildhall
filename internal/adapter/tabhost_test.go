@@ -566,6 +566,14 @@ func stubHerdr(dir string, args []string) int {
 		if !ok {
 			return fail("pane_not_found", "pane not found")
 		}
+		// A one-shot change trigger closes the pane's tab, as another client
+		// could while a close checks the workspace's tabs.
+		ws, suffix, _ := strings.Cut(args[3], ":p")
+		if trigger := filepath.Join(dir, session+"-change-"+ws); os.Remove(trigger) == nil {
+			if os.Remove(tabFile(ws+":t"+suffix)) != nil {
+				return 2
+			}
+		}
 		state, _ := os.ReadFile(p)
 		fg := `{"pid":10,"name":"bash","argv":["bash"]}`
 		if string(state) == "busy" || string(state) == "startup" {
