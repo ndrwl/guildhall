@@ -176,7 +176,9 @@ func (s *Session) readEvents(now time.Time) {
 }
 
 // Finish renders what is left once the launcher has exited: a last line with no newline, and any pending event.
+// It closes the session's files whether or not rendering succeeds.
 func (s *Session) Finish(now time.Time) error {
+	defer s.Close()
 	if err := s.Poll(now); err != nil {
 		return err
 	}
@@ -184,7 +186,12 @@ func (s *Session) Finish(now time.Time) error {
 		s.m.Line(string(l), s.seen)
 	}
 	s.m.Flush()
+	return s.r.Err()
+}
+
+// Close closes the files the session tails, which Windows cannot remove while they are open. It is safe to call
+// more than once; the session reads nothing more afterwards.
+func (s *Session) Close() {
 	s.log.close()
 	s.events.close()
-	return s.r.Err()
 }

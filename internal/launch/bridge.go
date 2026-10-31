@@ -92,6 +92,7 @@ func presentWorkbench(b Bridge, logPath string, done <-chan error, out io.Writer
 	k := b.Attempt.Key
 	r.Header(k.Repository, k.TaskID, k.Step, strconv.Itoa(k.Attempt))
 	s := workbench.NewSession(r, logPath, b.Attempt.Dir(), now())
+	defer s.Close()
 	for {
 		// Output errors are presentation errors only: the child remains owned.
 		if err := s.Poll(now()); err != nil {

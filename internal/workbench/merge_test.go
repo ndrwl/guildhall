@@ -192,6 +192,7 @@ func TestSessionReplaysFromTheStart(t *testing.T) {
 	now := at.Add(6 * time.Hour)
 	got := render(func(r *Renderer) {
 		s := NewSession(r, logPath, dir, now)
+		defer s.Close()
 		if err := s.Poll(now); err != nil {
 			t.Fatal(err)
 		}
@@ -240,6 +241,7 @@ func TestSessionTailsLiveAppends(t *testing.T) {
 	var out bytes.Buffer
 	r := NewRenderer(&out, Options{Width: 80, Location: time.UTC})
 	s := NewSession(r, logPath, dir, at)
+	defer s.Close()
 	poll := func() {
 		t.Helper()
 		if err := s.Poll(at); err != nil {
@@ -286,6 +288,7 @@ func TestQuietLines(t *testing.T) {
 	var out bytes.Buffer
 	r := NewRenderer(&out, Options{Width: 80})
 	s := NewSession(r, logPath, dir, at)
+	defer s.Close()
 	for _, d := range []time.Duration{0, 30 * time.Second, 59 * time.Second, time.Minute, 90 * time.Second, 2 * time.Minute, 3 * time.Minute, 4 * time.Minute, 5 * time.Minute} {
 		if err := s.Poll(at.Add(d)); err != nil {
 			t.Fatal(err)
@@ -315,6 +318,7 @@ func TestQuietLines(t *testing.T) {
 func TestSessionReportsOutputErrors(t *testing.T) {
 	logPath, dir := writeAttempt(t, sampleAttempt(), true)
 	s := NewSession(NewRenderer(&failingWriter{}, Options{}), logPath, dir, at)
+	defer s.Close()
 	if err := s.Poll(at); err == nil {
 		t.Error("a failing pane reported no error")
 	}

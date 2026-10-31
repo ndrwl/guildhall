@@ -108,9 +108,10 @@ func TestShellCommandRoundTrips(t *testing.T) {
 				}
 				lines[i] = line
 			}
-			script := strings.Join(lines, "\n")
-			if b, err := sh.run(path, script).CombinedOutput(); err != nil {
-				t.Errorf("%s ran the lines: %v\n%s", sh.name, err, b)
+			for _, script := range scriptBatches(lines, maxScriptBytes) {
+				if b, err := sh.run(path, script).CombinedOutput(); err != nil {
+					t.Errorf("%s ran the lines: %v\n%s", sh.name, err, b)
+				}
 			}
 			for i, arg := range sh.args {
 				t.Run(fmt.Sprintf("%q", arg), func(t *testing.T) {
@@ -128,6 +129,39 @@ func TestShellCommandRoundTrips(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// maxScriptBytes bounds one shell run's script. Git Bash on Windows cuts a -c script given on the command line at
+// about 8 KiB, which left the last lines' quotes open, so the lines are run in batches well under that.
+const maxScriptBytes = 4096
+
+// scriptBatches joins lines into scripts of at most limit bytes each, except that a single longer line is a
+// script of its own.
+func scriptBatches(lines []string, limit int) []string {
+	var scripts []string
+	var cur []string
+	size := 0
+	for _, l := range lines {
+		if len(cur) > 0 && size+1+len(l) > limit {
+			scripts = append(scripts, strings.Join(cur, "\n"))
+			cur, size = nil, 0
+		}
+		if len(cur) > 0 {
+			size++
+		}
+		cur, size = append(cur, l), size+len(l)
+	}
+	if len(cur) > 0 {
+		scripts = append(scripts, strings.Join(cur, "\n"))
+	}
+	return scripts
+}
+
+func TestScriptBatches(t *testing.T) {
+	got := scriptBatches([]string{"aaaa", "bb", "c", "dddddddddd", "e"}, 8)
+	if want := []string{"aaaa\nbb", "c", "dddddddddd", "e"}; !slices.Equal(got, want) {
+		t.Errorf("scriptBatches = %q, want %q", got, want)
 	}
 }
 
