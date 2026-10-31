@@ -92,7 +92,7 @@ A task whose [dependencies](tasks.md#dependencies) have not all merged waits at 
 `--ignore-deps --reason <text>` starts it anyway: before advancing, the command records the Director's dependency override, with the reason, under mutation id `dependency-override.<repo>.<task>`, then advances as usual, so the task passes the gate, its branch is fast-forwarded to the current main, and it is never held again.
 The override shows in [`task timeline`](tasks.md#inspection) as `dependency_override`, with its `reason` and `overridden_at`, and as an `override-dependencies` event.
 Repeating the command with the same reason replays the override; there is no engine event for it.
-The command refuses, recording nothing: `--ignore-deps` without `--reason` or with an empty one, `--reason` without `--ignore-deps` and a reason over 64 KiB, each a usage error (exit 2); a task that is done or cancelled, a task with no `depends_on`, a second override with another reason ("already overridden"), and new work while the Director session is [recovering](director.md#ready), each exit 1.
+The command refuses, recording nothing: `--ignore-deps` without `--reason` or with an empty one, `--reason` without `--ignore-deps` and a reason over 64 KiB, each a usage error (exit 2); a task that is done or cancelled, a task with no [effective dependencies](tasks.md#changing-dependencies), a second override with another reason ("already overridden"), and new work while the Director session is [recovering](director.md#ready), each exit 1.
 
 ## `step done`
 
@@ -200,7 +200,7 @@ A task's close time is the commit time of its `task-state` receipt, or for a [ca
 A task is prunable only when all of these hold, and is otherwise listed as skipped with the reason:
 
 - it is `done` or `cancelled` and its close is at least `prune_after` ago (`too recent`);
-- no `open` task names it in `depends_on` (`open dependant`);
+- no `open` task has it among its [effective dependencies](tasks.md#changing-dependencies) (`open dependant`);
 - it has no open `audit` decision, one neither answered nor void (`audit ... open`); no close opens one any more, but one an earlier release opened still holds its task until answered ([decision](decisions/retire-quality-audit.md));
 - no `self-review-<n>.json` under `<copy>/quality/<repo>/<task>/` has a criterion still pending its judge, or cannot be read (`self-review ... pending`);
 - it has no unfinished attempt, judge attempts included, and no unreleased ownership record;

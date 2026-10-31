@@ -33,6 +33,8 @@ type Records struct {
 	full      []store.FullReview
 	contexts  []store.TaskContext
 	links     []store.TaskLink
+	// dependencies are the tasks' dependency records.
+	dependencies []store.TaskDependency
 	// taskOverrides are the tasks' override records; overrides their dependency overrides.
 	taskOverrides []store.TaskOverride
 	overrides     map[[2]string]store.DependencyOverride
@@ -358,6 +360,98 @@ func (r *Records) TaskLinks(repository, taskID string) ([]store.TaskLink, error)
 	return list(r, repository, taskID, r.links, func(l store.TaskLink) (string, string) { return l.Repository, l.TaskID })
 }
 
+// AddTaskDependency records the task's next dependency record on an open task, as store.AddTaskDependency does,
+// without its checks of the ids and the text.
+func (r *Records) AddTaskDependency(mutationID, repository, taskID string, op store.TaskDependencyOp, dep store.TaskRef, prior int, text string) (store.Receipt, error) {
+	req := struct {
+		Repository, TaskID, Text string
+		Op                       store.TaskDependencyOp
+		Dependency               store.TaskRef
+		Prior                    int
+	}{repository, taskID, text, op, dep, prior}
+	self := store.TaskRef{Repository: repository, ID: taskID}
+	return r.mutate(mutationID, "add-task-dependency", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID = repository, taskID
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case op != store.TaskDependencyAdd && op != store.TaskDependencyRemove:
+			return fmt.Errorf("%w: task dependency op %q", store.ErrInvalid, op)
+		case dep == self:
+			return fmt.Errorf("%w: task %s cannot depend on itself", store.ErrInvalid, store.DependencyName(self))
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		}
+		d, ok := r.tasks[[2]string{dep.Repository, dep.ID}]
+		if !ok {
+			return fmt.Errorf("dependency: task %s: %w", store.DependencyName(dep), store.ErrNotFound)
+		}
+		mine, n := 0, 0
+		for _, x := range r.dependencies {
+			if x.Repository == repository && x.TaskID == taskID {
+				n = x.Number
+				if x.Dependency == dep {
+					mine++
+				}
+			}
+		}
+		effective := slices.Contains(r.effectiveDependencies(self), dep)
+		switch {
+		case mine != prior:
+			return fmt.Errorf("%w: %d dependency records for %s, not %d", store.ErrExists, mine, store.DependencyName(dep), prior)
+		case op == store.TaskDependencyAdd && effective:
+			return fmt.Errorf("%w: already depends on %s", store.ErrExists, store.DependencyName(dep))
+		case op == store.TaskDependencyAdd && d.State == store.TaskCancelled:
+			return fmt.Errorf("%w: %s is cancelled", store.ErrInvalid, store.DependencyName(dep))
+		case op == store.TaskDependencyRemove && !effective:
+			return fmt.Errorf("%w: does not depend on %s", store.ErrInvalid, store.DependencyName(dep))
+		case op == store.TaskDependencyAdd && r.reaches(dep, self):
+			return fmt.Errorf("%w: depending on %s would make a cycle", store.ErrInvalid, store.DependencyName(dep))
+		}
+		x := store.TaskDependency{Repository: repository, TaskID: taskID, Number: n + 1, Op: op, Dependency: dep, Text: text, Author: store.TaskDependencyAuthor}
+		rc.CommittedAt = r.now()
+		x.AddedAt, rc.Record = rc.CommittedAt, store.TaskDependencyRecord(x.Number)
+		r.dependencies = append(r.dependencies, x)
+		return nil
+	})
+}
+
+// effectiveDependencies is a task's effective dependencies; r.mu is held.
+func (r *Records) effectiveDependencies(ref store.TaskRef) []store.TaskRef {
+	var mine []store.TaskDependency
+	for _, x := range r.dependencies {
+		if x.Repository == ref.Repository && x.TaskID == ref.ID {
+			mine = append(mine, x)
+		}
+	}
+	return store.EffectiveDependencies(r.tasks[[2]string{ref.Repository, ref.ID}], mine)
+}
+
+// reaches reports whether a walk of effective dependencies from start reaches target; r.mu is held.
+func (r *Records) reaches(start, target store.TaskRef) bool {
+	seen := map[store.TaskRef]bool{start: true}
+	for queue := []store.TaskRef{start}; len(queue) > 0; queue = queue[1:] {
+		if queue[0] == target {
+			return true
+		}
+		for _, d := range r.effectiveDependencies(queue[0]) {
+			if !seen[d] {
+				seen[d] = true
+				queue = append(queue, d)
+			}
+		}
+	}
+	return false
+}
+
+// TaskDependencies implements interp.Records.
+func (r *Records) TaskDependencies(repository, taskID string) ([]store.TaskDependency, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return list(r, repository, taskID, r.dependencies, func(x store.TaskDependency) (string, string) { return x.Repository, x.TaskID })
+}
+
 // AddTaskOverride records the task's next override record on an open task, as store.AddTaskOverride does, without
 // its checks of the ids, the key, the value and the text.
 func (r *Records) AddTaskOverride(mutationID, repository, taskID string, op store.TaskOverrideOp, key, value string, prior int, text string) (store.Receipt, error) {
@@ -485,7 +579,7 @@ func (r *Records) OverrideDependencies(mutationID, repository, taskID, reason st
 			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
 		case t.State != store.TaskOpen:
 			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
-		case len(t.DependsOn) == 0:
+		case len(r.effectiveDependencies(store.TaskRef{Repository: repository, ID: taskID})) == 0:
 			return fmt.Errorf("%w: task %s/%s has no dependencies to override", store.ErrInvalid, repository, taskID)
 		}
 		if _, ok := r.overrides[[2]string{repository, taskID}]; ok {
@@ -1008,6 +1102,9 @@ type RecordsHarness struct {
 	// AddTaskOverride records the Director's next override record on a task, as store.AddTaskOverride does; nil
 	// skips the override cases.
 	AddTaskOverride func(mutationID, repository, taskID string, op store.TaskOverrideOp, key, value string, prior int, text string) (store.Receipt, error)
+	// AddTaskDependency records the Director's next dependency record on a task, as store.AddTaskDependency does; nil
+	// skips the dependency-change cases.
+	AddTaskDependency func(mutationID, repository, taskID string, op store.TaskDependencyOp, dep store.TaskRef, prior int, text string) (store.Receipt, error)
 	// OverrideDependencies records the Director's dependency override, as store.OverrideDependencies does.
 	OverrideDependencies func(mutationID, repository, taskID, reason string) (store.Receipt, error)
 	// SetTaskPriority records a task's priority, as store.SetTaskPriority does, which orders the start queue.
@@ -1030,7 +1127,7 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r, clock := NewRecords(), NewClock()
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, AddTaskOverride: r.AddTaskOverride, OverrideDependencies: r.OverrideDependencies,
+		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, AddTaskOverride: r.AddTaskOverride, AddTaskDependency: r.AddTaskDependency, OverrideDependencies: r.OverrideDependencies,
 		SetTaskPriority: r.SetTaskPriority, PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
 }
 
@@ -1697,6 +1794,80 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if got, err := h.Records.TaskOverrides("app", "t8"); err != nil || len(got) != 0 {
 			t.Errorf("TaskOverrides of an unknown task = %+v, %v", got, err)
 		}
+	})
+
+	t.Run("lists dependency records in order and refuses one that is stale, repeated, cyclic or to nothing", func(t *testing.T) {
+		h := setup(t)
+		if h.AddTaskDependency == nil {
+			t.Skip("the harness records no dependency changes")
+		}
+		for _, id := range []string{"t2", "t3"} {
+			dep := task
+			dep.ID = id
+			if _, err := h.CreateTask("task:app:"+id, dep); err != nil {
+				t.Fatal(err)
+			}
+		}
+		lib := task
+		lib.Repository, lib.ID, lib.DependsOn = "lib", "t4", []store.TaskRef{{Repository: "app", ID: "t7"}}
+		if _, err := h.CreateTask("task:lib:t4", lib); err != nil {
+			t.Fatal(err)
+		}
+		t2, t3, t4 := store.TaskRef{Repository: "app", ID: "t2"}, store.TaskRef{Repository: "app", ID: "t3"}, store.TaskRef{Repository: "lib", ID: "t4"}
+		_, err := h.AddTaskDependency("dep-x", "app", "t7", store.TaskDependencyAdd, store.TaskRef{Repository: "app", ID: "t9"}, 0, "Wait for it.")
+		want(t, "AddTaskDependency of an unknown task", err, store.ErrNotFound)
+		_, err = h.AddTaskDependency("dep-y", "app", "t7", store.TaskDependencyRemove, t2, 0, "Drop it.")
+		want(t, "AddTaskDependency removing a dependency not effective", err, store.ErrInvalid)
+		_, err = h.AddTaskDependency("dep-z", "app", "t7", store.TaskDependencyAdd, t4, 0, "Wait for it.")
+		want(t, "AddTaskDependency closing a cycle across repositories", err, store.ErrInvalid)
+		_, err = h.AddTaskDependency("dep-self", "app", "t7", store.TaskDependencyAdd, store.TaskRef{Repository: "app", ID: "t7"}, 0, "Wait for it.")
+		want(t, "AddTaskDependency on itself", err, store.ErrInvalid)
+		var receipts []store.Receipt
+		steps := []struct {
+			op    store.TaskDependencyOp
+			dep   store.TaskRef
+			prior int
+		}{{store.TaskDependencyAdd, t2, 0}, {store.TaskDependencyAdd, t3, 0}, {store.TaskDependencyRemove, t2, 1}}
+		for i, st := range steps {
+			rc, err := h.AddTaskDependency(fmt.Sprintf("dep-%d", i+1), "app", "t7", st.op, st.dep, st.prior, "Guildmaster: "+string(st.op)+".")
+			if err != nil || rc.Record != store.TaskDependencyRecord(i+1) || rc.Repository != "app" || rc.TaskID != "t7" {
+				t.Fatalf("AddTaskDependency %d = %+v, %v", i+1, rc, err)
+			}
+			receipts = append(receipts, rc)
+		}
+		if replay, err := h.AddTaskDependency("dep-1", "app", "t7", store.TaskDependencyAdd, t2, 0, "Guildmaster: add."); err != nil || replay != receipts[0] {
+			t.Fatalf("replay = %+v, %v", replay, err)
+		}
+		_, err = h.AddTaskDependency("dep-4", "app", "t7", store.TaskDependencyAdd, t3, 0, "Guildmaster: add.")
+		want(t, "AddTaskDependency with a stale prior count", err, store.ErrExists)
+		_, err = h.AddTaskDependency("dep-5", "app", "t7", store.TaskDependencyAdd, t3, 1, "Guildmaster: add.")
+		want(t, "AddTaskDependency of one already effective", err, store.ErrExists)
+		got, err := h.Records.TaskDependencies("app", "t7")
+		if err != nil || len(got) != len(steps) {
+			t.Fatalf("TaskDependencies = %+v, %v", got, err)
+		}
+		for i, x := range got {
+			w := store.TaskDependency{Repository: "app", TaskID: "t7", Number: i + 1, Op: steps[i].op, Dependency: steps[i].dep,
+				Text: "Guildmaster: " + string(steps[i].op) + ".", Author: store.TaskDependencyAuthor, AddedAt: receipts[i].CommittedAt}
+			if x != w {
+				t.Errorf("TaskDependencies[%d] = %+v, want %+v", i, x, w)
+			}
+		}
+		self, err := h.Records.Task("app", "t7")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if eff := store.EffectiveDependencies(self, got); !slices.Equal(eff, []store.TaskRef{t3}) {
+			t.Errorf("EffectiveDependencies = %+v, want only %+v", eff, t3)
+		}
+		if got, err := h.Records.TaskDependencies("app", "t8"); err != nil || len(got) != 0 {
+			t.Errorf("TaskDependencies of an unknown task = %+v, %v", got, err)
+		}
+		if _, err := h.Records.SetTaskState("close-t7", "app", "t7", store.TaskDone); err != nil {
+			t.Fatal(err)
+		}
+		_, err = h.AddTaskDependency("dep-6", "app", "t7", store.TaskDependencyRemove, t3, 1, "Too late.")
+		want(t, "AddTaskDependency on a done task", err, store.ErrInvalid)
 	})
 
 	t.Run("reads a dependency override", func(t *testing.T) {

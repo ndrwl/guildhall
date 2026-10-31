@@ -139,7 +139,8 @@ func (a *App) taskStart(args []string) int {
 	return a.advancedOrCancelled(f, ev.Task, n, err)
 }
 
-// overrideDependencies records the Director's dependency override of an open task that has dependencies, under a
+// overrideDependencies records the Director's dependency override of an open task that has effective dependencies
+// (store.EffectiveDependencies), under a
 // mutation id derived from the task, so repeating the command with the same reason replays it and the advance that
 // follows passes the dependency gate (docs/running.md#task-start). A second override with another reason is refused.
 func overrideDependencies(records storeRecords, repo, task, reason string) error {
@@ -148,12 +149,16 @@ func overrideDependencies(records storeRecords, repo, task, reason string) error
 	}
 	_, err := withRecords(records, false, nil, func(s *store.Store) (struct{}, error) {
 		t, err := s.Task(repo, task)
+		if err != nil {
+			return struct{}{}, err
+		}
+		changes, err := s.TaskDependencies(repo, task)
 		switch {
 		case err != nil:
 			return struct{}{}, err
 		case t.State != store.TaskOpen:
 			return struct{}{}, fmt.Errorf("--ignore-deps: task %s/%s is %s", repo, task, t.State)
-		case len(t.DependsOn) == 0:
+		case len(store.EffectiveDependencies(t, changes)) == 0:
 			return struct{}{}, fmt.Errorf("--ignore-deps: task %s/%s has no dependencies", repo, task)
 		}
 		_, err = s.OverrideDependencies(dependencyOverrideMutation(repo, task), repo, task, reason)
@@ -722,6 +727,10 @@ func (p storeRecords) TaskLinks(repo, id string) ([]store.TaskLink, error) {
 
 func (p storeRecords) TaskOverrides(repo, id string) ([]store.TaskOverride, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskOverride, error) { return s.TaskOverrides(repo, id) })
+}
+
+func (p storeRecords) TaskDependencies(repo, id string) ([]store.TaskDependency, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskDependency, error) { return s.TaskDependencies(repo, id) })
 }
 
 func (p storeRecords) FullReviews(repo, id string) ([]store.FullReview, error) {

@@ -34,7 +34,9 @@ type RepositoryCounts struct {
 	TaskLinks    int
 	// TaskOverrides counts task override records, sets and unsets alike.
 	TaskOverrides int
-	Owners        int
+	// TaskDependencies counts task dependency records, adds and removes alike.
+	TaskDependencies int
+	Owners           int
 	// UncontainedStarting counts the owners in starting with no containment
 	// recorded: once their launcher is gone nothing can prove them exited
 	// (docs/artisan.md#limits).
@@ -115,8 +117,8 @@ func (s *Store) Doctor() (Report, error) {
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketRulings): &counts.Rulings,
 				string(bucketTaskContexts): &counts.TaskContexts, string(bucketTaskLinks): &counts.TaskLinks,
-				string(bucketTaskOverrides): &counts.TaskOverrides,
-				string(bucketOwners):        &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
+				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketTaskDependencies): &counts.TaskDependencies,
+				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 				string(bucketPruned): &counts.Pruned,
 			} {
 				b := tx.Bucket(bucketRepos).Bucket(repo).Bucket([]byte(name))
@@ -163,6 +165,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(TaskLink)
 	case string(bucketTaskOverrides):
 		rec = new(TaskOverride)
+	case string(bucketTaskDependencies):
+		rec = new(TaskDependency)
 	case string(bucketOwners):
 		rec = new(Ownership)
 	case string(bucketMessages):

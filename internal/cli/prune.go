@@ -148,7 +148,7 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Every open task's dependencies, across repositories: a done task one of them names is kept.
+		// Every open task's effective dependencies, across repositories: a done task one of them names is kept.
 		dependants := map[store.TaskRef][]store.TaskRef{}
 		all := map[string][]store.Task{}
 		for _, repo := range repos {
@@ -161,7 +161,11 @@ func (p *pruner) selectTasks(repository, taskID string) ([]pruneTask, error) {
 				if t.State != store.TaskOpen {
 					continue
 				}
-				for _, d := range t.DependsOn {
+				changes, err := s.TaskDependencies(t.Repository, t.ID)
+				if err != nil {
+					return nil, err
+				}
+				for _, d := range store.EffectiveDependencies(t, changes) {
 					dependants[d] = append(dependants[d], store.TaskRef{Repository: t.Repository, ID: t.ID})
 				}
 			}

@@ -87,7 +87,8 @@ A finished outcome without a readable result is refused, not guessed.
 
 ## Dependency
 
-- A task's dependencies are the tasks named by `task new --depends-on`, fixed at creation ([dependencies](tasks.md#dependencies)).
+- A task's dependencies are the tasks named by `task new --depends-on`, which the task record keeps ([dependencies](tasks.md#dependencies)).
+- A task's **effective dependencies** are that list with the Director's later `task depends add|remove` records applied in order; every reader of dependencies uses them ([changing dependencies](tasks.md#changing-dependencies)).
 - The **dependency gate** stands before a task's first step not run by the Director, such as research after the grill: it passes once every dependency is `done` (merged), or the Director overrides ([the dependency gate](interpreter.md#the-dependency-gate)).
 - A task **held by a dependency** is one the gate holds: its last advance recorded nothing and waits `{"wait":"dependencies"}`, the Director has a `dependency-held` message and `director status` a `dependencies` item.
 - A **dependency override** is the Director's recorded decision, with a reason, to start a held task anyway, `task start --ignore-deps --reason <text>`; it lasts for the rest of the task's life ([`task start`](running.md#task-start)).

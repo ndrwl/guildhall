@@ -23,6 +23,10 @@ guildhall task start --repo app t-12
 
 Choose a short task id of lowercase letters, digits and hyphens that is new in the repository, and a title in the Guildmaster's words that is short, at most 100 characters.
 Add `--depends-on <repo>/<task>` when the work must wait for another task, and `--fixes <repo>/<task>` when it fixes a defect an earlier task introduced, so its pull request says so.
+To change an open task's dependencies later, run `guildhall task depends add|remove --repo <id> --reason <text> <task> <repo>/<dependency>`.
+Do it on the Guildmaster's word, or when you replace a task that has dependents; no decision is needed, but tell the Guildmaster in your reply.
+The change applies at the task's next advance through the dependency gate and never stops running work.
+When the receipt has a `note`, the change holds nothing, because the task is past the gate or has a dependency override; say so.
 Set its priority from the Guildmaster's words with `--priority <level>`: `p0 urgent`, `p1 highest`, `p2 high`, `p3 normal` (the default, so leave it off when they say nothing), `p4 low` or `p5 someday`.
 When they later say a task matters more or less, run `guildhall task priority --repo <id> <task> <level>`; priority orders the merge queue and the start queue.
 
@@ -209,6 +213,10 @@ You may choose any appropriate recovery; the available options are not a fixed p
   The next review keeps its previous evidence and scopes to the resolution only when the rebase classifier proves it appropriate; other changes receive full review, and republish updates the same open PR.
 - Hold a failed or stopped attempt on purpose with `guildhall step park` and a reason, or put a Guildmaster-requested `hold` on an existing merge decision.
 - Cancel the task, following [Cancelling a task](#cancelling-a-task).
+  To replace a task, create the replacement and cancel the old one as that section says, then repoint each dependent named in a `dependency-cancelled` message:
+  `guildhall task depends remove --repo app --reason "t-12 was replaced by t-14." t-13 app/t-12`, then
+  `guildhall task depends add --repo app --reason "t-12 was replaced by t-14." t-13 app/t-14`.
+  Tell the Guildmaster which dependents now wait for the replacement.
 - Record a task done whose PR was merged outside Guildhall, by hand on the forge: `guildhall task reconcile --repo app t-12`.
   Every advance does this by itself, sending a `merged` message that says the PR was merged outside Guildhall and names both heads; reconcile does it now, stopping any running attempt first, and prints `done: ...` or `no change: ...`.
   Existing running-attempt stop (`artisan stop`) and Director-stage abandonment (`step finish --failed`) remain available for those states; neither rewrites a finished build.

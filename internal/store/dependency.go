@@ -21,8 +21,8 @@ type DependencyOverride struct {
 const DependencyOverrideRecord = "dependency-override"
 
 // OverrideDependencies records the Director's dependency override, receipt record dependency-override, on an open
-// task that has dependencies. A blank or oversized reason is refused with ErrInvalid, as is a closed task or one
-// with no depends_on; an unknown task is ErrNotFound and a second override of the task, under another mutation id,
+// task that has effective dependencies (EffectiveDependencies). A blank or oversized reason is refused with
+// ErrInvalid, as is a closed task or one with no effective dependencies; an unknown task is ErrNotFound and a second override of the task, under another mutation id,
 // is ErrExists.
 func (s *Store) OverrideDependencies(mutationID, repository, taskID, reason string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
@@ -34,11 +34,14 @@ func (s *Store) OverrideDependencies(mutationID, repository, taskID, reason stri
 	o := DependencyOverride{Repository: repository, TaskID: taskID, Reason: reason}
 	return s.mutate(mutationID, "override-dependencies", o, func(tx *bolt.Tx, rc *Receipt) error {
 		rc.Repository, rc.TaskID, rc.Record = repository, taskID, DependencyOverrideRecord
-		t, err := openTask(tx, repository, taskID)
+		if _, err := openTask(tx, repository, taskID); err != nil {
+			return err
+		}
+		deps, err := effectiveDependencies(tx, TaskRef{Repository: repository, ID: taskID})
 		if err != nil {
 			return err
 		}
-		if len(t.DependsOn) == 0 {
+		if len(deps) == 0 {
 			return invalid("task %s/%s has no dependencies to override", repository, taskID)
 		}
 		b, err := createRepoBucket(tx, repository, bucketDependencyOverrides)

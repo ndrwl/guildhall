@@ -61,6 +61,10 @@ type Records interface {
 	// set|unset), never the engine. An advance reads them once, under the task lock, for the task's effective config
 	// (ApplyTaskOverrides).
 	TaskOverrides(repository, taskID string) ([]store.TaskOverride, error)
+	// TaskDependencies lists a task's dependency records by number; the Director records them (guildhall task
+	// depends add|remove), never the engine. The gate reads the task's effective dependencies from them
+	// (store.EffectiveDependencies).
+	TaskDependencies(repository, taskID string) ([]store.TaskDependency, error)
 	StartAttempt(mutationID, repository, taskID, step string) (store.Receipt, error)
 	StartCappedAttempt(mutationID, repository, taskID, step string, caps store.AttemptCaps) (store.Receipt, error)
 	StartDirectorAttempt(mutationID, repository, taskID, step string, hold bool) (store.Receipt, error)

@@ -37,6 +37,7 @@ var taskUsage = `usage:
   guildhall task grant create|revoke|list ... (guildhall task grant for its usage)
   guildhall task context add|list ... (guildhall task context for its usage)
   guildhall task link add|remove|list ... (guildhall task link for its usage)
+  guildhall task depends add|remove ... (guildhall task depends for its usage)
   guildhall task override set|unset|list ... (guildhall task override for its usage)
   guildhall task design --repo <id> --task <id> --brief <file|-> ... (guildhall task design --help for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
@@ -166,6 +167,9 @@ func (a *App) task(args []string) int {
 	}
 	if sub == "link" {
 		return a.taskLink(args[1:])
+	}
+	if sub == "depends" {
+		return a.taskDepends(args[1:])
 	}
 	if sub == "override" {
 		return a.taskOverride(args[1:])
@@ -701,15 +705,16 @@ func showTask(s *store.Store, cfg *config.Config, repo, id string) (taskDetail, 
 	return d, nil
 }
 
-// taskView is a task as task list and task show print it: the immutable record, its priority and, while it waits
-// in its repository's merge queue, its entry there.
+// taskView is a task as task list and task show print it: the immutable record with its effective dependencies as
+// depends_on, its priority and, while it waits in its repository's merge queue, its entry there.
 type taskView struct {
 	store.Task
 	Priority   store.Priority   `json:"priority"`
 	MergeQueue *mergeQueueEntry `json:"merge_queue,omitempty"`
 }
 
-// taskViews reads each task's priority, DefaultPriority when none was set, and merge-queue entry.
+// taskViews reads each task's priority, DefaultPriority when none was set, and merge-queue entry, and gives each its
+// effective dependencies (store.EffectiveDependencies) as depends_on, not the list it was created with.
 func taskViews(s *store.Store, tasks []store.Task) ([]taskView, error) {
 	priorities := map[string]map[string]store.Priority{}
 	var repos []string
@@ -736,6 +741,11 @@ func taskViews(s *store.Store, tasks []store.Task) ([]taskView, error) {
 		if !ok {
 			p = store.DefaultPriority
 		}
+		changes, err := s.TaskDependencies(t.Repository, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		t.DependsOn = store.EffectiveDependencies(t, changes)
 		out = append(out, taskView{Task: t, Priority: p, MergeQueue: queued[t.Repository+"/"+t.ID]})
 	}
 	return out, nil

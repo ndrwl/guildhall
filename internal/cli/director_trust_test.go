@@ -73,7 +73,6 @@ func TestDirectorClaudeReloadReusesTrustedWorkspace(t *testing.T) {
 	}
 	holdsOne(t, dir, 2)
 	copyRun(t, dir, "director", "stop", "--now")
-	copyRun(t, dir, "director", "turn-ended")
 	if code := ended(t, done); code != 0 {
 		t.Fatalf("supervisor exit %d", code)
 	}

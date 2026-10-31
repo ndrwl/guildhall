@@ -69,6 +69,11 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 				return s.AddTaskOverride(m, repo, id, op, key, value, prior, text)
 			})
 		},
+		AddTaskDependency: func(m, repo, id string, op store.TaskDependencyOp, dep store.TaskRef, prior int, text string) (store.Receipt, error) {
+			return write(func(s *store.Store) (store.Receipt, error) {
+				return s.AddTaskDependency(m, repo, id, op, dep, prior, text)
+			})
+		},
 		OverrideDependencies: func(m, repo, id, reason string) (store.Receipt, error) {
 			return write(func(s *store.Store) (store.Receipt, error) { return s.OverrideDependencies(m, repo, id, reason) })
 		},
