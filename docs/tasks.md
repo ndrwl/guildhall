@@ -143,7 +143,7 @@ A held task also keeps its dependents waiting, whose `dependency-held` message r
 ## Task cancel
 
 `task cancel --reason <text> <task>` ends an open task for good without delivering it ([decision](decisions/task-cancel.md)).
-The Director runs it only at the Guildmaster's request; it cannot be undone, and work that is wanted again is a new task.
+The Director first asks the Guildmaster, naming each task, and runs it only after their yes, one command per task; it cannot be undone, and work that is wanted again is a new task.
 `--reason` is required, non-blank UTF-8 of at most 64 KiB, and the repository must be listed in the config, as for `task start`.
 It takes the `--store`, `--config` and `--state` of `task start`, or a copy, and holds the task's lock for its whole run, so it never interleaves with an advance or a merge.
 
