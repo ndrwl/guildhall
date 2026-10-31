@@ -128,10 +128,10 @@ func (a *App) backupStatus(t backupTarget, fail func(error) int) int {
 		} else {
 			b.WriteString("last commit: none\n")
 		}
-		switch {
-		case stamp.Pushed == "":
+		switch stamp.Pushed {
+		case "":
 			b.WriteString("last push: none\n")
-		case stamp.Pushed == stamp.Commit:
+		case stamp.Commit:
 			fmt.Fprintf(&b, "last push: %s at %s\n", stamp.Pushed, stamp.PushedAt.Format(time.RFC3339))
 		default:
 			fmt.Fprintf(&b, "last push: %s at %s; the last commit waits for the next push\n", stamp.Pushed, stamp.PushedAt.Format(time.RFC3339))
