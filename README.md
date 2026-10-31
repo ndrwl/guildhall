@@ -108,7 +108,7 @@ go: go1.27.2
 ```
 
 A missing tool is reported, not treated as an error.
-Prebuilt binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, will be published for version tags; side-by-side install and rollback is planned ([release upgrades](docs/releases.md)).
+Prebuilt binaries for Linux, Windows and macOS, with a `SHA256SUMS` file, will be published for version tags; side-by-side installs, a per-copy release pin and the PATH launcher are built, and rollback is planned ([release upgrades](docs/releases.md)).
 
 ## Try it today
 

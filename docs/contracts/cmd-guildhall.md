@@ -3,6 +3,8 @@
 ## Contract
 
 The process entry point: arguments, standard streams and exit status are handed to `cli.App.Run`.
+First it refuses, exit 1, a `GUILDHALL_RELEASE` naming another version than its own (`cli.CheckReleaseEnv`), and otherwise removes the variable from its environment ([the CLI's release commands](cli.md#release)).
+`cmd/guildhall-launcher` is the [PATH launcher](launcher.md)'s entry point, handing its arguments and streams to `launcher.Main`.
 
 ## Tests
 
@@ -12,6 +14,7 @@ The full fake end-to-end tests select named profiles whose adapter is `fake` in 
 
 `main_test.go` builds the binary with the release version linker flag and runs `version`, keeping its first line's `guildhall v0.0.0-test <os>/<arch> ` prefix, and `version --json`, which parses and, when the test tree is a git checkout, has the `revision` Go stamped into the build, then `doctor` and an unknown command, then renders through the release skills and, for a request with no baseline, the [release baseline](baseline.md).
 `release_test.go`, `TestReleaseInstallOfABuiltBinary`, builds the binary with `-buildvcs=false` and a release version by the linker flag, sees its `version --json` report that version unmodified with `store_schema` and `release_contract` 1, installs it with `release install` into a temporary `GUILDHALL_HOME`, runs the installed release, which finds its home from its own path for `release status` with `GUILDHALL_HOME` empty, and sees a plain `go build`, which reports `dev`, refused; it was written with the commands and passed on its first run.
+`adopt_test.go`, `TestAdoptThroughTheLauncher`, builds a version-stamped `guildhall` and `cmd/guildhall-launcher` into one `PATH` directory, adopts a fresh copy, sees the old binary kept as `guildhall.pre-adopt` and the plain `guildhall`, now the launcher, run the pinned release's `version --json`, adopts again through the launcher with nothing changed, reads the pin in `release status`, and sees the installed release refuse `GUILDHALL_RELEASE=v9.9.9`; it was written with slice 2 and passed on its first run.
 `run_test.go`, `TestTaskRunsEndToEnd`, is the S7 acceptance on every CI runner: the built binary approves the repository's fake-straight workflow, which has no validate step and so is below the review floor, then runs task app/t-1 on `internal/cli/testdata/run` from `task new` to its merge decision through `task start`, the fake Artisan in owned launcher processes, `step done`, `decide answer` and `task start --decision`, proves every launcher stopped with [`launchtest.StopAll`](launch-launchtest.md) over `artisan stop`, and asserts the timeline's attempts, decisions and event order.
 It was written after the commands and passed on its first run.
 `director_safety_test.go` holds the Director [safety checks](../director.md#safety-checks): approval, guard rails, crash recovery and zero idle turns, each on the fake Director and the Claude stub side by side, over one build of the binary shared by every check.

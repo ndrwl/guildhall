@@ -479,18 +479,36 @@ func (h Home) Copies() ([]string, error) {
 // Register adds the copy directory dir, made absolute and clean, to the inventory under the home lock, keeping it
 // sorted and without duplicates; registering a copy already there changes nothing.
 func (h Home) Register(dir string, lockWait time.Duration) error {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
+	if _, err := inventoryName(dir); err != nil {
 		return err
-	}
-	if strings.ContainsAny(abs, "\r\n") {
-		return fmt.Errorf("copy directory %q contains a line break", abs)
 	}
 	unlock, err := h.Lock(lockWait)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = unlock() }()
+	return h.RegisterLocked(dir)
+}
+
+// inventoryName is dir as the inventory lists it: absolute and clean, with no line break.
+func inventoryName(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	if strings.ContainsAny(abs, "\r\n") {
+		return "", fmt.Errorf("copy directory %q contains a line break", abs)
+	}
+	return abs, nil
+}
+
+// RegisterLocked is Register for a caller already holding the home lock, such as a pin change, which registers
+// its copy and records the pin under one hold.
+func (h Home) RegisterLocked(dir string) error {
+	abs, err := inventoryName(dir)
+	if err != nil {
+		return err
+	}
 	copies, err := h.Copies()
 	if err != nil {
 		return err

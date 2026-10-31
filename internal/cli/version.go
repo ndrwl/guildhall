@@ -67,6 +67,10 @@ type versionInfo struct {
 	ReleaseContract int `json:"release_contract"`
 	// repository is the id of Guildhall's own repository in the copy's config, "" when it lists none.
 	repository string
+	// pin is the copy's release pin, "" for a copy that has not adopted releases, and pinBehind how far that
+	// pinned release is behind main, nil when not known.
+	pin       string
+	pinBehind *behindMain
 }
 
 // behindMain is how far the binary's revision is behind the repository's default branch as last fetched.
@@ -173,13 +177,32 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 	if err != nil {
 		return v
 	}
-	v.BehindMain = &behindMain{Count: count, MissingPRs: []int{}, AsOf: readFetchTime(fetched, repo.Path), stale: stale}
-	for _, s := range subjects {
-		if pr, ok := subjectPR(s); ok {
-			v.BehindMain.MissingPRs = append(v.BehindMain.MissingPRs, pr)
+	v.BehindMain = newBehind(count, subjects, readFetchTime(fetched, repo.Path), stale)
+	// An adopted copy's new work runs its pin, which may not be this binary until the Director reloads: the install
+	// item compares the pin with main (docs/releases.md).
+	if pin, err := release.ReadPin(filepath.Dir(cfgPath)); err == nil {
+		v.pin = pin
+		switch rev, _ := pseudoVersionCommit(pin); {
+		case pin == v.Version:
+			v.pinBehind = v.BehindMain
+		case rev != "":
+			if count, subjects, err := g.Behind(ctx, repo.Path, rev, versionMainRef); err == nil {
+				v.pinBehind = newBehind(count, subjects, v.BehindMain.AsOf, stale)
+			}
 		}
 	}
 	return v
+}
+
+// newBehind is a behindMain of count first-parent commits with their subjects, naming the pull requests they merged.
+func newBehind(count int, subjects []string, asOf string, stale bool) *behindMain {
+	m := &behindMain{Count: count, MissingPRs: []int{}, AsOf: asOf, stale: stale}
+	for _, s := range subjects {
+		if pr, ok := subjectPR(s); ok {
+			m.MissingPRs = append(m.MissingPRs, pr)
+		}
+	}
+	return m
 }
 
 // pseudoVersion matches a Go pseudo-version in its three forms, vX.0.0-yyyymmddhhmmss-abcdef123456,
@@ -252,8 +275,18 @@ func (a *App) refreshVersionAfterMerge(ctx context.Context, cfgPath, state, repo
 // known.
 func (v versionInfo) installItem() (needsMeItem, bool) {
 	m := v.BehindMain
+	if v.pin != "" {
+		m = v.pinBehind
+	}
 	if m == nil || m.Count <= 0 || v.repository == "" {
 		return needsMeItem{}, false
+	}
+	if v.pin != "" {
+		return needsMeItem{Kind: installKind, Repository: v.repository, Count: m.Count,
+			Reason: fmt.Sprintf("this copy's pinned release %s is %d %s behind main%s; on the Guildmaster's word, install the new build with "+
+				"guildhall release install <version> --from <file> --sha256 <hex>, pin it with guildhall release use <version>, then run guildhall director reload",
+				v.pin, m.Count, plural(m.Count, "merge", "merges"), m.prs()),
+			Command: "guildhall release install"}, true
 	}
 	return needsMeItem{Kind: installKind, Repository: v.repository, Count: m.Count,
 		Reason: fmt.Sprintf("the installed guildhall (%s) is %d %s behind main%s; ask the Guildmaster to install",

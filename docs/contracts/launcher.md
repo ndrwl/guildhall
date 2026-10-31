@@ -1,0 +1,49 @@
+# `internal/launcher`
+
+## Contract
+
+The package is [the PATH launcher](../releases.md#the-path-launcher), built as its own small program, `cmd/guildhall-launcher`, which `guildhall release adopt` and `guildhall release install --launcher` install as `<home>/bin/guildhall` (`guildhall.exe`) and in place of the `guildhall` on `PATH`, so `runsProgram` and Herdr still see the name `guildhall`.
+It is slice 2 of task d127.
+It loads no configuration and opens no store.
+
+**Selecting the copy.** `SelectCopy(args, getwd)` selects as the CLI does ([copies](../running.md#copies)), through the same [`internal/copydir`](copydir.md):
+
+1. `--copy <dir>` or `--copy=<dir>` (one or two dashes), made absolute; two naming different directories are refused as conflicting;
+2. else, when `--store`, `--config` or `--state` is given, no discovery: the copy is the given store's own directory when it holds a copy marker, the store's owning copy, and otherwise none; two `--store` flags naming different files are refused;
+3. else copy discovery from the working directory, which finds no copy under a copy's `state/`.
+
+Arguments after `--` are not read.
+
+**Choosing the release.** `Choose(Options)` finds the home with `release.Locate` from the environment alone, `GUILDHALL_HOME` or the platform default, never from its own path, then:
+
+- with a copy whose `release.pin` names an installed, intact release (`Home.Runnable`), that release;
+- a pin whose release is missing or damaged refuses, naming the copy, the version, the path checked or the damage and the fix, `guildhall release install <version> --from <file> --sha256 <hex>`, or, for a copy with a `managed.toml`, a rollout; it never falls back to another release;
+- a copy with no pin refuses, naming `release.pin` and `guildhall release use <version>` or `guildhall release adopt`, or, managed, `guildhall config reload --copy <dir>`; so does a pin that cannot be read;
+- no copy refuses, naming `--copy`.
+
+Recovery dispatch replaces each refusal for `guildhall release ...`, and, when no copy is selected at all, for `help`, `-h`, `--help`, `version` and no command, which read and change nothing: it runs the newest installed, verified release (`Home.Newest`) and says why on stderr, `guildhall: launcher: recovery dispatch: <reason>; running on <version>, the newest installed, verified release`.
+With none it refuses, saying it never runs an unverified `.incoming` binary.
+Explicit `config reload --copy <dir>` joins recovery dispatch with the managed pin, in slice 5.
+
+Task-aware dispatch, which runs an existing task on the release it recorded from the store, repository and task arguments, lands with task release records in slice 3; until then every command of a copy runs on its pin, as a task created before its copy recorded releases does.
+
+**Running it.** `ChildEnv(env, version)` drops every inherited `GUILDHALL_RELEASE` and `GUILDHALL_LAUNCHER_PROBE` and sets `GUILDHALL_RELEASE=<version>`, so the inherited value is never a selection input.
+`Main` prints `guildhall: launcher: <reason>` and exits 1 on a refusal; otherwise:
+
+- on Unix it `exec`s the release with the same arguments and standard streams, so the release is the very process its caller started and recorded;
+- on Windows it starts the release as a child in the same console with the launcher's standard streams, ignores Ctrl-C, which the console delivers to the child itself, and exits with the child's exit code.
+  The child inherits the launcher's Job Object, the runtime unit a Director or Artisan launch recorded, so that unit still captures the real process; when the launcher is in a job and the child is not, it kills the child and refuses.
+
+Under `GUILDHALL_LAUNCHER_PROBE=1` it prints `{"schema":"guildhall.launcher","version":1}` and dispatches nothing, which is how install and adopt tell a launcher from a release.
+
+## Tests
+
+`launcher_test.go` was written with the launcher and not run red.
+The test binary plays both the launcher and, copied into a temporary home's `releases/<version>/` by `Home.Install`, the release, which prints its arguments, `GUILDHALL_RELEASE`, its path and its stdin as JSON and exits with `FAKE_EXIT`.
+`TestLauncherRunsTheCopyPin` runs a pinned release by `--copy`, `--copy=`, discovery at and below a copy, a store's owning copy and a `release` command, each with the arguments unchanged and an inherited `GUILDHALL_RELEASE` replaced, with copy A on v1.0.0 and copy B on v2.0.0 each running its own, then forwards stdin and exit code 7 and drops the probe variable.
+`TestLauncherRefusesAnUnusablePin` refuses `director start` and `task advance` on a missing, damaged and absent pin, a managed copy's absent pin and no copy, naming the version, path and fix.
+`TestLauncherRecoveryDispatch` runs `release status` from an absent, missing and damaged pin and from no copy on the newest verified release past a damaged newer one, and refuses with only an `.incoming` binary.
+`TestLauncherRefusesConflictingSelection` refuses two `--copy` and two `--store` flags; `TestLauncherProbe` the probe report; `TestChildEnv` the environment.
+`launcher_windows_test.go`'s `TestLauncherChildStaysInTheJob`, run only in the Windows CI job, starts the launcher in an `artisan.NewUnit` Job Object, sees the launcher and its release both members while the release blocks on stdin, and gets the release's output and exit code 5 back.
+`TestLauncherSurvivesCtrlBreak`, also Windows-only, starts the launcher in a new process group with a release that prints `ready` once it listens for an interrupt (`FAKE_INTERRUPT=1`), sends the group `CTRL_BREAK_EVENT` with `GenerateConsoleCtrlEvent` (a new group has Ctrl-C disabled, and Go delivers both as `os.Interrupt`), and sees the launcher outlive the event and exit with the release's own exit code 9.
+`internal/cli`'s `TestCopySelectionIsShared` runs one table through the CLI's copy selection and `SelectCopy`.

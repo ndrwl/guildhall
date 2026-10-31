@@ -213,6 +213,16 @@ The `director` bucket's nested `enrolments` and `managed-revisions` hold its enr
 - `ManagedView` returns the newest enrolment event, none in a store that has none, and every revision event recorded under it when it is `enrolled`.
   Only a `reload` or `guildmaster-approved` event of the newest enrolment authorizes its digest (`ManagedView.Authorization`): enrolment and observation never do, and leaving, or enrolling again, starts with no authorization.
 
+### Release pins
+
+A copy's [release pin](releases.md#the-pin) is a store fact; its `release.pin` file is a cache of the newest event.
+The `director` bucket's nested `release-pins` holds the copy's release-pin events, keyed by zero-padded event sequence from 1 and created by its first event; it is append-only and additive, so it needs no schema bump.
+An event has the pinned `version` and its `sha256` (64 lowercase hex characters), the `previous_version` and `previous_sha256` of the newest event before it, both empty for the first, its `source`, `adopt`, `use`, `reload`, `rollback` or `guildmaster-approved`, and the `receipt` sequence and `time` the store sets.
+`RecordReleasePin` records one under the mutation id `release-pin:<sequence>`, the sequence one more than the newest event's, and sets the previous fields itself: a caller that gives them must name the newest event, else `ErrMutationConflict`, and two events recorded at once conflict the same way.
+A pin to the version and sha256 already newest, a version that is not a release version (`dev`, or not a `v` followed by letters, digits, `.`, `-` and `+`, or with `..`), a bad sha256, an unknown source and a store-set field are `ErrInvalid`.
+`LatestReleasePin` returns the newest event, `ErrNotFound` for none, `ReleasePins` every event oldest first, and `ManagedView.ReleasePin` the newest in the view's transaction, which the configuration-admission boundary compares with `release.pin`.
+`store doctor` decodes every event.
+
 ## Attempt ownership
 
 An ownership record says which per-attempt launcher owns a running stage attempt, so a second launcher cannot run the same attempt while the first is alive.

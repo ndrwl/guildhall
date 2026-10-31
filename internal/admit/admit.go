@@ -144,6 +144,9 @@ func Judge(f Files, v store.ManagedView) Admission {
 		a.Mode = ModeRefused
 		refuse("this copy left managed mode (keeping %s) but a %s is present: a stale or unexpected managed file; remove it, or run guildhall director enrol --steward <label>", v.Enrolment.Revision, ManagedFile)
 	}
+	if pin := PinRefusal(f.Dir(), v.ReleasePin); pin != "" {
+		refuse("%s", pin)
+	}
 	return a
 }
 
