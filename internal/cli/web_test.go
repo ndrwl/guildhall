@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -405,5 +408,38 @@ func TestDirectorSessionBindFailureOnlyWarns(t *testing.T) {
 	copyRun(t, dir, "director", "stop", "--now")
 	if code := ended(t, done); code != 0 {
 		t.Errorf("director start exited %d", code)
+	}
+}
+
+// feedbackFrom writes body to <dir>/documents/<rel> and returns a webBuilder whose files record it, under the
+// slash path rel, as send-back-build-1 with its sha256.
+func feedbackFrom(t *testing.T, dir, rel, body string) webBuilder {
+	t.Helper()
+	file := filepath.Join(dir, "documents", rel)
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(body))
+	doc := store.DocumentRef{Name: "send-back-build-1", Path: rel, SHA256: hex.EncodeToString(sum[:])}
+	return webBuilder{fl: taskFiles{Documents: []timedDocument{{DocumentRef: doc}}}, state: dir}
+}
+
+func TestWebFeedbackReadsDotDotPrefixedName(t *testing.T) {
+	b := feedbackFrom(t, t.TempDir(), "..foo/x.md", "Fix the test.\n")
+	if got := b.feedback("build", 1); got != "Fix the test." {
+		t.Errorf("feedback = %q, want the quoted text", got)
+	}
+}
+
+func TestWebFeedbackRefusesBackslashPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a backslash is a path separator on Windows")
+	}
+	b := feedbackFrom(t, t.TempDir(), `a\b.md`, "Fix the test.\n")
+	if got := b.feedback("build", 1); got != "" {
+		t.Errorf("feedback = %q, want none for a backslash path", got)
 	}
 }
