@@ -5,6 +5,12 @@ It ships as embedded files in `internal/lanterns/plugin` and is installed in eve
 The Claude adapter passes its absolute plugin directory to Claude, without symlinks or a separate checkout.
 A classic session-start hook supplies the opening-marker convention even without function hooks.
 The function-hook adapter wraps the original assistant drawing in a rounded urgency frame; only an opening marker selects red, yellow or green, and unmarked text is neutral.
+When the reply text is exactly the [Director's layout](../director.md#chat-address), the pure `layout` function in `lib/presentation.mjs` splits it into the marker line, Needs you, the middle section and the Routine box, and the frame holds one Claude drawing each for the marker line, Needs you and the middle section, made by calling `next` with that section's text.
+The engine's `Box` takes only full borders, so the rules and the Routine box are `Text` in the frame's color, four columns narrower than the viewport (80 when unknown).
+A `rule` line of `─` comes before the middle section and before the Routine box.
+`routineBox` draws the box whole: the `routineEdge` top edge `┌─ routine ─…─ as of #<sequence> ─┐`, each box line between `│` sides and wrapped to fit, and a `└─…─┘` bottom edge.
+Text that is not the layout, a missing label, an unclosed fence, a fence that is not the last block, a Routine box without its `unchanged` and `as of` lines, and any thrown error give exactly the single frame around the original drawing.
+Only the drawing changes: transcript text, tool execution and model context are untouched.
 Without `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, function hooks perform no reads, registrations, drawing changes or timer work.
 
 The native status line uses `director context-report --lanterns`.

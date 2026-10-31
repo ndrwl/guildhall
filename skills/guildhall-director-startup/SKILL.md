@@ -45,7 +45,7 @@ guildhall director ready
 ```
 
 `guildhall director ready` prints the session as one JSON line with state `running`.
-Then tell the Guildmaster in a few plain sentences what you recovered, what is still waiting on them and what happens next.
+Then tell the Guildmaster in your role's reply layout: Needs you is what still waits on them, What I did is what you recovered and what happens next, and the Routine box lists what is running.
 
 ## Rules
 

@@ -1,4 +1,4 @@
-import {urgency,smithy,raster} from '../lib/presentation.mjs';
+import {urgency,layout,routineBox,rule,smithy,raster} from '../lib/presentation.mjs';
 
 // Engine operations are kept here. Geometry and urgency classification are pure.
 // Each module lifetime owns its state; the preference survives Director sessions.
@@ -60,11 +60,30 @@ export function register(on) {
     return result;
   });
   on('ui.render',{component:'AssistantMessage'},async($,e,next)=>{
+    if(!await active($)||!e.props?.text)return next(e);
+    const color=urgency(e.props.text);
+    const frame=children=>({borderStyle:'round',borderColor:color,flexDirection:'column',paddingX:1,children});
+    // A reply in the Director's layout is drawn section by section, each with Claude's own drawing;
+    // anything else, and any failure, keeps the single frame around the original drawing.
+    try {
+      const parts=layout(e.props.text);
+      if(parts) {
+        const {Box,Text}=$.ui.resolve(e);
+        const draw=text=>next({...e,props:{...e.props,text}});
+        // The frame's border and padding take four columns.
+        // The engine's Box takes only full borders, so the rules and the Routine box are drawn as text.
+        const width=Math.max(1,Math.min(512,Math.floor(e.viewport?.columns??80)-4));
+        const line=()=>Text({color,children:rule(width)});
+        const sections=[await draw(parts.marker),await draw(parts.needs)];
+        if(parts.did)sections.push(line(),await draw(parts.did));
+        if(parts.routine!==undefined)sections.push(line(),Text({color,children:routineBox(width,parts.routine,parts.asOf)}));
+        return Box(frame(sections));
+      }
+    }catch {}
     const original=await next(e);
-    if(!await active($)||!e.props?.text)return original;
     try {
       const {Box}=$.ui.resolve(e);
-      return Box({borderStyle:'round',borderColor:urgency(e.props.text),flexDirection:'column',paddingX:1,children:original});
+      return Box(frame(original));
     }catch {return original}
   });
   for(const component of ['ToolUse','ToolResult','ToolGroup'])on('ui.render',{component},async($,e,next)=>{

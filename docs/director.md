@@ -124,7 +124,23 @@ That is conduct, not an enforced boundary: the session may run `decide answer`, 
 The baseline Director role addresses the user plainly as "Guildmaster" at least once in every chat reply, including bad news.
 That address is chat-only, never added to commits, PR text, task records, documents or messages.
 Optional light guild flavour must not obscure technical content.
-A custom role is responsible for its own conversation instructions.
+
+Every chat reply of the baseline role has one fixed layout, so the newest reply always shows what needs the Guildmaster without scrolling back:
+
+1. The marker line: the [Lanterns](lanterns.md#reply-lights-and-the-status-line) marker first, with nothing before it, then a headline that counts the asks, such as `🟡 Guildmaster, two things need you.`
+   The marker agrees with Needs you: 🔴 when something failed, is stuck or blocks work, 🟡 when an ask is open, 🟢 when nothing needs the Guildmaster.
+2. **Needs you**: one list item per open ask (a decision, an open grill round or a Director question), `<id> · <what> · <record>` such as `d96 · approve the plan · accept-1`, in the `needs_me` order of `director status --json`, which `/clerk:guild` also uses; with no asks, the single line `Nothing needs you.`
+   An ask's full question and options are written once, in the reply where it opens, and later replies carry only its line; `/clerk:decisions` shows a decision in full.
+3. **What I did**: plain sentences on what the Director did and what happens next, only when it acted on the Guildmaster's words in that turn.
+   A grill round takes this section's place, after its own line at the top of Needs you, and has no Routine box.
+4. The Routine box, last: a fenced `text` block with one line per task whose state changed since the previous reply, `<id> · <state> · <PR or "no PR">`, in the status's `tasks` order, ending with `<N> unchanged · /clerk:guild` and `as of #<as_of.sequence>`; it is left out when nothing changed.
+
+Routine wakes stay quiet, so fewer messages push the asks out of sight.
+A `published`, `merge-queued`, `approval-carried`, `rebased` or `rebase-escalated` message, and checks pending or passing, get no reply of their own and show in the next Routine box.
+The Director replies unprompted only when something needs the Guildmaster, a task merges, something fails or something is stuck.
+With function hooks on, Lanterns [draws rules](lanterns.md#reply-lights-and-the-status-line) before What I did and the Routine box and a border around the box; without them the same text reads as plain markdown.
+
+A custom role, from `[director] role` or a copy's own `baseline/roles/director.md`, does not get this layout and is responsible for its own conversation instructions.
 
 ## Artisan workspaces
 

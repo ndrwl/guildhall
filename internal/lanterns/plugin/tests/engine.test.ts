@@ -26,6 +26,23 @@ test('real engine defaults Calm on, preserves assistant content and paints S2', 
   expect(frame.props.borderStyle).toBe('round');
   expect(frame.props.borderColor).toBe('yellow');
   expect(saved).toBe('');
+  // A reply in the Director's layout is drawn section by section inside the same frame.
+  const reply = [
+    '🟡 Guildmaster, one thing needs you.', '',
+    '**Needs you**', '- d96 · approve the plan · accept-1', '',
+    '**What I did**', 'Raised d95 to p0 as you asked.', '',
+    '```text', 'd93 · merged · #228', '7 unchanged · /clerk:guild', 'as of #5812', '```',
+  ].join('\n');
+  const layout = await $.ui.render({ component: 'AssistantMessage', surface: 'terminal', requestId: 'layout', viewport: { columns: 60, rows: 24 }, props: { text: reply } });
+  expect(layout.type).toBe('Box');
+  expect(layout.props.borderStyle).toBe('round');
+  expect(layout.props.borderColor).toBe('yellow');
+  const sections = [layout.children ?? layout.props.children].flat();
+  expect(sections.length).toBe(6);
+  expect(JSON.stringify(sections)).toContain('routine');
+  expect(JSON.stringify(sections)).toContain('as of #5812');
+  // The marker line, Needs you and What I did each come back from the engine's own drawing.
+  expect(sections.filter(s => JSON.stringify(s).includes('native content')).length).toBe(3);
   const spinner = await $.ui.render({ component: 'Spinner', surface: 'terminal', requestId: 'work', viewport: { columns: 30, rows: 24 }, props: { word: 'Working', message: null, mode: 'requesting' } });
   expect(spinner.type).toBe('Box');
   await clock.advance(880);

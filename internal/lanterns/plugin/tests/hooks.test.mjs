@@ -2,6 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {register} from '../hooks/register.js';
 import {assertS2} from './s2-contract.mjs';
+import {layout, routineBox, rule} from '../lib/presentation.mjs';
+import {twoAsks, nothing, grill} from './layout-fixtures.mjs';
 
 const calmPath='/workspace/plugin/calm.json';
 
@@ -17,9 +19,9 @@ function engine(flag='1', preference='off\n', copy='/copy') {
  command:{register:async e=>calls.push(e)},clock:{every:(ms,fn)=>{calls.push({ms,fn});return {cancel(){calls.push('canceled')}}}},
  config:{list:async()=>[{key:'theme',value:'dark'}]},
  ui:{resolve:()=>({Box:element('Box'),Text:element('Text'),Raster:element('Raster')}),invalidate:()=>{},toast:text=>calls.push(text),blit:async()=>({deny:true})}};
- const run=async(event,filter={},extra={})=>{
+ const run=async(event,filter={},extra={},next=async()=>({kind:'original'}))=>{
   const h=handlers.find(h=>h.event===event&&Object.entries(filter).every(([k,v])=>h.filter[k]===v));
-  assert.ok(h,`${event} handler`);return h.handler($,{...extra},async()=>({kind:'original'}));
+  assert.ok(h,`${event} handler`);return h.handler($,{...extra},next);
  };
  return {$,run,calls,get writes(){return writes},get writtenPath(){return writtenPath},get writtenValue(){return writtenValue}};
 }
@@ -96,4 +98,40 @@ test('saved preference loads before restored rows; failed save preserves current
  await e.run('command.run',{command:'calm'});
  assert.equal((await e.run('ui.render',{component:'ToolResult'})).display,'none');
  assert.ok(e.calls.some(c=>typeof c==='string'&&c.includes('unchanged')));
+});
+test('a layout reply draws each section with its own drawing, two rules and a bordered Routine box',async()=>{
+ const e=engine();const drawn=[];
+ const next=async event=>{drawn.push(event.props.text);assert.equal(event.requestId,'reply');return {kind:'drawn',text:event.props.text}};
+ const frame=await e.run('ui.render',{component:'AssistantMessage'},{requestId:'reply',viewport:{columns:60},props:{text:twoAsks}},next);
+ const parts=layout(twoAsks);
+ assert.deepEqual(drawn,[parts.marker,parts.needs,parts.did]);
+ const line={kind:'Text',color:'yellow',children:rule(56)};
+ const draw=text=>({kind:'drawn',text});
+ assert.deepEqual(frame,{kind:'Box',borderStyle:'round',borderColor:'yellow',flexDirection:'column',paddingX:1,children:[
+  draw(parts.marker),draw(parts.needs),line,draw(parts.did),line,
+  {kind:'Text',color:'yellow',children:routineBox(56,parts.routine,'5812')},
+ ]});
+});
+test('a layout reply without What I did or a Routine box draws no rule for them',async()=>{
+ const e=engine();const next=async event=>({kind:'drawn',text:event.props.text});
+ const quiet=await e.run('ui.render',{component:'AssistantMessage'},{props:{text:nothing}},next);
+ assert.equal(quiet.borderColor,'green');
+ assert.deepEqual(quiet.children.map(c=>c.kind),['drawn','drawn','Text','Text']);
+ assert.equal(quiet.children[3].children,routineBox(76,'d93 · merged · #228\n9 unchanged · /clerk:guild','5813'));
+ // A grill round has no What I did label; it is drawn in that place, set off by the same rule.
+ const round=await e.run('ui.render',{component:'AssistantMessage'},{props:{text:grill}},next);
+ assert.deepEqual(round.children.map(c=>c.kind),['drawn','drawn','Text','drawn']);
+});
+test('a non-layout reply, or a section drawing that throws, gives the single frame',async()=>{
+ const e=engine();
+ const single={kind:'Box',borderStyle:'round',borderColor:'yellow',flexDirection:'column',paddingX:1,children:{kind:'original'}};
+ assert.deepEqual(await e.run('ui.render',{component:'AssistantMessage'},{props:{text:'🟡 Guildmaster, d96 waits for you.'}}),single);
+ const next=async event=>{if(event.props.text!==twoAsks)throw Error('no sections');return {kind:'original'}};
+ assert.deepEqual(await e.run('ui.render',{component:'AssistantMessage'},{props:{text:twoAsks}},next),single);
+});
+test('without the flag a layout reply is drawn natively',async()=>{
+ const e=engine('0');const drawn=[];
+ const next=async event=>{drawn.push(event.props.text);return {kind:'original'}};
+ assert.deepEqual(await e.run('ui.render',{component:'AssistantMessage'},{props:{text:twoAsks}},next),{kind:'original'});
+ assert.deepEqual(drawn,[twoAsks]);
 });

@@ -66,13 +66,45 @@ guildhall task files --repo app t-12 --json
 ```
 
 `guildhall director status --json` is the one to start from: its `needs_me` list says what waits on you or on them, each with its command.
-Answer with the decisions waiting on them first, each in one or two plain sentences with its options, then what is running and what is stuck.
 For a running attempt, `guildhall artisan status` with the attempt's flags says whether it is alive.
+
+Answer in the reply layout your role sets, the same in every reply:
+
+1. The marker line: the Lanterns marker first, with nothing before it, then a headline that counts the asks; 🔴 when something failed, is stuck or blocks work, 🟡 when an ask is open and 🟢 when nothing needs them.
+2. Needs you: the label `**Needs you**`, then one list item per open ask (a decision, an open grill round or a question of yours) as `<id> · <what> · <record>`, in `needs_me` order, the order `/clerk:guild` uses.
+   The record is the short store name, such as `accept-1` or `grill-1`; with no asks the section is the single line `Nothing needs you.`
+3. What I did: the label `**What I did**`, then plain sentences on what you did and what happens next, only when you acted on the Guildmaster's words in this turn.
+4. The Routine box, last: a fenced `text` block with one line per task whose state changed since your previous reply, `<id> · <state> · <PR or "no PR">`, in the status's `tasks` order (repository, then id).
+   It ends with `<N> unchanged · /clerk:guild` and `as of #<as_of.sequence>`, so your next reply knows where "since" starts, and it is left out when nothing changed.
+
+For example, when the Guildmaster has just asked you to put d95 first:
+
+````markdown
+🟡 Guildmaster, two things need you.
+
+**Needs you**
+- d96 · approve the plan · accept-1
+- d104 · grill round 1 · grill-1
+
+**What I did**
+Raised d95 to p0 as you asked; it is second in the merge queue now.
+
+```text
+d93 · merged · #228
+d95 · merge queue 2/3 · #229
+7 unchanged · /clerk:guild
+as of #5812
+```
+````
+
+Keep each `<what>` and each state to a few words, so a line rarely wraps.
 
 ## Answering decisions in conversation
 
 A decision is a question Guildhall opened for the Guildmaster, such as approving a plan or merging a pull request.
 Read it with `guildhall decide show --repo app --task t-12 --decision accept-1`, put its question and options to the Guildmaster in plain English, and wait for their reply.
+Give the full question and options once, in the reply where the decision opens, after Needs you in What I did's place; every later reply carries only its line in Needs you, such as `- t-12 · approve the plan · accept-1`.
+When the Guildmaster wants to read it again, point them to `/clerk:decisions`, or put it to them again when they ask.
 Then record their reply:
 
 1. Map their reply onto exactly one of the decision's options, such as `approved` for "yes, go ahead"; when it fits none or more than one, ask again rather than guess.
