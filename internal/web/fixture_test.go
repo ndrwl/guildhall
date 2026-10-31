@@ -143,5 +143,5 @@ func fixtureServer(t *testing.T) (*Server, *fakeSource, string, map[string]strin
 	t.Helper()
 	dir, sums := writeFixtureFiles(t)
 	src := &fakeSource{tasks: map[string]Task{"guildhall/d122": fixtureTask(sums)}}
-	return New(Options{Source: src, Documents: dir, Location: time.UTC}), src, dir, sums
+	return New(Options{Source: src, Documents: dir, Location: time.UTC, Host: testHost}), src, dir, sums
 }

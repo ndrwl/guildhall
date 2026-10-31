@@ -81,9 +81,9 @@ func (s *webServer) close() {
 	})
 }
 
-// webHandler is the copy's task-page server over a webSource.
-func (a *App) webHandler(c clerkPaths, log io.Writer) *web.Server {
-	return web.New(web.Options{Source: webSource{a: a, c: c}, Documents: filepath.Join(c.state, "documents"),
+// webHandler is the copy's task-page server over a webSource, answering only requests for address.
+func (a *App) webHandler(c clerkPaths, address string, log io.Writer) *web.Server {
+	return web.New(web.Options{Source: webSource{a: a, c: c}, Documents: filepath.Join(c.state, "documents"), Host: address,
 		Log: func(line string) { _, _ = fmt.Fprintln(log, line) }})
 }
 
@@ -104,7 +104,7 @@ func (a *App) startWeb(cfg *config.Config, n int, copyDir, storePath, state stri
 		return nil
 	}
 	c := clerkPaths{dir: copyDir, store: storePath, config: filepath.Join(copyDir, "config.toml"), state: state}
-	s := &webServer{running: web.Serve(ln, a.webHandler(c, a.Stderr)), record: record}
+	s := &webServer{running: web.Serve(ln, a.webHandler(c, cfg.Web.Address, a.Stderr)), record: record}
 	rec.State = webServing
 	a.writeWebRecord(record, rec)
 	_, _ = fmt.Fprintf(a.Stdout, "web: serving the task pages at %s/<repo>/<task>\n", rec.URL)
@@ -196,7 +196,7 @@ func (a *App) web(args []string) int {
 		signal.Notify(signals, sessionSignals...)
 		defer signal.Stop(signals)
 	}
-	running := web.Serve(ln, a.webHandler(c, a.Stderr))
+	running := web.Serve(ln, a.webHandler(c, cfg.Web.Address, a.Stderr))
 	_, _ = fmt.Fprintf(a.Stdout, "web: serving the task pages at %s/<repo>/<task> until interrupted\n", webBaseURL(cfg.Web.Address))
 	if a.webServing != nil {
 		a.webServing(ln.Addr().String())
