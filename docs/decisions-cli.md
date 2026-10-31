@@ -72,7 +72,7 @@ The Guildmaster's reply is recorded with `decide answer` like any other, and fre
 
 A question decision appears wherever open decisions do: `decide list`, Clerk's `/decisions`, `director status` `needs_me` (where `decide defer` can hold it) and `task show`.
 It never blocks or advances its task: the merge requirement `nothing_open` does not count it, a dependent task's dependency state does not report it as waiting for the Guildmaster, and a merge-queue front task is not `waiting_on` it.
-Cancelling the task, closing a slice or a merge outside Guildhall void it with the task's other open decisions.
+Any close of the task (cancel, a Guildhall merge that closes it, a merge outside Guildhall, a hallmark's finish), and closing a slice, void it with the task's other open decisions, so a question never outlives its task ([decision](decisions/closed-tasks-have-no-open-decisions.md)).
 Questions not about a task, such as install or config questions, stay in chat.
 
 ```sh

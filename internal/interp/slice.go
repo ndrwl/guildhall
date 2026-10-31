@@ -239,7 +239,7 @@ func (r *run) settleSlice() error {
 
 // closeSlice closes non-final slice k after its merge record, merge id's, of pull request pr: it tells the Director,
 // retires the slice's branch and worktree, takes the task out of the merge queue, so the next slice joins it afresh
-// with its stays and hold reset, and voids the open decisions but an earlier release's audit. The task stays open. Every write is keyed on id, so a repeat sends and records nothing new.
+// with its stays and hold reset, and voids every open decision, with no exceptions. The task stays open. Every write is keyed on id, so a repeat sends and records nothing new.
 func (r *run) closeSlice(k int, id string, repo config.Repository, pr *pullRequestDoc, outside bool) error {
 	key := id + ":" + digest.Of([]byte(pr.Remote)).Hex()[:12]
 	// The slice's decisions still open, such as a merge decision its authorization superseded, would otherwise stay
@@ -250,7 +250,7 @@ func (r *run) closeSlice(k int, id string, repo config.Repository, pr *pullReque
 	}
 	for i := range r.decisions {
 		d := &r.decisions[i]
-		if !d.Open() || d.ID == auditDecision {
+		if !d.Open() {
 			continue
 		}
 		if _, err := r.e.Records.VoidDecision(r.mutation("void", key, d.ID), r.task.Repository, r.task.ID, d.ID, reason); err != nil {

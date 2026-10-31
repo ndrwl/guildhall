@@ -152,6 +152,9 @@ func (r *Records) CancelTask(mutationID, repository, taskID, reason string) (sto
 		case t.State != store.TaskOpen:
 			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
 		}
+		if err := r.noOpenDecision(repository, taskID, store.TaskCancelled); err != nil {
+			return err
+		}
 		t.State, t.CancelReason, t.CancelledAt = store.TaskCancelled, reason, r.now()
 		r.tasks[[2]string{repository, taskID}] = t
 		return nil
@@ -632,10 +635,24 @@ func (r *Records) SetTaskState(mutationID, repository, taskID string, state stor
 		case t.State != store.TaskOpen:
 			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
 		}
+		if err := r.noOpenDecision(repository, taskID, state); err != nil {
+			return err
+		}
 		t.State = state
 		r.tasks[[2]string{repository, taskID}] = t
 		return nil
 	})
+}
+
+// noOpenDecision refuses to move task repository/taskID to state while one of its decisions is open, as the store
+// does: a closed task never has an open decision.
+func (r *Records) noOpenDecision(repository, taskID string, state store.TaskState) error {
+	for _, d := range r.decisions {
+		if d.Repository == repository && d.TaskID == taskID && d.Open() {
+			return fmt.Errorf("%w: task %s/%s cannot be %s while decision %q is open", store.ErrInvalid, repository, taskID, state, d.ID)
+		}
+	}
+	return nil
 }
 
 // attemptTask refuses a task an attempt of step does not start on, as the store does: an unknown task, and one that
@@ -961,8 +978,11 @@ func (r *Records) OpenDecision(mutationID string, d store.Decision) (store.Recei
 	}
 	return r.mutate(mutationID, "open-decision", d, func(rc *store.Receipt) error {
 		rc.Repository, rc.TaskID, rc.Record = d.Repository, d.TaskID, "decision/"+d.ID
-		if _, ok := r.tasks[[2]string{d.Repository, d.TaskID}]; !ok {
+		switch t, ok := r.tasks[[2]string{d.Repository, d.TaskID}]; {
+		case !ok:
 			return fmt.Errorf("task %s/%s: %w", d.Repository, d.TaskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, d.Repository, d.TaskID, t.State)
 		}
 		if slices.ContainsFunc(r.decisions, func(o store.Decision) bool {
 			return o.Repository == d.Repository && o.TaskID == d.TaskID && o.ID == d.ID
@@ -2013,5 +2033,63 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		if err != nil || len(got) != 2 || !got[0].Void || got[0].VoidReason != "Cancelled." || got[0].Answered || got[0].Open() || got[1].Void || got[1].Open() {
 			t.Errorf("Decisions = %+v, %v; want q-1 void and unanswered, q-2 answered", got, err)
 		}
+	})
+
+	t.Run("a closed task has no open decision", func(t *testing.T) {
+		h := setup(t)
+		q := store.Decision{Repository: "app", TaskID: "t7", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"}
+		if _, err := h.Records.OpenDecision("open-q-1", q); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.Records.SetTaskState("close-open-q", "app", "t7", store.TaskDone)
+		want(t, "SetTaskState done with a decision open", err, store.ErrInvalid)
+		_, err = h.Records.SetTaskState("cancel-open-q", "app", "t7", store.TaskCancelled)
+		want(t, "SetTaskState cancelled with a decision open", err, store.ErrInvalid)
+		if h.CancelTask != nil {
+			_, err = h.CancelTask("cancel.app.t7", "app", "t7", "Duplicate.")
+			want(t, "CancelTask with a decision open", err, store.ErrInvalid)
+		}
+		if got, err := h.Records.Task("app", "t7"); err != nil || got.State != store.TaskOpen {
+			t.Fatalf("Task after the refused closes = %+v, %v; want it open", got, err)
+		}
+		// Once the decision is answered the close goes through, and its replay returns its receipt.
+		if _, err := h.AnswerDecision("answer-q-1", "app", "t7", "q-1", "This one."); err != nil {
+			t.Fatal(err)
+		}
+		rc, err := h.Records.SetTaskState("close-1", "app", "t7", store.TaskDone)
+		if err != nil {
+			t.Fatalf("SetTaskState with no decision open = %v", err)
+		}
+		if replay, err := h.Records.SetTaskState("close-1", "app", "t7", store.TaskDone); err != nil || replay != rc {
+			t.Errorf("replay = %+v, %v; want %+v", replay, err, rc)
+		}
+		_, err = h.Records.OpenDecision("open-q-2", store.Decision{Repository: "app", TaskID: "t7", ID: "q-2", Kind: store.DecisionQuestion, Question: "Which?"})
+		want(t, "OpenDecision on a done task", err, store.ErrInvalid)
+		if got, err := h.Records.Decisions("app", "t7"); err != nil || len(got) != 1 {
+			t.Errorf("Decisions = %+v, %v; want q-1 only", got, err)
+		}
+	})
+
+	t.Run("a cancelled task gains no decision, and a replayed cancel still returns its receipt", func(t *testing.T) {
+		h := setup(t)
+		if h.CancelTask == nil || h.VoidDecision == nil {
+			t.Skip("the harness records no cancels")
+		}
+		q := store.Decision{Repository: "app", TaskID: "t7", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"}
+		if _, err := h.Records.OpenDecision("open-q-1", q); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.VoidDecision("void-q-1", "app", "t7", "q-1", "Task cancelled: Duplicate."); err != nil {
+			t.Fatal(err)
+		}
+		rc, err := h.CancelTask("cancel.app.t7", "app", "t7", "Duplicate.")
+		if err != nil {
+			t.Fatalf("CancelTask with every decision void = %v", err)
+		}
+		if replay, err := h.CancelTask("cancel.app.t7", "app", "t7", "Duplicate."); err != nil || replay != rc {
+			t.Errorf("replay = %+v, %v; want %+v", replay, err, rc)
+		}
+		_, err = h.Records.OpenDecision("open-q-2", store.Decision{Repository: "app", TaskID: "t7", ID: "q-2", Kind: store.DecisionQuestion, Question: "Which?"})
+		want(t, "OpenDecision on a cancelled task", err, store.ErrInvalid)
 	})
 }

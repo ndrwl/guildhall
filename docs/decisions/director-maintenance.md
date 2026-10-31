@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-30
 topic: maintenance
 tasks: d57
-amended-by: engine-owned-hallmark-cadence.md
+amended-by: engine-owned-hallmark-cadence.md, closed-tasks-have-no-open-decisions.md
 ---
 
 # Director maintenance is one skill with a note audit and a hallmark, each due on a counted cadence and recorded
@@ -30,7 +30,7 @@ Director maintenance is one skill, `guildhall-maintenance`, with two parts, the 
   The hallmark counts `merged` messages per repository, since a hallmark reviews one repository; `FinishedTasks` counts closes of every repository, cancellations among them, so it is not the count.
 - **Each run is a small record.**
   `director maintenance record` keeps a run in the store's `director-maintenance` bucket with its kind, the session, the time and a one-line summary of at most 1024 bytes, written only by the newest session that is not stopped, as [notes](director-reload-and-notes.md) are.
-  For the hallmark this is amended by [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md): the last hallmark is the repository's last done hallmark task, counted from the answer to its `follow-ups` decision (from its launch when it has none) and holding the next one until that answer, and `record --hallmark` is refused.
+  For the hallmark this is amended by [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md): the last hallmark is the repository's last done hallmark task, counted from the answer to its `follow-ups` decision (from its launch when it has none), and `record --hallmark` is refused; since [d121](closed-tasks-have-no-open-decisions.md) a hallmark stays open until that answer, so the running-hallmark hold keeps the next one back until then.
 - **The status feed carries counts and times, never note text.**
   `director status` gains a `maintenance` object with the last note audit and sessions until the next, and per repository the last hallmark and merges until the next; `director maintenance list` shows the history.
 - **The Guildmaster stays in the loop.**

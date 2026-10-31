@@ -466,7 +466,8 @@ func TestMergeWithoutGuildmasterOverSuggestions(t *testing.T) {
 }
 
 // TestMergeWithoutGuildmasterOverQuestion: a Director's question decision open on the task never fails nothing_open,
-// so deliver merges by itself and the question stays open.
+// so deliver merges by itself; the merge closes the task, which voids the question, since a closed task has no open
+// decisions (d121).
 func TestMergeWithoutGuildmasterOverQuestion(t *testing.T) {
 	e, f := newRequiresEnv(t, backends[0], unattended, bound(t, workflow.VerdictApproved, head, nil))
 	want(t, e.toValidate(t), waitChecks)
@@ -482,8 +483,8 @@ func TestMergeWithoutGuildmasterOverQuestion(t *testing.T) {
 	if got := e.nothingOpenCondition(t, "deliver-1-authorized"); got["holds"] != true || got["reason"] != nil || slices.Contains(got["evidence"].([]any), any("q1")) {
 		t.Errorf("nothing_open = %v, want it to hold", got)
 	}
-	if !e.decision(t, "q1").Open() {
-		t.Errorf("q1 = %+v, want it still open", e.decision(t, "q1"))
+	if q := e.decision(t, "q1"); q.Open() || q.Answered || !q.Void {
+		t.Errorf("q1 = %+v, want it voided by the close", q)
 	}
 }
 

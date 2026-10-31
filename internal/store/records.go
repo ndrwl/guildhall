@@ -205,8 +205,9 @@ type Decision struct {
 	Choice string `json:"choice,omitempty"`
 	// Note is the trimmed text after the first line of an answer to a decision with options.
 	Note string `json:"note,omitempty"`
-	// Void marks an unanswered decision (VoidDecision) with its reason: one of a cancelled task, or an acceptance the
-	// engine superseded because its spec changed. Nobody waits for it, and it can no longer be answered.
+	// Void marks an unanswered decision (VoidDecision) with its reason: one still open when its task closed (done or
+	// cancelled) or its slice merged, or an acceptance the engine superseded because its spec changed. Nobody waits
+	// for it, and it can no longer be answered.
 	Void       bool   `json:"void,omitempty"`
 	VoidReason string `json:"void_reason,omitempty"`
 }
@@ -268,7 +269,9 @@ func (s *Store) createTask(mutationID string, t Task) (Receipt, error) {
 // opSetTaskState is the operation recorded on a task state receipt, which FinishedTasks counts.
 const opSetTaskState = "set-task-state"
 
-// SetTaskState moves an open task to done or cancelled; finished tasks do not change.
+// SetTaskState moves an open task to done or cancelled; finished tasks do not change. It refuses with ErrInvalid
+// while the task has an open decision, so a closed task never has one: the caller voids them first
+// (docs/decisions/closed-tasks-have-no-open-decisions.md).
 func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskState) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
 		return Receipt{}, err
@@ -287,6 +290,9 @@ func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskSt
 		if err != nil {
 			return err
 		}
+		if err := noOpenDecision(tx, repository, taskID, state); err != nil {
+			return err
+		}
 		t.State = state
 		return putJSON(repoBucket(tx, repository, bucketTasks), []byte(taskID), t)
 	})
@@ -299,7 +305,8 @@ const opCancelTask = "cancel-task"
 // CancelTask moves an open task to cancelled, recording the Director's nonempty reason and the commit time as
 // the task's CancelReason and CancelledAt (docs/tasks.md#task-cancel). It is a separate operation from
 // SetTaskState, whose request, and so the digest of every done close and its replay, it leaves unchanged. A task
-// already closed is ErrInvalid, and an unknown one ErrNotFound.
+// already closed is ErrInvalid, as is one with an open decision, which the caller voids first; an unknown one is
+// ErrNotFound.
 func (s *Store) CancelTask(mutationID, repository, taskID, reason string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
 		return Receipt{}, err
@@ -316,6 +323,9 @@ func (s *Store) CancelTask(mutationID, repository, taskID, reason string) (Recei
 		r.Repository, r.TaskID, r.Record = repository, taskID, "task"
 		t, err := openTask(tx, repository, taskID)
 		if err != nil {
+			return err
+		}
+		if err := noOpenDecision(tx, repository, taskID, TaskCancelled); err != nil {
 			return err
 		}
 		t.State, t.CancelReason, t.CancelledAt = TaskCancelled, reason, s.now().UTC()
@@ -468,7 +478,8 @@ func (s *Store) UnbindPane(mutationID, repository, taskID string) (Receipt, erro
 	})
 }
 
-// OpenDecision records an open typed decision for the Guildmaster.
+// OpenDecision records an open typed decision for the Guildmaster on an open task; a done or cancelled task is
+// ErrInvalid, so a closed task never gains one.
 // It refuses an unknown kind, a missing or malformed subject (a question may omit it),
 // options that are blank, multi-line, padded, duplicated, longer than MaxOptionBytes
 // or more than MaxDecisionOptions, and any answer fields; the decision id is unique within its task.
@@ -482,7 +493,7 @@ func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
 	repository, taskID, id := d.Repository, d.TaskID, d.ID
 	return s.mutate(mutationID, "open-decision", d, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = repository, taskID, "decision/"+id
-		if _, err := getTask(tx, repository, taskID); err != nil {
+		if _, err := openTask(tx, repository, taskID); err != nil {
 			return err
 		}
 		decisions, err := createRepoBucket(tx, repository, bucketDecisions)
@@ -701,6 +712,21 @@ func attemptTask(tx *bolt.Tx, repository, taskID, step string) (Task, error) {
 		err = invalid("a judge attempt needs a done task; task %s/%s is %s", repository, taskID, t.State)
 	}
 	return t, err
+}
+
+// noOpenDecision refuses to move task repository/taskID to state while one of its decisions is open: a closed task
+// never has an open decision (docs/decisions/closed-tasks-have-no-open-decisions.md).
+func noOpenDecision(tx *bolt.Tx, repository, taskID string, state TaskState) error {
+	var decisions []Decision
+	if err := scan(repoBucket(tx, repository, bucketDecisions), recordKey(taskID, ""), &decisions); err != nil {
+		return err
+	}
+	for _, d := range decisions {
+		if d.Open() {
+			return invalid("task %s/%s cannot be %s while decision %q is open; void or answer it first", repository, taskID, state, d.ID)
+		}
+	}
+	return nil
 }
 
 func openTask(tx *bolt.Tx, repository, taskID string) (Task, error) {

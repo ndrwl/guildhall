@@ -242,7 +242,7 @@ A new head, such as a build round after review findings, publishes the next roun
 
 1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; a required `ci_green` does not hold when deliver takes no `validation` input ([validation gate](#validate)), and a required `artisan_approval` does not hold when no `review` or `document-review` step comes before deliver (`deliver step "<id>" takes no review outcome`), even in a Guildmaster-approved workflow the admission floor did not check. When one is not required its gate is skipped, but its state is still reported.
 2. The delivered head: the published head, or the head validate [rebased](#tiered-rebase) it to, followed through validate's rebase documents; the review and CI gates of a rebased head are read as below.
-3. `nothing_open`: the latest outcomes of the review steps before deliver have no open finding, and the task has no unanswered decision but the deliver step's own.
+3. `nothing_open`: the latest outcomes of the review steps before deliver have no open finding, and the task has no open decision but the deliver step's own; a voided decision, such as one an earlier slice's merge voided or a superseded acceptance, is not open and does not count.
    Every finding is open, unresolved or newly raised, except a `disputed` one with a standing (uncontested) Director ruling of any move on that finding of that document; suggestions never count.
    The reason names the counts, such as "review-3-outcome has 1 unresolved and 1 disputed finding(s)", and adds "N suggestion(s), not counted" when suggestions exist, even when the condition holds, so an authorization records them.
    An approval recorded by a loop-exit `accept` keeps its findings unresolved, so it still holds the merge for the Guildmaster: the accept covered the loop, not the merge.
@@ -264,9 +264,11 @@ Below, the merge id `<merge>` is the decision's id, or `deliver-<k>` for a merge
 A `hold` answer merges nothing: the task waits for the Director (`director`, naming the decision) and the Director is told as `<repo>.<task>.merge-held.<decision>`.
 A `merge` answer, or a merge Guildhall authorized, once the task holds the front of the merge queue and its pull request is clear, calls `Forge.Merge` for the recorded remote and pull request number at the head, which squash-merges it only while the pull request is still at that head, never with `--admin` or `--auto`.
 A head no publish step pushed cannot be merged and is refused with `ErrUnsupported`.
-When the forge merges, the engine records `<merge>-merge` (`tasks/<repo>/<task>/<merge>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<merge>`, type `merged`, saying "(decision <merge>)" or "(merged by Guildhall, <merge>-authorized)", [retires the task's working directory](#the-working-directory), marks the task `done` and returns the wait `done`.
+When the forge merges, the engine records `<merge>-merge` (`tasks/<repo>/<task>/<merge>/merge.json`), the merged pull request with its merge commit, sends `<repo>.<task>.merged.<merge>`, type `merged`, saying "(decision <merge>)" or "(merged by Guildhall, <merge>-authorized)", [retires the task's working directory](#the-working-directory), voids every decision of the task still open, with reason `Task done: pull request <url> merged`, marks the task `done` and returns the wait `done`.
+A `merge` answer can override a failing `nothing_open`, so a question, a loop exit or an earlier round may still be open here; closing voids them all, with no exceptions, so a closed task never has an open decision ([decision](decisions/closed-tasks-have-no-open-decisions.md)).
+Every engine close takes this one path (`closeTask`): the last Guildhall merge, a [merge outside Guildhall](tasks.md#merged-outside-guildhall) and a [report-only finish](#report-only-workflows); each void is keyed on the decision and the close's one reason, so a close that fails part-way replays to the same writes.
 It opens no decision as it closes the task: the Guildmaster's `audit` ([G4](quality.md#honesty-and-evidence-g)) is retired, and the deprecated `quality_audit_sample` has no effect ([decision](decisions/retire-quality-audit.md)).
-An `audit` decision an earlier release opened stays open and answerable after the task is done, and answering it records the answer only.
+An `audit` decision an earlier release opened is voided by the close like any other.
 A later advance of a done task is refused with `ErrTaskClosed`.
 
 When the forge refuses, such as required checks failing or pending, the branch behind its base, branch protection or the pull request having moved, nothing is merged.
@@ -555,11 +557,14 @@ The task's custody lock serialises advances; external writers must not change th
 ## Report-only workflows
 
 A workflow with no `deliver` step, such as the shipped `hallmark` workflow of a [hallmark task](tasks.md#task-kinds), finishes once every step is done ([decision](decisions/report-only-workflows.md)).
-The advance records document `finished`, at `tasks/<repo>/<task>/finished.json`, `{"schema":"guildhall.finished/1","head":…}`, sends the Director a `finished` message, id `<repo>.<task>.finished`, naming the last step's output, sets the task `done` and returns `{"wait":"done"}`.
+The advance records document `finished`, at `tasks/<repo>/<task>/finished.json`, `{"schema":"guildhall.finished/1","head":…}`, and sends the Director a `finished` message, id `<repo>.<task>.finished`, naming the last step's output.
 It sends no `merged` message and opens no audit, so a hallmark counts toward no hallmark cadence.
-When the last step is a `hallmark` step that recorded a report, the close opens decision `follow-ups`, kind `follow-ups`, before anything else is sent, so a close that fails replays to the same decision; the order is `finished` recorded, the decision opened and announced (`<repo>.<task>.decision.follow-ups`), the `finished` message, which says the decision is open, and the task set `done`.
+When the last step is a `hallmark` step that recorded a report, it opens decision `follow-ups`, kind `follow-ups`, and the task stays open, waiting on it: the order is `finished` recorded, the decision opened and announced (`<repo>.<task>.decision.follow-ups`), and the `finished` message, which says the decision is open, that the task stays open until it is answered, and that `guildhall task start --decision follow-ups --repo <repo> <task>` then closes it; the advance returns `{"wait":"decision","step":"<last>","decision":"follow-ups"}`.
+A deferred decision is still open, so the task keeps waiting.
 The decision is bound to the latest attempt's report as a document subject and offers `pick` and `none`; its question names the repository, task and report path, lists the report's `### H<n>. <title>` headings in order, best effort and cut with `… see the report` to fit `MaxTextBytes`, and asks for the picked ids on the lines after `pick`.
-Answering it records the answer only; the Director creates the picked tasks.
+Answering it records the answer only, as for any decision; the Director creates the picked tasks.
+The advance after the answer, `task start --decision follow-ups`, finishes again: `finished` is already recorded and the decision and `finished` messages are resends, so nothing is sent twice, and it [closes the task](#publish-and-deliver), voiding any decision still open, sets it `done` and returns `{"wait":"done"}`.
+A report-only task with no `follow-ups` decision, one whose last step is not a `hallmark` step or whose report cannot be read back, closes at once on the advance that finishes it.
 `head` is set only when every step that runs attempts is a `hallmark` step: the prepared commit of the last step's latest attempt, at which [prune](running.md#pruning) retires the worktree as it does at a merge record's head; without it the worktree is kept.
 A definition that has a deliver step and somehow runs past it is still refused with `ErrUnsupported`.
 

@@ -68,11 +68,6 @@ type publishRefusalDoc struct {
 // mergeOptions are the answers the merge decision offers.
 var mergeOptions = []string{"merge", "hold"}
 
-// auditDecision is the id of the audit decision an earlier release opened on a delivered task; a step's decisions
-// are always <step>-<round>, so it is never one of them. No close opens one any more (docs/quality.md, G4), but an
-// audit already recorded stays answerable.
-const auditDecision = "audit"
-
 // repository returns the task's repository configuration, its merge requirements tightened by the task's
 // merge-requires overrides, so every gate that starts here agrees (docs/tasks.md#task-overrides).
 func (r *run) repository() (config.Repository, error) {
@@ -1057,7 +1052,7 @@ func (r *run) nothingOpen(s workflow.Step, required bool, outcomes []reviewOutco
 		suggestions += len(o.outcome.Suggestions)
 	}
 	for i, d := range r.decisions {
-		if p := r.decisionPlaces[i]; d.Answered || d.Kind == store.DecisionQuestion || (p.ok && p.step == s.ID && !p.exit) {
+		if p := r.decisionPlaces[i]; !d.Open() || d.Kind == store.DecisionQuestion || (p.ok && p.step == s.ID && !p.exit) {
 			continue
 		}
 		c.Evidence = append(c.Evidence, d.ID)
@@ -1228,7 +1223,8 @@ func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string
 	if err := r.leave("merged:"+id, false); err != nil {
 		return false, Next{}, err
 	}
-	if _, err := r.e.Records.SetTaskState(r.mutation("task-state", string(store.TaskDone)), r.task.Repository, r.task.ID, store.TaskDone); err != nil {
+	// A merge answer can override a failing nothing_open, so a question or loop exit may still be open here.
+	if err := r.closeTask(fmt.Sprintf("Task done: pull request %s merged", pr.URL)); err != nil {
 		return false, Next{}, err
 	}
 	return false, Next{Wait: WaitDone, Step: s.ID}, nil

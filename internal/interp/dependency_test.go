@@ -82,6 +82,18 @@ func (e *env) stepsAttempted(t *testing.T) []string {
 
 func (e *env) closeTask(t *testing.T, repo, id string, state store.TaskState) {
 	t.Helper()
+	// A closed task has no open decision, so its open ones are voided first, as every close does.
+	ds, err := e.h.Records.Decisions(repo, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range ds {
+		if d.Open() {
+			if _, err := e.h.Records.VoidDecision("close-void:"+repo+":"+id+":"+d.ID, repo, id, d.ID, "Task "+string(state)+"."); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if _, err := e.h.Records.SetTaskState("close:"+repo+":"+id, repo, id, state); err != nil {
 		t.Fatal(err)
 	}

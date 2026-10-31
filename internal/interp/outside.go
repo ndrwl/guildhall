@@ -256,16 +256,6 @@ func (r *run) closeMergedOutside(pr *pullRequestDoc) (Next, error) {
 	if err != nil {
 		return Next{}, err
 	}
-	// An audit an earlier release opened before a close that failed stays answerable, so it is not voided.
-	for _, d := range r.decisions {
-		if !d.Open() || d.ID == auditDecision {
-			continue
-		}
-		reason := fmt.Sprintf("Task done: pull request %s merged outside Guildhall", pr.URL)
-		if _, err := r.e.Records.VoidDecision(r.mutation("void", key, d.ID), r.task.Repository, r.task.ID, d.ID, reason); err != nil {
-			return Next{}, err
-		}
-	}
 	recorded := "none"
 	prs, _, err := TaskPullRequests(r.documents, r.e.DocumentDir)
 	if err != nil {
@@ -301,7 +291,7 @@ func (r *run) closeMergedOutside(pr *pullRequestDoc) (Next, error) {
 			}
 		}
 	}
-	if _, err := r.e.Records.SetTaskState(r.mutation("task-state", string(store.TaskDone)), r.task.Repository, r.task.ID, store.TaskDone); err != nil {
+	if err := r.closeTask(fmt.Sprintf("Task done: pull request %s merged outside Guildhall", pr.URL)); err != nil {
 		return Next{}, err
 	}
 	return Next{Wait: WaitDone, Step: s.ID}, nil

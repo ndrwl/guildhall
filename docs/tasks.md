@@ -53,7 +53,7 @@ An unknown `--kind` is a usage error.
 |---|---|---|
 | `feature` | The repository's `workflow` setting, `default` when it names none | New or changed behaviour: grill, research, plan, the Guildmaster's acceptance, build, review, publish, validate and deliver. |
 | `bug` | The repository's [`[repository.kinds]`](configuration.md#repositories) `bug` workflow, the shipped `bug` when it names none | A fix for a defect in behaviour that should already work, with no Guildmaster stage: the default's steps without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and deliver, merging under the repository's merge requirements. Research reproduces the defect from the task title and detail and finds its cause, or fails with what it found; plan proceeds on recommended answers, or fails with a question that needs the Guildmaster; build writes a regression test that fails before the fix and passes after it, and review checks that test. |
-| `hallmark` | The repository's `[repository.kinds]` `hallmark` workflow, the shipped `hallmark` when it names none | A report-only review of the whole repository, launched when a [hallmark is due](director.md#maintenance): one read-only `hallmark` stage, under the `researcher` profile with the `guildhall-hallmark` skill, is given the repository's previous hallmark report as `previous` and writes a ranked report of PR-sized follow-ups. Intake fails the stage if it leaves a tracked change or moves HEAD, and the task finishes as done with no pull request ([decision](decisions/report-only-workflows.md)). |
+| `hallmark` | The repository's `[repository.kinds]` `hallmark` workflow, the shipped `hallmark` when it names none | A report-only review of the whole repository, launched when a [hallmark is due](director.md#maintenance): one read-only `hallmark` stage, under the `researcher` profile with the `guildhall-hallmark` skill, is given the repository's previous hallmark report as `previous` and writes a ranked report of PR-sized follow-ups. Intake fails the stage if it leaves a tracked change or moves HEAD, and the task finishes as done with no pull request once its `follow-ups` decision is answered, staying open until then ([decision](decisions/report-only-workflows.md)). |
 
 The descriptions are in the binary, `task new --help`, not in the workflows, so rewording them changes no digest.
 Every Artisan prompt shows the task's title and detail, quoted as text after its header; a bug task has no grill, so its title and its detail, with the symptom and the exact error, are the only statement of the defect its research is given.
@@ -203,7 +203,7 @@ In order, it:
 2. refuses a task whose deliver recorded its merge, a `<decision>-merge` document: its work merged or is merging; a [multi-PR task](#multi-pr-tasks) is refused only while its current slice is merging, that is, the current slice has a merge record or the slice merged last has not finished closing, since the next one has recorded nothing yet, and advancing the task finishes it;
 3. stops each running attempt: an Artisan attempt through its owner, as [`artisan stop`](artisan.md#commands) does, and a Director stage's attempt, which has no owner, by recording it `stopped`; when an Artisan's stop cannot be proven the cancel is refused and the task stays open, so a cancelled task never has a live Artisan;
 4. closes each pull request the task's `-pr` documents record with the comment `Cancelled by Guildhall: <reason>`, keeping its branch; a closed one is left as it is, and one merged on the forge refuses the cancel, after only the stops above: its work landed, so the [outside-merge rule](#merged-outside-guildhall) records the task `done`, and the cancel exits 1 with `pull request <url> of task <repo>/<task> is merged; its work landed, so the task is recorded done, not cancelled`;
-5. voids each open decision with the reason `Task cancelled: <reason>`: a void decision leaves `decide list`, `director status` and the dependency gate's states, `decide show` prints it with `"void":true`, and it can no longer be answered;
+5. voids each open decision with the reason `Task cancelled: <reason>`, so a cancelled task never has an open decision, which the store refuses ([decision](decisions/closed-tasks-have-no-open-decisions.md)): a void decision leaves `decide list`, `director status` and the dependency gate's states, `decide show` prints it with `"void":true`, and it can no longer be answered;
 6. takes the task out of the [start queue](interpreter.md#the-start-queue) and the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
 7. sends the Director one `dependency-cancelled` message for each open task, in any listed repository, that [depends](#dependencies) on it, by its effective dependencies; the dependents are not cancelled, and one already held by the dependency gate gets its `dependency-held` message too at its next advance;
 8. records the task `cancelled`, with its `cancel_reason` and `cancelled_at`.
@@ -218,7 +218,7 @@ A cancelled task leaves `task list --open`, and `task list` and `task show` prin
 It contributes nothing to `director status` but its unread messages, until they are read.
 A cancel counts toward `handoff_after_tasks` as a merge does.
 Stopping an attempt makes its launcher advance the task; `task start` and `step done` of a cancelled task print `task <repo>/<task> is cancelled; nothing to advance` and succeed, so no `advance-failed` message follows; of a done task they still fail.
-`decide answer` refuses a cancelled task's decisions; a done task's, such as an audit an earlier release opened, are answered as before.
+`decide answer` refuses a cancelled task's decisions; a done task has none open, since every close voids them, but one an earlier release left open on a done task, such as an audit or a hallmark's `follow-ups`, is answered as before.
 Cancel never records `cancelled` for a task whose work landed.
 
 ## Merged outside Guildhall
@@ -231,19 +231,18 @@ A merge of deliver's own whose record a crash lost, the pull request merged at t
 When a task has landed outside Guildhall, Guildhall, in order:
 
 1. records the forge's merged pull request, with its head and `merge_commit`, as `outside-<number>-merge`, so `task cancel` sees the task as merged;
-2. voids each open decision with the reason `Task done: pull request <url> merged outside Guildhall`, except an `audit` an earlier release opened, which stays answerable;
-3. sends the Director a `merged` message, id `<repo>.<task>.merged.outside.<number>`, naming the pull request, the forge's head, its merge commit and the head Guildhall last recorded for it, so `task timeline` and `director status` show the merge;
-4. retires the working directory at the forge's head; a head Guildhall never fetched keeps it, with a `workspace-kept` message, as for any merge;
-5. takes the task out of the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
-6. records the task `done`.
+2. sends the Director a `merged` message, id `<repo>.<task>.merged.outside.<number>`, naming the pull request, the forge's head, its merge commit and the head Guildhall last recorded for it, so `task timeline` and `director status` show the merge;
+3. retires the working directory at the forge's head; a head Guildhall never fetched keeps it, with a `workspace-kept` message, as for any merge;
+4. takes the task out of the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
+5. voids each open decision with the reason `Task done: pull request <url> merged outside Guildhall`, with no exceptions, an `audit` an earlier release opened included, and records the task `done`, as every close does ([decision](decisions/closed-tasks-have-no-open-decisions.md)).
 
 Like a merge by deliver, it opens no [audit](quality.md#honesty-and-evidence-g): the Guildmaster's audit is retired ([decision](decisions/retire-quality-audit.md)).
 
-Every write's mutation id is keyed on the pull request's remote and number, so a run that fails part-way is finished by the next from the recorded `outside-<number>-merge`, sending nothing twice.
+Every write's mutation id is keyed on the pull request's remote and number, or for the voids on the close, so a run that fails part-way is finished by the next from the recorded `outside-<number>-merge`, sending nothing twice.
 The forge must read pull requests (GitHub does); a forge that cannot never applies the rule.
 
 A [multi-PR task](#multi-pr-tasks) applies the rule to its current slice alone: the rule reads only that slice's recorded pull requests, while the slice has no merge record.
-A merge of a slice before the last is recorded as that slice's merge, `outside-<number>-merge` for slice 1 and `outside--s<k>-<number>-merge` after, voids the open decisions, sends a `merged` message naming the slice, retires the slice's working directory and takes the task out of the merge queue, but leaves the task open: the advance goes on with the next slice.
+A merge of a slice before the last is recorded as that slice's merge, `outside-<number>-merge` for slice 1 and `outside--s<k>-<number>-merge` after, voids every open decision, with no exceptions, sends a `merged` message naming the slice, retires the slice's working directory and takes the task out of the merge queue, but leaves the task open: the advance goes on with the next slice.
 Only the last slice's merge records the task `done`.
 
 Every advance applies the rule first, after taking its event's result and before any step runs, to a task with `-pr` documents and no `-merge` document, at the cost of one `gh pr view` per recorded pull request; that advance prints `{"wait":"done",...}`.

@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-31
 topic: workflow
 tasks: d74, d77, d81
-amended-by: engine-owned-hallmark-cadence.md
+amended-by: engine-owned-hallmark-cadence.md, closed-tasks-have-no-open-decisions.md
 ---
 
 # A report-only workflow finishes as done without delivering, and the hallmark task kind runs one
@@ -30,7 +30,8 @@ Evidence reaches a hallmark by input, not by grants (d81): the engine renders a 
 The `hallmark` workflow ships release-approved beside `default` and `bug`; because it has no guarded step, a `publish` or `deliver` step a baseline has none of counts as weakening, so the authority cannot admit any revision meeting the floor as non-weakening.
 A repository's `workflow_overrides` are keyed by step id across every workflow its kinds run, so a workflow other than the feature workflow takes only the overrides of the steps it has; the feature workflow still refuses an override naming a step it lacks.
 
-A finished hallmark's close opens one decision, id and kind `follow-ups`, bound to its latest attempt's report as a document subject, before the `finished` message, so a close that fails replays to the same decision (d77).
+A finished hallmark opens one decision, id and kind `follow-ups`, bound to its latest attempt's report as a document subject, before the `finished` message (d77).
+Since [d121](closed-tasks-have-no-open-decisions.md) the hallmark does not close then: it waits on the decision with its task open, and the advance after the answer, `guildhall task start --decision follow-ups`, closes it done, so a closed hallmark never has an open decision; a report-only task with no `follow-ups` decision still closes as it finishes.
 Its question names the repository, task and report path and lists the report's `### H<n>. <title>` headings best effort, never failing the close; it offers `pick`, with the picked ids as free text on the following lines, and `none`.
 Answering it records the answer only: Guildhall creates no task, and the Director runs `guildhall task new` for each picked id and nothing else.
 
@@ -45,5 +46,6 @@ Answering it records the answer only: Guildhall creates no task, and the Directo
 
 Tracked files that a test or build changes count as changes and fail the attempt.
 The previous report matches a hallmark step, not a workflow name, so an override still continues the ledger; hallmarks from before Guildhall recorded them are not imported, though the Director may attach one as task context.
-A refused or failed hallmark attempt opens no `follow-ups` decision, and prune does not wait for an open one, since the decision and its report are store records that outlive the worktree.
+A refused or failed hallmark attempt opens no `follow-ups` decision.
+A hallmark waiting on its open `follow-ups` decision is an open task, so prune keeps its worktree until the answer closes it (d121); once closed, the decision and its report are store records that outlive the worktree.
 This record left open how the last hallmark run is recorded; [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md) decided it from the repository's last done hallmark task, so creating or starting a hallmark task records nothing and `director maintenance record --hallmark` is refused.

@@ -146,7 +146,15 @@ func TestDecideOpenRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A closed task has no open decisions, so each close voids the task's open decision first, as the engine and
+	// cancel do.
+	if _, err := s.VoidDecision("void-merge", "app", "t-2", "merge", "Task done"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.SetTaskState("done", "app", "t-2", store.TaskDone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.VoidDecision("void-port", "lib", "t-1", "port", "Task cancelled: not needed"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.CancelTask("cancel", "lib", "t-1", "not needed"); err != nil {
