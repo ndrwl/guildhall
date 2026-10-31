@@ -15,8 +15,8 @@ The `test (ubuntu-latest)` leg runs `go test -race ./...` as an extra step after
 It is Linux-only because `-race` needs cgo and a C compiler, which the Linux runner has, and one race-enabled run finds what the other legs would.
 The plain `Test` step still runs on all three operating systems.
 A race the step finds is filed as its own task rather than fixed in the change that found it.
-The step's first run failed, and that failure is filed as guildhall/d89, which holds the details.
-Until guildhall/d89 lands, the step has `continue-on-error: true`, so it reports in every log without blocking merges; the change that fixes the failure removes the flag.
+The step's first run failed, and guildhall/d89 (`e0993c47`) fixed that failure.
+The step is now blocking: a race failure fails the `test (ubuntu-latest)` job and so blocks merges; main run 41154510329 at `2420a81e` confirmed it green, and so did this change's own CI run.
 The step sits after the release test so a red race run cannot skip it.
 
 ## The release test in CI
