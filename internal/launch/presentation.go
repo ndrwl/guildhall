@@ -2,6 +2,7 @@ package launch
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/workbench"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -56,6 +58,9 @@ type Presentation struct {
 	// the bridge as WorkspaceCloseAfterFlag so its finish line states it; zero is
 	// never closing automatically.
 	CloseAfter time.Duration
+	// Output is the effective artisan_pane_output setting, workbench.OutputWorkbench or workbench.OutputPlain,
+	// passed to the bridge as PaneOutputFlag; empty is the Workbench.
+	Output string
 }
 
 const (
@@ -71,6 +76,9 @@ const (
 // WorkspaceCloseAfterFlag is the internal bridge flag that carries
 // Presentation.CloseAfter; it goes with --pane-launch only.
 const WorkspaceCloseAfterFlag = "--workspace-close-after"
+
+// PaneOutputFlag is the internal bridge flag that carries Presentation.Output; it goes with --pane-launch only.
+const PaneOutputFlag = "--pane-output"
 
 // FinishLine is the line the bridge prints when its launcher exits. closeAfter
 // is the configured close delay: zero says the Herdr workspace stays open, and a
@@ -308,7 +316,8 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		presentation.log(at, report)
 		return interp.Handle{}, err
 	}
-	argv := append(append([]string(nil), cmd.Args...), "--pane-launch", WorkspaceCloseAfterFlag, presentation.CloseAfter.String())
+	argv := append(append([]string(nil), cmd.Args...), "--pane-launch", WorkspaceCloseAfterFlag, presentation.CloseAfter.String(),
+		PaneOutputFlag, cmp.Or(presentation.Output, workbench.OutputWorkbench))
 	if err := l.Type(ctx, tab, shell, argv); err != nil {
 		report.ReadBackErr = errLaunchUnsettled
 		presentation.log(at, report)
@@ -459,47 +468,5 @@ func (pr *Presentation) recovered(at Attempt, abandoned string, closed bool, rea
 func (pr *Presentation) warn(format string, args ...any) {
 	if pr.Warnings != nil {
 		_, _ = fmt.Fprintf(pr.Warnings, "guildhall: warning: "+format+"\n", args...)
-	}
-}
-
-// Present starts argv as a detached owned launcher, appending output to logPath,
-// and streams that log to out until it exits. A lost output consumer never stops
-// the launcher. argv must be a fully validated artisan start invocation without
-// --pane-launch. When the launcher exits it prints FinishLine(closeAfter). It is
-// an internal CLI bridge, not a second attempt owner.
-func Present(argv, env []string, logPath string, closeAfter time.Duration, out io.Writer) error {
-	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return err
-	}
-	cmd, err := startDetached(func() *exec.Cmd {
-		c := exec.Command(argv[0], argv[1:]...)
-		c.Env = env
-		c.Stdout, c.Stderr = log, log
-		return c
-	})
-	_ = log.Close()
-	if err != nil {
-		return err
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	reader, err := os.Open(filepath.Clean(logPath))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = reader.Close() }()
-	for {
-		// Output errors are presentation errors only: the child remains owned.
-		if _, err := io.Copy(out, reader); err != nil {
-			return err
-		}
-		select {
-		case err := <-done:
-			_, _ = io.Copy(out, reader)
-			_, _ = fmt.Fprintln(out, "\n"+FinishLine(closeAfter))
-			return err
-		case <-time.After(100 * time.Millisecond):
-		}
 	}
 }

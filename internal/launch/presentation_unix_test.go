@@ -68,6 +68,10 @@ func TestWorkflowPaneOwnsLauncherAndClosingDoesNotStopAttempt(t *testing.T) {
 	if !strings.Contains(panes.Sent()[0], "'--pane-launch' '--workspace-close-after' '5m0s'") {
 		t.Errorf("bridge line %q does not pass the close delay", panes.Sent()[0])
 	}
+	// An unset pane output is the Workbench, and the bridge is told so.
+	if !strings.Contains(panes.Sent()[0], "'--workspace-close-after' '5m0s' '--pane-output' 'workbench'") {
+		t.Errorf("bridge line %q does not pass the pane output", panes.Sent()[0])
+	}
 	// A second launch, even from another Process after a caller restart, must
 	// not type anything while ownership is live or the API outcome is unknown.
 	again := &launch.Process{Executable: p.Executable, Env: p.Env, Store: p.Store, StateDir: p.StateDir, Presentation: p.Presentation}
