@@ -1,6 +1,6 @@
 # Release upgrades
 
-Everything on this page is designed, not built, except the copy and its selection, which [copies](running.md#copies) describes as built.
+Everything on this page is designed, not built, except the copy and its selection, which [copies](running.md#copies) describes as built, and what [built so far](#built-so-far) lists.
 No other command, config key, file or store record it names exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [release upgrades](decisions/release-upgrades.md).
 It implements R1.31: a release pin, side-by-side installs, new tasks only, and rollback.
@@ -20,6 +20,20 @@ On `main` today:
 - `guildhall task new` binds the configuration digest to the task, so a new managed revision reaches new tasks only (R1.62).
 
 Nothing records which release a task runs, and a machine has exactly one `guildhall` on `PATH`.
+
+## Built so far
+
+Task d127 builds this page in five slices; slice 1 is built and changes nothing for any copy:
+
+- **The Guildhall home** is `$GUILDHALL_HOME` when set; else, for an installed release, the home it is installed under (`<home>/releases/<version>/guildhall`); else `$XDG_DATA_HOME/guildhall`, or `~/.local/share/guildhall` without it, on Linux, WSL and a VDS alike, and `%LOCALAPPDATA%\Guildhall` on Windows.
+- **What counts as a release**: a binary whose `guildhall version --json` reports a version other than `dev`, `modified: false` and a `release_contract`, tagged (`v1.4.0`) or a main pseudo-version (`v0.0.0-20261031162214-d385b331abcd`). A plain `go build` reports `dev` and a build from a tree with local changes is modified; both are refused, since two of them would share a directory.
+- **`guildhall release install <version> --from <file> --sha256 <hex>`** installs one as the [layout](#layout) says: copy into `.incoming/`, verify the sha256, run the verified copy's `version --json` to check the version, then rename into `releases/<version>/` under the home lock. Beside `SHA256` it records `release.json`: the binary's `store_schema` and `release_contract`, which `version --json` now reports, and the install time. Installing the same binary again changes nothing; another binary under an installed version is refused.
+- **`guildhall release status [--json]`** prints the home, each installed release with any damage, and the inventoried copies.
+- The `copies` inventory and the home lock exist; nothing registers a copy yet.
+
+The contracts are [`internal/release`](contracts/release.md) and [the CLI's release commands](contracts/cli.md#release).
+Slice 2 adds the pin, `release use`, the launcher and `release adopt`; slice 3 tasks recording their release; slice 4 rollback and prune; slice 5 the managed pin through `config reload`.
+Until a copy adopts, the install-each-merge routine (`go install …@<pseudo-version>` onto `PATH`) is unchanged.
 
 ## Layout
 
