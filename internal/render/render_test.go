@@ -567,6 +567,43 @@ func TestQuestionGoldenPerKind(t *testing.T) {
 	}
 }
 
+// TestQuestionSummary: a plan approval's question carries the spec's Summary block after its first line, or a line
+// naming the spec when it has none; other kinds ignore both.
+func TestQuestionSummary(t *testing.T) {
+	spec := input(t, "spec", "tasks/t7/spec.md", "spec.md")
+	accept := step(t, "accept", "guildmaster-approval", `{"instructions": "Check the scope."}`)
+	for _, c := range []struct {
+		golden    string
+		summary   string
+		noSummary bool
+	}{
+		{"question-guildmaster-approval-summary.txt", "- **Goal:** one page.\r\n- **Size:** small.\n- **Slices:** none.\n- **Changed since the grill:** nothing.\n- **Open questions:**\n  - Q1 Which? Recommended: this one.\n", false},
+		{"question-guildmaster-approval-no-summary.txt", "", true},
+	} {
+		t.Run(c.golden, func(t *testing.T) {
+			stage := attempt(t, accept)
+			stage.Summary, stage.NoSummary = c.summary, c.noSummary
+			ask, err := Question(stage, []Input{spec})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(ask.Question, "\r") {
+				t.Error("question contains a carriage return")
+			}
+			golden(t, c.golden, []byte(ask.Question))
+		})
+	}
+	review := attempt(t, step(t, "review", "review", `{"actor":"guildmaster", "profile": "reviewer-opus"}`))
+	plain, err := Question(review, []Input{spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review.Summary, review.NoSummary = "- **Goal:** x.", true
+	if ask, err := Question(review, []Input{spec}); err != nil || ask.Question != plain.Question {
+		t.Errorf("a review's question changed with a summary: %q, %v", ask.Question, err)
+	}
+}
+
 // TestDesignQuestionGolden: a design round's decision offers approved and changes_requested, says what each does and
 // lists the brief and the design by digest.
 func TestDesignQuestionGolden(t *testing.T) {

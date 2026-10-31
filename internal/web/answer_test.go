@@ -107,8 +107,8 @@ func TestAnsweringPage(t *testing.T) {
 			t.Errorf("the Guildmaster's page lacks %s", want)
 		}
 	}
-	if n := strings.Count(body, "<form "); n != 3 {
-		t.Errorf("%d forms, want one per ask (3)", n)
+	if n := strings.Count(body, "<form "); n != 4 {
+		t.Errorf("%d forms, want one per ask (4)", n)
 	}
 	for _, bad := range []string{"<script", " disabled>"} {
 		if strings.Contains(body, bad) {
