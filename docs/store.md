@@ -212,6 +212,7 @@ The `director` bucket's nested `enrolments` and `managed-revisions` hold its enr
   `RecordManagedRevision` records one under the mutation id `managed-revision:<enrolment>:<source>:<digest hex>` while the newest enrolment event is `enrolled`, and refuses it otherwise with `ErrInvalid`; one event is kept per enrolment, source and digest, and recording it again returns that event and its receipt.
 - `ManagedView` returns the newest enrolment event, none in a store that has none, and every revision event recorded under it when it is `enrolled`.
   Only a `reload` or `guildmaster-approved` event of the newest enrolment authorizes its digest (`ManagedView.Authorization`): enrolment and observation never do, and leaving, or enrolling again, starts with no authorization.
+- The alert decisions on `observed-untrusted` digests are ordinary decisions of an ordinary task, `untrusted` under the reserved repository `managed-mode` of the Director store, recorded by the configuration-admission boundary ([observed-untrusted alerts](director-modes.md#observed-untrusted-alerts)); the store gives that repository no special meaning.
 
 ### Release pins
 

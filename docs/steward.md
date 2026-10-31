@@ -94,7 +94,9 @@ guildhall steward status [--copy <dir>]
 ```
 
 `steward status` prints one JSON document: the newest Steward session, every roster machine with its SSH alias, OS and Director copies, each copy's last rollout from the newest receipt under the copy's `rollouts/`, and every rollout approval with its state, `waiting`, `approved`, `declined` or `void`.
-It reads local files only; nothing reaches a Director.
+Each copy also has its `mode`, read with the fixed, read-only [remote command](#remote-commands) `director mode --json` over SSH: the copy's mode name, the Steward it is enrolled with, its `managed.toml` digest, whether the copy's own store authorizes that digest, any refusal, and any `untrusted` digest waiting for the Guildmaster's answer on that copy.
+A copy whose mode cannot be read, because its machine is unreachable, `ssh` is missing or its `guildhall` is too old to know `director mode`, has no `mode`, a `problem` saying why, and a line in `problems`; the command still succeeds.
+Nothing else reaches a Director, and status changes nothing.
 
 ### Approval in a Steward session
 
@@ -297,7 +299,9 @@ To bring a copy under this Steward:
    Enrolment never authorizes that first digest, so the copy refuses every command that needs its settings until it is authorized.
 4. Authorize it: run a rollout to the machine, whose apply runs `config reload` on each copy it writes, or run `guildhall config reload --copy <dir>` there by hand.
    A rollout that leaves the copy unchanged writes nothing and runs no reload, so the hand reload is the way when the Steward's settings already match.
-5. Check with `guildhall director mode` on the copy: it shows `managed`, the Steward's label and the digest, authorized.
+5. Check with `guildhall director mode` on the copy, or `guildhall steward status` here: it shows `managed`, the Steward's label and the digest, authorized.
+
+A `managed.toml` changed on the machine by anything but a rollout and its reload, such as a hand edit, is not applied: the copy records it `observed-untrusted` and raises an approve/reject decision for the Guildmaster in its own `needs_me` ([observed-untrusted alerts](director-modes.md#observed-untrusted-alerts)), and `steward status` shows the digest as untrusted.
 
 `guildhall director leave`, run on the Director's machine on the Guildmaster's word, returns the copy to standalone; then remove it from the roster.
 
@@ -316,5 +320,4 @@ Release binding and execution enforcement of R1.31 remain future work.
 - Enrolment through the setup wizard (R1.43-R1.51).
 - Platform support: tests replace `scp` and `ssh` with stubs on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
 - The Steward session's live acceptance: CI runs it against a stand-in runtime only, so it is not claimed until the Guildmaster has run it once with three Director hosts (R1.27, R1.30).
-- The rest of managed mode ([standalone and managed Directors](director-modes.md#what-is-missing)): observed-untrusted alerts on the Director, and `steward status` reading each copy's mode with `director mode --json`, follow-up `guildhall/d123` slice 3.
 - Collection of lessons and maintenance tickets from Directors, and their triage, follow-up `guildhall/d103`.

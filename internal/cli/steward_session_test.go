@@ -518,7 +518,8 @@ func TestStewardSessionApproveRefusesADecline(t *testing.T) {
 	}
 }
 
-// TestStewardStatusWithoutASession: steward status reads the roster and approvals with no session yet.
+// TestStewardStatusWithoutASession: steward status reads the roster and approvals with no session yet; with no ssh
+// to read a copy's mode, that is the copy's problem and the command still succeeds.
 func TestStewardStatusWithoutASession(t *testing.T) {
 	dir := stewardCopy(t, "/exit")
 	code, out, stderr := runCLI(t, "steward", "status", "--copy", dir)
@@ -529,7 +530,8 @@ func TestStewardStatusWithoutASession(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &st); err != nil {
 		t.Fatal(err)
 	}
-	if st.Session != nil || len(st.Roster) != 1 || st.Roster[0].Label != "workstation" || st.Roster[0].Directors[0].LastRollout != nil || len(st.Problems) != 0 {
+	if st.Session != nil || len(st.Roster) != 1 || st.Roster[0].Label != "workstation" || st.Roster[0].Directors[0].LastRollout != nil ||
+		len(st.Problems) != 1 || !strings.HasPrefix(st.Problems[0], "workstation/tools: mode: ssh is needed") {
 		t.Errorf("status = %+v", st)
 	}
 }

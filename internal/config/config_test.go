@@ -164,6 +164,7 @@ func TestValidationRefusals(t *testing.T) {
 		{"director with private config", `name = "alpha"`, "name = \"alpha\"\n[private_config]\nlocation = \"x\"", `private_config is for the steward only`},
 		{"duplicate repository", `id = "site"`, `id = "tool"`, `duplicate repository id "tool"`},
 		{"invalid repository id", `id = "site"`, `id = "My Site"`, `invalid repository id`},
+		{"reserved repository id", `id = "site"`, `id = "managed-mode"`, `repository id "managed-mode" is reserved`},
 		{"relative path", `path = '`, `path = 'relative/`, `path must be absolute`},
 		{"second owner machine", `owner_machine = "workstation"
 workflow`, `owner_machine = "laptop"

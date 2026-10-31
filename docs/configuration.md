@@ -158,7 +158,7 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 
 | Key | Meaning |
 |---|---|
-| `id` | Unique lowercase identifier. |
+| `id` | Unique lowercase identifier; `managed-mode` is reserved for the Director store's [observed-untrusted alerts](director-modes.md#observed-untrusted-alerts) and refused. |
 | `path` | Absolute path of the repository on the owner machine. |
 | `remote` | Git remote; web URLs must not embed user info and no URL may embed a password. `publish` pushes task branches there, and the [GitHub forge](contracts/forge.md) supports only `github.com` remotes. |
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |

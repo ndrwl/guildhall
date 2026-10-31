@@ -22,7 +22,8 @@ type Meaning struct {
 
 // meanings maps each decision kind, then each option it offers, to its meaning. It covers every option set the
 // engine (interp.DecisionOptions), the rendered Guildmaster questions (render.DecisionOptions), grants
-// (store.DecisionOptions) and the Steward (cli.StewardDecisionOptions) offer; TestOptionMeaningsCoverEveryOption
+// (store.DecisionOptions), the Steward (cli.StewardDecisionOptions) and the managed-mode alerts
+// (admit.AlertDecisionOptions) offer; TestOptionMeaningsCoverEveryOption
 // keeps it in step with them. The Steward's rollout approval is listed although a Director's page never reads the
 // Steward's store, so a later Steward page needs no new table. The untyped kind "" holds the handoff wait's option,
 // which render.Question offers with no kind of its own.
@@ -35,8 +36,9 @@ var meanings = map[string]map[string]Meaning{
 	"approval": {
 		"approved":          {"approve it; the task goes on", TonePositive},
 		"changes_requested": {"send it back with your words", ToneCarryOn},
-		"approve":           {"roll the plan out to its machines", TonePositive},
+		"approve":           {"approve exactly this; a rollout plan rolls out, a managed revision applies", TonePositive},
 		"decline":           {"do not roll the plan out", ToneNegative},
+		"reject":            {"the managed revision stays refused", ToneNegative},
 	},
 	"review": {
 		"approved":          {"the work passes review", TonePositive},

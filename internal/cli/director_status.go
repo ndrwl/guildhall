@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/backup"
@@ -198,12 +199,24 @@ type statusGuardRails struct {
 type statusMode struct {
 	// Name is the mode the configuration-admission boundary finds: standalone, managed or refused.
 	Name string `json:"name"`
+	// Refusal is the boundary's refusal, naming the state and the command that fixes it; empty when admitted.
+	Refusal string `json:"refusal,omitempty"`
+	// Steward is the label of the Steward a managed or refused copy is enrolled with.
+	Steward string `json:"steward,omitempty"`
+	// AppliedDigest is the managed.toml digest a managed copy applies, and AppliedAt and AppliedBy the time and
+	// source of the revision event that authorized it; absent when no managed revision is applied.
+	AppliedDigest string     `json:"applied_digest,omitempty"`
+	AppliedAt     *time.Time `json:"applied_at,omitempty"`
+	AppliedBy     string     `json:"applied_by,omitempty"`
+	// Untrusted is the observed-untrusted managed.toml digest on disk awaiting authorization, with its alert
+	// decision on the reserved task and whether it waits or was rejected.
+	Untrusted *admit.Alert `json:"untrusted,omitempty"`
 }
 
-// statusModeName is the mode name of the copy whose config is at cfgPath, or whose store is at storePath when no
-// config is named, with managed facts v read from its store. A config that cannot be read leaves the mode to the
-// store and managed.toml alone.
-func statusModeName(cfgPath, storePath string, v store.ManagedView) string {
+// statusModeOf is the mode of the copy whose config is at cfgPath, or whose store is at storePath when no config is
+// named, with managed facts v and alert decisions alerts read from its store. A config that cannot be read leaves
+// the mode to the store and managed.toml alone.
+func statusModeOf(cfgPath, storePath string, v store.ManagedView, alerts []store.Decision) statusMode {
 	if cfgPath == "" {
 		cfgPath = filepath.Join(filepath.Dir(storePath), "config.toml")
 	}
@@ -214,8 +227,18 @@ func statusModeName(cfgPath, storePath string, v store.ManagedView) string {
 			f.Managed = b
 		}
 	}
-	return judge(f, v).Mode
+	a := admit.JudgeAlerts(f, v, alerts)
+	m := statusMode{Name: a.Mode, Refusal: a.Refusal, Steward: a.Steward, Untrusted: a.Untrusted}
+	if r := a.Authorization; r != nil && a.Refusal == "" {
+		at := r.Time
+		m.AppliedDigest, m.AppliedAt, m.AppliedBy = r.Digest, &at, string(r.Source)
+	}
+	return m
 }
+
+// reservedRepository reports whether repo is the Director store's reserved managed-mode repository, whose task task
+// listings, the status feed's tasks and prune leave out; its open decisions still reach needs_me.
+func reservedRepository(repo string) bool { return repo == admit.AlertRepository }
 
 type statusTask struct {
 	Repository string            `json:"repository"`
@@ -583,12 +606,17 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	var hallmarks map[string]repoHallmarks
 	var taskSlices map[string]*statusSlices
 	var managed store.ManagedView
+	var alerts []store.Decision
 	v, err := withRecords(p, true, now, func(s *store.Store) (store.DirectorView, error) {
 		v, err := s.DirectorView()
 		if err != nil {
 			return v, err
 		}
+		v.Tasks = slices.DeleteFunc(v.Tasks, func(t store.Task) bool { return reservedRepository(t.Repository) })
 		if managed, err = s.ManagedView(); err != nil {
+			return v, err
+		}
+		if alerts, err = s.Decisions(admit.AlertRepository, admit.AlertTask); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return v, err
 		}
 		if starts, err = s.StartQueue(); err != nil {
@@ -614,7 +642,7 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	out := directorStatus{
 		AsOf:        statusLabel{Partial: true, Excluded: []string{"worker files", "transcripts", "forge state"}, Sequence: v.AsOf.Sequence, CommittedAt: v.AsOf.CommittedAt},
 		Session:     statusSession{State: "no session"},
-		Mode:        statusMode{Name: statusModeName(cfgPath, path, managed)},
+		Mode:        statusModeOf(cfgPath, path, managed, alerts),
 		Tasks:       []statusTask{},
 		MergeQueues: queues,
 		Decisions:   []statusDecision{},

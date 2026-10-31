@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -126,7 +127,13 @@ func (a *App) decide(args []string) int {
 	case "show":
 		out, err = findDecision(s, *repo, *task, *id)
 	case "answer":
-		out, err = answerDecision(s, *repo, *task, *id, answer, "", "")
+		if out, err = answerDecision(s, *repo, *task, *id, answer, "", ""); err == nil && *repo == admit.AlertRepository && *task == admit.AlertTask {
+			// An approved managed-mode alert authorizes its exact digest (docs/director-modes.md#guard-rails).
+			var d store.Decision
+			if d, err = findDecision(s, *repo, *task, *id); err == nil {
+				err = admit.ApplyAnswer(s, d)
+			}
+		}
 	}
 	if cerr := s.Close(); err == nil {
 		err = cerr

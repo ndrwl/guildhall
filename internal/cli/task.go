@@ -751,7 +751,8 @@ func taskViews(s *store.Store, tasks []store.Task) ([]taskView, error) {
 	return out, nil
 }
 
-// listTasks lists one repository's tasks, or every repository's in repository order when repo is empty.
+// listTasks lists one repository's tasks, or every repository's in repository order when repo is empty, leaving out
+// the reserved managed-mode repository's.
 func listTasks(s *store.Store, repo string) ([]store.Task, error) {
 	repos := []string{repo}
 	if repo == "" {
@@ -759,6 +760,7 @@ func listTasks(s *store.Store, repo string) ([]store.Task, error) {
 		if repos, err = s.Repositories(); err != nil {
 			return nil, err
 		}
+		repos = slices.DeleteFunc(repos, reservedRepository)
 	}
 	out := []store.Task{}
 	for _, r := range repos {
