@@ -45,7 +45,7 @@ func TestStoreDoctorReportsStore(t *testing.T) {
 		"receipts: 2\n" +
 		"workflow approvals: 0\n" +
 		"director: sessions 0, wakes 0\n" +
-		"repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 1, rulings 0, task contexts 0, task links 0, task overrides 0, owners 0 (0 starting without containment), messages 0 (0 unread), pruned tasks 0\n"
+		"repository app: tasks 1, attempts 0, documents 0, pane bindings 0, decisions 1, rulings 0, task contexts 0, task links 0, task overrides 0, task dependencies 0, owners 0 (0 starting without containment), messages 0 (0 unread), pruned tasks 0\n"
 	if got := stdout.String(); got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}

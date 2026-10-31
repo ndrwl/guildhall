@@ -532,3 +532,124 @@ func TestDependencyMessageTypesRegistered(t *testing.T) {
 		t.Error("dependency-held reuses the between-Directors dependency-notice type")
 	}
 }
+
+// changeDependency records the Director's next change to app/t7's dependencies, as guildhall task depends does.
+func (e *env) changeDependency(t *testing.T, op store.TaskDependencyOp, repo, id string, prior int) {
+	t.Helper()
+	dep := store.TaskRef{Repository: repo, ID: id}
+	if _, err := e.h.AddTaskDependency("depends:"+string(op)+":"+repo+":"+id+":"+string(rune('0'+prior)), "app", "t7", op, dep, prior, "Guildmaster: "+string(op)+" "+repo+"/"+id+"."); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDependencyAddedAfterCreationHoldsResearch: a task created with no dependencies is held at research by one the
+// Director added later; adding another changes the set and sends a new dependency-held message; removing both passes
+// the gate.
+func TestDependencyAddedAfterCreationHoldsResearch(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			def := loadWorkflow(t, "director-grill")
+			e := newEnvTasks(t, withTasks(b, libTask(def)), def, func(*store.Task) {}, researchExpectation([]byte("# Research\n")))
+			e.changeDependency(t, store.TaskDependencyAdd, "app", "t3", 0)
+			want(t, e.grilled(t), heldAt)
+			first := e.held(t)
+			if len(first) != 1 {
+				t.Fatalf("dependency-held messages = %v, want one", first)
+			}
+			for _, text := range first {
+				if !strings.Contains(text, "app/t3: in progress") {
+					t.Errorf("message does not name the added app/t3:\n%s", text)
+				}
+			}
+
+			e.changeDependency(t, store.TaskDependencyAdd, "lib", "l1", 0)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), heldAt)
+			second := e.held(t)
+			if len(second) != 2 {
+				t.Fatalf("a changed set of dependencies sent %v, want a second message", second)
+			}
+			for id, text := range second {
+				if _, ok := first[id]; !ok && !strings.Contains(text, "lib/l1: in progress") {
+					t.Errorf("new message %s does not name lib/l1:\n%s", id, text)
+				}
+			}
+
+			e.changeDependency(t, store.TaskDependencyRemove, "app", "t3", 1)
+			e.changeDependency(t, store.TaskDependencyRemove, "lib", "l1", 1)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
+		})
+	}
+}
+
+// TestDependencyRemovedPassesTheGate: removing a held task's last unmet dependency, one it was created with, passes
+// the gate while that dependency is still open; the d102/d103 case, followed by its replacement merging.
+func TestDependencyRemovedPassesTheGate(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			def := loadWorkflow(t, "director-grill")
+			e := newDependentEnv(t, b, def, []store.Task{libTask(def)}, researchExpectation([]byte("# Research\n")))
+			e.closeTask(t, "lib", "l1", store.TaskDone)
+			want(t, e.grilled(t), heldAt)
+			// app/t3 is replaced by lib/l2: the dependent follows it.
+			l2 := libTask(def)
+			l2.ID = "l2"
+			if _, err := e.h.CreateTask("task:lib:l2", l2); err != nil {
+				t.Fatal(err)
+			}
+			e.changeDependency(t, store.TaskDependencyRemove, "app", "t3", 0)
+			e.changeDependency(t, store.TaskDependencyAdd, "lib", "l2", 0)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), heldAt)
+			found := false
+			for _, text := range e.held(t) {
+				found = found || (strings.Contains(text, "lib/l2: in progress") && !strings.Contains(text, "app/t3"))
+			}
+			if !found {
+				t.Fatalf("no message names only the replacement lib/l2: %v", e.held(t))
+			}
+			e.changeDependency(t, store.TaskDependencyRemove, "lib", "l2", 1)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
+		})
+	}
+}
+
+// TestDependencyAddedPastTheGateHoldsNothing: a dependency added to a task already past research never holds it.
+func TestDependencyAddedPastTheGateHoldsNothing(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			def := loadWorkflow(t, "director-grill")
+			e := newEnvTasks(t, b, def, func(*store.Task) {}, researchExpectation([]byte("# Research\n")))
+			want(t, e.grilled(t), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
+			e.changeDependency(t, store.TaskDependencyAdd, "app", "t3", 0)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
+			if got := e.held(t); len(got) != 0 {
+				t.Errorf("a task past research was told it is held: %v", got)
+			}
+		})
+	}
+}
+
+// TestDependencyOverridePassesAnAddedDependency: the dependency override lasts for the task's life, so a dependency
+// added after it holds nothing.
+func TestDependencyOverridePassesAnAddedDependency(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			def := loadWorkflow(t, "director-grill")
+			e := newDependentEnv(t, b, def, []store.Task{libTask(def)}, researchExpectation([]byte("# Research\n")))
+			e.closeTask(t, "lib", "l1", store.TaskDone)
+			if _, err := e.h.OverrideDependencies("dependency-override.app.t7", "app", "t7", "t7 does not touch t3's files."); err != nil {
+				t.Fatal(err)
+			}
+			e.changeDependency(t, store.TaskDependencyRemove, "lib", "l1", 0)
+			l2 := libTask(def)
+			l2.ID = "l2"
+			if _, err := e.h.CreateTask("task:lib:l2", l2); err != nil {
+				t.Fatal(err)
+			}
+			e.changeDependency(t, store.TaskDependencyAdd, "lib", "l2", 0)
+			want(t, e.grilled(t), interp.Next{Wait: interp.WaitAttempt, Step: "research", Attempt: 1})
+			if got := e.held(t); len(got) != 0 {
+				t.Errorf("an overridden task was told it is held: %v", got)
+			}
+		})
+	}
+}

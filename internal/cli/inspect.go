@@ -87,6 +87,12 @@ type timedTaskOverride struct {
 	seq uint64
 }
 
+// timedDependency is one task dependency record, its added_at the commit time of its receipt.
+type timedDependency struct {
+	store.TaskDependency
+	seq uint64
+}
+
 type timedFullReview struct {
 	store.FullReview
 	RequestedAt *time.Time `json:"requested_at,omitempty"`
@@ -120,6 +126,9 @@ type taskTimeline struct {
 	Links []timedLink `json:"links"`
 	// Overrides are the task's override records, sets and unsets, in the order they were recorded.
 	Overrides []timedTaskOverride `json:"overrides"`
+	// Dependencies are the task's dependency records, adds and removes with their reasons, in the order they were
+	// recorded; Task's depends_on is the list it was created with, which they change.
+	Dependencies []timedDependency `json:"dependencies"`
 	// DesignRounds is how many design rounds the task has used, counted from their briefs; absent when none. Each
 	// round's designer attempts and decision are among Attempts and Decisions.
 	DesignRounds int `json:"design_rounds,omitempty"`
@@ -201,7 +210,7 @@ func span(rs []store.Receipt, startOp, endOp string) (start, end *time.Time, sec
 func timeline(h store.TaskHistory) taskTimeline {
 	byRecord := recordReceipts(h.Receipts)
 	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Findings: []timedFindings{},
-		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Context: []timedContext{}, Links: []timedLink{}, Overrides: []timedTaskOverride{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
+		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Context: []timedContext{}, Links: []timedLink{}, Overrides: []timedTaskOverride{}, Dependencies: []timedDependency{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
 	for _, a := range h.Attempts {
 		t := timedAttempt{StageAttempt: a}
 		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)], "start-attempt", "finish-attempt")
@@ -253,6 +262,13 @@ func timeline(h store.TaskHistory) taskTimeline {
 		}
 		out.Overrides = append(out.Overrides, t)
 	}
+	for _, d := range h.Dependencies {
+		t := timedDependency{TaskDependency: d}
+		if at, _, _, seq := span(byRecord[store.TaskDependencyRecord(d.Number)], "add-task-dependency", ""); at != nil {
+			t.AddedAt, t.seq = *at, seq
+		}
+		out.Dependencies = append(out.Dependencies, t)
+	}
 	if o := h.DependencyOverride; o != nil {
 		out.DependencyOverride = &timedOverride{DependencyOverride: *o}
 		out.DependencyOverride.OverriddenAt, _, _, _ = span(byRecord[store.DependencyOverrideRecord], "override-dependencies", "")
@@ -287,6 +303,7 @@ func timeline(h store.TaskHistory) taskTimeline {
 	slices.SortStableFunc(out.Context, func(a, b timedContext) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Links, func(a, b timedLink) int { return byStart(a.seq, b.seq) })
 	slices.SortStableFunc(out.Overrides, func(a, b timedTaskOverride) int { return byStart(a.seq, b.seq) })
+	slices.SortStableFunc(out.Dependencies, func(a, b timedDependency) int { return byStart(a.seq, b.seq) })
 	return out
 }
 

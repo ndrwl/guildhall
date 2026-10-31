@@ -13,15 +13,24 @@ import (
 )
 
 // dependencyGate decides whether the task may run s, its first step not run by the Director, or must wait for its
-// dependencies to merge (docs/interpreter.md#the-dependency-gate). It passes a task with no depends_on, reading
-// nothing more; a task that already has an attempt of a step not run by the Director; a task the Director overrode;
-// and a task whose every dependency is done. The gate only holds or releases: a released task starts on the main
-// its dependencies merged into because its first attempt's launch fast-forwards its untouched branch.
+// dependencies to merge (docs/interpreter.md#the-dependency-gate). It passes a task that already has an attempt of a
+// step not run by the Director, reading nothing; a task with no effective dependencies (store.EffectiveDependencies),
+// after one read of its dependency records and no dependency lookups; a task the Director overrode; and a task whose
+// every effective dependency is done. The gate only holds or releases: a released task starts on the main its
+// dependencies merged into because its first attempt's launch fast-forwards its untouched branch.
 //
 // A held task records nothing: the Director is sent one dependency-held message per state of its unmerged
 // dependencies, and the advance waits for them (WaitDependencies).
 func (r *run) dependencyGate(s workflow.Step) (held bool, next Next, err error) {
-	if len(r.task.DependsOn) == 0 || r.pastGate() {
+	if r.pastGate() {
+		return false, Next{}, nil
+	}
+	changes, err := r.e.Records.TaskDependencies(r.task.Repository, r.task.ID)
+	if err != nil {
+		return false, Next{}, fmt.Errorf("dependency records: %w", err)
+	}
+	deps := store.EffectiveDependencies(r.task, changes)
+	if len(deps) == 0 {
 		return false, Next{}, nil
 	}
 	_, err = r.e.Records.DependencyOverride(r.task.Repository, r.task.ID)
@@ -31,7 +40,7 @@ func (r *run) dependencyGate(s workflow.Step) (held bool, next Next, err error) 
 	case !errors.Is(err, store.ErrNotFound):
 		return false, Next{}, fmt.Errorf("dependency override: %w", err)
 	}
-	lines, err := r.unmerged()
+	lines, err := r.unmerged(deps)
 	if err != nil {
 		return false, Next{}, err
 	}
@@ -44,18 +53,24 @@ func (r *run) dependencyGate(s workflow.Step) (held bool, next Next, err error) 
 // pastGate reports whether the task has an attempt of any step not run by the Director: it passed the gate before,
 // so a loop, retry or send-back to that step is never held again. A design round's designer attempt does not count,
 // so it never lets research past the gate.
-func (r *run) pastGate() bool {
-	_, designer := DesignSteps(r.def)
-	return slices.ContainsFunc(r.attempts, func(a store.StageAttempt) bool {
-		i := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == a.Step })
-		return a.Step != designer && (i < 0 || r.def.Steps[i].Actor() != workflow.DirectorActor)
+func (r *run) pastGate() bool { return PastDependencyGate(r.def, r.attempts) }
+
+// PastDependencyGate reports whether a task bound to def, with attempts, is past the dependency gate: it has an
+// attempt of a step not run by the Director, a design round's designer attempt aside. The gate never holds such a
+// task again, so a dependency added to it holds nothing (docs/tasks.md#changing-dependencies).
+func PastDependencyGate(def *workflow.Definition, attempts []store.StageAttempt) bool {
+	_, designer := DesignSteps(def)
+	return slices.ContainsFunc(attempts, func(a store.StageAttempt) bool {
+		i := slices.IndexFunc(def.Steps, func(s workflow.Step) bool { return s.ID == a.Step })
+		return a.Step != designer && (i < 0 || def.Steps[i].Actor() != workflow.DirectorActor)
 	})
 }
 
-// unmerged lists each dependency that is not done as "<repo>/<id>: <state>", in repository then id order, where
-// state is coarse so a dependency moving through its normal steps does not change it.
-func (r *run) unmerged() ([]string, error) {
-	deps := slices.Clone(r.task.DependsOn)
+// unmerged lists each of the task's effective dependencies, effective, that is not done as "<repo>/<id>: <state>",
+// in repository then id order, where state is coarse so a dependency moving through its normal steps does not change
+// it.
+func (r *run) unmerged(effective []store.TaskRef) ([]string, error) {
+	deps := slices.Clone(effective)
 	slices.SortFunc(deps, func(a, b store.TaskRef) int {
 		return cmp.Or(cmp.Compare(a.Repository, b.Repository), cmp.Compare(a.ID, b.ID))
 	})

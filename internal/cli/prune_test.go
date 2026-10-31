@@ -299,7 +299,7 @@ func skips(results []pruneResult) map[string]string {
 // a dry run lists the same tasks as the real run and removes nothing.
 func TestPruneSelection(t *testing.T) {
 	f := newPruneFixture(t)
-	for _, id := range []string{"t-due", "t-edge", "t-recent", "t-dep", "t-audit", "t-review", "t-reviewed", "t-running", "t-judge", "t-open", "t-pruned"} {
+	for _, id := range []string{"t-due", "t-edge", "t-recent", "t-dep", "t-later", "t-audit", "t-review", "t-reviewed", "t-running", "t-judge", "t-open", "t-pruned"} {
 		f.task("app", id)
 	}
 	f.task("app", "t-dependant", store.TaskRef{Repository: "app", ID: "t-dep"})
@@ -311,9 +311,14 @@ func TestPruneSelection(t *testing.T) {
 			Subject: &store.Subject{Kind: store.SubjectHead, Digest: strings.Repeat("a", 40)}, Options: []string{"yes", "no"}, Question: "Audit?"})
 		return err
 	})
-	for _, id := range []string{"t-due", "t-dep", "t-audit", "t-review", "t-reviewed", "t-running", "t-judge", "t-pruned"} {
+	for _, id := range []string{"t-due", "t-dep", "t-later", "t-audit", "t-review", "t-reviewed", "t-running", "t-judge", "t-pruned"} {
 		f.close("app", id)
 	}
+	// t-open depends on the done t-later only through a dependency added after creation.
+	f.mutate(func(s *store.Store) error {
+		_, err := s.AddTaskDependency(f.id(), "app", "t-open", store.TaskDependencyAdd, store.TaskRef{Repository: "app", ID: "t-later"}, 0, "Builds on it.")
+		return err
+	})
 	f.close("lib", "t-lib")
 	f.at = f.now.Add(-14 * 24 * time.Hour)
 	f.close("app", "t-edge")
@@ -340,6 +345,7 @@ func TestPruneSelection(t *testing.T) {
 		"app/t-edge":     "",
 		"app/t-recent":   "too recent: closed 2026-10-02, prunable from 2026-10-16",
 		"app/t-dep":      "open dependant app/t-dependant",
+		"app/t-later":    "open dependant app/t-open",
 		"app/t-audit":    "audit audit open",
 		"app/t-review":   "self-review 1 pending",
 		"app/t-reviewed": "",

@@ -27,6 +27,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task grant create|revoke|list ...` records, revokes and lists [task grants](#task-grants); these take `--task <id>` rather than a positional task.
 - `guildhall task context add --store <path> --repo <id> (--text <text> | --file <path>) <task>` adds an entry of [task context](#task-context) and prints its receipt; `guildhall task context list --store <path> --repo <id> <task> --json` prints the task's entries.
 - `guildhall task link add|remove --store <path> --repo <id> --document <repo>/<task>/<name> (--text <text> | --file <path>) <task>` links another task's recorded document to a task, or unlinks it, as a [task link](#task-links) and prints its receipt; `add` also takes `--state <dir>`; `guildhall task link list --store <path> --repo <id> <task> --json` prints the task's link records.
+- `guildhall task depends add|remove --store <path> --repo <id> --reason <text> <task> <repo>/<dependency>` adds a dependency to an open task, or removes one, after creation, as described in [changing dependencies](#changing-dependencies), and prints its receipt.
 - `guildhall task override set --store <path> --config <director.toml> --repo <id> --key <key> --value <value> --text <text> <task>` gives a task its own value for a task-scoped setting as a [task override](#task-overrides) and prints its receipt; `unset` removes it and takes no `--config` or `--value`; `guildhall task override list --store <path> --repo <id> <task> --json` prints the task's override records.
 - `guildhall task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]` adds a [design round](#design-rounds) to a feature task and advances it, printing where the task waits as [`task start`](running.md#task-start) does; it takes `--task <id>` rather than a positional task.
 
@@ -93,7 +94,10 @@ A task bound to `default` or `bug` under an earlier release keeps resolving afte
 Each `--depends-on <repo>/<task>` names a task of this Director, in any repository, that must already exist in the store.
 An unknown dependency refuses the task and writes nothing; a task cannot depend on itself.
 The dependency order is preserved as given.
-Dependencies are fixed at creation.
+The task record keeps this creation list unchanged.
+The Director can add or remove dependencies afterwards with [`task depends`](#changing-dependencies); each change is its own record.
+A task's **effective dependencies** are its creation list with those records applied in number order.
+The gate, `--ignore-deps`, `task cancel`'s message to dependents, `prune`, the clerk and `task show` all read the effective dependencies.
 
 A dependent task waits for its dependencies: its grill runs at once, but research, or whatever its first step not run by the Director is, does not start until every dependency is `done`, that is, merged.
 That is the [dependency gate](interpreter.md#the-dependency-gate): while it holds the task, advancing it records nothing and prints `{"wait":"dependencies","step":"<step>"}`, and the Director gets one `dependency-held` message for each change in the dependencies' coarse state (in progress, waiting for the Guildmaster or the Director, cancelled), never one per advance.
@@ -103,7 +107,53 @@ A task already past research, with an attempt of a step not run by the Director,
 
 The Director can start a held task anyway with [`task start --ignore-deps --reason <text>`](running.md#task-start), the **dependency override**.
 It is recorded as its own record, never by changing the task (R1.62), lasts for the rest of the task's life, starts the task from the current main and shows with its reason in `task timeline`.
-A cancelled dependency never merges, so the override is the only way to start a task that depends on one; [`task cancel`](#task-cancel) tells the Director about each open dependent with a `dependency-cancelled` message.
+A cancelled dependency never merges, so a task that depends on one starts only with the override, or once [`task depends remove`](#changing-dependencies) drops the cancelled dependency; [`task cancel`](#task-cancel) tells the Director about each open dependent with a `dependency-cancelled` message.
+
+### Changing dependencies
+
+```
+guildhall task depends add    --store <path> [--config <director.toml>] --repo <id> --reason <text> <task> <repo>/<dependency>
+guildhall task depends remove --store <path> [--config <director.toml>] --repo <id> --reason <text> <task> <repo>/<dependency>
+```
+
+`--copy <dir>`, or the copy found from the current directory, stands in for `--store` and `--config`.
+
+`add` makes `<repo>/<dependency>` one of the task's effective dependencies.
+`remove` drops one, including a dependency the task was created with.
+The main use is a replaced task.
+When a task is cancelled and a replacement is created, each dependent runs `remove` for the old task and `add` for the new one, so it follows the replacement instead of being cancelled and recreated.
+
+- The dependency is `<repository>/<task>`, as `--depends-on` takes it, of any repository of the copy.
+- The reason, `--reason`, must be non-blank UTF-8 of at most 64 KiB.
+- Each change records the task's next dependency record, numbered from 1 per task, adds and removes alike.
+  The record holds `op`, `dependency`, `text` (the reason), author `director` and `added_at`.
+- Each change prints its receipt: record `task-dependency/<n>`, mutation `task-dependency:<repo>:<task>:<op>:<dep repo>:<dep task>:<prior>`.
+  The mutation is hashed as for `task new` when longer than 128 bytes.
+  `prior` is how many records the task already has for that dependency.
+- Running the same command again, while its record is still that dependency's latest, prints the original receipt and records nothing.
+- These are refused with exit 1, and nothing is written:
+  - a task that is unknown or not open;
+  - a dependency that is unknown, or is the task itself;
+  - an `add` of a cancelled dependency, or of one already effective;
+  - an `add` that would make a cycle; the error names the path, such as `app/t-1 -> app/a -> lib/b -> app/t-1`;
+  - a `remove` of a dependency that is not effective;
+  - a record made meanwhile for the same dependency.
+- A `done` dependency may be added; it is satisfied at once.
+- A usage error exits 2.
+
+A change takes effect at the task's next advance through the gate; it never stops or restarts running work.
+A held task whose last unmet dependency is removed is released on the [dependency watcher's](director.md#dependencies) next tick.
+A task that gains an unmet dependency before the gate is held when it reaches it.
+A changed set of unmet dependencies sends a new `dependency-held` message.
+
+An `add` that holds nothing is still recorded, and its receipt carries a `note`:
+
+- `past the dependency gate; this change holds nothing until the task is recreated`: the task already has an attempt of a step not run by the Director, so the gate never holds it again.
+  The task's bound workflow is resolved with `--config`, or the copy's, to tell.
+- `dependency override in force; this task is not held`: the [dependency override](#dependencies) lasts for the task's life.
+
+`task show` and `task list` print the effective dependencies as `depends_on`.
+`task timeline` lists every record under `dependencies` and keeps the creation list in `task`.
 
 `--fixes <repo>/<task>` names the earlier task whose defect this one fixes, which must already exist; publish then adds "Fixes a defect introduced by task `<repo>/<task>`." to the pull request body ([quality rubric](quality.md#running-it)), whatever the task's kind; without `--kind` it also makes the task a [bug](#task-kinds).
 
@@ -155,7 +205,7 @@ In order, it:
 4. closes each pull request the task's `-pr` documents record with the comment `Cancelled by Guildhall: <reason>`, keeping its branch; a closed one is left as it is, and one merged on the forge refuses the cancel, after only the stops above: its work landed, so the [outside-merge rule](#merged-outside-guildhall) records the task `done`, and the cancel exits 1 with `pull request <url> of task <repo>/<task> is merged; its work landed, so the task is recorded done, not cancelled`;
 5. voids each open decision with the reason `Task cancelled: <reason>`: a void decision leaves `decide list`, `director status` and the dependency gate's states, `decide show` prints it with `"void":true`, and it can no longer be answered;
 6. takes the task out of the [start queue](interpreter.md#the-start-queue) and the [merge queue](interpreter.md#the-merge-queue), releasing the front if it holds it, and clears its [merge hold](#holding-a-merge);
-7. sends the Director one `dependency-cancelled` message for each open task, in any listed repository, that [depends](#dependencies) on it; the dependents are not cancelled, and one already held by the dependency gate gets its `dependency-held` message too at its next advance;
+7. sends the Director one `dependency-cancelled` message for each open task, in any listed repository, that [depends](#dependencies) on it, by its effective dependencies; the dependents are not cancelled, and one already held by the dependency gate gets its `dependency-held` message too at its next advance;
 8. records the task `cancelled`, with its `cancel_reason` and `cancelled_at`.
 
 A multi-PR task with slices merged is cancelled too: step 4 closes only the unmerged slices' pull requests, a merged slice's stays merged and stands, and the cancel prints a line naming each merged slice and its pull request after recording the task `cancelled`, never `done`.
@@ -259,7 +309,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 `task timeline` prints:
 
 - `omitted_kinds`: the record kinds this version leaves out, each with why; empty now that findings and rulings are recorded.
-- `task`: the task record.
+- `task`: the task record, with `depends_on` the list it was created with.
 - `attempts`: every stage attempt with its outcome (absent while running), `started_at`, `finished_at` and `duration_seconds` between them, ordered by when they started.
 - `decisions`: every decision with its kind, subject, options, question and the Guildmaster's exact words (`answer`, `choice`, `note`), plus `opened_at`, `answered_at` and `wait_seconds` between them, ordered by when they opened.
 - `findings`: every review outcome document with its `summary` (absent for a /1 outcome), its findings (`id`, `rule`, `file`, `line`, `summary`), its `suggestions` (`id`, `file`, `line`, `summary`) and its `dispositions` of the previous round's findings (`finding`, `state`, `reason`), read from the store's projection, with `recorded_at`, ordered by when they were recorded.
@@ -269,6 +319,7 @@ An unknown repository or task fails with exit 1 and the store's not-found error.
 - `context`: every entry of [task context](#task-context) with its `number`, `text`, `author` and `added_at`, ordered by when it was added.
 - `links`: every [task link](#task-links) record with its `number`, `op`, `source`, `text`, `author` and `added_at`, ordered by when it was recorded; a removed link stays listed beside its removal.
 - `overrides`: every [task override](#task-overrides) record with its `number`, `op`, `key`, `value` (on a `set`), `text`, `author` and `added_at`, ordered by when it was recorded; an unset override stays listed beside its unset.
+- `dependencies`: every [dependency record](#changing-dependencies) with its `number`, `op`, `dependency`, `text` (the reason), `author` and `added_at`, ordered by when it was recorded.
 - `design_rounds`: the [design rounds](#design-rounds) used, counted from their briefs; absent when the task has had none. Each round's designer attempts and its decision are among `attempts` and `decisions`.
 - `dependency_override`: the Director's [dependency override](#dependencies), with its `reason` and `overridden_at`; absent when the task has none.
 - `priority` and `priority_changes`: the task's [priority](#priority) now and every level set, each with `set_at`.

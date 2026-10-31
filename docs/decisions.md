@@ -248,6 +248,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [A parked attempt, a deferred decision or a follow-up can be held until named tasks merge](decisions/hold-until-merged.md)
 - [The Director parks a failed or stopped attempt with a reason, so it leaves needs_me](decisions/park-attempt.md)
 - [A task can be cancelled for good, with a reason, voiding its decisions and closing its pull requests](decisions/task-cancel.md)
+- [A task's dependencies change after creation through append-only records, folded into one effective list](decisions/task-dependency-changes.md)
 - [A task override gives one task its own value for a task-scoped setting, on the Guildmaster's word](decisions/task-overrides.md)
 
 ## Director

@@ -11,7 +11,7 @@ The engine consumes eight narrow interfaces, declared in `internal/interp` besid
 
 | Seam | Real implementation | Double | Shared suite |
 |---|---|---|---|
-| `Records`: read a task, its attempts, documents, decisions, rulings, task context, task links and dependency override; start and finish attempts, record documents, open decisions and contest rulings; optionally, as `MergeQueue`, read and change its repository's [merge queue](#the-merge-queue) | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
+| `Records`: read a task, its attempts, documents, decisions, rulings, task context, task links, task overrides, dependency records and dependency override; start and finish attempts, record documents, open decisions and contest rulings; optionally, as `MergeQueue`, read and change its repository's [merge queue](#the-merge-queue) | `cli.storeRecords`, opening the store for each operation, in production; `*store.Store` in process | `interptest.Records` | `interptest.RunRecordsContract`, against all three |
 | `Launcher` ([launch seam](mock-agent.md#the-launch-seam)) | `launch.Process` | `interptest.Script` | `interptest.RunLauncherContract` |
 | `Prompter`: `render.Prompt` with the caller's baseline and skill roots | `PromptFunc` over `render.Prompt` | a recording `PromptFunc` | none: the real renderer runs in tests |
 | `Outbox`: the send half of `messaging.Mailbox` | `cli.storeRecords`, sending through a `messaging.StoreMailbox` over the store it opens for each send, in production; `messaging.StoreMailbox` in process | `messagingtest.Fake` | `messagingtest.RunMailboxContract`, against all three |
@@ -119,16 +119,17 @@ A retry of another attempt while one is queued is refused with `ErrEvent`, namin
 
 ## The dependency gate
 
-A task created with [`depends_on`](tasks.md#dependencies) does not run research, or any later step, until every task it depends on is `done`, that is, merged (R1.14, R1.58).
+A task with dependencies does not run research, or any later step, until every task it depends on is `done`, that is, merged (R1.14, R1.58).
+Its dependencies are its [effective dependencies](tasks.md#changing-dependencies): the `depends_on` it was created with, with the Director's later `task depends add|remove` records applied in order (`store.EffectiveDependencies`), read through `Records.TaskDependencies`.
 The gate stands in the walk over the steps, just before the first step whose actor is not `director`, so it holds an Artisan, Guildmaster or engine step alike, and also a send-back or retry, which pass through the same walk.
 Director stages, such as the grill, are never held: the grill, its `step finish` and the watcher's advance after it run while dependencies are open.
 
 The gate passes when any of these is true, each read from the records:
 
-1. The task has no `depends_on`. Nothing more is read, so a task without dependencies behaves as before.
-2. The Director recorded a [dependency override](tasks.md#dependencies) for the task, which lasts for the rest of its life.
-3. The task already has an attempt of a step not run by the Director. A task already past research is unaffected, and a loop, send-back or retry back to research is never held again.
-4. Every dependency's task state is `done`, read through `Records.Task`, which reads a task of any repository in the same store.
+1. The task already has an attempt of a step not run by the Director. Nothing is read. A task already past research is unaffected, and a loop, send-back or retry back to research is never held again; a dependency added to it holds nothing.
+2. The task has no effective dependencies. Only its dependency records, usually none, are read, and no dependency is looked up, so a task without dependencies behaves as before.
+3. The Director recorded a [dependency override](tasks.md#dependencies) for the task, which lasts for the rest of its life, so a dependency added after it holds nothing either.
+4. Every effective dependency's task state is `done`, read through `Records.Task`, which reads a task of any repository in the same store.
 
 Otherwise the task is held: the advance records nothing, and returns `{"wait":"dependencies","step":<step>}` for the held step (`WaitDependencies`).
 The gate runs before the step itself, so before the [pause hold](director.md#pause-and-resume), the caps, preparation and any record: a held task never reaches them.

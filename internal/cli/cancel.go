@@ -274,19 +274,35 @@ func leaveQueues(records storeRecords, repo, task string, say func(string, ...an
 	return err
 }
 
-// tellDependents sends the Director one dependency-cancelled message for each open task of a listed repository that
-// depends on the cancelled task ref; dependents are not cancelled. A message already sent by an earlier run of the
+// tellDependents sends the Director one dependency-cancelled message for each open task of a listed repository whose
+// effective dependencies (store.EffectiveDependencies) hold the cancelled task ref; dependents are not cancelled. A message already sent by an earlier run of the
 // cancel stands, so a re-run sends nothing new.
 func tellDependents(records storeRecords, cfg *config.Config, ref store.TaskRef, reason string, say func(string, ...any)) error {
 	for _, r := range cfg.Repositories {
-		tasks, err := withRecords(records, true, nil, func(s *store.Store) ([]store.Task, error) { return s.Tasks(r.ID) })
+		dependents, err := withRecords(records, true, nil, func(s *store.Store) ([]store.Task, error) {
+			tasks, err := s.Tasks(r.ID)
+			if err != nil {
+				return nil, err
+			}
+			var out []store.Task
+			for _, t := range tasks {
+				if t.State != store.TaskOpen {
+					continue
+				}
+				changes, err := s.TaskDependencies(t.Repository, t.ID)
+				if err != nil {
+					return nil, err
+				}
+				if slices.Contains(store.EffectiveDependencies(t, changes), ref) {
+					out = append(out, t)
+				}
+			}
+			return out, nil
+		})
 		if err != nil {
 			return err
 		}
-		for _, dep := range tasks {
-			if dep.State != store.TaskOpen || !slices.Contains(dep.DependsOn, ref) {
-				continue
-			}
+		for _, dep := range dependents {
 			m, err := interp.DependencyCancelledMessage(store.TaskRef{Repository: dep.Repository, ID: dep.ID}, ref, reason)
 			if err != nil {
 				return err
