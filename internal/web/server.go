@@ -2,18 +2,14 @@ package web
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"errors"
 	"html/template"
 	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -222,23 +218,19 @@ func (s *Server) document(w http.ResponseWriter, repo, id, name, part string) {
 // bytes and 200, or a status and a reason that names the document and never a filesystem path: 404 for a file that
 // is missing, 409 for one that no longer matches its record.
 func (s *Server) verified(doc Document) ([]byte, int, string) {
-	clean := path.Clean(doc.Path)
-	if doc.Path == "" || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(doc.Path, "\\") {
+	body, err := ReadVerified(s.o.Documents, doc.Path, doc.SHA256)
+	switch {
+	case err == nil:
+		return body, http.StatusOK, ""
+	case errors.Is(err, ErrUnsafePath):
 		return nil, http.StatusConflict, "The record of " + doc.Name + " names no file inside the document directory."
-	}
-	body, err := os.ReadFile(filepath.Join(s.o.Documents, filepath.FromSlash(clean)))
-	if errors.Is(err, fs.ErrNotExist) {
+	case errors.Is(err, ErrMissing):
 		return nil, http.StatusNotFound, "The file of " + doc.Name + " is missing from the copy's documents."
-	}
-	if err != nil {
-		s.log("web: read document " + doc.Repository + "/" + doc.TaskID + "/" + doc.Name + ": " + err.Error())
-		return nil, http.StatusInternalServerError, "The file of " + doc.Name + " could not be read."
-	}
-	sum := sha256.Sum256(body)
-	if hex.EncodeToString(sum[:]) != strings.ToLower(doc.SHA256) {
+	case errors.Is(err, ErrDigestMismatch):
 		return nil, http.StatusConflict, "The file of " + doc.Name + " does not match the sha256 recorded for it, so it is not shown."
 	}
-	return body, http.StatusOK, ""
+	s.log("web: read document " + doc.Repository + "/" + doc.TaskID + "/" + doc.Name + ": " + err.Error())
+	return nil, http.StatusInternalServerError, "The file of " + doc.Name + " could not be read."
 }
 
 func isHTML(p string) bool {
