@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -15,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
-	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/web"
@@ -641,12 +638,8 @@ func (b webBuilder) feedback(step string, n int) string {
 		if d.Name != name {
 			continue
 		}
-		clean := path.Clean(d.Path)
-		if path.IsAbs(clean) || strings.HasPrefix(clean, "..") {
-			return ""
-		}
-		data, err := os.ReadFile(filepath.Join(b.state, "documents", filepath.FromSlash(clean)))
-		if err != nil || digest.Of(data).Hex() != d.SHA256 || !utf8.Valid(data) {
+		data, err := web.ReadVerified(filepath.Join(b.state, "documents"), d.Path, d.SHA256)
+		if err != nil || !utf8.Valid(data) {
 			return ""
 		}
 		return webCut(strings.TrimSpace(string(data)), webFeedbackBytes)
