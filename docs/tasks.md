@@ -230,7 +230,7 @@ Each slice merge sends a `merged` message, so it counts toward `hallmark_after_m
 A spec that turns out wrong part-way goes back to plan with `step send-back`; the revised spec keeps every merged slice's entry byte for byte and may rewrite, add or drop the slices still to come, the Guildmaster accepts it, and the current slice's steps, bound to the old spec, run again under the new one.
 Merged slices' records are never read again.
 `director status` gives such a task a `slices` object, `{current, total, items: [{index, title, state, pull_request}]}`; Clerk's `/guild` shows `slice k of n` beside where it stands, `/task` and `/inspect` show the current slice and list every slice with its title, state and pull request, and the Artisan's Herdr workspace is labelled `└ <task> · slice k/n · <step> #<n>`.
-GitHub stacked pull requests are not used: each slice starts after the one before merged.
+GitHub stacked pull requests are not used: each slice starts after the one before merged ([why, and when stacking may be reconsidered](decisions/stacked-prs-not-yet.md)).
 
 ## Retries
 
