@@ -15,7 +15,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
-	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -93,7 +92,7 @@ func (a *App) stepFinish(args []string) int {
 // Director, then, under the task's lock, copies each output into the task's working directory as <port><ext> and
 // publishes the attempt's result once; a refusal writes nothing.
 func finishStage(f advanceFlags, k artisan.AttemptKey, summary string, outputs stageOutputs, failed bool) error {
-	cfg, err := config.Load(f.config)
+	cfg, err := admitDirector(f.config)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}

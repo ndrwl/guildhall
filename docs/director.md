@@ -20,8 +20,8 @@ A bare restart typed in a Herdr pane binds that pane from Herdr's environment, a
 
 It first runs a preflight and prints one line per check, as `doctor` prints, stopping at the first that fails:
 
-- `config`: the copy's `config.toml` is a Director config.
-  Until managed mode lands, a copy with `managed.toml` beside its config, or with inline `[managed]` settings, is refused naming `guildhall director enrol`.
+- `config`: the copy's `config.toml` is a Director config, admitted by the [shared configuration-admission boundary](director-modes.md#mode).
+  An inline `[managed]` section is refused in every mode; a copy the mode table refuses, such as one with `managed.toml` beside its config and no enrolment, is refused naming the state and the command that fixes it; and an enrolled copy whose `managed.toml` digest its store has not authorized is refused.
 - `runtime`: the runtime is one of the adapters, and the program it runs is on `PATH`; the fake runtime is the `guildhall` executable itself.
 - `guildhall`: `guildhall` is on `PATH`, because the session's hooks, status line and Director commands invoke that bare name; a refusal names adding the running executable's directory to `PATH`.
 - `store`: the copy's `director.store` exists and opens; a missing one is refused naming `guildhall store init`.

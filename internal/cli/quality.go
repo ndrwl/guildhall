@@ -11,7 +11,6 @@ import (
 	"strconv"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
-	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/quality"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -105,7 +104,7 @@ func (a *App) qualityJudged(args []string) int {
 // withJudge runs fn with the copy's judge for the task, holding the task's lock, and wakes the Director for what it
 // sent once the lock is released, as an advance does.
 func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) error) error {
-	cfg, err := config.Load(f.config)
+	cfg, err := admitDirector(f.config)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
@@ -202,7 +201,7 @@ func (a *App) qualityAgreement(args []string) int {
 	case fl.NArg() > 0:
 		return a.usageError(fmt.Sprintf("quality agreement: unexpected argument %q", fl.Arg(0)))
 	}
-	cfg, err := config.Load(f.config)
+	cfg, err := admitDirector(f.config)
 	if err != nil {
 		return a.fail(fmt.Errorf("quality agreement: config: %w", err))
 	}

@@ -37,7 +37,7 @@ Before `director start` the Director was a bare `claude` with no record, and the
 
 ## Consequences
 
-Until managed mode lands, a copy with `managed.toml` or inline `[managed]` settings is refused, naming `guildhall director enrol`.
+The start preflight admits the config through the [shared configuration-admission boundary](../director-modes.md#mode): inline `[managed]` settings are refused in every mode, a copy the mode table refuses is refused naming the state and the command that fixes it, and an unauthorized managed revision is refused.
 `director status` does not yet probe the supervisor's identity for liveness.
 The doubles prove only the command shape and settings the adapter writes; live Claude acceptance is a lab run, not CI.
 

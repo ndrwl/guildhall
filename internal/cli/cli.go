@@ -133,6 +133,12 @@ Commands:
   director context-report [--lanterns] --copy <dir>
                  display status and context only with --lanterns (generated workspaces);
                  without it, record runtime context for legacy workspaces
+  director mode [--json] --copy <dir>
+                 print the copy's mode, standalone or managed, and any refusal of its settings
+  director enrol --steward <label> --copy <dir>
+                 record that a Steward manages the copy, with the digest of its managed.toml
+  director leave --copy <dir>
+                 return a managed copy to standalone, keeping its managed values in [local]
   clerk guild|decisions|task|inspect|queue [--all] [<id>] [--copy <dir>]
                  print the Guildmaster's read-only answers behind the Clerk plugin's slash commands;
                  guild takes --all, task and inspect take a task id

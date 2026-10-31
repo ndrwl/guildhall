@@ -28,7 +28,7 @@ import (
 )
 
 // director runs `guildhall director status|start|ready|pause|resume|stop|note|follow-up|maintenance|reload|turn-started|
-// turn-ended|wait-wake|context-report`
+// turn-ended|wait-wake|context-report|enrol|leave|mode`
 // (docs/director.md).
 func (a *App) director(args []string) int {
 	if len(args) > 0 {
@@ -61,9 +61,15 @@ func (a *App) director(args []string) int {
 			return a.directorWaitWake(args[1:])
 		case "context-report":
 			return a.directorContextReport(args[1:])
+		case "enrol":
+			return a.directorEnrol(args[1:])
+		case "leave":
+			return a.directorLeave(args[1:])
+		case "mode":
+			return a.directorMode(args[1:])
 		}
 	}
-	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake and context-report")
+	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake, context-report, enrol, leave and mode")
 }
 
 // fakeDirector runs the fake Director session: `guildhall fake-director --role <file> <first message>`.
@@ -765,25 +771,6 @@ func (a *App) resolveRuntime(p *startPlan) (string, error) {
 		}
 	}
 	return exe, nil
-}
-
-// admitConfig loads the copy's config for a standalone Director: a managed copy, with managed.toml beside the
-// config or inline [managed] settings, is refused until managed mode lands.
-func admitConfig(copyDir, cfgPath string) (*config.Config, error) {
-	if _, err := os.Stat(filepath.Join(copyDir, "managed.toml")); err == nil {
-		return nil, errors.New("managed.toml: managed mode is not built yet, so a managed copy cannot start (guildhall director enrol)")
-	}
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		return nil, err
-	}
-	switch {
-	case cfg.Mode != config.ModeDirector:
-		return nil, fmt.Errorf("%s is a %s config, not a director's", cfgPath, cfg.Mode)
-	case len(cfg.Managed) > 0:
-		return nil, errors.New("inline [managed] settings: managed mode is not built yet, so a managed copy cannot start (guildhall director enrol)")
-	}
-	return cfg, nil
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

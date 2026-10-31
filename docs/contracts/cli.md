@@ -182,6 +182,24 @@ When the grammar was pinned, the existing and designed commands were checked aga
 | `director enrol\|leave` | designed ([director modes](../director-modes.md)) | yes, verbs outside the lifecycle four |
 | `director mode` | designed | yes, outside the reserved lifecycle verbs |
 
+`director enrol|leave` and `director mode` are built now, as [director modes](#director-modes) describes.
+
+### Director modes
+
+These commands act on a Director copy, `--copy <dir>` or the copy found from the current directory, whose `director.store` must exist; a Steward copy is refused, since it is never managed ([standalone and managed Directors](../director-modes.md)).
+
+- `guildhall director mode [--json]` prints the copy's mode, `standalone`, `managed` or `refused`, as the shared configuration-admission boundary finds it: the Steward's label, the digest of the `managed.toml` on disk and whether the store authorizes it, the newest enrolment event, the newest revision event and any refusal.
+  It reports and never refuses: a refused copy exits 0 with its refusal; a config that cannot be read exits 1.
+  `--json` prints one object: `mode`, `refusal`, `steward`, `managed_digest`, `authorized`, `enrolment` and `last_revision`.
+- `guildhall director enrol --steward <label>` needs a valid `managed.toml` beside the config, a director's config with no inline `[managed]`, and a copy that is not enrolled or has left; it records `enrolled` with the label and the managed digest and prints the event.
+  Enrolling again with the same label and digest replays the event; another label or digest while enrolled exits 1 naming `guildhall director leave`.
+  Enrolment never authorizes the digest.
+- `guildhall director leave` runs on the Guildmaster's word only.
+  It needs an admitted managed copy, so an unauthorized revision refuses it; it records `left`, writes the effective values of the managed keys into `[local]` of `config.toml` and renames `managed.toml` to `managed.toml.rev-<16 hex>`.
+  A `[local]` it cannot edit safely exits 1 before anything is recorded or written; leave run again after an interruption finishes the edit and the rename, and run on a copy that has left prints the event again.
+
+A missing `--steward`, an unknown flag and an extra argument are usage errors (exit 2); every other refusal exits 1.
+
 ### Version
 
 `guildhall version [--startup | --json] [--copy <dir>]` says which revision the binary is, which pull request it ends at and how far it is behind the repository's main ([decision](../decisions/version-from-build-info.md)).

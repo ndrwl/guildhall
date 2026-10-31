@@ -22,7 +22,7 @@ func newCopy(t *testing.T) string {
 		t.Fatalf("store init: exit %d, stderr %s", code, stderr)
 	}
 	approveRepo(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app")
-	return dir
+	return maybeManage(t, dir)
 }
 
 // bareCopy is a copy directory with its config and state but no store yet.

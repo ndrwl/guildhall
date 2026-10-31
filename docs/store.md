@@ -199,6 +199,20 @@ A run of kind `hallmark` is refused with `ErrInvalid` and `HallmarkRecordRetired
 A session that is not the newest or is `stopped`, any other kind, a note audit naming a repository or task and an invalid summary are refused with `ErrInvalid`, and an unknown session with `ErrNotFound`, as notes are.
 `MaintenanceRuns` returns every run, oldest first.
 `DirectorView.Maintenance` reads, in the view's transaction, the baseline, the earliest session with a policy, and its start receipt's sequence, and, with a baseline, the newest note audit and, for every repository, its newest hallmark run, the `merged` messages whose send sequence is greater than both that run's receipt and the baseline's start receipt, and, unserialised, the send sequences of every `merged` message after the baseline's start receipt, from which the status feed counts after a done hallmark task's create receipt instead; it reads every such repository's messages.
+
+### Managed mode
+
+A Director copy's [mode](director-modes.md#mode) is a store fact, read by the shared configuration-admission boundary.
+The `director` bucket's nested `enrolments` and `managed-revisions` hold its enrolment events and managed-revision events, each keyed by zero-padded event sequence from 1 and created by its first event; both are append-only, and their records carry the `receipt` sequence and `time` the store sets.
+
+- An enrolment event is `enrolled`, with the Steward's `steward` label, a lowercase id, and the managed `digest` (`sha256:<hex>` of the whole `managed.toml`), or `left`, with the `digest` it kept and its `revision` name, `managed.toml.rev-<first 16 hex digits>`.
+  `RecordEnrolment` records one under the content-derived mutation id `director-enrol:<sequence>:<steward>:<16 hex>` or `director-leave:<sequence>:<16 hex>`; recording the newest event again replays it, so `director enrol` and `director leave` are idempotent.
+  An `enrolled` event follows no event or a `left` one, and a `left` event follows an `enrolled` one; any other transition, an unknown event, a bad label, digest or revision name and a store-set field are `ErrInvalid`.
+- A managed-revision event has the `enrolment` sequence it was recorded under, set by the store, its `source`, `reload`, `observed-untrusted` or `guildmaster-approved`, the `digest` and the `previous` digest, if any, and for `guildmaster-approved` the alert `decision` it answered.
+  `RecordManagedRevision` records one under the mutation id `managed-revision:<enrolment>:<source>:<digest hex>` while the newest enrolment event is `enrolled`, and refuses it otherwise with `ErrInvalid`; one event is kept per enrolment, source and digest, and recording it again returns that event and its receipt.
+- `ManagedView` returns the newest enrolment event, none in a store that has none, and every revision event recorded under it when it is `enrolled`.
+  Only a `reload` or `guildmaster-approved` event of the newest enrolment authorizes its digest (`ManagedView.Authorization`): enrolment and observation never do, and leaving, or enrolling again, starts with no authorization.
+
 ## Attempt ownership
 
 An ownership record says which per-attempt launcher owns a running stage attempt, so a second launcher cannot run the same attempt while the first is alive.
@@ -268,7 +282,7 @@ Prune reads a task's close time from it, and `interp.LastHallmark` and `interp.O
 It checks existing metadata instead of initializing buckets, while leaving successful opens writable unless `ReadOnly` is also set.
 All messaging commands use this option; `send` and `ack` cannot initialize a store as a side effect of a refused operation.
 
-The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, an optional `workflow-approvals` bucket keyed by workflow digest, an optional `director` bucket holding `sessions` keyed by session number and `wakes` keyed by sequence, and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `owners`, `documents`, `panes`, `decisions`, `messages` and `inbox`, and, once a task is pruned, `pruned`, and, once a task's dependencies change, `task_dependencies`; a store without it opens unchanged.
+The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, an optional `workflow-approvals` bucket keyed by workflow digest, an optional `director` bucket holding `sessions` keyed by session number, `wakes` keyed by sequence and the Director's other nested buckets, such as [`enrolments` and `managed-revisions`](#managed-mode), and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `owners`, `documents`, `panes`, `decisions`, `messages` and `inbox`, and, once a task is pruned, `pruned`, and, once a task's dependencies change, `task_dependencies`; a store without it opens unchanged.
 `inbox` indexes unacknowledged messages by recipient and sequence, holding each message's id.
 A per-repository bucket is created by the first record that needs it, so a schema 1 file written before messages existed accepts them unchanged.
 The `workflow-approvals` bucket is likewise created by the first approval, and the `director` bucket by the first session or wake; neither is required, and a store without one has no such records.
@@ -293,7 +307,7 @@ Usage errors exit 2.
 ## `guildhall store doctor`
 
 `guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count, the count of [Director sessions](#director-sessions) and of [wakes](messaging.md#waking-the-director) and each repository's record counts, including rulings, task context entries, task link records, task override records, task dependency records, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread, and [pruned tasks](#pruned-tasks).
-A record that does not decode, such as a damaged session or wake, is printed as a `problem:` line.
+A record that does not decode, such as a damaged session, wake, enrolment or managed-revision event, is printed as a `problem:` line.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.
 
 Both commands take `--copy <dir>`, or the copy found from the current directory, in place of `<path>`, naming the copy's `director.store`; a path given with `--copy` must be that file, and a path given without it bypasses copy discovery ([copies](running.md#copies)).

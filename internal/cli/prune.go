@@ -694,9 +694,14 @@ func (a *App) prune(args []string) int {
 	if cp.dir == "" {
 		return a.usageError("prune: " + cp.missing(a).Error() + "\n" + pruneHelp)
 	}
-	cfg, err := config.Load(filepath.Join(cp.dir, "config.toml"))
+	cfg, refusal, err := appliedConfig(filepath.Join(cp.dir, "config.toml"))
 	if err != nil {
 		return a.fail(fmt.Errorf("prune: %w", err))
+	}
+	if refusal != "" {
+		if _, err := fmt.Fprintf(a.Stderr, "prune: managed settings not applied, using config.toml alone: %s\n", refusal); err != nil {
+			return 1
+		}
 	}
 	p, err := a.pruner(cfg, cp.dir)
 	if err != nil {

@@ -62,7 +62,7 @@ func (f *advanceFlags) resolve(a *App) error {
 // listed refuses, before anything else is read or written, a repository the config does not list: the
 // repositories guard rail (docs/director.md#guard-rails).
 func (f *advanceFlags) listed() error {
-	cfg, err := config.Load(f.config)
+	cfg, err := admitDirector(f.config)
 	if err != nil {
 		return err
 	}
@@ -458,7 +458,7 @@ const storeWait = config.DefaultLockWait
 
 // advance runs one engine advance of ev's task over f (docs/running.md).
 func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
-	cfg, err := config.Load(f.config)
+	cfg, err := admitDirector(f.config)
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}

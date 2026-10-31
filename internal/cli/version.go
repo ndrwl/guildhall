@@ -269,7 +269,7 @@ func ownRepository(cfgPath, module string) (config.Repository, bool) {
 	if module == "" {
 		return config.Repository{}, false
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := reportedConfig(cfgPath)
 	if err != nil {
 		return config.Repository{}, false
 	}

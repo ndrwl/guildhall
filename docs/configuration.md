@@ -8,7 +8,10 @@ When that sibling exists, `config.Load` uses `config.ParseCombined`, which refus
 Only a sibling that does not exist falls back: a sibling that exists but cannot be read, such as a directory, or that `config.ParseCombined` refuses, such as one with a checksum mismatch, is an error rather than a silent return to the inline layout.
 A config file that cannot be read is an error.
 No credentials belong in either; sign-in stays in each runtime's own store.
-Explicit standalone/managed admission, migration, enrolment and revision authorization are designed, not built (see [standalone and managed Directors](director-modes.md)); they do not change the current parser behavior described above.
+These pure parsing APIs are unchanged; what a Director command admits is decided above them by the [shared configuration-admission boundary](director-modes.md#mode).
+That boundary refuses an inline `[managed]` section in `config.toml` in every mode, whether or not a sibling `managed.toml` exists, with guidance to move the settings to `managed.toml` in the checksum-bearing format; it then applies the mode table and refuses a managed revision the copy's store has not authorized.
+`config.InlineManaged` reports an inline `[managed]` table, and `config.DecodeManaged` checks a managed file's checksum and schema without a config.
+The only writer of `config.toml` is [`guildhall director leave`](director-modes.md#enrol-and-leave), through `config.SetLocal`: a targeted line edit of the `[local]` table that keeps every other byte and refuses an inline or dotted `local`, a nested or repeated `[local]`, a quoted or dotted key and a value that is not a one-line string.
 
 ## Config file
 
@@ -86,7 +89,7 @@ A relaunch of an attempt already bound, after a crash, runs with the task's over
 
 `claude_skills_director`, `claude_skills_artisan` and `claude_skills_profile_<declared-name>` are string-valued managed/local settings containing a typed JSON policy.
 Each shipped default is overridable; a Steward can lock a key with `overridable = false` using normal managed/local precedence.
-Managed values are supported by the configuration resolver; current standalone Director admission still refuses managed copies as described above.
+Managed values are supported by the configuration resolver and apply in a managed copy once its store authorizes the revision ([standalone and managed Directors](director-modes.md#guard-rails)).
 Local replacement replaces the entire policy value, not individual JSON members.
 A profile-specific effective key replaces the generic Artisan key; otherwise the profile inherits that generic policy, which defaults to `artisan-v1`, without guessing roles from names like `reviewer-opus-b`.
 The shipped example explicitly binds researcher/planner to `artisan-v1`, builder to `builder-v1` and reviewer to `reviewer-v1`.

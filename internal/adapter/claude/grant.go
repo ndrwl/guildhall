@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/config"
 )
 
@@ -110,13 +111,14 @@ func GrantRules(grants []Grant) []string {
 }
 
 // ProfileTools are the rules of the effective grant the Director copy at copyDir gives profile for a task of
-// repository, loaded from the copy's config.toml; with no copy or no profile there is no grant, and nothing is
+// repository, admitted through the copy's configuration-admission boundary (internal/admit), so an attempt never
+// runs with a managed.toml the copy has not authorized; with no copy or no profile there is no grant, and nothing is
 // loaded. Only references travel to the wrapper, never a rule list.
 func ProfileTools(copyDir, profile, repository string) ([]string, error) {
 	if copyDir == "" || profile == "" {
 		return nil, nil
 	}
-	cfg, err := config.Load(filepath.Join(copyDir, "config.toml"))
+	cfg, _, err := admit.Admit(filepath.Join(copyDir, "config.toml"))
 	if err != nil {
 		return nil, err
 	}

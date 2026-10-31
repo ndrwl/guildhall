@@ -88,7 +88,7 @@ func (p startPlan) sessionRole() *sessionRole {
 // sweep, the daily prune, the in-flight snapshot of its tasks, the repositories' policies and the checks,
 // dependency, merge-queue, start-queue and holds watchers.
 var directorRole = &sessionRole{
-	command: "director", title: "Director", storeFile: "director.store", roleFile: "roles/director.md",
+	command: "director", title: "Director", storeFile: directorStoreFile, roleFile: "roles/director.md",
 	admit: admitConfig,
 	settings: func(cfg *config.Config) sessionSettings {
 		if d := cfg.Director; d != nil {

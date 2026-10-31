@@ -11,8 +11,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// overrideStore is goldenStore with the test Director config, and a managed.toml beside it that pins ci_log_limit;
-// it returns the store's and the config's paths.
+// overrideStore is goldenStore with the test Director config, and a managed.toml beside it that pins ci_log_limit,
+// in a copy enrolled and authorized for it; it returns the store's and the config's paths.
 func overrideStore(t *testing.T) (path, cfg string) {
 	t.Helper()
 	cfg = writeDirector(t, directorTOML)
@@ -21,6 +21,7 @@ func overrideStore(t *testing.T) (path, cfg string) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(filepath.Dir(cfg), "managed.toml"), string(managed))
+	enrolManaged(t, filepath.Dir(cfg))
 	return goldenStore(t), cfg
 }
 

@@ -1,8 +1,11 @@
 # Standalone and managed Directors
 
-Everything on this page is designed, not built, except where [what already holds](#what-already-holds) says otherwise.
-No command, config key or store record it names exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
+This page is partly built: [what already holds](#what-already-holds) says what is, and [what is missing](#what-is-missing) what is not.
+Later slices build the rest red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [optional Steward](decisions/optional-steward.md).
+
+Nothing can authorize a managed revision yet: `guildhall config reload` and the Guildmaster's approval decision are not built, and enrolment never authorizes one.
+So a copy enrolled now refuses every command that needs effective settings; no live copy should be enrolled until reload is built.
 
 A Director runs in one of two modes:
 
@@ -23,16 +26,21 @@ On `main` today:
 - Rollouts write only `managed.toml` and never `config.toml` ([managed publication](decisions/managed-publication-separate-from-director-config.md)), and refuse a copy whose repositories differ from the roster.
 - `guildhall task new` loads the combined config and binds its digest to the task, so a changed managed revision reaches new tasks only (R1.62).
 - The [Steward session](steward.md#the-steward-session) runs, supervised like a Director, with its own copy, store and Guildmaster-only inbox; it rolls out on the Guildmaster's word, and nothing a Director does depends on it.
+- The mode is a store fact: the [enrolment and managed-revision events](store.md#managed-mode) are recorded, and the [mode table](#mode) decides the mode.
+- Every Director command, and every Artisan attempt launched from a Director copy, loads its config through the shared configuration-admission boundary below (`internal/admit`), which refuses inline `[managed]` in every mode and refuses an enrolled copy whose `managed.toml` digest its store has not authorized, recording nothing.
+  These refuse: the session's start and reload, `task new`, `advance` and the commands that run it, `task cancel` and `task reconcile`, `task override set`, `finish`, `quality`, `ci log`, the workflow and grant commands that load a repository, `director leave`, and an attempt's launch, whose profile grant and Claude skill policy come from the admitted config.
+  Clerk answers without a refused config and says on standard error that it was refused.
+  These only report: `director status`, `director mode`, the messaging commands, `prune` and `version`.
+  A manual `prune` acts on settings but never refuses: when the boundary refuses the copy, it applies `config.toml` alone, with no managed settings, and says so, so an unauthorized `prune_after` or `lock_wait` never decides what it removes.
+- `guildhall director enrol`, `director leave` and `director mode` are built ([CLI contract](contracts/cli.md#director-modes)), and `director status` names the mode the boundary finds.
+- The Director suites in `internal/cli` run in both modes: `go test ./internal/cli -director-mode=managed`, or `GUILDHALL_TEST_DIRECTOR_MODE=managed`, makes each copy the shared test helpers return a managed copy with the same effective settings.
 
 ## What is missing
 
-- Nothing records which mode a copy is in; the mode is implied by whether `managed.toml` exists.
-- The config key `mode` already means the copy's role, `steward` or `director` (R1.9), so the management mode cannot reuse it.
-- `config.Parse` still accepts legacy inline `[managed]` settings in `config.toml`; in a standalone copy no Steward owns them.
+- `guildhall config reload` and the SSH command a rollout runs it with, so nothing authorizes a managed revision yet.
+- Observed-untrusted alerts: an unauthorized digest is refused, but not yet recorded or raised to the Guildmaster as a decision, so there is no approval either.
+- The status feed's other mode fields: refusal, Steward label, applied digest and time, and a pending untrusted digest; and `steward status` reading each copy's mode.
 - Managed settings are flat string keys, so repositories and merge requirements cannot be managed today: they are local in both modes, and a Director copy's own files are the only record of them.
-- Nothing stops a local edit of `managed.toml`: its checksum line detects a damaged transfer, not who wrote it.
-- There are no enrol or leave commands, no store events for them and no status feed.
-- Tests load config one way per case; nothing runs a suite in both modes.
 
 ## Mode
 
@@ -135,13 +143,13 @@ CI makes no model calls and uses no SSH: the Steward's commands are replaced by 
 | Managed revision event | New and previous digest, source `rollout`, `reload`, `observed-untrusted` or `guildmaster-approved`, and the time; never changed. Authorization must be recorded in the receiving store; observation records no authorization. Approval names the alert decision and exact approved digest. |
 | Lesson | A document reference with evidence and limits, and a state `proposed`, `collected`, `adopted` or `declined`. |
 
-## Conflicts to resolve
+## Conflicts resolved
 
-These are flagged rather than chosen silently:
+These were flagged rather than chosen silently, and the Guildmaster resolved each as proposed here; [requirements](requirements.md) now says so:
 
 - **R1.9** lists the copy layout with `mode` meaning steward or director and a `managed` section; the management mode here is a store fact so that `mode` keeps its meaning.
-- **R1.46** and **R1.43** make enrolment and installation the Steward's; standalone Directors need a Steward-free install path, such as running the setup wizard locally (R1.51) without enrolment.
-- **R1.39** and **R1.40** let the Herdr setup helper touch only machines enrolled by the Steward; a standalone Director's machine would need its own entry.
+- **R1.46** and **R1.43** make enrolment and installation the Steward's; standalone Directors install without enrolment, such as by running the setup wizard locally (R1.51).
+- **R1.39** and **R1.40** let the Herdr setup helper touch only machines enrolled by the Steward; a standalone Director's machine gets its own entry.
 - **R1.32** has the Steward draft every lesson; a standalone lesson is adopted without one.
 
 The [optional Steward decision](decisions/optional-steward.md) amends the [scp rollouts](decisions/steward-rollouts-copy-with-scp.md) no-remote-command restriction for `config reload`.

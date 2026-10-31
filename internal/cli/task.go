@@ -338,7 +338,7 @@ func (a *App) task(args []string) int {
 		task.ID, task.Title, task.Detail, task.DependsOn, task.Fixes = positional[0], *title, *detail, deps, fixed.ref
 		// Every override is judged before the store opens, as the workflow is, so a refused one creates no task.
 		if len(overrides) > 0 {
-			cfg, err := config.Load(*cfgPath)
+			cfg, err := admitDirector(*cfgPath)
 			if err != nil {
 				return fail(fmt.Errorf("config: %w", err))
 			}
@@ -354,7 +354,7 @@ func (a *App) task(args []string) int {
 	var showConfig *config.Config
 	if sub == "show" && *cfgPath != "" {
 		var err error
-		if showConfig, err = config.Load(*cfgPath); err != nil {
+		if showConfig, err = reportedConfig(*cfgPath); err != nil {
 			_, _ = fmt.Fprintf(a.Stderr, "guildhall: task show: config: %v; skipped_overrides not judged\n", err)
 		}
 	}
@@ -491,7 +491,7 @@ func acceptTask(cfgPath, repo, taskKind string) (store.Task, acceptedWorkflow, e
 
 // loadRepository loads the Director config at cfgPath and finds repository repo in it.
 func loadRepository(cfgPath, repo string) (*config.Config, config.Repository, error) {
-	cfg, err := config.Load(cfgPath)
+	cfg, err := admitDirector(cfgPath)
 	if err != nil {
 		return nil, config.Repository{}, fmt.Errorf("config: %w", err)
 	}

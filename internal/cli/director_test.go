@@ -83,7 +83,7 @@ func directorCopy(t *testing.T, table string, steps ...string) string {
 		copyFile(t, exe, filepath.Join(bin, name))
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return dir
+	return maybeManage(t, dir)
 }
 
 // runDirectorCmd runs `guildhall director <args>` in this process as cmd/guildhall assembles it, with no working
@@ -426,6 +426,8 @@ func TestDirectorStartRefusesAllowedToolsARuntimeCannotGrant(t *testing.T) {
 }
 
 func TestDirectorStartRefusals(t *testing.T) {
+	// The managed copy and inline managed cases are the mode table's, so this test runs standalone in both modes.
+	t.Setenv(directorModeEnv, "")
 	cases := []struct {
 		name, table string
 		args        []string
@@ -437,9 +439,12 @@ func TestDirectorStartRefusals(t *testing.T) {
 		{name: "no adapter", table: "[director]\nmodel = \"opus\"\n", code: 1, want: "the adapters are claude, fake"},
 		{name: "no director table", code: 1, want: "the adapters are claude, fake"},
 		{name: "unknown runtime", table: "[director]\nadapter = \"fake\"\n", args: []string{"codex"}, code: 1, want: `unknown runtime adapter "codex": the adapters are claude, fake`},
-		{name: "managed copy", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "director enrol",
+		{name: "managed copy", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "managed.toml is present but this copy is not enrolled: run guildhall director enrol --steward <label>",
 			setup: func(t *testing.T, dir string) { writeFile(t, filepath.Join(dir, "managed.toml"), "") }},
-		{name: "inline managed", table: "[director]\nadapter = \"fake\"\n\n[managed.stall_interval]\nvalue = \"5m\"\n", code: 1, want: "[managed]"},
+		{name: "inline managed", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "inline [managed] section, which a Director copy refuses in every mode",
+			setup: func(t *testing.T, dir string) {
+				appendFile(t, filepath.Join(dir, "config.toml"), "\n[managed.stall_interval]\nvalue = \"5m\"\n")
+			}},
 		{name: "no store", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "guildhall store init",
 			setup: func(t *testing.T, dir string) {
 				if err := os.Remove(filepath.Join(dir, "director.store")); err != nil {

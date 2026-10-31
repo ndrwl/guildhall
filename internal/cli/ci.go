@@ -17,7 +17,6 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/cilog"
-	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -72,7 +71,7 @@ func (a *App) ciCmd(args []string) int {
 	if cp.dir == "" {
 		return a.usageError("ci log: " + cp.missing(a).Error() + "\n" + ciLogHelp)
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := admitDirector(cfgPath)
 	if err != nil {
 		return a.fail(fmt.Errorf("config: %w", err))
 	}

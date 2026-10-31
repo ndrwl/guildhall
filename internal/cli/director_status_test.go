@@ -645,8 +645,8 @@ func TestDirectorStatusUsage(t *testing.T) {
 		code int
 		want string
 	}{
-		{"no subcommand", nil, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake and context-report"},
-		{"unknown subcommand", []string{"enrol"}, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake and context-report"},
+		{"no subcommand", nil, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake, context-report, enrol, leave and mode"},
+		{"unknown subcommand", []string{"enroll"}, 2, "director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake, context-report, enrol, leave and mode"},
 		{"no json", []string{"status", "--copy", dir}, 2, "prints JSON only; pass --json"},
 		{"no copy", []string{"status", "--json"}, 2, "director status: no Guildhall copy found from the current directory; pass --copy <dir> or cd into a copy"},
 		{"store without state", []string{"status", "--json", "--store", filepath.Join(dir, "director.store")}, 2, "--store and --state are required, or --copy"},
